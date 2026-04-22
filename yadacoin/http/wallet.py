@@ -294,6 +294,14 @@ class UnlockHandler(BaseHandler):
             key_or_wif = json_body.get("key_or_wif")
             expires = json_body.get("expires", 23040)
         if key_or_wif in [self.config.wif, self.config.private_key, self.config.seed]:
+            if getattr(self.config, "admin_kel", None):
+                self.set_status(403)
+                return self.render_as_json(
+                    {
+                        "status": "error",
+                        "message": "admin_kel is configured — use the KEL second factor to authenticate.",
+                    }
+                )
             self.set_secure_cookie("key_or_wif", "true")
 
             payload = {

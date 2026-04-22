@@ -887,6 +887,1173 @@ class TestNodeTypeSelfDetermination(AsyncTestCase):
         result = Nodes.self_determine_peer_type(self.config)
         self.assertIsNone(result)
 
+    # ------------------------------------------------------------------
+    # Additional coverage tests
+    # ------------------------------------------------------------------
+
+    async def test_get_all_nodes_indexed_by_address_for_block_height(self):
+        """Test get_all_nodes_indexed_by_address_for_block_height returns empty dict when no nodes."""
+        self.seeds_instance._NODES = []
+        self.gateways_instance._NODES = []
+        self.providers_instance._NODES = []
+        Seeds.set_fork_points()
+        Seeds.set_nodes()
+        SeedGateways.set_fork_points()
+        SeedGateways.set_nodes()
+        ServiceProviders.set_fork_points()
+        ServiceProviders.set_nodes()
+        result = Nodes.get_all_nodes_indexed_by_address_for_block_height(0)
+        self.assertEqual(result, {})
+
+    async def test_count_providers_per_gateway_zero_gateways(self):
+        """Returns 0 when gateways_count == 0."""
+        self.gateways_instance._NODES = []
+        result = Nodes._count_providers_per_gateway()
+        self.assertEqual(result, 0)
+
+    async def test_evict_all_dynamic_nodes_empty_set(self):
+        """_evict_all_dynamic_nodes returns early when dynamic_node_public_keys is empty."""
+        Nodes.dynamic_node_public_keys.clear()
+        initial_count = len(self.seeds_instance._NODES)
+        Nodes._evict_all_dynamic_nodes()
+        self.assertEqual(len(self.seeds_instance._NODES), initial_count)
+
+    async def test_load_dynamic_nodes_no_activation_height(self):
+        """load_dynamic_nodes_from_chain uses default fork when activation_height is None."""
+        from yadacoin.core.chain import CHAIN
+
+        self.config.LatestBlock.block.index = CHAIN.DYNAMIC_NODES_FORK - 1
+
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([])
+        self.config.mongo.async_db.blocks.find.return_value.sort.return_value = (
+            async_iter
+        )
+
+        initial = len(self.seeds_instance._NODES)
+        await Nodes.load_dynamic_nodes_from_chain()  # no activation_height argument
+        self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+    async def test_load_dynamic_nodes_latest_block_raises(self):
+        """load_dynamic_nodes_from_chain returns early when LatestBlock access raises."""
+        self.config.LatestBlock = MagicMock(side_effect=Exception("no block"))
+        initial = len(self.seeds_instance._NODES)
+        await Nodes.load_dynamic_nodes_from_chain()
+        self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+    async def test_load_dynamic_nodes_scan_from_exceeds_current_height(self):
+        """Returns early when scan_from > current_height (all data cached)."""
+        from yadacoin.core.chain import CHAIN
+
+        self.config.LatestBlock.block.index = CHAIN.DYNAMIC_NODES_FORK + 10
+        Nodes._last_scanned_height = CHAIN.DYNAMIC_NODES_FORK + 10  # already up-to-date
+
+        self.config.mongo.async_db.blocks.find.call_count
+        initial = len(self.seeds_instance._NODES)
+        await Nodes.load_dynamic_nodes_from_chain()
+        # Should not call find since scan_from > current_height
+        self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+    async def test_load_dynamic_nodes_cursor_creation_raises(self):
+        """Returns early when mongo cursor creation raises."""
+        from yadacoin.core.chain import CHAIN
+
+        self.config.LatestBlock.block.index = CHAIN.DYNAMIC_NODES_FORK + 5
+        self.config.mongo.async_db.blocks.find.side_effect = Exception("db error")
+
+        initial = len(self.seeds_instance._NODES)
+        await Nodes.load_dynamic_nodes_from_chain()
+        self.assertEqual(len(self.seeds_instance._NODES), initial)
+        # Reset side_effect for teardown
+        self.config.mongo.async_db.blocks.find.side_effect = None
+
+    async def test_load_dynamic_nodes_node_blob_not_dict(self):
+        """Skips transaction when relationship.node is not a dict (e.g., integer)."""
+        from yadacoin.core.chain import CHAIN
+
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [{"public_key": "03test", "relationship": {"node": 42}}],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        self.config.mongo.async_db.blocks.find.return_value.sort.return_value = (
+            async_iter
+        )
+
+        initial = len(self.seeds_instance._NODES)
+        await Nodes.load_dynamic_nodes_from_chain()
+        self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+    async def test_load_dynamic_nodes_node_def_from_nested_node(self):
+        """Uses node_blob directly when node_blob['node'] is not a dict."""
+        from yadacoin.core.chain import CHAIN
+
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": "03test",
+                    "relationship": {
+                        "node": {
+                            # No nested "node" key, so node_def = node_blob
+                            "identity": None,  # will trigger identity-not-dict path
+                        }
+                    },
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        self.config.mongo.async_db.blocks.find.return_value.sort.return_value = (
+            async_iter
+        )
+
+        initial = len(self.seeds_instance._NODES)
+        await Nodes.load_dynamic_nodes_from_chain()
+        self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+    async def test_load_dynamic_nodes_identity_not_dict(self):
+        """Skips transaction when identity is not a dict."""
+        from yadacoin.core.chain import CHAIN
+
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": "03test",
+                    "relationship": {
+                        "node": {
+                            "identity": "not_a_dict",
+                        }
+                    },
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        self.config.mongo.async_db.blocks.find.return_value.sort.return_value = (
+            async_iter
+        )
+
+        initial = len(self.seeds_instance._NODES)
+        await Nodes.load_dynamic_nodes_from_chain()
+        self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+    async def test_load_dynamic_nodes_collateral_missing(self):
+        """Skips transaction when collateral_address is missing."""
+        from yadacoin.core.chain import CHAIN
+
+        node_def = {
+            "identity": {
+                "public_key": "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3a",
+                "username_signature": base64.b64encode(b"valid_sig").decode(),
+                "username": "testuser_col",
+            },
+            # No collateral_address
+        }
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": node_def["identity"]["public_key"],
+                    "id": "txn_col",
+                    "relationship": {"node": node_def},
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        self.config.mongo.async_db.blocks.find.return_value.sort.return_value = (
+            async_iter
+        )
+
+        with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+            initial = len(self.seeds_instance._NODES)
+            await Nodes.load_dynamic_nodes_from_chain()
+            self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+    async def test_load_dynamic_nodes_assigns_seed_gateway_type(self):
+        """Tests the seed_gateway assignment branch in load_dynamic_nodes_from_chain."""
+        from yadacoin.core.chain import CHAIN
+
+        valid_pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3b"
+        node_def = {
+            "host": "1.2.3.4",
+            "port": 8000,
+            "identity": {
+                "public_key": valid_pub,
+                "username_signature": base64.b64encode(b"valid_sig").decode(),
+                "username": "testuser_sgw",
+            },
+            "collateral_address": "1TestAddress",
+        }
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": valid_pub,
+                    "id": "txn_sgw",
+                    "relationship": {"node": node_def},
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+
+        empty_collateral_iter = AsyncMock()
+        empty_collateral_iter.__aiter__.return_value = iter([])
+
+        def find_side_effect(query, *args, **kwargs):
+            if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
+                return empty_collateral_iter
+            cursor = MagicMock()
+            cursor.sort.return_value = async_iter
+            return cursor
+
+        self.config.mongo.async_db.blocks.find.side_effect = find_side_effect
+
+        mock_node = Mock()
+        mock_node.identity = Mock()
+        mock_node.identity.public_key = valid_pub
+
+        with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+            with mock.patch.object(self.config, "address_is_valid", return_value=True):
+                with mock.patch.object(
+                    Nodes, "_assign_node_type", return_value="seed_gateway"
+                ):
+                    with mock.patch(
+                        "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",
+                        return_value="1TestPaymentAddress",
+                    ):
+                        from yadacoin.core.peer import SeedGateway as SeedGatewayPeer
+
+                        with mock.patch.object(
+                            SeedGatewayPeer, "from_dict", return_value=mock_node
+                        ):
+                            before_gw = len(self.gateways_instance._NODES)
+                            await Nodes.load_dynamic_nodes_from_chain()
+                            self.assertGreater(
+                                len(self.gateways_instance._NODES), before_gw
+                            )
+
+        self.config.mongo.async_db.blocks.find.side_effect = None
+
+    async def test_load_dynamic_nodes_unknown_type_skipped(self):
+        """Tests that an unknown assigned_type causes the node to be skipped."""
+        from yadacoin.core.chain import CHAIN
+
+        valid_pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3c"
+        node_def = {
+            "identity": {
+                "public_key": valid_pub,
+                "username_signature": base64.b64encode(b"valid_sig").decode(),
+                "username": "testuser_unk",
+            },
+            "collateral_address": "1TestAddress",
+        }
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": valid_pub,
+                    "id": "txn_unk",
+                    "relationship": {"node": node_def},
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+
+        empty_collateral_iter = AsyncMock()
+        empty_collateral_iter.__aiter__.return_value = iter([])
+
+        def find_side_effect(query, *args, **kwargs):
+            if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
+                return empty_collateral_iter
+            cursor = MagicMock()
+            cursor.sort.return_value = async_iter
+            return cursor
+
+        self.config.mongo.async_db.blocks.find.side_effect = find_side_effect
+
+        with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+            with mock.patch.object(self.config, "address_is_valid", return_value=True):
+                with mock.patch.object(
+                    Nodes, "_assign_node_type", return_value="unknown_type"
+                ):
+                    initial = len(self.seeds_instance._NODES)
+                    await Nodes.load_dynamic_nodes_from_chain()
+                    self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+        self.config.mongo.async_db.blocks.find.side_effect = None
+
+    async def test_load_dynamic_nodes_pub_key_already_registered(self):
+        """Skips node registration when pub key is already in dynamic_node_public_keys."""
+        from yadacoin.core.chain import CHAIN
+
+        valid_pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3d"
+        Nodes.dynamic_node_public_keys.add(valid_pub)
+
+        node_def = {
+            "identity": {
+                "public_key": valid_pub,
+                "username_signature": base64.b64encode(b"valid_sig").decode(),
+                "username": "testuser_dup",
+            },
+            "collateral_address": "1TestAddress",
+        }
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": valid_pub,
+                    "id": "txn_dup",
+                    "relationship": {"node": node_def},
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+
+        empty_collateral_iter = AsyncMock()
+        empty_collateral_iter.__aiter__.return_value = iter([])
+
+        def find_side_effect(query, *args, **kwargs):
+            if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
+                return empty_collateral_iter
+            cursor = MagicMock()
+            cursor.sort.return_value = async_iter
+            return cursor
+
+        self.config.mongo.async_db.blocks.find.side_effect = find_side_effect
+
+        with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+            with mock.patch.object(self.config, "address_is_valid", return_value=True):
+                initial = len(self.seeds_instance._NODES)
+                await Nodes.load_dynamic_nodes_from_chain()
+                self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+        self.config.mongo.async_db.blocks.find.side_effect = None
+
+    async def test_load_dynamic_nodes_txn_pub_mismatch_skipped(self):
+        """Skips node when txn public_key differs from identity public_key."""
+        from yadacoin.core.chain import CHAIN
+
+        identity_pub = (
+            "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3e"
+        )
+        txn_pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b00"
+
+        node_def = {
+            "identity": {
+                "public_key": identity_pub,
+                "username_signature": base64.b64encode(b"valid_sig").decode(),
+                "username": "testuser_mismatch",
+            },
+            "collateral_address": "1TestAddress",
+        }
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": txn_pub,  # Different from identity pub
+                    "id": "txn_mismatch",
+                    "relationship": {"node": node_def},
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        self.config.mongo.async_db.blocks.find.return_value.sort.return_value = (
+            async_iter
+        )
+
+        with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+            initial = len(self.seeds_instance._NODES)
+            await Nodes.load_dynamic_nodes_from_chain()
+            self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+    async def test_load_dynamic_nodes_empty_username_sig_skipped(self):
+        """Line 318: covers when pub present but username_sig is falsy (empty string)."""
+        from yadacoin.core.chain import CHAIN
+
+        pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3f"
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": pub,
+                    "id": "txn_nosig",
+                    "relationship": {
+                        "node": {
+                            "identity": {
+                                "public_key": pub,
+                                "username_signature": "",  # Empty = falsy → line 318 hit
+                                "username": "testuser",
+                            },
+                        }
+                    },
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        self.config.mongo.async_db.blocks.find.return_value.sort.return_value = (
+            async_iter
+        )
+
+        initial = len(self.seeds_instance._NODES)
+        await Nodes.load_dynamic_nodes_from_chain()
+        self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+    async def test_load_dynamic_nodes_invalid_collateral_address_skipped(self):
+        """Line 339: covers when collateral present but config.address_is_valid returns False."""
+        from yadacoin.core.chain import CHAIN
+
+        pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b40"
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": pub,
+                    "id": "txn_invalidcol",
+                    "relationship": {
+                        "node": {
+                            "identity": {
+                                "public_key": pub,
+                                "username_signature": base64.b64encode(
+                                    b"valid_sig"
+                                ).decode(),
+                                "username": "testuser_inv_col",
+                            },
+                            "collateral_address": "invalid_addr",
+                        }
+                    },
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        self.config.mongo.async_db.blocks.find.return_value.sort.return_value = (
+            async_iter
+        )
+
+        with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+            with mock.patch.object(self.config, "address_is_valid", return_value=False):
+                initial = len(self.seeds_instance._NODES)
+                await Nodes.load_dynamic_nodes_from_chain()
+                self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+    async def test_load_dynamic_nodes_missing_txn_id_skipped(self):
+        """Line 347: covers when txn has no id (or id is falsy)."""
+        from yadacoin.core.chain import CHAIN
+
+        pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b41"
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": pub,
+                    # No "id" key → txn_id = None → falsy
+                    "relationship": {
+                        "node": {
+                            "identity": {
+                                "public_key": pub,
+                                "username_signature": base64.b64encode(
+                                    b"valid_sig"
+                                ).decode(),
+                                "username": "testuser_noid",
+                            },
+                            "collateral_address": "1ValidAddress",
+                        }
+                    },
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        self.config.mongo.async_db.blocks.find.return_value.sort.return_value = (
+            async_iter
+        )
+
+        with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+            with mock.patch.object(self.config, "address_is_valid", return_value=True):
+                initial = len(self.seeds_instance._NODES)
+                await Nodes.load_dynamic_nodes_from_chain()
+                self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+    async def test_load_dynamic_nodes_utxo_is_spent_skipped(self):
+        """Line 352: covers when _collateral_utxo_is_unspent returns False (UTXO spent)."""
+        from yadacoin.core.chain import CHAIN
+
+        pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b42"
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": pub,
+                    "id": "txn_spent",
+                    "relationship": {
+                        "node": {
+                            "identity": {
+                                "public_key": pub,
+                                "username_signature": base64.b64encode(
+                                    b"valid_sig"
+                                ).decode(),
+                                "username": "testuser_spent",
+                            },
+                            "collateral_address": "1ValidAddress",
+                        }
+                    },
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        self.config.mongo.async_db.blocks.find.return_value.sort.return_value = (
+            async_iter
+        )
+
+        with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+            with mock.patch.object(self.config, "address_is_valid", return_value=True):
+                with mock.patch.object(
+                    Nodes,
+                    "_collateral_utxo_is_unspent",
+                    new=AsyncMock(return_value=False),
+                ):
+                    initial = len(self.seeds_instance._NODES)
+                    await Nodes.load_dynamic_nodes_from_chain()
+                    self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+    async def test_load_dynamic_nodes_utxo_check_raises_skipped(self):
+        """Lines 353-354: covers except block when _collateral_utxo_is_unspent raises."""
+        from yadacoin.core.chain import CHAIN
+
+        pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b43"
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": pub,
+                    "id": "txn_raises",
+                    "relationship": {
+                        "node": {
+                            "identity": {
+                                "public_key": pub,
+                                "username_signature": base64.b64encode(
+                                    b"valid_sig"
+                                ).decode(),
+                                "username": "testuser_raises",
+                            },
+                            "collateral_address": "1ValidAddress",
+                        }
+                    },
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        self.config.mongo.async_db.blocks.find.return_value.sort.return_value = (
+            async_iter
+        )
+
+        with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+            with mock.patch.object(self.config, "address_is_valid", return_value=True):
+                with mock.patch.object(
+                    Nodes,
+                    "_collateral_utxo_is_unspent",
+                    new=AsyncMock(side_effect=RuntimeError("DB error")),
+                ):
+                    initial = len(self.seeds_instance._NODES)
+                    await Nodes.load_dynamic_nodes_from_chain()
+                    self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+    async def test_load_dynamic_nodes_assigns_service_provider_type(self):
+        """Lines 373-374: covers the service_provider branch in load_dynamic_nodes_from_chain."""
+        from yadacoin.core.chain import CHAIN
+
+        valid_pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b44"
+        node_def = {
+            "host": "10.0.0.1",
+            "port": 8001,
+            "identity": {
+                "public_key": valid_pub,
+                "username_signature": base64.b64encode(b"valid_sig").decode(),
+                "username": "testuser_sp",
+            },
+            "collateral_address": "1SPTestAddress",
+        }
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": valid_pub,
+                    "id": "txn_sp",
+                    "relationship": {"node": node_def},
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+
+        empty_collateral_iter = AsyncMock()
+        empty_collateral_iter.__aiter__.return_value = iter([])
+
+        def find_side_effect(query, *args, **kwargs):
+            if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
+                return empty_collateral_iter
+            cursor = MagicMock()
+            cursor.sort.return_value = async_iter
+            return cursor
+
+        self.config.mongo.async_db.blocks.find.side_effect = find_side_effect
+
+        mock_node = Mock()
+        mock_node.identity = Mock()
+        mock_node.identity.public_key = valid_pub
+
+        from yadacoin.core.peer import ServiceProvider as ServiceProviderPeer
+
+        with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+            with mock.patch.object(self.config, "address_is_valid", return_value=True):
+                with mock.patch.object(
+                    Nodes, "_assign_node_type", return_value="service_provider"
+                ):
+                    with mock.patch(
+                        "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",
+                        return_value="1TestPaymentAddressSP",
+                    ):
+                        with mock.patch.object(
+                            ServiceProviderPeer, "from_dict", return_value=mock_node
+                        ):
+                            before_sp = len(self.providers_instance._NODES)
+                            await Nodes.load_dynamic_nodes_from_chain()
+                            self.assertGreater(
+                                len(self.providers_instance._NODES), before_sp
+                            )
+
+        self.config.mongo.async_db.blocks.find.side_effect = None
+
+    async def test_load_dynamic_nodes_skips_duplicate_existing_node(self):
+        """Lines 391-392, 396: covers when pub key matches existing hardcoded node."""
+        from yadacoin.core.chain import CHAIN
+
+        valid_pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b45"
+        node_def = {
+            "host": "10.0.0.2",
+            "port": 8002,
+            "identity": {
+                "public_key": valid_pub,
+                "username_signature": base64.b64encode(b"valid_sig").decode(),
+                "username": "testuser_dup2",
+            },
+            "collateral_address": "1DupTestAddress",
+        }
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": valid_pub,
+                    "id": "txn_dup2",
+                    "relationship": {"node": node_def},
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+
+        empty_collateral_iter = AsyncMock()
+        empty_collateral_iter.__aiter__.return_value = iter([])
+
+        def find_side_effect(query, *args, **kwargs):
+            if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
+                return empty_collateral_iter
+            cursor = MagicMock()
+            cursor.sort.return_value = async_iter
+            return cursor
+
+        self.config.mongo.async_db.blocks.find.side_effect = find_side_effect
+
+        # Pre-populate Seeds with a node having the same pub key
+        mock_existing = Mock()
+        mock_existing.identity = Mock()
+        mock_existing.identity.public_key = valid_pub
+        self.seeds_instance._NODES.append(
+            {"ranges": [(CHAIN.DYNAMIC_NODES_FORK, None)], "node": mock_existing}
+        )
+
+        mock_new_node = Mock()
+        mock_new_node.identity = Mock()
+        mock_new_node.identity.public_key = valid_pub
+
+        from yadacoin.core.peer import Seed as SeedPeer
+
+        with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+            with mock.patch.object(self.config, "address_is_valid", return_value=True):
+                with mock.patch.object(Nodes, "_assign_node_type", return_value="seed"):
+                    with mock.patch.object(
+                        SeedPeer, "from_dict", return_value=mock_new_node
+                    ):
+                        initial = len(self.seeds_instance._NODES)
+                        await Nodes.load_dynamic_nodes_from_chain()
+                        # Node should NOT be re-added since it already exists
+                        self.assertEqual(len(self.seeds_instance._NODES), initial)
+
+        self.config.mongo.async_db.blocks.find.side_effect = None
+
+
+class TestNodesExceptionPaths(AsyncTestCase):
+    """Covers exception-handler and rare-branch paths in nodes.py."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        # Use a standalone mock config rather than touching the global Config singleton.
+        self.mock_cfg = MagicMock()
+        self.mock_cfg.LatestBlock.block.index = CHAIN.DYNAMIC_NODES_FORK + 100
+        self.mock_cfg.address_is_valid.return_value = True
+        self.seeds_instance = Seeds()
+        self.gateways_instance = SeedGateways()
+        self.providers_instance = ServiceProviders()
+        self.original_seeds = self.seeds_instance._NODES.copy()
+        self.original_gateways = self.gateways_instance._NODES.copy()
+        self.original_providers = self.providers_instance._NODES.copy()
+
+    async def asyncTearDown(self):
+        self.seeds_instance._NODES = self.original_seeds
+        self.gateways_instance._NODES = self.original_gateways
+        self.providers_instance._NODES = self.original_providers
+        Seeds.set_fork_points()
+        Seeds.set_nodes()
+        SeedGateways.set_fork_points()
+        SeedGateways.set_nodes()
+        ServiceProviders.set_fork_points()
+        ServiceProviders.set_nodes()
+        Nodes._get_nodes_for_block_height_cache = {
+            "Seeds": {},
+            "SeedGateways": {},
+            "ServiceProviders": {},
+        }
+        Nodes.dynamic_node_public_keys.clear()
+        Nodes.dynamic_node_collateral_txns.clear()
+        Nodes.dynamic_node_collateral_addresses.clear()
+        Nodes.eligible_nodes_by_address.clear()
+        Nodes._last_scanned_height = 0
+        await super().asyncTearDown()
+
+    # ------------------------------------------------------------------
+    # Line 72: get_nodes_for_block_height retries when first call returns None
+    # ------------------------------------------------------------------
+
+    def test_get_nodes_for_block_height_retries_on_none_fork(self):
+        """Line 72: retries get_fork_for_block_height when first call returns None."""
+        Seeds.set_fork_points()
+        Seeds.set_nodes()
+        valid_fork = Seeds().fork_points[0] if Seeds().fork_points else 0
+        Nodes._get_nodes_for_block_height_cache["Seeds"] = {}
+
+        with mock.patch.object(
+            Seeds, "get_fork_for_block_height", side_effect=[None, valid_fork]
+        ):
+            result = Seeds.get_nodes_for_block_height(valid_fork)
+
+        self.assertIsNotNone(result)
+
+    # ------------------------------------------------------------------
+    # Lines 128, 135-136: _collateral_utxo_is_unspent edge cases
+    # ------------------------------------------------------------------
+
+    async def test_collateral_utxo_is_unspent_skips_non_matching_inputs(self):
+        """Line 128: continues when transaction inputs don't reference txn_id."""
+        block = {
+            "transactions": [
+                {
+                    "inputs": [{"id": "DIFFERENT_TXN_ID"}],
+                    "public_key": "03abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678",
+                }
+            ]
+        }
+
+        async def aiter_blocks():
+            yield block
+
+        self.mock_cfg.mongo.async_db.blocks.find.return_value = aiter_blocks()
+
+        result = await Nodes._collateral_utxo_is_unspent(
+            self.mock_cfg, "TARGET_TXN_ID", "1SomeAddress"
+        )
+        self.assertTrue(result)
+
+    async def test_collateral_utxo_is_unspent_invalid_pubkey_continues(self):
+        """Lines 135-136: continues on exception computing spending_address."""
+        block = {
+            "transactions": [
+                {
+                    "inputs": [{"id": "TARGET_TXN_ID"}],
+                    "public_key": "INVALID_HEX_NOT_PUBKEY",
+                }
+            ]
+        }
+
+        async def aiter_blocks():
+            yield block
+
+        self.mock_cfg.mongo.async_db.blocks.find.return_value = aiter_blocks()
+
+        result = await Nodes._collateral_utxo_is_unspent(
+            self.mock_cfg, "TARGET_TXN_ID", "1SomeAddress"
+        )
+        self.assertTrue(result)
+
+    # ------------------------------------------------------------------
+    # Lines 156-157: _evict_all_dynamic_nodes handles broken node entry
+    # ------------------------------------------------------------------
+
+    def test_evict_all_dynamic_nodes_broken_node_entry(self):
+        """Lines 156-157: catches exception accessing entry node's public_key."""
+        Nodes.dynamic_node_public_keys.add("some_key")
+        # Entry whose .identity.public_key access raises
+        broken_entry = {"node": object()}  # plain object, no 'identity' attribute
+        self.seeds_instance._NODES.append(broken_entry)
+
+        # Should not raise
+        Nodes._evict_all_dynamic_nodes()
+        self.assertEqual(len(Nodes.dynamic_node_public_keys), 0)
+        # broken entry is retained (pk is None, not in dynamic_node_public_keys)
+        self.seeds_instance._NODES = [
+            e for e in self.seeds_instance._NODES if e is not broken_entry
+        ]
+
+    # ------------------------------------------------------------------
+    # Lines 182-183: _evict_spent_dynamic_nodes - no collateral address
+    # ------------------------------------------------------------------
+
+    async def test_evict_spent_nodes_no_collateral_address_evicts(self):
+        """Lines 182-183: pub with no collateral_address is treated as spent."""
+        pub = "03aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+        Nodes.dynamic_node_collateral_txns[pub] = "some_txn"
+        # Intentionally do NOT set dynamic_node_collateral_addresses[pub]
+        mock_node = Mock()
+        mock_node.identity = Mock()
+        mock_node.identity.public_key = pub
+        self.seeds_instance._NODES.append(
+            {"ranges": [(CHAIN.DYNAMIC_NODES_FORK, None)], "node": mock_node}
+        )
+        Nodes.dynamic_node_public_keys.add(pub)
+
+        with mock.patch(
+            "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",
+            return_value="1SomeAddr",
+        ):
+            await Nodes._evict_spent_dynamic_nodes(self.mock_cfg)
+
+        self.assertNotIn(pub, Nodes.dynamic_node_collateral_txns)
+
+    # ------------------------------------------------------------------
+    # Lines 188-189: _evict_spent_dynamic_nodes - _collateral_utxo_is_unspent raises
+    # ------------------------------------------------------------------
+
+    async def test_evict_spent_nodes_collateral_check_exception_continues(self):
+        """Lines 188-189: exception from _collateral_utxo_is_unspent is swallowed."""
+        pub = "03bbccddeeff00112233445566778899aabbccddeeff00112233445566778899aa"
+        Nodes.dynamic_node_collateral_txns[pub] = "txn_raises"
+        Nodes.dynamic_node_collateral_addresses[pub] = "1CollateralAddr"
+
+        with mock.patch.object(
+            Nodes,
+            "_collateral_utxo_is_unspent",
+            new=AsyncMock(side_effect=Exception("db error")),
+        ):
+            await Nodes._evict_spent_dynamic_nodes(self.mock_cfg)
+
+        # pub is still tracked (exception → continue, not evicted)
+        self.assertIn(pub, Nodes.dynamic_node_collateral_txns)
+
+    # ------------------------------------------------------------------
+    # Line 193: _evict_spent_dynamic_nodes - early return when spent_keys empty
+    # ------------------------------------------------------------------
+
+    async def test_evict_spent_nodes_early_return_when_none_spent(self):
+        """Line 193: returns early when all nodes are unspent."""
+        pub = "03ccddeeff00112233445566778899aabbccddeeff00112233445566778899aabb"
+        Nodes.dynamic_node_collateral_txns[pub] = "unspent_txn"
+        Nodes.dynamic_node_collateral_addresses[pub] = "1UnspentAddr"
+
+        initial_count = len(self.seeds_instance._NODES)
+
+        with mock.patch.object(
+            Nodes,
+            "_collateral_utxo_is_unspent",
+            new=AsyncMock(return_value=True),
+        ):
+            await Nodes._evict_spent_dynamic_nodes(self.mock_cfg)
+
+        # No nodes evicted
+        self.assertEqual(len(self.seeds_instance._NODES), initial_count)
+        self.assertIn(pub, Nodes.dynamic_node_collateral_txns)
+
+    # ------------------------------------------------------------------
+    # Lines 200-201: _evict_spent_dynamic_nodes - broken entry in second loop
+    # ------------------------------------------------------------------
+
+    async def test_evict_spent_nodes_broken_entry_in_eviction_loop(self):
+        """Lines 200-201: catches exception accessing node pk during eviction loop."""
+        pub = "03ddeeff00112233445566778899aabbccddeeff00112233445566778899aabbcc"
+        Nodes.dynamic_node_collateral_txns[pub] = "spent_txn"
+        Nodes.dynamic_node_collateral_addresses[pub] = "1SpentAddr"
+        Nodes.dynamic_node_public_keys.add(pub)
+
+        # Add a broken entry alongside a valid one
+        broken_entry = {"node": object()}  # accessing .identity.public_key raises
+        self.seeds_instance._NODES.append(broken_entry)
+
+        with mock.patch.object(
+            Nodes,
+            "_collateral_utxo_is_unspent",
+            new=AsyncMock(return_value=False),
+        ):
+            with mock.patch(
+                "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",
+                return_value="1SpentAddr",
+            ):
+                await Nodes._evict_spent_dynamic_nodes(self.mock_cfg)
+
+        self.assertNotIn(pub, Nodes.dynamic_node_collateral_txns)
+        # Clean up broken entry
+        self.seeds_instance._NODES = [
+            e for e in self.seeds_instance._NODES if e is not broken_entry
+        ]
+
+    # ------------------------------------------------------------------
+    # Lines 213-214: _evict_spent_dynamic_nodes - invalid hex pub key
+    # ------------------------------------------------------------------
+
+    async def test_evict_spent_nodes_invalid_hex_pub_key(self):
+        """Lines 213-214: catches exception when pub is not valid hex for address computation."""
+        pub = "NOT_VALID_HEX"
+        Nodes.dynamic_node_collateral_txns[pub] = "spent_txn2"
+        Nodes.dynamic_node_collateral_addresses[pub] = "1AnotherAddr"
+        Nodes.dynamic_node_public_keys.add(pub)
+
+        with mock.patch.object(
+            Nodes,
+            "_collateral_utxo_is_unspent",
+            new=AsyncMock(return_value=False),
+        ):
+            # Should not raise despite bad hex pub key
+            await Nodes._evict_spent_dynamic_nodes(self.mock_cfg)
+
+        self.assertNotIn(pub, Nodes.dynamic_node_collateral_txns)
+
+    # ------------------------------------------------------------------
+    # Line 378: load_dynamic_nodes_from_chain - unknown node type skipped
+    # ------------------------------------------------------------------
+
+    async def test_load_dynamic_nodes_unknown_assign_type_skipped(self):
+        """Line 378: skips node when _assign_node_type returns an unknown value."""
+        valid_pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3c"
+        node_def = {
+            "host": "1.2.3.4",
+            "port": 8000,
+            "collateral_address": "1TestAddr",
+            "identity": {
+                "public_key": valid_pub,
+                "username_signature": base64.b64encode(b"sig").decode(),
+                "username": "testuser",
+            },
+        }
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": valid_pub,
+                    "id": "txn_unknown",
+                    "relationship": {"node": node_def},
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        empty_iter = AsyncMock()
+        empty_iter.__aiter__.return_value = iter([])
+
+        def find_side_effect(query, *args, **kwargs):
+            if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
+                return empty_iter
+            cursor = MagicMock()
+            cursor.sort.return_value = async_iter
+            return cursor
+
+        self.mock_cfg.mongo.async_db.blocks.find.side_effect = find_side_effect
+
+        initial = len(self.seeds_instance._NODES)
+        with mock.patch("yadacoin.core.nodes.Config", return_value=self.mock_cfg):
+            with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+                with mock.patch.object(
+                    Nodes, "_assign_node_type", return_value="unknown_type"
+                ):
+                    await Nodes.load_dynamic_nodes_from_chain()
+
+        self.assertEqual(len(self.seeds_instance._NODES), initial)
+        self.mock_cfg.mongo.async_db.blocks.find.side_effect = None
+
+    # ------------------------------------------------------------------
+    # Lines 382-383: load_dynamic_nodes_from_chain - from_dict raises
+    # ------------------------------------------------------------------
+
+    async def test_load_dynamic_nodes_from_dict_raises_skipped(self):
+        """Lines 382-383: skips node when creator.from_dict raises."""
+        from yadacoin.core.peer import Seed as SeedPeer
+
+        valid_pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3d"
+        node_def = {
+            "host": "1.2.3.4",
+            "port": 8000,
+            "collateral_address": "1TestAddr",
+            "identity": {
+                "public_key": valid_pub,
+                "username_signature": base64.b64encode(b"sig").decode(),
+                "username": "testuser2",
+            },
+        }
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": valid_pub,
+                    "id": "txn_fromdict",
+                    "relationship": {"node": node_def},
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        empty_iter = AsyncMock()
+        empty_iter.__aiter__.return_value = iter([])
+
+        def find_side_effect(query, *args, **kwargs):
+            if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
+                return empty_iter
+            cursor = MagicMock()
+            cursor.sort.return_value = async_iter
+            return cursor
+
+        self.mock_cfg.mongo.async_db.blocks.find.side_effect = find_side_effect
+
+        initial = len(self.seeds_instance._NODES)
+        with mock.patch("yadacoin.core.nodes.Config", return_value=self.mock_cfg):
+            with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+                with mock.patch.object(Nodes, "_assign_node_type", return_value="seed"):
+                    with mock.patch.object(
+                        SeedPeer, "from_dict", side_effect=Exception("bad node data")
+                    ):
+                        await Nodes.load_dynamic_nodes_from_chain()
+
+        self.assertEqual(len(self.seeds_instance._NODES), initial)
+        self.mock_cfg.mongo.async_db.blocks.find.side_effect = None
+
+    # ------------------------------------------------------------------
+    # Lines 395-396: load_dynamic_nodes_from_chain - exception in dup check loop
+    # ------------------------------------------------------------------
+
+    async def test_load_dynamic_nodes_exception_in_duplicate_check(self):
+        """Lines 395-396: continues when exception raised iterating existing nodes."""
+        from yadacoin.core.peer import Seed as SeedPeer
+
+        valid_pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3e"
+        node_def = {
+            "host": "1.2.3.5",
+            "port": 8000,
+            "collateral_address": "1TestAddr2",
+            "identity": {
+                "public_key": valid_pub,
+                "username_signature": base64.b64encode(b"sig").decode(),
+                "username": "testuser3",
+            },
+        }
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "public_key": valid_pub,
+                    "id": "txn_dupcheck",
+                    "relationship": {"node": node_def},
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        empty_iter = AsyncMock()
+        empty_iter.__aiter__.return_value = iter([])
+
+        def find_side_effect(query, *args, **kwargs):
+            if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
+                return empty_iter
+            cursor = MagicMock()
+            cursor.sort.return_value = async_iter
+            return cursor
+
+        self.mock_cfg.mongo.async_db.blocks.find.side_effect = find_side_effect
+
+        # Insert a broken entry into seeds that will raise on .identity.public_key
+        broken_entry = {"node": object()}
+        self.seeds_instance._NODES.insert(0, broken_entry)
+
+        mock_node = Mock()
+        mock_node.identity = Mock()
+        mock_node.identity.public_key = valid_pub
+
+        with mock.patch("yadacoin.core.nodes.Config", return_value=self.mock_cfg):
+            with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+                with mock.patch.object(Nodes, "_assign_node_type", return_value="seed"):
+                    with mock.patch.object(
+                        SeedPeer, "from_dict", return_value=mock_node
+                    ):
+                        with mock.patch(
+                            "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",
+                            return_value="1TestAddr2",
+                        ):
+                            await Nodes.load_dynamic_nodes_from_chain()
+
+        # broken entry should have been iterated over without crashing
+        self.seeds_instance._NODES = [
+            e for e in self.seeds_instance._NODES if e is not broken_entry
+        ]
+        self.mock_cfg.mongo.async_db.blocks.find.side_effect = None
+
+    # ------------------------------------------------------------------
+    # Lines 466-467: self_determine_peer_type - exception in node list iteration
+    # ------------------------------------------------------------------
+
+    def test_self_determine_peer_type_exception_in_entry_continues(self):
+        """Lines 466-467: continues when accessing entry node's public_key raises."""
+        from yadacoin.enums.peertypes import PEER_TYPES
+
+        pub = "03ff00112233445566778899aabbccddeeff00112233445566778899aabbccddee"
+        self.mock_cfg.public_key = pub
+        Nodes.dynamic_node_public_keys.add(pub)
+
+        # First entry raises on .identity.public_key
+        broken_entry = {"node": object()}
+        # Second entry has the matching key
+        match_node = Mock()
+        match_node.identity = Mock()
+        match_node.identity.public_key = pub
+        self.seeds_instance._NODES.insert(0, broken_entry)
+        self.seeds_instance._NODES.insert(
+            1, {"ranges": [(0, None)], "node": match_node}
+        )
+
+        result = Nodes.self_determine_peer_type(self.mock_cfg)
+        self.assertEqual(result, PEER_TYPES.SEED.value)
+
+        # Clean up
+        self.seeds_instance._NODES = [
+            e
+            for e in self.seeds_instance._NODES
+            if e is not broken_entry and e.get("node") is not match_node
+        ]
+
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

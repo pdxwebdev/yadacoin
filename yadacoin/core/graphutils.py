@@ -18,8 +18,8 @@ from logging import getLogger
 from time import time
 
 import bson
-
 from eccsnacks.curve25519 import scalarmult
+
 from yadacoin.core.config import Config
 from yadacoin.core.crypt import Crypt
 from yadacoin.core.transaction import Transaction

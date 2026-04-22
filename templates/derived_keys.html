@@ -1,0 +1,1162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>Derived Keys Manager</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont,
+          "Segoe UI", Roboto, "Helvetica Neue",
+          Arial, sans-serif;
+        background: linear-gradient(
+          135deg,
+          #667eea 0%,
+          #764ba2 100%
+        );
+        min-height: 100vh;
+        padding: 24px 16px;
+      }
+
+      .page {
+        max-width: 860px;
+        margin: 0 auto;
+      }
+
+      .card {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 10px 40px
+          rgba(0, 0, 0, 0.15);
+        padding: 32px;
+        margin-bottom: 24px;
+      }
+
+      h1 {
+        color: #333;
+        font-size: 26px;
+        margin-bottom: 4px;
+      }
+      .subtitle {
+        color: #666;
+        font-size: 13px;
+        margin-bottom: 24px;
+      }
+
+      .section-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: #667eea;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #f0f0f0;
+        margin-bottom: 16px;
+      }
+
+      label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 5px;
+      }
+
+      input[type="text"],
+      input[type="password"] {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 13px;
+        font-family: inherit;
+        transition:
+          border-color 0.2s,
+          box-shadow 0.2s;
+      }
+      input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px
+          rgba(102, 126, 234, 0.12);
+      }
+      input.invalid {
+        border-color: #e53e3e;
+      }
+
+      .field-hint {
+        font-size: 11px;
+        color: #999;
+        margin-top: 3px;
+      }
+      .complexity-bar {
+        display: flex;
+        gap: 4px;
+        margin-top: 6px;
+      }
+      .complexity-bar span {
+        flex: 1;
+        height: 4px;
+        border-radius: 2px;
+        background: #e0e0e0;
+        transition: background 0.3s;
+      }
+      .complexity-label {
+        font-size: 11px;
+        margin-top: 4px;
+        color: #999;
+      }
+
+      .form-row {
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+        margin-bottom: 0;
+      }
+      .form-row > div {
+        flex: 1;
+      }
+
+      button {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 4px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .btn-primary {
+        background: linear-gradient(
+          135deg,
+          #667eea 0%,
+          #764ba2 100%
+        );
+        color: #fff;
+        white-space: nowrap;
+      }
+      .btn-primary:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px
+          rgba(102, 126, 234, 0.4);
+      }
+      .btn-primary:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .btn-secondary {
+        background: #f0f0f0;
+        color: #333;
+      }
+      .btn-secondary:hover {
+        background: #e0e0e0;
+      }
+      .btn-sm {
+        padding: 6px 14px;
+        font-size: 12px;
+      }
+      .btn-danger {
+        background: #fee2e2;
+        color: #b91c1c;
+      }
+      .btn-danger:hover {
+        background: #fecaca;
+      }
+
+      .msg {
+        padding: 10px 14px;
+        border-radius: 4px;
+        font-size: 13px;
+        margin-bottom: 16px;
+        display: none;
+      }
+      .msg.success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+        display: block;
+      }
+      .msg.error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+        display: block;
+      }
+      .msg.info {
+        background: #d1ecf1;
+        color: #0c5460;
+        border: 1px solid #bee5eb;
+        display: block;
+      }
+
+      .spinner {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border: 2px solid #f0f0f0;
+        border-top-color: #667eea;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        margin-right: 6px;
+        vertical-align: middle;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* Auth strip */
+      #authStrip {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      #authUnlocked {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+        padding: 8px 14px;
+        border-radius: 6px;
+        font-size: 13px;
+        display: none;
+        flex: 1;
+      }
+
+      /* Key log list */
+      .key-list {
+        list-style: none;
+      }
+      .key-item {
+        border: 1px solid #e8e8e8;
+        border-radius: 6px;
+        padding: 14px 16px;
+        margin-bottom: 10px;
+        cursor: pointer;
+        transition:
+          box-shadow 0.15s,
+          border-color 0.15s;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .key-item:hover {
+        border-color: #667eea;
+        box-shadow: 0 2px 8px
+          rgba(102, 126, 234, 0.15);
+      }
+      .key-item .ki-addr {
+        font-family: monospace;
+        font-size: 13px;
+        color: #333;
+        word-break: break-all;
+        flex: 1;
+      }
+      .key-item .ki-meta {
+        font-size: 11px;
+        color: #999;
+        white-space: nowrap;
+        text-align: right;
+      }
+      .key-item .ki-badge {
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        padding: 2px 7px;
+        border-radius: 3px;
+        background: #e0e7ff;
+        color: #3730a3;
+        white-space: nowrap;
+      }
+      .empty-state {
+        text-align: center;
+        color: #999;
+        font-size: 13px;
+        padding: 32px 0;
+      }
+
+      /* Pagination */
+      .pagination {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin-top: 16px;
+        justify-content: center;
+      }
+      .pagination button {
+        padding: 5px 12px;
+        font-size: 12px;
+      }
+      .pagination .page-info {
+        font-size: 12px;
+        color: #666;
+      }
+
+      /* Passkey */
+      .passkey-divider {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 12px 0 10px;
+        color: #bbb;
+        font-size: 11px;
+      }
+      .passkey-divider::before,
+      .passkey-divider::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: #e8e8e8;
+      }
+      .btn-passkey {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 18px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background: #fff;
+        color: #333;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          border-color 0.2s,
+          box-shadow 0.2s;
+      }
+      .btn-passkey:hover:not(:disabled) {
+        border-color: #667eea;
+        box-shadow: 0 2px 8px
+          rgba(102, 126, 234, 0.15);
+      }
+      .btn-passkey:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .btn-passkey svg {
+        flex-shrink: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="card">
+        <h1>Derived Keys Manager</h1>
+        <p class="subtitle">
+          Manage server-side KEL-authenticated
+          derived keys backed by the node seed
+          phrase.
+        </p>
+
+        <!-- ── Auth ── -->
+        <div class="section-title">
+          Wallet Authentication
+        </div>
+        <div
+          id="authStrip"
+          style="margin-bottom: 20px"
+        >
+          <div style="flex: 1">
+            <div
+              style="
+                display: flex;
+                gap: 8px;
+                align-items: flex-end;
+              "
+              id="wifRow"
+            >
+              <!-- WIF mode (shown when admin_kel is NOT configured) -->
+              <div
+                style="flex: 1"
+                id="wifFieldWrap"
+              >
+                <label for="wifInput"
+                  >Private Key or WIF</label
+                >
+                <input
+                  type="password"
+                  id="wifInput"
+                  placeholder="Paste private key or WIF from config.json"
+                  autocomplete="off"
+                />
+              </div>
+              <!-- KEL second-factor mode (shown when admin_kel IS configured) -->
+              <div
+                style="
+                  flex: 1;
+                  display: none;
+                  gap: 8px;
+                  flex-direction: column;
+                "
+                id="kelFieldWrap"
+              >
+                <div>
+                  <label for="kelPrivateKey"
+                    >Current Private Key</label
+                  >
+                  <input
+                    type="password"
+                    id="kelPrivateKey"
+                    placeholder="Current active signing private key (hex)"
+                    autocomplete="off"
+                  />
+                </div>
+                <div>
+                  <label for="kelFactor"
+                    >KEL Second Factor</label
+                  >
+                  <input
+                    type="password"
+                    id="kelFactor"
+                    placeholder="Enter the second factor used during KEL init"
+                    autocomplete="off"
+                  />
+                </div>
+              </div>
+              <button
+                class="btn-primary"
+                id="unlockBtn"
+                style="height: 40px"
+              >
+                Unlock
+              </button>
+            </div>
+            <div
+              id="unlockMsg"
+              style="
+                font-size: 12px;
+                margin-top: 5px;
+                display: none;
+              "
+            ></div>
+          </div>
+          <div id="authUnlocked">
+            ✅ <strong>Authenticated.</strong>
+            <button
+              class="btn-secondary btn-sm"
+              id="logoutBtn"
+              style="margin-left: 6px"
+            >
+              Log out
+            </button>
+          </div>
+        </div>
+
+        <!-- ── Init ── -->
+        <div class="section-title">
+          Initialise New Key Log
+        </div>
+        <div id="initMsg" class="msg"></div>
+        <div
+          style="
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-width: 500px;
+          "
+        >
+          <div>
+            <label for="initFactor"
+              >Second Factor
+              <span style="color: #e53e3e"
+                >*</span
+              ></label
+            >
+            <input
+              type="password"
+              id="initFactor"
+              placeholder="Strong passphrase"
+              autocomplete="off"
+            />
+            <div
+              class="complexity-bar"
+              id="initBar"
+            >
+              <span id="ib0"></span
+              ><span id="ib1"></span
+              ><span id="ib2"></span
+              ><span id="ib3"></span>
+            </div>
+            <div
+              class="complexity-label"
+              id="initComplexityLabel"
+            >
+              Enter a passphrase to see strength
+            </div>
+            <div class="field-hint">
+              Min 12 chars · uppercase · lowercase
+              · digit · special character
+            </div>
+          </div>
+          <div style="margin-top: 4px">
+            <button
+              class="btn-primary"
+              id="initBtn"
+              disabled
+            >
+              Init Key Log
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── List ── -->
+      <div class="card">
+        <div
+          style="
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+          "
+        >
+          <div
+            class="section-title"
+            style="margin-bottom: 0; border: none"
+          >
+            Key Log Entries
+          </div>
+          <button
+            class="btn-secondary btn-sm"
+            id="refreshBtn"
+          >
+            ↺ Refresh
+          </button>
+        </div>
+        <div id="listMsg" class="msg"></div>
+        <div
+          id="listLoading"
+          style="
+            display: none;
+            font-size: 13px;
+            color: #667eea;
+          "
+        >
+          <span class="spinner"></span>Loading…
+        </div>
+        <ul class="key-list" id="keyList"></ul>
+        <div
+          class="empty-state"
+          id="emptyState"
+          style="display: none"
+        >
+          No key log entries found. Initialise one
+          above.
+        </div>
+        <div
+          class="pagination"
+          id="listPager"
+          style="display: none"
+        >
+          <button
+            class="btn-secondary btn-sm"
+            id="prevPage"
+            disabled
+          >
+            ‹ Prev
+          </button>
+          <span
+            class="page-info"
+            id="pageInfo"
+          ></span>
+          <button
+            class="btn-secondary btn-sm"
+            id="nextPage"
+            disabled
+          >
+            Next ›
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- /.page -->
+
+    <script>
+      // ── Constants ──────────────────────────────────────────────────────────────
+      const LS_KEY = "yadacoin_derived_jwt";
+      const LS_NEXT_PK = "yadacoin_kel_next_pk";
+      const COLORS = [
+        "#e53e3e",
+        "#ed8936",
+        "#ecc94b",
+        "#38a169",
+      ];
+      const LABELS = [
+        "Too weak",
+        "Weak",
+        "Fair",
+        "Strong",
+      ];
+
+      // ── State ──────────────────────────────────────────────────────────────────
+      let token = null;
+      let listPage = 1;
+      const LIST_SIZE = 20;
+
+      // ── Helpers ────────────────────────────────────────────────────────────────
+      function getToken() {
+        return (
+          token || localStorage.getItem(LS_KEY)
+        );
+      }
+
+      function authHeaders() {
+        const t = getToken();
+        return t
+          ? {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${t}`,
+            }
+          : {
+              "Content-Type": "application/json",
+            };
+      }
+
+      function showMsg(el, text, type) {
+        el.className = `msg ${type}`;
+        el.textContent = text;
+        el.style.display = "block";
+        if (type !== "error")
+          setTimeout(() => {
+            el.style.display = "none";
+          }, 8000);
+      }
+
+      function trunc(s, n = 12) {
+        return s ? s.slice(0, n) + "…" : "–";
+      }
+
+      function fmtTime(ts) {
+        if (!ts) return "–";
+        return new Date(
+          ts * 1000,
+        ).toLocaleString();
+      }
+
+      // ── Password complexity ───────────────────────────────────────────────────
+      function complexityScore(pw) {
+        let score = 0;
+        if (pw.length >= 12) score++;
+        if (/[A-Z]/.test(pw)) score++;
+        if (/[0-9]/.test(pw)) score++;
+        if (/[^A-Za-z0-9]/.test(pw)) score++;
+        return score; // 0-4
+      }
+
+      function updateComplexityUI(
+        pw,
+        barPrefix,
+        labelId,
+      ) {
+        const score = complexityScore(pw);
+        for (let i = 0; i < 4; i++) {
+          document.getElementById(
+            barPrefix + i,
+          ).style.background =
+            i < score
+              ? COLORS[score - 1]
+              : "#e0e0e0";
+        }
+        const label =
+          document.getElementById(labelId);
+        if (!pw) {
+          label.textContent =
+            "Enter a passphrase to see strength";
+          label.style.color = "#999";
+        } else {
+          label.textContent =
+            LABELS[score - 1] || "Very weak";
+          label.style.color =
+            COLORS[score - 1] || "#e53e3e";
+        }
+        return score;
+      }
+
+      function isComplex(pw) {
+        return complexityScore(pw) >= 4;
+      }
+
+      // ── KEL mode detection ────────────────────────────────────────────────────
+      let kelModeActive = false;
+
+      async function detectKelMode() {
+        try {
+          const r = await fetch(
+            "/key-rotation/kel-status",
+          );
+          const d = await r.json();
+          if (d.admin_kel_configured) {
+            kelModeActive = true;
+            document.getElementById(
+              "wifFieldWrap",
+            ).style.display = "none";
+            document.getElementById(
+              "kelFieldWrap",
+            ).style.display = "block";
+            // Pre-populate the private key field if we stored one after last rotation
+            const savedPk = localStorage.getItem(LS_NEXT_PK);
+            if (savedPk) {
+              document.getElementById("kelPrivateKey").value = savedPk;
+            }
+            // init is server-blocked when admin_kel is set
+            document.getElementById(
+              "initBtn",
+            ).disabled = true;
+            const initMsg =
+              document.getElementById("initMsg");
+            initMsg.className = "msg info";
+            initMsg.innerHTML =
+              "Key log is already initialised. To re-initialise, remove <code>admin_kel</code> from config.json and restart.";
+            initMsg.style.display = "block";
+          }
+        } catch (_) {}
+      }
+
+      // ── Auth ──────────────────────────────────────────────────────────────────
+      function setAuthed(t) {
+        if (t) {
+          token = t;
+          localStorage.setItem(LS_KEY, t);
+        }
+        document.getElementById(
+          "wifRow",
+        ).style.display = "none";
+        document.getElementById(
+          "authUnlocked",
+        ).style.display = "block";
+        updateInitBtn();
+        loadList();
+      }
+
+      function setUnauthed() {
+        token = null;
+        localStorage.removeItem(LS_KEY);
+        document.getElementById(
+          "wifRow",
+        ).style.display = "flex";
+        document.getElementById(
+          "authUnlocked",
+        ).style.display = "none";
+        updateInitBtn();
+        // restore correct field visibility
+        if (kelModeActive) {
+          document.getElementById(
+            "wifFieldWrap",
+          ).style.display = "none";
+          document.getElementById(
+            "kelFieldWrap",
+          ).style.display = "block";
+        }
+      }
+
+      async function checkExistingAuth() {
+        await detectKelMode();
+        const stored =
+          localStorage.getItem(LS_KEY);
+        if (stored) {
+          setAuthed(stored);
+          return;
+        }
+        try {
+          const r = await fetch("/unlocked", {
+            credentials: "include",
+          });
+          const d = await r.json();
+          if (d.unlocked) setAuthed(null);
+        } catch (_) {}
+      }
+
+      document
+        .getElementById("unlockBtn")
+        .addEventListener("click", async () => {
+          const msgEl =
+            document.getElementById("unlockMsg");
+          const btn =
+            document.getElementById("unlockBtn");
+
+          if (kelModeActive) {
+            // ── KEL second-factor unlock ──────────────────────────────────
+            const factor = document
+              .getElementById("kelFactor")
+              .value.trim();
+            const privateKey = document
+              .getElementById("kelPrivateKey")
+              .value.trim();
+            if (!privateKey || !factor) {
+              msgEl.textContent =
+                "Please enter both the current private key and KEL second factor.";
+              msgEl.style.color = "#721c24";
+              msgEl.style.display = "block";
+              return;
+            }
+            btn.disabled = true;
+            btn.textContent = "Unlocking…";
+            msgEl.style.display = "none";
+            try {
+              const r = await fetch(
+                "/key-rotation/kel-unlock",
+                {
+                  method: "POST",
+                  credentials: "include",
+                  headers: {
+                    "Content-Type":
+                      "application/json",
+                  },
+                  body: JSON.stringify({
+                    private_key: privateKey,
+                    second_factor: factor,
+                  }),
+                },
+              );
+              const d = await r.json();
+              if (r.ok && d.token) {
+                document.getElementById(
+                  "kelPrivateKey",
+                ).value = "";
+                document.getElementById(
+                  "kelFactor",
+                ).value = "";
+                // Clear the stored next-key now that we've used it
+                localStorage.removeItem(LS_NEXT_PK);
+                setAuthed(d.token);
+                // Show the new private key the user must use next time
+                if (d.rotation) {
+                  // Persist it so the field is pre-filled on the next sign-in
+                  localStorage.setItem(LS_NEXT_PK, d.rotation.new_private_key);
+                  const msgEl =
+                    document.getElementById(
+                      "unlockMsg",
+                    );
+                  msgEl.style.cssText =
+                    "display:block;background:#d4edda;color:#155724;border:1px solid #c3e6cb;border-radius:4px;padding:10px;margin-top:8px;font-size:12px;";
+                  msgEl.innerHTML =
+                    `🔑 Key rotated. New private key saved for next login:<br>` +
+                    `<code style="user-select:all;word-break:break-all;display:block;margin-top:4px;">${d.rotation.new_private_key}</code>` +
+                    `<span style="font-size:11px;color:#155724;">Transaction: ${d.rotation.transaction_id}</span>`;
+                }
+              } else {
+                msgEl.textContent =
+                  d.message ||
+                  "Authentication failed.";
+                msgEl.style.color = "#721c24";
+                msgEl.style.display = "block";
+              }
+            } catch (e) {
+              msgEl.textContent = `Error: ${e.message}`;
+              msgEl.style.color = "#721c24";
+              msgEl.style.display = "block";
+            }
+            btn.disabled = false;
+            btn.textContent = "Unlock";
+            return;
+          }
+
+          // ── Standard WIF unlock ────────────────────────────────────────
+          const wif = document
+            .getElementById("wifInput")
+            .value.trim();
+          if (!wif) {
+            msgEl.textContent =
+              "Please enter your private key or WIF.";
+            msgEl.style.color = "#721c24";
+            msgEl.style.display = "block";
+            return;
+          }
+          btn.disabled = true;
+          btn.textContent = "Unlocking…";
+          msgEl.style.display = "none";
+          try {
+            const r = await fetch("/unlock", {
+              method: "POST",
+              credentials: "include",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body: JSON.stringify({
+                key_or_wif: wif,
+              }),
+            });
+            const d = await r.json();
+            if (r.ok && d.token) {
+              document.getElementById(
+                "wifInput",
+              ).value = "";
+              setAuthed(d.token);
+            } else {
+              msgEl.textContent =
+                d.message ||
+                "Authentication failed.";
+              msgEl.style.color = "#721c24";
+              msgEl.style.display = "block";
+            }
+          } catch (e) {
+            msgEl.textContent = `Error: ${e.message}`;
+            msgEl.style.color = "#721c24";
+            msgEl.style.display = "block";
+          }
+          btn.disabled = false;
+          btn.textContent = "Unlock";
+        });
+
+      document
+        .getElementById("wifInput")
+        .addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            document
+              .getElementById("unlockBtn")
+              .click();
+          }
+        });
+
+      document
+        .getElementById("kelFactor")
+        .addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            document
+              .getElementById("unlockBtn")
+              .click();
+          }
+        });
+
+      document
+        .getElementById("kelPrivateKey")
+        .addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            document
+              .getElementById("unlockBtn")
+              .click();
+          }
+        });
+
+      document
+        .getElementById("logoutBtn")
+        .addEventListener("click", setUnauthed);
+
+      // ── Init form ─────────────────────────────────────────────────────────────
+      function updateInitBtn() {
+        if (kelModeActive) return; // init is server-blocked; button stays disabled
+        const pw =
+          document.getElementById(
+            "initFactor",
+          ).value;
+        document.getElementById(
+          "initBtn",
+        ).disabled =
+          !getToken() || !isComplex(pw);
+      }
+
+      document
+        .getElementById("initFactor")
+        .addEventListener("input", function () {
+          updateComplexityUI(
+            this.value,
+            "ib",
+            "initComplexityLabel",
+          );
+          updateInitBtn();
+        });
+
+      document
+        .getElementById("initBtn")
+        .addEventListener("click", async () => {
+          const factor =
+            document.getElementById(
+              "initFactor",
+            ).value;
+          const msgEl =
+            document.getElementById("initMsg");
+          const btn =
+            document.getElementById("initBtn");
+
+          if (!isComplex(factor)) {
+            showMsg(
+              msgEl,
+              "Second factor does not meet complexity requirements.",
+              "error",
+            );
+            return;
+          }
+
+          btn.disabled = true;
+          btn.textContent = "Initialising…";
+          msgEl.style.display = "none";
+          try {
+            const r = await fetch(
+              "/key-rotation/init-derived-child-key",
+              {
+                method: "POST",
+                headers: authHeaders(),
+                body: JSON.stringify({
+                  second_factor: factor,
+                }),
+              },
+            );
+            const d = await r.json();
+            if (r.ok && d.status) {
+              document.getElementById(
+                "initFactor",
+              ).value = "";
+              updateComplexityUI(
+                "",
+                "ib",
+                "initComplexityLabel",
+              );
+              // Do not auto-hide — user needs to copy the transaction_id into config.json as admin_kel
+              msgEl.className = "msg success";
+              msgEl.innerHTML =
+                `✅ Key log initialised.<br>` +
+                `<strong>Signing address:</strong> <code>${d.address}</code><br>` +
+                `<strong>Transaction ID (admin_kel):</strong> <code style="user-select:all;word-break:break-all;">${d.transaction_id}</code><br>` +
+                (d.admin_kel_hint
+                  ? `<br><em style="font-size:11px;">${d.admin_kel_hint}</em>`
+                  : "");
+              msgEl.style.display = "block";
+              loadList();
+            } else {
+              showMsg(
+                msgEl,
+                d.message ||
+                  "Initialisation failed.",
+                "error",
+              );
+            }
+          } catch (e) {
+            showMsg(
+              msgEl,
+              `Error: ${e.message}`,
+              "error",
+            );
+          }
+          btn.disabled = false;
+          btn.textContent = "Init Key Log";
+          updateInitBtn();
+        });
+
+      // ── List ──────────────────────────────────────────────────────────────────
+      async function loadList(page = 1) {
+        listPage = page;
+        const loading = document.getElementById(
+          "listLoading",
+        );
+        const listEl =
+          document.getElementById("keyList");
+        const emptyEl =
+          document.getElementById("emptyState");
+        const pager =
+          document.getElementById("listPager");
+        const msgEl =
+          document.getElementById("listMsg");
+
+        loading.style.display = "block";
+        listEl.innerHTML = "";
+        emptyEl.style.display = "none";
+        pager.style.display = "none";
+        msgEl.style.display = "none";
+
+        try {
+          const r = await fetch(
+            `/key-rotation/derived-keys/list?page=${page}&page_size=${LIST_SIZE}`,
+            {
+              headers: authHeaders(),
+            },
+          );
+          const d = await r.json();
+          loading.style.display = "none";
+
+          if (!r.ok) {
+            showMsg(
+              msgEl,
+              d.message ||
+                "Failed to load key logs.",
+              "error",
+            );
+            return;
+          }
+
+          if (
+            !d.records ||
+            d.records.length === 0
+          ) {
+            emptyEl.style.display = "block";
+            return;
+          }
+
+          d.records.forEach((rec) => {
+            const li =
+              document.createElement("li");
+            li.className = "key-item";
+            li.innerHTML = `
+              <div class="ki-addr">${rec.address}</div>
+              <div class="ki-meta">
+                <div class="ki-badge">active</div>
+                <div style="margin-top:4px;">${rec.stored_at ? fmtTime(rec.stored_at) : "–"}</div>
+              </div>`;
+            li.addEventListener("click", () => {
+              window.location.href = `/key-rotation/derived-keys/detail?address=${encodeURIComponent(rec.address)}`;
+            });
+            listEl.appendChild(li);
+          });
+
+          if (d.pages > 1) {
+            pager.style.display = "flex";
+            document.getElementById(
+              "pageInfo",
+            ).textContent =
+              `Page ${d.page} of ${d.pages}`;
+            document.getElementById(
+              "prevPage",
+            ).disabled = d.page <= 1;
+            document.getElementById(
+              "nextPage",
+            ).disabled = d.page >= d.pages;
+          }
+        } catch (e) {
+          loading.style.display = "none";
+          showMsg(
+            msgEl,
+            `Error: ${e.message}`,
+            "error",
+          );
+        }
+      }
+
+      document
+        .getElementById("refreshBtn")
+        .addEventListener("click", () =>
+          loadList(listPage),
+        );
+      document
+        .getElementById("prevPage")
+        .addEventListener("click", () =>
+          loadList(listPage - 1),
+        );
+      document
+        .getElementById("nextPage")
+        .addEventListener("click", () =>
+          loadList(listPage + 1),
+        );
+
+      // ── Init ──────────────────────────────────────────────────────────────────
+      checkExistingAuth();
+    </script>
+  </body>
+</html>

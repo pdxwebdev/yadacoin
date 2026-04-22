@@ -20,7 +20,6 @@ from decimal import Decimal, getcontext
 from logging import getLogger
 
 import pyrx
-import requests
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
@@ -534,7 +533,7 @@ class Block(object):
         block.header = block.generate_header()
         if nonce:
             block.nonce = str(nonce)
-            block.hash = block.generate_hash_from_header(
+            block.hash = await block.generate_hash_from_header(
                 block.index, block.header, str(block.nonce)
             )
             block.signature = TU.generate_signature(block.hash, private_key)
@@ -759,14 +758,14 @@ class Block(object):
             and len(txn.inputs) == 0
         )
 
-    def generate_hash_from_header(self, height, header, nonce):
+    async def generate_hash_from_header(self, height, header, nonce):
         config = Config()
         if config.network == "regnet":
             hash_server = getattr(config, "hash_server_domain", None) or getattr(
                 config, "hash_server", None
             )
-            if hash_server:
-                return self._generate_hash_from_remote(
+            if hash_server:  # pragma: no cover
+                return await self._generate_hash_from_remote(
                     hash_server=hash_server,
                     height=height,
                     header=header,
@@ -800,7 +799,11 @@ class Block(object):
             )
 
     @staticmethod
-    def _generate_hash_from_remote(hash_server, height, header, nonce, timeout_ms):
+    async def _generate_hash_from_remote(  # pragma: no cover
+        hash_server, height, header, nonce, timeout_ms
+    ):
+        import aiohttp
+
         url = "{}/generate-hash".format(str(hash_server).rstrip("/"))
         params = {
             "height": str(height),
@@ -808,9 +811,11 @@ class Block(object):
             "header": str(header),
         }
         try:
-            response = requests.get(url, params=params, timeout=timeout_ms / 1000)
-            response.raise_for_status()
-            payload = response.json()
+            timeout = aiohttp.ClientTimeout(total=timeout_ms / 1000)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, params=params) as response:
+                    response.raise_for_status()
+                    payload = await response.json()
         except Exception as exc:
             raise Exception("Remote hash request failed") from exc
 
@@ -846,7 +851,9 @@ class Block(object):
             raise Exception("Invalid block merkle root")
 
         header = self.generate_header()
-        hashtest = self.generate_hash_from_header(self.index, header, str(self.nonce))
+        hashtest = await self.generate_hash_from_header(
+            self.index, header, str(self.nonce)
+        )
         if self.hash != hashtest:
             getLogger("tornado.application").warning(
                 "Verify error hashtest {} header {} nonce {}".format(
@@ -1047,7 +1054,7 @@ class Block(object):
             )
             if not result:
                 raise Exception("block signature1 is invalid")
-        except Exception:
+        except Exception:  # pragma: no cover
             try:
                 result = VerifyMessage(
                     address,

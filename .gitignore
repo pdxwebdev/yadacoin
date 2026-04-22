@@ -5,3 +5,5 @@ localtests
 *.log
 *.log.*
 node_modules
+.coverage
+htmlcov/

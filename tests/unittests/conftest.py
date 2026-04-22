@@ -60,3 +60,13 @@ def pytest_configure(config):
     _hash_server_domain = config.getoption("--hash_server_domain")
     if _hash_server_domain:
         core_config.Config.generate = _generate_with_hash_server_domain
+
+
+@pytest.fixture(scope="session", autouse=True)
+def initialize_config():
+    """Initialize the Config singleton once for the entire test session.
+
+    This ensures Config() always returns a fully initialized instance in any
+    test file, without each test class needing its own setUpClass/generate call.
+    """
+    core_config.Config.generate()

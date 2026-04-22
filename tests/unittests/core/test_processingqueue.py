@@ -132,6 +132,26 @@ class TestBlockProcessingQueue(unittest.TestCase):
         d = self.queue.to_dict()
         self.assertIn("queue", d)
 
+    def test_add_with_block_instances(self):
+        """Covers the isinstance(Block) path in add()."""
+        blockchain = _make_blockchain("hash_a", "hash_b")
+        item = BlockProcessingQueueItem(blockchain=blockchain)
+        result = self.queue.add(item)
+        self.assertTrue(result)
+        self.assertEqual(len(self.queue.queue), 1)
+
+    def test_add_block_instances_skip_last_popped(self):
+        """Covers the early-return path in the Block isinstance branch."""
+        blockchain = _make_blockchain("hash_x", "hash_y")
+        item = BlockProcessingQueueItem(blockchain=blockchain)
+        self.queue.add(item)
+        self.queue.pop()  # sets last_popped = ("hash_x", "hash_y")
+        item2 = BlockProcessingQueueItem(
+            blockchain=_make_blockchain("hash_x", "hash_y")
+        )
+        result = self.queue.add(item2)
+        self.assertIsNone(result)
+
 
 class TestTransactionProcessingQueue(unittest.TestCase):
     def setUp(self):
@@ -178,6 +198,16 @@ class TestTransactionProcessingQueue(unittest.TestCase):
         self.queue.add(item)
         self.queue.pop()
         self.assertEqual(self.queue.last_popped, "sig_abc")
+
+    def test_add_returns_none_when_matches_last_popped(self):
+        """Covers the early-return path when sig matches last_popped."""
+        item = self._make_item("sig1")
+        self.queue.add(item)
+        self.queue.pop()  # sets last_popped = "sig1"
+        item2 = self._make_item("sig1")
+        # Without ignore_last_popped, should skip because sig1 == last_popped
+        result = self.queue.add(item2)
+        self.assertIsNone(result)
 
 
 class TestNonceProcessingQueue(unittest.TestCase):

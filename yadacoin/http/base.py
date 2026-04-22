@@ -33,7 +33,7 @@ class BaseHandler(RequestHandler):
         self.timed_out = False
         """Common init for every request"""
         origin = self.get_query_argument("origin", "*")
-        if origin[-1] == "/":
+        if origin and origin[-1] == "/":
             origin = origin[:-1]
         self.app_log = logging.getLogger("tornado.application")
         self.app_log.info(self._request_summary())

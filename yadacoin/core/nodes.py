@@ -365,17 +365,17 @@ class Nodes:
 
                 # Assign node type using load-balancing strategy.
                 assigned_type = cls._assign_node_type()
+                if assigned_type not in ("seed", "seed_gateway", "service_provider"):
+                    continue
                 if assigned_type == "seed":
                     owner_class = Seeds
                     creator = Seed
                 elif assigned_type == "seed_gateway":
                     owner_class = SeedGateways
                     creator = SeedGateway
-                elif assigned_type == "service_provider":
+                else:
                     owner_class = ServiceProviders
                     creator = ServiceProvider
-                else:
-                    continue
 
                 try:
                     node_obj = creator.from_dict(node_def)

@@ -21,6 +21,7 @@ import time
 
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.common import changetime
+from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.http.base import BaseHandler
 
 
@@ -134,7 +135,7 @@ class ExplorerSearchHandler(BaseHandler):
                             changetime(x)
                             async for x in self.config.mongo.async_db.blocks.find(
                                 {"public_key": term}, {"_id": 0}
-                            )
+                            ).limit(100)
                         ],
                     }
                 )
@@ -152,7 +153,7 @@ class ExplorerSearchHandler(BaseHandler):
                             changetime(x)
                             async for x in self.config.mongo.async_db.blocks.find(
                                 {"transactions.public_key": term}, {"_id": 0}
-                            )
+                            ).limit(100)
                         ],
                     }
                 )
@@ -171,7 +172,7 @@ class ExplorerSearchHandler(BaseHandler):
                             changetime(x)
                             async for x in self.config.mongo.async_db.blocks.find(
                                 {"hash": term}, {"_id": 0}
-                            )
+                            ).limit(10)
                         ],
                     }
                 )
@@ -191,7 +192,7 @@ class ExplorerSearchHandler(BaseHandler):
                             changetime(x)
                             async for x in self.config.mongo.async_db.blocks.find(
                                 {"id": term.replace(" ", "+")}, {"_id": 0}
-                            )
+                            ).limit(10)
                         ],
                     }
                 )
@@ -211,7 +212,7 @@ class ExplorerSearchHandler(BaseHandler):
                             changetime(x)
                             async for x in self.config.mongo.async_db.blocks.find(
                                 {"transactions.hash": term}, {"_id": 0}
-                            )
+                            ).limit(10)
                         ],
                     }
                 )
@@ -231,7 +232,7 @@ class ExplorerSearchHandler(BaseHandler):
                             changetime(x)
                             async for x in self.config.mongo.async_db.blocks.find(
                                 {"transactions.rid": term}, {"_id": 0}
-                            )
+                            ).limit(10)
                         ],
                     }
                 )
@@ -295,7 +296,7 @@ class ExplorerSearchHandler(BaseHandler):
                                 changetime(x)
                                 async for x in self.config.mongo.async_db.blocks.find(
                                     {field: term}, {"_id": 0}
-                                )
+                                ).limit(10)
                             ],
                         }
                     )
@@ -572,6 +573,141 @@ class ExplorerLast50(BaseHandler):
         return self.render_as_json(miners)
 
 
+class HolderListPageHandler(BaseHandler):
+    async def get(self):
+        self.render("holders.html", title="YadaCoin - Holder List")
+
+
+@jwtauthwallet
+class HolderListAPIHandler(BaseHandler):
+    async def get(self):
+        # Cache for 10 minutes — computing all balances is expensive
+        if hasattr(self.config, "_holder_list_cache"):
+            cached = self.config._holder_list_cache
+            if time.time() - cached["time"] < 600:
+                return self.render_as_json(cached["data"])
+
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        db = self.config.mongo.async_db
+
+        # Deduplication prefix: if orphan/reorg blocks exist at the same height,
+        # keep only one per index (the first found after sorting by index).
+        # This prevents orphan coinbase outputs being counted as unspent supply,
+        # and prevents orphan spending transactions from incorrectly marking
+        # canonical UTXOs as spent.
+        DEDUP = [
+            {"$sort": {"index": 1}},
+            {
+                "$group": {
+                    "_id": "$index",
+                    "transactions": {"$first": "$transactions"},
+                }
+            },
+        ]
+
+        # Step 1: Derive address for every public key that has ever signed a
+        # spending txn on the canonical chain. Never relies on reversed_public_keys.
+        pk_to_addr = {}
+        async for doc in db.blocks.aggregate(
+            DEDUP
+            + [
+                {"$unwind": "$transactions"},
+                {"$match": {"transactions.inputs.0": {"$exists": True}}},
+                {"$group": {"_id": "$transactions.public_key"}},
+            ],
+            allowDiskUse=True,
+        ):
+            pk = doc["_id"]
+            if pk:
+                try:
+                    pk_to_addr[pk] = str(
+                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pk))
+                    )
+                except Exception:
+                    pass
+
+        # Step 2: Build spent_by_addr: {address -> set of txn_ids spent}.
+        # Only canonical spending transactions are considered.
+        spent_by_addr = {}
+        async for doc in db.blocks.aggregate(
+            DEDUP
+            + [
+                {"$unwind": "$transactions"},
+                {"$match": {"transactions.inputs.0": {"$exists": True}}},
+                {"$unwind": "$transactions.inputs"},
+                {
+                    "$project": {
+                        "_id": 0,
+                        "pk": "$transactions.public_key",
+                        "input_id": "$transactions.inputs.id",
+                    }
+                },
+            ],
+            allowDiskUse=True,
+        ):
+            pk = doc.get("pk")
+            input_id = doc.get("input_id")
+            if pk and input_id:
+                addr = pk_to_addr.get(pk)
+                if addr:
+                    spent_by_addr.setdefault(addr, set()).add(input_id)
+
+        # Step 3: Sum unspent outputs from canonical blocks only.
+        balances = {}
+        async for doc in db.blocks.aggregate(
+            DEDUP
+            + [
+                {"$unwind": "$transactions"},
+                {"$unwind": "$transactions.outputs"},
+                {
+                    "$match": {
+                        "transactions.outputs.value": {"$gt": 0},
+                        "transactions.outputs.to": {
+                            "$exists": True,
+                            "$nin": [None, ""],
+                        },
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": {
+                            "txn_id": "$transactions.id",
+                            "to": "$transactions.outputs.to",
+                        },
+                        "value": {"$sum": "$transactions.outputs.value"},
+                    }
+                },
+            ],
+            allowDiskUse=True,
+        ):
+            txn_id = doc["_id"]["txn_id"]
+            to_addr = doc["_id"]["to"]
+            value = doc["value"]
+            addr_spent = spent_by_addr.get(to_addr)
+            if addr_spent is None or txn_id not in addr_spent:
+                balances[to_addr] = balances.get(to_addr, 0) + value
+
+        holders = sorted(
+            [
+                {"address": addr, "balance": round(bal, 8)}
+                for addr, bal in balances.items()
+                if bal > 0
+            ],
+            key=lambda x: x["balance"],
+            reverse=True,
+        )
+
+        circulating_supply = round(sum(h["balance"] for h in holders), 8)
+        result = {
+            "holders": holders,
+            "count": len(holders),
+            "circulating_supply": circulating_supply,
+        }
+        self.config._holder_list_cache = {"time": time.time(), "data": result}
+        return self.render_as_json(result)
+
+
 EXPLORER_HANDLERS = [
     (r"/api-stats", HashrateAPIHandler),
     (r"/explorer", ExplorerHandler),
@@ -579,4 +715,6 @@ EXPLORER_HANDLERS = [
     (r"/explorer-get-balance", ExplorerGetBalance),
     (r"/explorer-latest", ExplorerLatestHandler),
     (r"/explorer-last50", ExplorerLast50),
+    (r"/holders", HolderListPageHandler),
+    (r"/api-holders", HolderListAPIHandler),
 ]

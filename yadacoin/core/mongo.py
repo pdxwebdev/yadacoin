@@ -469,7 +469,8 @@ class Mongo(object):
                 f'Converting block time to int for block: {block["index"]}'
             )
             self.db.blocks.update(
-                {"index": block["index"]}, {"$set": {"time": int(block["time"])}}
+                {"index": block["index"]},
+                {"$set": {"time": int(block["time"])}},
             )
 
         # convert mempool transaction time from string to number
@@ -479,7 +480,8 @@ class Mongo(object):
                 f'Converting txn time to int for txn: {txn["id"]}'
             )
             self.db.miner_transactions.update(
-                {"id": txn["id"]}, {"$set": {"time": int(txn["time"])}}
+                {"id": txn["id"]},
+                {"$set": {"time": int(txn["time"])}},
             )
 
         # convert blockchain transaction time from string to number

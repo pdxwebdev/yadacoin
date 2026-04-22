@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>Key Log Detail</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont,
+          "Segoe UI", Roboto, "Helvetica Neue",
+          Arial, sans-serif;
+        background: linear-gradient(
+          135deg,
+          #667eea 0%,
+          #764ba2 100%
+        );
+        min-height: 100vh;
+        padding: 24px 16px;
+      }
+
+      .page {
+        max-width: 860px;
+        margin: 0 auto;
+      }
+
+      .card {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 10px 40px
+          rgba(0, 0, 0, 0.15);
+        padding: 32px;
+        margin-bottom: 24px;
+      }
+
+      h1 {
+        color: #333;
+        font-size: 22px;
+        margin-bottom: 4px;
+      }
+
+      .subtitle {
+        color: #666;
+        font-size: 13px;
+        margin-bottom: 0;
+        font-family: monospace;
+        word-break: break-all;
+      }
+
+      .section-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: #667eea;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #f0f0f0;
+        margin-bottom: 16px;
+        margin-top: 28px;
+      }
+
+      label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 5px;
+      }
+
+      input[type="password"] {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 13px;
+        font-family: inherit;
+        transition:
+          border-color 0.2s,
+          box-shadow 0.2s;
+      }
+      input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px
+          rgba(102, 126, 234, 0.12);
+      }
+
+      button {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 4px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .btn-primary {
+        background: linear-gradient(
+          135deg,
+          #667eea 0%,
+          #764ba2 100%
+        );
+        color: #fff;
+        white-space: nowrap;
+      }
+      .btn-primary:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px
+          rgba(102, 126, 234, 0.4);
+      }
+      .btn-primary:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .btn-secondary {
+        background: #f0f0f0;
+        color: #333;
+      }
+      .btn-secondary:hover {
+        background: #e0e0e0;
+      }
+      .btn-sm {
+        padding: 6px 14px;
+        font-size: 12px;
+      }
+
+      .msg {
+        padding: 10px 14px;
+        border-radius: 4px;
+        font-size: 13px;
+        margin-bottom: 16px;
+        display: none;
+      }
+      .msg.success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+        display: block;
+      }
+      .msg.error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+        display: block;
+      }
+      .msg.info {
+        background: #d1ecf1;
+        color: #0c5460;
+        border: 1px solid #bee5eb;
+        display: block;
+      }
+
+      .spinner {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border: 2px solid #f0f0f0;
+        border-top-color: #667eea;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        margin-right: 6px;
+        vertical-align: middle;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #667eea;
+        text-decoration: none;
+        margin-bottom: 20px;
+        padding: 6px 0;
+      }
+      .back-link:hover {
+        text-decoration: underline;
+      }
+
+      .detail-fields {
+        margin-bottom: 8px;
+      }
+      .detail-field {
+        display: flex;
+        gap: 8px;
+        padding: 6px 0;
+        border-bottom: 1px solid #f4f4f4;
+        font-size: 12px;
+      }
+      .detail-field .df-label {
+        color: #999;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        min-width: 220px;
+        flex-shrink: 0;
+      }
+      .detail-field .df-val {
+        color: #333;
+        font-family: monospace;
+        word-break: break-all;
+      }
+
+      .history-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+        margin-bottom: 12px;
+      }
+      .history-table th {
+        text-align: left;
+        padding: 7px 10px;
+        background: #f8f8f8;
+        color: #666;
+        border-bottom: 1px solid #e8e8e8;
+        font-weight: 600;
+      }
+      .history-table td {
+        padding: 7px 10px;
+        border-bottom: 1px solid #f4f4f4;
+        color: #333;
+        font-family: monospace;
+      }
+      .history-table tr:last-child td {
+        border-bottom: none;
+      }
+
+      .badge-mempool {
+        background: #fef3c7;
+        color: #92400e;
+        border-radius: 3px;
+        padding: 1px 6px;
+        font-size: 10px;
+      }
+      .badge-chain {
+        background: #d1fae5;
+        color: #065f46;
+        border-radius: 3px;
+        padding: 1px 6px;
+        font-size: 10px;
+      }
+
+      .pagination {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin-top: 16px;
+        justify-content: center;
+      }
+      .pagination .page-info {
+        font-size: 12px;
+        color: #666;
+      }
+
+      /* ── Failed Attempt Modal ── */
+      .modal-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        z-index: 100;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 40px 16px;
+        overflow-y: auto;
+      }
+      .modal-backdrop.open {
+        display: flex;
+      }
+      .modal {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+        padding: 28px 32px;
+        width: 100%;
+        max-width: 720px;
+        position: relative;
+      }
+      .modal-close {
+        position: absolute;
+        top: 14px;
+        right: 18px;
+        background: none;
+        border: none;
+        font-size: 20px;
+        color: #999;
+        cursor: pointer;
+        padding: 4px 8px;
+        line-height: 1;
+      }
+      .modal-close:hover {
+        color: #333;
+      }
+      .modal h2 {
+        font-size: 16px;
+        color: #333;
+        margin-bottom: 18px;
+      }
+      .modal .detail-field .df-label {
+        min-width: 200px;
+      }
+      .modal-section {
+        font-size: 11px;
+        font-weight: 700;
+        color: #c53030;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        padding-bottom: 6px;
+        border-bottom: 2px solid #fed7d7;
+        margin: 20px 0 12px;
+      }
+      .failed-row {
+        cursor: pointer;
+      }
+      .failed-row:hover td {
+        background: #fff5f5;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="card">
+        <a
+          href="/key-rotation/derived-keys"
+          class="back-link"
+          >← Back to Key Log Entries</a
+        >
+
+        <div
+          id="pageLoading"
+          style="
+            color: #667eea;
+            font-size: 14px;
+            padding: 20px 0;
+          "
+        >
+          <span class="spinner"></span> Loading…
+        </div>
+        <div
+          id="pageError"
+          class="msg error"
+          style="display: none"
+        ></div>
+
+        <div
+          id="pageContent"
+          style="display: none"
+        >
+          <h1>Key Log Detail</h1>
+          <p
+            class="subtitle"
+            id="pageSubtitle"
+          ></p>
+
+          <!-- ── Details ── -->
+          <div
+            class="section-title"
+            style="margin-top: 20px"
+          >
+            Details
+          </div>
+          <div
+            class="detail-fields"
+            id="detailFields"
+          ></div>
+
+          <!-- ── Failed Attempts ── -->
+          <div
+            class="section-title"
+            style="color: #c53030"
+          >
+            Failed Attempts
+          </div>
+          <div
+            id="failedLoading"
+            style="
+              display: none;
+              font-size: 13px;
+              color: #667eea;
+              margin-bottom: 8px;
+            "
+          >
+            <span class="spinner"></span>Loading
+            failed attempts…
+          </div>
+          <div id="failedMsg" class="msg"></div>
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Exception</th>
+                <th>Message</th>
+                <th>From IP</th>
+                <th>Submitted Key</th>
+              </tr>
+            </thead>
+            <tbody id="failedBody"></tbody>
+          </table>
+          <div
+            class="pagination"
+            id="failedPager"
+            style="display: none"
+          >
+            <button
+              class="btn-secondary btn-sm"
+              id="failedPrev"
+              disabled
+            >
+              ‹ Prev
+            </button>
+            <span
+              class="page-info"
+              id="failedPageInfo"
+            ></span>
+            <button
+              class="btn-secondary btn-sm"
+              id="failedNext"
+              disabled
+            >
+              Next ›
+            </button>
+          </div>
+
+        </div>
+        <!-- /#pageContent -->
+      </div>
+    </div>
+
+    <!-- ── Failed Attempt Detail Modal ── -->
+    <div class="modal-backdrop" id="failedModal">
+      <div class="modal" id="failedModalBox">
+        <button class="modal-close" id="failedModalClose" title="Close">&times;</button>
+        <h2>Failed Attempt Detail</h2>
+        <div class="section-title" style="margin-top:0">Attempt Info</div>
+        <div class="detail-fields" id="failedModalInfo"></div>
+        <div class="modal-section">Submitted Transaction</div>
+        <div class="detail-fields" id="failedModalTxn"></div>
+      </div>
+    </div>
+
+    <script>
+      const LS_KEY = "yadacoin_derived_jwt";
+      const FAILED_SIZE = 10;
+
+      let failedPage = 1;
+      let currentRecord = null;
+
+      function getToken() {
+        return localStorage.getItem(LS_KEY);
+      }
+
+      function authHeaders() {
+        const t = getToken();
+        return t
+          ? {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${t}`,
+            }
+          : {
+              "Content-Type": "application/json",
+            };
+      }
+
+      function showMsg(el, text, type) {
+        el.className = `msg ${type}`;
+        el.textContent = text;
+        el.style.display = "block";
+        if (type !== "error")
+          setTimeout(() => {
+            el.style.display = "none";
+          }, 8000);
+      }
+
+      function trunc(s, n = 12) {
+        return s ? s.slice(0, n) + "…" : "–";
+      }
+
+      function fmtTime(ts) {
+        if (!ts) return "–";
+        return new Date(
+          ts * 1000,
+        ).toLocaleString();
+      }
+
+      // ── Bootstrap ─────────────────────────────────────────────────────────────
+      const params = new URLSearchParams(
+        location.search,
+      );
+      const address = params.get("address") || "";
+
+      if (!address || !getToken()) {
+        window.location.href =
+          "/key-rotation/derived-keys";
+      } else {
+        loadRecord();
+      }
+
+      // ── Record fetch ──────────────────────────────────────────────────────────
+      async function loadRecord() {
+        try {
+          const r = await fetch(
+            `/key-rotation/derived-keys/record?address=${encodeURIComponent(address)}`,
+            { headers: authHeaders() },
+          );
+          if (!r.ok) {
+            const d = await r
+              .json()
+              .catch(() => ({}));
+            document.getElementById(
+              "pageLoading",
+            ).style.display = "none";
+            const err =
+              document.getElementById(
+                "pageError",
+              );
+            err.textContent =
+              d.message ||
+              "Failed to load record.";
+            err.style.display = "block";
+            return;
+          }
+          const d = await r.json();
+          currentRecord = d.record;
+          renderPage();
+        } catch (e) {
+          document.getElementById(
+            "pageLoading",
+          ).style.display = "none";
+          const err =
+            document.getElementById("pageError");
+          err.textContent = `Error: ${e.message}`;
+          err.style.display = "block";
+        }
+      }
+
+      // ── Render ────────────────────────────────────────────────────────────────
+      async function renderPage() {
+        document.getElementById(
+          "pageLoading",
+        ).style.display = "none";
+        document.getElementById(
+          "pageContent",
+        ).style.display = "block";
+
+        const rec = currentRecord;
+        document.getElementById(
+          "pageSubtitle",
+        ).textContent = rec.address;
+        document.title = `Key Log — ${rec.address.slice(0, 16)}…`;
+
+        const fields = [
+          ["Address", rec.address],
+          ["Transaction ID", rec.transaction_id],
+          ["Public Key", rec.public_key],
+          [
+            "Prerotated Public Key",
+            rec.prerotated_public_key,
+          ],
+          [
+            "Prerotated Address",
+            rec.prerotated_address,
+          ],
+          [
+            "Twice Prerotated Public Key",
+            rec.twice_prerotated_public_key,
+          ],
+          [
+            "Twice Prerotated Address",
+            rec.twice_prerotated_address,
+          ],
+          [
+            "Stored At",
+            rec.stored_at
+              ? fmtTime(rec.stored_at)
+              : "–",
+          ],
+        ];
+
+        try {
+          const hr = await fetch(
+            `/key-rotation/derived-keys/history?address=${encodeURIComponent(rec.address)}&page=1&page_size=1`,
+            { headers: authHeaders() },
+          );
+          if (hr.ok) {
+            const hd = await hr.json();
+            if (hd.entries && hd.entries.length > 0) {
+              const e = hd.entries[0];
+              fields.push([
+                "Prev Public Key Hash",
+                e.prev_public_key_hash || "–",
+              ]);
+              fields.push(["Source", e.source || "–"]);
+            }
+          }
+        } catch (_) {}
+
+        document.getElementById(
+          "detailFields",
+        ).innerHTML = fields
+          .map(
+            ([l, v]) =>
+              `<div class="detail-field">` +
+              `<span class="df-label">${l}</span>` +
+              `<span class="df-val">${v || "–"}</span>` +
+              `</div>`,
+          )
+          .join("");
+
+        loadFailedAttempts(rec.address, 1);
+      }
+
+
+      // ── Failed Attempts ───────────────────────────────────────────────────────
+      async function loadFailedAttempts(
+        addr,
+        page = 1,
+      ) {
+        failedPage = page;
+        const loading = document.getElementById(
+          "failedLoading",
+        );
+        const tbody =
+          document.getElementById("failedBody");
+        const pager = document.getElementById(
+          "failedPager",
+        );
+        const msgEl =
+          document.getElementById("failedMsg");
+
+        loading.style.display = "block";
+        tbody.innerHTML = "";
+        pager.style.display = "none";
+        msgEl.style.display = "none";
+
+        try {
+          const r = await fetch(
+            `/key-rotation/failed-attempts?address=${encodeURIComponent(addr)}&page=${page}&page_size=${FAILED_SIZE}`,
+            { headers: authHeaders() },
+          );
+          const d = await r.json();
+          loading.style.display = "none";
+
+          if (!r.ok) {
+            showMsg(
+              msgEl,
+              d.message ||
+                "Failed to load failed attempts.",
+              "error",
+            );
+            return;
+          }
+
+          if (
+            !d.records ||
+            d.records.length === 0
+          ) {
+            tbody.innerHTML =
+              '<tr><td colspan="5" style="text-align:center;color:#999;padding:16px;">No failed attempts recorded.</td></tr>';
+            return;
+          }
+
+          d.records.forEach((e) => {
+            const tr =
+              document.createElement("tr");
+            tr.className = "failed-row";
+            tr.style.color = "#c53030";
+            const submittedKey =
+              (e.txn && e.txn.public_key) || "";
+            tr.innerHTML = `
+              <td>${e.timestamp ? fmtTime(e.timestamp) : "–"}</td>
+              <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${e.exception || "–"}</td>
+              <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${e.message || "–"}</td>
+              <td>${e.request_ip || "–"}</td>
+              <td>${trunc(submittedKey)}</td>`;
+            tr.addEventListener("click", () => showFailedDetail(e));
+            tbody.appendChild(tr);
+          });
+
+          if (d.pages > 1) {
+            pager.style.display = "flex";
+            document.getElementById(
+              "failedPageInfo",
+            ).textContent =
+              `Page ${d.page} of ${d.pages}`;
+            document.getElementById(
+              "failedPrev",
+            ).disabled = d.page <= 1;
+            document.getElementById(
+              "failedNext",
+            ).disabled = d.page >= d.pages;
+          }
+        } catch (err) {
+          loading.style.display = "none";
+          showMsg(
+            msgEl,
+            `Error: ${err.message}`,
+            "error",
+          );
+        }
+      }
+
+      document
+        .getElementById("failedPrev")
+        .addEventListener("click", () =>
+          loadFailedAttempts(
+            address,
+            failedPage - 1,
+          ),
+        );
+      document
+        .getElementById("failedNext")
+        .addEventListener("click", () =>
+          loadFailedAttempts(
+            address,
+            failedPage + 1,
+          ),
+        );
+
+      // ── Failed Attempt Detail Modal ───────────────────────────────────────────
+      function showFailedDetail(e) {
+        function row(label, val) {
+          const safe = String(val || "–")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+          return (
+            `<div class="detail-field">` +
+            `<span class="df-label">${label}</span>` +
+            `<span class="df-val">${safe}</span>` +
+            `</div>`
+          );
+        }
+
+        document.getElementById("failedModalInfo").innerHTML = [
+          row("Time", e.timestamp ? fmtTime(e.timestamp) : "–"),
+          row("From IP", e.request_ip),
+          row("Exception", e.exception),
+          row("Message", e.message),
+          row("Public Key Hash", e.public_key_hash),
+          row("Prerotated Key Hash", e.prerotated_key_hash),
+          row("Prev Public Key Hash", e.prev_public_key_hash),
+        ].join("");
+
+        const txn = e.txn || {};
+        const txnFields = [
+          ["Public Key", txn.public_key],
+          ["Prerotated Key Hash", txn.prerotated_key_hash],
+          ["Twice Prerotated Key Hash", txn.twice_prerotated_key_hash],
+          ["Prev Public Key Hash", txn.prev_public_key_hash],
+          ["Transaction ID", txn.id || txn.transaction_id],
+          ["Relationship", txn.relationship],
+          ["Time", txn.time ? fmtTime(txn.time) : undefined],
+        ];
+        document.getElementById("failedModalTxn").innerHTML =
+          txnFields.some(([, v]) => v)
+            ? txnFields.map(([l, v]) => row(l, v)).join("")
+            : `<p style="font-size:12px;color:#999;padding:8px 0">No transaction data recorded.</p>`;
+
+        document.getElementById("failedModal").classList.add("open");
+      }
+
+      document
+        .getElementById("failedModalClose")
+        .addEventListener("click", () =>
+          document.getElementById("failedModal").classList.remove("open"),
+        );
+      document
+        .getElementById("failedModal")
+        .addEventListener("click", (ev) => {
+          if (ev.target === document.getElementById("failedModal"))
+            document.getElementById("failedModal").classList.remove("open");
+        });
+      document.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape")
+          document.getElementById("failedModal").classList.remove("open");
+      });
+
+    </script>
+  </body>
+</html>

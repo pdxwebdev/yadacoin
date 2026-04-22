@@ -217,5 +217,85 @@ class TestNodeAnnouncement(AsyncTestCase):
         self.assertEqual(result["relationship"]["node"]["host"], "192.168.1.100")
 
 
+class TestNodeAnnouncementDirectInit(unittest.TestCase):
+    """Tests for NodeAnnouncement.__init__ validation branches."""
+
+    VALID_IDENTITY = {
+        "public_key": "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3a",
+        "username": "test_node",
+        "username_signature": "dGVzdA==",
+    }
+
+    def test_init_identity_none_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            NodeAnnouncement(identity=None, host="127.0.0.1", port=8080)
+        self.assertIn("identity", str(ctx.exception))
+
+    def test_init_identity_not_dict_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            NodeAnnouncement(identity="not a dict", host="127.0.0.1", port=8080)
+        self.assertIn("dict", str(ctx.exception))
+
+    def test_init_no_public_key_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            NodeAnnouncement(identity={}, host="127.0.0.1", port=8080)
+        self.assertIn("public_key", str(ctx.exception))
+
+    def test_init_no_username_signature_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            NodeAnnouncement(
+                identity={"public_key": "abc"},
+                host="127.0.0.1",
+                port=8080,
+            )
+        self.assertIn("username_signature", str(ctx.exception))
+
+    def test_init_host_none_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            NodeAnnouncement(identity=self.VALID_IDENTITY, host=None, port=8080)
+        self.assertIn("host", str(ctx.exception))
+
+    def test_init_port_none_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            NodeAnnouncement(identity=self.VALID_IDENTITY, host="127.0.0.1", port=None)
+        self.assertIn("port", str(ctx.exception))
+
+    def test_from_dict_not_dict_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            NodeAnnouncement.from_dict("not a dict")
+        self.assertIn("dict", str(ctx.exception))
+
+    def test_repr_returns_string(self):
+        node = NodeAnnouncement.from_dict(
+            {
+                "identity": self.VALID_IDENTITY,
+                "host": "127.0.0.1",
+                "port": 8080,
+            }
+        )
+        result = repr(node)
+        self.assertIsInstance(result, str)
+        self.assertIn("NodeAnnouncement", result)
+
+    def test_init_invalid_identity_raises(self):
+        """Lines 68-69: covers except in Identity.from_dict (missing username)."""
+        with self.assertRaises(ValueError) as ctx:
+            # Has pub_key and sig to pass pre-checks, but Identity.from_dict will fail
+            NodeAnnouncement(
+                identity={"public_key": "abc", "username_signature": "def"},
+                host="127.0.0.1",
+                port=8080,
+            )
+        self.assertIn("Invalid identity", str(ctx.exception))
+
+    def test_init_non_integer_port_raises(self):
+        """Lines 74-75: covers except in port validation."""
+        with self.assertRaises(ValueError) as ctx:
+            NodeAnnouncement(
+                identity=self.VALID_IDENTITY, host="127.0.0.1", port="not_a_port"
+            )
+        self.assertIn("port", str(ctx.exception).lower())
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

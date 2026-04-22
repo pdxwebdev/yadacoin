@@ -327,6 +327,38 @@
         </div>
       </div>
 
+      <!-- Authentication Section -->
+      <div id="authSection" style="margin-bottom:1.25rem;">
+        <div id="wifSection" style="background:#23272b;border:1px solid #343a40;border-radius:8px;padding:1rem 1.25rem;">
+          <div style="font-size:0.8rem;text-transform:uppercase;letter-spacing:0.05em;color:#868e96;margin-bottom:0.6rem;">Authentication Required</div>
+          <div style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;">
+            <div style="flex:1;min-width:220px;">
+              <input
+                type="password"
+                id="holderWif"
+                placeholder="Paste your private key or WIF from config.json"
+                autocomplete="off"
+                style="background:#2c3036;color:#e0e0e0;border:1px solid #454d55;border-radius:6px;padding:0.5rem 0.75rem;width:100%;font-size:0.9rem;"
+              />
+            </div>
+            <button
+              type="button"
+              id="unlockBtn"
+              style="background:#1c3a5e;color:#4a9eff;border:1px solid #4a9eff;border-radius:6px;padding:0.5rem 1.1rem;font-size:0.9rem;font-weight:600;cursor:pointer;white-space:nowrap;"
+            >Unlock</button>
+          </div>
+          <div id="unlockMsg" style="font-size:0.82rem;color:#f87171;margin-top:0.5rem;display:none;"></div>
+        </div>
+        <div id="authStatusSection" style="display:none;background:#1a2e1a;border:1px solid #2d5a2d;border-radius:8px;padding:0.75rem 1.25rem;justify-content:space-between;align-items:center;">
+          <span style="color:#56d364;font-size:0.9rem;">&#10003; <strong>Authenticated.</strong> Wallet unlocked.</span>
+          <button
+            type="button"
+            id="logoutBtn"
+            style="background:none;border:1px solid #2d5a2d;color:#56d364;border-radius:4px;padding:3px 10px;font-size:0.8rem;cursor:pointer;"
+          >Log out</button>
+        </div>
+      </div>
+
       <div
         id="errorMsg"
         class="error-msg d-none"
@@ -492,15 +524,106 @@
     </div>
 
     <script>
+      const LS_KEY = 'yadacoin_holders_jwt';
       let allHolders = [];
       let totalSupply = 0;
       let sortKey = "balance";
       let sortDir = "desc";
       let lastFetch = null;
 
-      async function loadHolders() {
+      const wifSection = document.getElementById('wifSection');
+      const authStatusSection = document.getElementById('authStatusSection');
+      const unlockBtn = document.getElementById('unlockBtn');
+      const logoutBtn = document.getElementById('logoutBtn');
+      const unlockMsg = document.getElementById('unlockMsg');
+
+      function getToken() {
+        return localStorage.getItem(LS_KEY);
+      }
+
+      function setAuthed(token) {
+        if (token) localStorage.setItem(LS_KEY, token);
+        wifSection.style.display = 'none';
+        authStatusSection.style.display = 'flex';
+      }
+
+      function setUnauthed() {
+        localStorage.removeItem(LS_KEY);
+        wifSection.style.display = 'block';
+        authStatusSection.style.display = 'none';
+      }
+
+      async function checkAuth() {
+        const stored = getToken();
+        if (stored) {
+          setAuthed(null);
+          loadHolders();
+          return;
+        }
         try {
-          const res = await fetch("/api-holders");
+          const resp = await fetch('/unlocked', { credentials: 'include' });
+          const data = await resp.json();
+          if (data.unlocked) {
+            setAuthed(null);
+            loadHolders();
+          }
+        } catch (e) {}
+      }
+
+      unlockBtn.addEventListener('click', async () => {
+        const wif = document.getElementById('holderWif').value.trim();
+        if (!wif) {
+          unlockMsg.textContent = 'Please enter your private key or WIF.';
+          unlockMsg.style.display = 'block';
+          return;
+        }
+        unlockBtn.disabled = true;
+        unlockBtn.textContent = 'Unlocking…';
+        unlockMsg.style.display = 'none';
+        try {
+          const resp = await fetch('/unlock', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key_or_wif: wif }),
+          });
+          const data = await resp.json();
+          if (resp.ok && data.token) {
+            document.getElementById('holderWif').value = '';
+            setAuthed(data.token);
+            loadHolders();
+          } else {
+            unlockMsg.textContent = data.message || 'Authentication failed. Check your private key or WIF.';
+            unlockMsg.style.display = 'block';
+          }
+        } catch (err) {
+          unlockMsg.textContent = 'Error: ' + err.message;
+          unlockMsg.style.display = 'block';
+        }
+        unlockBtn.disabled = false;
+        unlockBtn.textContent = 'Unlock';
+      });
+
+      document.getElementById('holderWif').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); unlockBtn.click(); }
+      });
+
+      logoutBtn.addEventListener('click', () => setUnauthed());
+
+      async function loadHolders() {
+        document.getElementById("loadingDiv").style.display = "block";
+        document.getElementById("holderTable").style.display = "none";
+        const errEl = document.getElementById("errorMsg");
+        errEl.classList.add("d-none");
+        try {
+          const token = getToken();
+          const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+          const res = await fetch("/api-holders", { credentials: 'include', headers });
+          if (res.status === 401) {
+            setUnauthed();
+            document.getElementById("loadingDiv").style.display = "none";
+            return;
+          }
           if (!res.ok)
             throw new Error(
               "Server returned " + res.status,
@@ -528,12 +651,10 @@
           document.getElementById(
             "loadingDiv",
           ).style.display = "none";
-          const err =
-            document.getElementById("errorMsg");
-          err.textContent =
+          errEl.textContent =
             "Failed to load holder data: " +
             e.message;
-          err.classList.remove("d-none");
+          errEl.classList.remove("d-none");
         }
       }
 
@@ -696,7 +817,7 @@
         .getElementById("searchInput")
         .addEventListener("input", renderTable);
 
-      loadHolders();
+      checkAuth();
     </script>
   </body>
 </html>

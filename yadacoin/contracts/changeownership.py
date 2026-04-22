@@ -365,12 +365,16 @@ class ChangeOwnershipContract(Contract):
                 "proof_type": self.proof_type,
                 "price": self.price,
                 "identity": self.identity.to_dict,
-                "asset": self.asset.to_dict()
-                if isinstance(self.asset, Asset)
-                else self.asset,
-                "creator": self.creator.to_dict
-                if isinstance(self.creator, Identity)
-                else self.creator,
+                "asset": (
+                    self.asset.to_dict()
+                    if isinstance(self.asset, Asset)
+                    else self.asset
+                ),
+                "creator": (
+                    self.creator.to_dict
+                    if isinstance(self.creator, Identity)
+                    else self.creator
+                ),
             }
         }
 

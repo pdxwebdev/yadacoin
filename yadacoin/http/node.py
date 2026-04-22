@@ -499,7 +499,7 @@ class MineBlockHandler(BaseHandler):
                 {"status": False, "message": "Node not in regnet mode."}
             )
         self.config.mp.block_factory.hash = (
-            self.config.mp.block_factory.generate_hash_from_header(
+            await self.config.mp.block_factory.generate_hash_from_header(
                 self.config.mp.block_factory.index,
                 self.config.mp.block_factory.header,
                 "",

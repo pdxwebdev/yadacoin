@@ -109,7 +109,9 @@ class MiningPool(object):
         self.config.app_log.debug(f"Extra Nonce for job {job.index}: {job.extra_nonce}")
         self.config.app_log.debug(f"Nonce for job {job.index}: {nonce}")
 
-        hash1 = self.block_factory.generate_hash_from_header(job.index, header, nonce)
+        hash1 = await self.block_factory.generate_hash_from_header(
+            job.index, header, nonce
+        )
         if hash1 != body["params"]["result"]:
             self.app_log.warning(
                 "Hashes do no match: hash1 {} body->hash {} nonce {} index {}".format(

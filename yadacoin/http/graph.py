@@ -26,6 +26,7 @@ import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
 from eccsnacks.curve25519 import scalarmult_base
+from tornado.httpclient import HTTPRequest
 
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
@@ -1047,10 +1048,10 @@ class ChallengeHandler(BaseGraphHandler):
                     }
                 )
                 return self.render_as_json({"status": True})
-            if challenge and int(time.time()) == challenge["challenge"]["time"]:
-                raise Exception(
-                    "Requests happing too fast. Same time stamp as previously generated timestamp."
-                )
+                # DISABLED: unreachable code after return (dead code, attack surface reduction)
+                # raise Exception(
+                #     "Requests happing too fast. Same time stamp as previously generated timestamp."
+                # )
             await self.generate_challenge(data)
             return self.render_as_json({"status": True, "challenge": challenge})
         except:

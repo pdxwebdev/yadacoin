@@ -28,6 +28,7 @@ from tornado import testing
 from yadacoin.app import NodeApplication
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
+from yadacoin.core.blockchainutils import BlockChainUtils
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.mongo import Mongo
@@ -35,10 +36,12 @@ from yadacoin.core.mongo import Mongo
 
 class AsyncTestCase(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        c = Config.generate()
+        c = Config()
         c.network = "regnet"
         c.mongo = Mongo()
         c.mongo_debug = True
+        if c.BU is None:
+            c.BU = BlockChainUtils()
 
         # Apply hash_server_domain if provided via pytest flag
         try:

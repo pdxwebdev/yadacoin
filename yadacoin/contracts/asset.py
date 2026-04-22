@@ -37,7 +37,9 @@ class Asset:
             username, collection=Collections.ASSET.value, parent=parent
         )
         self.data = data
-        self.checksum = hashlib.sha256(data + self.identity.username_signature)
+        self.checksum = hashlib.sha256(
+            (data + self.identity.username_signature).encode()
+        ).hexdigest()
 
     def to_dict(self):
         return {

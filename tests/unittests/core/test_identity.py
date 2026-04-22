@@ -202,5 +202,32 @@ class TestPublicIdentity(unittest.TestCase):
         self.assertIn("username", d)
 
 
+class TestIdentityPublicKeyHex(unittest.TestCase):
+    def test_public_key_hex_with_pubkey_object(self):
+        """Line 121: covers the isinstance(PublicKey) branch of public_key_hex."""
+        from coincurve import PrivateKey
+
+        priv = PrivateKey()
+        pub_obj = priv.public_key
+        ident = Identity(
+            public_key=pub_obj,
+            username="test",
+            username_signature="sig",
+        )
+        result = ident.public_key_hex
+        self.assertIsInstance(result, str)
+        self.assertEqual(result, pub_obj.format().hex())
+
+    def test_public_key_hex_with_string(self):
+        """Covers the else branch of public_key_hex (string input)."""
+        ident = Identity(
+            public_key="abcdef1234",
+            username="test",
+            username_signature="sig",
+        )
+        result = ident.public_key_hex
+        self.assertEqual(result, "abcdef1234")
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

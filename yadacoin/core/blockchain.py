@@ -37,6 +37,7 @@ class Blockchain(object):
     def __init__(self, blocks=None, partial=False):
         self.config = Config()
         self.mongo = self.config.mongo
+        self.partial = partial
         if isinstance(blocks, list):
             self.init_blocks = blocks
         elif isinstance(blocks, Block):
@@ -45,11 +46,6 @@ class Blockchain(object):
             self.init_blocks = [blocks]
         elif not blocks:
             self.init_blocks = []
-        else:
-            self.init_blocks = blocks
-        self.partial = partial
-        if not self.blocks:
-            return  # allow nothing
 
     async def make_gen(self, blocks):
         if isinstance(blocks, list):

@@ -222,13 +222,11 @@ class Peer:
             in self.config.nodeClient.outbound_ignore[SeedGateway.__name__]
         ):
             seed_select += 1
-            if seed_select >= len(username_signatures):
-                return None
             if num_reset and seed_select >= first_number:
-                break  # failed to find a seed gateway
-            if seed_select >= len(self.config.seed_gateways) + 1:
-                if first_number > 0:
-                    seed_select = 0
+                return None  # checked every gateway, all are ignored
+            if seed_select >= len(username_signatures):
+                seed_select = 0
+                num_reset = True
 
         seed_gateway = self.config.seed_gateways[
             list(self.config.seed_gateways)[seed_select]
@@ -702,12 +700,6 @@ class ServiceProvider(Peer):
             txn = self.get_payload_txn(payload)
             if txn:
                 txn_sum = sum([x.value for x in txn.outputs])
-
-                if not peer and not txn_sum:
-                    self.config.app_log.error(
-                        "Zero sum transaction and no routing information. Cannot route transaction."
-                    )
-                    return
 
                 from_peer = None
                 if payload.get("from_peer"):

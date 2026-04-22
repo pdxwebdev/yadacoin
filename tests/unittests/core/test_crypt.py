@@ -54,6 +54,17 @@ class TestCrypt(unittest.TestCase):
         with self.assertRaises((ValueError, Exception)):
             self.crypt.encrypt_consistent("not-hex")
 
+    def test_shared_encrypt_returns_hex(self):
+        result = self.crypt.shared_encrypt(b"test data for shared")
+        self.assertIsInstance(result, str)
+        bytes.fromhex(result)  # should be valid hex
+
+    def test_shared_encrypt_decrypt_roundtrip(self):
+        plaintext = b"roundtrip test data!!"
+        encrypted = self.crypt.shared_encrypt(plaintext)
+        decrypted = self.crypt.shared_decrypt(encrypted)
+        self.assertEqual(decrypted, plaintext)
+
 
 class TestRIPEMD160(unittest.TestCase):
     def test_ripemd160_empty(self):
@@ -85,6 +96,10 @@ class TestRIPEMD160(unittest.TestCase):
         r1 = RIPEMD160.ripemd160(b"input1")
         r2 = RIPEMD160.ripemd160(b"input2")
         self.assertNotEqual(r1, r2)
+
+    def test_fi_invalid_i_raises(self):
+        with self.assertRaises(AssertionError):
+            RIPEMD160.fi(0, 0, 0, 5)
 
 
 if __name__ == "__main__":

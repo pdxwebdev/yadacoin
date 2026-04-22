@@ -872,15 +872,14 @@ class KeyEventLog:
                         ]
                     },
                 )
-                if result_mempool:
-                    txn = Transaction.from_dict(result_mempool)
-                    txn.mempool = True
-                    if not txn.prev_public_key_hash:
-                        inception = txn
-                        break
-                    address = txn.prev_public_key_hash
-                else:
+                if not result_mempool:
                     break
+                txn = Transaction.from_dict(result_mempool)
+                txn.mempool = True
+                if not txn.prev_public_key_hash:
+                    inception = txn
+                    break
+                address = txn.prev_public_key_hash
         if inception:
             log.append(inception)
             txn = inception
@@ -915,11 +914,10 @@ class KeyEventLog:
                             {MempoolQueryFields.PUBLIC_KEY_HASH.value: address},
                         )
                     )
-                    if result_mempool:
-                        txn = Transaction.from_dict(result_mempool)
-                        txn.mempool = True
-                        log.append(txn)
-                    else:
+                    if not result_mempool:
                         break
+                    txn = Transaction.from_dict(result_mempool)
+                    txn.mempool = True
+                    log.append(txn)
 
         return log

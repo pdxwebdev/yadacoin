@@ -180,6 +180,12 @@ class Config:
         self.masternode_fee_minimum = config.get("masternode_fee_minimum", 1)
         self.balance_min_utxo = config.get("balance_min_utxo", 1)
 
+        # Transaction signature of the inception entry for the designated admin KEL.
+        # Set this to the transaction_id returned by /key-rotation/init-derived-child-key.
+        # When set, DerivedChildKeyHandler only accepts rotations belonging to this KEL,
+        # and InitDerivedChildKeyHandler will reject further inits.
+        self.admin_kel = config.get("admin_kel", None)
+
         for key, val in config.items():
             if not hasattr(self, key):
                 setattr(self, key, val)
@@ -682,3 +688,7 @@ class SSLConfig:
             "keyfile": self.key_file,
             "port": self.port,
         }
+
+
+# Module-level CONFIG reference, set by the application or tests before use.
+CONFIG = None

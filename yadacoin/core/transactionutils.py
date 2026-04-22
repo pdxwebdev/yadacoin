@@ -379,8 +379,7 @@ class TU(object):  # Transaction Utilities
             "transactions.requested_rid": smart_contract_txn.requested_rid,
         }
         if start_index and end_index:
-            match["index"]["$gte"] = start_index
-            match["index"]["$lt"] = end_index
+            match["index"] = {"$gte": start_index, "$lt": end_index}
         match2 = {
             "transactions.relationship.smart_contract": {"$exists": False},
             "transactions.requested_rid": smart_contract_txn.requested_rid,

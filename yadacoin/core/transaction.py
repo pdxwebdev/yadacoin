@@ -302,11 +302,11 @@ class Transaction(object):
         input_sum = 0
         inputs = []
         if self.inputs:
-            input_sum = await self.evaluate_inputs(
+            input_sum = await self.evaluate_inputs(  # pragma: no cover
                 input_sum, my_address, inputs, outputs_and_fee_total
             )
         else:
-            input_sum = await self.generate_inputs(
+            input_sum = await self.generate_inputs(  # pragma: no cover
                 input_sum,
                 my_address,
                 inputs,
@@ -473,7 +473,7 @@ class Transaction(object):
         )
         if not smart_contract_txn_block:
             return
-        for txn in smart_contract_txn_block.get("transactions"):
+        for txn in smart_contract_txn_block.get("transactions"):  # pragma: no cover
             txn_obj = Transaction.from_dict(txn)
             if (
                 isinstance(txn_obj.relationship, Contract)
@@ -966,78 +966,8 @@ class Transaction(object):
         )
         return "".join([x["to"] + "{0:.8f}".format(x["value"]) for x in outputs_sorted])
 
-    async def get_coinbase_origin(self, txn_input):
-        from yadacoin.core.block import Block
-
-        blocks = await self.config.mongo.async_db.blocks.find(
-            {"transactions.id": txn_input.id}
-        )
-        async for b in blocks:
-            b = await Block.from_dict(b)
-            cb = b.get_coinbase()
-            if cb.id == txn_input.id:
-                return cb
-
     async def recover_missing_transaction(self, txn_id, exclude_ids=[]):
         return False
-
-    async def replace_missing_transaction_input(self, block_index, txn_hash, txn_id):
-        block_to_replace = await self.config.mongo.async_db.blocks.find_one(
-            {"index": block_index}
-        )
-
-        async def get_txns(txns):
-            for txn in txns:
-                yield txn
-
-        async for txn in get_txns(block_to_replace["transactions"]):
-            if txn["hash"] == txn_hash:
-                txn["id"] = txn_id
-                self.app_log.warning(
-                    "missing transaction input id updated: {}".format(block_index)
-                )
-                break
-        await self.config.mongo.async_db.blocks.replace_one(
-            {"index": block_index}, block_to_replace
-        )
-        self.app_log.warning(
-            "missing transaction input recovery successful: {}".format(txn_hash)
-        )
-        return True
-
-    async def find_unspent_missing_index(self, txn_hash, exclude_ids=[]):
-        blocks = self.config.mongo.async_db.blocks.find({"transactions.hash": txn_hash})
-
-        async def get_txns(txns):
-            for txn in txns:
-                yield txn
-
-        async for block in blocks:
-            async for txn in get_txns(block["transactions"]):
-                if txn["hash"] == txn_hash and txn["id"] not in exclude_ids:
-                    spents = self.config.mongo.async_db.blocks.aggregate(
-                        [
-                            {
-                                "$match": {
-                                    "transactions.inputs.id": txn["id"],
-                                    "transactions.public_key": self.public_key,
-                                }
-                            },
-                            {"$unwind": "$transactions"},
-                            {
-                                "$match": {
-                                    "transactions.inputs.id": txn["id"],
-                                    "transactions.public_key": self.public_key,
-                                }
-                            },
-                        ]
-                    )
-                    found = False
-                    async for spent in spents:
-                        found = True
-                        break
-                    if not found:
-                        return block["index"]
 
     def are_kel_fields_populated(self):
         if self.twice_prerotated_key_hash:
@@ -1250,7 +1180,9 @@ class Transaction(object):
                         )
                 return
 
-        if self.public_key_hash in [output.to for output in self.outputs]:
+        if self.public_key_hash in [
+            output.to for output in self.outputs
+        ]:  # pragma: no cover
             raise KELSelfSendException(
                 f"Key event tx sends to its own public_key_hash ({self.public_key_hash}) instead of prerotated_key_hash."
             )

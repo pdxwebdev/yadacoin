@@ -22,8 +22,8 @@ import time
 import uuid
 
 import jwt
-
 from eccsnacks.curve25519 import scalarmult_base
+
 from yadacoin.core.config import Config
 from yadacoin.core.graphutils import GraphUtils as GU
 from yadacoin.core.identity import Identity
@@ -267,51 +267,6 @@ class LogoutHandler(BaseHandler):
             self.render_as_json({"authenticated": False})
 
 
-class HashrateAPIHandler(BaseHandler):
-    async def get(self):
-        max_target = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-        config = self.config
-        blocks = config.BU.get_blocks()
-        total_nonce = 0
-        periods = []
-        last_time = None
-        for block in blocks:
-            difficulty = max_target / int(block.get("target"), 16)
-            if block.get("index") == 0:
-                start_timestamp = block.get("time")
-            if last_time:
-                if int(block.get("time")) > last_time:
-                    periods.append(
-                        {
-                            "hashrate": (
-                                ((int(block.get("index")) / 144) * difficulty) * 2**32
-                            )
-                            / 600
-                            / 100,
-                            "index": block.get("index"),
-                            "elapsed_time": (int(block.get("time")) - last_time),
-                        }
-                    )
-            last_time = int(block.get("time"))
-            try:
-                total_nonce += int(block.get("nonce"))
-            except:
-                total_nonce += int(block.get("nonce"), 16)
-        sorted(periods, key=lambda x: x["index"])
-        total_time_elapsed = int(block.get("time")) - int(start_timestamp)
-        network_hash_rate = total_nonce / int(total_time_elapsed)
-        self.render_as_json(
-            {
-                "stats": {
-                    "network_hash_rate": network_hash_rate,
-                    "total_time_elapsed": total_time_elapsed,
-                    "total_nonce": total_nonce,
-                    "periods": periods,
-                }
-            }
-        )
-
-
 class AppHandler(BaseHandler):
     async def get(self):
         """
@@ -322,6 +277,7 @@ class AppHandler(BaseHandler):
 
 class App2FAHandler(BaseHandler):
     async def prepare(self):
+        await super().prepare()
         if self.request.protocol == "https":
             self.redirect(
                 "http://" + self.request.host + self.request.uri, permanent=False
