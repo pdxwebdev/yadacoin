@@ -46,6 +46,8 @@ class Blockchain(object):
             self.init_blocks = [blocks]
         elif not blocks:
             self.init_blocks = []
+        else:
+            self.init_blocks = blocks
 
     async def make_gen(self, blocks):
         if isinstance(blocks, list):

@@ -921,5 +921,303 @@ class TestBlockchainGetDifficultyExtra(AsyncTestCase):
             self.assertEqual(blockchain.get_highest_block_height(), 12)
 
 
+class TestBlockchainInitBranches(AsyncTestCase):
+    """Cover the Block, dict, and async-iterable __init__ branches (lines 44, 46, 50)."""
+
+    async def test_init_with_block_instance(self):
+        """Line 44: Blockchain(block) wraps it in a list."""
+        b = Block()
+        blockchain = Blockchain(b)
+        self.assertEqual(blockchain.init_blocks, [b])
+
+    async def test_init_with_dict(self):
+        """Line 46: Blockchain(dict) wraps it in a list."""
+        d = {"index": 0}
+        blockchain = Blockchain(d)
+        self.assertEqual(blockchain.init_blocks, [d])
+
+    async def test_init_with_async_iterable(self):
+        """Line 50: Blockchain(async_iter) stores it as-is."""
+        source = _AsyncIterClone([Block()])
+        blockchain = Blockchain(source)
+        self.assertIs(blockchain.init_blocks, source)
+
+
+class TestMakeGenAsyncBranch(AsyncTestCase):
+    """Lines 57-58: make_gen with a non-list async iterable."""
+
+    async def test_make_gen_with_async_iterable(self):
+        items = [Block(), Block()]
+
+        async def _gen():
+            for item in items:
+                yield item
+
+        blockchain = Blockchain()
+        result = [x async for x in blockchain.make_gen(_gen())]
+        self.assertEqual(result, items)
+
+
+class TestIsConsecutiveFalseBranches(AsyncTestCase):
+    """Lines 86, 88: is_consecutive returns False paths."""
+
+    async def test_is_consecutive_false_index_gap(self):
+        """Line 86: (prev.index + 1) != block.index -> False."""
+        b1 = Block()
+        b1.index = 0
+        b1.hash = "h0"
+        b1.prev_hash = ""
+        b2 = Block()
+        b2.index = 5  # gap
+        b2.hash = "h1"
+        b2.prev_hash = "h0"
+        blockchain = Blockchain([b1, b2])
+        self.assertFalse(await blockchain.is_consecutive)
+
+    async def test_is_consecutive_false_prev_hash_mismatch(self):
+        """Line 88: prev.hash != block.prev_hash -> False."""
+        b1 = Block()
+        b1.index = 0
+        b1.hash = "correct"
+        b1.prev_hash = ""
+        b2 = Block()
+        b2.index = 1
+        b2.hash = "h1"
+        b2.prev_hash = "wrong"
+        blockchain = Blockchain([b1, b2])
+        self.assertFalse(await blockchain.is_consecutive)
+
+
+class TestAsyncFirstBlockAndCount(AsyncTestCase):
+    """Lines 101-103 (async_first_block) and 120-123 (count)."""
+
+    async def test_async_first_block(self):
+        """Lines 101-103: async_first_block returns first block."""
+        b1 = Block()
+        b1.index = 0
+        b2 = Block()
+        b2.index = 1
+        blockchain = Blockchain([b1, b2])
+        result = await blockchain.async_first_block
+        self.assertEqual(result, b1)
+
+    async def test_count_property(self):
+        """Lines 120-123: count returns number of blocks."""
+        blocks = [Block(), Block(), Block()]
+        blockchain = Blockchain(blocks)
+        self.assertEqual(await blockchain.count, 3)
+
+    async def test_count_empty(self):
+        """Lines 120-123: count returns 0 for empty chain."""
+        blockchain = Blockchain()
+        self.assertEqual(await blockchain.count, 0)
+
+
+class TestAllowSameBlockSpendingFork(AsyncTestCase):
+    """Lines 206-209: ALLOW_SAME_BLOCK_SPENDING_FORK inner loop sets input_txn/spent_in_txn."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.config = Config()
+        self.config.BU = MagicMock()
+        self.config.BU.get_transaction_by_id = AsyncMock(return_value=None)
+        self.config.BU.is_input_spent = AsyncMock(return_value=False)
+
+        class _AppLog:
+            def warning(self, *a, **kw):
+                pass
+
+            def info(self, *a, **kw):
+                pass
+
+            def debug(self, *a, **kw):
+                pass
+
+        self.config.app_log = _AppLog()
+
+    async def test_input_id_found_in_items_indexed(self):
+        """Lines 206-209: input_item.id matches a transaction_signature."""
+        from time import time as _time
+
+        last = _make_test_block(
+            index=CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK - 1,
+            block_time=int(_time()) - 1000,
+        )
+        # txn_a has transaction_signature "sig-a"; txn_b has an input whose id = "sig-a"
+        txn_a = MagicMock()
+        txn_a.transaction_signature = "sig-a"
+        txn_a.inputs = []
+        txn_a.verify = AsyncMock(return_value=None)
+
+        input_item = MagicMock()
+        input_item.id = "sig-a"
+        input_item.input_txn = None
+
+        txn_b = MagicMock()
+        txn_b.transaction_signature = "sig-b"
+        txn_b.inputs = [input_item]
+        txn_b.verify = AsyncMock(return_value=None)
+
+        block = _make_test_block(
+            index=CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK,
+            block_time=int(_time()) - 5,
+            prev_hash=last.hash,
+            transactions=[txn_a, txn_b],
+            target=2**256 - 1,
+        )
+        block.hash = "0" * 64
+        with mock.patch.object(
+            CHAIN, "get_target_10min", new=AsyncMock(return_value=2**256 - 1)
+        ):
+            with mock.patch.object(CHAIN, "target_block_time", return_value=600):
+                self.config.network = "regnet"
+                await Blockchain.test_block(block, simulate_last_block=last)
+        # Lines 208-209 executed: input_txn set to txn_a, spent_in_txn set to txn_b
+        self.assertIs(input_item.input_txn, txn_a)
+        self.assertEqual(txn_a.spent_in_txn, txn_b)
+
+
+class TestBULookupAndFindInExtraBlocks(AsyncTestCase):
+    """Lines 250, 252-255: else branch for BU lookup and find_in_extra_blocks failure."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.config = Config()
+        self.config.BU = MagicMock()
+        self.config.BU.is_input_spent = AsyncMock(return_value=False)
+
+        class _AppLog:
+            def warning(self, *a, **kw):
+                pass
+
+            def info(self, *a, **kw):
+                pass
+
+            def debug(self, *a, **kw):
+                pass
+
+        self.config.app_log = _AppLog()
+
+    async def test_bu_lookup_when_no_input_txn(self):
+        """Line 250: x.input_txn is falsy -> BU.get_transaction_by_id called."""
+        from time import time as _time
+
+        last = _make_test_block(index=9, block_time=int(_time()) - 1000)
+        input_item = MagicMock()
+        input_item.id = "some-id"
+        input_item.input_txn = None  # falsy -> else branch
+
+        found_txn = MagicMock()
+        self.config.BU.get_transaction_by_id = AsyncMock(return_value=found_txn)
+
+        txn = MagicMock()
+        txn.inputs = [input_item]
+        txn.public_key = "pk"
+        txn.verify = AsyncMock(return_value=None)
+
+        block = _make_test_block(
+            index=10,
+            block_time=int(_time()) - 5,
+            prev_hash=last.hash,
+            transactions=[txn],
+            target=2**256 - 1,
+        )
+        block.hash = "0" * 64
+        with mock.patch.object(CHAIN, "get_target", new=AsyncMock(return_value=0)):
+            with mock.patch.object(CHAIN, "target_block_time", return_value=600):
+                self.config.network = "regnet"
+                await Blockchain.test_block(block, simulate_last_block=last)
+        self.config.BU.get_transaction_by_id.assert_awaited_once_with(
+            "some-id", instance=True
+        )
+
+    async def test_find_in_extra_blocks_and_failed_warning(self):
+        """Lines 252-255: BU returns None -> find_in_extra_blocks -> None -> failed."""
+        from time import time as _time
+
+        last = _make_test_block(index=9, block_time=int(_time()) - 1000)
+        input_item = MagicMock()
+        input_item.id = "missing-id"
+        input_item.input_txn = None  # else branch
+
+        self.config.BU.get_transaction_by_id = AsyncMock(return_value=None)
+
+        txn = MagicMock()
+        txn.inputs = [input_item]
+        txn.public_key = "pk"
+        txn.verify = AsyncMock(return_value=None)
+        txn.find_in_extra_blocks = AsyncMock(return_value=None)  # also None -> failed
+
+        block = _make_test_block(
+            index=10,
+            block_time=int(_time()) - 5,
+            prev_hash=last.hash,
+            transactions=[txn],
+            target=2**256 - 1,
+        )
+        block.hash = "0" * 64
+        with mock.patch.object(CHAIN, "get_target", new=AsyncMock(return_value=0)):
+            with mock.patch.object(CHAIN, "target_block_time", return_value=600):
+                self.config.network = "regnet"
+                result = await Blockchain.test_block(block, simulate_last_block=last)
+        txn.find_in_extra_blocks.assert_awaited_once_with(input_item)
+        # failed=True but pre-CHECK_DOUBLE_SPEND_FROM so continues; regnet -> True
+        self.assertTrue(result)
+
+
+class TestBlockV5ForkBranch(AsyncTestCase):
+    """Lines 318-319: BLOCK_V5_FORK little_hash branch."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.config = Config()
+        self.config.BU = MagicMock()
+        self.config.BU.get_transaction_by_id = AsyncMock(return_value=None)
+        self.config.BU.is_input_spent = AsyncMock(return_value=False)
+
+        class _AppLog:
+            def warning(self, *a, **kw):
+                pass
+
+            def info(self, *a, **kw):
+                pass
+
+            def debug(self, *a, **kw):
+                pass
+
+        self.config.app_log = _AppLog()
+
+    async def test_block_v5_fork_little_hash_branch(self):
+        """Lines 318-319: index >= BLOCK_V5_FORK and little_hash(hash) < target."""
+        from time import time as _time
+
+        last = _make_test_block(
+            index=CHAIN.BLOCK_V5_FORK - 1, block_time=int(_time()) - 1000
+        )
+        block = _make_test_block(
+            index=CHAIN.BLOCK_V5_FORK,
+            block_time=int(_time()) - 5,
+            prev_hash=last.hash,
+            target=2**256 - 1,
+        )
+        block.hash = "0" * 64  # little_hash("0"*64) = "0"*64 = 0 < any positive target
+        with mock.patch.object(
+            CHAIN, "get_target_10min", new=AsyncMock(return_value=2**256 - 1)
+        ):
+            with mock.patch.object(CHAIN, "target_block_time", return_value=600):
+                result = await Blockchain.test_block(block, simulate_last_block=last)
+        self.assertTrue(result)
+
+
+class TestGetGenesisBlock(AsyncTestCase):
+    """Line 436: get_genesis_block classmethod."""
+
+    async def test_get_genesis_block(self):
+        """Line 436: calls Block.from_dict with genesis data."""
+        block = await Blockchain.get_genesis_block()
+        self.assertIsInstance(block, Block)
+        self.assertEqual(block.index, 0)
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
