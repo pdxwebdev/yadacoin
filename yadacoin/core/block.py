@@ -99,10 +99,6 @@ class FastGraphRule2(Exception):
     pass
 
 
-class ExternalInputSpentException(Exception):
-    pass
-
-
 class UnknownOutputAddressException(Exception):
     pass
 

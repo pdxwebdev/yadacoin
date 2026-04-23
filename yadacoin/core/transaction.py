@@ -383,13 +383,7 @@ class Transaction(object):
     async def sum_inputs(
         self, input_obj, input_txn, my_address, input_sum, inputs, outputs_and_fee_total
     ):
-        if isinstance(input_obj, ExternalInput):
-            await input_txn.verify()
-            address = str(
-                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(input_txn.public_key))
-            )
-        else:
-            address = my_address
+        address = my_address
 
         for txn_output in input_txn.outputs:
             if txn_output.to == address and float(txn_output.value) > 0.0:
@@ -681,53 +675,14 @@ class Transaction(object):
 
             found = False
             for output in txn_input.outputs:
-                if isinstance(txn, ExternalInput):
-                    ext_address = P2PKHBitcoinAddress.from_pubkey(
-                        bytes.fromhex(txn_input.public_key)
-                    )
-                    int_address = P2PKHBitcoinAddress.from_pubkey(
-                        bytes.fromhex(txn.public_key)
-                    )
-                    if str(output.to) == str(ext_address) and str(int_address) == str(
-                        txn.address
-                    ):
-                        try:
-                            result = verify_signature(
-                                base64.b64decode(txn.signature),
-                                txn.id.encode("utf-8"),
-                                bytes.fromhex(txn_input.public_key),
-                            )
-                            if not result:
-                                raise Exception()
-                        except:
-                            try:
-                                result = VerifyMessage(
-                                    ext_address,
-                                    BitcoinMessage(txn.id, magic=""),
-                                    txn.signature,
-                                )
-                                if not result:
-                                    raise
-                            except:
-                                raise InvalidTransactionSignatureException(
-                                    "external input transaction signature did not verify"
-                                )
-
-                        found = True
-                        total_input += float(output.value)
-                elif str(output.to) == str(address):
+                if str(output.to) == str(address):
                     found = True
                     total_input += float(output.value)
 
             if not found:
-                if isinstance(txn, ExternalInput):
-                    raise InvalidTransactionException(
-                        "external input signing information did not match any recipients of the input transaction"
-                    )
-                else:
-                    raise InvalidTransactionException(
-                        "using inputs from a transaction where you were not one of the recipients."
-                    )
+                raise InvalidTransactionException(
+                    "using inputs from a transaction where you were not one of the recipients."
+                )
 
         if self.coinbase:
             return
@@ -1306,45 +1261,6 @@ class Input(object):
 
     def to_dict(self):
         return {"id": self.id}
-
-
-class ExternalInput(Input):
-    def __init__(self, public_key, address, txn_id, signature):
-        # TODO: error, superclass init missing
-        self.config = Config()
-        self.mongo = self.config.mongo
-        self.public_key = public_key
-        self.id = txn_id
-        self.signature = signature
-        self.address = address
-
-    async def verify(self):
-        txn = await self.config.BU.get_transaction_by_id(self.id, instance=True)
-        result = verify_signature(
-            base64.b64decode(self.signature),
-            self.id.encode("utf-8"),
-            bytes.fromhex(txn.public_key),
-        )
-        if not result:
-            raise Exception("Invalid external input")
-
-    @classmethod
-    def from_dict(cls, txn):
-        # TODO: sig doees not match
-        return cls(
-            public_key=txn.get("public_key", ""),
-            address=txn.get("address", ""),
-            txn_id=txn.get("id", ""),
-            signature=txn.get("signature", ""),
-        )
-
-    def to_dict(self):
-        return {
-            "public_key": self.public_key,
-            "address": self.address,
-            "id": self.id,
-            "signature": self.signature,
-        }
 
 
 class Output(object):

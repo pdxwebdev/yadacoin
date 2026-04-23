@@ -988,35 +988,6 @@ class TestTransactionPureMethods(AsyncTestCase):
                 await txn.evaluate_inputs(0, my_address, [], 10.0)
 
     # -----------------------------------------------------------------------
-    # sum_inputs ExternalInput branch (lines 387-388)
-    # -----------------------------------------------------------------------
-
-    async def test_sum_inputs_external_input_branch(self):
-        """Lines 387-388: ExternalInput triggers verify() and address derivation."""
-        from unittest.mock import AsyncMock, patch
-
-        from yadacoin.core.transaction import ExternalInput
-
-        # Build a minimal ExternalInput-style object
-        ext_inp = ExternalInput(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            address="some_ext_address",
-            txn_id="some_txn_id",
-            signature="fake_sig",
-        )
-        input_txn = Transaction(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            outputs=[Output(to="no_match", value=1.0)],
-        )
-
-        txn = Transaction(public_key=yadacoin.core.config.CONFIG.public_key)
-
-        with patch.object(input_txn, "verify", new=AsyncMock(return_value=None)):
-            result = await txn.sum_inputs(ext_inp, input_txn, "any_address", 0, [], 1.0)
-
-        self.assertEqual(result, 0)  # no matching output
-
-    # -----------------------------------------------------------------------
     # contract_generated property (lines 454-459)
     # -----------------------------------------------------------------------
 
@@ -1565,39 +1536,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         self.assertFalse(result)
 
     # -----------------------------------------------------------------------
-    # ExternalInput class (lines 1390-1418)
-    # -----------------------------------------------------------------------
-
-    def test_external_input_init(self):
-        """Lines 1390-1395: ExternalInput __init__ sets all attributes."""
-        from yadacoin.core.transaction import ExternalInput
-
-        ext = ExternalInput(
-            public_key="testpk",
-            address="testaddr",
-            txn_id="testtxnid",
-            signature="testsig",
-        )
-        self.assertEqual(ext.public_key, "testpk")
-        self.assertEqual(ext.id, "testtxnid")
-        self.assertEqual(ext.signature, "testsig")
-        self.assertEqual(ext.address, "testaddr")
-
-    def test_external_input_from_dict_and_to_dict(self):
-        """Lines 1410, 1418: ExternalInput.from_dict and to_dict round-trip."""
-        from yadacoin.core.transaction import ExternalInput
-
-        d = {
-            "public_key": "pk1",
-            "address": "addr1",
-            "id": "txnid1",
-            "signature": "sig1",
-        }
-        ext = ExternalInput.from_dict(d)
-        self.assertEqual(ext.id, "txnid1")
-        self.assertEqual(ext.to_dict(), d)
-
-    # -----------------------------------------------------------------------
     # is_already_onchain (lines 1063-1101)
     # -----------------------------------------------------------------------
 
@@ -2118,134 +2056,6 @@ class TestTransactionPureMethods(AsyncTestCase):
                     await txn.verify(check_input_spent=True)
         self.assertIn("already spent", str(ctx.exception))
 
-    async def test_verify_external_input_empty_outputs_raises(self):
-        """Line 724: ExternalInput with no matching outputs raises InvalidTransactionException."""
-        from yadacoin.core.transaction import ExternalInput
-        from yadacoin.core.transactionutils import TU
-
-        # input_txn has no outputs → found stays False → ExternalInput not found raises at 724
-        empty_input_txn = Transaction(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            outputs=[],
-        )
-        ext_inp = ExternalInput(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            address="some_ext_addr",
-            txn_id="ext_txn_id",
-            signature="ext_sig",
-        )
-        ext_inp.input_txn = empty_input_txn
-
-        txn = Transaction(public_key=yadacoin.core.config.CONFIG.public_key)
-        txn.inputs = [ext_inp]
-        txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
-            yadacoin.core.config.CONFIG.private_key, txn.hash
-        )
-
-        with self.assertRaises(InvalidTransactionException) as ctx:
-            await txn.verify()
-        self.assertIn("external input", str(ctx.exception))
-
-    async def test_verify_external_input_matching_output_verifies(self):
-        """Lines 684-720: ExternalInput with matching output and valid sig adds to total_input."""
-        from unittest.mock import patch
-
-        from bitcoin.wallet import P2PKHBitcoinAddress
-
-        from yadacoin.core.transaction import ExternalInput
-        from yadacoin.core.transactionutils import TU
-
-        config_address = str(
-            P2PKHBitcoinAddress.from_pubkey(
-                bytes.fromhex(yadacoin.core.config.CONFIG.public_key)
-            )
-        )
-
-        # The backing tx for the ExternalInput — output goes to config_address
-        input_txn = Transaction(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            outputs=[Output(to=config_address, value=1.0)],
-        )
-
-        # ExternalInput: public_key and address both equal config_address so the
-        # ext_address == output.to and int_address == txn.address checks pass.
-        ext_inp = ExternalInput(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            address=config_address,
-            txn_id="ext_txn_id",
-            signature="ZmFrZV9zaWc=",
-        )
-        ext_inp.input_txn = input_txn  # bypass DB
-
-        # Main txn: output 1.0, fee 0 → total_input == total_output → no mismatch
-        txn = Transaction(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            outputs=[Output(to="1DestAddr", value=1.0)],
-            fee=0.0,
-        )
-        txn.inputs = [ext_inp]
-        txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
-            yadacoin.core.config.CONFIG.private_key, txn.hash
-        )
-
-        # Mock verify_signature globally so both the outer txn sig check and
-        # the external input sig check pass without needing a real key/sig pair.
-        with patch("yadacoin.core.transaction.verify_signature", return_value=True):
-            await txn.verify()  # should not raise
-
-    async def test_verify_external_input_sig_fallback_both_fail_raises(self):
-        """Lines 701-712: verify_signature returns False for ext input → except → VerifyMessage=False → raises."""
-        from unittest.mock import patch
-
-        from bitcoin.wallet import P2PKHBitcoinAddress
-
-        from yadacoin.core.transaction import (
-            ExternalInput,
-            InvalidTransactionSignatureException,
-        )
-        from yadacoin.core.transactionutils import TU
-
-        config_address = str(
-            P2PKHBitcoinAddress.from_pubkey(
-                bytes.fromhex(yadacoin.core.config.CONFIG.public_key)
-            )
-        )
-
-        input_txn = Transaction(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            outputs=[Output(to=config_address, value=1.0)],
-        )
-
-        ext_inp = ExternalInput(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            address=config_address,
-            txn_id="ext_txn_id",
-            signature="ZmFrZV9zaWc=",
-        )
-        ext_inp.input_txn = input_txn
-
-        txn = Transaction(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            outputs=[Output(to="1DestAddr", value=1.0)],
-            fee=0.0,
-        )
-        txn.inputs = [ext_inp]
-        txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
-            yadacoin.core.config.CONFIG.private_key, txn.hash
-        )
-
-        # First call (outer tx signature check) returns True; second call (ExternalInput) returns False.
-        # VerifyMessage also returns False → InvalidTransactionSignatureException raised at line 712.
-        with patch(
-            "yadacoin.core.transaction.verify_signature", side_effect=[True, False]
-        ):
-            with patch("yadacoin.core.transaction.VerifyMessage", return_value=False):
-                with self.assertRaises(InvalidTransactionSignatureException):
-                    await txn.verify()
-
     async def test_is_already_in_mempool_with_twice_prerotated_and_prev(self):
         """Lines 1108, 1127: twice_prerotated_key_hash and prev_public_key_hash paths in is_already_in_mempool."""
         from unittest.mock import AsyncMock, MagicMock
@@ -2674,63 +2484,6 @@ class TestTransactionPureMethods(AsyncTestCase):
                 ):
                     # 1 UTXO, 1 spent → 1 - 1 = 0 == len([]) → no exception
                     await txn.verify_kel_output_rules(block=None)
-
-    # -----------------------------------------------------------------------
-    # ExternalInput.verify() (lines 1398-1405)
-    # -----------------------------------------------------------------------
-
-    async def test_external_input_verify_valid_signature(self):
-        """Lines 1398-1403: ExternalInput.verify() passes with valid signature."""
-        from unittest.mock import AsyncMock, patch
-
-        from yadacoin.core.transaction import ExternalInput
-
-        input_txn = Transaction(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-        )
-
-        ext_inp = ExternalInput(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            address="some_ext_address",
-            txn_id="some_txn_id",
-            signature="ZmFrZV9zaWc=",  # base64 of 'fake_sig'
-        )
-
-        with patch.object(
-            ext_inp.config.BU,
-            "get_transaction_by_id",
-            new=AsyncMock(return_value=input_txn),
-        ):
-            with patch("yadacoin.core.transaction.verify_signature", return_value=True):
-                await ext_inp.verify()  # should not raise
-
-    async def test_external_input_verify_invalid_signature_raises(self):
-        """Lines 1404-1405: ExternalInput.verify() raises when verify_signature returns False."""
-        from unittest.mock import AsyncMock, patch
-
-        from yadacoin.core.transaction import ExternalInput
-
-        input_txn = Transaction(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-        )
-
-        ext_inp = ExternalInput(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            address="some_ext_address",
-            txn_id="some_txn_id",
-            signature="ZmFrZV9zaWc=",
-        )
-
-        with patch.object(
-            ext_inp.config.BU,
-            "get_transaction_by_id",
-            new=AsyncMock(return_value=input_txn),
-        ):
-            with patch(
-                "yadacoin.core.transaction.verify_signature", return_value=False
-            ):
-                with self.assertRaises(Exception, msg="Invalid external input"):
-                    await ext_inp.verify()
 
 
 if __name__ == "__main__":

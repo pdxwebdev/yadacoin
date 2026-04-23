@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from yadacoin.core.config import Config
 from yadacoin.core.transaction import (
-    ExternalInput,
     Input,
     InvalidTransactionSignatureException,
     MaxRelationshipSizeExceeded,
@@ -49,7 +48,7 @@ class TransactionTestCase(AsyncTestCase):
 
 
 # ---------------------------------------------------------------------------
-# Input, Output, ExternalInput, Relationship
+# Input, Output, Relationship
 # ---------------------------------------------------------------------------
 
 
@@ -97,32 +96,6 @@ class TestOutput(unittest.TestCase):
     def test_to_dict(self):
         out = Output(to="addr1", value=2.5)
         self.assertEqual(out.to_dict(), {"to": "addr1", "value": 2.5})
-
-
-class TestExternalInput(TransactionTestCase):
-    async def test_from_dict(self):
-        ei = ExternalInput.from_dict(
-            {
-                "public_key": "pk1",
-                "address": "addr1",
-                "id": "txnid1",
-                "signature": "sig1",
-            }
-        )
-        self.assertEqual(ei.public_key, "pk1")
-        self.assertEqual(ei.address, "addr1")
-        self.assertEqual(ei.id, "txnid1")
-        self.assertEqual(ei.signature, "sig1")
-
-    async def test_to_dict(self):
-        ei = ExternalInput(
-            public_key="pk1", address="addr1", txn_id="txnid1", signature="sig1"
-        )
-        d = ei.to_dict()
-        self.assertIn("public_key", d)
-        self.assertIn("address", d)
-        self.assertIn("id", d)
-        self.assertIn("signature", d)
 
 
 class TestRelationship(unittest.TestCase):
