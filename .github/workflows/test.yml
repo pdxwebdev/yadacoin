@@ -32,4 +32,4 @@ jobs:
           pip install pytest==8.1.2 mongomock pytest-cov
 
       - name: Run unit tests with pytest
-        run: pytest tests/unittests/core --cov=yadacoin.core --cov-config=.coveragerc --cov-report=term-missing --cov-fail-under=100
+        run: pytest tests/unittests --cov=yadacoin.core --cov-config=.coveragerc --cov-report=term-missing --cov-fail-under=100
