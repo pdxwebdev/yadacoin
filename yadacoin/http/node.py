@@ -22,8 +22,6 @@ from datetime import datetime, timezone
 from tornado import escape
 
 from yadacoin.core.chain import CHAIN
-from yadacoin.core.transaction import Transaction
-from yadacoin.core.transactionutils import TU
 from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.http.base import BaseHandler
 
@@ -341,54 +339,6 @@ class GetMempoolHandler(BaseHandler):
         )
 
 
-class GetCurrentSmartContractTransactions(BaseHandler):
-    async def get(self):
-        return self.render_as_json({"txn_ids": [x["id"] for x in txns]})
-
-
-class GetCurrentSmartContractTransaction(BaseHandler):
-    async def get(self):
-        return self.render_as_json({"txn_ids": [x["id"] for x in txns]})
-
-
-class GetExpiredSmartContractTransactions(BaseHandler):
-    async def get(self):
-        return self.render_as_json({"txn_ids": [x["id"] for x in txns]})
-
-
-class GetExpiredSmartContractTransaction(BaseHandler):
-    async def get(self):
-        return self.render_as_json({"txn_ids": [x["id"] for x in txns]})
-
-
-class GetSmartContractTriggerTransaction(BaseHandler):
-    async def get(self):
-        txn_id = self.get_query_argument("id", None).replace(" ", "+")
-        start_index = self.get_query_argument("start_index", None)
-        end_index = self.get_query_argument("end_index", None)
-        smart_contracts = self.config.mongo.async_db.blocks.aggregate(
-            [
-                {"$match": {"transactions.id": txn_id}},
-                {"$unwind": "$transactions"},
-                {"$match": {"transactions.id": txn_id}},
-                {"$sort": {"transactions.time": -1}},
-            ]
-        )
-        smart_contract = None
-        async for smart_contract in smart_contracts:
-            break
-        if not smart_contract:
-            self.status_code = 404
-            return self.render_as_json({"status": False, "message": "not found"})
-        smart_contract_txn = Transaction.from_dict(smart_contract["transactions"])
-        trigger_txns = []
-        async for trigger_txn in TU.get_trigger_txns(
-            self.config, smart_contract_txn, start_index, end_index
-        ):
-            trigger_txns.append(Transaction.from_dict(trigger_txn).to_dict())
-        return self.render_as_json({"transactions": trigger_txns})
-
-
 class GetMonitoringHandler(BaseHandler):
     async def get(self):
         # Node Data
@@ -536,11 +486,6 @@ NODE_HANDLERS = [
     (r"/rebroadcast-transactions", RebroadcastTransactions),
     (r"/rebroadcast-failed-transaction", RebroadcastFailedTransactions),
     (r"/get-mempool", GetMempoolHandler),
-    (r"/get-current-smart-contract-transactions", GetCurrentSmartContractTransactions),
-    (r"/get-current-smart-contract-transaction", GetCurrentSmartContractTransaction),
-    (r"/get-expired-smart-contract-transactions", GetExpiredSmartContractTransactions),
-    (r"/get-expired-smart-contract-transaction", GetExpiredSmartContractTransaction),
-    (r"/get-trigger-transactions", GetSmartContractTriggerTransaction),
     (r"/get-monitoring", GetMonitoringHandler),
     (r"/get-tested-nodes", GetTestedNodesHandler),
     (r"/mine-block", MineBlockHandler),

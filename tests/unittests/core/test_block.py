@@ -3600,6 +3600,165 @@ class TestBlock(AsyncTestCase):
 
         self.assertIn("double spend", str(ctx.exception.args[0]))
 
+    @mock.patch(
+        "yadacoin.core.block.Block.generate_hash_from_header",
+        new=mock_generate_hash_from_header,
+    )
+    @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
+    async def test_verify_smart_contract_relationship_rejected_post_fork(self):
+        """SMART_CONTRACT_REMOVAL_FORK: txn with relationship.smart_contract is rejected."""
+        import asyncio as _asyncio
+
+        from yadacoin.core.chain import CHAIN
+
+        block = await Block.from_dict(copy.deepcopy(masternode_fee_block))
+
+        sc_txn = Mock()
+        sc_txn.version = 5
+        sc_txn.coinbase = False
+        sc_txn.transaction_signature = "sc_relationship_sig"
+        sc_txn.inputs = []
+        sc_txn.outputs = []
+        sc_txn.fee = 0.0
+        sc_txn.masternode_fee = 0.0
+        sc_txn.relationship = {"smart_contract": {"foo": "bar"}}
+        sc_txn.contract_generated = _asyncio.coroutine(lambda: False)()
+        sc_txn.time = block.time
+        sc_txn.hash = "scc" * 21
+
+        orig_txns = block.transactions[:]
+        block.transactions.insert(0, sc_txn)
+
+        orig_fork = CHAIN.SMART_CONTRACT_REMOVAL_FORK
+        CHAIN.SMART_CONTRACT_REMOVAL_FORK = 0
+        try:
+            with mock.patch(
+                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
+                return_value={},
+            ):
+                with self.assertRaises(Exception) as ctx:
+                    await block.verify()
+        finally:
+            CHAIN.SMART_CONTRACT_REMOVAL_FORK = orig_fork
+            block.transactions = orig_txns
+
+        self.assertIn("smart contract transactions are not allowed", str(ctx.exception))
+
+    @mock.patch(
+        "yadacoin.core.block.Block.generate_hash_from_header",
+        new=mock_generate_hash_from_header,
+    )
+    @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
+    async def test_verify_contract_generated_rejected_post_fork(self):
+        """SMART_CONTRACT_REMOVAL_FORK: contract_generated=True txn is rejected."""
+        import asyncio as _asyncio
+
+        from yadacoin.core.chain import CHAIN
+
+        block = await Block.from_dict(copy.deepcopy(masternode_fee_block))
+
+        cg_txn = Mock()
+        cg_txn.version = 5
+        cg_txn.coinbase = False
+        cg_txn.transaction_signature = "cg_post_fork_sig"
+        cg_txn.inputs = []
+        cg_txn.outputs = []
+        cg_txn.fee = 0.0
+        cg_txn.masternode_fee = 0.0
+        cg_txn.relationship = "x"
+        cg_txn.contract_generated = _asyncio.coroutine(lambda: True)()
+        cg_txn.time = block.time
+        cg_txn.hash = "cgc" * 21
+
+        orig_txns = block.transactions[:]
+        block.transactions.insert(0, cg_txn)
+
+        orig_fork = CHAIN.SMART_CONTRACT_REMOVAL_FORK
+        CHAIN.SMART_CONTRACT_REMOVAL_FORK = 0
+        try:
+            with mock.patch(
+                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
+                return_value={},
+            ):
+                with self.assertRaises(Exception) as ctx:
+                    await block.verify()
+        finally:
+            CHAIN.SMART_CONTRACT_REMOVAL_FORK = orig_fork
+            block.transactions = orig_txns
+
+        self.assertIn(
+            "contract-generated transactions are not allowed", str(ctx.exception)
+        )
+
+    async def test_generate_filters_smart_contract_txns_post_fork(self):
+        """SMART_CONTRACT_REMOVAL_FORK: Block.generate skips SC and contract_generated txns."""
+        import asyncio as _asyncio
+
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.transaction import Transaction
+
+        sc_txn = Mock(spec=Transaction)
+        sc_txn.relationship = {"smart_contract": {"foo": "bar"}}
+        sc_txn.contract_generated = _asyncio.coroutine(lambda: False)()
+        sc_txn.coinbase = False
+        sc_txn.transaction_signature = "sc_gen_sig"
+        sc_txn.inputs = []
+        sc_txn.outputs = []
+
+        cg_txn = Mock(spec=Transaction)
+        cg_txn.relationship = "x"
+        cg_txn.contract_generated = _asyncio.coroutine(lambda: True)()
+        cg_txn.coinbase = False
+        cg_txn.transaction_signature = "cg_gen_sig"
+        cg_txn.inputs = []
+        cg_txn.outputs = []
+
+        regular_txn = Mock(spec=Transaction)
+        regular_txn.relationship = "y"
+        regular_txn.contract_generated = _asyncio.coroutine(lambda: False)()
+        regular_txn.coinbase = False
+        regular_txn.transaction_signature = "reg_sig"
+        regular_txn.inputs = []
+        regular_txn.outputs = []
+
+        captured = {"regular": None, "generated": None}
+
+        async def fake_validate(
+            txns, transaction_objs, used_sigs, used_inputs, idx, xtime
+        ):
+            if captured["regular"] is None:
+                captured["regular"] = list(txns)
+            else:
+                captured["generated"] = list(txns)
+
+        with mock.patch(
+            "yadacoin.core.transaction.Transaction.ensure_instance",
+            side_effect=lambda x: x,
+        ), mock.patch.object(
+            Block, "validate_transactions", new=fake_validate
+        ), mock.patch.object(
+            Block, "init_async", new=AsyncMock(return_value=Block.__new__(Block))
+        ), mock.patch(
+            "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
+            return_value={},
+        ):
+            try:
+                await Block.generate(
+                    transactions=[sc_txn, cg_txn, regular_txn],
+                    public_key=yadacoin.core.config.CONFIG.public_key,
+                    private_key=yadacoin.core.config.CONFIG.private_key,
+                    index=CHAIN.SMART_CONTRACT_REMOVAL_FORK,
+                    force_time=int(time_module.time()),
+                    prev_hash="0" * 64,
+                )
+            except Exception:
+                # Downstream init may fail; we only care about the filtered lists.
+                pass
+
+        # SC and contract_generated txns must be excluded; only regular kept.
+        self.assertEqual(captured["regular"], [regular_txn])
+        self.assertEqual(captured["generated"], [])
+
 
 class TestBlockPureMethods(unittest.TestCase):
     """Tests for pure static methods in Block that don't require async/DB."""

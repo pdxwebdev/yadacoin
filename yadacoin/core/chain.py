@@ -98,6 +98,7 @@ class CHAIN(object):
     DYNAMIC_NODES_FORK = 591000
     DYNAMIC_NODES_COLLATERAL_AMOUNT = 5000
     CHECK_KEL_OUTPUT_ROUTING_FORK = 591000
+    SMART_CONTRACT_REMOVAL_FORK = 593600
 
     @classmethod
     def target_block_time(cls, network: str):

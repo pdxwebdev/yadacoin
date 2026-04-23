@@ -686,7 +686,18 @@ class Transaction(object):
 
         if self.coinbase:
             return
-        if self.miner_signature and await self.contract_generated:
+        # Only skip input/output balance validation for contract-generated
+        # transactions before the smart-contract removal fork.  After that
+        # fork, contract_generated transactions are rejected at the block
+        # level, so reaching this branch with a post-fork index would
+        # indicate a logic error.  Keeping the guard prevents the bypass
+        # from being abused after smart contracts have been disabled.
+        current_index = self.config.LatestBlock.block.index
+        if (
+            self.miner_signature
+            and await self.contract_generated
+            and current_index < CHAIN.SMART_CONTRACT_REMOVAL_FORK
+        ):
             return
 
         total_output = 0

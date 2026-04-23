@@ -350,6 +350,18 @@ class NodeRPC(BaseRPC):
         """
         txn = item.transaction
 
+        # Reject any externally-submitted transaction claiming to be a coinbase.
+        # Coinbase transactions are generated exclusively by the block builder and
+        # must never enter the mempool.  Allowing them in would let a malicious
+        # peer bypass Transaction.verify()'s input/output balance check (which
+        # returns early for coinbase) and pollute the mempool, causing miners to
+        # build invalid blocks (coinbase_count != 1 failure in Block.verify()).
+        if txn.coinbase:
+            self.config.app_log.warning(
+                f"Rejecting coinbase transaction submitted to mempool: {txn.transaction_signature}"
+            )
+            return
+
         check_max_inputs = False
         if self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
             check_max_inputs = True

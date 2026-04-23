@@ -748,7 +748,9 @@ class TestGetPendingTransactions(AsyncTestCase):
         from yadacoin.core.transaction import Transaction
 
         pool = _mk_pool()
-        pool.config.LatestBlock.block.index = 10**9  # past all forks
+        pool.config.LatestBlock.block.index = (
+            593000  # past prior forks, pre-removal fork
+        )
         sc_txn1 = MagicMock(spec=Transaction)
         sc_txn1.relationship = MagicMock()
         sc_txn1.relationship.identity.wif = "wif1"
@@ -794,7 +796,7 @@ class TestGetPendingTransactions(AsyncTestCase):
         from yadacoin.core.transaction import Transaction
 
         pool = _mk_pool()
-        pool.config.LatestBlock.block.index = 10**9
+        pool.config.LatestBlock.block.index = 593000
 
         rtxn = MagicMock(spec=Transaction)
         rtxn.private = True
@@ -955,6 +957,48 @@ class TestGetPendingTransactions(AsyncTestCase):
         ):
             r = await pool.get_pending_transactions()
         self.assertEqual(r, ["payout"])
+
+    async def test_smart_contracts_disabled_post_fork_skips_assembly(self):
+        """SMART_CONTRACT_REMOVAL_FORK: post-fork, mempool assembly skips SC queries entirely."""
+        from yadacoin.core.transaction import Transaction
+
+        pool = _mk_pool()
+        pool.config.LatestBlock.block.index = (
+            10**9
+        )  # past SMART_CONTRACT_REMOVAL_FORK
+
+        rtxn = MagicMock(spec=Transaction)
+        rtxn.private = False
+        rtxn.requested_rid = "rid1"
+        rtxn.relationship = "x"
+        rtxn.transaction_signature = "rs"
+        rtxn.inputs = []
+        rtxn.public_key = "pk"
+        rtxn.spent_in_txn = None
+        rtxn.input_txn = None
+
+        # Only one find() call expected (regular txns); SC find must not be called.
+        pool.mongo.async_db.miner_transactions.find = MagicMock(
+            return_value=_AsyncIterCursor([{"d": 1}])
+        )
+        pool.verify_pending_transaction = AsyncMock(return_value=rtxn)
+        sc_mock = AsyncMock()
+        exp_mock = AsyncMock()
+        with patch(
+            "yadacoin.core.miningpool.Transaction.from_dict", return_value=rtxn
+        ), patch(
+            "yadacoin.core.miningpool.TU.get_current_smart_contract_txns",
+            new=sc_mock,
+        ), patch(
+            "yadacoin.core.miningpool.TU.get_expired_smart_contract_txns",
+            new=exp_mock,
+        ):
+            r = await pool.get_pending_transactions()
+        self.assertEqual(r, [rtxn])
+        sc_mock.assert_not_awaited()
+        exp_mock.assert_not_awaited()
+        # mongo.find called exactly once (regular query), SC query skipped
+        self.assertEqual(pool.mongo.async_db.miner_transactions.find.call_count, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -1257,7 +1301,9 @@ class TestRemainingBranches(AsyncTestCase):
         from yadacoin.core.transaction import Transaction
 
         pool = _mk_pool()
-        pool.config.LatestBlock.block.index = 10**9  # past fork
+        pool.config.LatestBlock.block.index = (
+            593000  # past same-block-spending fork, pre-removal fork
+        )
         # parent txn (sig "p") is spent by child txn that has input.id="p"
         parent = MagicMock(spec=Transaction)
         parent.transaction_signature = "p"

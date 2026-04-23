@@ -223,11 +223,20 @@ class Block(object):
         used_inputs = {}
         regular_txns = []
         generated_txns = []
+        smart_contracts_disabled = index >= CHAIN.SMART_CONTRACT_REMOVAL_FORK
         for x in transactions:
             x = Transaction.ensure_instance(x)
             if await x.contract_generated:
+                if smart_contracts_disabled:
+                    continue
                 generated_txns.append(x)
             else:
+                if (
+                    smart_contracts_disabled
+                    and isinstance(x.relationship, dict)
+                    and "smart_contract" in x.relationship
+                ):
+                    continue
                 regular_txns.append(x)
 
         await Block.validate_transactions(
@@ -894,6 +903,19 @@ class Block(object):
                 raise Exception(
                     "block contains transaction with version too old for this height"
                 )
+
+            if self.index >= CHAIN.SMART_CONTRACT_REMOVAL_FORK:
+                if (
+                    isinstance(txn.relationship, dict)
+                    and "smart_contract" in txn.relationship
+                ):
+                    raise Exception(
+                        "smart contract transactions are not allowed after SMART_CONTRACT_REMOVAL_FORK"
+                    )
+                if await txn.contract_generated:
+                    raise Exception(
+                        "contract-generated transactions are not allowed after SMART_CONTRACT_REMOVAL_FORK"
+                    )
 
             if int(self.index) > CHAIN.CHECK_TIME_FROM and (
                 int(txn.time) > int(self.time) + CHAIN.TIME_TOLERANCE
