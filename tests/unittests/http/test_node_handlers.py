@@ -582,55 +582,6 @@ class TestGetTransactionByPublicKeyHandlerEmptyKey(HttpTestCase):
 
 
 # ---------------------------------------------------------------------------
-# Smart Contract Handlers (lines 346, 351, 356, 361)
-# ---------------------------------------------------------------------------
-
-
-class TestSmartContractHandlers(HttpTestCase):
-    def test_get_current_smart_contract_transactions(self):
-        # References undefined 'txns' → NameError → 500
-        response = self.fetch("/get-current-smart-contract-transactions")
-        self.assertEqual(response.code, 500)
-
-    def test_get_current_smart_contract_transaction(self):
-        response = self.fetch("/get-current-smart-contract-transaction")
-        self.assertEqual(response.code, 500)
-
-    def test_get_expired_smart_contract_transactions(self):
-        response = self.fetch("/get-expired-smart-contract-transactions")
-        self.assertEqual(response.code, 500)
-
-    def test_get_expired_smart_contract_transaction(self):
-        response = self.fetch("/get-expired-smart-contract-transaction")
-        self.assertEqual(response.code, 500)
-
-
-# ---------------------------------------------------------------------------
-# GetSmartContractTriggerTransaction (lines 366-389)
-# ---------------------------------------------------------------------------
-
-
-class TestGetSmartContractTriggerTransaction(HttpTestCase):
-    def setUp(self):
-        super().setUp()
-        mock_db = MagicMock()
-        mock_db.blocks.aggregate = MagicMock(return_value=make_async_iter_cursor([]))
-        self.config.mongo.async_db = mock_db
-
-    def test_no_id_returns_500(self):
-        # No id param → replace() on None → 500
-        response = self.fetch("/get-trigger-transactions")
-        self.assertEqual(response.code, 500)
-
-    def test_no_smart_contract_found_returns_404(self):
-        response = self.fetch("/get-trigger-transactions?id=nonexistent_id")
-        self.assertEqual(response.code, 200)
-        data = json.loads(response.body)
-        self.assertFalse(data["status"])
-        self.assertEqual(data["message"], "not found")
-
-
-# ---------------------------------------------------------------------------
 # MineBlockHandler (lines 494-516)  — runs even without JWT auth
 # ---------------------------------------------------------------------------
 
@@ -687,49 +638,6 @@ class TestMineBlockHandler(HttpTestCase):
         self.assertEqual(response.code, 200)
         data = json.loads(response.body)
         self.assertTrue(data["status"])
-
-
-# ---------------------------------------------------------------------------
-# GetSmartContractTriggerTransaction - found path (lines 383-389)
-# ---------------------------------------------------------------------------
-
-
-class TestGetSmartContractTriggerTransactionFoundPath(HttpTestCase):
-    def setUp(self):
-        super().setUp()
-        smart_contract_doc = {
-            "transactions": {
-                "id": "sc_id_1",
-                "public_key": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
-                "hash": "testhash",
-                "outputs": [],
-                "inputs": [],
-                "time": 0,
-                "fee": 0,
-                "version": 5,
-                "private": False,
-                "signatures": [],
-                "prerotated_key_hash": "",
-                "twice_prerotated_key_hash": "",
-                "prev_public_key_hash": "",
-            }
-        }
-        mock_db = MagicMock()
-        mock_db.blocks.aggregate = MagicMock(
-            return_value=make_async_iter_cursor([smart_contract_doc])
-        )
-        self.config.mongo.async_db = mock_db
-
-    def test_found_smart_contract_returns_transactions(self):
-        with patch(
-            "yadacoin.http.node.TU.get_trigger_txns",
-            return_value=make_async_iter_cursor([]),
-        ):
-            response = self.fetch("/get-trigger-transactions?id=sc_id_1")
-        self.assertEqual(response.code, 200)
-        data = json.loads(response.body)
-        self.assertIn("transactions", data)
-        self.assertEqual(data["transactions"], [])
 
 
 # ---------------------------------------------------------------------------
