@@ -1038,6 +1038,7 @@ class TestVerifyPendingTransaction(AsyncTestCase):
         txn.transaction_signature = "dup"
         txn.verify = AsyncMock()
         txn.inputs = []
+        txn.coinbase = False
         r = await pool.verify_pending_transaction(txn, ["dup"])
         self.assertIsNone(r)
 
@@ -1055,6 +1056,7 @@ class TestVerifyPendingTransaction(AsyncTestCase):
         txn.inputs = [MagicMock(id="i1")]
         txn.public_key = "pk"
         txn.verify = AsyncMock()
+        txn.coinbase = False
         txn.to_dict = MagicMock(return_value={})
         r = await pool.verify_pending_transaction(txn, [])
         self.assertIsNone(r)
@@ -1073,6 +1075,7 @@ class TestVerifyPendingTransaction(AsyncTestCase):
         txn.inputs = [MagicMock(id="i1"), MagicMock(id="i1")]
         txn.public_key = "pk"
         txn.verify = AsyncMock()
+        txn.coinbase = False
         txn.to_dict = MagicMock(return_value={})
         r = await pool.verify_pending_transaction(txn, [])
         self.assertIsNone(r)
@@ -1088,8 +1091,26 @@ class TestVerifyPendingTransaction(AsyncTestCase):
         txn.inputs = []
         txn.public_key = "pk"
         txn.verify = AsyncMock()
+        txn.coinbase = False
         r = await pool.verify_pending_transaction(txn, [])
         self.assertIs(r, txn)
+
+    async def test_coinbase_txn_rejected(self):
+        """Coinbase transactions must never be accepted into the mempool."""
+        from yadacoin.core.transaction import Transaction
+
+        pool = _mk_pool()
+        pool.config.LatestBlock.block.index = 0
+        txn = MagicMock(spec=Transaction)
+        txn.version = 999
+        txn.transaction_signature = "cb"
+        txn.inputs = []
+        txn.public_key = "pk"
+        txn.coinbase = True
+        txn.verify = AsyncMock()
+        r = await pool.verify_pending_transaction(txn, [])
+        self.assertIsNone(r)
+        txn.verify.assert_not_awaited()
 
     async def test_kel_transient_exception(self):
         from yadacoin.core.keyeventlog import KELExceptionPredecessorNotYetInMempool
@@ -1102,6 +1123,7 @@ class TestVerifyPendingTransaction(AsyncTestCase):
         txn.transaction_signature = "s"
         txn.inputs = []
         txn.public_key = "pk"
+        txn.coinbase = False
         txn.verify = AsyncMock(
             side_effect=KELExceptionPredecessorNotYetInMempool("nope")
         )

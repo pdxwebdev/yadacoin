@@ -692,7 +692,11 @@ class Transaction(object):
         # level, so reaching this branch with a post-fork index would
         # indicate a logic error.  Keeping the guard prevents the bypass
         # from being abused after smart contracts have been disabled.
-        current_index = self.config.LatestBlock.block.index
+        if block is not None:
+            current_index = block.index
+        else:
+            latest = getattr(self.config, "LatestBlock", None)
+            current_index = latest.block.index if latest and latest.block else 0
         if (
             self.miner_signature
             and await self.contract_generated
