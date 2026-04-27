@@ -575,6 +575,10 @@ class Block(object):
     async def validate_transactions(
         txns, transaction_objs, used_sigs, used_inputs, index, xtime
     ):
+        # SHOULD ONLY EVER BE USED FOR BLOCK GENERATION,
+        # NEVER FOR BLOCK VALIDATION
+        # (since mempool state is not relevant for validation and
+        # can be manipulated by attackers to cause valid transactions to be rejected)
         config = Config()
 
         if index >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK:
@@ -613,6 +617,7 @@ class Block(object):
                     check_kel=check_kel,
                     check_dynamic_nodes=check_dynamic_nodes,
                     mempool=True,
+                    batch_txns=txns,
                 )
                 for output in transaction_obj.outputs:
                     if not config.address_is_valid(output.to):

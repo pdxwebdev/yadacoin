@@ -668,6 +668,7 @@ class MiningPool(object):
                 check_kel=check_kel,
                 check_dynamic_nodes=check_dynamic_nodes,
                 mempool=True,
+                batch_txns=transactions,
             )
 
             if transaction_obj.transaction_signature in used_sigs:

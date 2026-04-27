@@ -19,11 +19,11 @@ import tornado
 from tornado import testing
 from tornado.web import Application
 
+from plugins.keyrotation.handlers import KEY_ROTATION_HANDLERS
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo
 from yadacoin.http.keyeventlog import KEY_EVENT_LOG_HANDLERS
-from yadacoin.http.keyrotation import KEY_ROTATION_HANDLERS
 
 
 def make_async_iter_cursor(rows=None):

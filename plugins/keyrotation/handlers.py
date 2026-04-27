@@ -30,6 +30,7 @@ import base64
 import hashlib
 import hmac as _hmac
 import json
+import os
 import struct
 import time
 
@@ -88,6 +89,9 @@ def derive_secure_path(
 
 class KeyRotationHandler(BaseHandler):
     """GET /key-rotation — serve the client-side key-rotation UI."""
+
+    def get_template_path(self):
+        return os.path.join(os.path.dirname(__file__), "templates")
 
     async def get(self):
         self.render("key_rotation.html")
@@ -208,7 +212,6 @@ class KeyRotationSpentHandler(BaseHandler):
         return self.render_as_json({"spent": False, "source": None, "txid": ""})
 
 
-@jwtauthwallet
 class DerivedChildKeyHandler(BaseHandler):
     """
     POST /key-rotation/derived-child-key
@@ -271,6 +274,7 @@ class DerivedChildKeyHandler(BaseHandler):
         public_key = body.get("public_key", "").strip()
         second_factor = body.get("second_factor", "")
         signature = body.get("signature", "").strip()
+        relationship = body.get("relationship", "") or ""
         verify_signature = False
 
         if not public_key or not second_factor or (not signature and verify_signature):
@@ -483,6 +487,12 @@ class DerivedChildKeyHandler(BaseHandler):
         # the next signer, i.e. the public_key_hash of latest KEL entry.
         prev_public_key_hash = latest.public_key_hash
 
+        relationship_hash = (
+            hashlib.sha256(relationship.encode("utf-8")).digest().hex()
+            if relationship
+            else ""
+        )
+
         txn = Transaction(
             txn_time=int(time.time()),
             public_key=public_key,
@@ -495,8 +505,8 @@ class DerivedChildKeyHandler(BaseHandler):
             twice_prerotated_key_hash=grandchild_address,
             public_key_hash=address,
             prev_public_key_hash=prev_public_key_hash,
-            relationship="",
-            relationship_hash="",
+            relationship=relationship,
+            relationship_hash=relationship_hash,
             rid="",
             dh_public_key="",
         )
@@ -556,6 +566,8 @@ class DerivedChildKeyHandler(BaseHandler):
                 "public_key": public_key,
                 "prerotated_public_key": child_pub_hex,
                 "prerotated_address": child_address,
+                "prerotated_private_key": child["private_key"].hex(),
+                "prerotated_chain_code": child["chain_code"].hex(),
                 "twice_prerotated_public_key": grandchild_pub_hex,
                 "twice_prerotated_address": grandchild_address,
                 "prev_private_key": derived["private_key"].hex(),
@@ -566,7 +578,6 @@ class DerivedChildKeyHandler(BaseHandler):
         )
 
 
-@jwtauthwallet
 class InitDerivedChildKeyHandler(BaseHandler):
     """
     POST /key-rotation/init-derived-child-key
@@ -626,10 +637,37 @@ class InitDerivedChildKeyHandler(BaseHandler):
             )
 
         second_factor = body.get("second_factor", "")
+        private_key = body.get("private_key", "").strip()
         if not second_factor:
             self.set_status(400)
             return self.render_as_json(
                 {"status": False, "message": "second_factor is required"}
+            )
+
+        # ------------------------------------------------------------------ #
+        # 1b. Reject immediately if admin_kel is already configured
+        # ------------------------------------------------------------------ #
+        admin_kel = getattr(self.config, "admin_kel", None)
+        if admin_kel:
+            self.set_status(409)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": (
+                        f"admin_kel is already configured ({admin_kel}). "
+                        "Remove it from config.json to re-initialize."
+                    ),
+                }
+            )
+
+        # ------------------------------------------------------------------ #
+        # 1c. Authenticate: private_key must match the node's configured key
+        # ------------------------------------------------------------------ #
+        node_private_key = getattr(self.config, "private_key", "") or ""
+        if not private_key or private_key != node_private_key:
+            self.set_status(401)
+            return self.render_as_json(
+                {"status": False, "message": "invalid private_key"}
             )
 
         # ------------------------------------------------------------------ #
@@ -682,21 +720,8 @@ class InitDerivedChildKeyHandler(BaseHandler):
         twice_address = str(P2PKHBitcoinAddress.from_pubkey(twice_pub_bytes))
 
         # ------------------------------------------------------------------ #
-        # 4. Reject if admin_kel is already configured or a KEL already exists
+        # 4. Reject if a KEL already exists for the signing key
         # ------------------------------------------------------------------ #
-        admin_kel = getattr(self.config, "admin_kel", None)
-        if admin_kel:
-            self.set_status(409)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": (
-                        f"admin_kel is already configured ({admin_kel}). "
-                        "Remove it from config.json to re-initialize."
-                    ),
-                }
-            )
-
         try:
             existing_kel = await KeyEventLog.build_from_public_key(signing_pub_hex)
         except Exception:
@@ -834,20 +859,15 @@ class KelUnlockHandler(BaseHandler):
     - ``private_key`` (hex) — the current active signing private key
     - ``second_factor`` (str) — the secret factor used during init/rotation
 
-    On success issues the same ES256 JWT that ``/unlock`` issues.
+    On success performs a KEL rotation and returns the new key material.
 
     Body (JSON)
     -----------
     private_key   : str  (hex, 64 chars)
     second_factor : str
-    expires       : int  (optional, seconds, default 23040)
     """
 
     async def post(self):
-        import datetime as _dt
-
-        import jwt as _jwt
-
         admin_kel = getattr(self.config, "admin_kel", None)
         if not admin_kel:
             self.set_status(403)
@@ -873,8 +893,6 @@ class KelUnlockHandler(BaseHandler):
                     "message": "private_key and second_factor are required",
                 }
             )
-
-        expires = int(body.get("expires", 23040))
 
         _AUTH_FAIL = {
             "status": False,
@@ -1156,26 +1174,14 @@ class KelUnlockHandler(BaseHandler):
             upsert=True,
         )
 
-        # ------------------------------------------------------------------ #
-        # 5. Issue JWT
-        # ------------------------------------------------------------------ #
-        payload = {
-            "timestamp": time.time(),
-            "key_or_wif": "true",
-            "exp": _dt.datetime.utcnow() + _dt.timedelta(seconds=expires),
-        }
-        token = _jwt.encode(payload, self.config.jwt_secret_key, algorithm="ES256")
-        await self.config.mongo.async_db.config.update_one(
-            {"key": "jwt"}, {"$set": {"key": "jwt", "value": payload}}, upsert=True
-        )
         return self.render_as_json(
             {
                 "status": True,
-                "token": token,
                 "rotation": {
                     "new_address": prerot_address,
                     "new_public_key": prerot_pub_hex,
                     "new_private_key": rederived["private_key"].hex(),
+                    "new_chain_code": rederived["chain_code"].hex(),
                     "transaction_id": rotation_txn.transaction_signature,
                 },
             }
@@ -1184,6 +1190,9 @@ class KelUnlockHandler(BaseHandler):
 
 class DerivedKeysPageHandler(BaseHandler):
     """GET /key-rotation/derived-keys — serve the derived-keys management UI."""
+
+    def get_template_path(self):
+        return os.path.join(os.path.dirname(__file__), "templates")
 
     async def get(self):
         self.render("derived_keys.html")
@@ -1366,11 +1375,13 @@ class KelFailedAttemptsHandler(BaseHandler):
 class DerivedKeyDetailPageHandler(BaseHandler):
     """GET /key-rotation/derived-keys/detail — serve the standalone detail page."""
 
+    def get_template_path(self):
+        return os.path.join(os.path.dirname(__file__), "templates")
+
     async def get(self):
         self.render("derived_key_detail.html")
 
 
-@jwtauthwallet
 class DerivedKeyRecordHandler(BaseHandler):
     """GET /key-rotation/derived-keys/record?address= — return a single derived_keys record."""
 
@@ -1390,7 +1401,7 @@ class DerivedKeyRecordHandler(BaseHandler):
         return self.render_as_json({"record": record})
 
 
-KEY_ROTATION_HANDLERS = [
+HANDLERS = KEY_ROTATION_HANDLERS = [
     (
         r"/key-rotation/derived-keys/history",
         DerivedKeyHistoryHandler,
