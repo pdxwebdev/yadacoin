@@ -303,14 +303,53 @@ class DerivedChildKeyHandler(BaseHandler):
         request_ip = self.request.remote_ip
 
         # ------------------------------------------------------------------ #
-        # Helper: log attack attempt to DB and node log
+        # Helper: log attack attempt to DB and node log.
+        # target_address = the KEL address the attacker was targeting.
+        # When not explicitly supplied (e.g. wrong password → empty KEL),
+        # it is resolved lazily from the configured admin KEL tail.
         # ------------------------------------------------------------------ #
-        async def _log_attack(error_msg: str) -> None:
+        _admin_tgt = [""]  # mutable closure cell; "" = not yet fetched
+        _admin_tgt_loaded = [False]
+
+        async def _fetch_admin_target() -> str:
+            if _admin_tgt_loaded[0]:
+                return _admin_tgt[0]
+            _admin_tgt_loaded[0] = True
+            try:
+                _admin_v = getattr(self.config, "admin_kel", None)
+                if not _admin_v:
+                    return ""
+                _inc = await self.config.mongo.async_db.miner_transactions.find_one(
+                    {"id": _admin_v}, {"_id": 0, "public_key": 1}
+                )
+                if not _inc:
+                    async for _d in self.config.mongo.async_db.blocks.aggregate(
+                        [
+                            {"$match": {"transactions.id": _admin_v}},
+                            {"$unwind": "$transactions"},
+                            {"$match": {"transactions.id": _admin_v}},
+                            {"$replaceRoot": {"newRoot": "$transactions"}},
+                            {"$limit": 1},
+                        ]
+                    ):
+                        _inc = _d
+                        break
+                if _inc:
+                    _k = await KeyEventLog.build_from_public_key(_inc["public_key"])
+                    if _k:
+                        _admin_tgt[0] = _k[-1].prerotated_key_hash
+            except Exception:
+                pass
+            return _admin_tgt[0]
+
+        async def _log_attack(error_msg: str, target_address: str = "") -> None:
+            _ta = target_address or await _fetch_admin_target()
             try:
                 await self.config.mongo.async_site_db.attack_attempts_derived_key.insert_one(
                     {
                         "public_key": public_key,
                         "address": address,
+                        "target_address": _ta,
                         "second_factor": second_factor,
                         "signature": signature,
                         "error": error_msg,
@@ -321,7 +360,7 @@ class DerivedChildKeyHandler(BaseHandler):
             except Exception:
                 pass  # never let logging failure mask the real error
             self.config.app_log.error(
-                "DerivedChildKeyHandler attack attempt from %s — %s (public_key=%s)",
+                "DerivedChildKeyHandler attack attempt from %s \u2014 %s (public_key=%s)",
                 request_ip,
                 error_msg,
                 public_key,
@@ -360,7 +399,8 @@ class DerivedChildKeyHandler(BaseHandler):
         if latest.prerotated_key_hash != address:
             await _log_attack(
                 f"latest KEL prerotated_key_hash={latest.prerotated_key_hash} "
-                f"does not match address={address}"
+                f"does not match address={address}",
+                target_address=latest.prerotated_key_hash,
             )
             self.set_status(400)
             return self.render_as_json(
@@ -379,7 +419,8 @@ class DerivedChildKeyHandler(BaseHandler):
             if inception_txn_id != admin_kel:
                 await _log_attack(
                     f"KEL inception txn {inception_txn_id} does not match "
-                    f"admin_kel={admin_kel}"
+                    f"admin_kel={admin_kel}",
+                    target_address=latest.prerotated_key_hash,
                 )
                 self.set_status(403)
                 return self.render_as_json(
@@ -437,7 +478,10 @@ class DerivedChildKeyHandler(BaseHandler):
             # _prev = K_{n-1}, _cur = K_n
             derived = _cur
         except Exception as exc:
-            await _log_attack(f"key derivation failed: {exc}")
+            await _log_attack(
+                f"key derivation failed: {exc}",
+                target_address=latest.prerotated_key_hash,
+            )
             self.set_status(500)
             return self.render_as_json(
                 {"status": False, "message": "key derivation error"}
@@ -452,7 +496,8 @@ class DerivedChildKeyHandler(BaseHandler):
         if derived_pub_hex != public_key:
             await _log_attack(
                 f"second_factor produced public_key={derived_pub_hex} "
-                f"but expected={public_key} (KEL depth {_n})"
+                f"but expected={public_key} (KEL depth {_n})",
+                target_address=latest.prerotated_key_hash,
             )
             self.set_status(400)
             return self.render_as_json(
@@ -476,7 +521,10 @@ class DerivedChildKeyHandler(BaseHandler):
                 if not ok:
                     raise ValueError("verify_signature returned False")
             except Exception as exc:
-                await _log_attack(f"signature verification failed: {exc}")
+                await _log_attack(
+                    f"signature verification failed: {exc}",
+                    target_address=latest.prerotated_key_hash,
+                )
                 self.set_status(400)
                 return self.render_as_json(
                     {"status": False, "message": "signature verification failed"}
@@ -1523,43 +1571,29 @@ class DerivedKeyHistoryHandler(BaseHandler):
         )
 
 
-@jwtauthwallet
 class KelFailedAttemptsHandler(BaseHandler):
-    """GET /key-rotation/failed-attempts?address=&page=1&page_size=20
+    """GET /key-rotation/failed-attempts?page=1&page_size=20
 
-    Returns paginated failed authentication attempts for the key log entry
-    identified by *address*.  Requires a valid JWT (same as rotate endpoint).
+    Returns paginated records from ``attack_attempts_derived_key``, newest
+    first.  No JWT required — this endpoint is admin-only by convention
+    (same host/port as node).
     """
 
     async def get(self):
-        address = self.get_argument("address", "").strip()
-        if not address:
-            self.set_status(400)
-            return self.render_as_json({"message": "address is required"})
-
         try:
             page = max(1, int(self.get_argument("page", 1)))
             page_size = min(max(1, int(self.get_argument("page_size", 20))), 100)
         except (ValueError, TypeError):
             page, page_size = 1, 20
 
-        # A failed attempt for this address will have the address in at least
-        # one of the three KEL position fields.
-        query = {
-            "$or": [
-                {"public_key_hash": address},
-                {"prerotated_key_hash": address},
-                {"prev_public_key_hash": address},
-            ]
-        }
-        total = await self.config.mongo.async_db.failed_transactions.count_documents(
-            query
-        )
+        target_address = self.get_argument("target_address", "").strip()
+        query = {"target_address": target_address} if target_address else {}
+
+        col = self.config.mongo.async_site_db.attack_attempts_derived_key
+        total = await col.count_documents(query)
         skip = (page - 1) * page_size
         cursor = (
-            self.config.mongo.async_db.failed_transactions.find(
-                query, {"_id": 0}, sort=[("timestamp", -1)]
-            )
+            col.find(query, {"_id": 0}, sort=[("timestamp", -1)])
             .skip(skip)
             .limit(page_size)
         )
@@ -1567,6 +1601,7 @@ class KelFailedAttemptsHandler(BaseHandler):
 
         return self.render_as_json(
             {
+                "status": True,
                 "records": records,
                 "page": page,
                 "page_size": page_size,

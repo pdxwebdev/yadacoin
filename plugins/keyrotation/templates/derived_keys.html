@@ -241,6 +241,12 @@
         box-shadow: 0 2px 8px
           rgba(102, 126, 234, 0.15);
       }
+      .key-item.selected {
+        border-color: #e53e3e;
+        background: #fff5f5;
+        box-shadow: 0 2px 8px
+          rgba(229, 62, 62, 0.15);
+      }
       .key-item .ki-addr {
         font-family: monospace;
         font-size: 13px;
@@ -488,6 +494,139 @@
           <button
             class="btn-secondary btn-sm"
             id="nextPage"
+            disabled
+          >
+            Next ›
+          </button>
+        </div>
+      </div>
+
+      <!-- Attack Attempts ─────────────────────────────────────────────── -->
+      <div
+        class="card"
+        id="attemptsCard"
+        style="display: none"
+      >
+        <div
+          style="
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+          "
+        >
+          <div style="flex: 1; min-width: 0">
+            <div
+              class="section-title"
+              style="
+                margin-bottom: 4px;
+                border: none;
+                color: #e53e3e;
+              "
+            >
+              ⚠ Attack Attempts
+            </div>
+            <div
+              id="attemptsAddrLabel"
+              style="
+                font-size: 11px;
+                font-family: monospace;
+                color: #555;
+                word-break: break-all;
+              "
+            ></div>
+          </div>
+          <div
+            style="
+              display: flex;
+              gap: 8px;
+              margin-left: 12px;
+              flex-shrink: 0;
+            "
+          >
+            <button
+              class="btn-secondary btn-sm"
+              id="attemptsRefreshBtn"
+            >
+              ↺ Refresh
+            </button>
+            <button
+              class="btn-secondary btn-sm"
+              id="attemptsCloseBtn"
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+        <div id="attemptsMsg" class="msg"></div>
+        <div
+          id="attemptsLoading"
+          style="
+            display: none;
+            font-size: 13px;
+            color: #667eea;
+          "
+        >
+          <span class="spinner"></span>Loading…
+        </div>
+        <table
+          id="attemptsTable"
+          style="
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            display: none;
+          "
+        >
+          <thead>
+            <tr
+              style="
+                background: #f7f7f7;
+                color: #555;
+                text-align: left;
+              "
+            >
+              <th style="padding: 6px 8px">
+                Time
+              </th>
+              <th style="padding: 6px 8px">IP</th>
+              <th style="padding: 6px 8px">
+                Address
+              </th>
+              <th style="padding: 6px 8px">
+                Error
+              </th>
+            </tr>
+          </thead>
+          <tbody id="attemptsBody"></tbody>
+        </table>
+        <div
+          class="empty-state"
+          id="attemptsEmpty"
+          style="display: none"
+        >
+          No attack attempts recorded.
+        </div>
+        <div
+          class="pagination"
+          id="attemptsPager"
+          style="display: none; margin-top: 12px"
+        >
+          <button
+            class="btn-secondary btn-sm"
+            id="attemptsPrev"
+            disabled
+          >
+            ‹ Prev
+          </button>
+          <span
+            class="page-info"
+            id="attemptsPageInfo"
+          ></span>
+          <button
+            class="btn-secondary btn-sm"
+            id="attemptsNext"
             disabled
           >
             Next ›
@@ -911,6 +1050,9 @@
               rec.source === "mempool"
                 ? `<span style="font-size:10px;color:#ed8936;margin-left:6px;">mempool</span>`
                 : `<span style="font-size:10px;color:#38a169;margin-left:6px;">on-chain</span>`;
+            li.style.cursor = "pointer";
+            li.title =
+              "Click to view attack attempts for this address";
             li.innerHTML = `
               <div class="ki-addr">#${rec.index} &nbsp;${rec.public_key_hash}${sourceBadge}</div>
               <div class="ki-meta" style="font-size:11px;color:#666;margin-top:4px;">
@@ -920,6 +1062,24 @@
                 ${flagBadge}
                 <div style="margin-top:4px;">${rec.time ? fmtTime(rec.time) : "–"}</div>
               </div>`;
+            li.addEventListener("click", () => {
+              document
+                .querySelectorAll(
+                  ".key-item.selected",
+                )
+                .forEach((el) =>
+                  el.classList.remove("selected"),
+                );
+              li.classList.add("selected");
+              li.scrollIntoView({
+                behavior: "smooth",
+                block: "nearest",
+              });
+              loadAttempts(
+                1,
+                rec.prerotated_key_hash,
+              );
+            });
             listEl.appendChild(li);
           });
 
@@ -954,6 +1114,173 @@
         .addEventListener("click", () =>
           loadList(listPage + 1),
         );
+
+      // ── Attack attempts ────────────────────────────────────────────────────────
+      const ATTEMPTS_SIZE = 20;
+      let attemptsPage = 1;
+      let attemptsAddress = "";
+
+      async function loadAttempts(
+        page = 1,
+        address = attemptsAddress,
+      ) {
+        attemptsPage = page;
+        attemptsAddress = address;
+        const card = document.getElementById(
+          "attemptsCard",
+        );
+        const loading = document.getElementById(
+          "attemptsLoading",
+        );
+        const tbody = document.getElementById(
+          "attemptsBody",
+        );
+        const table = document.getElementById(
+          "attemptsTable",
+        );
+        const emptyEl = document.getElementById(
+          "attemptsEmpty",
+        );
+        const pager = document.getElementById(
+          "attemptsPager",
+        );
+        const msgEl = document.getElementById(
+          "attemptsMsg",
+        );
+        const label = document.getElementById(
+          "attemptsAddrLabel",
+        );
+
+        card.style.display = "";
+        label.textContent = address
+          ? `Attacks targeting: ${address}`
+          : "(all addresses)";
+        loading.style.display = "block";
+        table.style.display = "none";
+        emptyEl.style.display = "none";
+        pager.style.display = "none";
+        msgEl.style.display = "none";
+        tbody.innerHTML = "";
+
+        const qs = address
+          ? `page=${page}&page_size=${ATTEMPTS_SIZE}&target_address=${encodeURIComponent(address)}`
+          : `page=${page}&page_size=${ATTEMPTS_SIZE}`;
+
+        try {
+          const r = await fetch(
+            `/key-rotation/failed-attempts?${qs}`,
+          );
+          const d = await r.json();
+          loading.style.display = "none";
+
+          if (!r.ok || !d.status) {
+            showMsg(
+              msgEl,
+              d.message ||
+                "Failed to load attempts.",
+              "error",
+            );
+            return;
+          }
+
+          if (
+            !d.records ||
+            d.records.length === 0
+          ) {
+            emptyEl.style.display = "block";
+            return;
+          }
+
+          table.style.display = "";
+          d.records.forEach((rec) => {
+            const tr =
+              document.createElement("tr");
+            tr.style.borderBottom =
+              "1px solid #f0f0f0";
+            const ts = rec.timestamp
+              ? fmtTime(rec.timestamp)
+              : "–";
+            const ip = rec.request_ip || "–";
+            const addr =
+              rec.address ||
+              rec.public_key?.slice(0, 20) +
+                "…" ||
+              "–";
+            const err = rec.error || "–";
+            tr.innerHTML = `
+              <td style="padding:5px 8px;white-space:nowrap">${ts}</td>
+              <td style="padding:5px 8px">${ip}</td>
+              <td style="padding:5px 8px;font-family:monospace;font-size:11px">${addr}</td>
+              <td style="padding:5px 8px;color:#b91c1c">${err}</td>`;
+            tbody.appendChild(tr);
+          });
+
+          if (d.pages > 1) {
+            pager.style.display = "flex";
+            document.getElementById(
+              "attemptsPageInfo",
+            ).textContent =
+              `Page ${d.page} of ${d.pages} (${d.total} total)`;
+            document.getElementById(
+              "attemptsPrev",
+            ).disabled = d.page <= 1;
+            document.getElementById(
+              "attemptsNext",
+            ).disabled = d.page >= d.pages;
+          } else {
+            document.getElementById(
+              "attemptsPageInfo",
+            ).textContent = `${d.total} total`;
+          }
+        } catch (e) {
+          loading.style.display = "none";
+          showMsg(
+            msgEl,
+            `Error: ${e.message}`,
+            "error",
+          );
+        }
+      }
+
+      document
+        .getElementById("attemptsRefreshBtn")
+        .addEventListener("click", () =>
+          loadAttempts(
+            attemptsPage,
+            attemptsAddress,
+          ),
+        );
+      document
+        .getElementById("attemptsPrev")
+        .addEventListener("click", () =>
+          loadAttempts(
+            attemptsPage - 1,
+            attemptsAddress,
+          ),
+        );
+      document
+        .getElementById("attemptsNext")
+        .addEventListener("click", () =>
+          loadAttempts(
+            attemptsPage + 1,
+            attemptsAddress,
+          ),
+        );
+      document
+        .getElementById("attemptsCloseBtn")
+        .addEventListener("click", () => {
+          document.getElementById(
+            "attemptsCard",
+          ).style.display = "none";
+          // deselect highlighted item
+          document
+            .querySelectorAll(
+              ".key-item.selected",
+            )
+            .forEach((el) =>
+              el.classList.remove("selected"),
+            );
+        });
 
       // ── Init ──────────────────────────────────────────────────────────────────
       detectKelMode();
