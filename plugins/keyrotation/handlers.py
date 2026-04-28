@@ -329,6 +329,9 @@ class DerivedChildKeyHandler(BaseHandler):
 
         # ------------------------------------------------------------------ #
         # 2. Build the key event log for this public key
+        #    Include mempool entries so that consecutive calls (second agent
+        #    prompt before the first is mined) correctly find the pre-commitment
+        #    made by the CONFIRMING txn that is still in the mempool.
         # ------------------------------------------------------------------ #
         try:
             kel = await KeyEventLog.build_from_public_key(public_key)
@@ -387,38 +390,52 @@ class DerivedChildKeyHandler(BaseHandler):
                 )
 
         # ------------------------------------------------------------------ #
-        # 4. Load parent (previous) material from the derived_keys collection
+        # 4+5. Re-derive the key chain from the node seed + second_factor.
+        #
+        #      Rather than storing/reading prev key material in derived_keys,
+        #      we walk the derivation chain from the BIP39 seed to depth n
+        #      (where n = len(on-chain KEL)) to reconstruct K_{n-1} (prev)
+        #      and K_n (current).  This makes the handler fully stateless —
+        #      no DB record needs to exist before the first call.
         # ------------------------------------------------------------------ #
-        record = await self.config.mongo.async_site_db.derived_keys.find_one(
-            {"prerotated_address": address}, {"_id": 0}
-        )
-        if not record:
-            self.set_status(404)
+        from bip32utils import BIP32Key
+        from mnemonic import Mnemonic
+
+        seed = getattr(self.config, "seed", "") or ""
+        if not seed:
+            self.set_status(400)
             return self.render_as_json(
                 {
                     "status": False,
-                    "message": (
-                        "no parent key material found for this address; "
-                        "the key must be registered in derived_keys first"
-                    ),
+                    "message": "seed not configured in config.json; cannot verify second_factor",
                 }
             )
 
         try:
-            prev_priv_bytes = bytes.fromhex(record["prev_private_key"])
-            prev_cc_bytes = bytes.fromhex(record["prev_chain_code"])
-        except (KeyError, ValueError):
+            _mn = Mnemonic("english")
+            _entropy = _mn.to_entropy(seed)
+            _bip32_root = BIP32Key.fromEntropy(_entropy)
+            _root_priv = _bip32_root.PrivateKey()
+            _root_cc = _bip32_root.ChainCode()
+        except Exception as exc:
             self.set_status(500)
             return self.render_as_json(
-                {"status": False, "message": "stored key material is malformed"}
+                {"status": False, "message": f"seed derivation failed: {exc}"}
             )
 
-        # ------------------------------------------------------------------ #
-        # 5. Re-derive the key from the parent material + second_factor
-        #    and verify it matches the submitted public_key
-        # ------------------------------------------------------------------ #
+        # Derive K0 from root, then walk n = len(kel) steps to reach K_n.
+        # K_{n-1} is the signing key; derive(K_{n-1}, sf) = K_n.
         try:
-            derived = derive_secure_path(prev_priv_bytes, prev_cc_bytes, second_factor)
+            _cur = derive_secure_path(_root_priv, _root_cc, second_factor)  # K0
+            _n = len(
+                kel
+            )  # KEL depth (on-chain + mempool); K_n must equal submitted public_key
+            for _i in range(_n):
+                _cur = derive_secure_path(
+                    _cur["private_key"], _cur["chain_code"], second_factor
+                )
+            # _prev = K_{n-1}, _cur = K_n
+            derived = _cur
         except Exception as exc:
             await _log_attack(f"key derivation failed: {exc}")
             self.set_status(500)
@@ -430,10 +447,12 @@ class DerivedChildKeyHandler(BaseHandler):
         derived_pub_bytes = derived_priv_obj.public_key.format(compressed=True)
         derived_pub_hex = derived_pub_bytes.hex()
 
+        # Verify the derived key matches what was submitted — wrong second_factor
+        # produces a completely different public key at this depth.
         if derived_pub_hex != public_key:
             await _log_attack(
                 f"second_factor produced public_key={derived_pub_hex} "
-                f"but expected={public_key}"
+                f"but expected={public_key} (KEL depth {_n})"
             )
             self.set_status(400)
             return self.render_as_json(
@@ -466,6 +485,24 @@ class DerivedChildKeyHandler(BaseHandler):
         # ------------------------------------------------------------------ #
         # 7. Derive prerotated and twice-prerotated keys, build and sign a
         #    rotation transaction, broadcast, then persist key material.
+        #
+        #    When `relationship` is non-empty the transaction is an UNCONFIRMED
+        #    key event.  The KEL protocol requires every UNCONFIRMED event to
+        #    have a paired CONFIRMING event in the same block; without it the
+        #    block builder rejects both transactions.  We therefore automatically
+        #    create and broadcast the CONFIRMING transaction (signed by the
+        #    prerotated key / child) alongside the UNCONFIRMED one.
+        #
+        #    Key chain used when relationship is set:
+        #      UNCONFIRMED  — signed by K_{n+1} (derived / `address`)
+        #                     prerotated=K_{n+2} (child), twice_prerotated=K_{n+3} (grandchild)
+        #      CONFIRMING   — signed by K_{n+2} (child)
+        #                     prerotated=K_{n+3} (grandchild), twice_prerotated=K_{n+4} (great-grandchild)
+        #
+        #    After both are mined, kel[-1].prerotated = K_{n+3} (grandchild_address).
+        #    The agent credential returned is K_{n+3}'s private key.
+        #    localStorage is updated to K_{n+2}'s material so the next call
+        #    correctly derives K_{n+3} as the next UNCONFIRMED signer.
         # ------------------------------------------------------------------ #
         child = derive_secure_path(
             derived["private_key"], derived["chain_code"], second_factor
@@ -540,40 +577,149 @@ class DerivedChildKeyHandler(BaseHandler):
                     f"DerivedChildKeyHandler broadcast error: {exc}"
                 )
 
-        await self.config.mongo.async_site_db.derived_keys.update_one(
-            {"address": address},
-            {
-                "$set": {
-                    "address": address,
-                    "public_key": public_key,
-                    "prerotated_public_key": child_pub_hex,
-                    "prerotated_address": child_address,
-                    "twice_prerotated_public_key": grandchild_pub_hex,
-                    "twice_prerotated_address": grandchild_address,
-                    "prev_private_key": derived["private_key"].hex(),
-                    "prev_chain_code": derived["chain_code"].hex(),
-                    "stored_at": time.time(),
-                    "transaction_id": txn.transaction_signature,
-                }
-            },
-            upsert=True,
+        # ------------------------------------------------------------------ #
+        # 7b. When this is an UNCONFIRMED event (relationship is set),
+        #     automatically build and broadcast the paired CONFIRMING txn.
+        #
+        #     CONFIRMING is signed by K_{n+2} (child) and advances the chain:
+        #       public_key_hash         = child_address       (K_{n+2})
+        #       prev_public_key_hash    = address             (K_{n+1})
+        #       prerotated_key_hash     = grandchild_address  (K_{n+3})
+        #       twice_prerotated_key_hash = great_grandchild  (K_{n+4})
+        #       outputs[0].to           = grandchild_address  (K_{n+3})
+        #       relationship            = ""
+        #
+        #     verify_unconfirmed_and_confirming links:
+        #       UNCONFIRMED.twice_prerotated (K_{n+3}) == CONFIRMING.prerotated (K_{n+3}) ✓
+        #       UNCONFIRMED.prerotated       (K_{n+2}) == CONFIRMING.public_key_hash (K_{n+2}) ✓
+        #       UNCONFIRMED.public_key_hash  (K_{n+1}) == CONFIRMING.prev_public_key_hash (K_{n+1}) ✓
+        # ------------------------------------------------------------------ #
+        confirming_txn = None
+        if relationship:
+            great_grandchild = derive_secure_path(
+                grandchild["private_key"], grandchild["chain_code"], second_factor
+            )
+            great_grandchild_priv_obj = _CoincurvePrivateKey(
+                great_grandchild["private_key"]
+            )
+            great_grandchild_pub_bytes = great_grandchild_priv_obj.public_key.format(
+                compressed=True
+            )
+            great_grandchild_address = str(
+                P2PKHBitcoinAddress.from_pubkey(great_grandchild_pub_bytes)
+            )
+
+            confirming_txn = Transaction(
+                txn_time=int(time.time()),
+                public_key=child_pub_hex,
+                outputs=[{"to": grandchild_address, "value": 0.0}],
+                inputs=[],
+                fee=self.ROTATION_FEE,
+                masternode_fee=0.0,
+                version=7,
+                prerotated_key_hash=grandchild_address,
+                twice_prerotated_key_hash=great_grandchild_address,
+                public_key_hash=child_address,
+                prev_public_key_hash=address,  # UNCONFIRMED's public_key_hash
+                relationship="",
+                relationship_hash="",
+                rid="",
+                dh_public_key="",
+            )
+
+            confirming_txn.hash = await confirming_txn.generate_hash()
+            confirming_txn.transaction_signature = (
+                TU.generate_signature_with_private_key(
+                    child["private_key"].hex(), confirming_txn.hash
+                )
+            )
+
+            await self.config.mongo.async_db.miner_transactions.replace_one(
+                {"id": confirming_txn.transaction_signature},
+                confirming_txn.to_dict(),
+                upsert=True,
+            )
+
+            if "node" in self.config.modes:
+                try:
+                    async for peer_stream in self.config.peer.get_sync_peers():
+                        await self.config.nodeShared.write_params(
+                            peer_stream,
+                            "newtxn",
+                            {"transaction": confirming_txn.to_dict()},
+                        )
+                        if peer_stream.peer.protocol_version > 1:
+                            self.config.nodeClient.retry_messages[
+                                (
+                                    peer_stream.peer.rid,
+                                    "newtxn",
+                                    confirming_txn.transaction_signature,
+                                )
+                            ] = {"transaction": confirming_txn.to_dict()}
+                except Exception as exc:
+                    self.config.app_log.warning(
+                        f"DerivedChildKeyHandler confirming broadcast error: {exc}"
+                    )
+
+        now = time.time()
+
+        # When an UNCONFIRMED+CONFIRMING pair was submitted:
+        #   prev_private_key      = child (K_{n+2}) — localStorage advances past the UNCONFIRMED signer
+        #   prerotated_private_key = grandchild (K_{n+3}) — the agent's one-time-use credential
+        # When only a CONFIRMING was submitted (no relationship):
+        #   prev_private_key      = derived (K_{n+1}) — unchanged behaviour
+        #   prerotated_private_key = child   (K_{n+2})
+        ls_priv = (
+            child["private_key"].hex()
+            if confirming_txn
+            else derived["private_key"].hex()
         )
+        ls_cc = (
+            child["chain_code"].hex() if confirming_txn else derived["chain_code"].hex()
+        )
+        agent_priv = (
+            grandchild["private_key"].hex()
+            if confirming_txn
+            else child["private_key"].hex()
+        )
+        agent_cc = (
+            grandchild["chain_code"].hex()
+            if confirming_txn
+            else child["chain_code"].hex()
+        )
+        agent_pub = grandchild_pub_hex if confirming_txn else child_pub_hex
+        agent_addr = grandchild_address if confirming_txn else child_address
 
         return self.render_as_json(
             {
                 "status": True,
                 "address": address,
                 "public_key": public_key,
-                "prerotated_public_key": child_pub_hex,
-                "prerotated_address": child_address,
-                "prerotated_private_key": child["private_key"].hex(),
-                "prerotated_chain_code": child["chain_code"].hex(),
-                "twice_prerotated_public_key": grandchild_pub_hex,
-                "twice_prerotated_address": grandchild_address,
-                "prev_private_key": derived["private_key"].hex(),
-                "prev_chain_code": derived["chain_code"].hex(),
-                "stored_at": time.time(),
+                "prerotated_public_key": agent_pub,
+                "prerotated_address": agent_addr,
+                "prerotated_private_key": agent_priv,
+                "prerotated_chain_code": agent_cc,
+                "twice_prerotated_public_key": (
+                    grandchild_pub_hex
+                    if not confirming_txn
+                    else great_grandchild_priv_obj.public_key.format(
+                        compressed=True
+                    ).hex()
+                ),
+                "twice_prerotated_address": (
+                    grandchild_address
+                    if not confirming_txn
+                    else great_grandchild_address
+                ),
+                "prev_private_key": ls_priv,
+                "prev_chain_code": ls_cc,
+                "stored_at": now,
                 "transaction_id": txn.transaction_signature,
+                **(
+                    {"confirming_transaction_id": confirming_txn.transaction_signature}
+                    if confirming_txn
+                    else {}
+                ),
             }
         )
 
@@ -1203,40 +1349,98 @@ class ListDerivedKeysHandler(BaseHandler):
     """
     GET /key-rotation/derived-keys/list
 
-    Return all records in the ``derived_keys`` collection, newest first.
-    Supports optional ``page`` and ``page_size`` query params for pagination.
+    Build and return the full KEL (on-chain + mempool) for the admin_kel
+    inception transaction.  Each entry is a KEL txn annotated with its
+    source (blockchain / mempool) and flag (inception / confirming /
+    unconfirmed).
+
+    Falls back to an empty list when admin_kel is not configured or the
+    inception txn cannot be found.
     """
 
     async def get(self):
-        pass
+        from yadacoin.core.keyeventlog import KeyEventLog
+        from yadacoin.core.transaction import Transaction
 
-        try:
-            page = max(1, int(self.get_query_argument("page", "1")))
-            page_size = min(50, max(1, int(self.get_query_argument("page_size", "20"))))
-        except (ValueError, TypeError):
-            page, page_size = 1, 20
+        admin_kel = getattr(self.config, "admin_kel", None)
+        if not admin_kel:
+            return self.render_as_json(
+                {"status": True, "total": 0, "records": [], "kel_depth": 0}
+            )
 
-        skip = (page - 1) * page_size
-        projection = {"_id": 0}
+        # Locate the inception txn by its transaction_signature == admin_kel
+        inception_dict = None
 
-        total = await self.config.mongo.async_site_db.derived_keys.count_documents({})
-        cursor = (
-            self.config.mongo.async_site_db.derived_keys.find({}, projection)
-            .sort("stored_at", -1)
-            .skip(skip)
-            .limit(page_size)
-        )
+        # Check blockchain first
+        pipeline = [
+            {"$match": {"transactions.id": admin_kel}},
+            {"$unwind": "$transactions"},
+            {"$match": {"transactions.id": admin_kel}},
+            {"$replaceRoot": {"newRoot": "$transactions"}},
+            {"$limit": 1},
+        ]
+        async for doc in self.config.mongo.async_db.blocks.aggregate(pipeline):
+            inception_dict = doc
+            break
+
+        # Fall back to mempool
+        if not inception_dict:
+            inception_dict = (
+                await self.config.mongo.async_db.miner_transactions.find_one(
+                    {"id": admin_kel}, {"_id": 0}
+                )
+            )
+
+        if not inception_dict:
+            return self.render_as_json(
+                {
+                    "status": True,
+                    "total": 0,
+                    "records": [],
+                    "kel_depth": 0,
+                    "message": "inception transaction not found on-chain or in mempool",
+                }
+            )
+
+        inception_txn = Transaction.from_dict(inception_dict)
+        kel_entries = await KeyEventLog.build_from_public_key(inception_txn.public_key)
+
         records = []
-        async for doc in cursor:
-            records.append(doc)
+        for i, txn in enumerate(kel_entries):
+            # Determine source
+            source = "mempool" if getattr(txn, "mempool", False) else "blockchain"
+            # Determine flag
+            if not txn.prev_public_key_hash:
+                flag = "inception"
+            elif (
+                not txn.relationship
+                and len(txn.outputs) == 1
+                and txn.outputs[0].to == txn.prerotated_key_hash
+            ):
+                flag = "confirming"
+            else:
+                flag = "unconfirmed"
+
+            records.append(
+                {
+                    "index": i,
+                    "flag": flag,
+                    "source": source,
+                    "public_key": txn.public_key,
+                    "public_key_hash": txn.public_key_hash,
+                    "prerotated_key_hash": txn.prerotated_key_hash,
+                    "twice_prerotated_key_hash": txn.twice_prerotated_key_hash,
+                    "prev_public_key_hash": txn.prev_public_key_hash,
+                    "transaction_id": txn.transaction_signature,
+                    "time": int(txn.time),
+                }
+            )
 
         return self.render_as_json(
             {
                 "status": True,
-                "total": total,
-                "page": page,
-                "page_size": page_size,
-                "pages": max(1, -(-total // page_size)),
+                "total": len(records),
+                "kel_depth": len(records),
                 "records": records,
             }
         )
@@ -1401,6 +1605,237 @@ class DerivedKeyRecordHandler(BaseHandler):
         return self.render_as_json({"record": record})
 
 
+class KelResyncHandler(BaseHandler):
+    """
+    POST /key-rotation/kel-resync
+
+    Recovery endpoint: re-derives key material from the node seed and
+    rebuilds the ``derived_keys`` DB records to match the current on-chain
+    KEL state, WITHOUT creating a new transaction.
+
+    Use this when:
+    - The mempool was cleared and ``derived_keys`` records were lost.
+    - localStorage contains a stale key several rotations ahead of the
+      last confirmed on-chain entry.
+
+    The handler walks the on-chain KEL forward from the inception, finding
+    the tail entry whose ``prerotated_key_hash`` is not yet spent (i.e. the
+    next expected signer).  It re-derives key material up to that point using
+    the seed + second_factor and upserts the correct ``derived_keys`` record.
+
+    Request body (JSON)
+    -------------------
+    private_key   : str  – node private key (same auth as init)
+    second_factor : str  – the same second_factor used during init
+
+    Response
+    --------
+    On success returns the ``prev_private_key`` and ``prev_chain_code`` that
+    must be stored in ``yadacoin_derived_key`` / ``yadacoin_derived_cc`` in
+    localStorage, plus the current ``prerotated_address`` (the next valid
+    signing address per the on-chain KEL).
+    """
+
+    async def post(self):
+        from bip32utils import BIP32Key
+        from mnemonic import Mnemonic
+
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        try:
+            body = json.loads(self.request.body)
+        except Exception:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "message": "invalid json body"}
+            )
+
+        second_factor = body.get("second_factor", "").strip()
+        private_key = body.get("private_key", "").strip()
+
+        if not second_factor or not private_key:
+            self.set_status(400)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": "second_factor and private_key are required",
+                }
+            )
+
+        # Auth: private_key must match node config
+        node_private_key = getattr(self.config, "private_key", "") or ""
+        if private_key != node_private_key:
+            self.set_status(401)
+            return self.render_as_json(
+                {"status": False, "message": "invalid private_key"}
+            )
+
+        # Load seed
+        seed = getattr(self.config, "seed", "") or ""
+        if not seed:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "message": "seed not configured in config.json"}
+            )
+
+        try:
+            mn = Mnemonic("english")
+            entropy = mn.to_entropy(seed)
+            bip32_root = BIP32Key.fromEntropy(entropy)
+            root_priv = bip32_root.PrivateKey()
+            root_cc = bip32_root.ChainCode()
+        except Exception as exc:
+            self.set_status(500)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": f"could not derive root key from seed: {exc}",
+                }
+            )
+
+        # Derive the inception signing key (K0) from root + second_factor
+        k0 = derive_secure_path(root_priv, root_cc, second_factor)
+        k0_priv_obj = _CoincurvePrivateKey(k0["private_key"])
+        k0_pub_hex = k0_priv_obj.public_key.format(compressed=True).hex()
+
+        # Build the on-chain KEL for K0 (on-chain only — ignore mempool)
+        try:
+            kel = await KeyEventLog.build_from_public_key(k0_pub_hex, onchain_only=True)
+        except Exception as exc:
+            self.set_status(500)
+            return self.render_as_json(
+                {"status": False, "message": f"error building key event log: {exc}"}
+            )
+
+        if not kel:
+            self.set_status(404)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": "no on-chain key event log found for the derived signing key; "
+                    "run /key-rotation/init-derived-child-key first",
+                }
+            )
+
+        # Optionally verify against admin_kel
+        admin_kel = getattr(self.config, "admin_kel", None)
+        if admin_kel and kel[0].transaction_signature != admin_kel:
+            self.set_status(403)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": "on-chain KEL inception does not match admin_kel in config",
+                }
+            )
+
+        # Walk the derivation chain to match the on-chain KEL depth.
+        # kel[0] = inception (signed with K0); kel[1] = first confirming (signed with K1), etc.
+        # After N on-chain entries, the next expected signer is K_N.
+        # The derived_keys record for K_N needs prev_private_key = K_(N-1), prev_chain_code = K_(N-1)_cc.
+        #
+        # Derivation chain:
+        #   K0 = derive(root, sf)
+        #   K1 = derive(K0.priv, K0.cc, sf)
+        #   K2 = derive(K1.priv, K1.cc, sf)
+        #   ...
+        n = len(kel)  # number of on-chain entries; next signer index = n
+        cur = k0
+        for _ in range(n):
+            cur = derive_secure_path(
+                cur["private_key"], cur["chain_code"], second_factor
+            )
+        # cur is now K_n — the key the on-chain KEL expects as next signer
+        # prev (K_(n-1)) is one step back; we need to recompute it
+        prev = k0
+        for _ in range(n - 1):
+            prev = derive_secure_path(
+                prev["private_key"], prev["chain_code"], second_factor
+            )
+        # After loop: prev = K_(n-1), cur = K_n
+
+        cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
+        cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
+        cur_pub_hex = cur_pub_bytes.hex()
+        cur_address = str(P2PKHBitcoinAddress.from_pubkey(cur_pub_bytes))
+
+        # Verify the derived address matches the latest KEL prerotated_key_hash
+        expected_address = kel[-1].prerotated_key_hash
+        if cur_address != expected_address:
+            self.set_status(500)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": (
+                        f"derived address {cur_address} does not match "
+                        f"on-chain KEL prerotated_key_hash {expected_address}; "
+                        "verify second_factor is correct"
+                    ),
+                }
+            )
+
+        # Compute prev address (K_(n-1)) so we can key the DB record correctly.
+        prev_priv_obj = _CoincurvePrivateKey(prev["private_key"])
+        prev_pub_bytes = prev_priv_obj.public_key.format(compressed=True)
+        prev_pub_hex = prev_pub_bytes.hex()
+        prev_address = str(P2PKHBitcoinAddress.from_pubkey(prev_pub_bytes))
+
+        # K_(n+1) — the twice-prerotated key relative to K_(n-1)
+        child = derive_secure_path(cur["private_key"], cur["chain_code"], second_factor)
+        child_priv_obj = _CoincurvePrivateKey(child["private_key"])
+        child_pub_bytes = child_priv_obj.public_key.format(compressed=True)
+        child_pub_hex = child_pub_bytes.hex()
+        child_address = str(P2PKHBitcoinAddress.from_pubkey(child_pub_bytes))
+
+        # Rebuild the derived_keys record for K_(n-1):
+        #   address            = K_(n-1) address
+        #   prerotated_address = K_n address  ← DerivedChildKeyHandler queries this
+        #   prev_private_key   = K_(n-1) priv  ← derive(prev, sf) == K_n
+        #
+        # This exactly mirrors what InitDerivedChildKeyHandler + DerivedChildKeyHandler
+        # would have written after n on-chain confirmations.
+        now = time.time()
+        await self.config.mongo.async_site_db.derived_keys.update_one(
+            {"address": prev_address},
+            {
+                "$set": {
+                    "address": prev_address,
+                    "public_key": prev_pub_hex,
+                    "prerotated_public_key": cur_pub_hex,
+                    "prerotated_address": cur_address,
+                    "twice_prerotated_public_key": child_pub_hex,
+                    "twice_prerotated_address": child_address,
+                    "prev_private_key": prev["private_key"].hex(),
+                    "prev_chain_code": prev["chain_code"].hex(),
+                    "stored_at": now,
+                    "resync": True,
+                }
+            },
+            upsert=True,
+        )
+
+        return self.render_as_json(
+            {
+                "status": True,
+                "kel_depth": n,
+                # cur_address is the address kel[-1].prerotated_key_hash expects next
+                "next_signer_address": cur_address,
+                "next_signer_public_key": cur_pub_hex,
+                "prerotated_address": child_address,
+                "prerotated_public_key": child_pub_hex,
+                # These restore the DB-matching key material to localStorage.
+                # Put prev_private_key → yadacoin_derived_key
+                #     prev_chain_code  → yadacoin_derived_cc
+                "prev_private_key": prev["private_key"].hex(),
+                "prev_chain_code": prev["chain_code"].hex(),
+                "stored_at": now,
+                "localStorage_hint": (
+                    "Set localStorage.yadacoin_derived_key = prev_private_key "
+                    "and localStorage.yadacoin_derived_cc = prev_chain_code"
+                ),
+            }
+        )
+
+
 HANDLERS = KEY_ROTATION_HANDLERS = [
     (
         r"/key-rotation/derived-keys/history",
@@ -1437,6 +1872,10 @@ HANDLERS = KEY_ROTATION_HANDLERS = [
     (
         r"/key-rotation/init-derived-child-key",
         InitDerivedChildKeyHandler,
+    ),
+    (
+        r"/key-rotation/kel-resync",
+        KelResyncHandler,
     ),
     (
         r"/key-rotation/derived-child-key",

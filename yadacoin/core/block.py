@@ -428,8 +428,17 @@ class Block(object):
                         config.app_log.warning(
                             f"KEL remove reason [is_already_onchain]: outputs={[o.to for o in txn.outputs]} key_log_last_prerotated={key_log[-1].prerotated_key_hash if key_log else None} | txn={txn.transaction_signature}"
                         )
-                        await block.remove_transaction(txn, hash_collection)
-                        continue
+                    # This is a stale mempool copy of an already-confirmed txn.
+                    # Remove only this txn — do NOT cascade-delete linked transactions
+                    # via remove_transaction(), as those may be legitimate next-step
+                    # KEL entries (e.g. a confirming entry whose prerotated_key_hash
+                    # would match this txn's twice_prerotated_key_hash and be
+                    # incorrectly purged as a "linked" txn).
+                    await config.mongo.async_db.miner_transactions.delete_one(
+                        {"id": txn.transaction_signature}
+                    )
+                    block.transactions.remove(txn)
+                    continue
 
                 # test if it has no kel but specifies prev key hash
                 if await txn.has_key_event_log() and not txn.are_kel_fields_populated():

@@ -163,8 +163,6 @@ class NodeApplication(Application):
             self.config.node_server_instance.start(1)
 
         self.init_peer()
-        if MODES.POOL.value in self.config.modes:
-            self.init_pool()
 
         if MODES.WEB.value in self.config.modes:
             if os.path.exists(path.join(path.dirname(__file__), "..", "static")):
@@ -228,6 +226,8 @@ class NodeApplication(Application):
             self.init_http()
             self.init_whitelist()
             self.init_jwt()
+        if MODES.POOL.value in self.config.modes:
+            self.init_pool()
         self.init_ioloop()
 
     async def remove_peer(self, stream, reason=None):
@@ -1067,7 +1067,9 @@ class NodeApplication(Application):
             ).start()
             # Populate eligible_nodes_by_address immediately on startup so coinbase
             # validation works before the first hourly background_node_testing fires.
-            tornado.ioloop.IOLoop.current().call_later(0, self.background_node_testing)
+            # Delay slightly so the HTTP server is fully listening before the node
+            # tests begin (which can take several seconds and block the IOLoop).
+            tornado.ioloop.IOLoop.current().call_later(5, self.background_node_testing)
 
             if self.config.peer_type in [
                 PEER_TYPES.SERVICE_PROVIDER.value,
