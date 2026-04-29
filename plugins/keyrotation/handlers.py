@@ -26,7 +26,6 @@ DerivedChildKeyHandler is an exception: it manages server-side KEL-authenticated
 child-key derivation backed by the derived_keys collection in yadacoin_site.
 """
 
-import base64
 import hashlib
 import hmac as _hmac
 import json
@@ -36,7 +35,6 @@ import time
 
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey as _CoincurvePrivateKey
-from coincurve import verify_signature as _verify_signature
 
 from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.http.base import BaseHandler
@@ -273,16 +271,14 @@ class DerivedChildKeyHandler(BaseHandler):
 
         public_key = body.get("public_key", "").strip()
         second_factor = body.get("second_factor", "")
-        signature = body.get("signature", "").strip()
         relationship = body.get("relationship", "") or ""
-        verify_signature = False
 
-        if not public_key or not second_factor or (not signature and verify_signature):
+        if not public_key or not second_factor:
             self.set_status(400)
             return self.render_as_json(
                 {
                     "status": False,
-                    "message": "public_key, second_factor, and signature are required",
+                    "message": "public_key and second_factor are required",
                 }
             )
 
@@ -351,7 +347,6 @@ class DerivedChildKeyHandler(BaseHandler):
                         "address": address,
                         "target_address": _ta,
                         "second_factor": second_factor,
-                        "signature": signature,
                         "error": error_msg,
                         "request_ip": request_ip,
                         "timestamp": time.time(),
@@ -503,32 +498,6 @@ class DerivedChildKeyHandler(BaseHandler):
             return self.render_as_json(
                 {"status": False, "message": "second factor is incorrect"}
             )
-
-        # ------------------------------------------------------------------ #
-        # 6. Verify the request signature
-        #    Signature is base64-DER over sha256(public_key.encode('utf-8'))
-        #    produced by the private key of public_key.
-        # ------------------------------------------------------------------ #
-        if verify_signature:
-            try:
-                sig_bytes = base64.b64decode(signature)
-                ok = _verify_signature(
-                    sig_bytes,
-                    public_key.encode("utf-8"),
-                    pub_key_bytes,
-                    hasher="sha256",
-                )
-                if not ok:
-                    raise ValueError("verify_signature returned False")
-            except Exception as exc:
-                await _log_attack(
-                    f"signature verification failed: {exc}",
-                    target_address=latest.prerotated_key_hash,
-                )
-                self.set_status(400)
-                return self.render_as_json(
-                    {"status": False, "message": "signature verification failed"}
-                )
 
         # ------------------------------------------------------------------ #
         # 7. Derive prerotated and twice-prerotated keys, build and sign a

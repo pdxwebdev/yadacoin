@@ -399,6 +399,14 @@
       import { sha512 } from "https://esm.sh/@noble/hashes@1.4.0/sha512";
       import { hmac } from "https://esm.sh/@noble/hashes@1.4.0/hmac";
 
+      // Required by @noble/secp256k1 v2 for synchronous signing
+      secp.etc.hmacSha256Sync = (key, ...msgs) =>
+        hmac(
+          sha256,
+          key,
+          secp.etc.concatBytes(...msgs),
+        );
+
       // ── hex helpers ──
       const hex = {
         toBytes(h) {
@@ -422,6 +430,43 @@
             )
             .join(""),
       };
+
+      // ── DER-encode a secp256k1 signature from compact r||s bytes ──
+      // coincurve's verify_signature always expects DER encoding.
+      function compactSigToDerHex(sigObj) {
+        // @noble/secp256k1 v2 Signature exposes r and s as BigInts
+        function encInt(n) {
+          let h = n.toString(16);
+          if (h.length % 2) h = "0" + h;
+          // prepend 0x00 if high bit set (to keep positive)
+          if (parseInt(h.slice(0, 2), 16) >= 0x80)
+            h = "00" + h;
+          return h;
+        }
+        const r = encInt(sigObj.r);
+        const s = encInt(sigObj.s);
+        const rLen = (r.length / 2)
+          .toString(16)
+          .padStart(2, "0");
+        const sLen = (s.length / 2)
+          .toString(16)
+          .padStart(2, "0");
+        const seq =
+          "02" + rLen + r + "02" + sLen + s;
+        const seqLen = (seq.length / 2)
+          .toString(16)
+          .padStart(2, "0");
+        const derHex = "30" + seqLen + seq;
+        // Convert hex → base64 (standard base64-encoded DER, e.g. MEUCIQCGhW…)
+        const bytes = new Uint8Array(
+          derHex
+            .match(/.{2}/g)
+            .map((b) => parseInt(b, 16)),
+        );
+        return btoa(
+          String.fromCharCode(...bytes),
+        );
+      }
 
       // ── derive_secure_path (matches keyrotation.py) ──
       const CURVE_ORDER = BigInt(
@@ -619,6 +664,11 @@
           .replace(/>/g, "&gt;");
       }
 
+      // ── Travel conversation state ──
+      let travel = null;
+      // null       = no active request
+      // { dest, checkin, checkout, services }  — collected so far
+
       // ── Main send handler ──
       async function send() {
         const prompt = userInput.value.trim();
@@ -630,21 +680,136 @@
 
         appendUser(prompt);
 
-        // Simulate agent "thinking"
         const thinkRow = appendThinking();
-        await sleep(900 + Math.random() * 600);
+        await sleep(600 + Math.random() * 400);
         thinkRow.remove();
 
-        // Agent decides it needs privileged access
+        if (travel === null) {
+          travel = {};
+          parseTravelInfo(prompt, travel);
+        } else {
+          fillNextTravelField(prompt);
+        }
+
+        advanceTravelConversation();
+      }
+
+      // ── Parse travel details from free text ──
+      function parseTravelInfo(text, state) {
+        // destination: "to NYC", "to New York", or an all-caps word
+        const destMatch =
+          text.match(
+            /\bto\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\b/,
+          ) || text.match(/\b([A-Z]{2,})\b/);
+        if (destMatch) state.dest = destMatch[1];
+
+        // dates: "May 10-15", "May 10 to May 15", "2026-05-10 to 2026-05-15"
+        const dateMatch =
+          text.match(
+            /(\w+\s+\d{1,2})\s*[-–to]+\s*(\w+\s*\d{1,2})/i,
+          ) ||
+          text.match(
+            /(\d{4}-\d{2}-\d{2})\s*[-–to]+\s*(\d{4}-\d{2}-\d{2})/,
+          );
+        if (dateMatch) {
+          state.checkin = dateMatch[1].trim();
+          state.checkout = dateMatch[2].trim();
+        }
+
+        // services keywords
+        const svcs = [];
+        if (
+          /hotel|room|stay|accommodation/i.test(
+            text,
+          )
+        )
+          svcs.push("hotel");
+        if (/flight|fly|plane|air/i.test(text))
+          svcs.push("flight");
+        if (/car|rental|rent/i.test(text))
+          svcs.push("car");
+        if (svcs.length) state.services = svcs;
+      }
+
+      // ── Fill the next missing field from a follow-up reply ──
+      function fillNextTravelField(text) {
+        if (!travel.dest) {
+          travel.dest = text.trim();
+        } else if (!travel.checkin) {
+          const m =
+            text.match(
+              /(\w+\s+\d{1,2})\s*[-–to]+\s*(\w+\s*\d{1,2})/i,
+            ) ||
+            text.match(/(\d{4}-\d{2}-\d{2})/);
+          if (m) {
+            travel.checkin = m[1].trim();
+            travel.checkout = (
+              m[2] || m[1]
+            ).trim();
+          } else {
+            travel.checkin = text.trim();
+            travel.checkout = text.trim();
+          }
+        } else if (!travel.services) {
+          const svcs = [];
+          if (/hotel/i.test(text))
+            svcs.push("hotel");
+          if (/flight|fly/i.test(text))
+            svcs.push("flight");
+          if (/car|rental/i.test(text))
+            svcs.push("car");
+          travel.services = svcs.length
+            ? svcs
+            : ["hotel", "flight"];
+        }
+      }
+
+      // ── Advance the conversation or show approval card ──
+      function advanceTravelConversation() {
+        if (!travel.dest) {
+          appendAgent(
+            "I'd be happy to help with travel! Where would you like to go?",
+          );
+          sendBtn.disabled = false;
+          return;
+        }
+        if (!travel.checkin) {
+          appendAgent(
+            `Great, <strong>${escHtml(travel.dest)}</strong>! ` +
+              `What are your travel dates? (e.g. "May 10–15")`,
+          );
+          sendBtn.disabled = false;
+          return;
+        }
+        if (!travel.services) {
+          appendAgent(
+            `Got it — <strong>${escHtml(travel.checkin)}</strong> → ` +
+              `<strong>${escHtml(travel.checkout)}</strong>. ` +
+              `Which services do you need? (hotel, flight, car — or any combination)`,
+          );
+          sendBtn.disabled = false;
+          return;
+        }
+
+        // All details collected — show summary + approval card
+        const svcsHtml = travel.services
+          .map(
+            (s) =>
+              `<strong>${escHtml(s)}</strong>`,
+          )
+          .join(", ");
         const bubble = appendAgent(
-          `I can help with: <em>"${escHtml(prompt)}"</em>.<br><br>` +
-            `To carry this out I need to act on your behalf using a one-time on-chain credential. ` +
-            `Please enter your <strong>second factor</strong> and approve below.`,
+          `Here's your booking summary:<br><br>` +
+            `📍 Destination: <strong>${escHtml(travel.dest)}</strong><br>` +
+            `📅 Check-in: <strong>${escHtml(travel.checkin)}</strong><br>` +
+            `📅 Check-out: <strong>${escHtml(travel.checkout)}</strong><br>` +
+            `🛎 Services: ${svcsHtml}<br><br>` +
+            `To proceed I'll broadcast a rotation transaction committing ` +
+            `this scope on-chain. Please enter your second factor to approve.`,
         );
 
-        // Inject approval card into the bubble
         const card = buildApprovalCard(
-          prompt,
+          travel,
           bubble,
         );
         bubble.appendChild(card);
@@ -658,22 +823,44 @@
       }
 
       // ── Approval card builder ──
-      function buildApprovalCard(prompt, bubble) {
+      function buildApprovalCard(
+        travelDetails,
+        bubble,
+      ) {
+        // Build structured scope JSON that will be committed on-chain
+        const scope = {
+          task: "travel_booking",
+          dest: travelDetails.dest,
+          checkin: travelDetails.checkin,
+          checkout: travelDetails.checkout,
+          services: travelDetails.services,
+        };
+        const scopeJson = JSON.stringify(
+          scope,
+          null,
+          2,
+        );
+        const relationshipB64 = btoa(
+          unescape(encodeURIComponent(scopeJson)),
+        );
+
         const card =
           document.createElement("div");
         card.className = "approval-card";
         card.innerHTML = `
           <div class="title">🔐 Authorisation Required</div>
           <div class="detail">
-            A rotation transaction will be broadcast with the prompt committed
-            on-chain in the <code>relationship</code> field. The agent will
-            receive a one-time private key valid only for this action.
+            The following scope will be committed on-chain in the
+            <code>relationship</code> field of the rotation transaction.
+            The travel service will verify your signature and enforce
+            exactly this scope — it will not accept requests outside it.
+            <pre style="margin-top:8px;font-size:0.76rem;max-height:120px">${escHtml(scopeJson)}</pre>
           </div>
           <div class="sf-row">
             <input type="password" class="sf-input" placeholder="Second factor (password)" autocomplete="current-password" />
           </div>
           <div class="btn-row">
-            <button class="btn approve ap-btn">✓ Approve</button>
+            <button class="btn approve ap-btn">✓ Approve &amp; Book</button>
             <button class="btn deny dn-btn">✗ Deny</button>
           </div>`;
 
@@ -701,6 +888,7 @@
           card.remove();
           bubble.innerHTML += `<hr style="border-color:var(--border);margin:8px 0;">
             <span style="color:var(--red2);font-size:0.82rem;">✗ Action denied by operator.</span>`;
+          travel = null;
           sendBtn.disabled = false;
           userInput.focus();
           scrollBottom();
@@ -722,7 +910,6 @@
             sfInput.disabled = true;
             card.remove();
 
-            // Steps bubble
             const stepsBubble = appendAgent("");
             const stepsDiv =
               document.createElement("div");
@@ -749,7 +936,7 @@
                   "operator key missing from localStorage",
                 );
 
-              // 1. Derive child key
+              // ── Step 1: Derive child key client-side ──
               const s1 = addStep(
                 "Deriving pre-committed key from operator key…",
               );
@@ -770,9 +957,9 @@
                 childPubHex.slice(0, 20) +
                 "…";
 
-              // 2. POST derived-child-key
+              // ── Step 2: Broadcast rotation txn with scope committed on-chain ──
               const s2 = addStep(
-                "Broadcasting rotation transaction with prompt on-chain…",
+                "Broadcasting rotation transaction with booking scope on-chain…",
               );
               const rotateRes = await fetch(
                 "/key-rotation/derived-child-key",
@@ -786,13 +973,7 @@
                     public_key: childPubHex,
                     second_factor: sf,
                     signature: "",
-                    relationship: btoa(
-                      unescape(
-                        encodeURIComponent(
-                          prompt,
-                        ),
-                      ),
-                    ),
+                    relationship: relationshipB64,
                   }),
                 },
               );
@@ -809,22 +990,24 @@
                   (rotateData.message ||
                     rotateRes.status);
                 appendAgent(
-                  `<span style="color:var(--red2)">I wasn't able to obtain a credential. Please check your second factor and try again.</span>`,
+                  `<span style="color:var(--red2)">I wasn't able to obtain a credential. ` +
+                    `Please check your second factor and try again.</span>`,
                 );
+                travel = null;
                 sendBtn.disabled = false;
                 userInput.focus();
                 return;
               }
               s2.classList.add("done");
               s2.textContent =
-                "› Rotation broadcast · txid " +
+                "› Scope committed · txid " +
                 rotateData.transaction_id.slice(
                   0,
                   20,
                 ) +
                 "…";
 
-              // Update localStorage for next call
+              // Update localStorage so next call derives from the rotated key
               localStorage.setItem(
                 LS_PRIV,
                 rotateData.prev_private_key,
@@ -835,22 +1018,77 @@
                   rotateData.prev_chain_code,
                 );
 
-              // 3. POST action
-              const s3 = addStep(
-                "Submitting one-time credential to action endpoint…",
+              // ── Step 3: Fetch challenge from travel service ──
+              const provPrivBytes = hex.toBytes(
+                rotateData.prerotated_private_key,
               );
-              const privHex =
-                rotateData.prerotated_private_key;
-              const payload = JSON.stringify({
-                tool: "fetch_account_summary",
-                prompt,
-                public_key:
-                  rotateData.prerotated_public_key,
-                nonce: crypto.randomUUID(),
-                ts: Math.floor(Date.now() / 1000),
-              });
-              const actionRes = await fetch(
-                "/ai-agent-auth/api/action",
+              const provPubHex = hex.fromBytes(
+                secp.getPublicKey(
+                  provPrivBytes,
+                  true,
+                ),
+              );
+
+              const s3 = addStep(
+                "Requesting authentication challenge from travel service…",
+              );
+              const chalRes = await fetch(
+                `/ai-agent-auth/api/challenge?public_key=${encodeURIComponent(provPubHex)}`,
+              );
+              const chalData =
+                await chalRes.json();
+              if (
+                !chalRes.ok ||
+                !chalData.challenge
+              ) {
+                s3.classList.add("fail");
+                s3.textContent =
+                  "› Failed to get challenge";
+                appendAgent(
+                  `<span style="color:var(--red2)">Could not obtain a challenge from the travel service.</span>`,
+                );
+                travel = null;
+                sendBtn.disabled = false;
+                userInput.focus();
+                return;
+              }
+              s3.classList.add("done");
+              s3.textContent =
+                "› Challenge received: " +
+                chalData.challenge.slice(0, 16) +
+                "… (expires in " +
+                chalData.expires_in +
+                "s)";
+
+              // ── Step 4: Sign challenge client-side — private key never leaves browser ──
+              const s4 = addStep(
+                "Signing challenge with provisioned key (client-side, key stays in browser)…",
+              );
+              const challengeBytes =
+                new TextEncoder().encode(
+                  chalData.challenge,
+                );
+              const challengeHash = sha256(
+                challengeBytes,
+              );
+              const sigObj = secp.sign(
+                challengeHash,
+                provPrivBytes,
+              );
+              const sigHex =
+                compactSigToDerHex(sigObj);
+              s4.classList.add("done");
+              s4.textContent =
+                "› Signed · sig " +
+                sigHex.slice(0, 16) +
+                "… (private key NOT sent)";
+
+              // ── Step 5: Submit to travel booking service ──
+              const s5 = addStep(
+                "Submitting signed booking request to travel service…",
+              );
+              const bookRes = await fetch(
+                "/ai-agent-auth/api/travel",
                 {
                   method: "POST",
                   headers: {
@@ -858,46 +1096,94 @@
                       "application/json",
                   },
                   body: JSON.stringify({
-                    private_key: privHex,
-                    payload,
-                    prompt,
+                    public_key: provPubHex,
+                    challenge: chalData.challenge,
+                    signature: sigHex,
+                    services:
+                      travelDetails.services,
+                    dest: travelDetails.dest,
+                    checkin:
+                      travelDetails.checkin,
+                    checkout:
+                      travelDetails.checkout,
                   }),
                 },
               );
-              const actionData =
-                await actionRes.json();
-              if (
-                actionRes.ok &&
-                actionData.status
-              ) {
-                s3.classList.add("done");
-                s3.textContent =
-                  "› Authorised · address " +
-                  rotateData.prerotated_address.slice(
-                    0,
-                    16,
-                  ) +
-                  "…";
+              const bookData =
+                await bookRes.json();
+
+              if (bookRes.status === 200) {
+                s5.classList.add("done");
+                s5.textContent =
+                  "› All services booked (200 OK)";
+                const confirmations =
+                  bookData.completed
+                    .map(
+                      (c) =>
+                        `✓ <strong>${escHtml(c.service)}</strong>: <code>${escHtml(c.confirmation)}</code>`,
+                    )
+                    .join("<br>");
+                appendAgent(
+                  `✅ <strong>All booked!</strong><br><br>${confirmations}<br><br>` +
+                    `Authorisation on-chain: <code>${rotateData.transaction_id.slice(0, 24)}…</code><br>` +
+                    `<span style="color:var(--muted);font-size:0.8rem">KEL depth ${bookData.kel_depth} · authorised address ${bookData.authorized_address.slice(0, 16)}…</span>`,
+                );
+              } else if (bookRes.status === 206) {
+                s5.classList.add("done");
+                s5.textContent =
+                  "› Partial booking (206 Partial Content)";
+                const done = bookData.completed
+                  .map(
+                    (c) =>
+                      `✓ <strong>${escHtml(c.service)}</strong>: <code>${escHtml(c.confirmation)}</code>`,
+                  )
+                  .join("<br>");
+                const fail = bookData.failed
+                  .map(
+                    (f) =>
+                      `✗ <strong>${escHtml(f.service)}</strong>: <em>${escHtml(f.message)}</em>`,
+                  )
+                  .join("<br>");
+                appendAgent(
+                  `⚠️ <strong>Partially booked (206)</strong><br><br>` +
+                    `${done}<br><br>` +
+                    `<span style="color:var(--red2)">${fail}</span><br><br>` +
+                    `Authorisation on-chain: <code>${rotateData.transaction_id.slice(0, 24)}…</code>`,
+                );
+              } else if (bookRes.status === 403) {
+                s5.classList.add("fail");
+                s5.textContent =
+                  "› Scope or auth error (403)";
+                appendAgent(
+                  `🔒 <strong>Authorisation error (403)</strong><br>` +
+                    `<span style="color:var(--red2)">${escHtml(bookData.message || "Scope violation or key not authorised")}</span>`,
+                );
+              } else if (bookRes.status === 422) {
+                s5.classList.add("fail");
+                s5.textContent =
+                  "› Nothing available (422)";
+                const fail = (
+                  bookData.failed || []
+                )
+                  .map(
+                    (f) =>
+                      `✗ <strong>${escHtml(f.service)}</strong>: <em>${escHtml(f.message)}</em>`,
+                  )
+                  .join("<br>");
+                appendAgent(
+                  `❌ <strong>Unprocessable (422)</strong> — none of the requested services are available:<br><br>` +
+                    `<span style="color:var(--red2)">${fail || escHtml(bookData.message || "")}</span>`,
+                );
               } else {
-                s3.classList.add("fail");
-                s3.textContent =
-                  "› Action rejected (" +
-                  actionRes.status +
-                  "): " +
-                  (actionData.message || "");
+                s5.classList.add("fail");
+                s5.textContent =
+                  "› Error " + bookRes.status;
+                appendAgent(
+                  `❌ <strong>Error ${bookRes.status}</strong>: ${escHtml(bookData.message || "Unknown error")}`,
+                );
               }
 
-              // Final agent reply
-              const ok =
-                actionRes.ok && actionData.status;
-              appendAgent(
-                ok
-                  ? `✅ Done. I've completed the action for: <em>"${escHtml(prompt)}"</em><br>` +
-                      `The authorisation transaction is on-chain at <code>${rotateData.transaction_id.slice(0, 24)}…</code>.`
-                  : `❌ The action could not be completed. The server responded: <em>${escHtml(actionData.message || String(actionRes.status))}</em>`,
-              );
-
-              // Refresh session pill with new key
+              // Refresh session pill with rotated operator key
               try {
                 const newPub = hex.fromBytes(
                   secp.getPublicKey(
@@ -921,6 +1207,7 @@
                 `<span style="color:var(--red2)">Unexpected error: ${escHtml(String(e))}</span>`,
               );
             } finally {
+              travel = null;
               sendBtn.disabled = false;
               userInput.focus();
             }
