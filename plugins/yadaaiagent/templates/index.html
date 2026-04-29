@@ -684,11 +684,25 @@
         const dnBtn =
           card.querySelector(".dn-btn");
 
+        // Auto-focus the second-factor field and submit on Enter
+        setTimeout(() => sfInput.focus(), 50);
+        sfInput.addEventListener(
+          "keydown",
+          (e) => {
+            if (
+              e.key === "Enter" &&
+              !apBtn.disabled
+            )
+              apBtn.click();
+          },
+        );
+
         dnBtn.addEventListener("click", () => {
           card.remove();
           bubble.innerHTML += `<hr style="border-color:var(--border);margin:8px 0;">
             <span style="color:var(--red2);font-size:0.82rem;">✗ Action denied by operator.</span>`;
           sendBtn.disabled = false;
+          userInput.focus();
           scrollBottom();
         });
 
@@ -798,6 +812,7 @@
                   `<span style="color:var(--red2)">I wasn't able to obtain a credential. Please check your second factor and try again.</span>`,
                 );
                 sendBtn.disabled = false;
+                userInput.focus();
                 return;
               }
               s2.classList.add("done");
@@ -907,6 +922,7 @@
               );
             } finally {
               sendBtn.disabled = false;
+              userInput.focus();
             }
           },
         );
