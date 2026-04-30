@@ -713,22 +713,42 @@
           );
         if (dateMatch) {
           state.checkin = dateMatch[1].trim();
-          state.checkout = dateMatch[2].trim();
+          const rawOut = dateMatch[2].trim();
+          // If checkout captured only a number (e.g. "16"), inherit the month
+          // from checkin so "May 10-16" → checkout "May 16"
+          if (/^\d{1,2}$/.test(rawOut)) {
+            const monthWord = state.checkin
+              .replace(/\s*\d+$/, "")
+              .trim();
+            state.checkout = monthWord
+              ? `${monthWord} ${rawOut}`
+              : rawOut;
+          } else {
+            state.checkout = rawOut;
+          }
         }
 
         // services keywords
         const svcs = [];
-        if (
-          /hotel|room|stay|accommodation/i.test(
-            text,
+        if (/\ball\b|everything/i.test(text)) {
+          state.services = [
+            "hotel",
+            "flight",
+            "car",
+          ];
+        } else {
+          if (
+            /hotel|room|stay|accommodation/i.test(
+              text,
+            )
           )
-        )
-          svcs.push("hotel");
-        if (/flight|fly|plane|air/i.test(text))
-          svcs.push("flight");
-        if (/car|rental|rent/i.test(text))
-          svcs.push("car");
-        if (svcs.length) state.services = svcs;
+            svcs.push("hotel");
+          if (/flight|fly|plane|air/i.test(text))
+            svcs.push("flight");
+          if (/car|rental|rent/i.test(text))
+            svcs.push("car");
+          if (svcs.length) state.services = svcs;
+        }
       }
 
       // ── Fill the next missing field from a follow-up reply ──
@@ -743,24 +763,40 @@
             text.match(/(\d{4}-\d{2}-\d{2})/);
           if (m) {
             travel.checkin = m[1].trim();
-            travel.checkout = (
-              m[2] || m[1]
-            ).trim();
+            const rawOut = (m[2] || m[1]).trim();
+            if (/^\d{1,2}$/.test(rawOut)) {
+              const monthWord = travel.checkin
+                .replace(/\s*\d+$/, "")
+                .trim();
+              travel.checkout = monthWord
+                ? `${monthWord} ${rawOut}`
+                : rawOut;
+            } else {
+              travel.checkout = rawOut;
+            }
           } else {
             travel.checkin = text.trim();
             travel.checkout = text.trim();
           }
         } else if (!travel.services) {
           const svcs = [];
-          if (/hotel/i.test(text))
-            svcs.push("hotel");
-          if (/flight|fly/i.test(text))
-            svcs.push("flight");
-          if (/car|rental/i.test(text))
-            svcs.push("car");
-          travel.services = svcs.length
-            ? svcs
-            : ["hotel", "flight"];
+          if (/\ball\b|everything/i.test(text)) {
+            travel.services = [
+              "hotel",
+              "flight",
+              "car",
+            ];
+          } else {
+            if (/hotel/i.test(text))
+              svcs.push("hotel");
+            if (/flight|fly/i.test(text))
+              svcs.push("flight");
+            if (/car|rental/i.test(text))
+              svcs.push("car");
+            travel.services = svcs.length
+              ? svcs
+              : ["hotel", "flight", "car"];
+          }
         }
       }
 

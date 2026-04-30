@@ -74,7 +74,7 @@ def _valid_challenge(public_key: str, challenge: str) -> bool:
 _MOCK_INVENTORY = {
     "hotel": {"available": True},
     "flight": {"available": True},
-    "car": {"available": False, "reason": "No rental cars available for these dates"},
+    "car": {"available": True},
 }
 
 
