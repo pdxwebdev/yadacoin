@@ -2,7 +2,7 @@
 
 **Specification version:** 1.0-draft  
 **Date:** 2026-05-01  
-**Authors:** Matthew Vogel, Reynold Vogel (YadaCoin)  
+**Authors:** Matthew Vogel (YadaCoin)  
 **Status:** Draft — intended for submission to the W3C DID Extensions Registry  
 **Specification URL:** https://yadacoin.io/docs/did-method-spec  
 **Repository:** https://github.com/pdxwebdev/yadacoin
@@ -39,13 +39,13 @@ allowing any standard DID resolver to:
 
 ### 1.1 Design Goals
 
-| Goal | How it is achieved |
-|---|---|
-| Decentralization | No registry, DNS, or third-party service required for resolution |
-| Key rotation | Pre-rotation commitments bound on-chain before exposure |
-| Revocation | A key whose `public_key_hash` appears in the KEL is immediately revoked |
-| Minimal trust anchor | Proof-of-work blockchain; no permissioned validator set |
-| Interoperability | DIDs expressed as standard W3C DID URIs; DID Documents include `JsonWebKey2020` and `EcdsaSecp256k1VerificationKey2019` representations |
+| Goal                 | How it is achieved                                                                                                                      |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Decentralization     | No registry, DNS, or third-party service required for resolution                                                                        |
+| Key rotation         | Pre-rotation commitments bound on-chain before exposure                                                                                 |
+| Revocation           | A key whose `public_key_hash` appears in the KEL is immediately revoked                                                                 |
+| Minimal trust anchor | Proof-of-work blockchain; no permissioned validator set                                                                                 |
+| Interoperability     | DIDs expressed as standard W3C DID URIs; DID Documents include `JsonWebKey2020` and `EcdsaSecp256k1VerificationKey2019` representations |
 
 ---
 
@@ -104,24 +104,24 @@ public key. Each entry records a key state transition.
 
 ### 4.1 KEL Entry Fields
 
-| Field | Type | Description |
-|---|---|---|
-| `id` | string | Transaction identifier (hex) |
-| `public_key` | string | Compressed secp256k1 public key (hex) — the signer of this entry |
-| `public_key_hash` | string | P2PKH address of `public_key` — once this appears in the KEL the key is **revoked** |
-| `prerotated_key_hash` | string | P2PKH address of the **next** authorized signer |
-| `twice_prerotated_key_hash` | string | P2PKH address of the signer after next |
-| `prev_public_key_hash` | string | P2PKH address of the previous signer (empty for inception) |
-| `relationship` | string | Base64-encoded UTF-8 JSON scope/relationship document (optional) |
-| `transaction_signature` | string | Signature over the serialized transaction by `public_key` |
+| Field                       | Type   | Description                                                                         |
+| --------------------------- | ------ | ----------------------------------------------------------------------------------- |
+| `id`                        | string | Transaction identifier (hex)                                                        |
+| `public_key`                | string | Compressed secp256k1 public key (hex) — the signer of this entry                    |
+| `public_key_hash`           | string | P2PKH address of `public_key` — once this appears in the KEL the key is **revoked** |
+| `prerotated_key_hash`       | string | P2PKH address of the **next** authorized signer                                     |
+| `twice_prerotated_key_hash` | string | P2PKH address of the signer after next                                              |
+| `prev_public_key_hash`      | string | P2PKH address of the previous signer (empty for inception)                          |
+| `relationship`              | string | Base64-encoded UTF-8 JSON scope/relationship document (optional)                    |
+| `transaction_signature`     | string | Signature over the serialized transaction by `public_key`                           |
 
 ### 4.2 Key Event Types
 
-| Type | Location | Description |
-|---|---|---|
-| **Inception** | On-chain | First entry for a public key. No `prev_public_key_hash`. Single output to `prerotated_key_hash`. `relationship` MUST be `""`. |
-| **Unconfirmed** | Mempool | Rotation transaction that carries the optional scope/relationship. Always in mempool when active. |
-| **Confirming** | Mempool or on-chain | Countersigns the unconfirmed rotation. `relationship` is `""`. Once confirmed, the new key is the head of the KEL. |
+| Type            | Location            | Description                                                                                                                   |
+| --------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Inception**   | On-chain            | First entry for a public key. No `prev_public_key_hash`. Single output to `prerotated_key_hash`. `relationship` MUST be `""`. |
+| **Unconfirmed** | Mempool             | Rotation transaction that carries the optional scope/relationship. Always in mempool when active.                             |
+| **Confirming**  | Mempool or on-chain | Countersigns the unconfirmed rotation. `relationship` is `""`. Once confirmed, the new key is the head of the KEL.            |
 
 ### 4.3 Chain Integrity Rules
 
@@ -194,11 +194,11 @@ A DID Document for `did:yadacoin:<pubkey_hex>` is produced as follows:
 
 The `yadacoinKel` property is a method-specific extension that exposes:
 
-| Field | Description |
-|---|---|
-| `depth` | Number of entries in the resolved KEL |
-| `headTransactionId` | `id` field of the latest confirming KEL entry |
-| `prerotatedKeyHash` | P2PKH address committed as the next signer |
+| Field                    | Description                                      |
+| ------------------------ | ------------------------------------------------ |
+| `depth`                  | Number of entries in the resolved KEL            |
+| `headTransactionId`      | `id` field of the latest confirming KEL entry    |
+| `prerotatedKeyHash`      | P2PKH address committed as the next signer       |
 | `twicePrerotatedKeyHash` | P2PKH address committed as the signer after next |
 
 Resolvers that do not understand `yadacoinKel` MUST ignore it.
@@ -216,20 +216,21 @@ To create a `did:yadacoin` DID:
 3. Compute P2PKH addresses: `addr_0 = addr(K_0)`, `addr_1 = addr(K_1)`, `addr_2 = addr(K_2)`.
 4. Construct and broadcast an **inception transaction** (version-7) to the YadaCoin network:
 
-   | Field | Value |
-   |---|---|
-   | `public_key` | `K_0` (hex) |
-   | `public_key_hash` | `addr_0` |
-   | `prerotated_key_hash` | `addr_1` |
-   | `twice_prerotated_key_hash` | `addr_2` |
-   | `prev_public_key_hash` | `""` |
-   | `relationship` | `""` |
-   | outputs | single output to `addr_1` |
+   | Field                       | Value                     |
+   | --------------------------- | ------------------------- |
+   | `public_key`                | `K_0` (hex)               |
+   | `public_key_hash`           | `addr_0`                  |
+   | `prerotated_key_hash`       | `addr_1`                  |
+   | `twice_prerotated_key_hash` | `addr_2`                  |
+   | `prev_public_key_hash`      | `""`                      |
+   | `relationship`              | `""`                      |
+   | outputs                     | single output to `addr_1` |
 
 5. Once the inception transaction is confirmed on-chain, the DID
    `did:yadacoin:<K_0_hex>` is created and resolvable.
 
 **Inception transaction MUST**:
+
 - Have exactly one output, sent to `prerotated_key_hash`.
 - Have `relationship == ""`.
 - Have `prev_public_key_hash == ""`.
@@ -241,7 +242,7 @@ To resolve `did:yadacoin:<pubkey_hex>`:
 #### Option A — Public REST API
 
 ```
-GET https://yadacoin.io/key-rotation/kel?public_key=<pubkey_hex>
+GET https://yadacoin.io/key-event-log?public_key=<pubkey_hex>
 ```
 
 Returns a JSON array of KEL entries ordered from oldest to newest. Apply the
@@ -260,11 +261,11 @@ kel = await KeyEventLog.build_from_public_key(pubkey_hex)
 
 The resolver SHOULD return the following resolution metadata:
 
-| Key | Value |
-|---|---|
-| `contentType` | `"application/did+ld+json"` |
-| `retrieved` | ISO 8601 timestamp of resolution |
-| `error` | `"notFound"` if KEL is empty; `"deactivated"` if key is revoked |
+| Key           | Value                                                           |
+| ------------- | --------------------------------------------------------------- |
+| `contentType` | `"application/did+ld+json"`                                     |
+| `retrieved`   | ISO 8601 timestamp of resolution                                |
+| `error`       | `"notFound"` if KEL is empty; `"deactivated"` if key is revoked |
 
 ### 6.3 Update (Key Rotation)
 
@@ -273,27 +274,27 @@ To rotate the active key from `K_n` to `K_{n+1}`:
 1. Pre-generate additional key pairs `K_{n+2}`, `K_{n+3}` as needed.
 2. Broadcast an **unconfirmed rotation transaction** (signed by `K_n`):
 
-   | Field | Value |
-   |---|---|
-   | `public_key` | `K_n` (hex) |
-   | `public_key_hash` | `addr(K_n)` |
-   | `prerotated_key_hash` | `addr(K_{n+1})` |
-   | `twice_prerotated_key_hash` | `addr(K_{n+2})` |
-   | `prev_public_key_hash` | `addr(K_{n-1})` |
-   | `relationship` | base64-encoded JSON scope document (optional) |
-   | outputs | sent to `addr(K_{n+1})` |
+   | Field                       | Value                                         |
+   | --------------------------- | --------------------------------------------- |
+   | `public_key`                | `K_n` (hex)                                   |
+   | `public_key_hash`           | `addr(K_n)`                                   |
+   | `prerotated_key_hash`       | `addr(K_{n+1})`                               |
+   | `twice_prerotated_key_hash` | `addr(K_{n+2})`                               |
+   | `prev_public_key_hash`      | `addr(K_{n-1})`                               |
+   | `relationship`              | base64-encoded JSON scope document (optional) |
+   | outputs                     | sent to `addr(K_{n+1})`                       |
 
 3. Broadcast a **confirming rotation transaction** (signed by `K_{n+1}`):
 
-   | Field | Value |
-   |---|---|
-   | `public_key` | `K_{n+1}` (hex) |
-   | `public_key_hash` | `addr(K_{n+1})` |
-   | `prerotated_key_hash` | `addr(K_{n+2})` |
-   | `twice_prerotated_key_hash` | `addr(K_{n+3})` |
-   | `prev_public_key_hash` | `addr(K_n)` |
-   | `relationship` | `""` |
-   | outputs | sent to `addr(K_{n+2})` |
+   | Field                       | Value                   |
+   | --------------------------- | ----------------------- |
+   | `public_key`                | `K_{n+1}` (hex)         |
+   | `public_key_hash`           | `addr(K_{n+1})`         |
+   | `prerotated_key_hash`       | `addr(K_{n+2})`         |
+   | `twice_prerotated_key_hash` | `addr(K_{n+3})`         |
+   | `prev_public_key_hash`      | `addr(K_n)`             |
+   | `relationship`              | `""`                    |
+   | outputs                     | sent to `addr(K_{n+2})` |
 
 After both transactions are accepted into the mempool (or confirmed on-chain),
 resolving `did:yadacoin:<K_{n+1}_hex>` returns the updated DID Document. The old
@@ -441,10 +442,10 @@ The verifiable data registry for `did:yadacoin` is the **YadaCoin blockchain**
 any node may participate in block production and validation.
 
 - **Network:** YadaCoin mainnet
-- **Block time:** approximately 2 minutes
+- **Block time:** approximately 10 minutes
 - **Transaction version:** 7 (key event transactions)
 - **Public node:** `https://yadacoin.io`
-- **KEL lookup endpoint:** `GET https://yadacoin.io/key-rotation/kel?public_key=<hex>`
+- **KEL lookup endpoint:** `GET https://yadacoin.io/key-event-log?public_key=<hex>`
 
 ---
 
@@ -476,30 +477,30 @@ A conforming `did:yadacoin` DID controller:
   - `yadacoin.core.transaction.Transaction`
 - **Agent auth SDK (Python):** `sdk/python/yadacoin_agent_auth.py`
 - **Agent auth SDK (JavaScript):** `sdk/js/yadacoin-agent-auth.mjs`
-- **Public resolver endpoint:** `https://yadacoin.io/key-rotation/kel?public_key=<hex>`
+- **Public resolver endpoint:** `https://yadacoin.io/key-event-log?public_key=<hex>`
 
 ---
 
 ## 12. Related Work
 
-| Specification | Relationship |
-|---|---|
-| [W3C DID Core 1.0](https://www.w3.org/TR/did-core/) | This method conforms to the DID Core specification |
-| [W3C VC Data Model 2.0](https://www.w3.org/TR/vc-data-model-2.0/) | Scope documents use the VC 2.0 format |
-| [KERI](https://keri.one/) (IETF draft) | YadaCoin KEL is a blockchain-anchored subset of KERI pre-rotation semantics |
-| [did:ion](https://identity.foundation/ion/) | Similar blockchain-anchored key management; ION uses Bitcoin Sidetree |
-| [did:key](https://w3c-ccg.github.io/did-method-key/) | Self-contained; no revocation; used for ephemeral keys in the agent auth protocol |
-| [KEL Agent Auth Spec](./kel_agent_auth_spec.md) | Application protocol built on top of `did:yadacoin` for AI agent authentication |
-| [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421) | HTTP Message Signatures; complementary authentication mechanism |
+| Specification                                                     | Relationship                                                                      |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [W3C DID Core 1.0](https://www.w3.org/TR/did-core/)               | This method conforms to the DID Core specification                                |
+| [W3C VC Data Model 2.0](https://www.w3.org/TR/vc-data-model-2.0/) | Scope documents use the VC 2.0 format                                             |
+| [KERI](https://keri.one/) (IETF draft)                            | YadaCoin KEL is a blockchain-anchored subset of KERI pre-rotation semantics       |
+| [did:ion](https://identity.foundation/ion/)                       | Similar blockchain-anchored key management; ION uses Bitcoin Sidetree             |
+| [did:key](https://w3c-ccg.github.io/did-method-key/)              | Self-contained; no revocation; used for ephemeral keys in the agent auth protocol |
+| [KEL Agent Auth Spec](./kel_agent_auth_spec.md)                   | Application protocol built on top of `did:yadacoin` for AI agent authentication   |
+| [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421)                | HTTP Message Signatures; complementary authentication mechanism                   |
 
 ---
 
 ## 13. Revision History
 
-| Version | Date | Changes |
-|---|---|---|
+| Version   | Date       | Changes                              |
+| --------- | ---------- | ------------------------------------ |
 | 1.0-draft | 2026-05-01 | Initial draft for W3C CCG submission |
 
 ---
 
-*YadaCoin Open Source License (YOSL) v1.1 — Copyright © 2017-2025 Matthew Vogel, Reynold Vogel, Inc.*
+_YadaCoin Open Source License (YOSL) v1.1 — Copyright © 2017-2025 Matthew Vogel, Inc._

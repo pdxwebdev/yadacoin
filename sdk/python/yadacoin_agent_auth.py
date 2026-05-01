@@ -194,7 +194,7 @@ class YadaCoinRestKelProvider:
     async def build_from_public_key(self, public_key_hex: str) -> List[Any]:
         import aiohttp  # type: ignore
 
-        url = f"{self.base_url}/key-rotation/kel?public_key={public_key_hex}"
+        url = f"{self.base_url}/key-event-log?public_key={public_key_hex}"
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 url, timeout=aiohttp.ClientTimeout(total=10)

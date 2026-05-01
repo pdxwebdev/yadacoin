@@ -289,7 +289,7 @@ kel = await KeyEventLog.build_from_public_key(public_key_hex)
 ### Option B — REST API (no local node required)
 
 ```
-GET https://yadacoin.io/key-rotation/kel?public_key=<hex>
+GET https://yadacoin.io/key-event-log?public_key=<hex>
 ```
 
 Response: JSON array of KEL entries (same schema as on-chain transactions).
