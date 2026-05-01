@@ -33,13 +33,30 @@
  *     "/ai-agent-auth/api/travel",
  *     { method: "POST", publicKey, privateKey,
  *       body: { services: ["hotel","flight"], dest: "NYC",
- *               checkin: "2026-05-10", checkout: "2026-05-15" } }
+ *               checkin: "May 10", checkout: "May 15" } }
  *   );
  *
  *   if (result.ok) {
  *     const data = await result.json();
  *     console.log(data.completed);
  *   }
+ *
+ * Building a W3C VC 2.0 scope
+ * ----------------------------
+ *   import { buildVCScope, parseScope } from "./yadacoin-agent-auth.mjs";
+ *
+ *   const relationshipB64 = buildVCScope({
+ *     operatorPubHex: "02a1b2c3...",
+ *     agentPubHex:    "03d4e5f6...",
+ *     authorizationType: "TravelBookingAuthorization",
+ *     authorization: {
+ *       destination: "New York City",
+ *       checkin: "May 10",
+ *       checkout: "May 15",
+ *       services: ["hotel", "flight"],
+ *     },
+ *   });
+ *   // Pass relationshipB64 to POST /key-rotation/derived-child-key
  */
 
 import { secp256k1 } from "@noble/curves/secp256k1";
@@ -326,34 +343,105 @@ export class AgentAuthClient {
 }
 
 // ---------------------------------------------------------------------------
-// Scope builder
+// Scope builder — W3C Verifiable Credentials 2.0
 // ---------------------------------------------------------------------------
 
 /**
- * Build a scope document to be committed in the rotation transaction's
- * relationship field.
+ * Build a W3C Verifiable Credential 2.0 scope document and return it
+ * base64-encoded, ready to pass as the `relationship` parameter to
+ * POST /key-rotation/derived-child-key.
  *
- * Returns the base64-encoded JSON string ready to pass as the `relationship`
- * parameter to POST /key-rotation/derived-child-key.
+ * Conforms to spec section 5 (protocol v1.1).
+ *
+ * @param {object} options
+ * @param {string} options.operatorPubHex      — operator compressed public key (hex)
+ * @param {string} options.agentPubHex         — agent key K_{n+3} compressed public key (hex)
+ * @param {string} [options.authorizationType] — e.g. "TravelBookingAuthorization"
+ * @param {object} [options.authorization={}]  — service-specific authorization fields
+ * @param {string} [options.validFrom]         — ISO 8601 timestamp (default: now)
+ * @returns {string} base64-encoded JSON
+ */
+export function buildVCScope({
+  operatorPubHex,
+  agentPubHex,
+  authorizationType = "AgentAuthorization",
+  authorization = {},
+  validFrom,
+} = {}) {
+  if (!operatorPubHex || !agentPubHex)
+    throw new Error("operatorPubHex and agentPubHex are required");
+  const vc = {
+    "@context": [
+      "https://www.w3.org/ns/credentials/v2",
+      "https://yadacoin.io/contexts/agent-auth/v1",
+    ],
+    type: ["VerifiableCredential", "AgentAuthorizationCredential"],
+    issuer: `did:yadacoin:${operatorPubHex}`,
+    validFrom: validFrom ?? new Date().toISOString(),
+    credentialSubject: {
+      id: `did:yadacoin:${agentPubHex}`,
+      agentAuthorization: {
+        type: authorizationType,
+        ...authorization,
+      },
+    },
+  };
+  return btoa(unescape(encodeURIComponent(JSON.stringify(vc))));
+}
+
+/**
+ * Build a scope document using the legacy flat format (deprecated, pre-v1.1).
+ *
+ * Prefer `buildVCScope()` for new integrations.
  *
  * @param {object} scope — e.g. { task, dest, checkin, checkout, services }
  * @returns {string} base64-encoded JSON
+ * @deprecated Use buildVCScope() instead.
  */
 export function buildScope(scope) {
   return btoa(unescape(encodeURIComponent(JSON.stringify(scope))));
 }
 
 /**
- * Parse a scope document from a base64-encoded relationship field.
+ * Parse and normalise a scope document from a base64-encoded relationship
+ * field.  Accepts both W3C VC 2.0 and legacy flat formats and returns a
+ * common `{dest, checkin, checkout, services}` object.
+ *
+ * W3C VC 2.0 mapping:
+ *   credentialSubject.agentAuthorization.destination → dest
+ *   credentialSubject.agentAuthorization.checkin    → checkin
+ *   credentialSubject.agentAuthorization.checkout   → checkout
+ *   credentialSubject.agentAuthorization.services   → services (lowercased)
  *
  * @param {string} relationship — base64 string from a KEL entry
- * @returns {object|null}
+ * @returns {{ dest: string|null, checkin: string|null, checkout: string|null,
+ *             services: string[], raw: object }|null}
  */
 export function parseScope(relationship) {
   if (!relationship) return null;
+  let raw;
   try {
-    return JSON.parse(decodeURIComponent(escape(atob(relationship))));
+    raw = JSON.parse(decodeURIComponent(escape(atob(relationship))));
   } catch {
     return null;
   }
+  if (raw["@context"] && raw["credentialSubject"]) {
+    // W3C VC 2.0
+    const auth = raw?.credentialSubject?.agentAuthorization ?? {};
+    return {
+      dest: auth.destination ?? null,
+      checkin: auth.checkin ?? null,
+      checkout: auth.checkout ?? null,
+      services: (auth.services ?? []).map((s) => s.toLowerCase()),
+      raw,
+    };
+  }
+  // Legacy flat format
+  return {
+    dest: raw.dest ?? null,
+    checkin: raw.checkin ?? null,
+    checkout: raw.checkout ?? null,
+    services: (raw.services ?? []).map((s) => s.toLowerCase()),
+    raw,
+  };
 }

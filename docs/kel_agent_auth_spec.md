@@ -1,4 +1,4 @@
-# YadaCoin KEL Agent Auth Protocol — Specification v1.0
+# YadaCoin KEL Agent Auth Protocol — Specification v1.1
 
 ## 1. Overview
 
@@ -54,40 +54,91 @@ The chain guarantees that:
 ## 4. Agent Provisioning
 
 Before calling a service the operator must provision the agent key on-chain. This
-is a one-time rotation transaction broadcast to the YadaCoin network.
+is a **pair** of rotation transactions broadcast to the YadaCoin network.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Rotation transaction (UNCONFIRMED + CONFIRMING pair)       │
+│  UNCONFIRMED transaction  (signed by K_{n})                 │
 │                                                             │
-│  public_key            = K_{n}   (current signing key)     │
-│  public_key_hash       = addr(K_{n})                       │
-│  prerotated_key_hash   = addr(K_{n+1})  ← agent identity   │
-│  twice_prerotated_key_hash = addr(K_{n+2})                  │
-│  relationship          = base64(scope_json)                 │
+│  public_key                = K_{n}                         │
+│  public_key_hash           = addr(K_{n})                   │
+│  prerotated_key_hash       = addr(K_{n+1})  ← agent key    │
+│  twice_prerotated_key_hash = addr(K_{n+2})  ← scope anchor │
+│  relationship              = base64(W3C_VC_JSON)            │
+└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  CONFIRMING transaction  (signed by K_{n+1})                │
+│                                                             │
+│  public_key                = K_{n+1}                       │
+│  public_key_hash           = addr(K_{n+1})                 │
+│  prerotated_key_hash       = addr(K_{n+2})                 │
+│  twice_prerotated_key_hash = addr(K_{n+3})  ← agent key    │
+│  relationship              = ""                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-After the transaction is broadcast (mempool is sufficient — services check
-mempool + chain), `K_{n+1}` is the agent credential.
+The **agent credential** is `K_{n+3}` — the `twice_prerotated_key_hash` of the
+CONFIRMING tx. The scope is carried on the UNCONFIRMED tx, whose
+`twice_prerotated_key_hash` equals `addr(K_{n+2})` which in turn equals the
+CONFIRMING tx's `prerotated_key_hash`.
+
+After both transactions are broadcast (mempool is sufficient — services check
+mempool + chain), `K_{n+3}` is the agent credential.
+
+> **Scope location rule**: To retrieve the scope for an agent key `K_agent`,
+> walk the KEL and find the entry `E` where
+> `E.twice_prerotated_key_hash == addr(K_agent)`. The scope is in
+> `E.relationship`.
 
 ---
 
-## 5. Scope Document
+## 5. Scope Document (W3C Verifiable Credential 2.0)
 
-The `relationship` field MUST be a base64-encoded UTF-8 JSON object. Services
-SHOULD define their own task-specific fields; unrecognised keys MUST be ignored.
+The `relationship` field of the UNCONFIRMED provisioning transaction MUST be a
+base64-encoded UTF-8 JSON object conforming to the
+[W3C Verifiable Credentials Data Model v2.0](https://www.w3.org/TR/vc-data-model-2.0/).
 
-**Common fields**
+**Required fields**
 
-| Field                  | Type                   | Description                                          |
-| ---------------------- | ---------------------- | ---------------------------------------------------- |
-| `task`                 | string                 | Identifies the service type, e.g. `"travel_booking"` |
-| `services`             | string[]               | Whitelist of allowed service names                   |
-| `dest`                 | string                 | Destination (travel services)                        |
-| `checkin` / `checkout` | string (ISO 8601 date) | Date range                                           |
+| JSON path                                   | Type     | Description                                           |
+| ------------------------------------------- | -------- | ----------------------------------------------------- |
+| `@context`                                  | string[] | Must include `"https://www.w3.org/ns/credentials/v2"` |
+| `type`                                      | string[] | Must include `"VerifiableCredential"`                 |
+| `issuer`                                    | string   | `did:yadacoin:<operator_public_key_hex>`              |
+| `validFrom`                                 | string   | ISO 8601 timestamp                                    |
+| `credentialSubject.id`                      | string   | `did:yadacoin:<agent_public_key_hex>` (K\_{n+3})      |
+| `credentialSubject.agentAuthorization.type` | string   | Service-defined, e.g. `"TravelBookingAuthorization"`  |
 
-**Example**
+Services define their own `agentAuthorization` fields; unrecognised keys MUST
+be ignored.
+
+**Example — Travel Booking**
+
+```json
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://yadacoin.io/contexts/agent-auth/v1"
+  ],
+  "type": ["VerifiableCredential", "AgentAuthorizationCredential"],
+  "issuer": "did:yadacoin:02a1b2c3...",
+  "validFrom": "2026-05-01T00:00:00.000Z",
+  "credentialSubject": {
+    "id": "did:yadacoin:03d4e5f6...",
+    "agentAuthorization": {
+      "type": "TravelBookingAuthorization",
+      "destination": "New York City",
+      "checkin": "May 10",
+      "checkout": "May 15",
+      "services": ["hotel", "flight"]
+    }
+  }
+}
+```
+
+**Legacy flat format (deprecated)**
+
+Pre-v1.1 implementations used a flat JSON object:
 
 ```json
 {
@@ -99,8 +150,9 @@ SHOULD define their own task-specific fields; unrecognised keys MUST be ignored.
 }
 ```
 
-If `relationship` is absent or does not parse as JSON, the service MAY apply
-default policy (e.g. deny all, or allow a fixed default scope).
+Services SHOULD accept both formats for backwards compatibility. The Python
+and JavaScript SDKs provide `_extract_scope()` / `parseScope()` helpers that
+normalise both into a common `{dest, checkin, checkout, services}` dict.
 
 ---
 
@@ -175,16 +227,22 @@ Content-Type: application/json
 A conforming service MUST perform these checks **in order**, returning the
 specified HTTP status on failure:
 
-| Step | Check                                                                        | Failure status |
-| ---- | ---------------------------------------------------------------------------- | -------------- |
-| 1    | `challenge` matches HMAC-SHA256 for current or previous 30-second window     | 401            |
-| 2    | `secp256k1_verify(b64decode(signature), sha256(challenge), public_key)`      | 401            |
-| 3    | KEL exists for `public_key`                                                  | 403            |
-| 4    | `addr(public_key)` does NOT appear as `public_key_hash` in any KEL entry     | 403            |
-| 5    | `kel[-1].prerotated_key_hash == addr(public_key)`                            | 403            |
-| 6    | Request is within the scope committed in `kel[-1].relationship` (if present) | 403            |
+| Step | Check                                                                                                        | Failure status |
+| ---- | ------------------------------------------------------------------------------------------------------------ | -------------- |
+| 1    | `challenge` matches HMAC-SHA256 for current or previous 30-second window                                     | 401            |
+| 2    | `secp256k1_verify(b64decode(signature), sha256(challenge), public_key)`                                      | 401            |
+| 3    | KEL exists for `public_key`                                                                                  | 403            |
+| 4    | `addr(public_key)` does NOT appear as `public_key_hash` in any KEL entry                                     | 403            |
+| 5    | `kel[-1].prerotated_key_hash == addr(public_key)`                                                            | 403            |
+| 6    | Find KEL entry `E` where `E.twice_prerotated_key_hash == addr(public_key)`; read scope from `E.relationship` | 403            |
+| 7    | Request is within the scope read in step 6 (if present)                                                      | 403            |
 
-Step 6 is service-defined; the SDK provides helpers but ultimate enforcement
+> **Step 6 detail**: `kel[-1]` is the CONFIRMING tx and its `relationship` is always `""`. The
+> scope is on the UNCONFIRMED tx one level back, identified by its
+> `twice_prerotated_key_hash == addr(agent_key)`. Always iterate the KEL
+> to find this entry rather than reading `kel[-1].relationship`.
+
+Step 7 is service-defined; the SDK provides helpers but ultimate enforcement
 is the service's responsibility.
 
 ---
@@ -305,11 +363,19 @@ async def action_handler(request):
 
 ---
 
+---
+
 ## 13. Versioning
 
-This document describes **protocol version 1.0**. Breaking changes will
-increment the major version. The `public_key` field in requests MAY carry a
-`protocol_version` hint in future versions.
+This document describes **protocol version 1.1**.
+
+| Version | Changes                                                                                                                                                                            |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | Initial specification                                                                                                                                                              |
+| 1.1     | Scope format upgraded to W3C Verifiable Credentials 2.0; clarified scope location (UNCONFIRMED tx); validation table updated to 7 steps; CONFIRMING/UNCONFIRMED tx pair documented |
+
+Breaking changes will increment the major version. The `public_key` field in
+requests MAY carry a `protocol_version` hint in future versions.
 
 ---
 

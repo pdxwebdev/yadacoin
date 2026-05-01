@@ -668,6 +668,7 @@
       let travel = null;
       // null       = no active request
       // { dest, checkin, checkout, services }  — collected so far
+      let chatHistory = [];
 
       // ── Main send handler ──
       async function send() {
@@ -679,177 +680,96 @@
         sendBtn.disabled = true;
 
         appendUser(prompt);
+        chatHistory.push({
+          role: "user",
+          content: prompt,
+        });
 
         const thinkRow = appendThinking();
-        await sleep(600 + Math.random() * 400);
+
+        let data;
+        try {
+          const resp = await fetch(
+            "/ai-agent-auth/api/chat",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body: JSON.stringify({
+                messages: chatHistory,
+              }),
+            },
+          );
+          data = await resp.json();
+          if (!resp.ok)
+            throw new Error(
+              data.error || resp.status,
+            );
+        } catch (e) {
+          thinkRow.remove();
+          appendAgent(
+            `<span style="color:var(--red2)">⚠ Could not reach AI service: ${escHtml(String(e))}. ` +
+              `Make sure Ollama is running (<code>ollama serve</code>).</span>`,
+          );
+          sendBtn.disabled = false;
+          chatHistory.pop(); // remove failed user message
+          return;
+        }
         thinkRow.remove();
 
-        if (travel === null) {
-          travel = {};
-          parseTravelInfo(prompt, travel);
-        } else {
-          fillNextTravelField(prompt);
-        }
-
-        advanceTravelConversation();
-      }
-
-      // ── Parse travel details from free text ──
-      function parseTravelInfo(text, state) {
-        // destination: "to NYC", "to New York", or an all-caps word
-        const destMatch =
-          text.match(
-            /\bto\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\b/,
-          ) || text.match(/\b([A-Z]{2,})\b/);
-        if (destMatch) state.dest = destMatch[1];
-
-        // dates: "May 10-15", "May 10 to May 15", "2026-05-10 to 2026-05-15"
-        const dateMatch =
-          text.match(
-            /(\w+\s+\d{1,2})\s*[-–to]+\s*(\w+\s*\d{1,2})/i,
-          ) ||
-          text.match(
-            /(\d{4}-\d{2}-\d{2})\s*[-–to]+\s*(\d{4}-\d{2}-\d{2})/,
-          );
-        if (dateMatch) {
-          state.checkin = dateMatch[1].trim();
-          const rawOut = dateMatch[2].trim();
-          // If checkout captured only a number (e.g. "16"), inherit the month
-          // from checkin so "May 10-16" → checkout "May 16"
-          if (/^\d{1,2}$/.test(rawOut)) {
-            const monthWord = state.checkin
-              .replace(/\s*\d+$/, "")
-              .trim();
-            state.checkout = monthWord
-              ? `${monthWord} ${rawOut}`
-              : rawOut;
-          } else {
-            state.checkout = rawOut;
+        // Merge extracted fields into travel state
+        if (data.extracted) {
+          if (!travel) travel = {};
+          for (const [k, v] of Object.entries(
+            data.extracted,
+          )) {
+            if (v != null && v !== "")
+              travel[k] = v;
           }
         }
 
-        // services keywords
-        const svcs = [];
-        if (/\ball\b|everything/i.test(text)) {
-          state.services = [
-            "hotel",
-            "flight",
-            "car",
-          ];
-        } else {
-          if (
-            /hotel|room|stay|accommodation/i.test(
-              text,
+        chatHistory.push({
+          role: "assistant",
+          content: data.reply,
+        });
+
+        if (
+          data.complete &&
+          travel?.dest &&
+          travel?.checkin &&
+          travel?.checkout &&
+          travel?.services?.length
+        ) {
+          // All details collected — show summary + approval card
+          const svcsHtml = travel.services
+            .map(
+              (s) =>
+                `<strong>${escHtml(s)}</strong>`,
             )
-          )
-            svcs.push("hotel");
-          if (/flight|fly|plane|air/i.test(text))
-            svcs.push("flight");
-          if (/car|rental|rent/i.test(text))
-            svcs.push("car");
-          if (svcs.length) state.services = svcs;
-        }
-      }
-
-      // ── Fill the next missing field from a follow-up reply ──
-      function fillNextTravelField(text) {
-        if (!travel.dest) {
-          travel.dest = text.trim();
-        } else if (!travel.checkin) {
-          const m =
-            text.match(
-              /(\w+\s+\d{1,2})\s*[-–to]+\s*(\w+\s*\d{1,2})/i,
-            ) ||
-            text.match(/(\d{4}-\d{2}-\d{2})/);
-          if (m) {
-            travel.checkin = m[1].trim();
-            const rawOut = (m[2] || m[1]).trim();
-            if (/^\d{1,2}$/.test(rawOut)) {
-              const monthWord = travel.checkin
-                .replace(/\s*\d+$/, "")
-                .trim();
-              travel.checkout = monthWord
-                ? `${monthWord} ${rawOut}`
-                : rawOut;
-            } else {
-              travel.checkout = rawOut;
-            }
-          } else {
-            travel.checkin = text.trim();
-            travel.checkout = text.trim();
-          }
-        } else if (!travel.services) {
-          const svcs = [];
-          if (/\ball\b|everything/i.test(text)) {
-            travel.services = [
-              "hotel",
-              "flight",
-              "car",
-            ];
-          } else {
-            if (/hotel/i.test(text))
-              svcs.push("hotel");
-            if (/flight|fly/i.test(text))
-              svcs.push("flight");
-            if (/car|rental/i.test(text))
-              svcs.push("car");
-            travel.services = svcs.length
-              ? svcs
-              : ["hotel", "flight", "car"];
-          }
-        }
-      }
-
-      // ── Advance the conversation or show approval card ──
-      function advanceTravelConversation() {
-        if (!travel.dest) {
-          appendAgent(
-            "I'd be happy to help with travel! Where would you like to go?",
+            .join(", ");
+          const bubble = appendAgent(
+            escHtml(data.reply) +
+              `<br><br>` +
+              `📍 Destination: <strong>${escHtml(travel.dest)}</strong><br>` +
+              `📅 Check-in: <strong>${escHtml(travel.checkin)}</strong><br>` +
+              `📅 Check-out: <strong>${escHtml(travel.checkout)}</strong><br>` +
+              `🛎 Services: ${svcsHtml}<br><br>` +
+              `To proceed I'll broadcast a rotation transaction committing ` +
+              `this scope on-chain as a W3C Verifiable Credential. ` +
+              `Please enter your second factor to approve.`,
           );
-          sendBtn.disabled = false;
-          return;
-        }
-        if (!travel.checkin) {
-          appendAgent(
-            `Great, <strong>${escHtml(travel.dest)}</strong>! ` +
-              `What are your travel dates? (e.g. "May 10–15")`,
+          const card = buildApprovalCard(
+            travel,
+            bubble,
           );
+          bubble.appendChild(card);
+          scrollBottom();
+        } else {
+          appendAgent(data.reply);
           sendBtn.disabled = false;
-          return;
         }
-        if (!travel.services) {
-          appendAgent(
-            `Got it — <strong>${escHtml(travel.checkin)}</strong> → ` +
-              `<strong>${escHtml(travel.checkout)}</strong>. ` +
-              `Which services do you need? (hotel, flight, car — or any combination)`,
-          );
-          sendBtn.disabled = false;
-          return;
-        }
-
-        // All details collected — show summary + approval card
-        const svcsHtml = travel.services
-          .map(
-            (s) =>
-              `<strong>${escHtml(s)}</strong>`,
-          )
-          .join(", ");
-        const bubble = appendAgent(
-          `Here's your booking summary:<br><br>` +
-            `📍 Destination: <strong>${escHtml(travel.dest)}</strong><br>` +
-            `📅 Check-in: <strong>${escHtml(travel.checkin)}</strong><br>` +
-            `📅 Check-out: <strong>${escHtml(travel.checkout)}</strong><br>` +
-            `🛎 Services: ${svcsHtml}<br><br>` +
-            `To proceed I'll broadcast a rotation transaction committing ` +
-            `this scope on-chain. Please enter your second factor to approve.`,
-        );
-
-        const card = buildApprovalCard(
-          travel,
-          bubble,
-        );
-        bubble.appendChild(card);
-        scrollBottom();
       }
 
       function sleep(ms) {
@@ -863,21 +783,35 @@
         travelDetails,
         bubble,
       ) {
-        // Build structured scope JSON that will be committed on-chain
-        const scope = {
-          task: "travel_booking",
-          dest: travelDetails.dest,
-          checkin: travelDetails.checkin,
-          checkout: travelDetails.checkout,
-          services: travelDetails.services,
+        // Preview VC (displayed before approval — credentialSubject.id filled in
+        // after the second factor is entered and the child key is derived)
+        const previewVc = {
+          "@context": [
+            "https://www.w3.org/ns/credentials/v2",
+            "https://yadacoin.io/contexts/agent-auth/v1",
+          ],
+          type: [
+            "VerifiableCredential",
+            "AgentAuthorizationCredential",
+          ],
+          issuer:
+            "did:yadacoin:<operator_public_key>",
+          validFrom: new Date().toISOString(),
+          credentialSubject: {
+            id: "did:yadacoin:<agent_key_derived_on_approval>",
+            agentAuthorization: {
+              type: "TravelBookingAuthorization",
+              destination: travelDetails.dest,
+              checkin: travelDetails.checkin,
+              checkout: travelDetails.checkout,
+              services: travelDetails.services,
+            },
+          },
         };
-        const scopeJson = JSON.stringify(
-          scope,
+        const previewJson = JSON.stringify(
+          previewVc,
           null,
           2,
-        );
-        const relationshipB64 = btoa(
-          unescape(encodeURIComponent(scopeJson)),
         );
 
         const card =
@@ -886,11 +820,11 @@
         card.innerHTML = `
           <div class="title">🔐 Authorisation Required</div>
           <div class="detail">
-            The following scope will be committed on-chain in the
-            <code>relationship</code> field of the rotation transaction.
-            The travel service will verify your signature and enforce
-            exactly this scope — it will not accept requests outside it.
-            <pre style="margin-top:8px;font-size:0.76rem;max-height:120px">${escHtml(scopeJson)}</pre>
+            The following W3C Verifiable Credential will be committed on-chain
+            in the <code>relationship</code> field of the rotation transaction.
+            The <code>credentialSubject.id</code> is filled in with the derived
+            agent key after you enter your second factor.
+            <pre style="margin-top:8px;font-size:0.76rem;max-height:140px;overflow:auto">${escHtml(previewJson)}</pre>
           </div>
           <div class="sf-row">
             <input type="password" class="sf-input" placeholder="Second factor (password)" autocomplete="current-password" />
@@ -925,6 +859,7 @@
           bubble.innerHTML += `<hr style="border-color:var(--border);margin:8px 0;">
             <span style="color:var(--red2);font-size:0.82rem;">✗ Action denied by operator.</span>`;
           travel = null;
+          chatHistory = [];
           sendBtn.disabled = false;
           userInput.focus();
           scrollBottom();
@@ -987,6 +922,69 @@
                   true,
                 ),
               );
+
+              // Derive the agent key (K_{n+3} = grandchild of child)
+              // so we can embed did:yadacoin:<agentPubHex> in the VC
+              const _gc1 = deriveSecurePath(
+                child.priv,
+                child.cc,
+                sf,
+              );
+              const _gc2 = deriveSecurePath(
+                _gc1.priv,
+                _gc1.cc,
+                sf,
+              );
+              const agentPubHex = hex.fromBytes(
+                secp.getPublicKey(
+                  _gc2.priv,
+                  true,
+                ),
+              );
+              const operatorPubHex =
+                hex.fromBytes(
+                  secp.getPublicKey(
+                    hex.toBytes(storedPriv),
+                    true,
+                  ),
+                );
+
+              // Build the W3C VC 2.0 that will be committed on-chain
+              const vc = {
+                "@context": [
+                  "https://www.w3.org/ns/credentials/v2",
+                  "https://yadacoin.io/contexts/agent-auth/v1",
+                ],
+                type: [
+                  "VerifiableCredential",
+                  "AgentAuthorizationCredential",
+                ],
+                issuer: `did:yadacoin:${operatorPubHex}`,
+                validFrom:
+                  new Date().toISOString(),
+                credentialSubject: {
+                  id: `did:yadacoin:${agentPubHex}`,
+                  agentAuthorization: {
+                    type: "TravelBookingAuthorization",
+                    destination:
+                      travelDetails.dest,
+                    checkin:
+                      travelDetails.checkin,
+                    checkout:
+                      travelDetails.checkout,
+                    services:
+                      travelDetails.services,
+                  },
+                },
+              };
+              const relationshipB64 = btoa(
+                unescape(
+                  encodeURIComponent(
+                    JSON.stringify(vc),
+                  ),
+                ),
+              );
+
               s1.classList.add("done");
               s1.textContent =
                 "› Pre-committed key derived: " +
@@ -1030,6 +1028,7 @@
                     `Please check your second factor and try again.</span>`,
                 );
                 travel = null;
+                chatHistory = [];
                 sendBtn.disabled = false;
                 userInput.focus();
                 return;
@@ -1084,6 +1083,7 @@
                   `<span style="color:var(--red2)">Could not obtain a challenge from the travel service.</span>`,
                 );
                 travel = null;
+                chatHistory = [];
                 sendBtn.disabled = false;
                 userInput.focus();
                 return;
@@ -1244,6 +1244,7 @@
               );
             } finally {
               travel = null;
+              chatHistory = [];
               sendBtn.disabled = false;
               userInput.focus();
             }

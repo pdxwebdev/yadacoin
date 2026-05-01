@@ -45,6 +45,7 @@ import time
 import tornado.web
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import verify_signature as _verify_signature
+from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 
 from yadacoin.http.base import BaseHandler
 
@@ -82,6 +83,135 @@ def _gen_confirmation(service: str, seed: str) -> str:
     pfx = {"hotel": "HTL", "flight": "FLT", "car": "CAR"}.get(service, "SVC")
     h = hashlib.sha256(f"{seed}{service}".encode()).hexdigest()[:6].upper()
     return f"{pfx}-{h}"
+
+
+def _extract_scope(data: dict) -> dict:
+    """Normalize scope from W3C VC 2.0 or legacy flat format.
+
+    W3C VC 2.0 format:
+      { "@context": [...], "credentialSubject": { "agentAuthorization": { ... } } }
+    Legacy flat format:
+      { "task": "travel_booking", "dest": ..., "services": [...] }
+    """
+    if "@context" in data and "credentialSubject" in data:
+        auth = data.get("credentialSubject", {}).get("agentAuthorization", {})
+        return {
+            "dest": auth.get("destination"),
+            "services": [s.lower() for s in auth.get("services", [])],
+            "checkin": auth.get("checkin"),
+            "checkout": auth.get("checkout"),
+        }
+    # Legacy flat format — normalise service list to lowercase
+    services = data.get("services", [])
+    return {**data, "services": [s.lower() for s in services]}
+
+
+class AgentChatHandler(BaseHandler):
+    """
+    POST /ai-agent-auth/api/chat
+
+    Proxies the conversation to a local Ollama instance and returns a
+    structured JSON response for driving the travel booking UI.
+
+    Body (JSON)
+    -----------
+    messages : list[{role: "user"|"assistant", content: str}]
+
+    Response (JSON)
+    ---------------
+    reply     : str   — LLM's natural-language reply
+    extracted : dict  — {dest, checkin, checkout, services} with null for unknowns
+    complete  : bool  — true when all four fields are known
+    error     : str   — present only on failure
+
+    Config keys (config.json)
+    -------------------------
+    ollama_host  : str  (default "http://localhost:11434")
+    ollama_model : str  (default "llama3.2")
+    """
+
+    _SYSTEM_PROMPT = (
+        "You are a travel booking assistant. Extract travel details from the conversation.\n"
+        "ALWAYS respond with ONLY a valid JSON object — no other text, no markdown:\n"
+        "{\n"
+        '  "reply": "your natural conversational response",\n'
+        '  "extracted": {\n'
+        '    "dest": "city/destination or null",\n'
+        '    "checkin": "check-in date in Month Day format (e.g. May 10) or null",\n'
+        '    "checkout": "check-out date in Month Day format (e.g. May 16) or null",\n'
+        '    "services": ["hotel","flight","car"] subset or null\n'
+        "  },\n"
+        '  "complete": false\n'
+        "}\n"
+        "Rules:\n"
+        "- Only use service values: hotel, flight, car\n"
+        '- If the user says "all" or "everything": services=["hotel","flight","car"]\n'
+        "- Set complete=true ONLY when dest, checkin, checkout AND services are ALL known\n"
+        '- For date ranges like "May 10-16": checkin="May 10", checkout="May 16"\n'
+        "- Ask conversationally for any missing fields\n"
+        "- The reply field must be plain text (no JSON, no markdown)"
+    )
+
+    async def post(self):
+        try:
+            body = json.loads(self.request.body)
+        except Exception:
+            self.set_status(400)
+            return self.render_as_json({"error": "invalid json body"})
+
+        messages = body.get("messages", [])
+        if not isinstance(messages, list):
+            self.set_status(400)
+            return self.render_as_json({"error": "messages must be a list"})
+
+        ollama_host = (
+            getattr(self.config, "ollama_host", None) or "http://localhost:11434"
+        ).rstrip("/")
+        ollama_model = getattr(self.config, "ollama_model", None) or "llama3.2"
+
+        full_messages = [{"role": "system", "content": self._SYSTEM_PROMPT}] + messages
+
+        try:
+            client = AsyncHTTPClient()
+            req = HTTPRequest(
+                url=f"{ollama_host}/api/chat",
+                method="POST",
+                headers={"Content-Type": "application/json"},
+                body=json.dumps(
+                    {"model": ollama_model, "messages": full_messages, "stream": False}
+                ),
+                request_timeout=60.0,
+            )
+            resp = await client.fetch(req)
+            ollama_data = json.loads(resp.body)
+            content = ollama_data["message"]["content"].strip()
+        except Exception as exc:
+            self.set_status(502)
+            return self.render_as_json(
+                {
+                    "error": f"Ollama unreachable: {exc}",
+                    "hint": f"Ensure Ollama is running at {ollama_host} with model '{ollama_model}'",
+                }
+            )
+
+        # Strip any accidental markdown code fences the model might add
+        if content.startswith("```"):
+            content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+        try:
+            parsed = json.loads(content)
+            reply = str(parsed.get("reply", ""))
+            extracted = parsed.get("extracted") or {}
+            complete = bool(parsed.get("complete", False))
+        except Exception:
+            # Model didn't return valid JSON — treat entire response as the reply
+            reply = content
+            extracted = {}
+            complete = False
+
+        return self.render_as_json(
+            {"reply": reply, "extracted": extracted, "complete": complete}
+        )
 
 
 class AgentAuthAppHandler(BaseHandler):
@@ -299,15 +429,32 @@ class TravelBookingHandler(BaseHandler):
             )
 
         # ── 7. Read authorised scope from relationship field ───────────────── #
+        # The scope is committed in the UNCONFIRMED tx whose
+        # twice_prerotated_key_hash == address (the agent key being authenticated).
+        # kel[-1] is the CONFIRMING tx (relationship=""); the UNCONFIRMED tx
+        # is the KEL entry that pre-committed to the agent key two hops ahead.
         scope = {}
-        raw_rel = getattr(latest, "relationship", None)
-        if raw_rel:
-            try:
-                scope = json.loads(
-                    base64.b64decode(raw_rel).decode("utf-8", errors="replace")
+        for entry in kel:
+            tpkh = (
+                getattr(entry, "twice_prerotated_key_hash", None)
+                if not isinstance(entry, dict)
+                else entry.get("twice_prerotated_key_hash")
+            )
+            if tpkh == address:
+                raw_rel = (
+                    getattr(entry, "relationship", None)
+                    if not isinstance(entry, dict)
+                    else entry.get("relationship")
                 )
-            except Exception:
-                pass  # unstructured relationship — no scope restrictions
+                if raw_rel:
+                    try:
+                        parsed = json.loads(
+                            base64.b64decode(raw_rel).decode("utf-8", errors="replace")
+                        )
+                        scope = _extract_scope(parsed)
+                    except Exception:
+                        pass
+                break
 
         scope_services = [s.lower() for s in scope.get("services", [])]
         scope_dest = (scope.get("dest") or "").strip().lower()
@@ -393,6 +540,7 @@ class TravelBookingHandler(BaseHandler):
 
 HANDLERS = [
     (r"/ai-agent-auth", AgentAuthAppHandler),
+    (r"/ai-agent-auth/api/chat", AgentChatHandler),
     (r"/ai-agent-auth/api/challenge", AgentChallengeHandler),
     (r"/ai-agent-auth/api/travel", TravelBookingHandler),
     (

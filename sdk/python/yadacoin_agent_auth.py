@@ -40,7 +40,9 @@ Quick start (Tornado)
                 self.set_status(exc.http_status)
                 return self.write({"error": str(exc)})
 
-            scope = auth.scope        # dict from on-chain relationship field
+            # auth.scope is normalised from W3C VC 2.0 or legacy flat format:
+            # { "dest": ..., "checkin": ..., "checkout": ..., "services": [...] }
+            scope = auth.scope
             address = auth.address    # P2PKH address of the agent key
             kel_depth = len(auth.kel)
             # ... your service logic ...
@@ -98,6 +100,56 @@ class AuthResult:
     kel: List[Any]
     scope: Dict[str, Any] = field(default_factory=dict)
     kel_txid: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Scope normalisation
+# ---------------------------------------------------------------------------
+
+
+def _extract_scope(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalise a scope document into a flat dict.
+
+    Accepts either W3C VC 2.0 format or the legacy flat format and returns::
+
+        {
+            "dest":     str | None,
+            "checkin":  str | None,
+            "checkout": str | None,
+            "services": list[str],
+        }
+
+    W3C VC 2.0 example input::
+
+        {
+          "@context": ["https://www.w3.org/ns/credentials/v2", ...],
+          "credentialSubject": {
+            "id": "did:yadacoin:<agent_pub_hex>",
+            "agentAuthorization": {
+              "type": "TravelBookingAuthorization",
+              "destination": "New York City",
+              "checkin": "May 10",
+              "checkout": "May 15",
+              "services": ["hotel", "flight"]
+            }
+          }
+        }
+
+    Legacy flat example input::
+
+        {"task": "travel_booking", "dest": "NYC", "services": ["hotel"]}
+    """
+    if "@context" in raw and "credentialSubject" in raw:
+        auth = raw.get("credentialSubject", {}).get("agentAuthorization", {})
+        return {
+            "dest": auth.get("destination"),
+            "checkin": auth.get("checkin"),
+            "checkout": auth.get("checkout"),
+            "services": [s.lower() for s in auth.get("services", [])],
+        }
+    # Legacy flat format — normalise service list to lowercase
+    services = raw.get("services", [])
+    return {**raw, "services": [s.lower() for s in services]}
 
 
 # ---------------------------------------------------------------------------
@@ -326,20 +378,31 @@ class AgentAuthValidator:
                 403,
             )
 
-        # Step 6 — parse scope (does not enforce; call enforce_scope separately)
+        # Step 6 — find scope on the UNCONFIRMED tx
+        # The CONFIRMING tx (kel[-1]) always has relationship="".  The scope
+        # is on the UNCONFIRMED tx whose twice_prerotated_key_hash == address.
         scope: Dict[str, Any] = {}
-        raw_rel = (
-            getattr(latest, "relationship", None)
-            if not isinstance(latest, dict)
-            else latest.get("relationship")
-        )
-        if raw_rel:
-            try:
-                scope = json.loads(
-                    base64.b64decode(raw_rel).decode("utf-8", errors="replace")
+        for entry in kel:
+            tpkh = (
+                getattr(entry, "twice_prerotated_key_hash", None)
+                if not isinstance(entry, dict)
+                else entry.get("twice_prerotated_key_hash")
+            )
+            if tpkh == address:
+                raw_rel = (
+                    getattr(entry, "relationship", None)
+                    if not isinstance(entry, dict)
+                    else entry.get("relationship")
                 )
-            except Exception:
-                pass  # unstructured relationship — no scope parsed
+                if raw_rel:
+                    try:
+                        parsed = json.loads(
+                            base64.b64decode(raw_rel).decode("utf-8", errors="replace")
+                        )
+                        scope = _extract_scope(parsed)
+                    except Exception:
+                        pass  # unstructured relationship — no scope parsed
+                break
 
         kel_txid = (
             getattr(latest, "transaction_signature", None)
@@ -367,6 +430,10 @@ class AgentAuthValidator:
         dest: Optional[str] = None,
     ) -> None:
         """Raise AuthError(403) if the request exceeds the committed scope.
+
+        Works with scopes normalised from both W3C VC 2.0 and legacy flat
+        format (both produce the same ``{dest, services, ...}`` dict after
+        ``_extract_scope()`` normalisation in ``validate()``).
 
         Parameters
         ----------
