@@ -381,59 +381,66 @@ requests MAY carry a `protocol_version` hint in future versions.
 
 ## 14. Related Standards and Alternatives
 
-This section maps each architectural component to the most relevant existing
-standards and notes how they relate to or could augment this protocol.
+This section maps each architectural component of this protocol to the most
+relevant existing standards. Implementors MAY replace or augment components
+with the alternatives listed below.
 
 ### 14.1 Key Event Log / Key Rotation
 
-**Current**: Custom version-7 blockchain transactions chained by hash pre-commitment.
-
-**[KERI](https://keri.one/)** (Key Event Receipt Infrastructure — IETF draft) was
-designed for exactly this problem: pre-rotation, `next` key hash commitments,
-rotation events (`icp`, `rot`, `ixn`), and duplicity detection. The YadaCoin KEL
-is a blockchain-anchored subset of the KERI model. Full KERI adds witness
-infrastructure and receipt thresholds. Alignment with KERI event grammar would
-improve interoperability with existing KERI tooling and verifiers.
+The YadaCoin KEL uses version-7 blockchain transactions chained by hash
+pre-commitment. This model is a blockchain-anchored subset of
+**[KERI](https://keri.one/)** (Key Event Receipt Infrastructure — IETF draft),
+which defines a formal grammar for key events (`icp` inception, `rot` rotation,
+`ixn` interaction), pre-rotation with `next` key hash commitments, and
+duplicity detection. Implementations that require off-chain operation, witness
+infrastructure, or multi-threshold receipts SHOULD adopt full KERI event types.
+Alignment with KERI terminology improves interoperability with existing KERI
+tooling and verifiers.
 
 ---
 
 ### 14.2 Agent Identity / DID Method
 
-**Current**: `did:yadacoin:<pubkey_hex>` — informal convention.
+Agent and operator identities are expressed as `did:yadacoin:<pubkey_hex>`.
+This convention is compatible with the
+[W3C Decentralized Identifiers](https://www.w3.org/TR/did-core/) specification.
+A formal `did:yadacoin` DID method registration at the W3C CCG would allow
+standard DID resolvers to treat KEL entries as a DID Document with
+`verificationMethod` and `authentication` sections, enabling interoperability
+with any W3C VC issuer or verifier. Alternative DID methods are compared below:
 
-| Method                                                          | Trade-off                                                                      |
+| Method | Trade-off |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| [`did:key`](https://w3c-ccg.github.io/did-method-key/)          | Self-contained, no chain needed; no revocation                                 |
-| [`did:web`](https://w3c-ccg.github.io/did-method-web/)          | DNS-anchored; centralised trust                                                |
-| [`did:ion`](https://identity.foundation/ion/)                   | Bitcoin-anchored; well-specified; closest structural match to YadaCoin's model |
-| [`did:peer`](https://identity.foundation/peer-did-method-spec/) | P2P, no blockchain; no global resolution                                       |
-
-Publishing a `did:yadacoin` DID method spec at the W3C CCG would let standard
-DID resolvers treat KEL entries as a DID Document with `verificationMethod` and
-`authentication` sections, enabling drop-in use with any W3C VC issuer/verifier.
+| [`did:key`](https://w3c-ccg.github.io/did-method-key/) | Self-contained, no chain needed; no revocation |
+| [`did:web`](https://w3c-ccg.github.io/did-method-web/) | DNS-anchored; centralised trust |
+| [`did:ion`](https://identity.foundation/ion/) | Bitcoin-anchored; well-specified; closest structural match to YadaCoin's model |
+| [`did:peer`](https://identity.foundation/peer-did-method-spec/) | P2P, no blockchain; no global resolution |
 
 ---
 
 ### 14.3 Challenge-Response Authentication
 
-**Current**: Stateless HMAC-SHA256 with 30-second windows.
+This protocol uses a stateless HMAC-SHA256 challenge with 30-second windows.
+The following standards provide alternative or complementary authentication
+mechanisms:
 
-| Standard                                                                         | Notes                                                                                                                    |
+| Standard | Notes |
 | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | **[HTTP Message Signatures](https://www.rfc-editor.org/rfc/rfc9421)** (RFC 9421) | Signs request headers + body; replay-safe with `nonce`; no pre-shared secret needed; eliminates the challenge round-trip |
-| **[DPoP](https://www.rfc-editor.org/rfc/rfc9449)** (RFC 9449)                    | Proof-of-possession JWT bound to a specific HTTP request; pairs well with OAuth 2.0                                      |
-| **[FIDO2/WebAuthn](https://www.w3.org/TR/webauthn-3/)**                          | Applies to the operator's approval step (the "second factor" approval button matches this model exactly)                 |
-| **[GNAP](https://www.rfc-editor.org/rfc/rfc9635)** (RFC 9635)                    | Full grant negotiation replacing OAuth; supports key-bound tokens and delegated agent flows                              |
+| **[DPoP](https://www.rfc-editor.org/rfc/rfc9449)** (RFC 9449) | Proof-of-possession JWT bound to a specific HTTP request; compatible with OAuth 2.0 |
+| **[FIDO2/WebAuthn](https://www.w3.org/TR/webauthn-3/)** | Applicable to the operator approval step; the second-factor confirmation flow matches the WebAuthn ceremony model |
+| **[GNAP](https://www.rfc-editor.org/rfc/rfc9635)** (RFC 9635) | Full grant negotiation protocol; supports key-bound tokens and delegated agent flows |
 
-RFC 9421 (HTTP Message Signatures) is the most direct drop-in replacement: the
-agent signs the HTTP request itself rather than a server-issued challenge,
-eliminating one round-trip and binding the signature to the full request payload.
+RFC 9421 (HTTP Message Signatures) eliminates the challenge round-trip by
+binding the signature to the full request payload including headers and body.
 
 ---
 
 ### 14.4 Scope / Authorization Document
 
-**Current**: W3C Verifiable Credentials 2.0 in the `relationship` field.
+This protocol uses W3C Verifiable Credentials 2.0 committed in the
+`relationship` field. The following standards provide alternative or
+complementary authorization mechanisms:
 
 | Standard                                                                                     | Notes                                                                                                                              |
 | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
@@ -442,14 +449,17 @@ eliminating one round-trip and binding the signature to the full request payload
 | **[UMA 2.0](https://docs.kantarainitiative.org/uma/wg/rec-oauth-uma-grant-2.0.html)**        | Operator controls resource server grants via an authorisation server; well-suited to multi-party agent delegation                  |
 | **[XACML 3.0](https://docs.oasis-open.org/xacml/3.0/xacml-3.0-core-spec-en.html)**           | Full policy language; useful when scope enforcement requires complex policy composition                                            |
 
-RFC 9396 `authorization_details` objects are the closest structural equivalent
-to `agentAuthorization` and have broad OAuth ecosystem tooling support.
+RFC 9396 `authorization_details` objects are structurally equivalent to
+`agentAuthorization` and are supported by the majority of OAuth 2.0
+authorisation server implementations.
 
 ---
 
 ### 14.5 Signature Scheme
 
-**Current**: secp256k1 ECDSA, DER-encoded, base64.
+This protocol uses secp256k1 ECDSA with DER encoding and base64 transport.
+The following alternatives offer improved size, performance, or ecosystem
+interoperability:
 
 | Alternative                                                                                                              | Benefit                                                                                      |
 | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
@@ -457,39 +467,43 @@ to `agentAuthorization` and have broad OAuth ecosystem tooling support.
 | **JWS ES256K** ([RFC 7515](https://www.rfc-editor.org/rfc/rfc7515) + [RFC 8812](https://www.rfc-editor.org/rfc/rfc8812)) | Standard JSON encoding for the existing secp256k1 key material; drop-in for interoperability |
 | **BLS12-381**                                                                                                            | Supports signature aggregation (multiple agents, one combined proof); useful at scale        |
 
-Ed25519 expressed as JWS (`EdDSA` alg) gives the best interoperability with the
-widest tooling ecosystem for minimal implementation change.
+JWS with `ES256K` (secp256k1) or `EdDSA` (Ed25519) provides a standardised
+encoding layer over the existing key material with broad library support.
 
 ---
 
 ### 14.6 Key Derivation
 
-**Current**: 4× BIP32 hardened children using HMAC-SHA256 (simplified); production
-should use HMAC-SHA512 per the full BIP32 spec.
+This protocol uses 4× BIP32 hardened child derivation. The reference
+implementation uses HMAC-SHA256 for the derivation function; conforming
+implementations SHOULD use HMAC-SHA512 per the full BIP32 specification.
+Alternative KDFs:
 
-| Standard                                                                                | Notes                                                                                              |
-| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| **[BIP32](https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki)** (full spec) | Already the intended target; the JS SDK's simplified SHA-256 path should be updated to HMAC-SHA512 |
-| **[SLIP-0010](https://github.com/satoshilabs/slips/blob/master/slip-0010.md)**          | BIP32 generalised to Ed25519 and other curves                                                      |
-| **[HKDF](https://www.rfc-editor.org/rfc/rfc5869)** (RFC 5869)                           | Simpler extract-expand KDF; not HD-wallet compatible but more auditable for non-Bitcoin contexts   |
+| Standard                                                                                | Notes                                                                                            |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **[BIP32](https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki)** (full spec) | Intended target for this protocol; HMAC-SHA512 MUST be used in production                        |
+| **[SLIP-0010](https://github.com/satoshilabs/slips/blob/master/slip-0010.md)**          | BIP32 generalised to Ed25519 and other curves                                                    |
+| **[HKDF](https://www.rfc-editor.org/rfc/rfc5869)** (RFC 5869)                           | Simpler extract-expand KDF; not HD-wallet compatible but more auditable for non-Bitcoin contexts |
 
 ---
 
-### 14.7 Recommended Adoption Path
+### 14.7 Interoperability Roadmap
 
-In priority order for maximum third-party interoperability:
+The following integrations would maximise third-party adoption without
+breaking changes to the core protocol:
 
-1. **Publish `did:yadacoin` as a W3C CCG DID method** — unlocks all existing
-   DID/VC resolver tooling and enables `credentialSubject.id` to be resolved
-   to a live DID Document.
-2. **RFC 9421 (HTTP Message Signatures)** — replaces the HMAC challenge
-   round-trip with request-bound signatures that cover the full body.
-3. **RFC 9396 (Rich Authorization Requests)** — provides a standard OAuth
-   vocabulary for `agentAuthorization` that authorisation servers already
-   understand.
-4. **KERI alignment** — if the KEL ever moves off-chain or becomes
-   multi-witness, KERI event types (`icp`, `rot`) map directly to the
-   UNCONFIRMED/CONFIRMING tx pair.
+1. **`did:yadacoin` DID method registration** (W3C CCG) — enables standard
+   DID resolvers to resolve `credentialSubject.id` values to live DID
+   Documents with `verificationMethod` entries.
+2. **RFC 9421 (HTTP Message Signatures)** — replaces the stateless HMAC
+   challenge with request-bound signatures that cover the full body,
+   eliminating a round-trip.
+3. **RFC 9396 (Rich Authorization Requests)** — maps `agentAuthorization`
+   objects to a standard OAuth 2.0 `authorization_details` vocabulary
+   understood by existing authorisation servers.
+4. **KERI event type alignment** — if the KEL is extended to support
+   multi-witness operation, the UNCONFIRMED/CONFIRMING tx pair maps
+   directly to KERI `rot` and `ixn` event types.
 
 ---
 

@@ -4,6 +4,8 @@ Welcome to the YadaCoin developer documentation.
 
 ## Sections
 
+* [`did:yadacoin` DID Method Specification](./did-yadacoin-method-spec) - W3C DID method specification for the YadaCoin blockchain.
+* [KEL Agent Auth Protocol](./kel_agent_auth_spec) - Protocol for authenticating AI agents using the Key Event Log.
 * [`API`](./API) - Create a new project.
     * [`explorer`](./API/explorer) - Explorer endpoints will return relevant blockchain information for various search terms.
     * [`graph`](./API/graph) - Endpoints necessary for creating a YadaCoin enabled application.
