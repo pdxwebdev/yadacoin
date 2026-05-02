@@ -409,12 +409,12 @@ standard DID resolvers to treat KEL entries as a DID Document with
 `verificationMethod` and `authentication` sections, enabling interoperability
 with any W3C VC issuer or verifier. Alternative DID methods are compared below:
 
-| Method | Trade-off |
+| Method                                                          | Trade-off                                                                      |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| [`did:key`](https://w3c-ccg.github.io/did-method-key/) | Self-contained, no chain needed; no revocation |
-| [`did:web`](https://w3c-ccg.github.io/did-method-web/) | DNS-anchored; centralised trust |
-| [`did:ion`](https://identity.foundation/ion/) | Bitcoin-anchored; well-specified; closest structural match to YadaCoin's model |
-| [`did:peer`](https://identity.foundation/peer-did-method-spec/) | P2P, no blockchain; no global resolution |
+| [`did:key`](https://w3c-ccg.github.io/did-method-key/)          | Self-contained, no chain needed; no revocation                                 |
+| [`did:web`](https://w3c-ccg.github.io/did-method-web/)          | DNS-anchored; centralised trust                                                |
+| [`did:ion`](https://identity.foundation/ion/)                   | Bitcoin-anchored; well-specified; closest structural match to YadaCoin's model |
+| [`did:peer`](https://identity.foundation/peer-did-method-spec/) | P2P, no blockchain; no global resolution                                       |
 
 ---
 
@@ -424,12 +424,12 @@ This protocol uses a stateless HMAC-SHA256 challenge with 30-second windows.
 The following standards provide alternative or complementary authentication
 mechanisms:
 
-| Standard | Notes |
+| Standard                                                                         | Notes                                                                                                                    |
 | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | **[HTTP Message Signatures](https://www.rfc-editor.org/rfc/rfc9421)** (RFC 9421) | Signs request headers + body; replay-safe with `nonce`; no pre-shared secret needed; eliminates the challenge round-trip |
-| **[DPoP](https://www.rfc-editor.org/rfc/rfc9449)** (RFC 9449) | Proof-of-possession JWT bound to a specific HTTP request; compatible with OAuth 2.0 |
-| **[FIDO2/WebAuthn](https://www.w3.org/TR/webauthn-3/)** | Applicable to the operator approval step; the second-factor confirmation flow matches the WebAuthn ceremony model |
-| **[GNAP](https://www.rfc-editor.org/rfc/rfc9635)** (RFC 9635) | Full grant negotiation protocol; supports key-bound tokens and delegated agent flows |
+| **[DPoP](https://www.rfc-editor.org/rfc/rfc9449)** (RFC 9449)                    | Proof-of-possession JWT bound to a specific HTTP request; compatible with OAuth 2.0                                      |
+| **[FIDO2/WebAuthn](https://www.w3.org/TR/webauthn-3/)**                          | Applicable to the operator approval step; the second-factor confirmation flow matches the WebAuthn ceremony model        |
+| **[GNAP](https://www.rfc-editor.org/rfc/rfc9635)** (RFC 9635)                    | Full grant negotiation protocol; supports key-bound tokens and delegated agent flows                                     |
 
 RFC 9421 (HTTP Message Signatures) eliminates the challenge round-trip by
 binding the signature to the full request payload including headers and body.

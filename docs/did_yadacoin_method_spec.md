@@ -4,7 +4,7 @@
 **Date:** 2026-05-01  
 **Authors:** Matthew Vogel (YadaCoin)  
 **Status:** Draft — intended for submission to the W3C DID Extensions Registry  
-**Specification URL:** https://yadacoin.io/docs/did-method-spec  
+**Specification URL:** https://pdxwebdev.github.io/yadacoin/did-yadacoin-method-spec.html  
 **Repository:** https://github.com/pdxwebdev/yadacoin
 
 ---
