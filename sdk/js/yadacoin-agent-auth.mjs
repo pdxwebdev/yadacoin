@@ -351,14 +351,15 @@ export class AgentAuthClient {
  * base64-encoded, ready to pass as the `relationship` parameter to
  * POST /key-rotation/derived-child-key.
  *
- * Conforms to spec section 5 (protocol v1.1).
+ * Conforms to spec section 5 (protocol v1.2).
  *
  * @param {object} options
- * @param {string} options.operatorPubHex      — operator compressed public key (hex)
- * @param {string} options.agentPubHex         — agent key K_{n+3} compressed public key (hex)
- * @param {string} [options.authorizationType] — e.g. "TravelBookingAuthorization"
- * @param {object} [options.authorization={}]  — service-specific authorization fields
- * @param {string} [options.validFrom]         — ISO 8601 timestamp (default: now)
+ * @param {string} options.operatorPubHex         — operator compressed public key (hex)
+ * @param {string} options.agentPubHex            — agent key K_{n+3} compressed public key (hex)
+ * @param {string} [options.authorizationType]    — e.g. "TravelBookingAuthorization"
+ * @param {object} [options.authorization={}]     — service-specific authorization fields
+ * @param {string} [options.validFrom]            — ISO 8601 timestamp (default: now)
+ * @param {string} [options.kelStatusMode]        — "rotation" (default) or "temporal" (see §5.1)
  * @returns {string} base64-encoded JSON
  */
 export function buildVCScope({
@@ -367,6 +368,7 @@ export function buildVCScope({
   authorizationType = "AgentAuthorization",
   authorization = {},
   validFrom,
+  kelStatusMode = "rotation",
 } = {}) {
   if (!operatorPubHex || !agentPubHex)
     throw new Error("operatorPubHex and agentPubHex are required");
@@ -378,6 +380,10 @@ export function buildVCScope({
     type: ["VerifiableCredential", "AgentAuthorizationCredential"],
     issuer: `did:yadacoin:${operatorPubHex}`,
     validFrom: validFrom ?? new Date().toISOString(),
+    credentialStatus: {
+      type: "YadaKELStatus",
+      mode: kelStatusMode,
+    },
     credentialSubject: {
       id: `did:yadacoin:${agentPubHex}`,
       agentAuthorization: {
@@ -428,11 +434,13 @@ export function parseScope(relationship) {
   if (raw["@context"] && raw["credentialSubject"]) {
     // W3C VC 2.0
     const auth = raw?.credentialSubject?.agentAuthorization ?? {};
+    const credStatus = raw?.credentialStatus ?? {};
     return {
       dest: auth.destination ?? null,
       checkin: auth.checkin ?? null,
       checkout: auth.checkout ?? null,
       services: (auth.services ?? []).map((s) => s.toLowerCase()),
+      kelStatusMode: (credStatus.mode ?? "rotation").toLowerCase(),
       raw,
     };
   }
@@ -442,6 +450,7 @@ export function parseScope(relationship) {
     checkin: raw.checkin ?? null,
     checkout: raw.checkout ?? null,
     services: (raw.services ?? []).map((s) => s.toLowerCase()),
+    kelStatusMode: "rotation", // legacy format always defaults to rotation
     raw,
   };
 }

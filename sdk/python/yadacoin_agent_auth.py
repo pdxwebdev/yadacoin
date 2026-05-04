@@ -284,13 +284,14 @@ class AgentAuthValidator:
     ) -> AuthResult:
         """Authenticate an agent request and return an AuthResult on success.
 
-        Performs all 6 required validation steps from the spec:
+        Performs all required validation steps from the spec (v1.2):
           1. Challenge validity (HMAC-SHA256, 30-second windows)
           2. secp256k1 signature verification
           3. KEL existence
-          4. Revocation check
-          5. Pre-commitment check
-          6. Scope parsing (does NOT enforce — call enforce_scope() separately)
+          4. On-chain scope + credentialStatus.mode read
+          5. Revocation check (skipped for mode="temporal")
+          6. Pre-commitment check (both modes)
+          7. Scope parsing (does NOT enforce — call enforce_scope() separately)
 
         Raises AuthError on any failure with an appropriate http_status.
         """
@@ -352,36 +353,10 @@ class AgentAuthValidator:
                 403,
             )
 
-        # Step 4 — revocation check
-        for entry in kel:
-            pkh = (
-                getattr(entry, "public_key_hash", None) or entry.get("public_key_hash")
-                if isinstance(entry, dict)
-                else None
-            )
-            if pkh == address:
-                raise AuthError(
-                    "this key has already been spent and is revoked",
-                    403,
-                )
-
-        # Step 5 — pre-commitment check
-        latest = kel[-1]
-        prerotated = (
-            getattr(latest, "prerotated_key_hash", None)
-            if not isinstance(latest, dict)
-            else latest.get("prerotated_key_hash")
-        )
-        if prerotated != address:
-            raise AuthError(
-                "public key is not the pre-committed next signer in the KEL",
-                403,
-            )
-
-        # Step 6 — find scope on the UNCONFIRMED tx
-        # The CONFIRMING tx (kel[-1]) always has relationship="".  The scope
-        # is on the UNCONFIRMED tx whose twice_prerotated_key_hash == address.
+        # Step 4 — read on-chain scope + credentialStatus.mode
+        # Must be done before the revocation check so mode can gate it.
         scope: Dict[str, Any] = {}
+        kel_status_mode = "rotation"  # default per spec §5.1
         for entry in kel:
             tpkh = (
                 getattr(entry, "twice_prerotated_key_hash", None)
@@ -400,9 +375,46 @@ class AgentAuthValidator:
                             base64.b64decode(raw_rel).decode("utf-8", errors="replace")
                         )
                         scope = _extract_scope(parsed)
+                        cred_status = parsed.get("credentialStatus", {})
+                        if isinstance(cred_status, dict):
+                            kel_status_mode = cred_status.get(
+                                "mode", "rotation"
+                            ).lower()
                     except Exception:
                         pass  # unstructured relationship — no scope parsed
                 break
+
+        # Step 5 — revocation check (mode-aware per spec §5.1 / §7 step 6)
+        # rotation: credential is one-time-use; reject if key has rotated.
+        # temporal: credential survives holder key rotations; skip this check.
+        if kel_status_mode == "rotation":
+            for entry in kel:
+                pkh = (
+                    getattr(entry, "public_key_hash", None)
+                    if not isinstance(entry, dict)
+                    else entry.get("public_key_hash")
+                )
+                if pkh == address:
+                    raise AuthError(
+                        "this key has already been spent and is revoked",
+                        403,
+                    )
+
+        # Step 6 — pre-commitment check (both modes: VP must use current active key)
+        latest = kel[-1]
+        # Step 6 — pre-commitment check (both modes: VP must use current active key)
+        prerotated = (
+            getattr(latest, "prerotated_key_hash", None)
+            if not isinstance(latest, dict)
+            else latest.get("prerotated_key_hash")
+        )
+        if prerotated != address:
+            raise AuthError(
+                "public key is not the pre-committed next signer in the KEL",
+                403,
+            )
+
+        # Step 7 — scope already read in step 4 above
 
         kel_txid = (
             getattr(latest, "transaction_signature", None)
