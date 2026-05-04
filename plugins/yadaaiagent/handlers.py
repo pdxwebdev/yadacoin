@@ -35,17 +35,13 @@ GET  /ai-agent-auth/api/challenge          — issue stateless HMAC challenge
 POST /ai-agent-auth/api/travel             — mock travel booking service
 """
 
-import base64
 import hashlib
-import hmac as _hmac
 import json
 import os
-import time
 
 import tornado.web
-from bitcoin.wallet import P2PKHBitcoinAddress
-from coincurve import verify_signature as _verify_signature
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
+from yadacoin_agent_auth import AgentAuthValidator, AuthError, YadaCoinNodeKelProvider
 
 from yadacoin.http.base import BaseHandler
 
@@ -55,20 +51,10 @@ _CHALLENGE_SECRET = os.environ.get(
     "YADACOIN_AGENT_SECRET", "yadacoin-demo-agent-secret-2026"
 ).encode("utf-8")
 
-
-def _make_challenge(public_key: str, window: int) -> str:
-    """Return a deterministic HMAC-SHA256 hex string for (public_key, window)."""
-    msg = f"{public_key}:{window}".encode("utf-8")
-    return _hmac.new(_CHALLENGE_SECRET, msg, hashlib.sha256).hexdigest()
-
-
-def _valid_challenge(public_key: str, challenge: str) -> bool:
-    """Accept challenges from the current 30-second window or the previous one."""
-    now = int(time.time())
-    for w in [now // 30, now // 30 - 1]:
-        if _hmac.compare_digest(challenge, _make_challenge(public_key, w)):
-            return True
-    return False
+_validator = AgentAuthValidator(
+    challenge_secret=_CHALLENGE_SECRET,
+    kel_provider=YadaCoinNodeKelProvider(),
+)
 
 
 # ── Mock travel inventory ─────────────────────────────────────────────────────
@@ -83,68 +69,6 @@ def _gen_confirmation(service: str, seed: str) -> str:
     pfx = {"hotel": "HTL", "flight": "FLT", "car": "CAR"}.get(service, "SVC")
     h = hashlib.sha256(f"{seed}{service}".encode()).hexdigest()[:6].upper()
     return f"{pfx}-{h}"
-
-
-def _extract_scope(data: dict) -> dict:
-    """Normalize scope from W3C VC 2.0 or legacy flat format.
-
-    W3C VC 2.0 format:
-      { "@context": [...], "credentialSubject": { "agentAuthorization": { ... } } }
-    Legacy flat format:
-      { "task": "travel_booking", "dest": ..., "services": [...] }
-    """
-    if "@context" in data and "credentialSubject" in data:
-        auth = data.get("credentialSubject", {}).get("agentAuthorization", {})
-        return {
-            "dest": auth.get("destination"),
-            "services": [s.lower() for s in auth.get("services", [])],
-            "checkin": auth.get("checkin"),
-            "checkout": auth.get("checkout"),
-        }
-    # Legacy flat format — normalise service list to lowercase
-    services = data.get("services", [])
-    return {**data, "services": [s.lower() for s in services]}
-
-
-def _verify_vp_proof(vp: dict, public_key_bytes: bytes, challenge: str):
-    """Verify a Verifiable Presentation's EcdsaSecp256k1 proof.
-
-    The proof must cover SHA256(challenge_bytes + canonical_vp_sans_proof_bytes),
-    where the canonical form is JSON with sorted top-level keys and no whitespace.
-
-    Returns (ok: bool, error: str).
-    """
-    proof = vp.get("proof")
-    if not proof:
-        return False, "VP missing proof"
-
-    if proof.get("challenge") != challenge:
-        return (
-            False,
-            f"VP proof.challenge '{proof.get('challenge')}' does not match supplied challenge",
-        )
-
-    proof_value = proof.get("proofValue", "")
-    if not proof_value:
-        return False, "VP missing proof.proofValue"
-
-    # Reconstruct VP without proof for verification (canonical, sorted keys)
-    vp_sans_proof = {k: v for k, v in vp.items() if k != "proof"}
-    vp_bytes = json.dumps(vp_sans_proof, separators=(",", ":"), sort_keys=True).encode(
-        "utf-8"
-    )
-
-    challenge_bytes = challenge.encode("utf-8")
-    msg_hash = hashlib.sha256(challenge_bytes + vp_bytes).digest()
-
-    try:
-        sig_bytes = base64.b64decode(proof_value)
-        ok = _verify_signature(sig_bytes, msg_hash, public_key_bytes, hasher=None)
-        if not ok:
-            return False, "VP proof signature mismatch"
-        return True, ""
-    except Exception as exc:
-        return False, f"VP proof verification error: {exc}"
 
 
 class AgentChatHandler(BaseHandler):
@@ -417,15 +341,7 @@ class AgentChallengeHandler(BaseHandler):
             return self.render_as_json(
                 {"status": False, "message": "public_key query parameter required"}
             )
-
-        now = int(time.time())
-        challenge = _make_challenge(public_key, now // 30)
-        return self.render_as_json(
-            {
-                "challenge": challenge,
-                "expires_in": 30 - (now % 30),
-            }
-        )
+        return self.render_as_json(_validator.make_challenge(public_key))
 
 
 class TravelBookingHandler(BaseHandler):
@@ -468,7 +384,7 @@ class TravelBookingHandler(BaseHandler):
     """
 
     async def post(self):
-        from yadacoin.core.keyeventlog import KeyEventLog
+        pass
 
         try:
             body = json.loads(self.request.body)
@@ -483,172 +399,26 @@ class TravelBookingHandler(BaseHandler):
         signature = (body.get("signature") or "").strip()
         services = [s.lower() for s in (body.get("services") or [])]
         dest = (body.get("dest") or "").strip()
-        (body.get("checkin") or "").strip()
-        (body.get("checkout") or "").strip()
 
-        if not public_key or not challenge or not signature:
-            self.set_status(400)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": "public_key, challenge, and signature are required",
-                }
-            )
-
-        # ── 1. Validate challenge ──────────────────────────────────────────── #
-        if not _valid_challenge(public_key, challenge):
-            self.set_status(401)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": "challenge expired or invalid — request a fresh one",
-                }
-            )
-
-        # ── 2. Parse public key ────────────────────────────────────────────── #
+        # ── Authenticate: challenge, sig, KEL, revocation, pre-commitment ─── #
         try:
-            pub_key_bytes = bytes.fromhex(public_key)
-            if len(pub_key_bytes) not in (33, 65):
-                raise ValueError("unexpected length")
-        except Exception as exc:
-            self.set_status(400)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": f"invalid public_key: {exc}",
-                    "debug_public_key_prefix": public_key[:20],
-                    "debug_signature_prefix": signature[:20],
-                }
-            )
+            auth = await _validator.validate(public_key, challenge, signature)
+        except AuthError as exc:
+            self.set_status(exc.http_status)
+            return self.render_as_json({"status": False, "message": str(exc)})
 
-        address = str(P2PKHBitcoinAddress.from_pubkey(pub_key_bytes))
-
-        # ── 3. Verify signature ────────────────────────────────────────────── #
-        # Client signs sha256(challenge_utf8) with secp.sign(hash, privKey).
-        # secp256k1 v2 signs the raw bytes passed to it (no second hash).
-        # So we pre-hash here and verify with hasher=None (no further hashing).
+        # ── Destination scope check ────────────────────────────────────────── #
         try:
-            sig_bytes = base64.b64decode(signature)
-        except Exception as exc:
-            self.set_status(401)
+            AgentAuthValidator.enforce_scope(auth, dest=dest)
+        except AuthError as exc:
+            self.set_status(exc.http_status)
             return self.render_as_json(
-                {
-                    "status": False,
-                    "message": f"signature base64 decode failed: {exc}",
-                    "debug_signature_prefix": signature[:30],
-                }
-            )
-        try:
-            msg_hash = hashlib.sha256(challenge.encode("utf-8")).digest()
-            ok = _verify_signature(
-                sig_bytes,
-                msg_hash,
-                pub_key_bytes,
-                hasher=None,
-            )
-            if not ok:
-                raise ValueError("signature mismatch")
-        except Exception as exc:
-            self.set_status(401)
-            return self.render_as_json(
-                {"status": False, "message": f"signature verification failed: {exc}"}
+                {"status": False, "message": str(exc), "scope": auth.scope}
             )
 
-        # ── 4. Build KEL ───────────────────────────────────────────────────── #
-        try:
-            kel = await KeyEventLog.build_from_public_key(public_key)
-        except Exception as exc:
-            self.set_status(400)
-            return self.render_as_json(
-                {"status": False, "message": f"error retrieving KEL: {exc}"}
-            )
+        scope_services = [s.lower() for s in auth.scope.get("services", [])]
 
-        if not kel:
-            self.set_status(403)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": (
-                        "no KEL found for this public key — "
-                        "key has not been provisioned on-chain"
-                    ),
-                }
-            )
-
-        # ── 5. Revocation check ────────────────────────────────────────────── #
-        for entry in kel:
-            if getattr(entry, "public_key_hash", None) == address:
-                self.set_status(403)
-                return self.render_as_json(
-                    {
-                        "status": False,
-                        "message": "this key has already been used and is revoked",
-                        "address": address,
-                    }
-                )
-
-        # ── 6. Pre-commitment check ────────────────────────────────────────── #
-        latest = kel[-1]
-        if getattr(latest, "prerotated_key_hash", None) != address:
-            self.set_status(403)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": (
-                        "public key is not the pre-committed next signer — "
-                        "the KEL has advanced past this key or it was never authorised"
-                    ),
-                    "address": address,
-                    "expected": getattr(latest, "prerotated_key_hash", None),
-                }
-            )
-
-        # ── 7. Read authorised scope from relationship field ───────────────── #
-        # The scope is committed in the UNCONFIRMED tx whose
-        # twice_prerotated_key_hash == address (the agent key being authenticated).
-        # kel[-1] is the CONFIRMING tx (relationship=""); the UNCONFIRMED tx
-        # is the KEL entry that pre-committed to the agent key two hops ahead.
-        scope = {}
-        for entry in kel:
-            tpkh = (
-                getattr(entry, "twice_prerotated_key_hash", None)
-                if not isinstance(entry, dict)
-                else entry.get("twice_prerotated_key_hash")
-            )
-            if tpkh == address:
-                raw_rel = (
-                    getattr(entry, "relationship", None)
-                    if not isinstance(entry, dict)
-                    else entry.get("relationship")
-                )
-                if raw_rel:
-                    try:
-                        parsed = json.loads(
-                            base64.b64decode(raw_rel).decode("utf-8", errors="replace")
-                        )
-                        scope = _extract_scope(parsed)
-                    except Exception:
-                        pass
-                break
-
-        scope_services = [s.lower() for s in scope.get("services", [])]
-        scope_dest = (scope.get("dest") or "").strip().lower()
-
-        # ── 8. Destination scope check ─────────────────────────────────────── #
-        if dest and scope_dest and dest.lower() != scope_dest:
-            self.set_status(403)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": (
-                        f"destination '{dest}' is not authorised — "
-                        f"scope commits to '{scope.get('dest')}'"
-                    ),
-                    "scope": scope,
-                }
-            )
-
-        # ── 9. Mock booking ────────────────────────────────────────────────── #
+        # ── Mock booking ────────────────────────────────────────────────────── #
         completed = []
         failed = []
 
@@ -682,7 +452,7 @@ class TravelBookingHandler(BaseHandler):
                 completed.append(
                     {
                         "service": svc,
-                        "confirmation": _gen_confirmation(svc, address),
+                        "confirmation": _gen_confirmation(svc, auth.address),
                     }
                 )
 
@@ -705,10 +475,10 @@ class TravelBookingHandler(BaseHandler):
                 "status": n_ok > 0,
                 "completed": completed,
                 "failed": failed,
-                "scope_used": scope,
-                "authorized_address": address,
-                "kel_depth": len(kel),
-                "kel_txid": getattr(latest, "transaction_signature", None),
+                "scope_used": auth.scope,
+                "authorized_address": auth.address,
+                "kel_depth": len(auth.kel),
+                "kel_txid": auth.kel_txid,
             }
         )
 
@@ -746,8 +516,6 @@ class VendorBaseHandler(BaseHandler):
     vendor_name: str = ""
 
     async def post(self):
-        from yadacoin.core.keyeventlog import KeyEventLog
-
         try:
             body = json.loads(self.request.body)
         except Exception:
@@ -769,188 +537,23 @@ class VendorBaseHandler(BaseHandler):
                 }
             )
 
-        # ── 1. Validate challenge ──────────────────────────────────────────── #
-        if not _valid_challenge(public_key, challenge):
-            self.set_status(401)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": "challenge expired or invalid — request a fresh one",
-                }
-            )
-
-        # ── 2. Parse public key ────────────────────────────────────────────── #
+        # ── Authenticate: challenge, VP proof, KEL, revocation, scope ─────── #
         try:
-            pub_key_bytes = bytes.fromhex(public_key)
-            if len(pub_key_bytes) not in (33, 65):
-                raise ValueError("unexpected length")
-        except Exception as exc:
-            self.set_status(400)
-            return self.render_as_json(
-                {"status": False, "message": f"invalid public_key: {exc}"}
-            )
+            auth = await _validator.validate_vp(public_key, challenge, vp)
+        except AuthError as exc:
+            self.set_status(exc.http_status)
+            return self.render_as_json({"status": False, "message": str(exc)})
 
-        address = str(P2PKHBitcoinAddress.from_pubkey(pub_key_bytes))
-
-        # ── 3. Validate VP structure ───────────────────────────────────────── #
-        vp_types = vp.get("type", [])
-        if "VerifiablePresentation" not in vp_types:
-            self.set_status(400)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": "vp.type must include 'VerifiablePresentation'",
-                }
-            )
-
-        expected_holder = f"did:yadacoin:{public_key}"
-        if vp.get("holder") != expected_holder:
-            self.set_status(403)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": (
-                        f"VP holder '{vp.get('holder')}' does not match "
-                        f"supplied public_key"
-                    ),
-                }
-            )
-
-        # ── 4. Verify VP proof ─────────────────────────────────────────────── #
-        ok, err = _verify_vp_proof(vp, pub_key_bytes, challenge)
-        if not ok:
-            self.set_status(401)
-            return self.render_as_json(
-                {"status": False, "message": f"VP proof invalid: {err}"}
-            )
-
-        # ── 5. Extract VC from VP and read presented scope ─────────────────── #
-        vc_list = vp.get("verifiableCredential", [])
-        if not vc_list:
-            self.set_status(400)
-            return self.render_as_json(
-                {"status": False, "message": "VP contains no verifiableCredential"}
-            )
-
-        vc = vc_list[0] if isinstance(vc_list, list) else vc_list
-        vp_scope = _extract_scope(vc)
-
-        # ── 6. Build KEL ───────────────────────────────────────────────────── #
+        # ── Service scope check ────────────────────────────────────────────── #
         try:
-            kel = await KeyEventLog.build_from_public_key(public_key)
-        except Exception as exc:
-            self.set_status(400)
+            AgentAuthValidator.enforce_scope(auth, services=[self.vendor_service])
+        except AuthError as exc:
+            self.set_status(exc.http_status)
             return self.render_as_json(
-                {"status": False, "message": f"error retrieving KEL: {exc}"}
+                {"status": False, "message": str(exc), "scope": auth.scope}
             )
 
-        if not kel:
-            self.set_status(403)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": (
-                        "no KEL found for this public key — "
-                        "key has not been provisioned on-chain"
-                    ),
-                }
-            )
-
-        # ── 7. Read on-chain scope + credentialStatus ─────────────────────── #
-        # Read the VC from the KEL first so that credentialStatus.mode is known
-        # before the revocation check (step 8).
-        on_chain_scope = {}
-        kel_status_mode = "rotation"  # default; "temporal" skips revocation check
-        for entry in kel:
-            tpkh = (
-                getattr(entry, "twice_prerotated_key_hash", None)
-                if not isinstance(entry, dict)
-                else entry.get("twice_prerotated_key_hash")
-            )
-            if tpkh == address:
-                raw_rel = (
-                    getattr(entry, "relationship", None)
-                    if not isinstance(entry, dict)
-                    else entry.get("relationship")
-                )
-                if raw_rel:
-                    try:
-                        parsed = json.loads(
-                            base64.b64decode(raw_rel).decode("utf-8", errors="replace")
-                        )
-                        on_chain_scope = _extract_scope(parsed)
-                        cred_status = parsed.get("credentialStatus", {})
-                        if isinstance(cred_status, dict):
-                            kel_status_mode = cred_status.get(
-                                "mode", "rotation"
-                            ).lower()
-                    except Exception:
-                        pass
-                break
-
-        # ── 8. Revocation check (mode-aware) ──────────────────────────────── #
-        # rotation: credential is one-time-use; reject if key has already rotated.
-        # temporal: credential survives holder key rotation; skip this check and
-        #           instead rely on step 9 to confirm the key is the current active
-        #           key per the KEL.
-        if kel_status_mode == "rotation":
-            for entry in kel:
-                if getattr(entry, "public_key_hash", None) == address:
-                    self.set_status(403)
-                    return self.render_as_json(
-                        {
-                            "status": False,
-                            "message": "this key has already been used and is revoked",
-                        }
-                    )
-
-        # ── 9. Pre-commitment check ────────────────────────────────────────── #
-        # For both modes: the submitted public_key must be the current pre-committed
-        # next signer per the KEL.  In temporal mode this confirms the holder is
-        # presenting with their *current* active key even if prior keys have rotated.
-        latest = kel[-1]
-        if getattr(latest, "prerotated_key_hash", None) != address:
-            self.set_status(403)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": (
-                        "public key is not the pre-committed next signer — "
-                        "the KEL has advanced past this key or it was never authorised"
-                    ),
-                }
-            )
-
-        on_chain_services = [s.lower() for s in on_chain_scope.get("services", [])]
-
-        # ── 10. Scope checks ───────────────────────────────────────────────── #
-        # On-chain scope is the authority ceiling — VP cannot exceed it.
-        if on_chain_services and self.vendor_service not in on_chain_services:
-            self.set_status(403)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": (
-                        f"'{self.vendor_service}' is not in the on-chain "
-                        f"authorised scope"
-                    ),
-                    "authorized_services": on_chain_services,
-                }
-            )
-
-        vp_services = [s.lower() for s in vp_scope.get("services", [])]
-        if vp_services and self.vendor_service not in vp_services:
-            self.set_status(403)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": (
-                        f"'{self.vendor_service}' is not in the presented VP scope"
-                    ),
-                }
-            )
-
-        # ── 11. Book ──────────────────────────────────────────────────────── #
+        # ── Book ────────────────────────────────────────────────────────────── #
         inv = _MOCK_INVENTORY.get(self.vendor_service, {})
         if not inv.get("available", False):
             self.set_status(422)
@@ -962,16 +565,16 @@ class VendorBaseHandler(BaseHandler):
                 }
             )
 
-        confirmation = _gen_confirmation(self.vendor_service, address)
+        confirmation = _gen_confirmation(self.vendor_service, auth.address)
         return self.render_as_json(
             {
                 "status": True,
                 "service": self.vendor_service,
                 "vendor": self.vendor_name,
                 "confirmation": confirmation,
-                "authorized_address": address,
-                "kel_depth": len(kel),
-                "kel_txid": getattr(latest, "transaction_signature", None),
+                "authorized_address": auth.address,
+                "kel_depth": len(auth.kel),
+                "kel_txid": auth.kel_txid,
             }
         )
 
