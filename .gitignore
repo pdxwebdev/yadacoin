@@ -7,3 +7,4 @@ localtests
 node_modules
 .coverage
 htmlcov/
+sdk/
