@@ -1,6 +1,6 @@
 # The `did:yadacoin` DID Method Specification
 
-**Specification version:** 1.0-draft  
+**Specification version:** 1.1-draft  
 **Date:** 2026-05-01  
 **Authors:** Matthew Vogel (YadaCoin)  
 **Status:** Draft — intended for submission to the W3C DID Extensions Registry  
@@ -202,6 +202,42 @@ The `yadacoinKel` property is a method-specific extension that exposes:
 | `twicePrerotatedKeyHash` | P2PKH address committed as the signer after next |
 
 Resolvers that do not understand `yadacoinKel` MUST ignore it.
+
+### 5.4 `YadaKELStatus` — Method-Defined Credential Status Type
+
+`did:yadacoin` defines a W3C Verifiable Credential status type,
+`YadaKELStatus`, for use in the `credentialStatus` field of VCs committed
+in the KEL `relationship` field. This type is registered in the
+`https://yadacoin.io/contexts/agent-auth/v1` JSON-LD context.
+
+```json
+"credentialStatus": {
+  "type": "YadaKELStatus",
+  "mode": "rotation"
+}
+```
+
+The `mode` field governs how a verifier interprets a key rotation in the
+_holder's_ KEL when checking whether the VC is still valid:
+
+| `mode`     | Revocation behaviour                                                                                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `rotation` | **One-time-use.** If the holder's public key address appears as `public_key_hash` in any KEL entry the VC is considered revoked. Default if `mode` is absent.                              |
+| `temporal` | **Persists across holder key rotations.** The revocation-by-rotation check is skipped. Verifiers MUST instead confirm the VP is signed with the holder's _current_ active key per the KEL. |
+
+**Verifier algorithm (abridged)**
+
+1. Locate the KEL entry `E` where `E.twice_prerotated_key_hash == addr(holder_key)`.
+2. Decode `E.relationship` and read `credentialStatus.mode` (default `"rotation"`).
+3. If `mode == "rotation"`: reject if `addr(holder_key)` appears as any `public_key_hash` in the KEL.
+4. Regardless of mode: confirm `kel[-1].prerotated_key_hash == addr(holder_key)` — the VP MUST be signed with the current active key.
+
+**Note on DID-level vs. VC-level revocation**: `YadaKELStatus` controls
+VC validity, not DID Document state. At the DID level, a key that has
+signed a rotation transaction is always deactivated (§5.1, §6.4). `temporal`
+mode allows the _credential_ to remain valid even after the holder's DID has
+cycled through key rotations, provided the VP is signed with the current
+active key.
 
 ---
 
@@ -483,23 +519,24 @@ A conforming `did:yadacoin` DID controller:
 
 ## 12. Related Work
 
-| Specification                                                     | Relationship                                                                      |
-| ----------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [W3C DID Core 1.0](https://www.w3.org/TR/did-core/)               | This method conforms to the DID Core specification                                |
-| [W3C VC Data Model 2.0](https://www.w3.org/TR/vc-data-model-2.0/) | Scope documents use the VC 2.0 format                                             |
-| [KERI](https://keri.one/) (IETF draft)                            | YadaCoin KEL is a blockchain-anchored subset of KERI pre-rotation semantics       |
-| [did:ion](https://identity.foundation/ion/)                       | Similar blockchain-anchored key management; ION uses Bitcoin Sidetree             |
-| [did:key](https://w3c-ccg.github.io/did-method-key/)              | Self-contained; no revocation; used for ephemeral keys in the agent auth protocol |
-| [KEL Agent Auth Spec](./kel_agent_auth_spec.md)                   | Application protocol built on top of `did:yadacoin` for AI agent authentication   |
-| [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421)                | HTTP Message Signatures; complementary authentication mechanism                   |
+| Specification                                                     | Relationship                                                                                                     |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| [W3C DID Core 1.0](https://www.w3.org/TR/did-core/)               | This method conforms to the DID Core specification                                                               |
+| [W3C VC Data Model 2.0](https://www.w3.org/TR/vc-data-model-2.0/) | Scope documents use the VC 2.0 format                                                                            |
+| [KERI](https://keri.one/) (IETF draft)                            | YadaCoin KEL is a blockchain-anchored subset of KERI pre-rotation semantics                                      |
+| [did:ion](https://identity.foundation/ion/)                       | Similar blockchain-anchored key management; ION uses Bitcoin Sidetree                                            |
+| [did:key](https://w3c-ccg.github.io/did-method-key/)              | Self-contained; no revocation; used for ephemeral keys in the agent auth protocol                                |
+| [KEL Agent Auth Spec v1.2](./kel_agent_auth_spec.md)              | Application protocol built on top of `did:yadacoin` for AI agent authentication; v1.2 introduces `YadaKELStatus` |
+| [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421)                | HTTP Message Signatures; complementary authentication mechanism                                                  |
 
 ---
 
 ## 13. Revision History
 
-| Version   | Date       | Changes                              |
-| --------- | ---------- | ------------------------------------ |
-| 1.0-draft | 2026-05-01 | Initial draft for W3C CCG submission |
+| Version   | Date       | Changes                                                                                                                                          |
+| --------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1.0-draft | 2026-05-01 | Initial draft for W3C CCG submission                                                                                                             |
+| 1.1-draft | 2026-05-03 | Added §5.4 `YadaKELStatus` credential status type with `rotation` / `temporal` modes; updated Related Work to reference KEL Agent Auth Spec v1.2 |
 
 ---
 

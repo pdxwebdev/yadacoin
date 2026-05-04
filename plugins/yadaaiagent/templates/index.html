@@ -366,6 +366,125 @@
         opacity: 0.4;
         cursor: not-allowed;
       }
+
+      /* ── Settings gear button ── */
+      #settingsBtn {
+        background: none;
+        border: 1px solid var(--border);
+        color: var(--subtext);
+        border-radius: 6px;
+        width: 32px;
+        height: 32px;
+        font-size: 1rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      #settingsBtn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      /* ── Settings drawer ── */
+      #settingsDrawer {
+        display: none;
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 320px;
+        background: var(--surface);
+        border-left: 1px solid var(--border);
+        z-index: 100;
+        flex-direction: column;
+        padding: 20px;
+        gap: 14px;
+        overflow-y: auto;
+      }
+      #settingsDrawer.open {
+        display: flex;
+      }
+      #settingsDrawer h2 {
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: var(--accent);
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        flex-shrink: 0;
+      }
+      .setting-group {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .setting-group label {
+        font-size: 0.75rem;
+        color: var(--subtext);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .setting-group select,
+      .setting-group input {
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 7px 10px;
+        font-size: 0.84rem;
+        font-family: inherit;
+        width: 100%;
+      }
+      .setting-group select:focus,
+      .setting-group input:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .setting-group .hint {
+        font-size: 0.72rem;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+      #apiKeyRow {
+        display: none;
+      }
+      #apiKeyRow.visible {
+        display: flex;
+      }
+      #settingsSaveBtn {
+        background: var(--accent);
+        color: var(--bg);
+        border: none;
+        border-radius: 6px;
+        padding: 8px 16px;
+        font-weight: 700;
+        font-size: 0.84rem;
+        cursor: pointer;
+        margin-top: 4px;
+      }
+      #settingsSaveBtn:hover {
+        background: var(--accent2);
+      }
+      #settingsCloseBtn {
+        background: none;
+        border: 1px solid var(--border);
+        color: var(--subtext);
+        border-radius: 6px;
+        padding: 8px 16px;
+        font-size: 0.84rem;
+        cursor: pointer;
+      }
+      #settingsCloseBtn:hover {
+        border-color: var(--red);
+        color: var(--red2);
+      }
+      #settingsSavedMsg {
+        font-size: 0.78rem;
+        color: var(--green2);
+        display: none;
+      }
     </style>
   </head>
   <body>
@@ -378,7 +497,99 @@
         </div>
       </div>
       <div id="sessionPill">checking key…</div>
+      <button
+        id="settingsBtn"
+        title="LLM settings"
+      >
+        ⚙
+      </button>
     </header>
+
+    <div id="settingsDrawer">
+      <h2>LLM Settings</h2>
+
+      <div class="setting-group">
+        <label>Provider</label>
+        <select id="llmProvider">
+          <option value="ollama">
+            Ollama (local)
+          </option>
+          <option value="openai">OpenAI</option>
+          <option value="anthropic">
+            Anthropic
+          </option>
+          <option value="openai_compat">
+            OpenAI-compatible (custom)
+          </option>
+        </select>
+      </div>
+
+      <div
+        class="setting-group"
+        id="ollamaHostRow"
+      >
+        <label>Ollama host</label>
+        <input
+          id="llmOllamaHost"
+          type="text"
+          placeholder="http://localhost:11434"
+        />
+      </div>
+
+      <div
+        class="setting-group"
+        id="customBaseUrlRow"
+        style="display: none"
+      >
+        <label>Base URL</label>
+        <input
+          id="llmBaseUrl"
+          type="text"
+          placeholder="https://api.example.com/v1"
+        />
+      </div>
+
+      <div class="setting-group">
+        <label>Model</label>
+        <input
+          id="llmModel"
+          type="text"
+          placeholder="e.g. llama3.2, gpt-4o, claude-3-5-sonnet-20241022"
+        />
+        <div class="hint" id="modelHint">
+          Ollama: run <code>ollama list</code> to
+          see available models.
+        </div>
+      </div>
+
+      <div class="setting-group" id="apiKeyRow">
+        <label>API Key</label>
+        <input
+          id="llmApiKey"
+          type="password"
+          placeholder="sk-…"
+          autocomplete="off"
+        />
+        <div class="hint">
+          Stored in localStorage — never sent to
+          the YadaCoin server.
+        </div>
+      </div>
+
+      <div
+        style="
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        "
+      >
+        <button id="settingsSaveBtn">Save</button>
+        <button id="settingsCloseBtn">
+          Close
+        </button>
+        <span id="settingsSavedMsg">✓ Saved</span>
+      </div>
+    </div>
 
     <div id="chat"></div>
 
@@ -543,6 +754,175 @@
       // ── localStorage keys ──
       const LS_PRIV = "yadacoin_derived_key";
       const LS_CC = "yadacoin_derived_cc";
+      const LS_LLM_PROVIDER =
+        "yadacoin_llm_provider";
+      const LS_LLM_MODEL = "yadacoin_llm_model";
+      const LS_LLM_API_KEY =
+        "yadacoin_llm_api_key";
+      const LS_LLM_OLLAMA_HOST =
+        "yadacoin_llm_ollama_host";
+      const LS_LLM_BASE_URL =
+        "yadacoin_llm_base_url";
+
+      // ── LLM settings helpers ──
+      function getLlmSettings() {
+        return {
+          provider:
+            localStorage.getItem(
+              LS_LLM_PROVIDER,
+            ) || "ollama",
+          model:
+            localStorage.getItem(LS_LLM_MODEL) ||
+            "",
+          api_key:
+            localStorage.getItem(
+              LS_LLM_API_KEY,
+            ) || "",
+          ollama_host:
+            localStorage.getItem(
+              LS_LLM_OLLAMA_HOST,
+            ) || "",
+          base_url:
+            localStorage.getItem(
+              LS_LLM_BASE_URL,
+            ) || "",
+        };
+      }
+
+      // ── Settings drawer logic ──
+      const settingsBtn = document.getElementById(
+        "settingsBtn",
+      );
+      const settingsDrawer =
+        document.getElementById("settingsDrawer");
+      const settingsSaveBtn =
+        document.getElementById(
+          "settingsSaveBtn",
+        );
+      const settingsCloseBtn =
+        document.getElementById(
+          "settingsCloseBtn",
+        );
+      const settingsSavedMsg =
+        document.getElementById(
+          "settingsSavedMsg",
+        );
+      const llmProvider = document.getElementById(
+        "llmProvider",
+      );
+      const llmModel =
+        document.getElementById("llmModel");
+      const llmApiKey =
+        document.getElementById("llmApiKey");
+      const llmOllamaHost =
+        document.getElementById("llmOllamaHost");
+      const llmBaseUrl =
+        document.getElementById("llmBaseUrl");
+      const apiKeyRow =
+        document.getElementById("apiKeyRow");
+      const ollamaHostRow =
+        document.getElementById("ollamaHostRow");
+      const customBaseUrlRow =
+        document.getElementById(
+          "customBaseUrlRow",
+        );
+      const modelHint =
+        document.getElementById("modelHint");
+
+      const MODEL_HINTS = {
+        ollama:
+          "Ollama: run <code>ollama list</code> to see available models. Default: llama3.2",
+        openai:
+          "OpenAI models: gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo",
+        anthropic:
+          "Anthropic models: claude-3-5-sonnet-20241022, claude-3-haiku-20240307",
+        openai_compat:
+          "Enter the model name your provider expects.",
+      };
+
+      function applyProviderUI(provider) {
+        const needsKey = provider !== "ollama";
+        const isOllama = provider === "ollama";
+        const isCompat =
+          provider === "openai_compat";
+        apiKeyRow.classList.toggle(
+          "visible",
+          needsKey,
+        );
+        ollamaHostRow.style.display = isOllama
+          ? ""
+          : "none";
+        customBaseUrlRow.style.display = isCompat
+          ? ""
+          : "none";
+        modelHint.innerHTML =
+          MODEL_HINTS[provider] || "";
+      }
+
+      // Populate fields from localStorage on open
+      settingsBtn.addEventListener(
+        "click",
+        () => {
+          const s = getLlmSettings();
+          llmProvider.value = s.provider;
+          llmModel.value = s.model;
+          llmApiKey.value = s.api_key;
+          llmOllamaHost.value = s.ollama_host;
+          llmBaseUrl.value = s.base_url;
+          applyProviderUI(s.provider);
+          settingsDrawer.classList.add("open");
+          settingsSavedMsg.style.display = "none";
+        },
+      );
+
+      llmProvider.addEventListener(
+        "change",
+        () => {
+          applyProviderUI(llmProvider.value);
+        },
+      );
+
+      settingsSaveBtn.addEventListener(
+        "click",
+        () => {
+          localStorage.setItem(
+            LS_LLM_PROVIDER,
+            llmProvider.value,
+          );
+          localStorage.setItem(
+            LS_LLM_MODEL,
+            llmModel.value.trim(),
+          );
+          // API key never leaves the browser — only sent in requests to /api/chat
+          localStorage.setItem(
+            LS_LLM_API_KEY,
+            llmApiKey.value.trim(),
+          );
+          localStorage.setItem(
+            LS_LLM_OLLAMA_HOST,
+            llmOllamaHost.value.trim(),
+          );
+          localStorage.setItem(
+            LS_LLM_BASE_URL,
+            llmBaseUrl.value.trim(),
+          );
+          settingsSavedMsg.style.display =
+            "inline";
+          setTimeout(
+            () =>
+              (settingsSavedMsg.style.display =
+                "none"),
+            2000,
+          );
+        },
+      );
+
+      settingsCloseBtn.addEventListener(
+        "click",
+        () => {
+          settingsDrawer.classList.remove("open");
+        },
+      );
 
       // ── DOM refs ──
       const chatEl =
@@ -689,6 +1069,7 @@
 
         let data;
         try {
+          const llmCfg = getLlmSettings();
           const resp = await fetch(
             "/ai-agent-auth/api/chat",
             {
@@ -699,6 +1080,18 @@
               },
               body: JSON.stringify({
                 messages: chatHistory,
+                llm: {
+                  provider: llmCfg.provider,
+                  model:
+                    llmCfg.model || undefined,
+                  api_key:
+                    llmCfg.api_key || undefined,
+                  ollama_host:
+                    llmCfg.ollama_host ||
+                    undefined,
+                  base_url:
+                    llmCfg.base_url || undefined,
+                },
               }),
             },
           );
@@ -711,7 +1104,7 @@
           thinkRow.remove();
           appendAgent(
             `<span style="color:var(--red2)">⚠ Could not reach AI service: ${escHtml(String(e))}. ` +
-              `Make sure Ollama is running (<code>ollama serve</code>).</span>`,
+              `Check your LLM settings (⚙ button) or make sure Ollama is running (<code>ollama serve</code>).</span>`,
           );
           sendBtn.disabled = false;
           chatHistory.pop(); // remove failed user message
@@ -797,6 +1190,10 @@
           issuer:
             "did:yadacoin:<operator_public_key>",
           validFrom: new Date().toISOString(),
+          credentialStatus: {
+            type: "YadaKELStatus",
+            mode: "rotation",
+          },
           credentialSubject: {
             id: "did:yadacoin:<agent_key_derived_on_approval>",
             agentAuthorization: {
@@ -962,6 +1359,10 @@
                 issuer: `did:yadacoin:${operatorPubHex}`,
                 validFrom:
                   new Date().toISOString(),
+                credentialStatus: {
+                  type: "YadaKELStatus",
+                  mode: "rotation",
+                },
                 credentialSubject: {
                   id: `did:yadacoin:${agentPubHex}`,
                   agentAuthorization: {
@@ -1053,7 +1454,7 @@
                   rotateData.prev_chain_code,
                 );
 
-              // ── Step 3: Fetch challenge from travel service ──
+              // ── Step 3: Build VP wrapping the on-chain VC ──
               const provPrivBytes = hex.toBytes(
                 rotateData.prerotated_private_key,
               );
@@ -1065,157 +1466,208 @@
               );
 
               const s3 = addStep(
-                "Requesting authentication challenge from travel service…",
+                "Building Verifiable Presentation wrapping on-chain VC…",
               );
-              const chalRes = await fetch(
-                `/ai-agent-auth/api/challenge?public_key=${encodeURIComponent(provPubHex)}`,
-              );
-              const chalData =
-                await chalRes.json();
-              if (
-                !chalRes.ok ||
-                !chalData.challenge
-              ) {
-                s3.classList.add("fail");
-                s3.textContent =
-                  "› Failed to get challenge";
-                appendAgent(
-                  `<span style="color:var(--red2)">Could not obtain a challenge from the travel service.</span>`,
-                );
-                travel = null;
-                chatHistory = [];
-                sendBtn.disabled = false;
-                userInput.focus();
-                return;
+
+              // VP base without proof — holder presents the VC issued on-chain
+              const vpBase = {
+                "@context": [
+                  "https://www.w3.org/ns/credentials/v2",
+                ],
+                type: ["VerifiablePresentation"],
+                holder: `did:yadacoin:${provPubHex}`,
+                verifiableCredential: [vc],
+              };
+
+              // Deep-sort all keys recursively so the canonical form matches
+              // json.dumps(..., sort_keys=True) on the server side.
+              // NOTE: JSON.stringify(obj, arrayReplacer) filters nested objects
+              // to only include keys in the array — do NOT use that approach.
+              function deepSortKeys(obj) {
+                if (Array.isArray(obj))
+                  return obj.map(deepSortKeys);
+                if (
+                  obj !== null &&
+                  typeof obj === "object"
+                ) {
+                  const sorted = {};
+                  Object.keys(obj)
+                    .sort()
+                    .forEach(
+                      (k) =>
+                        (sorted[k] = deepSortKeys(
+                          obj[k],
+                        )),
+                    );
+                  return sorted;
+                }
+                return obj;
               }
-              s3.classList.add("done");
-              s3.textContent =
-                "› Challenge received: " +
-                chalData.challenge.slice(0, 16) +
-                "… (expires in " +
-                chalData.expires_in +
-                "s)";
 
-              // ── Step 4: Sign challenge client-side — private key never leaves browser ──
-              const s4 = addStep(
-                "Signing challenge with provisioned key (client-side, key stays in browser)…",
+              // Canonical bytes (sorted keys, no whitespace) — used in proof
+              const vpCanonical = JSON.stringify(
+                deepSortKeys(vpBase),
               );
-              const challengeBytes =
+              const vpCanonicalBytes =
                 new TextEncoder().encode(
-                  chalData.challenge,
+                  vpCanonical,
                 );
-              const challengeHash = sha256(
-                challengeBytes,
-              );
-              const sigObj = secp.sign(
-                challengeHash,
-                provPrivBytes,
-              );
-              const sigHex =
-                compactSigToDerHex(sigObj);
-              s4.classList.add("done");
-              s4.textContent =
-                "› Signed · sig " +
-                sigHex.slice(0, 16) +
-                "… (private key NOT sent)";
 
-              // ── Step 5: Submit to travel booking service ──
-              const s5 = addStep(
-                "Submitting signed booking request to travel service…",
-              );
-              const bookRes = await fetch(
-                "/ai-agent-auth/api/travel",
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type":
-                      "application/json",
-                  },
-                  body: JSON.stringify({
-                    public_key: provPubHex,
+              s3.classList.add("done");
+              s3.textContent = `› VP built · holder did:yadacoin:${provPubHex.slice(0, 16)}…`;
+
+              // ── Steps 4+: Authenticate with each vendor independently ──
+              // Each vendor issues its own challenge and verifies the VP proof.
+              const vendorResults = [];
+              for (const service of travelDetails.services) {
+                // 4a. Request challenge from this vendor
+                const sChallenge = addStep(
+                  `[${service}] Requesting challenge from vendor…`,
+                );
+                const chalRes = await fetch(
+                  `/ai-agent-auth/api/vendor/${service}/challenge?public_key=${encodeURIComponent(provPubHex)}`,
+                );
+                const chalData =
+                  await chalRes.json();
+                if (
+                  !chalRes.ok ||
+                  !chalData.challenge
+                ) {
+                  sChallenge.classList.add(
+                    "fail",
+                  );
+                  sChallenge.textContent = `› [${service}] Failed to get challenge`;
+                  vendorResults.push({
+                    service,
+                    status: "error",
+                    message:
+                      "challenge request failed",
+                  });
+                  continue;
+                }
+                sChallenge.classList.add("done");
+                sChallenge.textContent = `› [${service}] Challenge: ${chalData.challenge.slice(0, 12)}… (expires in ${chalData.expires_in}s)`;
+
+                // 4b. Sign VP: SHA256(challenge_bytes + canonical_vp_sans_proof_bytes)
+                //     This binds the signature to both the challenge and the VP content.
+                const sSign = addStep(
+                  `[${service}] Signing VP with agent key (private key stays in browser)…`,
+                );
+                const challengeBytes =
+                  new TextEncoder().encode(
+                    chalData.challenge,
+                  );
+                const msgBytes = new Uint8Array(
+                  challengeBytes.length +
+                    vpCanonicalBytes.length,
+                );
+                msgBytes.set(challengeBytes);
+                msgBytes.set(
+                  vpCanonicalBytes,
+                  challengeBytes.length,
+                );
+                const msgHash = sha256(msgBytes);
+                const sigObj = secp.sign(
+                  msgHash,
+                  provPrivBytes,
+                );
+                const proofValue =
+                  compactSigToDerHex(sigObj);
+                sSign.classList.add("done");
+                sSign.textContent = `› [${service}] VP signed · sig ${proofValue.slice(0, 12)}…`;
+
+                // Build full VP with proof
+                const vp = {
+                  ...vpBase,
+                  proof: {
+                    type: "EcdsaSecp256k1Signature2019",
                     challenge: chalData.challenge,
-                    signature: sigHex,
-                    services:
-                      travelDetails.services,
-                    dest: travelDetails.dest,
-                    checkin:
-                      travelDetails.checkin,
-                    checkout:
-                      travelDetails.checkout,
-                  }),
-                },
-              );
-              const bookData =
-                await bookRes.json();
+                    created:
+                      new Date().toISOString(),
+                    proofPurpose:
+                      "authentication",
+                    verificationMethod: `did:yadacoin:${provPubHex}#keys-1`,
+                    proofValue,
+                  },
+                };
 
-              if (bookRes.status === 200) {
-                s5.classList.add("done");
-                s5.textContent =
-                  "› All services booked (200 OK)";
-                const confirmations =
-                  bookData.completed
-                    .map(
-                      (c) =>
-                        `✓ <strong>${escHtml(c.service)}</strong>: <code>${escHtml(c.confirmation)}</code>`,
-                    )
-                    .join("<br>");
-                appendAgent(
-                  `✅ <strong>All booked!</strong><br><br>${confirmations}<br><br>` +
-                    `Authorisation on-chain: <code>${rotateData.transaction_id.slice(0, 24)}…</code><br>` +
-                    `<span style="color:var(--muted);font-size:0.8rem">KEL depth ${bookData.kel_depth} · authorised address ${bookData.authorized_address.slice(0, 16)}…</span>`,
+                // 4c. Present VP to vendor
+                const sBook = addStep(
+                  `[${service}] Presenting VP to vendor…`,
                 );
-              } else if (bookRes.status === 206) {
-                s5.classList.add("done");
-                s5.textContent =
-                  "› Partial booking (206 Partial Content)";
-                const done = bookData.completed
-                  .map(
-                    (c) =>
-                      `✓ <strong>${escHtml(c.service)}</strong>: <code>${escHtml(c.confirmation)}</code>`,
-                  )
-                  .join("<br>");
-                const fail = bookData.failed
-                  .map(
-                    (f) =>
-                      `✗ <strong>${escHtml(f.service)}</strong>: <em>${escHtml(f.message)}</em>`,
-                  )
-                  .join("<br>");
-                appendAgent(
-                  `⚠️ <strong>Partially booked (206)</strong><br><br>` +
-                    `${done}<br><br>` +
-                    `<span style="color:var(--red2)">${fail}</span><br><br>` +
-                    `Authorisation on-chain: <code>${rotateData.transaction_id.slice(0, 24)}…</code>`,
+                const bookRes = await fetch(
+                  `/ai-agent-auth/api/vendor/${service}`,
+                  {
+                    method: "POST",
+                    headers: {
+                      "Content-Type":
+                        "application/json",
+                    },
+                    body: JSON.stringify({
+                      public_key: provPubHex,
+                      challenge:
+                        chalData.challenge,
+                      vp,
+                    }),
+                  },
                 );
-              } else if (bookRes.status === 403) {
-                s5.classList.add("fail");
-                s5.textContent =
-                  "› Scope or auth error (403)";
-                appendAgent(
-                  `🔒 <strong>Authorisation error (403)</strong><br>` +
-                    `<span style="color:var(--red2)">${escHtml(bookData.message || "Scope violation or key not authorised")}</span>`,
-                );
-              } else if (bookRes.status === 422) {
-                s5.classList.add("fail");
-                s5.textContent =
-                  "› Nothing available (422)";
-                const fail = (
-                  bookData.failed || []
+                const bookData =
+                  await bookRes.json();
+
+                if (bookRes.status === 200) {
+                  sBook.classList.add("done");
+                  sBook.textContent = `› [${service}] Booked by ${escHtml(bookData.vendor)} · ${escHtml(bookData.confirmation)}`;
+                  vendorResults.push({
+                    service,
+                    status: "ok",
+                    confirmation:
+                      bookData.confirmation,
+                    vendor: bookData.vendor,
+                  });
+                } else {
+                  sBook.classList.add("fail");
+                  sBook.textContent = `› [${service}] ${bookRes.status}: ${bookData.message || "failed"}`;
+                  vendorResults.push({
+                    service,
+                    status: "error",
+                    message:
+                      bookData.message ||
+                      String(bookRes.status),
+                  });
+                }
+              }
+
+              // ── Final summary ──
+              const allOk = vendorResults.every(
+                (r) => r.status === "ok",
+              );
+              const anyOk = vendorResults.some(
+                (r) => r.status === "ok",
+              );
+              const resultLines = vendorResults
+                .map((r) =>
+                  r.status === "ok"
+                    ? `✓ <strong>${escHtml(r.service)}</strong> (${escHtml(r.vendor)}): <code>${escHtml(r.confirmation)}</code>`
+                    : `✗ <strong>${escHtml(r.service)}</strong>: <span style="color:var(--red2)">${escHtml(r.message)}</span>`,
                 )
-                  .map(
-                    (f) =>
-                      `✗ <strong>${escHtml(f.service)}</strong>: <em>${escHtml(f.message)}</em>`,
-                  )
-                  .join("<br>");
+                .join("<br>");
+
+              if (allOk) {
                 appendAgent(
-                  `❌ <strong>Unprocessable (422)</strong> — none of the requested services are available:<br><br>` +
-                    `<span style="color:var(--red2)">${fail || escHtml(bookData.message || "")}</span>`,
+                  `✅ <strong>All services booked!</strong><br><br>` +
+                    `${resultLines}<br><br>` +
+                    `Scope committed on-chain: <code>${rotateData.transaction_id.slice(0, 24)}…</code><br>` +
+                    `<span style="color:var(--muted);font-size:0.8rem">Each vendor independently verified your VP against the KEL</span>`,
+                );
+              } else if (anyOk) {
+                appendAgent(
+                  `⚠️ <strong>Partial success</strong><br><br>` +
+                    `${resultLines}<br><br>` +
+                    `Scope committed on-chain: <code>${rotateData.transaction_id.slice(0, 24)}…</code>`,
                 );
               } else {
-                s5.classList.add("fail");
-                s5.textContent =
-                  "› Error " + bookRes.status;
                 appendAgent(
-                  `❌ <strong>Error ${bookRes.status}</strong>: ${escHtml(bookData.message || "Unknown error")}`,
+                  `❌ <strong>All bookings failed</strong><br><br>${resultLines}`,
                 );
               }
 

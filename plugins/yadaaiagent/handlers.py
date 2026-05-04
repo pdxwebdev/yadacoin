@@ -106,32 +106,76 @@ def _extract_scope(data: dict) -> dict:
     return {**data, "services": [s.lower() for s in services]}
 
 
+def _verify_vp_proof(vp: dict, public_key_bytes: bytes, challenge: str):
+    """Verify a Verifiable Presentation's EcdsaSecp256k1 proof.
+
+    The proof must cover SHA256(challenge_bytes + canonical_vp_sans_proof_bytes),
+    where the canonical form is JSON with sorted top-level keys and no whitespace.
+
+    Returns (ok: bool, error: str).
+    """
+    proof = vp.get("proof")
+    if not proof:
+        return False, "VP missing proof"
+
+    if proof.get("challenge") != challenge:
+        return (
+            False,
+            f"VP proof.challenge '{proof.get('challenge')}' does not match supplied challenge",
+        )
+
+    proof_value = proof.get("proofValue", "")
+    if not proof_value:
+        return False, "VP missing proof.proofValue"
+
+    # Reconstruct VP without proof for verification (canonical, sorted keys)
+    vp_sans_proof = {k: v for k, v in vp.items() if k != "proof"}
+    vp_bytes = json.dumps(vp_sans_proof, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
+
+    challenge_bytes = challenge.encode("utf-8")
+    msg_hash = hashlib.sha256(challenge_bytes + vp_bytes).digest()
+
+    try:
+        sig_bytes = base64.b64decode(proof_value)
+        ok = _verify_signature(sig_bytes, msg_hash, public_key_bytes, hasher=None)
+        if not ok:
+            return False, "VP proof signature mismatch"
+        return True, ""
+    except Exception as exc:
+        return False, f"VP proof verification error: {exc}"
+
+
 class AgentChatHandler(BaseHandler):
     """
     POST /ai-agent-auth/api/chat
 
-    Proxies the conversation to a local Ollama instance and returns a
+    Proxies the conversation to a configurable LLM and returns a
     structured JSON response for driving the travel booking UI.
 
     Body (JSON)
     -----------
     messages : list[{role: "user"|"assistant", content: str}]
+    llm      : {
+        provider    : "ollama" | "openai" | "anthropic" | "openai_compat"
+        model       : str (optional — falls back to sensible defaults)
+        api_key     : str (required for openai / anthropic / openai_compat)
+        ollama_host : str (ollama only, default "http://localhost:11434")
+        base_url    : str (openai_compat only)
+      }
 
-    Response (JSON)
-    ---------------
-    reply     : str   — LLM's natural-language reply
-    extracted : dict  — {dest, checkin, checkout, services} with null for unknowns
-    complete  : bool  — true when all four fields are known
-    error     : str   — present only on failure
-
-    Config keys (config.json)
-    -------------------------
-    ollama_host  : str  (default "http://localhost:11434")
-    ollama_model : str  (default "llama3.2")
+    The api_key is supplied by the browser from localStorage and is never
+    stored on the YadaCoin server.
     """
 
     _SYSTEM_PROMPT = (
-        "You are a travel booking assistant. Extract travel details from the conversation.\n"
+        "You are a travel booking assistant. Your ONLY job is to collect travel details from the user.\n"
+        "You CANNOT book anything, confirm any reservation, or process any payment.\n"
+        "NEVER ask for credit card details, payment info, or personal identification.\n"
+        "NEVER say a booking has been made or confirmed — you have no ability to do that.\n"
+        "Actual booking is handled by a separate cryptographic authorization system after the user approves.\n"
+        "\n"
         "ALWAYS respond with ONLY a valid JSON object — no other text, no markdown:\n"
         "{\n"
         '  "reply": "your natural conversational response",\n'
@@ -146,11 +190,22 @@ class AgentChatHandler(BaseHandler):
         "Rules:\n"
         "- Only use service values: hotel, flight, car\n"
         '- If the user says "all" or "everything": services=["hotel","flight","car"]\n'
-        "- Set complete=true ONLY when dest, checkin, checkout AND services are ALL known\n"
+        "- complete MUST be false unless ALL FOUR of dest, checkin, checkout, AND services are known\n"
+        "- If any of dest, checkin, checkout, services is null or unknown, set complete=false and ask for the missing field(s)\n"
+        "- NEVER set complete=true unless all four values are confirmed — not before, not to be polite\n"
         '- For date ranges like "May 10-16": checkin="May 10", checkout="May 16"\n'
-        "- Ask conversationally for any missing fields\n"
-        "- The reply field must be plain text (no JSON, no markdown)"
+        "- The reply field must be plain text (no JSON, no markdown)\n"
+        "- When complete=false: your reply should acknowledge what you have and ask for what is missing\n"
+        "- When complete=true: summarise all four details and say the operator will now be asked to approve the booking"
     )
+
+    # ── Default models per provider ───────────────────────────────────────────
+    _DEFAULT_MODELS = {
+        "ollama": "llama3.2",
+        "openai": "gpt-4o-mini",
+        "anthropic": "claude-3-haiku-20240307",
+        "openai_compat": "gpt-3.5-turbo",
+    }
 
     async def post(self):
         try:
@@ -164,34 +219,47 @@ class AgentChatHandler(BaseHandler):
             self.set_status(400)
             return self.render_as_json({"error": "messages must be a list"})
 
+        # ── Read per-request LLM config sent from the browser ─────────────── #
+        llm_cfg = body.get("llm") or {}
+        provider = (llm_cfg.get("provider") or "ollama").lower().strip()
+        model = (llm_cfg.get("model") or "").strip() or self._DEFAULT_MODELS.get(
+            provider, "gpt-4o-mini"
+        )
+        api_key = (llm_cfg.get("api_key") or "").strip()
         ollama_host = (
-            getattr(self.config, "ollama_host", None) or "http://localhost:11434"
+            llm_cfg.get("ollama_host")
+            or getattr(self.config, "ollama_host", None)
+            or "http://localhost:11434"
         ).rstrip("/")
-        ollama_model = getattr(self.config, "ollama_model", None) or "llama3.2"
+        base_url = (llm_cfg.get("base_url") or "").rstrip("/")
 
         full_messages = [{"role": "system", "content": self._SYSTEM_PROMPT}] + messages
 
         try:
-            client = AsyncHTTPClient()
-            req = HTTPRequest(
-                url=f"{ollama_host}/api/chat",
-                method="POST",
-                headers={"Content-Type": "application/json"},
-                body=json.dumps(
-                    {"model": ollama_model, "messages": full_messages, "stream": False}
-                ),
-                request_timeout=60.0,
-            )
-            resp = await client.fetch(req)
-            ollama_data = json.loads(resp.body)
-            content = ollama_data["message"]["content"].strip()
+            if provider == "ollama":
+                content = await self._call_ollama(ollama_host, model, full_messages)
+            elif provider == "openai":
+                content = await self._call_openai_compat(
+                    "https://api.openai.com/v1", model, api_key, full_messages
+                )
+            elif provider == "anthropic":
+                content = await self._call_anthropic(model, api_key, full_messages)
+            elif provider == "openai_compat":
+                if not base_url:
+                    self.set_status(400)
+                    return self.render_as_json(
+                        {"error": "base_url required for openai_compat provider"}
+                    )
+                content = await self._call_openai_compat(
+                    base_url, model, api_key, full_messages
+                )
+            else:
+                self.set_status(400)
+                return self.render_as_json({"error": f"unknown provider '{provider}'"})
         except Exception as exc:
             self.set_status(502)
             return self.render_as_json(
-                {
-                    "error": f"Ollama unreachable: {exc}",
-                    "hint": f"Ensure Ollama is running at {ollama_host} with model '{ollama_model}'",
-                }
+                {"error": f"LLM unreachable ({provider}): {exc}"}
             )
 
         # Strip any accidental markdown code fences the model might add
@@ -204,7 +272,6 @@ class AgentChatHandler(BaseHandler):
             extracted = parsed.get("extracted") or {}
             complete = bool(parsed.get("complete", False))
         except Exception:
-            # Model didn't return valid JSON — treat entire response as the reply
             reply = content
             extracted = {}
             complete = False
@@ -212,6 +279,114 @@ class AgentChatHandler(BaseHandler):
         return self.render_as_json(
             {"reply": reply, "extracted": extracted, "complete": complete}
         )
+
+    async def _call_ollama(self, host: str, model: str, messages: list) -> str:
+        client = AsyncHTTPClient()
+        req = HTTPRequest(
+            url=f"{host}/api/chat",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps(
+                {
+                    "model": model,
+                    "messages": messages,
+                    "stream": False,
+                    "keep_alive": "10m",  # keep model loaded for 10 minutes after last request
+                }
+            ),
+            request_timeout=480.0,
+        )
+        resp = await client.fetch(req, raise_error=False)
+        if resp.code != 200:
+            msg = resp.body.decode("utf-8", errors="replace")
+            raise ValueError(f"Ollama {resp.code}: {msg}")
+        data = json.loads(resp.body)
+        return data["message"]["content"].strip()
+
+    async def _call_openai_compat(
+        self, base_url: str, model: str, api_key: str, messages: list
+    ) -> str:
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        client = AsyncHTTPClient()
+        req = HTTPRequest(
+            url=f"{base_url}/chat/completions",
+            method="POST",
+            headers=headers,
+            body=json.dumps({"model": model, "messages": messages, "temperature": 0.2}),
+            request_timeout=120.0,
+        )
+        resp = await client.fetch(req, raise_error=False)
+        if resp.code != 200:
+            try:
+                err = json.loads(resp.body)
+                msg = err.get("error", {}).get("message") or resp.body.decode(
+                    "utf-8", errors="replace"
+                )
+            except Exception:
+                msg = resp.body.decode("utf-8", errors="replace")
+            raise ValueError(f"OpenAI {resp.code}: {msg}")
+        data = json.loads(resp.body)
+        return data["choices"][0]["message"]["content"].strip()
+
+    async def _call_anthropic(self, model: str, api_key: str, messages: list) -> str:
+        # Anthropic uses a separate system parameter instead of a system role message
+        system_content = ""
+        filtered = []
+        for m in messages:
+            if m.get("role") == "system":
+                system_content = m.get("content", "")
+            else:
+                filtered.append(m)
+
+        # Anthropic requires the conversation to start with a user message
+        if not filtered or filtered[0].get("role") != "user":
+            raise ValueError("Anthropic requires the first message to have role 'user'")
+
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            # Enable prompt caching so the system prompt is cached across turns.
+            # The cache_control block on the system message marks it as cacheable.
+            "anthropic-beta": "prompt-caching-2024-07-31",
+        }
+        body: dict = {
+            "model": model,
+            "max_tokens": 1024,
+            "messages": filtered,
+        }
+        if system_content:
+            # Use the extended content-block format so we can attach cache_control.
+            body["system"] = [
+                {
+                    "type": "text",
+                    "text": system_content,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+
+        client = AsyncHTTPClient()
+        req = HTTPRequest(
+            url="https://api.anthropic.com/v1/messages",
+            method="POST",
+            headers=headers,
+            body=json.dumps(body),
+            request_timeout=120.0,
+        )
+        resp = await client.fetch(req, raise_error=False)
+        if resp.code != 200:
+            try:
+                err = json.loads(resp.body)
+                msg = err.get("error", {}).get("message") or resp.body.decode(
+                    "utf-8", errors="replace"
+                )
+            except Exception:
+                msg = resp.body.decode("utf-8", errors="replace")
+            raise ValueError(f"Anthropic {resp.code}: {msg}")
+        data = json.loads(resp.body)
+        return data["content"][0]["text"].strip()
 
 
 class AgentAuthAppHandler(BaseHandler):
@@ -538,11 +713,305 @@ class TravelBookingHandler(BaseHandler):
         )
 
 
+# ── Per-vendor VP-based handlers ──────────────────────────────────────────────
+
+
+class VendorBaseHandler(BaseHandler):
+    """
+    Base class for individual vendor booking endpoints.
+
+    Each vendor is a fully independent service.  The agent authenticates by
+    presenting a W3C Verifiable Presentation (VP) that wraps the on-chain VC.
+    The VP proof must cover SHA256(challenge_bytes + canonical_vp_sans_proof_bytes)
+    so the signature binds both the challenge and the presented credential.
+
+    Body (JSON)
+    -----------
+    public_key : hex compressed secp256k1 public key (agent key = VP holder)
+    challenge  : hex challenge from GET /api/vendor/<service>/challenge
+    vp         : W3C VP object  {type, holder, verifiableCredential, proof}
+
+    Auth steps (each vendor runs independently)
+    -------------------------------------------
+    1. Validate HMAC challenge (stateless, 30-second windows).
+    2. Parse + validate VP structure; confirm holder == did:yadacoin:<public_key>.
+    3. Verify VP proof signature.
+    4. Extract VC from VP; read scope from credentialSubject.agentAuthorization.
+    5. Build KEL; run revocation + pre-commitment checks.
+    6. Cross-check VP scope against on-chain scope (VP cannot exceed KEL scope).
+    7. Confirm this vendor's service is authorized in scope; book if available.
+    """
+
+    vendor_service: str = ""
+    vendor_name: str = ""
+
+    async def post(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        try:
+            body = json.loads(self.request.body)
+        except Exception:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "message": "invalid json body"}
+            )
+
+        public_key = (body.get("public_key") or "").strip()
+        challenge = (body.get("challenge") or "").strip()
+        vp = body.get("vp")
+
+        if not public_key or not challenge or not vp:
+            self.set_status(400)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": "public_key, challenge, and vp are required",
+                }
+            )
+
+        # ── 1. Validate challenge ──────────────────────────────────────────── #
+        if not _valid_challenge(public_key, challenge):
+            self.set_status(401)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": "challenge expired or invalid — request a fresh one",
+                }
+            )
+
+        # ── 2. Parse public key ────────────────────────────────────────────── #
+        try:
+            pub_key_bytes = bytes.fromhex(public_key)
+            if len(pub_key_bytes) not in (33, 65):
+                raise ValueError("unexpected length")
+        except Exception as exc:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "message": f"invalid public_key: {exc}"}
+            )
+
+        address = str(P2PKHBitcoinAddress.from_pubkey(pub_key_bytes))
+
+        # ── 3. Validate VP structure ───────────────────────────────────────── #
+        vp_types = vp.get("type", [])
+        if "VerifiablePresentation" not in vp_types:
+            self.set_status(400)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": "vp.type must include 'VerifiablePresentation'",
+                }
+            )
+
+        expected_holder = f"did:yadacoin:{public_key}"
+        if vp.get("holder") != expected_holder:
+            self.set_status(403)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": (
+                        f"VP holder '{vp.get('holder')}' does not match "
+                        f"supplied public_key"
+                    ),
+                }
+            )
+
+        # ── 4. Verify VP proof ─────────────────────────────────────────────── #
+        ok, err = _verify_vp_proof(vp, pub_key_bytes, challenge)
+        if not ok:
+            self.set_status(401)
+            return self.render_as_json(
+                {"status": False, "message": f"VP proof invalid: {err}"}
+            )
+
+        # ── 5. Extract VC from VP and read presented scope ─────────────────── #
+        vc_list = vp.get("verifiableCredential", [])
+        if not vc_list:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "message": "VP contains no verifiableCredential"}
+            )
+
+        vc = vc_list[0] if isinstance(vc_list, list) else vc_list
+        vp_scope = _extract_scope(vc)
+
+        # ── 6. Build KEL ───────────────────────────────────────────────────── #
+        try:
+            kel = await KeyEventLog.build_from_public_key(public_key)
+        except Exception as exc:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "message": f"error retrieving KEL: {exc}"}
+            )
+
+        if not kel:
+            self.set_status(403)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": (
+                        "no KEL found for this public key — "
+                        "key has not been provisioned on-chain"
+                    ),
+                }
+            )
+
+        # ── 7. Read on-chain scope + credentialStatus ─────────────────────── #
+        # Read the VC from the KEL first so that credentialStatus.mode is known
+        # before the revocation check (step 8).
+        on_chain_scope = {}
+        kel_status_mode = "rotation"  # default; "temporal" skips revocation check
+        for entry in kel:
+            tpkh = (
+                getattr(entry, "twice_prerotated_key_hash", None)
+                if not isinstance(entry, dict)
+                else entry.get("twice_prerotated_key_hash")
+            )
+            if tpkh == address:
+                raw_rel = (
+                    getattr(entry, "relationship", None)
+                    if not isinstance(entry, dict)
+                    else entry.get("relationship")
+                )
+                if raw_rel:
+                    try:
+                        parsed = json.loads(
+                            base64.b64decode(raw_rel).decode("utf-8", errors="replace")
+                        )
+                        on_chain_scope = _extract_scope(parsed)
+                        cred_status = parsed.get("credentialStatus", {})
+                        if isinstance(cred_status, dict):
+                            kel_status_mode = cred_status.get(
+                                "mode", "rotation"
+                            ).lower()
+                    except Exception:
+                        pass
+                break
+
+        # ── 8. Revocation check (mode-aware) ──────────────────────────────── #
+        # rotation: credential is one-time-use; reject if key has already rotated.
+        # temporal: credential survives holder key rotation; skip this check and
+        #           instead rely on step 9 to confirm the key is the current active
+        #           key per the KEL.
+        if kel_status_mode == "rotation":
+            for entry in kel:
+                if getattr(entry, "public_key_hash", None) == address:
+                    self.set_status(403)
+                    return self.render_as_json(
+                        {
+                            "status": False,
+                            "message": "this key has already been used and is revoked",
+                        }
+                    )
+
+        # ── 9. Pre-commitment check ────────────────────────────────────────── #
+        # For both modes: the submitted public_key must be the current pre-committed
+        # next signer per the KEL.  In temporal mode this confirms the holder is
+        # presenting with their *current* active key even if prior keys have rotated.
+        latest = kel[-1]
+        if getattr(latest, "prerotated_key_hash", None) != address:
+            self.set_status(403)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": (
+                        "public key is not the pre-committed next signer — "
+                        "the KEL has advanced past this key or it was never authorised"
+                    ),
+                }
+            )
+
+        on_chain_services = [s.lower() for s in on_chain_scope.get("services", [])]
+
+        # ── 10. Scope checks ───────────────────────────────────────────────── #
+        # On-chain scope is the authority ceiling — VP cannot exceed it.
+        if on_chain_services and self.vendor_service not in on_chain_services:
+            self.set_status(403)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": (
+                        f"'{self.vendor_service}' is not in the on-chain "
+                        f"authorised scope"
+                    ),
+                    "authorized_services": on_chain_services,
+                }
+            )
+
+        vp_services = [s.lower() for s in vp_scope.get("services", [])]
+        if vp_services and self.vendor_service not in vp_services:
+            self.set_status(403)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": (
+                        f"'{self.vendor_service}' is not in the presented VP scope"
+                    ),
+                }
+            )
+
+        # ── 11. Book ──────────────────────────────────────────────────────── #
+        inv = _MOCK_INVENTORY.get(self.vendor_service, {})
+        if not inv.get("available", False):
+            self.set_status(422)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "service": self.vendor_service,
+                    "message": f"No {self.vendor_service} available at this time",
+                }
+            )
+
+        confirmation = _gen_confirmation(self.vendor_service, address)
+        return self.render_as_json(
+            {
+                "status": True,
+                "service": self.vendor_service,
+                "vendor": self.vendor_name,
+                "confirmation": confirmation,
+                "authorized_address": address,
+                "kel_depth": len(kel),
+                "kel_txid": getattr(latest, "transaction_signature", None),
+            }
+        )
+
+
+class FlightVendorHandler(VendorBaseHandler):
+    """POST /ai-agent-auth/api/vendor/flight — mock flight booking vendor."""
+
+    vendor_service = "flight"
+    vendor_name = "SkyLink Airlines"
+
+
+class HotelVendorHandler(VendorBaseHandler):
+    """POST /ai-agent-auth/api/vendor/hotel — mock hotel booking vendor."""
+
+    vendor_service = "hotel"
+    vendor_name = "Grand Stay Hotels"
+
+
+class CarVendorHandler(VendorBaseHandler):
+    """POST /ai-agent-auth/api/vendor/car — mock car rental vendor."""
+
+    vendor_service = "car"
+    vendor_name = "DriveEasy Rentals"
+
+
 HANDLERS = [
     (r"/ai-agent-auth", AgentAuthAppHandler),
     (r"/ai-agent-auth/api/chat", AgentChatHandler),
     (r"/ai-agent-auth/api/challenge", AgentChallengeHandler),
-    (r"/ai-agent-auth/api/travel", TravelBookingHandler),
+    (
+        r"/ai-agent-auth/api/travel",
+        TravelBookingHandler,
+    ),  # legacy — single combined endpoint
+    # Per-vendor endpoints: each vendor issues its own challenge and verifies a VP
+    (r"/ai-agent-auth/api/vendor/flight/challenge", AgentChallengeHandler),
+    (r"/ai-agent-auth/api/vendor/hotel/challenge", AgentChallengeHandler),
+    (r"/ai-agent-auth/api/vendor/car/challenge", AgentChallengeHandler),
+    (r"/ai-agent-auth/api/vendor/flight", FlightVendorHandler),
+    (r"/ai-agent-auth/api/vendor/hotel", HotelVendorHandler),
+    (r"/ai-agent-auth/api/vendor/car", CarVendorHandler),
     (
         r"/aiagentauthstatic/(.*)",
         tornado.web.StaticFileHandler,

@@ -106,11 +106,32 @@ base64-encoded UTF-8 JSON object conforming to the
 | `type`                                      | string[] | Must include `"VerifiableCredential"`                 |
 | `issuer`                                    | string   | `did:yadacoin:<operator_public_key_hex>`              |
 | `validFrom`                                 | string   | ISO 8601 timestamp                                    |
+| `credentialStatus.type`                     | string   | MUST be `"YadaKELStatus"` (see §5.1)                  |
+| `credentialStatus.mode`                     | string   | `"rotation"` or `"temporal"` (see §5.1)               |
 | `credentialSubject.id`                      | string   | `did:yadacoin:<agent_public_key_hex>` (K\_{n+3})      |
 | `credentialSubject.agentAuthorization.type` | string   | Service-defined, e.g. `"TravelBookingAuthorization"`  |
 
 Services define their own `agentAuthorization` fields; unrecognised keys MUST
 be ignored.
+
+### 5.1 YadaKELStatus — Credential Status Type
+
+`credentialStatus.type: "YadaKELStatus"` declares that revocation and
+presentation validity are governed by the holder's Key Event Log on the
+YadaCoin blockchain. The `mode` field controls how the verifier interprets
+a key rotation in the holder's KEL:
+
+| `mode`     | Revocation behaviour                                                                                                                  | Typical use case                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `rotation` | **One-time-use.** If the holder's key appears as `public_key_hash` in any KEL entry the credential is revoked.                        | Short-lived delegated agent credentials       |
+| `temporal` | **Persists across rotations.** Revocation check is skipped; the VP MUST be signed with the holder's _current_ active key per the KEL. | Long-lived professional credentials, licenses |
+
+Verifiers MUST read `credentialStatus.mode` from the on-chain VC before
+applying the revocation check. If the field is absent the verifier MUST
+default to `"rotation"` behaviour.
+
+The `YadaKELStatus` type is defined in the
+`https://yadacoin.io/contexts/agent-auth/v1` JSON-LD context.
 
 **Example — Travel Booking**
 
@@ -123,6 +144,10 @@ be ignored.
   "type": ["VerifiableCredential", "AgentAuthorizationCredential"],
   "issuer": "did:yadacoin:02a1b2c3...",
   "validFrom": "2026-05-01T00:00:00.000Z",
+  "credentialStatus": {
+    "type": "YadaKELStatus",
+    "mode": "rotation"
+  },
   "credentialSubject": {
     "id": "did:yadacoin:03d4e5f6...",
     "agentAuthorization": {
@@ -227,22 +252,28 @@ Content-Type: application/json
 A conforming service MUST perform these checks **in order**, returning the
 specified HTTP status on failure:
 
-| Step | Check                                                                                                        | Failure status |
-| ---- | ------------------------------------------------------------------------------------------------------------ | -------------- |
-| 1    | `challenge` matches HMAC-SHA256 for current or previous 30-second window                                     | 401            |
-| 2    | `secp256k1_verify(b64decode(signature), sha256(challenge), public_key)`                                      | 401            |
-| 3    | KEL exists for `public_key`                                                                                  | 403            |
-| 4    | `addr(public_key)` does NOT appear as `public_key_hash` in any KEL entry                                     | 403            |
-| 5    | `kel[-1].prerotated_key_hash == addr(public_key)`                                                            | 403            |
-| 6    | Find KEL entry `E` where `E.twice_prerotated_key_hash == addr(public_key)`; read scope from `E.relationship` | 403            |
-| 7    | Request is within the scope read in step 6 (if present)                                                      | 403            |
+| Step | Check                                                                                                                               | Failure status |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| 1    | `challenge` matches HMAC-SHA256 for current or previous 30-second window                                                            | 401            |
+| 2    | `secp256k1_verify(b64decode(signature), sha256(challenge), public_key)`                                                             | 401            |
+| 3    | KEL exists for `public_key`                                                                                                         | 403            |
+| 4    | Find KEL entry `E` where `E.twice_prerotated_key_hash == addr(public_key)`; read scope and `credentialStatus` from `E.relationship` | 403            |
+| 5    | Read `credentialStatus.mode` (default `"rotation"` if absent)                                                                       | —              |
+| 6    | **If `mode == "rotation"`**: `addr(public_key)` does NOT appear as `public_key_hash` in any KEL entry                               | 403            |
+| 7    | `kel[-1].prerotated_key_hash == addr(public_key)` (confirms key is the current active key per the KEL, regardless of mode)          | 403            |
+| 8    | Request is within the scope read in step 4 (if present)                                                                             | 403            |
 
-> **Step 6 detail**: `kel[-1]` is the CONFIRMING tx and its `relationship` is always `""`. The
+> **Step 4 detail**: `kel[-1]` is the CONFIRMING tx and its `relationship` is always `""`. The
 > scope is on the UNCONFIRMED tx one level back, identified by its
 > `twice_prerotated_key_hash == addr(agent_key)`. Always iterate the KEL
 > to find this entry rather than reading `kel[-1].relationship`.
 
-Step 7 is service-defined; the SDK provides helpers but ultimate enforcement
+> **Step 6 note**: In `temporal` mode the revocation check is skipped because
+> the credential is intended to survive key rotations. Step 7 still enforces
+> that the VP is signed with the holder's _current_ active key; an old key
+> that has already rotated will fail step 7 rather than step 6.
+
+Step 8 is service-defined; the SDK provides helpers but ultimate enforcement
 is the service's responsibility.
 
 ---
@@ -367,12 +398,13 @@ async def action_handler(request):
 
 ## 13. Versioning
 
-This document describes **protocol version 1.1**.
+This document describes **protocol version 1.2**.
 
-| Version | Changes                                                                                                                                                                            |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0     | Initial specification                                                                                                                                                              |
-| 1.1     | Scope format upgraded to W3C Verifiable Credentials 2.0; clarified scope location (UNCONFIRMED tx); validation table updated to 7 steps; CONFIRMING/UNCONFIRMED tx pair documented |
+| Version | Changes                                                                                                                                                                                                                             |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | Initial specification                                                                                                                                                                                                               |
+| 1.1     | Scope format upgraded to W3C Verifiable Credentials 2.0; clarified scope location (UNCONFIRMED tx); validation table updated to 7 steps; CONFIRMING/UNCONFIRMED tx pair documented                                                  |
+| 1.2     | Added `credentialStatus.type: "YadaKELStatus"` with `mode` field (`rotation` / `temporal`); server validation table restructured — scope read before revocation check so mode gates check; updated VC examples and VP auth sections |
 
 Breaking changes will increment the major version. The `public_key` field in
 requests MAY carry a `protocol_version` hint in future versions.
