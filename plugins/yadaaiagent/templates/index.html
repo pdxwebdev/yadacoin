@@ -485,6 +485,63 @@
         color: var(--green2);
         display: none;
       }
+
+      /* ── Payment method list (settings drawer) ── */
+      .pm-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.82rem;
+      }
+      .pm-item:last-child {
+        border-bottom: none;
+      }
+      .pm-item .pm-label {
+        flex: 1;
+        color: var(--text);
+      }
+      .pm-default-badge {
+        font-size: 0.68rem;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: #1e3a1e;
+        color: var(--green2);
+        border: 1px solid #16a34a;
+        white-space: nowrap;
+      }
+      .pm-action {
+        cursor: pointer;
+        font-size: 0.72rem;
+        text-decoration: underline;
+        color: var(--subtext);
+      }
+      .pm-action.remove {
+        color: var(--red2);
+      }
+      .pm-add-row {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .pm-add-row input {
+        flex: 1;
+      }
+      .pm-add-btn {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 0.82rem;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .pm-add-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
     </style>
   </head>
   <body>
@@ -573,6 +630,35 @@
         <div class="hint">
           Stored in localStorage — never sent to
           the YadaCoin server.
+        </div>
+      </div>
+
+      <div
+        class="setting-group"
+        style="
+          border-top: 1px solid var(--border);
+          padding-top: 12px;
+        "
+      >
+        <label>Payment Methods</label>
+        <div id="pmList"></div>
+        <div class="pm-add-row">
+          <input
+            id="pmLabelInput"
+            type="text"
+            placeholder="e.g. Visa ending in 4242"
+          />
+          <button
+            class="pm-add-btn"
+            id="pmAddBtn"
+          >
+            + Add
+          </button>
+        </div>
+        <div class="hint">
+          Stored in localStorage only. A mock
+          token is committed in the VC — raw card
+          details never leave the browser.
         </div>
       </div>
 
@@ -763,6 +849,8 @@
         "yadacoin_llm_ollama_host";
       const LS_LLM_BASE_URL =
         "yadacoin_llm_base_url";
+      const LS_PAYMENT_METHODS =
+        "yadacoin_payment_methods";
 
       // ── LLM settings helpers ──
       function getLlmSettings() {
@@ -787,6 +875,105 @@
               LS_LLM_BASE_URL,
             ) || "",
         };
+      }
+
+      // ── Payment methods helpers ──
+      function getPaymentMethods() {
+        try {
+          return JSON.parse(
+            localStorage.getItem(
+              LS_PAYMENT_METHODS,
+            ) || "[]",
+          );
+        } catch {
+          return [];
+        }
+      }
+      function savePaymentMethods(methods) {
+        localStorage.setItem(
+          LS_PAYMENT_METHODS,
+          JSON.stringify(methods),
+        );
+      }
+      function getDefaultPaymentMethod() {
+        const methods = getPaymentMethods();
+        return (
+          methods.find((m) => m.isDefault) ||
+          methods[0] ||
+          null
+        );
+      }
+      function renderPmList() {
+        const pmListEl =
+          document.getElementById("pmList");
+        if (!pmListEl) return;
+        const methods = getPaymentMethods();
+        if (!methods.length) {
+          pmListEl.innerHTML = `<div style="color:var(--muted);font-size:0.8rem;padding:4px 0">No payment methods saved.</div>`;
+          return;
+        }
+        pmListEl.innerHTML = methods
+          .map(
+            (m, i) => `
+          <div class="pm-item">
+            <span class="pm-label">${escHtml(m.label)}</span>
+            ${m.isDefault ? `<span class="pm-default-badge">default</span>` : `<span class="pm-action" data-set-default="${i}">set default</span>`}
+            <span class="pm-action remove" data-remove="${i}">remove</span>
+          </div>`,
+          )
+          .join("");
+        pmListEl
+          .querySelectorAll("[data-set-default]")
+          .forEach((el) => {
+            el.addEventListener("click", () => {
+              const idx = parseInt(
+                el.dataset.setDefault,
+              );
+              savePaymentMethods(
+                getPaymentMethods().map(
+                  (pm, i) => ({
+                    ...pm,
+                    isDefault: i === idx,
+                  }),
+                ),
+              );
+              renderPmList();
+            });
+          });
+        pmListEl
+          .querySelectorAll("[data-remove]")
+          .forEach((el) => {
+            el.addEventListener("click", () => {
+              const idx = parseInt(
+                el.dataset.remove,
+              );
+              const updated = getPaymentMethods()
+                .filter((_, i) => i !== idx)
+                .map((pm, i) =>
+                  i === 0 && !pm.isDefault
+                    ? {
+                        ...pm,
+                        isDefault:
+                          getPaymentMethods()
+                            .filter(
+                              (_, j) => j !== idx,
+                            )
+                            .every(
+                              (p) => !p.isDefault,
+                            ),
+                      }
+                    : pm,
+                );
+              // ensure at least one default if any remain
+              if (
+                updated.length &&
+                !updated.some((p) => p.isDefault)
+              )
+                updated[0].isDefault = true;
+              savePaymentMethods(updated);
+              renderPmList();
+            });
+          });
       }
 
       // ── Settings drawer logic ──
@@ -870,6 +1057,7 @@
           llmOllamaHost.value = s.ollama_host;
           llmBaseUrl.value = s.base_url;
           applyProviderUI(s.provider);
+          renderPmList();
           settingsDrawer.classList.add("open");
           settingsSavedMsg.style.display = "none";
         },
@@ -923,6 +1111,36 @@
           settingsDrawer.classList.remove("open");
         },
       );
+
+      document
+        .getElementById("pmAddBtn")
+        .addEventListener("click", () => {
+          const input = document.getElementById(
+            "pmLabelInput",
+          );
+          const label = input.value.trim();
+          if (!label) {
+            input.style.borderColor =
+              "var(--red)";
+            return;
+          }
+          input.style.borderColor = "";
+          const methods = getPaymentMethods();
+          const token =
+            "demo_tok_" +
+            Math.random()
+              .toString(36)
+              .slice(2, 10);
+          methods.push({
+            id: token,
+            label,
+            token,
+            isDefault: methods.length === 0,
+          });
+          savePaymentMethods(methods);
+          input.value = "";
+          renderPmList();
+        });
 
       // ── DOM refs ──
       const chatEl =
@@ -1202,6 +1420,8 @@
               checkin: travelDetails.checkin,
               checkout: travelDetails.checkout,
               services: travelDetails.services,
+              paymentMethod:
+                "<selected_on_approval>",
             },
           },
         };
@@ -1223,6 +1443,10 @@
             agent key after you enter your second factor.
             <pre style="margin-top:8px;font-size:0.76rem;max-height:140px;overflow:auto">${escHtml(previewJson)}</pre>
           </div>
+          <div class="sf-row" style="flex-direction:column;gap:6px;align-items:stretch">
+            <label style="font-size:0.75rem;color:var(--subtext);font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Payment Method</label>
+            <select class="pm-select" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:0.84rem"></select>
+          </div>
           <div class="sf-row">
             <input type="password" class="sf-input" placeholder="Second factor (password)" autocomplete="current-password" />
           </div>
@@ -1237,6 +1461,34 @@
           card.querySelector(".ap-btn");
         const dnBtn =
           card.querySelector(".dn-btn");
+        const pmSelect =
+          card.querySelector(".pm-select");
+
+        // Populate payment method selector
+        (() => {
+          const methods = getPaymentMethods();
+          if (!methods.length) {
+            pmSelect.innerHTML = `<option value="-1">⚠ No payment methods — add one in ⚙ Settings</option>`;
+            pmSelect.disabled = true;
+          } else {
+            const defIdx = methods.findIndex(
+              (m) => m.isDefault,
+            );
+            pmSelect.innerHTML = methods
+              .map(
+                (m, i) =>
+                  `<option value="${i}"${
+                    i === defIdx ||
+                    (defIdx < 0 && i === 0)
+                      ? " selected"
+                      : ""
+                  }>${escHtml(m.label)}${
+                    m.isDefault ? " ★" : ""
+                  }</option>`,
+              )
+              .join("");
+          }
+        })();
 
         // Auto-focus the second-factor field and submit on Enter
         setTimeout(() => sfInput.focus(), 50);
@@ -1276,6 +1528,17 @@
             apBtn.disabled = true;
             dnBtn.disabled = true;
             sfInput.disabled = true;
+
+            // Read payment method BEFORE removing card from DOM
+            const pmMethods = getPaymentMethods();
+            const pmIdx = pmSelect
+              ? parseInt(pmSelect.value, 10)
+              : -1;
+            const selectedPm =
+              pmIdx >= 0 && pmMethods[pmIdx]
+                ? pmMethods[pmIdx]
+                : null;
+
             card.remove();
 
             const stepsBubble = appendAgent("");
@@ -1375,6 +1638,16 @@
                       travelDetails.checkout,
                     services:
                       travelDetails.services,
+                    ...(selectedPm
+                      ? {
+                          paymentMethod: {
+                            token:
+                              selectedPm.token,
+                            label:
+                              selectedPm.label,
+                          },
+                        }
+                      : {}),
                   },
                 },
               };
@@ -1616,7 +1889,14 @@
 
                 if (bookRes.status === 200) {
                   sBook.classList.add("done");
-                  sBook.textContent = `› [${service}] Booked by ${escHtml(bookData.vendor)} · ${escHtml(bookData.confirmation)}`;
+                  const pmLabel =
+                    bookData.payment_method
+                      ?.label || "";
+                  sBook.textContent =
+                    `› [${service}] Booked by ${escHtml(bookData.vendor)} · ${escHtml(bookData.confirmation)}` +
+                    (pmLabel
+                      ? ` · ${escHtml(pmLabel)}`
+                      : "");
                   vendorResults.push({
                     service,
                     status: "ok",
