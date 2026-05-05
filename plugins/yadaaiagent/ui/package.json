@@ -11,6 +11,7 @@
   "dependencies": {
     "@noble/hashes": "^1.8.0",
     "@noble/secp256k1": "^3.1.0",
+    "dompurify": "^3.4.2",
     "marked": "^15.0.12",
     "vue": "^3.5.12"
   },

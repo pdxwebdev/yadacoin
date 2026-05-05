@@ -19,6 +19,29 @@
 <script setup>
 import { ref, watch, nextTick } from "vue";
 import { marked } from "marked";
+import DOMPurify from "dompurify";
+
+marked.setOptions({ breaks: true, gfm: true });
+
+const PURIFY_CONFIG = {
+  ALLOWED_TAGS: [
+    "p", "br", "strong", "em", "b", "i", "s", "del",
+    "ul", "ol", "li",
+    "h1", "h2", "h3", "h4",
+    "blockquote", "hr",
+    "pre", "code",
+    "a",
+    "table", "thead", "tbody", "tr", "th", "td",
+    "span", "div",
+  ],
+  ALLOWED_ATTR: ["href", "target", "rel", "class", "style"],
+  ALLOW_DATA_ATTR: false,
+  FORCE_BODY: false,
+};
+
+function sanitize(html) {
+  return DOMPurify.sanitize(html, PURIFY_CONFIG);
+}
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -35,10 +58,9 @@ function escHtml(s) {
 function renderBubble(msg) {
   if (msg.thinking) return msg.html;
   if (msg.role === "user") return msg.html || escHtml(msg.content);
-  // Agent messages: if already tagged as raw HTML (from approval flow etc.) use as-is,
-  // otherwise run through marked for full markdown support.
-  if (msg.html) return msg.html;
-  return marked.parse(msg.content || "");
+  // Agent messages: sanitize everything through DOMPurify regardless of source.
+  if (msg.html) return sanitize(msg.html);
+  return sanitize(marked.parse(msg.content || ""));
 }
 
 watch(
