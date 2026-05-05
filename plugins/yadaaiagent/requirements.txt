@@ -3,8 +3,5 @@
 # Install from the repo root:
 #   pip install -r plugins/yadaaiagent/requirements.txt
 #
-# yadacoin-agent-auth is a local SDK in sdk/python (not on PyPI).
-# The path below is relative to the repo root.
-../../sdk/python
-coincurve>=13.0
-python-bitcoinlib>=0.12.0
+# The [node] extra wires up YadaCoinNodeKelProvider for a locally running node.
+yadacoin-agent-auth[node]>=1.3.1
