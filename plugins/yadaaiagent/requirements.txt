@@ -4,4 +4,4 @@
 #   pip install -r plugins/yadaaiagent/requirements.txt
 #
 # The [node] extra wires up YadaCoinNodeKelProvider for a locally running node.
-yadacoin-agent-auth[node]>=1.3.1
+yadacoin-agent-auth>=1.3.1
