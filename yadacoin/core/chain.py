@@ -98,7 +98,7 @@ class CHAIN(object):
     DYNAMIC_NODES_FORK = 591000
     DYNAMIC_NODES_COLLATERAL_AMOUNT = 5000
     AGENT_REGISTRY_FORK = (
-        591000  # Agent registration enabled at same height as dynamic nodes
+        596000  # Agent registration enabled at same height as dynamic nodes
     )
     CHECK_KEL_OUTPUT_ROUTING_FORK = 591000
     SMART_CONTRACT_REMOVAL_FORK = 593600
