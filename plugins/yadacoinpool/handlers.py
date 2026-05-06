@@ -226,7 +226,14 @@ class PoolBlocksHandler(BaseWebHandler):
         pool_blocks_found_list = (
             await self.config.mongo.async_db.blocks.find(
                 {"public_key": pool_public_key},
-                {"_id": 0, "index": 1, "hash": 1, "updated_at": 1, "transactions": 1, "target": 1},  
+                {
+                    "_id": 0,
+                    "index": 1,
+                    "hash": 1,
+                    "updated_at": 1,
+                    "transactions": 1,
+                    "target": 1,
+                },
             )
             .sort([("index", -1)])
             .to_list(300)
@@ -242,24 +249,27 @@ class PoolBlocksHandler(BaseWebHandler):
             coinbase_tx = block["transactions"][-1]
             reward = 0
 
-            for output in coinbase_tx.get("outputs", []):  
+            for output in coinbase_tx.get("outputs", []):
                 if output["to"] == self.config.address:
                     reward += output["value"]
 
-            difficulty = max_target / int(block["target"], 16) if "target" in block else 0
+            difficulty = (
+                max_target / int(block["target"], 16) if "target" in block else 0
+            )
             txn_count = max(len(block["transactions"]) - 1, 0)
 
-            result_blocks.append({
-                "height": block["index"],
-                "time": block.get("updated_at", coinbase_tx["time"]),
-                "hash": block["hash"],
-                "reward": reward,
-                "difficulty": round(difficulty, 3),
-                "txn_count": txn_count,
-            })
+            result_blocks.append(
+                {
+                    "height": block["index"],
+                    "time": block.get("updated_at", coinbase_tx["time"]),
+                    "hash": block["hash"],
+                    "reward": reward,
+                    "difficulty": round(difficulty, 3),
+                    "txn_count": txn_count,
+                }
+            )
 
         self.render_as_json({"blocks": result_blocks})
-
 
 
 class PoolPayoutsHandler(BaseWebHandler):
@@ -277,18 +287,26 @@ class PoolPayoutsHandler(BaseWebHandler):
 
             tx_hash = txn.get("hash", "N/A")
             tx_time = txn.get("time", 0)
-            pool_fee = sum(o["value"] for o in outputs if o["to"] == self.config.address)
-            total_amount = sum(o["value"] for o in outputs if o["to"] != self.config.address)
+            pool_fee = sum(
+                o["value"] for o in outputs if o["to"] == self.config.address
+            )
+            total_amount = sum(
+                o["value"] for o in outputs if o["to"] != self.config.address
+            )
             payees = len([o for o in outputs if o["to"] != self.config.address])
 
             block = await self.config.mongo.async_db.blocks.find_one(
                 {"transactions.hash": tx_hash}, {"index": 1}
             )
-            in_mempool = await self.config.mongo.async_db.miner_transactions.count_documents(
-                {"hash": tx_hash}
+            in_mempool = (
+                await self.config.mongo.async_db.miner_transactions.count_documents(
+                    {"hash": tx_hash}
+                )
             )
-            in_failed = await self.config.mongo.async_db.failed_transactions.count_documents(
-                {"txn.hash": tx_hash}
+            in_failed = (
+                await self.config.mongo.async_db.failed_transactions.count_documents(
+                    {"txn.hash": tx_hash}
+                )
             )
 
             if block:
@@ -304,15 +322,17 @@ class PoolPayoutsHandler(BaseWebHandler):
                 status = "Unknown"
                 block_index = "N/A"
 
-            result_payouts.append({
-                "time": tx_time,
-                "hash": tx_hash,
-                "amount": total_amount,
-                "fee": pool_fee,
-                "payees": payees,
-                "status": status,
-                "block_height": block_index,
-            })
+            result_payouts.append(
+                {
+                    "time": tx_time,
+                    "hash": tx_hash,
+                    "amount": total_amount,
+                    "fee": pool_fee,
+                    "payees": payees,
+                    "status": status,
+                    "block_height": block_index,
+                }
+            )
 
         self.render_as_json({"payouts": result_payouts})
 
@@ -323,9 +343,9 @@ class GetStartHandler(BaseHandler):
             "pool_url": self.config.peer_host,
             "pool_port": self.config.stratum_pool_port,
             "pool_diff": self.config.pool_diff,
-            "algorithm": "rx/yada"
+            "algorithm": "rx/yada",
         }
-        
+
         self.render_as_json({"pool": pool_info})
 
 

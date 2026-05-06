@@ -46,21 +46,40 @@ class YadaNodeManager:
 
     def git_pull_latest(self):
         os.chdir(self.repo_path)
-        subprocess.run(
-            ["git", "fetch", "origin", "master", "--tags"]
-        )  # Fetch changes from master branch and update tags
-        original_commit = (
-            subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
-        )
-        subprocess.run(["git", "stash"])  # Stash any uncommitted changes
-        subprocess.run(
-            ["git", "pull", "origin", "master", "--tags"]
-        )  # Pull latest changes from master branch
-        subprocess.run(["git", "stash", "pop"])  # Pop the stashed changes
-        latest_commit = (
-            subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
-        )
-        return original_commit != latest_commit
+        subprocess.run(["git", "fetch", "origin", "--tags"])
+
+        # Tag the node is currently running on (None if not on a tag)
+        try:
+            current_tag = (
+                subprocess.check_output(
+                    ["git", "describe", "--tags", "--exact-match", "HEAD"],
+                    stderr=subprocess.DEVNULL,
+                )
+                .decode()
+                .strip()
+            )
+        except subprocess.CalledProcessError:
+            current_tag = None
+
+        # Highest version tag available locally (after fetch)
+        try:
+            latest_tag = (
+                subprocess.check_output(["git", "tag", "--sort=-version:refname"])
+                .decode()
+                .strip()
+                .splitlines()[0]
+            )
+        except (subprocess.CalledProcessError, IndexError):
+            latest_tag = None
+
+        if latest_tag and latest_tag != current_tag:
+            print(f"New tag available: {latest_tag} (was: {current_tag}). Updating...")
+            subprocess.run(["git", "stash"])
+            subprocess.run(["git", "checkout", latest_tag])
+            subprocess.run(["git", "stash", "pop"])
+            return True
+
+        return False
 
     def rebuild_docker_image(self):
         subprocess.run(

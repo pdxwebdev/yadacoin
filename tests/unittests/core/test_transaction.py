@@ -535,6 +535,15 @@ class TestTransactionPureMethods(AsyncTestCase):
             txn = Transaction(relationship={"node": {"host": "1.2.3.4", "port": 8000}})
             self.assertEqual(txn.relationship, mock_node)
 
+    def test_init_agent_announcement_relationship(self):
+        """Line 160: AgentAnnouncement from relationship dict with 'agent' key"""
+        from yadacoin.core.agentannouncement import AgentAnnouncement
+
+        mock_agent = MagicMock(spec=AgentAnnouncement)
+        with patch.object(AgentAnnouncement, "from_dict", return_value=mock_agent):
+            txn = Transaction(relationship={"agent": {"agent_id": "abc123"}})
+            self.assertEqual(txn.relationship, mock_agent)
+
     def test_init_oversized_relationship_raises(self):
         """Lines 161-167/172-174: oversized relationship string raises"""
         big_string = "x" * (TransactionConsts.RELATIONSHIP_MAX_SIZE.value + 1)
@@ -723,6 +732,22 @@ class TestTransactionPureMethods(AsyncTestCase):
         mock_node.to_string.assert_called_once()
         self.assertIsInstance(h, str)
 
+    async def test_generate_hash_with_agent_announcement_relationship(self):
+        """Line 763: AgentAnnouncement relationship in generate_hash"""
+        from yadacoin.core.agentannouncement import AgentAnnouncement
+
+        mock_agent = MagicMock(spec=AgentAnnouncement)
+        mock_agent.to_string.return_value = ""
+        txn = Transaction(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            txn_time=1,
+        )
+        txn.version = 2
+        txn.relationship = mock_agent
+        h = await txn.generate_hash()
+        mock_agent.to_string.assert_called_once()
+        self.assertIsInstance(h, str)
+
     async def test_generate_hash_version_7_with_relationship(self):
         """Lines 779-783: version 7 with relationship_hash check"""
         import hashlib
@@ -796,6 +821,19 @@ class TestTransactionPureMethods(AsyncTestCase):
         txn.relationship = mock_node
         d = txn.to_dict()
         self.assertIn("node", d["relationship"])
+
+    async def test_to_dict_with_agent_announcement_relationship(self):
+        """Lines 1248-1249: AgentAnnouncement wraps back in 'agent' key"""
+        from yadacoin.core.agentannouncement import AgentAnnouncement
+
+        mock_agent = MagicMock(spec=AgentAnnouncement)
+        mock_agent.to_dict.return_value = {"agent_id": "abc123"}
+        txn = Transaction(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+        )
+        txn.relationship = mock_agent
+        d = txn.to_dict()
+        self.assertIn("agent", d["relationship"])
 
     def test_to_json(self):
         """Line 1360: to_json produces valid JSON"""
@@ -1195,6 +1233,60 @@ class TestTransactionPureMethods(AsyncTestCase):
         )
         with self.assertRaises(InvalidTransactionException):
             await txn.verify(check_dynamic_nodes=False)
+
+    async def test_verify_agent_announcement_no_check_agent_registration_raises(self):
+        """Lines 638-641: AgentAnnouncement with check_agent_registration=False raises."""
+        from yadacoin.core.agentannouncement import AgentAnnouncement
+        from yadacoin.core.transactionutils import TU
+
+        class FakeAgentAnnouncement(AgentAnnouncement):
+            def __init__(self):
+                self.endpoint_url = "https://agent.example.com"
+
+            def to_string(self):
+                return ""
+
+            def to_dict(self):
+                return {}
+
+        txn = await Transaction.generate(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            private_key=yadacoin.core.config.CONFIG.private_key,
+        )
+        txn.relationship = FakeAgentAnnouncement()
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = TU.generate_signature_with_private_key(
+            yadacoin.core.config.CONFIG.private_key, txn.hash
+        )
+        with self.assertRaises(InvalidTransactionException):
+            await txn.verify(check_agent_registration=False)
+
+    async def test_verify_agent_announcement_missing_endpoint_url_raises(self):
+        """Lines 642-644: AgentAnnouncement with check_agent_registration=True but no endpoint_url raises."""
+        from yadacoin.core.agentannouncement import AgentAnnouncement
+        from yadacoin.core.transactionutils import TU
+
+        class FakeAgentAnnouncement(AgentAnnouncement):
+            def __init__(self):
+                self.endpoint_url = ""  # empty → falsy
+
+            def to_string(self):
+                return ""
+
+            def to_dict(self):
+                return {}
+
+        txn = await Transaction.generate(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            private_key=yadacoin.core.config.CONFIG.private_key,
+        )
+        txn.relationship = FakeAgentAnnouncement()
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = TU.generate_signature_with_private_key(
+            yadacoin.core.config.CONFIG.private_key, txn.hash
+        )
+        with self.assertRaises(InvalidTransactionException):
+            await txn.verify(check_agent_registration=True)
 
     async def test_verify_node_announcement_missing_collateral_address_raises(self):
         """Lines 624-627: NodeAnnouncement with check_dynamic_nodes=True but no collateral_address raises."""
