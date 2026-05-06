@@ -9,6 +9,7 @@ export const LS_LLM_BASE_URL = "yadacoin_llm_base_url";
 export const LS_PAYMENT_METHODS = "yadacoin_payment_methods";
 export const LS_ACTIVE_AGENT = "yadacoin_active_agent";
 export const LS_NODE_URL = "yadacoin_node_url";
+export const LS_BOOKING_CREDENTIALS = "yadacoin_booking_credentials";
 
 export function getNodeUrl() {
   return (localStorage.getItem(LS_NODE_URL) || "").replace(/\/+$/, "");
@@ -47,4 +48,27 @@ export function savePaymentMethods(methods) {
 export function getDefaultPaymentMethod() {
   const methods = getPaymentMethods();
   return methods.find((m) => m.isDefault) || methods[0] || null;
+}
+
+// ── Booking credentials ───────────────────────────────────────────────────────
+
+export function getBookingCredentials() {
+  try {
+    return JSON.parse(localStorage.getItem(LS_BOOKING_CREDENTIALS) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+export function saveBookingCredential(credential) {
+  const existing = getBookingCredentials();
+  // Deduplicate by credential id
+  const deduped = existing.filter((c) => c.id !== credential.id);
+  deduped.unshift(credential); // newest first
+  localStorage.setItem(LS_BOOKING_CREDENTIALS, JSON.stringify(deduped));
+}
+
+export function deleteBookingCredential(credentialId) {
+  const updated = getBookingCredentials().filter((c) => c.id !== credentialId);
+  localStorage.setItem(LS_BOOKING_CREDENTIALS, JSON.stringify(updated));
 }

@@ -25,6 +25,7 @@ from coincurve import verify_signature
 from ecdsa import SECP256k1, VerifyingKey
 from ecdsa.util import sigdecode_der
 
+from yadacoin.core.agentannouncement import AgentAnnouncement
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.config import Config
@@ -154,6 +155,9 @@ class Transaction(object):
         elif isinstance(self.relationship, dict) and "node" in self.relationship:
             # Convert node announcement dict to NodeAnnouncement instance
             self.relationship = NodeAnnouncement.from_dict(self.relationship["node"])
+        elif isinstance(self.relationship, dict) and "agent" in self.relationship:
+            # Convert agent registration dict to AgentAnnouncement instance
+            self.relationship = AgentAnnouncement.from_dict(self.relationship["agent"])
         elif (
             isinstance(self.relationship, str)
             and len(self.relationship) > TransactionConsts.RELATIONSHIP_MAX_SIZE.value
@@ -557,6 +561,7 @@ class Transaction(object):
         check_masternode_fee=False,
         check_kel=False,
         check_dynamic_nodes=False,
+        check_agent_registration=False,
         block=None,
         mempool=False,
         batch_txns=None,
@@ -628,6 +633,16 @@ class Transaction(object):
             if not collateral_outputs:
                 raise InvalidTransactionException(
                     f"Node announcement transaction must include an output of {CHAIN.DYNAMIC_NODES_COLLATERAL_AMOUNT} YDA to collateral_address {collateral_address}"
+                )
+        elif isinstance(self.relationship, AgentAnnouncement):
+            relationship = self.relationship.to_string()
+            if not check_agent_registration:
+                raise InvalidTransactionException(
+                    f"Agent registration transactions not allowed before fork height {CHAIN.AGENT_REGISTRY_FORK}"
+                )
+            if not self.relationship.endpoint_url:
+                raise InvalidTransactionException(
+                    "Agent registration transaction missing endpoint_url"
                 )
 
         if len(relationship) > TransactionConsts.RELATIONSHIP_MAX_SIZE.value:
@@ -743,6 +758,8 @@ class Transaction(object):
         if isinstance(self.relationship, Contract):
             relationship = self.relationship.to_string()
         elif isinstance(self.relationship, NodeAnnouncement):
+            relationship = self.relationship.to_string()
+        elif isinstance(self.relationship, AgentAnnouncement):
             relationship = self.relationship.to_string()
         else:
             relationship = self.relationship
@@ -1227,6 +1244,9 @@ class Transaction(object):
             # Wrap NodeAnnouncement back in "node" key for storage
             if isinstance(self.relationship, NodeAnnouncement):
                 relationship = {"node": relationship}
+            # Wrap AgentAnnouncement back in "agent" key for storage
+            elif isinstance(self.relationship, AgentAnnouncement):
+                relationship = {"agent": relationship}
         ret = {
             "time": int(self.time),
             "rid": self.rid,

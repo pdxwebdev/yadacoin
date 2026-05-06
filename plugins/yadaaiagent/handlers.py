@@ -702,6 +702,85 @@ def _gen_confirmation(service: str, seed: str) -> str:
     return f"{pfx}-{h}"
 
 
+def _did_web_id(config) -> str:
+    """Derive a did:web identifier from the node's wallet_host_port."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(getattr(config, "wallet_host_port", "") or "")
+    host = parsed.hostname or ""
+    port = parsed.port
+    if port and port not in (80, 443):
+        return f"did:web:{host}%3A{port}"
+    return f"did:web:{host}"
+
+
+def _gen_booking_credential(
+    service: str,
+    holder_address: str,
+    scope: dict,
+    confirmation: str,
+    vendor_name: str,
+    booking_details=None,
+    config=None,
+) -> dict:
+    """Return a signed W3C VC 2.0 Verifiable Credential for a completed booking."""
+    import datetime
+
+    from plugins.yadaaiagent.vc_support import BOOKING_V1_CONTEXT_URL, sign_credential
+
+    subject = {
+        "id": f"did:yadakel:{holder_address}",
+        "service": service,
+        "vendor": vendor_name,
+        "confirmation": confirmation,
+        "scope": scope,
+    }
+    if booking_details:
+        # Strip internal fields; keep the human-readable booking data
+        skip = {"confirmed", "confirmation"}
+        subject["bookingDetails"] = {
+            k: v for k, v in booking_details.items() if k not in skip
+        }
+
+    now = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Use did:web when config is present (resolvable); fall back to did:yadakel
+    if config is not None:
+        issuer_did = _did_web_id(config)
+    else:
+        issuer_did = f"did:yadakel:{service}"
+
+    credential = {
+        "@context": [
+            "https://www.w3.org/ns/credentials/v2",
+            BOOKING_V1_CONTEXT_URL,
+        ],
+        "id": f"urn:yadakel:booking:{confirmation}",
+        "type": ["VerifiableCredential", "BookingConfirmationCredential"],
+        "issuer": {
+            "id": issuer_did,
+            "name": vendor_name,
+        },
+        "validFrom": now,
+        "credentialSubject": subject,
+    }
+
+    if config is not None:
+        try:
+            credential["proof"] = {
+                "type": "DataIntegrityProof",
+                "cryptosuite": "ecdsa-secp256k1-2019",
+                "created": now,
+                "verificationMethod": f"{issuer_did}#key-1",
+                "proofPurpose": "assertionMethod",
+            }
+            credential = sign_credential(credential, config.private_key)
+        except Exception:
+            credential.pop("proof", None)  # remove incomplete proof on failure
+
+    return credential
+
+
 # ── Vendor MCP tool registry ──────────────────────────────────────────────────
 # Each entry: schemas (OpenAI function-calling format, compatible with Anthropic
 # and Ollama with tool-capable models) + mock impl callables.
@@ -1459,9 +1538,10 @@ class AgentChatHandler(BaseHandler):
         scope: dict,
         max_rounds: int = 8,
     ):
-        """Ollama /api/chat tool-calling loop. Returns (reply, confirmation|None)."""
+        """Ollama /api/chat tool-calling loop. Returns (reply, confirmation|None, confirm_result|None)."""
         client = AsyncHTTPClient()
         confirmation = None
+        confirm_result = None
         for _ in range(max_rounds):
             req = HTTPRequest(
                 url=f"{host}/api/chat",
@@ -1486,7 +1566,7 @@ class AgentChatHandler(BaseHandler):
             msg = data.get("message", {})
             tool_calls = msg.get("tool_calls") or []
             if not tool_calls:
-                return msg.get("content", ""), confirmation
+                return msg.get("content", ""), confirmation, confirm_result
             messages.append(msg)
             for tc in tool_calls:
                 fn_name = tc["function"]["name"]
@@ -1505,8 +1585,13 @@ class AgentChatHandler(BaseHandler):
                     result = fn(args, scope)
                 if fn_name == confirm_tool and result.get("confirmed"):
                     confirmation = result.get("confirmation")
+                    confirm_result = result
                 messages.append({"role": "tool", "content": json.dumps(result)})
-        return "Unable to complete the booking at this time.", confirmation
+        return (
+            "Unable to complete the booking at this time.",
+            confirmation,
+            confirm_result,
+        )
 
     async def _openai_tool_loop(
         self,
@@ -1520,12 +1605,13 @@ class AgentChatHandler(BaseHandler):
         scope: dict,
         max_rounds: int = 8,
     ):
-        """OpenAI-compat /chat/completions tool-calling loop. Returns (reply, confirmation|None)."""
+        """OpenAI-compat /chat/completions tool-calling loop. Returns (reply, confirmation|None, confirm_result|None)."""
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         client = AsyncHTTPClient()
         confirmation = None
+        confirm_result = None
         for _ in range(max_rounds):
             req = HTTPRequest(
                 url=f"{base_url}/chat/completions",
@@ -1552,7 +1638,7 @@ class AgentChatHandler(BaseHandler):
             msg = choice["message"]
             finish_reason = choice.get("finish_reason", "stop")
             if finish_reason != "tool_calls" or not msg.get("tool_calls"):
-                return msg.get("content") or "", confirmation
+                return msg.get("content") or "", confirmation, confirm_result
             messages.append(msg)
             for tc in msg["tool_calls"]:
                 fn_name = tc["function"]["name"]
@@ -1569,6 +1655,7 @@ class AgentChatHandler(BaseHandler):
                     result = fn(args, scope)
                 if fn_name == confirm_tool and result.get("confirmed"):
                     confirmation = result.get("confirmation")
+                    confirm_result = result
                 messages.append(
                     {
                         "role": "tool",
@@ -1576,7 +1663,11 @@ class AgentChatHandler(BaseHandler):
                         "content": json.dumps(result),
                     }
                 )
-        return "Unable to complete the booking at this time.", confirmation
+        return (
+            "Unable to complete the booking at this time.",
+            confirmation,
+            confirm_result,
+        )
 
     async def _anthropic_tool_loop(
         self,
@@ -1590,7 +1681,7 @@ class AgentChatHandler(BaseHandler):
         system_content: str = "",
         max_rounds: int = 8,
     ):
-        """Anthropic tool-use loop. Returns (reply, confirmation|None)."""
+        """Anthropic tool-use loop. Returns (reply, confirmation|None, confirm_result|None)."""
         # Convert OpenAI-format schemas → Anthropic format
         anthropic_tools = [
             {
@@ -1608,6 +1699,7 @@ class AgentChatHandler(BaseHandler):
         # Strip system messages; Anthropic takes system separately
         filtered = [m for m in messages if m.get("role") != "system"]
         confirmation = None
+        confirm_result = None
         for _ in range(max_rounds):
             body: dict = {
                 "model": model,
@@ -1636,7 +1728,7 @@ class AgentChatHandler(BaseHandler):
                 text = "".join(
                     b.get("text", "") for b in content_blocks if b.get("type") == "text"
                 )
-                return text.strip(), confirmation
+                return text.strip(), confirmation, confirm_result
             filtered.append({"role": "assistant", "content": content_blocks})
             tool_results = []
             for block in content_blocks:
@@ -1653,6 +1745,7 @@ class AgentChatHandler(BaseHandler):
                     result = fn(args, scope)
                 if fn_name == confirm_tool and result.get("confirmed"):
                     confirmation = result.get("confirmation")
+                    confirm_result = result
                 tool_results.append(
                     {
                         "type": "tool_result",
@@ -1661,7 +1754,11 @@ class AgentChatHandler(BaseHandler):
                     }
                 )
             filtered.append({"role": "user", "content": tool_results})
-        return "Unable to complete the booking at this time.", confirmation
+        return (
+            "Unable to complete the booking at this time.",
+            confirmation,
+            confirm_result,
+        )
 
     async def _run_tool_loop(
         self,
@@ -1678,7 +1775,7 @@ class AgentChatHandler(BaseHandler):
     ):
         """
         Dispatch to the appropriate provider tool loop.
-        Returns (reply: str, confirmation: str|None).
+        Returns (reply: str, confirmation: str|None, confirm_result: dict|None).
         """
         tools = vendor_tools["schemas"]
         confirm_tool = vendor_tools.get("confirm_tool", "")
@@ -1739,6 +1836,49 @@ class AgentChatHandler(BaseHandler):
             )
         else:
             raise ValueError(f"unknown provider '{provider}'")
+
+
+class BookingContextHandler(BaseHandler):
+    """GET /contexts/booking/v1 — serve the YadaCoin booking credential JSON-LD context."""
+
+    async def get(self):
+        from plugins.yadaaiagent.vc_support import BOOKING_V1_CONTEXT_DOC
+
+        self.set_header("Content-Type", "application/ld+json")
+        self.set_header("Access-Control-Allow-Origin", "*")
+        return self.finish(json.dumps(BOOKING_V1_CONTEXT_DOC))
+
+
+class WellKnownDidHandler(BaseHandler):
+    """GET /.well-known/did.json — serve the node's DID document (did:web)."""
+
+    async def get(self):
+        import base58  # noqa: PLC0415
+
+        did_id = _did_web_id(self.config)
+        pub_hex = self.config.public_key
+        # publicKeyMultibase: multibase base58btc (prefix 'z') of the compressed pubkey bytes
+        pub_bytes = bytes.fromhex(pub_hex)
+        pub_multibase = "z" + base58.b58encode(pub_bytes).decode("ascii")
+        doc = {
+            "@context": [
+                "https://www.w3.org/ns/did/v1",
+                "https://w3id.org/security/suites/secp256k1-2019/v1",
+            ],
+            "id": did_id,
+            "verificationMethod": [
+                {
+                    "id": f"{did_id}#key-1",
+                    "type": "EcdsaSecp256k1VerificationKey2019",
+                    "controller": did_id,
+                    "publicKeyMultibase": pub_multibase,
+                }
+            ],
+            "assertionMethod": [f"{did_id}#key-1"],
+        }
+        self.set_header("Content-Type", "application/did+ld+json")
+        self.set_header("Access-Control-Allow-Origin", "*")
+        return self.finish(json.dumps(doc))
 
 
 class AgentAuthAppHandler(BaseHandler):
@@ -2101,7 +2241,7 @@ class VendorChatBaseHandler(AgentChatHandler):
                 f"Customer's authorized scope: {scope_ctx}"
             )
             try:
-                reply, confirmation = await self._run_tool_loop(
+                reply, confirmation, confirm_result = await self._run_tool_loop(
                     provider,
                     model,
                     api_key,
@@ -2120,6 +2260,7 @@ class VendorChatBaseHandler(AgentChatHandler):
             complete = confirmation is not None
         else:
             # ── JSON fallback mode ─────────────────────────────────────────── #
+            confirm_result = None
             scope_ctx = json.dumps(auth.scope, separators=(",", ":"))
             base_prompt = vendor.get(
                 "vendorPrompt",
@@ -2195,6 +2336,15 @@ class VendorChatBaseHandler(AgentChatHandler):
         }
         if confirmation:
             result["confirmation"] = confirmation
+            result["credential"] = _gen_booking_credential(
+                self.vendor_service,
+                auth.address,
+                auth.scope,
+                confirmation,
+                vendor.get("name", self.vendor_service),
+                booking_details=confirm_result,
+                config=self.config,
+            )
 
         return self.render_as_json(result)
 
@@ -2565,6 +2715,8 @@ for _svc_id, _handler in _VENDOR_HANDLERS.items():
     ]
 
 HANDLERS = [
+    (r"/.well-known/did.json", WellKnownDidHandler),
+    (r"/contexts/booking/v1", BookingContextHandler),
     # SPA shell — catch-all for client-side routes (must be last)
     (
         r"/ai-agent-auth/assets/(.*)",

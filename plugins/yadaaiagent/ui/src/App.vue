@@ -14,6 +14,16 @@
         <div class="session-pill" :class="sessionPillClass">
           {{ sessionPillText }}
         </div>
+        <button
+          class="icon-btn"
+          title="Credential Wallet"
+          @click="showWallet = true"
+        >
+          &#127760;
+          <span v-if="credentialCount" class="wallet-badge">{{
+            credentialCount
+          }}</span>
+        </button>
         <button class="icon-btn" title="Settings" @click="showSettings = true">
           &#9881;
         </button>
@@ -27,6 +37,7 @@
           :agents="agents"
           @agent-changed="onAgentChanged"
           @session-rotated="onSessionRotated"
+          @credential-issued="onCredentialIssued"
         />
         <div v-if="approvalState" class="approval-overlay">
           <div class="approval-wrap">
@@ -52,6 +63,7 @@
     </div>
 
     <SettingsDrawer v-model="showSettings" />
+    <CredentialWallet v-model="showWallet" :key="walletKey" />
   </div>
 </template>
 
@@ -60,7 +72,12 @@ import { ref, computed, watch, onMounted } from "vue";
 import ChatPane from "./components/ChatPane.vue";
 import ApprovalCard from "./components/ApprovalCard.vue";
 import SettingsDrawer from "./components/SettingsDrawer.vue";
-import { LS_PRIV, getNodeUrl } from "./composables/useStorage.js";
+import CredentialWallet from "./components/CredentialWallet.vue";
+import {
+  LS_PRIV,
+  getNodeUrl,
+  getBookingCredentials,
+} from "./composables/useStorage.js";
 import { getPublicKeyHex, hex } from "./composables/useCrypto.js";
 
 const agents = ref([]);
@@ -82,6 +99,14 @@ function onAgentChanged(agentObj) {
 }
 
 const showSettings = ref(false);
+const showWallet = ref(false);
+const walletKey = ref(0); // force reload when credential-issued
+const credentialCount = ref(getBookingCredentials().length);
+
+function onCredentialIssued() {
+  credentialCount.value = getBookingCredentials().length;
+  walletKey.value++;
+}
 
 const sessionPubHex = ref("");
 function refreshSessionPill() {
@@ -363,10 +388,26 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
 }
 .icon-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+.wallet-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 9px;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  padding: 0 3px;
+  pointer-events: none;
 }
 .body {
   display: flex;

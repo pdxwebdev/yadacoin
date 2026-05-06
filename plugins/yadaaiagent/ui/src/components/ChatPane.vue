@@ -33,6 +33,7 @@ import {
   LS_ACTIVE_AGENT,
   getLlmSettings,
   getNodeUrl,
+  saveBookingCredential,
 } from "../composables/useStorage.js";
 import {
   hex,
@@ -46,7 +47,11 @@ import {
 const props = defineProps({
   agents: Array, // all agent types from /api/agents
 });
-const emit = defineEmits(["session-rotated", "agent-changed"]);
+const emit = defineEmits([
+  "session-rotated",
+  "agent-changed",
+  "credential-issued",
+]);
 
 // ── Current agent (auto-detected) ────────────────────────────────────────────
 const currentAgentId = ref("general");
@@ -478,6 +483,10 @@ async function advanceVendorQueue() {
     removeMsg(thinkIdx);
     vs.vendorMessages.push({ role: "assistant", content: data.reply });
     if (data.complete) {
+      if (data.credential) {
+        saveBookingCredential(data.credential);
+        emit("credential-issued");
+      }
       pushAgent(
         `<strong>${escHtml(data.vendor)}:</strong><br>${marked.parse(data.reply)}` +
           `Confirmation: <code>${escHtml(data.confirmation)}</code>`,
@@ -522,6 +531,10 @@ async function sendVendorMessage(text) {
       vendorState.value = null;
       return { exitVendor: true };
     } else if (data.complete) {
+      if (data.credential) {
+        saveBookingCredential(data.credential);
+        emit("credential-issued");
+      }
       pushAgent(
         `<strong>${escHtml(data.vendor)}:</strong><br>${marked.parse(data.reply)}` +
           `Confirmation: <code>${escHtml(data.confirmation)}</code>`,
@@ -749,6 +762,10 @@ async function runApprovalFlow(
       const data = await callVendorChatApi(service, vpData, initMessages);
       if (data.complete) {
         onStep(`[${service}] Confirmed: ${data.confirmation}`, "done");
+        if (data.credential) {
+          saveBookingCredential(data.credential);
+          emit("credential-issued");
+        }
         confirmedResults.push({
           service,
           status: "ok",
