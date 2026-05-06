@@ -32,6 +32,7 @@
             <option value="ollama">Ollama (local)</option>
             <option value="openai">OpenAI</option>
             <option value="anthropic">Anthropic</option>
+            <option value="github_models">GitHub Models</option>
             <option value="openai_compat">OpenAI-compatible (custom)</option>
           </select>
         </div>
@@ -68,10 +69,19 @@
           <input
             v-model="form.api_key"
             type="password"
-            placeholder="sk-…"
+            :placeholder="
+              form.provider === 'github_models'
+                ? 'GitHub PAT (github_pat_…)'
+                : 'sk-…'
+            "
             autocomplete="off"
           />
-          <div class="hint">
+          <div class="hint" v-if="form.provider === 'github_models'">
+            Use a GitHub personal access token with
+            <strong>Models</strong> access. Stored in localStorage only — never
+            sent to the YadaCoin server.
+          </div>
+          <div class="hint" v-else>
             Stored in localStorage only — never sent to the YadaCoin server.
           </div>
         </div>
@@ -156,12 +166,18 @@ const MODEL_HINTS = {
   openai: "e.g. gpt-4o, gpt-4o-mini, gpt-3.5-turbo",
   anthropic: "e.g. claude-3-5-sonnet-20241022, claude-3-haiku-20240307",
   openai_compat: "Enter the model name your provider expects.",
+  github_models:
+    "Free-tier rate limits are tight for gpt-4o / gpt-4o-mini. " +
+    "Less-restricted alternatives: <code>gpt-4.1-mini</code>, " +
+    "<code>Meta-Llama-3.1-70B-Instruct</code>, <code>Phi-3-medium-128k-instruct</code>, " +
+    "<code>Mistral-Nemo</code>.",
 };
 const MODEL_PLACEHOLDERS = {
   ollama: "llama3.2",
   openai: "gpt-4o-mini",
   anthropic: "claude-3-haiku-20240307",
   openai_compat: "gpt-3.5-turbo",
+  github_models: "gpt-4.1-mini",
 };
 const modelHint = computed(() => MODEL_HINTS[form.value.provider] || "");
 const modelPlaceholder = computed(

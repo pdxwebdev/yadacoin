@@ -25,14 +25,34 @@ marked.setOptions({ breaks: true, gfm: true });
 
 const PURIFY_CONFIG = {
   ALLOWED_TAGS: [
-    "p", "br", "strong", "em", "b", "i", "s", "del",
-    "ul", "ol", "li",
-    "h1", "h2", "h3", "h4",
-    "blockquote", "hr",
-    "pre", "code",
+    "p",
+    "br",
+    "strong",
+    "em",
+    "b",
+    "i",
+    "s",
+    "del",
+    "ul",
+    "ol",
+    "li",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "blockquote",
+    "hr",
+    "pre",
+    "code",
     "a",
-    "table", "thead", "tbody", "tr", "th", "td",
-    "span", "div",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "th",
+    "td",
+    "span",
+    "div",
   ],
   ALLOWED_ATTR: ["href", "target", "rel", "class", "style"],
   ALLOW_DATA_ATTR: false,
@@ -226,5 +246,63 @@ defineExpose({ chatEl, escHtml });
 .agent .bubble :deep(a) {
   color: var(--accent);
   text-decoration: underline;
+}
+
+/* Agent discovery cards injected inline into chat */
+.agent .bubble :deep(.disc-header) {
+  font-size: 0.8rem;
+  color: var(--subtext);
+  margin-bottom: 8px;
+}
+.agent .bubble :deep(.disc-list) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agent .bubble :deep(.disc-agent-card) {
+  display: flex;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.agent .bubble :deep(.disc-icon) {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.agent .bubble :deep(.disc-body) {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.agent .bubble :deep(.disc-label) {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+.agent .bubble :deep(.disc-label:hover) {
+  text-decoration: underline;
+}
+.agent .bubble :deep(.disc-desc) {
+  font-size: 0.78rem;
+  color: var(--subtext);
+}
+.agent .bubble :deep(.disc-caps) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.agent .bubble :deep(.disc-chip) {
+  font-size: 0.68rem;
+  background: rgba(99, 179, 237, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(99, 179, 237, 0.25);
+  border-radius: 4px;
+  padding: 1px 6px;
 }
 </style>

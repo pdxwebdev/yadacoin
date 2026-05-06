@@ -7,33 +7,37 @@
       <pre>{{ previewJson }}</pre>
     </div>
 
-    <div class="field-row">
-      <label>Payment Method</label>
-      <select v-model="selectedPmIdx" :disabled="!paymentMethods.length">
-        <option v-if="!paymentMethods.length" value="-1">
-          ⚠ No payment methods — add one in ⚙ Settings
-        </option>
-        <option v-for="(pm, i) in paymentMethods" :key="pm.token" :value="i">
-          {{ pm.label }}{{ pm.isDefault ? " ★" : "" }}
-        </option>
-      </select>
-    </div>
+    <template v-if="!isRegistration">
+      <div class="field-row">
+        <label>Payment Method</label>
+        <select v-model="selectedPmIdx" :disabled="!paymentMethods.length">
+          <option v-if="!paymentMethods.length" value="-1">
+            ⚠ No payment methods — add one in ⚙ Settings
+          </option>
+          <option v-for="(pm, i) in paymentMethods" :key="pm.token" :value="i">
+            {{ pm.label }}{{ pm.isDefault ? " ★" : "" }}
+          </option>
+        </select>
+      </div>
 
-    <div class="field-row">
-      <label>Second factor</label>
-      <input
-        ref="sfInput"
-        v-model="secondFactor"
-        type="password"
-        placeholder="Password / second factor"
-        autocomplete="current-password"
-        @keydown.enter="approve"
-      />
-    </div>
+      <div class="field-row">
+        <label>Second factor</label>
+        <input
+          ref="sfInput"
+          v-model="secondFactor"
+          type="password"
+          placeholder="Password / second factor"
+          autocomplete="current-password"
+          @keydown.enter="approve"
+        />
+      </div>
+    </template>
 
     <div class="btn-row">
       <button class="btn approve" :disabled="busy" @click="approve">
-        ✓ Approve &amp; Book
+        {{
+          isRegistration ? "📡 Broadcast Registration" : "✓ Approve &amp; Book"
+        }}
       </button>
       <button class="btn deny" :disabled="busy" @click="$emit('deny')">
         ✗ Deny
@@ -51,6 +55,10 @@ const props = defineProps({
   scope: Object,
 });
 const emit = defineEmits(["approve", "deny"]);
+
+const isRegistration = computed(
+  () => props.agentType?.id === "agent_registration",
+);
 
 const secondFactor = ref("");
 const busy = ref(false);
@@ -91,13 +99,16 @@ const previewJson = computed(() => {
 });
 
 function approve() {
-  if (!secondFactor.value) {
+  if (!isRegistration.value && !secondFactor.value) {
     sfInput.value?.focus();
     return;
   }
   const pm = paymentMethods.value[selectedPmIdx.value] || null;
   busy.value = true;
-  emit("approve", { secondFactor: secondFactor.value, paymentMethod: pm });
+  emit("approve", {
+    secondFactor: secondFactor.value,
+    paymentMethod: isRegistration.value ? null : pm,
+  });
 }
 </script>
 

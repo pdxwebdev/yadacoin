@@ -144,24 +144,84 @@ function autoGrow(e) {
   el.style.height = Math.min(el.scrollHeight, 160) + "px";
 }
 
+// ── Agent registry discovery ──────────────────────────────────────────────────
+/**
+ * Search the blockchain agent registry for agents matching the user's intent.
+ * Fires silently — if it fails or returns nothing, no message is shown.
+ * Only runs once per intent switch (tracked by lastDiscoveredIntent).
+ */
+let lastDiscoveredIntent = "";
+
+async function discoverAndPushAgents(intent, agentTypeId) {
+  const key = `${agentTypeId}:${intent}`;
+  if (key === lastDiscoveredIntent) return;
+  lastDiscoveredIntent = key;
+  try {
+    const params = new URLSearchParams({
+      intent,
+      agent_type: agentTypeId,
+      limit: "5",
+    });
+    const res = await fetch(
+      getNodeUrl() + `/ai-agent-auth/api/agents/discover?${params}`,
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+    const agents = (data.agents || []).slice(0, 5);
+    if (!agents.length) return;
+
+    const rows = agents
+      .map(
+        (a) =>
+          `<div class="disc-agent-card">` +
+          `<span class="disc-icon">${escHtml(a.icon || "🤖")}</span>` +
+          `<div class="disc-body">` +
+          `<a class="disc-label" href="${escHtml(a.endpoint_url)}" target="_blank" rel="noopener">${escHtml(a.label)}</a>` +
+          (a.description
+            ? `<div class="disc-desc">${escHtml(a.description)}</div>`
+            : "") +
+          `<div class="disc-caps">${(a.capabilities || []).map((c) => `<span class="disc-chip">${escHtml(c)}</span>`).join("")}</div>` +
+          `</div></div>`,
+      )
+      .join("");
+
+    pushAgent(
+      `<div class="disc-header">🔍 Found ${agents.length} registered agent${agents.length > 1 ? "s" : ""} on-chain for <em>${escHtml(agentTypeId)}</em>:</div>` +
+        `<div class="disc-list">${rows}</div>`,
+      true,
+    );
+  } catch {
+    // silent — discovery is best-effort
+  }
+}
+
 // ── Main send ────────────────────────────────────────────────────────────────
-async function send() {
-  const prompt = userInput.value.trim();
+async function send(overridePrompt) {
+  // overridePrompt must be a plain string — DOM events from @click/@keydown are ignored
+  const override = typeof overridePrompt === "string" ? overridePrompt : null;
+  const prompt = override ?? userInput.value.trim();
   if (!prompt || busy.value || !sessionReady.value) return;
-  userInput.value = "";
-  if (inputEl.value) {
-    inputEl.value.style.height = "auto";
+  if (!override) {
+    userInput.value = "";
+    if (inputEl.value) {
+      inputEl.value.style.height = "auto";
+    }
   }
   busy.value = true;
-  pushUser(prompt);
+  if (!override) pushUser(prompt);
 
   // Vendor follow-up mode — route to vendor chat instead of LLM
   if (vendorState.value) {
+    let result;
     try {
-      await sendVendorMessage(prompt);
+      result = await sendVendorMessage(prompt);
     } finally {
       busy.value = false;
       nextTick(() => inputEl.value?.focus());
+    }
+    // Vendor signalled exit — re-dispatch through main agent chat
+    if (result?.exitVendor) {
+      await send(prompt);
     }
     return;
   }
@@ -204,51 +264,61 @@ async function send() {
 
   removeMsg(thinkIdx);
 
-  // Auto-switch agent type based on detected intent, then re-dispatch to new agent
-  if (
+  // Auto-switch agent type based on detected intent, then re-dispatch to new agent.
+  // Loop up to MAX_HOPS to handle chains like therapy→general→travel in one send().
+  const MAX_HOPS = 3;
+  let hopCount = 0;
+  while (
+    hopCount < MAX_HOPS &&
     data.detected_agent_type &&
     data.detected_agent_type !== currentAgentId.value
   ) {
+    hopCount++;
     const newAgent = props.agents?.find(
       (a) => a.id === data.detected_agent_type,
     );
-    if (newAgent) {
-      currentAgentId.value = data.detected_agent_type;
-      localStorage.setItem(LS_ACTIVE_AGENT, currentAgentId.value);
-      emit("agent-changed", newAgent);
+    if (!newAgent) break;
 
-      // Discard the routing response; re-send the user message to the new agent
-      chatHistory.pop();
-      const { index: redirectIdx } = pushThinking();
-      try {
-        const llmCfg2 = getLlmSettings();
-        const resp2 = await fetch(getNodeUrl() + "/ai-agent-auth/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: chatHistory,
-            agent_type: currentAgentId.value,
-            llm: {
-              provider: llmCfg2.provider,
-              model: llmCfg2.model || undefined,
-              api_key: llmCfg2.api_key || undefined,
-              ollama_host: llmCfg2.ollama_host || undefined,
-              base_url: llmCfg2.base_url || undefined,
-            },
-          }),
-        });
-        data = await resp2.json();
-        if (!resp2.ok) throw new Error(data.error || resp2.status);
-      } catch (e) {
-        removeMsg(redirectIdx);
-        pushAgent(
-          `<span style="color:var(--red2)">⚠ Could not reach AI service: ${escHtml(String(e))}.</span>`,
-          true,
-        );
-        busy.value = false;
-        return;
-      }
+    currentAgentId.value = data.detected_agent_type;
+    localStorage.setItem(LS_ACTIVE_AGENT, currentAgentId.value);
+    emit("agent-changed", newAgent);
+    extractedScope = null; // reset scope when switching agent type
+
+    // Re-send the user message to the new agent (chatHistory already contains it)
+    const { index: redirectIdx } = pushThinking();
+    try {
+      const llmCfg2 = getLlmSettings();
+      const resp2 = await fetch(getNodeUrl() + "/ai-agent-auth/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: chatHistory,
+          agent_type: currentAgentId.value,
+          llm: {
+            provider: llmCfg2.provider,
+            model: llmCfg2.model || undefined,
+            api_key: llmCfg2.api_key || undefined,
+            ollama_host: llmCfg2.ollama_host || undefined,
+            base_url: llmCfg2.base_url || undefined,
+          },
+        }),
+      });
+      data = await resp2.json();
+      if (!resp2.ok) throw new Error(data.error || resp2.status);
+    } catch (e) {
       removeMsg(redirectIdx);
+      pushAgent(
+        `<span style="color:var(--red2)">⚠ Could not reach AI service: ${escHtml(String(e))}.</span>`,
+        true,
+      );
+      busy.value = false;
+      return;
+    }
+    removeMsg(redirectIdx);
+
+    // Search on-chain registry for agents matching this intent
+    if (currentAgentId.value !== "general") {
+      discoverAndPushAgents(prompt, currentAgentId.value);
     }
   }
 
@@ -261,6 +331,12 @@ async function send() {
   }
 
   chatHistory.push({ role: "assistant", content: data.reply });
+
+  // For non-general agents, search the on-chain registry in the background.
+  // The dedup guard prevents re-running for the same intent.
+  if (currentAgentId.value && currentAgentId.value !== "general") {
+    discoverAndPushAgents(prompt, currentAgentId.value);
+  }
 
   if (data.complete && extractedScope && Object.keys(extractedScope).length) {
     // Show the reply + scope summary inline as an HTML message
@@ -436,7 +512,16 @@ async function sendVendorMessage(text) {
     const data = await callVendorChatApi(service, vs.vpData, vs.vendorMessages);
     removeMsg(thinkIdx);
     vs.vendorMessages.push({ role: "assistant", content: data.reply });
-    if (data.complete) {
+    if (data.exit_vendor) {
+      // Vendor signals the user wants a different topic — tear down vendor flow
+      // and re-route the same message through the main agent chat
+      pushAgent(
+        `<strong>${escHtml(data.vendor)}:</strong><br>${marked.parse(data.reply)}`,
+        true,
+      );
+      vendorState.value = null;
+      return { exitVendor: true };
+    } else if (data.complete) {
       pushAgent(
         `<strong>${escHtml(data.vendor)}:</strong><br>${marked.parse(data.reply)}` +
           `Confirmation: <code>${escHtml(data.confirmation)}</code>`,
@@ -468,6 +553,50 @@ async function runApprovalFlow(
   onStep,
   onDone,
 ) {
+  // ── Agent registration — server signs, no key rotation needed ──────────────
+  if (agentType?.id === "agent_registration") {
+    onStep("Broadcasting agent registration to blockchain…");
+    try {
+      const capabilities = (scope.capabilities || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const res = await fetch(
+        getNodeUrl() + "/ai-agent-auth/api/agents/register",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            label: scope.label || "",
+            description: scope.description || "",
+            agent_type: scope.agent_type || "general",
+            capabilities,
+            endpoint_url: scope.endpoint_url || "",
+            icon: scope.icon || "🤖",
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || String(res.status));
+      onStep("Agent registered · ID " + data.agent_id, "done");
+      onDone(
+        true,
+        `✅ <strong>Agent registered on-chain!</strong><br><br>` +
+          `<strong>Label:</strong> ${escHtml(scope.label)}<br>` +
+          `<strong>Agent ID:</strong> <code>${escHtml(data.agent_id)}</code><br>` +
+          `<strong>Transaction:</strong> <code>${escHtml((data.transaction_signature || "").slice(0, 32))}…</code>`,
+      );
+    } catch (e) {
+      onStep("Registration failed: " + e.message, "fail");
+      onDone(false, "Registration failed: " + escHtml(e.message));
+    }
+    extractedScope = null;
+    chatHistory = [];
+    busy.value = false;
+    nextTick(() => inputEl.value?.focus());
+    return;
+  }
+
   const storedPriv = localStorage.getItem(LS_PRIV);
   const storedCc = localStorage.getItem(LS_CC);
   const sf = secondFactor;
@@ -602,10 +731,21 @@ async function runApprovalFlow(
   for (const service of targetServices) {
     onStep(`[${service}] Initiating vendor conversation…`);
     try {
-      // Initial greeting message so the LLM always has a user turn first
-      const initMessages = [
-        { role: "user", content: "Hello, I'm ready to finalize my booking." },
-      ];
+      // Build an initial greeting that summarises what was already collected
+      // so the vendor doesn't re-ask for information the user already provided.
+      const scopeSummary =
+        scope && Object.keys(scope).length
+          ? " The customer has already provided the following details: " +
+            Object.entries(scope)
+              .map(
+                ([k, v]) =>
+                  `${k.replace(/_/g, " ")}: ${Array.isArray(v) ? v.join(", ") : v}`,
+              )
+              .join("; ") +
+            ". Please use this information and only ask for anything still missing."
+          : "";
+      const initGreeting = `Hello, I'm ready to finalize my booking.${scopeSummary}`;
+      const initMessages = [{ role: "user", content: initGreeting }];
       const data = await callVendorChatApi(service, vpData, initMessages);
       if (data.complete) {
         onStep(`[${service}] Confirmed: ${data.confirmation}`, "done");
@@ -621,10 +761,7 @@ async function runApprovalFlow(
           service,
           vendorName: data.vendor,
           vendorMessages: [
-            {
-              role: "user",
-              content: "Hello, I'm ready to finalize my booking.",
-            },
+            { role: "user", content: initGreeting },
             { role: "assistant", content: data.reply },
           ],
         });

@@ -293,7 +293,32 @@ body {
 .header-center {
   flex: 1;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.top-nav {
+  display: flex;
+  gap: 4px;
+}
+.top-nav-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--subtext);
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 3px 10px;
+  transition: all 0.15s;
+}
+.top-nav-btn.active {
+  background: rgba(124, 58, 237, 0.18);
+  border-color: rgba(124, 58, 237, 0.4);
+  color: var(--accent2);
+}
+.top-nav-btn:hover:not(.active) {
+  color: var(--text);
+  border-color: var(--border);
 }
 .header-agent-name {
   font-size: 0.88rem;
