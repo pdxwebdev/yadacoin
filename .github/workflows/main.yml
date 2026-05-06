@@ -2,8 +2,8 @@ name: Build and Release Windows
 
 on:
   push:
-    branches:
-      - master
+    tags:
+      - "v*"
   release:
     types: [published]
   workflow_dispatch:
@@ -55,12 +55,10 @@ jobs:
           path: yadacoin-windows.zip
 
       - name: Upload Release Asset
-        if: github.event_name == 'release'
-        uses: actions/upload-release-asset@v1
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: yadacoin-windows.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: yadacoin-windows.zip
-          asset_name: yadacoin-windows.zip
-          asset_content_type: application/zip
