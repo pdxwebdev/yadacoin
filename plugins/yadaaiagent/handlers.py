@@ -34,10 +34,12 @@ GET  /ai-agent-auth/api/vendor/<svc>/challenge     — per-vendor challenge
 POST /ai-agent-auth/api/vendor/<svc>               — per-vendor VP booking
 """
 
+import asyncio
 import hashlib
 import inspect
 import json
 import os
+import re
 
 import tornado.web
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
@@ -1358,7 +1360,11 @@ class AgentChatHandler(BaseHandler):
                 )
             elif provider == "github_models":
                 content = await self._call_openai_compat(
-                    self._GITHUB_MODELS_BASE_URL, model, api_key, full_messages
+                    self._GITHUB_MODELS_BASE_URL,
+                    model,
+                    api_key,
+                    full_messages,
+                    temperature=None,
                 )
             else:
                 self.set_status(400)
@@ -1440,22 +1446,44 @@ class AgentChatHandler(BaseHandler):
         data = json.loads(resp.body)
         return data["message"]["content"].strip()
 
+    @staticmethod
+    def _parse_retry_after(body_bytes: bytes, max_wait: float = 10.0) -> float:
+        """Return seconds to wait from a 429 body, capped at max_wait. Returns 0 if not parseable."""
+        try:
+            text = body_bytes.decode("utf-8", errors="replace")
+            m = re.search(r"wait\s+(\d+)\s*second", text, re.IGNORECASE)
+            if m:
+                return min(float(m.group(1)), max_wait)
+        except Exception:
+            pass
+        return 0.0
+
     async def _call_openai_compat(
-        self, base_url: str, model: str, api_key: str, messages: list
+        self, base_url: str, model: str, api_key: str, messages: list, temperature=0.2
     ) -> str:
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         client = AsyncHTTPClient()
+        payload = {"model": model, "messages": messages}
+        if temperature is not None:
+            payload["temperature"] = temperature
         req = HTTPRequest(
             url=f"{base_url}/chat/completions",
             method="POST",
             headers=headers,
-            body=json.dumps({"model": model, "messages": messages, "temperature": 0.2}),
+            body=json.dumps(payload),
             request_timeout=120.0,
         )
-        resp = await client.fetch(req, raise_error=False)
-        if resp.code != 200:
+        for attempt in range(3):
+            resp = await client.fetch(req, raise_error=False)
+            if resp.code == 200:
+                break
+            if resp.code == 429 and attempt < 2:
+                wait = self._parse_retry_after(resp.body)
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                    continue
             try:
                 err = json.loads(resp.body)
                 msg = err.get("error", {}).get("message") or resp.body.decode(
@@ -1604,6 +1632,7 @@ class AgentChatHandler(BaseHandler):
         confirm_tool: str,
         scope: dict,
         max_rounds: int = 8,
+        temperature=0.3,
     ):
         """OpenAI-compat /chat/completions tool-calling loop. Returns (reply, confirmation|None, confirm_result|None)."""
         headers = {"Content-Type": "application/json"}
@@ -1613,23 +1642,31 @@ class AgentChatHandler(BaseHandler):
         confirmation = None
         confirm_result = None
         for _ in range(max_rounds):
+            payload = {
+                "model": model,
+                "messages": messages,
+                "tools": tools,
+                "tool_choice": "auto",
+            }
+            if temperature is not None:
+                payload["temperature"] = temperature
             req = HTTPRequest(
                 url=f"{base_url}/chat/completions",
                 method="POST",
                 headers=headers,
-                body=json.dumps(
-                    {
-                        "model": model,
-                        "messages": messages,
-                        "tools": tools,
-                        "tool_choice": "auto",
-                        "temperature": 0.3,
-                    }
-                ),
+                body=json.dumps(payload),
                 request_timeout=120.0,
             )
-            resp = await client.fetch(req, raise_error=False)
-            if resp.code != 200:
+            resp = None
+            for attempt in range(3):
+                resp = await client.fetch(req, raise_error=False)
+                if resp.code == 200:
+                    break
+                if resp.code == 429 and attempt < 2:
+                    wait = self._parse_retry_after(resp.body)
+                    if wait > 0:
+                        await asyncio.sleep(wait)
+                        continue
                 raise ValueError(
                     f"LLM {resp.code}: {resp.body.decode('utf-8', errors='replace')[:200]}"
                 )
@@ -1820,6 +1857,7 @@ class AgentChatHandler(BaseHandler):
                 confirm_tool,
                 scope,
                 max_rounds,
+                temperature=None if provider == "github_models" else 0.3,
             )
         elif provider == "anthropic":
             filtered = [m for m in full_messages if m.get("role") != "system"]
@@ -2293,7 +2331,11 @@ class VendorChatBaseHandler(AgentChatHandler):
                     )
                 elif provider == "github_models":
                     content = await self._call_openai_compat(
-                        self._GITHUB_MODELS_BASE_URL, model, api_key, full_messages
+                        self._GITHUB_MODELS_BASE_URL,
+                        model,
+                        api_key,
+                        full_messages,
+                        temperature=None,
                     )
                 else:
                     self.set_status(400)

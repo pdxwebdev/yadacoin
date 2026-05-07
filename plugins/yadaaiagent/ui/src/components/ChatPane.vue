@@ -691,6 +691,33 @@ async function runApprovalFlow(
   } catch (e) {
     onStep("Rotation failed: " + e.message, "fail");
     onDone(false, "Rotation failed: " + e.message);
+    // Re-present the approval card once the overlay finishes closing (onDone has a 600ms delay)
+    const retryScope = { ...scope };
+    const retryAgentType = agentType;
+    setTimeout(() => {
+      const scopeLines = Object.entries(retryScope)
+        .map(([k, v]) => {
+          const val = Array.isArray(v)
+            ? v.map((s) => `<strong>${escHtml(s)}</strong>`).join(", ")
+            : `<strong>${escHtml(String(v))}</strong>`;
+          return `${escHtml(k.replace(/_/g, " "))}: ${val}`;
+        })
+        .join("<br>");
+      const retryMsg = {
+        role: "agent",
+        html:
+          `${scopeLines}<br><br>` +
+          `To proceed I'll broadcast a rotation transaction committing this scope on-chain as a ` +
+          `W3C Verifiable Credential. Please enter your second factor to approve.`,
+        content: "",
+        showApproval: true,
+        approvalContext: { scope: retryScope, agentType: retryAgentType },
+      };
+      messages.value.push(retryMsg);
+      messages.value[messages.value.length - 1] = { ...retryMsg };
+    }, 700);
+    busy.value = false;
+    nextTick(() => inputEl.value?.focus());
     return;
   }
   onStep(

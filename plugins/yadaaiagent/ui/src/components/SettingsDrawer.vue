@@ -167,10 +167,10 @@ const MODEL_HINTS = {
   anthropic: "e.g. claude-3-5-sonnet-20241022, claude-3-haiku-20240307",
   openai_compat: "Enter the model name your provider expects.",
   github_models:
-    "Free-tier rate limits are tight for gpt-4o / gpt-4o-mini. " +
-    "Less-restricted alternatives: <code>gpt-4.1-mini</code>, " +
-    "<code>Meta-Llama-3.1-70B-Instruct</code>, <code>Phi-3-medium-128k-instruct</code>, " +
-    "<code>Mistral-Nemo</code>.",
+    "⚠️ GitHub Models is rate-limited to ~2 req/min regardless of your Copilot subscription — " +
+    "not suitable for demos. For reliable demos use <strong>OpenAI</strong> (gpt-4o-mini) " +
+    "or <strong>Ollama</strong> locally. If you must use GitHub Models, try: " +
+    "<code>gpt-4.1-mini</code>, <code>Meta-Llama-3.1-70B-Instruct</code>, <code>Mistral-Nemo</code>.",
 };
 const MODEL_PLACEHOLDERS = {
   ollama: "llama3.2",

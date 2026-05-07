@@ -1840,6 +1840,139 @@ class KelResyncHandler(BaseHandler):
         )
 
 
+class KelResetMempoolHandler(BaseHandler):
+    """
+    POST /key-rotation/kel-reset-mempool
+
+    Delete all key-rotation transactions for this node's KEL from the
+    miner_transactions (mempool) collection.  Useful during testing when
+    old mempool entries expire and corrupt the in-memory key log.
+
+    Auth: same as KelResyncHandler — requires node private_key + second_factor.
+
+    Request body (JSON)
+    -------------------
+    private_key   : str  – node private key (must match config)
+    second_factor : str  – the same second_factor used during init
+
+    Response
+    --------
+    {"status": true, "deleted": <int>}  — number of mempool entries removed.
+    """
+
+    async def post(self):
+        from bip32utils import BIP32Key
+        from mnemonic import Mnemonic
+
+        try:
+            body = json.loads(self.request.body)
+        except Exception:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "message": "invalid json body"}
+            )
+
+        private_key = body.get("private_key", "").strip()
+        second_factor = body.get("second_factor", "").strip()
+
+        if not private_key or not second_factor:
+            self.set_status(400)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": "private_key and second_factor are required",
+                }
+            )
+
+        # Auth: private_key must match node config
+        node_private_key = getattr(self.config, "private_key", "") or ""
+        if private_key != node_private_key:
+            self.set_status(401)
+            return self.render_as_json(
+                {"status": False, "message": "invalid private_key"}
+            )
+
+        # Verify second_factor by deriving K0 and checking it matches an existing KEL
+        seed = getattr(self.config, "seed", "") or ""
+        if not seed:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "message": "seed not configured in config.json"}
+            )
+
+        try:
+            mn = Mnemonic("english")
+            entropy = mn.to_entropy(seed)
+            bip32_root = BIP32Key.fromEntropy(entropy)
+            root_priv = bip32_root.PrivateKey()
+            root_cc = bip32_root.ChainCode()
+        except Exception as exc:
+            self.set_status(500)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": f"could not derive root key from seed: {exc}",
+                }
+            )
+
+        k0 = derive_secure_path(root_priv, root_cc, second_factor)
+        k0_priv_obj = _CoincurvePrivateKey(k0["private_key"])
+        k0_pub_hex = k0_priv_obj.public_key.format(compressed=True).hex()
+
+        # Collect all public keys in the KEL so we can match mempool entries
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        try:
+            kel = await KeyEventLog.build_from_public_key(k0_pub_hex, onchain_only=True)
+        except Exception as exc:
+            self.set_status(500)
+            return self.render_as_json(
+                {"status": False, "message": f"error building key event log: {exc}"}
+            )
+
+        if not kel:
+            # No on-chain KEL — try mempool only
+            try:
+                kel = await KeyEventLog.build_from_public_key(k0_pub_hex)
+            except Exception:
+                kel = []
+
+        if not kel:
+            self.set_status(404)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": "no key event log found; verify second_factor is correct",
+                }
+            )
+
+        # Derive all KEL public keys so we can delete their mempool entries
+        cur = k0
+        kel_pub_keys = [k0_pub_hex]
+        for _ in range(len(kel)):
+            cur = derive_secure_path(
+                cur["private_key"], cur["chain_code"], second_factor
+            )
+            kel_pub_keys.append(
+                _CoincurvePrivateKey(cur["private_key"])
+                .public_key.format(compressed=True)
+                .hex()
+            )
+
+        result = await self.config.mongo.async_db.miner_transactions.delete_many(
+            {"public_key": {"$in": kel_pub_keys}}
+        )
+
+        self.config.app_log.warning(
+            "KelResetMempoolHandler: deleted %d mempool entries for KEL (keys=%s) by %s",
+            result.deleted_count,
+            kel_pub_keys,
+            self.request.remote_ip,
+        )
+
+        return self.render_as_json({"status": True, "deleted": result.deleted_count})
+
+
 HANDLERS = KEY_ROTATION_HANDLERS = [
     (
         r"/key-rotation/derived-keys/history",
@@ -1880,6 +2013,10 @@ HANDLERS = KEY_ROTATION_HANDLERS = [
     (
         r"/key-rotation/kel-resync",
         KelResyncHandler,
+    ),
+    (
+        r"/key-rotation/kel-reset-mempool",
+        KelResetMempoolHandler,
     ),
     (
         r"/key-rotation/derived-child-key",

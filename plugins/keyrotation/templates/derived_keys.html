@@ -432,6 +432,77 @@
         </div>
       </div>
 
+      <!-- ── Reset Mempool ── -->
+      <div class="card">
+        <div class="section-title">
+          Reset Mempool
+        </div>
+        <p
+          style="
+            font-size: 13px;
+            color: #667eea;
+            margin-bottom: 12px;
+          "
+        >
+          Removes all pending key-rotation
+          transactions for this KEL from the
+          mempool. Use during testing when old
+          entries expire and corrupt the in-memory
+          key log. In production, transactions are
+          confirmed before they expire.
+        </p>
+        <div
+          id="resetMempoolMsg"
+          class="msg"
+        ></div>
+        <div
+          style="
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-width: 500px;
+          "
+        >
+          <div>
+            <label for="resetPrivateKey"
+              >Node Private Key
+              <span style="color: #e53e3e"
+                >*</span
+              ></label
+            >
+            <input
+              type="password"
+              id="resetPrivateKey"
+              placeholder="Node private key (hex) from config.json"
+              autocomplete="off"
+            />
+          </div>
+          <div>
+            <label for="resetFactor"
+              >Second Factor
+              <span style="color: #e53e3e"
+                >*</span
+              ></label
+            >
+            <input
+              type="password"
+              id="resetFactor"
+              placeholder="Same passphrase used during init"
+              autocomplete="off"
+            />
+          </div>
+          <div style="margin-top: 4px">
+            <button
+              class="btn-danger"
+              id="resetMempoolBtn"
+              disabled
+            >
+              Reset Mempool
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- ── List ── -->
       <div class="card">
         <div
@@ -982,6 +1053,96 @@
           btn.disabled = false;
           btn.textContent = "Init Key Log";
           updateInitBtn();
+        });
+
+      // ── Reset Mempool ─────────────────────────────────────────────────────────
+      function updateResetMempoolBtn() {
+        const pk = document
+          .getElementById("resetPrivateKey")
+          .value.trim();
+        const sf = document
+          .getElementById("resetFactor")
+          .value.trim();
+        document.getElementById(
+          "resetMempoolBtn",
+        ).disabled = !pk || !sf;
+      }
+      document
+        .getElementById("resetPrivateKey")
+        .addEventListener(
+          "input",
+          updateResetMempoolBtn,
+        );
+      document
+        .getElementById("resetFactor")
+        .addEventListener(
+          "input",
+          updateResetMempoolBtn,
+        );
+
+      document
+        .getElementById("resetMempoolBtn")
+        .addEventListener("click", async () => {
+          const privateKey = document
+            .getElementById("resetPrivateKey")
+            .value.trim();
+          const factor = document
+            .getElementById("resetFactor")
+            .value.trim();
+          const msgEl = document.getElementById(
+            "resetMempoolMsg",
+          );
+          const btn = document.getElementById(
+            "resetMempoolBtn",
+          );
+
+          if (
+            !confirm(
+              "Delete all pending KEL transactions from the mempool?",
+            )
+          )
+            return;
+
+          btn.disabled = true;
+          btn.textContent = "Resetting\u2026";
+          msgEl.style.display = "none";
+          try {
+            const r = await fetch(
+              "/key-rotation/kel-reset-mempool",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                },
+                body: JSON.stringify({
+                  private_key: privateKey,
+                  second_factor: factor,
+                }),
+              },
+            );
+            const d = await r.json();
+            if (r.ok && d.status) {
+              document.getElementById(
+                "resetPrivateKey",
+              ).value = "";
+              document.getElementById(
+                "resetFactor",
+              ).value = "";
+              msgEl.className = "msg success";
+              msgEl.innerHTML = `\u2705 Mempool reset \u2014 ${d.deleted} transaction(s) removed.`;
+            } else {
+              msgEl.className = "msg error";
+              msgEl.innerHTML = `\u274c ${d.message || "Reset failed."}`;
+            }
+          } catch (e) {
+            msgEl.className = "msg error";
+            msgEl.innerHTML = `\u274c Error: ${e.message}`;
+          }
+          msgEl.style.display = "block";
+          btn.disabled = false;
+          btn.textContent = "Reset Mempool";
+          updateResetMempoolBtn();
         });
 
       // ── List ──────────────────────────────────────────────────────────────────
