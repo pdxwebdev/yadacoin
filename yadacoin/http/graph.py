@@ -290,7 +290,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                     check_max_inputs=True,
                     check_kel=True,
                     mempool=True,
-                    batch_txns=item_txns,
+                    batch_txns=item_txns + mempool_txns,
                 )
 
                 if transaction.are_kel_fields_populated():

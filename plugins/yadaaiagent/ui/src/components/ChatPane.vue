@@ -30,17 +30,23 @@ import ChatWindow from "./ChatWindow.vue";
 import {
   LS_PRIV,
   LS_CC,
+  LS_WALLET_MODE,
   LS_ACTIVE_AGENT,
   getLlmSettings,
   getNodeUrl,
   saveBookingCredential,
+  getWalletMode,
+  isClientWallet,
 } from "../composables/useStorage.js";
 import {
   hex,
   compactSigToDerBase64,
   deriveSecurePath,
   getPublicKeyHex,
+  getP2PKH,
+  buildRotationTxn,
   secp,
+  sha256,
 } from "../composables/useCrypto.js";
 
 // ── Props / emit ─────────────────────────────────────────────────────────────
@@ -51,6 +57,7 @@ const emit = defineEmits([
   "session-rotated",
   "agent-changed",
   "credential-issued",
+  "setup-wallet",
 ]);
 
 // ── Current agent (auto-detected) ────────────────────────────────────────────
@@ -83,11 +90,28 @@ const sessionReady = computed(() => {
 
 onMounted(() => {
   if (!sessionReady.value) {
-    pushAgent(
-      "⚠ No operator key found. " +
-        'Please <a href="/key-rotation/derived-keys" target="_blank" style="color:var(--accent)">initialise your key</a> first, then reload.',
-      true,
-    );
+    const storedMode = localStorage.getItem(LS_WALLET_MODE);
+    if (storedMode === "client") {
+      // Client wallet mode but no key yet — prompt setup
+      pushAgent(
+        "\u26A0 No wallet found. Click the session pill to set up your personal wallet, or switch to Node Wallet mode in Settings.",
+        true,
+      );
+      emit("setup-wallet");
+    } else if (storedMode === "node") {
+      // Node wallet mode explicitly set but no key derived yet
+      pushAgent(
+        "\u26A0 No operator key found. " +
+          'Please <a href="/key-rotation/derived-keys" target="_blank" style="color:var(--accent)">initialise your key</a> first, then reload.',
+        true,
+      );
+    } else {
+      // Completely fresh load — no wallet mode chosen yet
+      pushAgent(
+        "Welcome! To get started, set up a <strong>Personal Wallet</strong> (generate your own BIP39 seed in the browser) or configure a <strong>Node Wallet</strong> (server-managed key). Open <em>Settings ⚙</em> to choose.",
+        true,
+      );
+    }
   } else {
     pushAgent("Hello! I'm your YadaCoin AI agent. How can I help you today?");
   }
@@ -327,10 +351,12 @@ async function send(overridePrompt) {
     }
   }
 
-  // Merge extracted fields
+  // Merge extracted fields — never allow the LLM to set `confirmed` directly;
+  // confirmation must come from the user explicitly in a separate turn.
   if (data.extracted) {
     if (!extractedScope) extractedScope = {};
     for (const [k, v] of Object.entries(data.extracted)) {
+      if (k === "confirmed") continue; // strip: LLM cannot self-confirm
       if (v != null && v !== "") extractedScope[k] = v;
     }
   }
@@ -343,9 +369,173 @@ async function send(overridePrompt) {
     discoverAndPushAgents(prompt, currentAgentId.value);
   }
 
+  // ── Wallet agent read-only actions (no approval needed) ──────────────────
+  if (
+    currentAgentId.value === "wallet_agent" &&
+    extractedScope?.action &&
+    ["get_balance", "get_transactions", "get_pending"].includes(
+      extractedScope.action,
+    )
+  ) {
+    const action = extractedScope.action;
+    // Optimistically push the LLM reply first
+    pushAgent(data.reply);
+    // Then fetch and display the actual data
+    const privKey = localStorage.getItem(LS_PRIV);
+    if (privKey) {
+      try {
+        const pubHex = getPublicKeyHex(hex.toBytes(privKey));
+        const baseUrl = getNodeUrl();
+        if (action === "get_balance") {
+          const res = await fetch(
+            `${baseUrl}/ai-agent-auth/api/wallet/info?public_key=${encodeURIComponent(pubHex)}`,
+          );
+          if (res.ok) {
+            const d = await res.json();
+            pushAgent(
+              `<div class="wallet-data-card">` +
+                `<div class="wdc-title">💰 Balance</div>` +
+                `<div class="wdc-address">Address: <code>${escHtml(d.address)}</code></div>` +
+                `<div class="wdc-balance"><span class="wdc-amount">${escHtml(d.balance)}</span> YDA</div>` +
+                `</div>`,
+              true,
+            );
+          }
+        } else if (action === "get_transactions") {
+          // Fetch sent and received from existing wallet endpoints, merge
+          const [sentRes, recvRes] = await Promise.all([
+            fetch(
+              `${baseUrl}/get-past-sent-txns?public_key=${encodeURIComponent(pubHex)}&page=1`,
+            ),
+            fetch(
+              `${baseUrl}/get-past-received-txns?public_key=${encodeURIComponent(pubHex)}&page=1`,
+            ),
+          ]);
+          const sentData = sentRes.ok
+            ? await sentRes.json()
+            : { past_transactions: [] };
+          const recvData = recvRes.ok
+            ? await recvRes.json()
+            : { past_transactions: [] };
+          const sentTxns = (sentData.past_transactions || []).map((t) => ({
+            ...t,
+            _direction: "sent",
+          }));
+          const recvTxns = (recvData.past_transactions || []).map((t) => ({
+            ...t,
+            _direction: "received",
+          }));
+          const txns = [...sentTxns, ...recvTxns]
+            .sort((a, b) => (b.time || 0) - (a.time || 0))
+            .slice(0, 10);
+          if (!txns.length) {
+            pushAgent(
+              `<div class="wallet-data-card"><div class="wdc-title">📋 Transactions</div><div class="wdc-empty">No confirmed transactions found.</div></div>`,
+              true,
+            );
+          } else {
+            const rows = txns
+              .slice(0, 10)
+              .map((t) => {
+                const dir = t._direction || "?";
+                const dirIcon = dir === "sent" ? "↑" : "↓";
+                const dirClass = dir === "sent" ? "wdc-sent" : "wdc-recv";
+                const outs = (t.outputs || []).filter((o) => o.value > 0);
+                const amt = outs.reduce((s, o) => s + (o.value || 0), 0);
+                const to = outs.map((o) => o.to).join(", ");
+                const ts = t.time
+                  ? new Date(t.time * 1000).toLocaleString()
+                  : "";
+                return (
+                  `<div class="wdc-txrow ${dirClass}">` +
+                  `<span class="wdc-dir">${dirIcon}</span>` +
+                  `<span class="wdc-amt">${amt.toFixed(8)} YDA</span>` +
+                  `<span class="wdc-to">${escHtml(to.slice(0, 32))}…</span>` +
+                  `<span class="wdc-ts">${escHtml(ts)}</span>` +
+                  `</div>`
+                );
+              })
+              .join("");
+            pushAgent(
+              `<div class="wallet-data-card">` +
+                `<div class="wdc-title">📋 Recent Transactions</div>` +
+                `${rows}` +
+                `</div>`,
+              true,
+            );
+          }
+        } else if (action === "get_pending") {
+          // Fetch sent and received pending from existing wallet endpoints, merge
+          const [sentPendRes, recvPendRes] = await Promise.all([
+            fetch(
+              `${baseUrl}/get-past-pending-sent-txns?public_key=${encodeURIComponent(pubHex)}`,
+            ),
+            fetch(
+              `${baseUrl}/get-past-pending-received-txns?public_key=${encodeURIComponent(pubHex)}`,
+            ),
+          ]);
+          const sentPendData = sentPendRes.ok
+            ? await sentPendRes.json()
+            : { past_pending_transactions: [] };
+          const recvPendData = recvPendRes.ok
+            ? await recvPendRes.json()
+            : { past_pending_transactions: [] };
+          const sentPend = (sentPendData.past_pending_transactions || []).map(
+            (t) => ({ ...t, _direction: "sent" }),
+          );
+          const recvPend = (recvPendData.past_pending_transactions || []).map(
+            (t) => ({ ...t, _direction: "received" }),
+          );
+          const pending = [...sentPend, ...recvPend]
+            .sort((a, b) => (b.time || 0) - (a.time || 0))
+            .slice(0, 10);
+          if (!pending.length) {
+            pushAgent(
+              `<div class="wallet-data-card"><div class="wdc-title">⏳ Pending Transactions</div><div class="wdc-empty">No pending transactions in mempool.</div></div>`,
+              true,
+            );
+          } else {
+            const rows = pending
+              .slice(0, 10)
+              .map((t) => {
+                const dir = t._direction || "?";
+                const dirIcon = dir === "sent" ? "↑" : "↓";
+                const dirClass = dir === "sent" ? "wdc-sent" : "wdc-recv";
+                const outs = (t.outputs || []).filter((o) => o.value > 0);
+                const amt = outs.reduce((s, o) => s + (o.value || 0), 0);
+                const to = outs.map((o) => o.to).join(", ");
+                return (
+                  `<div class="wdc-txrow ${dirClass}">` +
+                  `<span class="wdc-dir">${dirIcon}</span>` +
+                  `<span class="wdc-amt">${amt.toFixed(8)} YDA</span>` +
+                  `<span class="wdc-to">${escHtml(to.slice(0, 32))}…</span>` +
+                  `<span class="wdc-ts wdc-pending">pending</span>` +
+                  `</div>`
+                );
+              })
+              .join("");
+            pushAgent(
+              `<div class="wallet-data-card">` +
+                `<div class="wdc-title">⏳ Pending Transactions</div>` +
+                `${rows}` +
+                `</div>`,
+              true,
+            );
+          }
+        }
+      } catch {
+        // silent — display is best-effort
+      }
+    }
+    busy.value = false;
+    nextTick(() => inputEl.value?.focus());
+    return;
+  }
+
   if (data.complete && extractedScope && Object.keys(extractedScope).length) {
     // Show the reply + scope summary inline as an HTML message
     const scopeLines = Object.entries(extractedScope)
+      .filter(([k]) => k !== "action")
       .map(([k, v]) => {
         const val = Array.isArray(v)
           ? v.map((s) => `<strong>${escHtml(s)}</strong>`).join(", ")
@@ -354,13 +544,32 @@ async function send(overridePrompt) {
       })
       .join("<br>");
 
-    const summaryMsg = pushAgent(
-      escHtml(data.reply) +
+    // Build agent-specific approval message
+    let approvalPrompt;
+    if (currentAgentId.value === "wallet_agent") {
+      const amt = extractedScope.amount ?? "";
+      const action = extractedScope.action ?? "send";
+      if (action === "wrap") {
+        const ethAddr = extractedScope.eth_address ?? "";
+        approvalPrompt =
+          `<br><br>` +
+          `<strong>Wrap:</strong> ${escHtml(String(amt))} YDA → bridge → <code>${escHtml(ethAddr)}</code> (Ethereum)<br><br>` +
+          `Please enter your second factor to authorize this wrap transaction.`;
+      } else {
+        const toAddr = extractedScope.to_address ?? "";
+        approvalPrompt =
+          `<br><br>` +
+          `<strong>Send:</strong> ${escHtml(String(amt))} YDA → <code>${escHtml(toAddr)}</code><br><br>` +
+          `Please enter your second factor to authorize this transaction.`;
+      }
+    } else {
+      approvalPrompt =
         `<br><br>${scopeLines}<br><br>` +
         `To proceed I'll broadcast a rotation transaction committing this scope on-chain as a ` +
-        `W3C Verifiable Credential. Please enter your second factor to approve.`,
-      true,
-    );
+        `W3C Verifiable Credential. Please enter your second factor to approve.`;
+    }
+
+    const summaryMsg = pushAgent(escHtml(data.reply) + approvalPrompt, true);
 
     // Attach approval card state into the message
     summaryMsg.showApproval = true;
@@ -557,6 +766,115 @@ async function sendVendorMessage(text) {
   }
 }
 
+// ── Client-side rotation helper ───────────────────────────────────────────────
+// Builds and broadcasts rotation transactions entirely in JS.
+// Returns { prevPrivHex, prevCcHex, provPrivBytes, transactionId } on success
+// or throws on failure.
+async function doClientRotation(privBytes, ccBytes, sf, relationshipB64) {
+  const child = deriveSecurePath(privBytes, ccBytes, sf);
+  const gc1 = deriveSecurePath(child.priv, child.cc, sf);
+  const gc2 = deriveSecurePath(gc1.priv, gc1.cc, sf);
+  const gc3 = deriveSecurePath(gc2.priv, gc2.cc, sf);
+
+  const currentPubHex = getPublicKeyHex(privBytes);
+  const childPubHex = getPublicKeyHex(child.priv);
+  const gc1PubHex = getPublicKeyHex(gc1.priv);
+  const gc2PubHex = getPublicKeyHex(gc2.priv);
+  const gc3PubHex = getPublicKeyHex(gc3.priv);
+
+  // P2PKH addresses
+  const currentPkh = getP2PKH(hex.toBytes(currentPubHex));
+  const childPkh = getP2PKH(hex.toBytes(childPubHex));
+  const gc1Pkh = getP2PKH(hex.toBytes(gc1PubHex));
+  const gc2Pkh = getP2PKH(hex.toBytes(gc2PubHex));
+  const gc3Pkh = getP2PKH(hex.toBytes(gc3PubHex));
+
+  // Fetch prev_public_key_hash from the existing /key-event-log endpoint.
+  // The last KEL entry's public_key_hash is the address that committed to
+  // currentPkh as its prerotated key (i.e. K_{n-1}).  Empty log = inception.
+  const kelRes = await fetch(
+    getNodeUrl() +
+      "/key-event-log?username_signature=asdf&public_key=" +
+      encodeURIComponent(currentPubHex),
+  );
+  const kelData = await kelRes.json();
+  if (!kelRes.ok) throw new Error(kelData.message || String(kelRes.status));
+  const kel = kelData.key_event_log || [];
+  // prev_public_key_hash for the new K_n-signed txn is the public_key_hash
+  // of the KEL entry that pre-committed to K_n as its prerotated key —
+  // i.e. the LAST entry's public_key_hash (= P2PKH(K_{n-1})).
+  // Empty KEL = inception case → "".
+  const prevPublicKeyHash =
+    kel.length > 0 ? (kel[kel.length - 1].public_key_hash ?? "") : "";
+
+  // relationship_hash = sha256("") for empty relationship
+  const enc = new TextEncoder();
+  const relStr = relationshipB64 || "";
+  const relHashBytes = sha256(enc.encode(relStr));
+  const relHashHex = hex.fromBytes(relHashBytes);
+
+  const txnTime = Math.floor(Date.now() / 1000);
+
+  // Build unconfirmed transaction (signed by current key K_n)
+  const unconfirmedTxn = await buildRotationTxn({
+    signerPrivBytes: privBytes,
+    publicKeyHex: currentPubHex,
+    prerotatedPkh: childPkh,
+    twicePrerotatedPkh: gc1Pkh,
+    publicKeyHash: currentPkh,
+    prevPublicKeyHash,
+    relationship: relStr,
+    relationshipHash: relHashHex,
+    txnTime,
+    inputs: [],
+    outputs: [{ to: childPkh, value: 0.0 }],
+  });
+
+  // Build confirming transaction (signed by child key K_{n+1})
+  const confirmingTxn = await buildRotationTxn({
+    signerPrivBytes: child.priv,
+    publicKeyHex: childPubHex,
+    prerotatedPkh: gc1Pkh,
+    twicePrerotatedPkh: gc2Pkh,
+    publicKeyHash: childPkh,
+    prevPublicKeyHash: currentPkh,
+    relationship: "",
+    relationshipHash: "",
+    txnTime,
+    inputs: [],
+    outputs: [{ to: gc1Pkh, value: 0.0 }],
+  });
+
+  // Broadcast both transactions directly to the node's /transaction endpoint
+  const bcastRes = await fetch(
+    getNodeUrl() + "/transaction?username_signature=1",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([unconfirmedTxn, confirmingTxn]),
+    },
+  );
+  const bcastData = await bcastRes.json();
+  if (!bcastRes.ok || bcastData.status === false)
+    throw new Error(bcastData.message || String(bcastRes.status));
+
+  // After broadcast:
+  //   unconfirmed txn signed by K_n (privBytes)     → prerotated = K_{n+1} (child)
+  //   confirming  txn signed by K_{n+1} (child)     → prerotated = K_{n+2} (gc1)
+  // After mining, kel[-1] = CONFIRMING with prerotated_key_hash = K_{n+2} (gc1).
+  // Next UNCONFIRMED signer must be K_{n+2} (the pre-committed key) → LS = gc1.
+  // Agent credential must match kel[-1].prerotated_key_hash → also gc1.
+  // (LS and agent share the same key here; client mode has no seed to re-derive,
+  // and the agent's off-chain VP signing doesn't conflict with the on-chain
+  // signer role for the next rotation.)
+  return {
+    prevPrivHex: hex.fromBytes(gc1.priv),
+    prevCcHex: hex.fromBytes(gc1.cc),
+    provPrivBytes: gc1.priv,
+    transactionId: unconfirmedTxn.id,
+  };
+}
+
 // ── Approval handler (called from App.vue overlay) ────────────────────────────
 // Exposed so parent can invoke from ApprovalCard emit
 async function runApprovalFlow(
@@ -566,6 +884,429 @@ async function runApprovalFlow(
   onStep,
   onDone,
 ) {
+  // ── Node config — key rotation then direct apply call, no vendor chat ────────
+  if (agentType?.id === "node_config") {
+    if (isClientWallet()) {
+      onDone(
+        false,
+        "⚠ Node config changes are only available for node-wallet mode. Personal wallets cannot modify node settings.",
+      );
+      busy.value = false;
+      nextTick(() => inputEl.value?.focus());
+      return;
+    }
+    const storedPriv0 = localStorage.getItem(LS_PRIV);
+    const storedCc0 = localStorage.getItem(LS_CC);
+    const sf0 = secondFactor;
+
+    onStep("Deriving pre-committed child key…");
+    const privBytes0 = hex.toBytes(storedPriv0);
+    const ccBytes0 = hex.toBytes(storedCc0);
+    const child0 = deriveSecurePath(privBytes0, ccBytes0, sf0);
+    const childPubHex0 = getPublicKeyHex(child0.priv);
+    onStep(
+      "Pre-committed key derived: " + childPubHex0.slice(0, 20) + "…",
+      "done",
+    );
+
+    onStep("Broadcasting rotation transaction…");
+    let rotateData0;
+    try {
+      const rotateRes0 = await fetch(
+        getNodeUrl() + "/key-rotation/derived-child-key",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            public_key: childPubHex0,
+            second_factor: sf0,
+            signature: "",
+            relationship: "",
+          }),
+        },
+      );
+      rotateData0 = await rotateRes0.json();
+      if (
+        !rotateRes0.ok ||
+        !rotateData0.status ||
+        !rotateData0.prerotated_private_key
+      ) {
+        throw new Error(rotateData0.message || String(rotateRes0.status));
+      }
+    } catch (e) {
+      onStep("Rotation failed: " + e.message, "fail");
+      onDone(false, "Rotation failed: " + escHtml(e.message));
+      busy.value = false;
+      nextTick(() => inputEl.value?.focus());
+      return;
+    }
+
+    localStorage.setItem(LS_PRIV, rotateData0.prev_private_key);
+    if (rotateData0.prev_chain_code)
+      localStorage.setItem(LS_CC, rotateData0.prev_chain_code);
+    emit("session-rotated", rotateData0.prev_private_key);
+    onStep(
+      "Rotation committed · txid " +
+        rotateData0.transaction_id.slice(0, 20) +
+        "…",
+      "done",
+    );
+
+    // Build a minimal VP (no config data) signed by the prerotated key
+    onStep("Building Verifiable Presentation…");
+    const provPrivBytes0 = hex.toBytes(rotateData0.prerotated_private_key);
+    const provPubHex0 = getPublicKeyHex(provPrivBytes0);
+    const operatorPubHex0 = getPublicKeyHex(privBytes0);
+
+    const gc1_0 = deriveSecurePath(child0.priv, child0.cc, sf0);
+    const gc2_0 = deriveSecurePath(gc1_0.priv, gc1_0.cc, sf0);
+    const agentPubHex0 = getPublicKeyHex(gc2_0.priv);
+
+    const vc0 = {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://yadacoin.io/contexts/agent-auth/v1",
+      ],
+      type: ["VerifiableCredential", "AgentAuthorizationCredential"],
+      issuer: `did:yadacoin:${operatorPubHex0}`,
+      validFrom: new Date().toISOString(),
+      credentialStatus: { type: "YadaKELStatus", mode: "rotation" },
+      credentialSubject: {
+        id: `did:yadacoin:${agentPubHex0}`,
+        agentAuthorization: {
+          type: "NodeConfigAuthorization",
+          services: ["NodeConfigAuthorization"],
+        },
+      },
+    };
+
+    const vpBase0 = {
+      "@context": ["https://www.w3.org/ns/credentials/v2"],
+      type: ["VerifiablePresentation"],
+      holder: `did:yadacoin:${provPubHex0}`,
+      verifiableCredential: [vc0],
+    };
+
+    function deepSortKeys0(obj) {
+      if (Array.isArray(obj)) return obj.map(deepSortKeys0);
+      if (obj !== null && typeof obj === "object") {
+        const s = {};
+        Object.keys(obj)
+          .sort()
+          .forEach((k) => (s[k] = deepSortKeys0(obj[k])));
+        return s;
+      }
+      return obj;
+    }
+
+    const vpCanonicalBytes0 = new TextEncoder().encode(
+      JSON.stringify(deepSortKeys0(vpBase0)),
+    );
+
+    // Get challenge
+    onStep("Fetching challenge…");
+    let chalData0;
+    try {
+      const chalRes0 = await fetch(
+        getNodeUrl() +
+          `/ai-agent-auth/api/challenge?public_key=${encodeURIComponent(provPubHex0)}`,
+      );
+      chalData0 = await chalRes0.json();
+      if (!chalRes0.ok || !chalData0.challenge) throw new Error("no challenge");
+    } catch (e) {
+      onStep("Challenge failed: " + e.message, "fail");
+      onDone(false, "Challenge failed: " + escHtml(e.message));
+      busy.value = false;
+      nextTick(() => inputEl.value?.focus());
+      return;
+    }
+
+    const vp0 = await buildSignedVP(
+      vpBase0,
+      vpCanonicalBytes0,
+      provPrivBytes0,
+      provPubHex0,
+      chalData0.challenge,
+    );
+
+    onStep("Applying config change…");
+    try {
+      const applyRes = await fetch(
+        getNodeUrl() + "/ai-agent-auth/api/node-config/apply",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            public_key: provPubHex0,
+            challenge: chalData0.challenge,
+            vp: vp0,
+            key: scope.config_key,
+            value: scope.new_value,
+          }),
+        },
+      );
+      const applyData = await applyRes.json();
+      if (!applyRes.ok)
+        throw new Error(
+          applyData.error || applyData.message || String(applyRes.status),
+        );
+      onStep("Config updated — node restarting", "done");
+      onDone(
+        true,
+        `✅ <strong>Config updated!</strong><br><br>` +
+          `<strong>${escHtml(scope.config_key)}</strong> → <code>${escHtml(String(scope.new_value))}</code><br><br>` +
+          `The node is restarting to apply the change.<br>` +
+          `Scope on-chain: <code>${rotateData0.transaction_id.slice(0, 24)}…</code>`,
+      );
+    } catch (e) {
+      onStep("Apply failed: " + e.message, "fail");
+      onDone(false, "Config apply failed: " + escHtml(e.message));
+    }
+    extractedScope = null;
+    chatHistory = [];
+    busy.value = false;
+    nextTick(() => inputEl.value?.focus());
+    return;
+  }
+
+  // ── Wallet agent — key rotation then send/wrap transaction ───────────────
+  if (agentType?.id === "wallet_agent") {
+    const storedPrivW = localStorage.getItem(LS_PRIV);
+    const storedCcW = localStorage.getItem(LS_CC);
+    const sfW = secondFactor;
+    const isWrap = scope.action === "wrap";
+    const WRAP_BRIDGE = "16U1gAmHazqqEkbRE9KFPShAperjJreMRA";
+    const toAddrW = isWrap ? WRAP_BRIDGE : scope.to_address || "";
+    const ethAddrW = isWrap ? scope.eth_address || "" : "";
+    const amtW = parseFloat(scope.amount) || 0;
+
+    onStep("Deriving pre-committed child key…");
+    const privBytesW = hex.toBytes(storedPrivW);
+    const ccBytesW = hex.toBytes(storedCcW);
+    const childW = deriveSecurePath(privBytesW, ccBytesW, sfW);
+    const childPubHexW = getPublicKeyHex(childW.priv);
+    onStep(
+      "Pre-committed key derived: " + childPubHexW.slice(0, 20) + "…",
+      "done",
+    );
+
+    onStep("Broadcasting rotation transaction…");
+    let rotateDataW;
+    try {
+      const gc1W = deriveSecurePath(childW.priv, childW.cc, sfW);
+      const gc2W = deriveSecurePath(gc1W.priv, gc1W.cc, sfW);
+      const agentPubHexW = getPublicKeyHex(gc2W.priv);
+      const operatorPubHexW = getPublicKeyHex(privBytesW);
+
+      const vcW = {
+        "@context": [
+          "https://www.w3.org/ns/credentials/v2",
+          "https://yadacoin.io/contexts/agent-auth/v1",
+        ],
+        type: ["VerifiableCredential", "AgentAuthorizationCredential"],
+        issuer: `did:yadacoin:${operatorPubHexW}`,
+        validFrom: new Date().toISOString(),
+        credentialStatus: { type: "YadaKELStatus", mode: "rotation" },
+        credentialSubject: {
+          id: `did:yadacoin:${agentPubHexW}`,
+          agentAuthorization: {
+            type: "WalletAuthorization",
+            services: ["WalletAuthorization"],
+            to_address: toAddrW,
+            amount: amtW,
+            ...(isWrap ? { eth_address: ethAddrW } : {}),
+          },
+        },
+      };
+
+      const relB64W = btoa(unescape(encodeURIComponent(JSON.stringify(vcW))));
+
+      if (isClientWallet()) {
+        const clientRot = await doClientRotation(
+          privBytesW,
+          ccBytesW,
+          sfW,
+          relB64W,
+        );
+        rotateDataW = {
+          prev_private_key: clientRot.prevPrivHex,
+          prev_chain_code: clientRot.prevCcHex,
+          prerotated_private_key: hex.fromBytes(clientRot.provPrivBytes),
+          transaction_id: clientRot.transactionId,
+          status: true,
+        };
+      } else {
+        const rotResW = await fetch(
+          getNodeUrl() + "/key-rotation/derived-child-key",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              public_key: childPubHexW,
+              second_factor: sfW,
+              signature: "",
+              relationship: relB64W,
+            }),
+          },
+        );
+        rotateDataW = await rotResW.json();
+        if (
+          !rotResW.ok ||
+          !rotateDataW.status ||
+          !rotateDataW.prerotated_private_key
+        ) {
+          throw new Error(rotateDataW.message || String(rotResW.status));
+        }
+      }
+    } catch (e) {
+      onStep("Rotation failed: " + e.message, "fail");
+      onDone(false, "Rotation failed: " + escHtml(e.message));
+      busy.value = false;
+      nextTick(() => inputEl.value?.focus());
+      return;
+    }
+
+    localStorage.setItem(LS_PRIV, rotateDataW.prev_private_key);
+    if (rotateDataW.prev_chain_code)
+      localStorage.setItem(LS_CC, rotateDataW.prev_chain_code);
+    emit("session-rotated", rotateDataW.prev_private_key);
+    onStep(
+      "Rotation committed · txid " +
+        rotateDataW.transaction_id.slice(0, 20) +
+        "…",
+      "done",
+    );
+
+    onStep("Building Verifiable Presentation…");
+    const provPrivBytesW = hex.toBytes(rotateDataW.prerotated_private_key);
+    const provPubHexW = getPublicKeyHex(provPrivBytesW);
+    const operatorPubHexW2 = getPublicKeyHex(privBytesW);
+
+    const gc1W2 = deriveSecurePath(childW.priv, childW.cc, sfW);
+    const gc2W2 = deriveSecurePath(gc1W2.priv, gc1W2.cc, sfW);
+    const agentPubHexW2 = getPublicKeyHex(gc2W2.priv);
+
+    const vcW2 = {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://yadacoin.io/contexts/agent-auth/v1",
+      ],
+      type: ["VerifiableCredential", "AgentAuthorizationCredential"],
+      issuer: `did:yadacoin:${operatorPubHexW2}`,
+      validFrom: new Date().toISOString(),
+      credentialStatus: { type: "YadaKELStatus", mode: "rotation" },
+      credentialSubject: {
+        id: `did:yadacoin:${agentPubHexW2}`,
+        agentAuthorization: {
+          type: "WalletAuthorization",
+          services: ["WalletAuthorization"],
+          to_address: toAddrW,
+          amount: amtW,
+          ...(isWrap ? { eth_address: ethAddrW } : {}),
+        },
+      },
+    };
+
+    const vpBaseW = {
+      "@context": ["https://www.w3.org/ns/credentials/v2"],
+      type: ["VerifiablePresentation"],
+      holder: `did:yadacoin:${provPubHexW}`,
+      verifiableCredential: [vcW2],
+    };
+
+    function deepSortKeysW(obj) {
+      if (Array.isArray(obj)) return obj.map(deepSortKeysW);
+      if (obj !== null && typeof obj === "object") {
+        const s = {};
+        Object.keys(obj)
+          .sort()
+          .forEach((k) => (s[k] = deepSortKeysW(obj[k])));
+        return s;
+      }
+      return obj;
+    }
+
+    const vpCanonicalBytesW = new TextEncoder().encode(
+      JSON.stringify(deepSortKeysW(vpBaseW)),
+    );
+
+    onStep("Fetching challenge…");
+    let chalDataW;
+    try {
+      const chalResW = await fetch(
+        getNodeUrl() +
+          `/ai-agent-auth/api/challenge?public_key=${encodeURIComponent(provPubHexW)}`,
+      );
+      chalDataW = await chalResW.json();
+      if (!chalResW.ok || !chalDataW.challenge) throw new Error("no challenge");
+    } catch (e) {
+      onStep("Challenge failed: " + e.message, "fail");
+      onDone(false, "Challenge failed: " + escHtml(e.message));
+      busy.value = false;
+      nextTick(() => inputEl.value?.focus());
+      return;
+    }
+
+    const vpW = await buildSignedVP(
+      vpBaseW,
+      vpCanonicalBytesW,
+      provPrivBytesW,
+      provPubHexW,
+      chalDataW.challenge,
+    );
+
+    onStep("Submitting transaction…");
+    try {
+      const sendRes = await fetch(
+        getNodeUrl() + "/ai-agent-auth/api/wallet/send",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            public_key: provPubHexW,
+            challenge: chalDataW.challenge,
+            vp: vpW,
+            ...(isWrap
+              ? { eth_address: ethAddrW, amount: amtW }
+              : { to_address: toAddrW, amount: amtW }),
+          }),
+        },
+      );
+      const sendData = await sendRes.json();
+      if (!sendRes.ok)
+        throw new Error(
+          sendData.error || sendData.message || String(sendRes.status),
+        );
+      onStep("Transaction submitted", "done");
+      onDone(
+        true,
+        isWrap
+          ? `✅ <strong>Wrap transaction sent!</strong><br><br>` +
+              `<strong>Amount:</strong> ${escHtml(String(amtW))} YDA<br>` +
+              `<strong>Ethereum address:</strong> <code>${escHtml(ethAddrW)}</code><br>` +
+              (sendData.transaction_id
+                ? `<strong>Transaction ID:</strong> <code>${escHtml(String(sendData.transaction_id).slice(0, 32))}…</code><br>`
+                : "") +
+              `<br>KEL authorization on-chain: <code>${rotateDataW.transaction_id.slice(0, 24)}…</code>`
+          : `✅ <strong>Transaction sent!</strong><br><br>` +
+              `<strong>To:</strong> <code>${escHtml(toAddrW)}</code><br>` +
+              `<strong>Amount:</strong> ${escHtml(String(amtW))} YDA<br>` +
+              (sendData.transaction_id
+                ? `<strong>Transaction ID:</strong> <code>${escHtml(String(sendData.transaction_id).slice(0, 32))}…</code><br>`
+                : "") +
+              `<br>KEL authorization on-chain: <code>${rotateDataW.transaction_id.slice(0, 24)}…</code>`,
+      );
+    } catch (e) {
+      onStep("Send failed: " + e.message, "fail");
+      onDone(false, "Transaction failed: " + escHtml(e.message));
+    }
+    extractedScope = null;
+    chatHistory = [];
+    busy.value = false;
+    nextTick(() => inputEl.value?.focus());
+    return;
+  }
+
   // ── Agent registration — server signs, no key rotation needed ──────────────
   if (agentType?.id === "agent_registration") {
     onStep("Broadcasting agent registration to blockchain…");
@@ -667,26 +1408,42 @@ async function runApprovalFlow(
   onStep("Broadcasting rotation transaction with scope committed on-chain…");
   let rotateData;
   try {
-    const rotateRes = await fetch(
-      getNodeUrl() + "/key-rotation/derived-child-key",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          public_key: childPubHex,
-          second_factor: sf,
-          signature: "",
-          relationship: relationshipB64,
-        }),
-      },
-    );
-    rotateData = await rotateRes.json();
-    if (
-      !rotateRes.ok ||
-      !rotateData.status ||
-      !rotateData.prerotated_private_key
-    ) {
-      throw new Error(rotateData.message || String(rotateRes.status));
+    if (isClientWallet()) {
+      const clientRot = await doClientRotation(
+        privBytes,
+        ccBytes,
+        sf,
+        relationshipB64,
+      );
+      rotateData = {
+        prev_private_key: clientRot.prevPrivHex,
+        prev_chain_code: clientRot.prevCcHex,
+        prerotated_private_key: hex.fromBytes(clientRot.provPrivBytes),
+        transaction_id: clientRot.transactionId,
+        status: true,
+      };
+    } else {
+      const rotateRes = await fetch(
+        getNodeUrl() + "/key-rotation/derived-child-key",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            public_key: childPubHex,
+            second_factor: sf,
+            signature: "",
+            relationship: relationshipB64,
+          }),
+        },
+      );
+      rotateData = await rotateRes.json();
+      if (
+        !rotateRes.ok ||
+        !rotateData.status ||
+        !rotateData.prerotated_private_key
+      ) {
+        throw new Error(rotateData.message || String(rotateRes.status));
+      }
     }
   } catch (e) {
     onStep("Rotation failed: " + e.message, "fail");
@@ -955,5 +1712,94 @@ defineExpose({ runApprovalFlow, messages, busy });
 .send-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+</style>
+
+<!-- Wallet data card styles — injected into ChatWindow's v-html output -->
+<style>
+.wallet-data-card {
+  background: #0d1117;
+  border: 1px solid #1e3a5f;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 0.82rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.wdc-title {
+  font-weight: 700;
+  color: #58a6ff;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid #1e3a5f;
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+.wdc-address {
+  color: #8b949e;
+  font-size: 0.76rem;
+  word-break: break-all;
+}
+.wdc-balance {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #3fb950;
+}
+.wdc-amount {
+  font-size: 1.3rem;
+}
+.wdc-txrow {
+  display: grid;
+  grid-template-columns: 1.2rem 6rem 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid #1a1e28;
+  font-size: 0.78rem;
+}
+.wdc-txrow:last-child {
+  border-bottom: none;
+}
+.wdc-dir {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.wdc-sent .wdc-dir {
+  color: #f85149;
+}
+.wdc-recv .wdc-dir {
+  color: #3fb950;
+}
+.wdc-amt {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.wdc-sent .wdc-amt {
+  color: #f85149;
+}
+.wdc-recv .wdc-amt {
+  color: #3fb950;
+}
+.wdc-to {
+  color: #8b949e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wdc-ts {
+  color: #6e7681;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+.wdc-pending {
+  color: #d29922;
+  font-style: italic;
+}
+.wdc-empty {
+  color: #6e7681;
+  font-style: italic;
 }
 </style>

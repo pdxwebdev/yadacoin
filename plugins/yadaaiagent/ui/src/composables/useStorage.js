@@ -1,6 +1,8 @@
 // localStorage key constants shared across the app
 export const LS_PRIV = "yadacoin_derived_key";
 export const LS_CC = "yadacoin_derived_cc";
+// Wallet mode: "node" (default — server-managed key) or "client" (user-owned seed)
+export const LS_WALLET_MODE = "yadacoin_wallet_mode";
 export const LS_LLM_PROVIDER = "yadacoin_llm_provider";
 export const LS_LLM_MODEL = "yadacoin_llm_model";
 export const LS_LLM_API_KEY = "yadacoin_llm_api_key";
@@ -12,7 +14,10 @@ export const LS_NODE_URL = "yadacoin_node_url";
 export const LS_BOOKING_CREDENTIALS = "yadacoin_booking_credentials";
 
 export function getNodeUrl() {
-  return (localStorage.getItem(LS_NODE_URL) || "").replace(/\/+$/, "");
+  return (localStorage.getItem(LS_NODE_URL) || window.location.origin).replace(
+    /\/+$/,
+    "",
+  );
 }
 
 export function getLlmSettings() {
@@ -71,4 +76,25 @@ export function saveBookingCredential(credential) {
 export function deleteBookingCredential(credentialId) {
   const updated = getBookingCredentials().filter((c) => c.id !== credentialId);
   localStorage.setItem(LS_BOOKING_CREDENTIALS, JSON.stringify(updated));
+}
+
+// ── Wallet mode ───────────────────────────────────────────────────────────────
+
+export function getWalletMode() {
+  return localStorage.getItem(LS_WALLET_MODE) || "client";
+}
+
+export function setWalletMode(mode) {
+  localStorage.setItem(LS_WALLET_MODE, mode === "client" ? "client" : "node");
+}
+
+export function isClientWallet() {
+  return getWalletMode() === "client";
+}
+
+/** Clear all client-side key material and reset to node-wallet mode. */
+export function clearClientWallet() {
+  localStorage.removeItem(LS_PRIV);
+  localStorage.removeItem(LS_CC);
+  localStorage.removeItem(LS_WALLET_MODE);
 }

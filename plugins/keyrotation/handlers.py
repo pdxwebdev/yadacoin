@@ -1874,6 +1874,9 @@ class KelResetMempoolHandler(BaseHandler):
 
         private_key = body.get("private_key", "").strip()
         second_factor = body.get("second_factor", "").strip()
+        search_rotations = body.get(
+            "search_rotations", 100
+        )  # number of rotations to search when matching mempool entries; optional, defaults to 100
 
         if not private_key or not second_factor:
             self.set_status(400)
@@ -1949,7 +1952,7 @@ class KelResetMempoolHandler(BaseHandler):
         # Derive all KEL public keys so we can delete their mempool entries
         cur = k0
         kel_pub_keys = [k0_pub_hex]
-        for _ in range(len(kel)):
+        for _ in range(int(search_rotations)):
             cur = derive_secure_path(
                 cur["private_key"], cur["chain_code"], second_factor
             )

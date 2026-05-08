@@ -88,7 +88,30 @@
       </section>
 
       <section>
-        <h3>Payment Methods</h3>
+        <h3>Wallet Mode</h3>
+        <div class="field-group">
+          <label>Active mode</label>
+          <select v-model="walletMode">
+            <option value="node">Node Wallet (server-managed key)</option>
+            <option value="client">Personal Wallet (client-side seed)</option>
+          </select>
+          <div class="hint">
+            <strong>Node Wallet</strong> — your node derives and stores your key.<br/>
+            <strong>Personal Wallet</strong> — you hold your own BIP39 seed; all rotations happen in the browser.
+          </div>
+        </div>
+        <div v-if="walletMode === 'client' && hasClientKey" class="pm-list">
+          <div class="pm-item">
+            <span class="pm-label" style="font-family:monospace;font-size:0.8em">{{ clientKeyPreview }}</span>
+            <span class="pm-action remove" @click="resetClientWallet">reset wallet</span>
+          </div>
+        </div>
+        <div v-if="walletMode === 'client' && !hasClientKey" class="hint" style="color:var(--accent2)">
+          No key found — click the session pill to set up your personal wallet.
+        </div>
+      </section>
+
+      <section>
         <div class="pm-list">
           <div v-if="!paymentMethods.length" class="pm-empty">
             No payment methods saved.
@@ -139,16 +162,41 @@ import {
   savePaymentMethods,
   getNodeUrl,
   LS_NODE_URL,
+  LS_PRIV,
+  getWalletMode,
+  setWalletMode,
+  clearClientWallet,
 } from "../composables/useStorage.js";
+import { getPublicKeyHex, hex } from "../composables/useCrypto.js";
 
 const props = defineProps({ modelValue: Boolean });
-const emit = defineEmits(["update:modelValue"]);
+const emit = defineEmits(["update:modelValue", "wallet-mode-changed"]);
 
 const form = ref({ ...getLlmSettings() });
 const nodeUrl = ref(getNodeUrl());
 const paymentMethods = ref(getPaymentMethods());
 const newPmLabel = ref("");
 const savedMsg = ref(false);
+const walletMode = ref(getWalletMode());
+
+const hasClientKey = computed(() => !!localStorage.getItem(LS_PRIV));
+const clientKeyPreview = computed(() => {
+  const priv = localStorage.getItem(LS_PRIV);
+  if (!priv) return "";
+  try {
+    const pub = getPublicKeyHex(hex.toBytes(priv));
+    return "\uD83D\uDD11 " + pub.slice(0, 20) + "…";
+  } catch {
+    return "(invalid key)";
+  }
+});
+
+function resetClientWallet() {
+  if (!confirm("This will delete your local key. Make sure you have your seed phrase. Continue?")) return;
+  clearClientWallet();
+  walletMode.value = "node";
+  emit("wallet-mode-changed");
+}
 
 watch(
   () => props.modelValue,
@@ -157,6 +205,7 @@ watch(
       form.value = { ...getLlmSettings() };
       nodeUrl.value = getNodeUrl();
       paymentMethods.value = getPaymentMethods();
+      walletMode.value = getWalletMode();
     }
   },
 );
@@ -194,6 +243,8 @@ function close() {
 function save() {
   saveLlmSettings(form.value);
   localStorage.setItem(LS_NODE_URL, nodeUrl.value.trim().replace(/\/+$/, ""));
+  setWalletMode(walletMode.value);
+  emit("wallet-mode-changed");
   savedMsg.value = true;
   setTimeout(() => {
     savedMsg.value = false;

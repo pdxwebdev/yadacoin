@@ -2,6 +2,8 @@ import * as secp from "@noble/secp256k1";
 import { sha256 } from "@noble/hashes/sha256";
 import { sha512 } from "@noble/hashes/sha512";
 import { hmac } from "@noble/hashes/hmac";
+import { ripemd160 } from "@noble/hashes/ripemd160";
+import { createBase58check } from "@scure/base";
 
 // NOTE: secp.etc is sealed after bundling — do NOT assign hmacSha256Sync.
 // All signing uses secp.signAsync() which handles HMAC internally.
@@ -103,9 +105,111 @@ export function getPublicKeyHex(privBytes) {
   return hex.fromBytes(secp.getPublicKey(privBytes, true));
 }
 
+// signAsync prehash:true (default) hashes msgBytes with sha256 internally.
 export async function signMessage(msgBytes, privBytes) {
-  const msgHash = sha256(msgBytes);
-  return secp.signAsync(msgHash, privBytes);
+  return secp.signAsync(msgBytes, privBytes);
+}
+
+// ── P2PKH address from compressed public key bytes ───────────────────────────
+const _b58check = createBase58check(sha256);
+
+export function getP2PKH(pubKeyBytes) {
+  // hash160 = RIPEMD160(SHA256(pubKeyBytes))
+  const hash160 = ripemd160(sha256(pubKeyBytes));
+  // version byte 0x00 (mainnet P2PKH) + 20-byte hash160
+  const payload = new Uint8Array(21);
+  payload[0] = 0x00;
+  payload.set(hash160, 1);
+  return _b58check.encode(payload);
+}
+
+// ── Build and sign a single rotation transaction ─────────────────────────────
+// Returns the transaction JSON object (as expected by POST /transaction).
+export async function buildRotationTxn({
+  signerPrivBytes, // Uint8Array – private key of the signer
+  publicKeyHex, // hex – compressed public key of the signer
+  prerotatedPkh, // string – P2PKH of prerotated key
+  twicePrerotatedPkh, // string – P2PKH of twice-prerotated key
+  publicKeyHash, // string – P2PKH of signer
+  prevPublicKeyHash, // string – P2PKH of previous key ("" for inception)
+  relationship, // string – relationship payload or ""
+  relationshipHash, // string – sha256 hex of relationship or sha256("")
+  txnTime, // number – unix timestamp (seconds)
+  inputs, // array  – [{id: "..."}] or []
+  outputs, // array  – [{to: "...", value: 0}]
+}) {
+  // Build the hash pre-image (matches transaction.jsx generateHash)
+  const fee = (0.0).toFixed(8);
+  const masternodeFee = (0.0).toFixed(8);
+  const inputHashes = inputs
+    .map((i) => i.id)
+    .sort((a, b) => {
+      const A = a.toLowerCase(),
+        B = b.toLowerCase();
+      return A < B ? -1 : A > B ? 1 : 0;
+    })
+    .join("");
+  const outputHashes = [...outputs]
+    .map((o) => ({ to: o.to, value: o.value }))
+    .sort((a, b) => {
+      const A = a.to.toLowerCase(),
+        B = b.to.toLowerCase();
+      return A < B ? -1 : A > B ? 1 : 0;
+    })
+    .map((o) => `${o.to}${o.value.toFixed(8)}`)
+    .join("");
+
+  const preimage =
+    publicKeyHex +
+    String(txnTime) +
+    "" + // dh_public_key
+    "" + // rid
+    (relationshipHash || "") +
+    fee +
+    masternodeFee +
+    "" + // requester_rid
+    "" + // requested_rid
+    inputHashes +
+    outputHashes +
+    "7" + // version
+    (prerotatedPkh || "") +
+    (twicePrerotatedPkh || "") +
+    (publicKeyHash || "") +
+    (prevPublicKeyHash || "");
+
+  // hash = sha256(preimage) as hex string
+  const enc = new TextEncoder();
+  const hashBytes = sha256(enc.encode(preimage));
+  const hashHex = hex.fromBytes(hashBytes);
+
+  // id = DER-base64(sign(hashHex))
+  // secp.signAsync prehash defaults to true → internally computes sha256(enc.encode(hashHex))
+  // Python coincurve.verify_signature(sig, hashHex.encode('utf-8'), pubkey) with default
+  // hasher='sha256' also computes sha256(hashHex_utf8) before verifying — exact match.
+  const idBytes = await secp.signAsync(enc.encode(hashHex), signerPrivBytes);
+  const idB64 = compactSigToDerBase64(idBytes);
+
+  return {
+    public_key: publicKeyHex,
+    time: txnTime,
+    dh_public_key: "",
+    rid: "",
+    inputs,
+    outputs,
+    relationship: relationship || "",
+    relationship_hash: relationshipHash || "",
+    fee: 0.0,
+    masternode_fee: 0.0,
+    requester_rid: "",
+    requested_rid: "",
+    version: 7,
+    prerotated_key_hash: prerotatedPkh || "",
+    twice_prerotated_key_hash: twicePrerotatedPkh || "",
+    public_key_hash: publicKeyHash || "",
+    prev_public_key_hash: prevPublicKeyHash || "",
+    hash: hashHex,
+    id: idB64,
+  };
 }
 
 export { secp, sha256 };

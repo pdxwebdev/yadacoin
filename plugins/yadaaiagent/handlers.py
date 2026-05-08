@@ -253,6 +253,10 @@ AGENT_TYPES = [
             "create a new agent entry, add an agent to the on-chain registry, or asks how to make "
             "their agent discoverable. Examples: 'register my agent', 'add my AI to the blockchain', "
             "'I want to list my agent'\n"
+            '- "wallet_agent": user asks about their balance, wallet funds, YDA amount, '
+            "transaction history, pending transactions, sending coins, transferring YDA, "
+            "or wrapping/unwrapping tokens. "
+            "Examples: 'what is my balance', 'show my transactions', 'send 5 YDA to ...'\n"
             "Keep detected_agent_type as 'general' for greetings, vague questions, or topics "
             "that don't clearly fit the above.\n"
             "complete MUST always be false."
@@ -427,6 +431,149 @@ AGENT_TYPES = [
             "- If the user clearly wants something other than registering an agent, set detected_agent_type to 'general'"
         ),
     },
+    {
+        "id": "wallet_agent",
+        "label": "Wallet Assistant",
+        "description": "Check balance, view on-chain and pending transaction history, send YDA, and wrap YDA to other chains.",
+        "icon": "💰",
+        "routing_hint": (
+            "user asks about their balance, wallet, YDA amount, funds, transactions, "
+            "transaction history, pending transactions, sending coins, transferring YDA, "
+            "or wrapping/unwrapping tokens. "
+            "Examples: 'what is my balance', 'show my transactions', 'send 5 YDA to ...', 'wrap 10 YDA to 0x...'"
+        ),
+        "authorizationType": "WalletAuthorization",
+        "fields": [
+            {
+                "key": "action",
+                "label": "Action",
+                "type": "select",
+                "options": ["send", "balance", "history", "pending", "wrap"],
+            },
+            {"key": "to_address", "label": "Recipient Address", "type": "text"},
+            {"key": "amount", "label": "Amount (YDA)", "type": "number"},
+            {
+                "key": "eth_address",
+                "label": "Ethereum Address (for wrap)",
+                "type": "text",
+            },
+        ],
+        "services": ["wallet"],
+        "systemPrompt": (
+            "You are a YadaCoin wallet assistant. You help users check their balance, "
+            "view transaction history, send YDA, and wrap YDA to other chains.\n"
+            "ALWAYS respond with ONLY a valid JSON object:\n"
+            "{\n"
+            '  "reply": "your conversational response",\n'
+            '  "extracted": {\n'
+            '    "action": "send|get_balance|get_transactions|get_pending|wrap or null",\n'
+            '    "to_address": "recipient YDA address or null",\n'
+            '    "amount": number or null,\n'
+            '    "eth_address": "0x Ethereum address for wrap, or null"\n'
+            "  },\n"
+            '  "complete": false,\n'
+            '  "detected_agent_type": "wallet_agent"\n'
+            "}\n"
+            "Rules:\n"
+            "- For balance requests: set action='get_balance', complete=false — "
+            "the system will fetch and display the balance automatically.\n"
+            "- For transaction history requests: set action='get_transactions', complete=false.\n"
+            "- For pending transactions: set action='get_pending', complete=false.\n"
+            "- For wrapping YDA: set action='wrap'. Collect amount AND eth_address (0x Ethereum address). "
+            "The wrap sends YDA to the bridge address with the Ethereum address in the relationship field. "
+            "Ask for confirmation before setting complete=true. "
+            "Set complete=true only when BOTH amount and eth_address are known AND the user has confirmed.\n"
+            "- For send: collect to_address AND amount. "
+            "Ask for confirmation before setting complete=true. "
+            "Set complete=true only when BOTH fields are known AND the user has confirmed.\n"
+            "- NEVER ask for private keys, seeds, or passwords.\n"
+            "- If the user wants something other than wallet operations, "
+            "set detected_agent_type to 'general'."
+        ),
+    },
+    {
+        "id": "node_config",
+        "label": "Node Configuration",
+        "description": "Change a setting in the active node config.json and restart the node.",
+        "icon": "⚙️",
+        "routing_hint": (
+            "user wants to change a node setting, update a config value, modify node configuration, "
+            "or asks about changing combined_address, pool settings, peer limits, or any node parameter. "
+            "Examples: 'change my combined address', 'update pool_take', 'set max_miners to 50'"
+        ),
+        "authorizationType": "NodeConfigAuthorization",
+        "fields": [
+            {"key": "config_key", "label": "Setting Name", "type": "text"},
+            {"key": "new_value", "label": "New Value", "type": "text"},
+        ],
+        "services": ["NodeConfigAuthorization"],
+        "systemPrompt": (
+            "You are a YadaCoin node configuration assistant. "
+            "Help the user change a setting in their active node config.json. "
+            "ALWAYS respond with ONLY a valid JSON object:\n"
+            "{\n"
+            '  "reply": "your conversational response",\n'
+            '  "extracted": {\n'
+            '    "config_key": "setting name or null",\n'
+            '    "new_value": "new value (as a string) or null",\n'
+            '    "confirmed": false\n'
+            "  },\n"
+            '  "complete": false,\n'
+            '  "detected_agent_type": "node_config"\n'
+            "}\n"
+            "Allowed settings (from README):\n"
+            "- combined_address (string): Wallet address to consolidate transactions. Default: node address\n"
+            "- credits_per_share (integer): Credits earned per mining share. Default: 5\n"
+            "- shares_required (boolean): Require shares to use node apps. Default: false\n"
+            "- pool_payout (boolean): Enable pool payouts to miners. Default: false\n"
+            "- pool_take (decimal): Pool operator cut as decimal (0.01 = 1%). Default: 0.01\n"
+            "- payout_frequency (integer): Blocks between payouts. Default: 6\n"
+            "- max_miners (integer): Max concurrent miners. Default: 100\n"
+            "- max_peers (integer): Max peers that can connect. Default: 20\n"
+            "- pool_diff (integer): Pool share difficulty. Default: 100000\n"
+            "- stratum_pool_port (integer): Stratum pool port. Default: 3333\n"
+            "- transactions_combining_wait (integer): Seconds before combining UTXOs. Default: 3600\n"
+            "- restrict_graph_api (boolean): Restrict graph API access. Default: false\n"
+            "- web_jwt_expiry (integer): JWT validity in seconds. Default: 23040\n"
+            "- peers_wait (integer): Seconds between peer reconnect attempts. Default: 30\n"
+            "- status_wait (integer): Seconds between status prints. Default: 10\n"
+            "- block_checker_wait (integer): Seconds between block height checks. Default: 1\n"
+            "- message_sender_wait (integer): Seconds between message retries. Default: 40\n"
+            "- pool_payer_wait (integer): Seconds between payout runs. Default: 110\n"
+            "- cache_validator_wait (integer): Seconds between cache validation. Default: 3550\n"
+            "- mempool_cleaner_wait (integer): Seconds between mempool cleans. Default: 1200\n"
+            "- nonce_processor_wait (integer): Seconds between nonce queue checks. Default: 1\n"
+            "- mongo_query_timeout (integer): Max MongoDB query time in ms. Default: 30000\n"
+            "- http_request_timeout (integer): Max HTTP request time in ms. Default: 3000\n"
+            "- masternode_fee_minimum (integer): Min YDA fee for masternode services. Default: 1\n"
+            "- balance_min_utxo (integer): Min UTXO amount to include in balance. Default: 1\n"
+            "- activate_peerjs (boolean): Activate PeerJS p2p broker. Default: false\n"
+            "- extended_status (boolean): Enable extended status. Default: false\n"
+            "- log_health_status (boolean): Log health status. Default: false\n"
+            "- docker_debug (boolean): Log docker resource usage. Default: false\n"
+            "- asyncio_debug (boolean): Log slow asyncio tasks. Default: false\n"
+            "- network_seeds (list): List of seed node addresses.\n"
+            "- network_service_providers (list): List of service provider node addresses.\n"
+            "- network_seed_gateways (list): List of seed gateway node addresses.\n"
+            "- serve_host (string): Host address the node listens on for inbound peer connections. Default: 0.0.0.0\n"
+            "- serve_port (integer): Port the node listens on for inbound peer connections. Default: 8005\n"
+            "- peer_host (string): Public hostname or IP this node advertises to peers. Default: node's public IP\n"
+            "- peer_port (integer): Port this node advertises to peers. Default: 8004\n"
+            "Rules:\n"
+            "- Only allow settings from the list above. Refuse requests for private_key, seed, etc.\n"
+            "- For list-type settings (network_seeds, network_service_providers, "
+            "  network_seed_gateways): new_value must be a valid JSON array string containing "
+            "  ALL entries for the list (not just the new item to add). If the user wants to "
+            "  ADD an entry, include the new entry in the array and ask the user to confirm "
+            "  it's the complete new list.\n"
+            "- Ask for confirmation before setting complete=true\n"
+            "- confirmed must be true (the user explicitly agreed) before complete=true\n"
+            "- complete=true only when config_key, new_value, AND confirmed=true are all set\n"
+            "- When complete=true, set reply to a brief message like 'Applying that change now.' "
+            "  Do NOT mention key rotation, authorization, or KEL transactions in your replies.\n"
+            "- If the user wants something other than config changes, set detected_agent_type to 'general'"
+        ),
+    },
 ]
 
 # Index by id for fast lookup
@@ -514,13 +661,50 @@ def _sanitize_messages(messages: list) -> list:
     return sanitized
 
 
+import re as _re
+
+# Patterns that commonly appear in prompt-injection payloads.
+# We don't try to enumerate all attacks — we remove structural markers that
+# could break out of the data context and into the instruction context.
+_INJECTION_PATTERNS = _re.compile(
+    r"(system\s*:|user\s*:|assistant\s*:|<\s*/?\s*(s|inst|sys)\s*>|\[INST\]|\[/INST\]|"
+    r"ignore\s+(previous|all|prior)\s+instructions?|"
+    r"you\s+are\s+now|from\s+now\s+on\s+you|your\s+new\s+(role|instructions?)|"
+    r"disregard\s+(your|the|all)|forget\s+(your|the|all|previous))",
+    _re.IGNORECASE,
+)
+
+
+def _sanitize_onchain_str(value, max_len: int = 200) -> str:
+    """Sanitize a string coming from on-chain before inserting into a prompt.
+
+    - Collapses all whitespace/newlines to single spaces (prevents newline injection)
+    - Strips known prompt-injection patterns
+    - Truncates to max_len characters
+    """
+    if not isinstance(value, str):
+        value = str(value)
+    # Collapse newlines/tabs/runs of whitespace
+    value = " ".join(value.split())
+    # Remove injection patterns
+    value = _INJECTION_PATTERNS.sub("[…]", value)
+    # Truncate
+    return value[:max_len]
+
+
 def _build_generic_intake_prompt(agent_type_id: str, agents: list) -> str:
     """Generate a generic intake system prompt for an on-chain-only agent type."""
     rep = agents[0] if agents else {}
-    label = rep.get("label") or agent_type_id.replace("_", " ").title()
-    description = rep.get("description", "")
+    label = _sanitize_onchain_str(
+        rep.get("label") or agent_type_id.replace("_", " ").title(), 80
+    )
+    description = _sanitize_onchain_str(rep.get("description", ""), 300)
     caps = rep.get("capabilities") or []
-    cap_str = ", ".join(str(c) for c in caps[:8]) if caps else ""
+    cap_str = (
+        ", ".join(_sanitize_onchain_str(str(c), 40) for c in caps[:8]) if caps else ""
+    )
+    # Sanitize agent_type_id itself — only allow alphanum + underscore
+    safe_type_id = _re.sub(r"[^a-z0-9_]", "_", agent_type_id.lower())[:64]
     return (
         f"You are an intake assistant for {label}. "
         + (f"{description} " if description else "")
@@ -531,7 +715,7 @@ def _build_generic_intake_prompt(agent_type_id: str, agents: list) -> str:
         '  "reply": "your conversational response",\n'
         '  "extracted": {},\n'
         '  "complete": false,\n'
-        f'  "detected_agent_type": "{agent_type_id}"\n'
+        f'  "detected_agent_type": "{safe_type_id}"\n'
         "}\n"
         + (f"Relevant topics: {cap_str}.\n" if cap_str else "")
         + "complete=true only when you have gathered enough information to proceed.\n"
@@ -559,16 +743,19 @@ def _build_general_prompt_dynamic(onchain_agents: list) -> str:
     # Layer in on-chain types not already present
     for blob in onchain_agents:
         at = blob.get("agent_type") or "general"
+        # Sanitize agent_type key — only allow alphanum + underscore
+        at = _re.sub(r"[^a-z0-9_]", "_", at.lower())[:64]
         if at in _META_IDS or at in type_entries:
             continue
         caps = blob.get("capabilities") or []
-        hint = blob.get("description") or (
+        raw_hint = blob.get("description") or (
             ", ".join(str(c) for c in caps[:5]) if caps else ""
         )
-        type_entries[at] = {
-            "label": blob.get("label") or at.replace("_", " ").title(),
-            "hint": hint,
-        }
+        hint = _sanitize_onchain_str(raw_hint, 200)
+        label = _sanitize_onchain_str(
+            blob.get("label") or at.replace("_", " ").title(), 80
+        )
+        type_entries[at] = {"label": label, "hint": hint}
 
     lines = []
     for type_id, info in type_entries.items():
@@ -2722,6 +2909,567 @@ class AgentDiscoverHandler(BaseHandler):
         return self.render_as_json({"agents": agents, "total": len(agents)})
 
 
+# ── Node config apply handler ─────────────────────────────────────────────────
+
+# Settings that may be changed via chat. Excludes keys that touch identity,
+# cryptographic material, or network addressing.
+_CONFIG_WRITEABLE: dict = {
+    "combined_address": str,
+    "credits_per_share": (int, float),
+    "shares_required": bool,
+    "pool_payout": bool,
+    "pool_take": float,
+    "payout_frequency": int,
+    "max_miners": int,
+    "max_peers": int,
+    "pool_diff": int,
+    "stratum_pool_port": int,
+    "transactions_combining_wait": int,
+    "restrict_graph_api": bool,
+    "web_jwt_expiry": int,
+    "peers_wait": int,
+    "status_wait": int,
+    "txn_queue_processor_wait": int,
+    "block_queue_processor_wait": int,
+    "block_checker_wait": int,
+    "message_sender_wait": int,
+    "pool_payer_wait": int,
+    "cache_validator_wait": int,
+    "mempool_cleaner_wait": int,
+    "mempool_sender_wait": int,
+    "nonce_processor_wait": int,
+    "mongo_query_timeout": int,
+    "http_request_timeout": int,
+    "masternode_fee_minimum": int,
+    "balance_min_utxo": int,
+    "activate_peerjs": bool,
+    "extended_status": bool,
+    "log_health_status": bool,
+    "docker_debug": bool,
+    "asyncio_debug": bool,
+    "asyncio_debug_duration": float,
+    "network_seeds": list,
+    "network_service_providers": list,
+    "network_seed_gateways": list,
+    "serve_host": str,
+    "serve_port": int,
+    "peer_host": str,
+    "peer_port": int,
+}
+
+
+def _coerce_config_value(key: str, raw):
+    """Coerce a raw (possibly string) value to the expected type for key."""
+    target = _CONFIG_WRITEABLE[key]
+    # Normalise tuple targets to the first concrete type for coercion.
+    primary = target[0] if isinstance(target, tuple) else target
+
+    if primary is bool:
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str):
+            if raw.lower() in ("true", "1", "yes", "on"):
+                return True
+            if raw.lower() in ("false", "0", "no", "off"):
+                return False
+        raise ValueError(f"Cannot coerce {raw!r} to bool for '{key}'")
+
+    if primary is float:
+        return float(raw)
+
+    if primary is int:
+        return int(float(raw))  # handles "3.0" → 3
+
+    if primary is list:
+        if isinstance(raw, list):
+            return raw
+        if isinstance(raw, str):
+            # Accept JSON array strings or comma-separated values
+            stripped = raw.strip()
+            if stripped.startswith("["):
+                import json as _json
+
+                return _json.loads(stripped)
+            return [item.strip() for item in stripped.split(",") if item.strip()]
+        raise ValueError(f"Cannot coerce {raw!r} to list for '{key}'")
+
+    # str
+    return str(raw)
+
+
+class NodeConfigApplyHandler(BaseHandler):
+    """
+    POST /ai-agent-auth/api/node-config/apply
+
+    Apply a single config change to the active config.json file and
+    schedule a graceful node restart so the change takes effect.
+
+    Requires a valid KEL-backed VP (key rotation / second-factor authorization)
+    with authorizationType == "NodeConfigAuthorization" in the scope.  The
+    flow mirrors the vendor VP endpoints:
+      1. GET /ai-agent-auth/api/challenge?public_key=<hex>  → challenge token
+      2. Browser derives next child key, broadcasts a rotation transaction
+         with scope = {authorizationType: "NodeConfigAuthorization",
+                       config_key: "<key>", config_value: "<value>"}
+      3. POST here with {public_key, challenge, vp, key, value}
+
+    Body (JSON)
+    -----------
+    public_key : hex compressed secp256k1 public key (the prerotated agent key)
+    challenge  : hex string from GET /api/challenge
+    vp         : W3C VP object {type, holder, verifiableCredential, proof}
+    key        : str — the config setting name (must be in _CONFIG_WRITEABLE)
+    value      : any — the new value (will be type-coerced)
+
+    Response (JSON)
+    ---------------
+    {"status": "ok", "key": ..., "value": ..., "restarting": true}
+    """
+
+    async def post(self):
+        import os
+        import signal
+        import tempfile
+
+        import tornado.ioloop
+
+        try:
+            body = json.loads(self.request.body)
+        except Exception:
+            self.set_status(400)
+            return self.render_as_json({"error": "invalid json body"})
+
+        public_key = (body.get("public_key") or "").strip()
+        challenge = (body.get("challenge") or "").strip()
+        vp = body.get("vp")
+        key = (body.get("key") or "").strip()
+        raw_value = body.get("value")
+
+        # ── Basic field validation ──────────────────────────────────────────
+        if not public_key or not challenge or not vp:
+            self.set_status(400)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": "public_key, challenge, and vp are required",
+                }
+            )
+
+        if not key:
+            self.set_status(400)
+            return self.render_as_json({"error": "key is required"})
+
+        if key not in _CONFIG_WRITEABLE:
+            self.set_status(400)
+            return self.render_as_json(
+                {
+                    "error": f"'{key}' is not a settable config option via chat. "
+                    "See the allowed list in the node_config agent."
+                }
+            )
+
+        if raw_value is None:
+            self.set_status(400)
+            return self.render_as_json({"error": "value is required"})
+
+        try:
+            coerced = _coerce_config_value(key, raw_value)
+        except (ValueError, TypeError) as exc:
+            self.set_status(400)
+            return self.render_as_json({"error": f"Invalid value: {exc}"})
+
+        # ── KEL / VP validation (second-factor / key rotation) ─────────────
+        try:
+            auth = await _validator.validate_vp(public_key, challenge, vp)
+        except AuthError as exc:
+            self.set_status(exc.http_status)
+            return self.render_as_json({"status": False, "message": str(exc)})
+
+        try:
+            AgentAuthValidator.enforce_scope(auth, services=["NodeConfigAuthorization"])
+        except AuthError as exc:
+            self.set_status(exc.http_status)
+            return self.render_as_json(
+                {"status": False, "message": str(exc), "scope": auth.scope}
+            )
+
+        # ── Locate the config file ──────────────────────────────────────────
+        config_path = getattr(self.config, "config_path", None)
+        if not config_path:
+            config_path = os.path.abspath(
+                os.path.join(
+                    os.path.dirname(__file__), "..", "..", "config", "config.json"
+                )
+            )
+
+        if not os.path.isfile(config_path):
+            self.set_status(500)
+            return self.render_as_json(
+                {"error": f"Config file not found at {config_path}"}
+            )
+
+        # ── Read → patch → write atomically ────────────────────────────────
+        try:
+            with open(config_path, "r") as fh:
+                cfg_dict = json.load(fh)
+        except Exception as exc:
+            self.set_status(500)
+            return self.render_as_json({"error": f"Failed to read config: {exc}"})
+
+        cfg_dict[key] = coerced
+
+        config_dir = os.path.dirname(config_path)
+        try:
+            fd, tmp_path = tempfile.mkstemp(dir=config_dir, suffix=".tmp")
+            with os.fdopen(fd, "w") as fh:
+                json.dump(cfg_dict, fh, indent=4)
+            os.replace(tmp_path, config_path)
+        except Exception as exc:
+            self.set_status(500)
+            return self.render_as_json({"error": f"Failed to write config: {exc}"})
+
+        # ── Update the in-memory Config singleton ───────────────────────────
+        try:
+            setattr(self.config, key, coerced)
+        except Exception:
+            pass  # best-effort; restart will reload from disk anyway
+
+        # ── Respond, then schedule graceful restart ─────────────────────────
+        self.render_as_json(
+            {
+                "status": "ok",
+                "key": key,
+                "value": coerced,
+                "restarting": True,
+                "authorized_address": auth.address,
+                "kel_depth": len(auth.kel),
+                "kel_txid": auth.kel_txid,
+                "message": (
+                    f"Config updated: {key} = {coerced!r}. "
+                    "Node is restarting to apply the change."
+                ),
+            }
+        )
+
+        def _do_restart():
+            os.kill(os.getpid(), signal.SIGTERM)
+
+        tornado.ioloop.IOLoop.current().call_later(2, _do_restart)
+
+
+# ── Wallet Agent API handlers ─────────────────────────────────────────────────
+
+
+class WalletInfoHandler(BaseHandler):
+    """
+    GET /ai-agent-auth/api/wallet/info?public_key=<hex>
+
+    Returns balance and address for the given public key.
+    Read-only — no authentication required.
+    """
+
+    async def get(self):
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        public_key = (self.get_argument("public_key", "") or "").strip()
+        if not public_key:
+            self.set_status(400)
+            return self.render_as_json({"error": "public_key is required"})
+        try:
+            address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+        except Exception:
+            self.set_status(400)
+            return self.render_as_json({"error": "invalid public_key"})
+        try:
+            balance = await self.config.BU.get_wallet_balance(address)
+        except Exception as exc:
+            self.set_status(500)
+            return self.render_as_json({"error": f"balance lookup failed: {exc}"})
+        return self.render_as_json(
+            {
+                "address": address,
+                "public_key": public_key,
+                "balance": "{0:.8f}".format(balance),
+            }
+        )
+
+
+class WalletTransactionsHandler(BaseHandler):
+    """
+    GET /ai-agent-auth/api/wallet/transactions?public_key=<hex>&direction=all|sent|received&page=1
+
+    Returns confirmed on-chain transactions (sent and/or received).
+    Read-only — no authentication required.
+    """
+
+    async def get(self):
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        public_key = (self.get_argument("public_key", "") or "").strip()
+        direction = (self.get_argument("direction", "all") or "all").strip().lower()
+        page = max(int(self.get_argument("page", "1") or "1"), 1) - 1
+        if not public_key:
+            self.set_status(400)
+            return self.render_as_json({"error": "public_key is required"})
+        try:
+            address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+        except Exception:
+            self.set_status(400)
+            return self.render_as_json({"error": "invalid public_key"})
+
+        results = []
+        try:
+            if direction in ("all", "sent"):
+                sent_q = [
+                    {
+                        "$match": {
+                            "transactions.inputs.0": {"$exists": True},
+                            "transactions.public_key": public_key,
+                            "transactions.outputs.value": {"$gt": 0},
+                        }
+                    },
+                    {"$unwind": "$transactions"},
+                    {
+                        "$match": {
+                            "transactions.inputs.0": {"$exists": True},
+                            "transactions.public_key": public_key,
+                            "transactions.outputs.value": {"$gt": 0},
+                        }
+                    },
+                    {"$sort": {"transactions.time": -1}},
+                    {"$skip": page * 10},
+                    {"$limit": 10},
+                ]
+                async for doc in self.config.mongo.async_db.blocks.aggregate(sent_q):
+                    txn = doc["transactions"]
+                    txn["_direction"] = "sent"
+                    results.append(txn)
+
+            if direction in ("all", "received"):
+                recv_q = [
+                    {
+                        "$match": {
+                            "transactions.outputs.to": address,
+                            "transactions.outputs.value": {"$gt": 0},
+                        }
+                    },
+                    {"$unwind": "$transactions"},
+                    {
+                        "$match": {
+                            "transactions.outputs.to": address,
+                            "transactions.outputs.value": {"$gt": 0},
+                            "transactions.public_key": {"$ne": public_key},
+                        }
+                    },
+                    {"$sort": {"transactions.time": -1}},
+                    {"$skip": page * 10},
+                    {"$limit": 10},
+                ]
+                async for doc in self.config.mongo.async_db.blocks.aggregate(recv_q):
+                    txn = doc["transactions"]
+                    txn["_direction"] = "received"
+                    results.append(txn)
+        except Exception as exc:
+            self.set_status(500)
+            return self.render_as_json({"error": f"query failed: {exc}"})
+
+        # Sort merged results newest-first
+        results.sort(key=lambda t: t.get("time", 0), reverse=True)
+        return self.render_as_json({"transactions": results[:10], "page": page + 1})
+
+
+class WalletSendHandler(BaseHandler):
+    """
+    POST /ai-agent-auth/api/wallet/send
+
+    Send or wrap a YDA transaction, authorised via a KEL-backed VP.
+
+    Body (JSON)
+    -----------
+    public_key : hex compressed secp256k1 key (the prerotated agent key)
+    challenge  : hex string from GET /ai-agent-auth/api/challenge
+    vp         : W3C VP object {type, holder, verifiableCredential, proof}
+    to_address : recipient YadaCoin address (ignored for wrap — bridge address used)
+    amount     : float — YDA amount to send/wrap
+    fee        : float — optional transaction fee (default 0.0)
+    eth_address: str  — Ethereum 0x address (required for wrap; omit for plain send)
+
+    Response (JSON)
+    ---------------
+    {"status": "ok", "transaction_id": "...", "to": ..., "amount": ..., "fee": ...}
+    """
+
+    WRAP_BRIDGE_ADDRESS = "16U1gAmHazqqEkbRE9KFPShAperjJreMRA"
+
+    async def post(self):
+        try:
+            body = json.loads(self.request.body)
+        except Exception:
+            self.set_status(400)
+            return self.render_as_json({"error": "invalid json body"})
+
+        public_key = (body.get("public_key") or "").strip()
+        challenge = (body.get("challenge") or "").strip()
+        vp = body.get("vp")
+        eth_address = (body.get("eth_address") or "").strip()
+        amount = body.get("amount")
+        fee = float(body.get("fee", 0.0))
+
+        # Wrap: to_address is always the bridge; relationship is the ETH address
+        is_wrap = bool(eth_address)
+        if is_wrap:
+            to_address = self.WRAP_BRIDGE_ADDRESS
+            if not eth_address.startswith("0x") or len(eth_address) != 42:
+                self.set_status(400)
+                return self.render_as_json(
+                    {
+                        "error": "eth_address must be a valid 0x Ethereum address (42 chars)"
+                    }
+                )
+        else:
+            to_address = (body.get("to_address") or "").strip()
+
+        if not public_key or not challenge or not vp:
+            self.set_status(400)
+            return self.render_as_json(
+                {"error": "public_key, challenge, and vp are required"}
+            )
+        if not to_address:
+            self.set_status(400)
+            return self.render_as_json(
+                {"error": "to_address or eth_address is required"}
+            )
+        try:
+            amount = float(amount)
+            if amount <= 0:
+                raise ValueError("amount must be positive")
+        except (TypeError, ValueError) as exc:
+            self.set_status(400)
+            return self.render_as_json({"error": f"invalid amount: {exc}"})
+
+        # ── KEL / VP validation ─────────────────────────────────────────────
+        try:
+            auth = await _validator.validate_vp(public_key, challenge, vp)
+        except AuthError as exc:
+            self.set_status(exc.http_status)
+            return self.render_as_json({"status": False, "message": str(exc)})
+
+        try:
+            AgentAuthValidator.enforce_scope(auth, services=["WalletAuthorization"])
+        except AuthError as exc:
+            self.set_status(exc.http_status)
+            return self.render_as_json(
+                {"status": False, "message": str(exc), "scope": auth.scope}
+            )
+
+        # Verify the VP scope matches what the user approved in chat
+        scope = auth.scope or {}
+        scope_to = (scope.get("to_address") or "").strip()
+        scope_amt = scope.get("amount")
+        scope_eth = (scope.get("eth_address") or "").strip()
+        if scope_to and scope_to != to_address:
+            self.set_status(403)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": (
+                        f"Scope mismatch: VP authorised send to '{scope_to}' "
+                        f"but request targets '{to_address}'"
+                    ),
+                }
+            )
+        if scope_eth and scope_eth != eth_address:
+            self.set_status(403)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": (
+                        f"Scope mismatch: VP authorised wrap to '{scope_eth}' "
+                        f"but request specifies '{eth_address}'"
+                    ),
+                }
+            )
+        if scope_amt is not None:
+            try:
+                if abs(float(scope_amt) - amount) > 1e-8:
+                    raise ValueError(
+                        f"VP authorised {scope_amt} YDA but request sends {amount} YDA"
+                    )
+            except (TypeError, ValueError) as exc:
+                self.set_status(403)
+                return self.render_as_json({"status": False, "message": str(exc)})
+
+        # ── Build and submit the transaction (same pipeline as GraphTransactionHandler) ─
+        from yadacoin.core.transaction import (
+            NotEnoughMoneyException,
+            TooManyInputsException,
+            Transaction,
+        )
+
+        try:
+            transaction = await Transaction.generate(
+                fee=fee,
+                public_key=self.config.public_key,
+                private_key=self.config.private_key,
+                inputs=[],
+                outputs=[{"to": to_address, "value": amount}],
+                relationship=eth_address if is_wrap else "",
+            )
+        except NotEnoughMoneyException:
+            self.set_status(400)
+            return self.render_as_json({"error": "not enough funds"})
+        except Exception as exc:
+            self.set_status(500)
+            return self.render_as_json(
+                {"error": f"transaction generation failed: {exc}"}
+            )
+
+        try:
+            await transaction.verify(
+                check_input_spent=True,
+                check_masternode_fee=True,
+                check_max_inputs=True,
+                check_kel=True,
+                mempool=True,
+            )
+        except TooManyInputsException as exc:
+            self.set_status(400)
+            return self.render_as_json({"error": f"too many inputs: {exc}"})
+        except Exception as exc:
+            self.set_status(400)
+            return self.render_as_json({"error": f"transaction invalid: {exc}"})
+
+        await self.config.mongo.async_db.miner_transactions.insert_one(
+            transaction.to_dict()
+        )
+        if "node" in self.config.modes:
+            async for peer_stream in self.config.peer.get_sync_peers():
+                await self.config.nodeShared.write_params(
+                    peer_stream, "newtxn", {"transaction": transaction.to_dict()}
+                )
+                if peer_stream.peer.protocol_version > 1:
+                    self.config.nodeClient.retry_messages[
+                        (
+                            peer_stream.peer.rid,
+                            "newtxn",
+                            transaction.transaction_signature,
+                        )
+                    ] = {"transaction": transaction.to_dict()}
+
+        return self.render_as_json(
+            {
+                "status": "ok",
+                "transaction_id": transaction.transaction_signature,
+                "to": to_address,
+                "amount": amount,
+                "fee": fee,
+                "authorized_address": auth.address,
+                "kel_depth": len(auth.kel),
+                "kel_txid": auth.kel_txid,
+            }
+        )
+
+
 # ── Dynamically generate a VendorHandler subclass for every registered service ─
 # Adding a new entry to VENDOR_REGISTRY automatically creates its handler.
 
@@ -2772,6 +3520,9 @@ HANDLERS = [
     (r"/ai-agent-auth/api/agents", AgentListHandler),
     (r"/ai-agent-auth/api/chat", AgentChatHandler),
     (r"/ai-agent-auth/api/challenge", AgentChallengeHandler),
+    (r"/ai-agent-auth/api/node-config/apply", NodeConfigApplyHandler),
+    (r"/ai-agent-auth/api/wallet/info", WalletInfoHandler),
+    (r"/ai-agent-auth/api/wallet/send", WalletSendHandler),
     (r"/ai-agent-auth/api/travel", TravelBookingHandler),  # legacy endpoint
     *_vendor_routes,
 ]

@@ -1,13 +1,73 @@
 <template>
   <div class="approval-card">
     <div class="title">🔐 Authorisation Required</div>
+
+    <!-- Sensitive-change warning for node_config -->
+    <div v-if="isNodeConfig && sensitiveKey" class="warning-banner">
+      ⚠️ <strong>Verify before approving.</strong> This will change
+      <code>{{ scope.config_key }}</code> to <code>{{ scope.new_value }}</code
+      >.
+      <span v-if="scope.config_key === 'combined_address'">
+        All mining and pool rewards will be sent to this address. Make sure it
+        is <em>your</em> wallet address.
+      </span>
+      <span
+        v-else-if="
+          scope.config_key === 'peer_host' || scope.config_key === 'peer_port'
+        "
+      >
+        This changes the address your node advertises to the network.
+      </span>
+      <span
+        v-else-if="
+          scope.config_key === 'serve_host' || scope.config_key === 'serve_port'
+        "
+      >
+        This changes the address your node listens on for inbound connections.
+      </span>
+    </div>
+
+    <!-- Scope summary for node_config -->
+    <div v-if="isNodeConfig" class="scope-summary">
+      <span class="scope-label">Setting:</span>
+      <code>{{ scope.config_key }}</code>
+      <span class="scope-label">New value:</span>
+      <code>{{ scope.new_value }}</code>
+    </div>
+
+    <!-- Send/Wrap summary for wallet_agent -->
+    <div v-if="isWalletAgent && scope.action !== 'wrap'" class="warning-banner">
+      ⚠️ <strong>Verify this transaction before approving.</strong>
+      You are authorizing a send of
+      <code>{{ scope.amount }} YDA</code> to <code>{{ scope.to_address }}</code
+      >.
+    </div>
+    <div v-if="isWalletAgent && scope.action !== 'wrap'" class="scope-summary">
+      <span class="scope-label">To:</span>
+      <code>{{ scope.to_address }}</code>
+      <span class="scope-label">Amount:</span>
+      <code>{{ scope.amount }} YDA</code>
+    </div>
+    <div v-if="isWalletAgent && scope.action === 'wrap'" class="warning-banner">
+      ⚠️ <strong>Verify this wrap before approving.</strong> You are wrapping
+      <code>{{ scope.amount }} YDA</code> to Ethereum address
+      <code>{{ scope.eth_address }}</code
+      >. The YDA will be sent to the bridge address.
+    </div>
+    <div v-if="isWalletAgent && scope.action === 'wrap'" class="scope-summary">
+      <span class="scope-label">Amount:</span>
+      <code>{{ scope.amount }} YDA</code>
+      <span class="scope-label">Ethereum address:</span>
+      <code>{{ scope.eth_address }}</code>
+    </div>
+
     <div class="detail">
       The following W3C Verifiable Credential will be committed on-chain in the
       <code>relationship</code> field of the rotation transaction.
       <pre>{{ previewJson }}</pre>
     </div>
 
-    <template v-if="!isRegistration">
+    <template v-if="!skipPayment">
       <div class="field-row">
         <label>Payment Method</label>
         <select v-model="selectedPmIdx" :disabled="!paymentMethods.length">
@@ -19,7 +79,9 @@
           </option>
         </select>
       </div>
+    </template>
 
+    <template v-if="!isRegistration">
       <div class="field-row">
         <label>Second factor</label>
         <input
@@ -36,7 +98,15 @@
     <div class="btn-row">
       <button class="btn approve" :disabled="busy" @click="approve">
         {{
-          isRegistration ? "📡 Broadcast Registration" : "✓ Approve &amp; Book"
+          isRegistration
+            ? "📡 Broadcast Registration"
+            : isNodeConfig
+              ? "🔐 Authorise & Apply"
+              : isWalletAgent && scope.action === "wrap"
+                ? "🔐 Authorise & Wrap"
+                : isWalletAgent
+                  ? "🔐 Authorise & Send"
+                  : "✓ Approve & Book"
         }}
       </button>
       <button class="btn deny" :disabled="busy" @click="$emit('deny')">
@@ -59,6 +129,23 @@ const emit = defineEmits(["approve", "deny"]);
 const isRegistration = computed(
   () => props.agentType?.id === "agent_registration",
 );
+const isNodeConfig = computed(() => props.agentType?.id === "node_config");
+const isWalletAgent = computed(() => props.agentType?.id === "wallet_agent");
+const skipPayment = computed(
+  () => isRegistration.value || isNodeConfig.value || isWalletAgent.value,
+);
+
+// Keys that warrant an explicit "verify this value" warning
+const SENSITIVE_KEYS = new Set([
+  "combined_address",
+  "peer_host",
+  "peer_port",
+  "serve_host",
+  "serve_port",
+]);
+const sensitiveKey = computed(
+  () => isNodeConfig.value && SENSITIVE_KEYS.has(props.scope?.config_key),
+);
 
 const secondFactor = ref("");
 const busy = ref(false);
@@ -74,6 +161,34 @@ onMounted(() => setTimeout(() => sfInput.value?.focus(), 50));
 
 const previewJson = computed(() => {
   const pm = paymentMethods.value[selectedPmIdx.value];
+  if (isNodeConfig.value) {
+    return JSON.stringify(
+      {
+        type: "NodeConfigAuthorization",
+        note: "Config change details are not committed on-chain for security.",
+      },
+      null,
+      2,
+    );
+  }
+  if (isWalletAgent.value) {
+    return JSON.stringify(
+      {
+        type: "WalletAuthorization",
+        services: ["WalletAuthorization"],
+        to_address:
+          props.scope?.action === "wrap"
+            ? "16U1gAmHazqqEkbRE9KFPShAperjJreMRA"
+            : props.scope?.to_address || "",
+        amount: props.scope?.amount ?? null,
+        ...(props.scope?.action === "wrap"
+          ? { eth_address: props.scope?.eth_address || "" }
+          : {}),
+      },
+      null,
+      2,
+    );
+  }
   return JSON.stringify(
     {
       "@context": [
@@ -107,7 +222,7 @@ function approve() {
   busy.value = true;
   emit("approve", {
     secondFactor: secondFactor.value,
-    paymentMethod: isRegistration.value ? null : pm,
+    paymentMethod: skipPayment.value ? null : pm,
   });
 }
 </script>
@@ -204,5 +319,44 @@ function approve() {
 }
 .btn.deny:hover:not(:disabled) {
   background: var(--red2);
+}
+.warning-banner {
+  background: rgba(255, 160, 0, 0.12);
+  border: 1px solid #ffaa00;
+  border-radius: 6px;
+  padding: 9px 12px;
+  color: #ffcc55;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.warning-banner code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+.scope-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+.scope-label {
+  color: var(--subtext);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.scope-summary code {
+  background: #0a0c12;
+  border: 1px solid var(--border);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  word-break: break-all;
 }
 </style>

@@ -7,7 +7,8 @@ class YadaNodeManager:
     def __init__(self):
         self.repo_path = os.path.dirname(os.path.abspath(__file__))
         self.service_name = "yada-node"
-        self.update_interval_seconds = 3600
+        self.update_interval_seconds = 3600  # how often to check for git updates
+        self.health_check_interval_seconds = 30  # how often to check container health
 
     def stop_previous_containers(self):
         try:
@@ -122,25 +123,29 @@ class YadaNodeManager:
         if self.is_mongodump_directory_present():
             self.start_restore_service()  # Start the restore service if directory exists
             print(f"Restoring from bootstrap data")
+        last_update_check = 0
         while True:
             if not self.ensure_container_running():
                 print(
                     f"Container {self.service_name} is not running. Starting it up..."
                 )
                 self.start_docker_image()
-            if self.git_pull_latest():
-                print(
-                    "Codebase updated. Rebuilding Docker image and restarting container..."
-                )
-                self.rebuild_docker_image()
-            else:
-                print(
-                    "No updates found. Checking again in {} seconds.".format(
-                        self.update_interval_seconds
+            # Only check for git updates at the longer interval
+            if time.time() - last_update_check >= self.update_interval_seconds:
+                if self.git_pull_latest():
+                    print(
+                        "Codebase updated. Rebuilding Docker image and restarting container..."
                     )
-                )
+                    self.rebuild_docker_image()
+                else:
+                    print(
+                        "No updates found. Checking again in {} seconds.".format(
+                            self.update_interval_seconds
+                        )
+                    )
+                last_update_check = time.time()
 
-            time.sleep(self.update_interval_seconds)
+            time.sleep(self.health_check_interval_seconds)
 
 
 if __name__ == "__main__":

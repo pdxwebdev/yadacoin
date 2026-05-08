@@ -983,6 +983,7 @@ class NodeApplication(Application):
             self.config = yadacoin.core.config.Config(json.loads(f.read()))
             # Sets the global var for all objects
             yadacoin.core.config.CONFIG = self.config
+            self.config.config_path = os.path.abspath(options.config)
             self.config.debug = options.debug
             # force network, command line one takes precedence
             if options.network != "":

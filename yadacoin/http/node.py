@@ -447,7 +447,6 @@ class MineBlockHandler(BaseHandler):
         from yadacoin.core.keyeventlog import KeyEventLog
 
         private_key_param = self.get_argument("private_key", None)
-        self.config.private_key
 
         if private_key_param:
             # KEL-based authorization: derive public key and verify against latest KEL entry

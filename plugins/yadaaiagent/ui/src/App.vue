@@ -11,7 +11,20 @@
         </span>
       </div>
       <div class="header-right">
-        <div class="session-pill" :class="sessionPillClass">
+        <div
+          class="session-pill"
+          :class="sessionPillClass"
+          :style="
+            !sessionPubHex && getWalletMode() === 'client'
+              ? 'cursor:pointer'
+              : ''
+          "
+          @click="
+            !sessionPubHex && getWalletMode() === 'client'
+              ? (showWalletSetup = true)
+              : null
+          "
+        >
           {{ sessionPillText }}
         </div>
         <button
@@ -38,6 +51,7 @@
           @agent-changed="onAgentChanged"
           @session-rotated="onSessionRotated"
           @credential-issued="onCredentialIssued"
+          @setup-wallet="showWalletSetup = true"
         />
         <div v-if="approvalState" class="approval-overlay">
           <div class="approval-wrap">
@@ -62,8 +76,16 @@
       </main>
     </div>
 
-    <SettingsDrawer v-model="showSettings" />
+    <SettingsDrawer
+      v-model="showSettings"
+      @wallet-mode-changed="onWalletModeChanged"
+    />
     <CredentialWallet v-model="showWallet" :key="walletKey" />
+    <WalletSetup
+      v-if="showWalletSetup"
+      @done="onWalletSetupDone"
+      @close="showWalletSetup = false"
+    />
   </div>
 </template>
 
@@ -73,17 +95,33 @@ import ChatPane from "./components/ChatPane.vue";
 import ApprovalCard from "./components/ApprovalCard.vue";
 import SettingsDrawer from "./components/SettingsDrawer.vue";
 import CredentialWallet from "./components/CredentialWallet.vue";
+import WalletSetup from "./components/WalletSetup.vue";
 import {
   LS_PRIV,
+  LS_WALLET_MODE,
   getNodeUrl,
   getBookingCredentials,
+  getWalletMode,
+  setWalletMode,
 } from "./composables/useStorage.js";
 import { getPublicKeyHex, hex } from "./composables/useCrypto.js";
+
+// ── Synchronous fresh-start default ──────────────────────────────────────────
+// Runs during parent setup(), BEFORE any child component mounts.
+// This ensures ChatPane.vue reads the correct mode in its own onMounted.
+if (!localStorage.getItem(LS_WALLET_MODE) && !localStorage.getItem(LS_PRIV)) {
+  setWalletMode("client");
+}
 
 const agents = ref([]);
 const activeAgent = ref(null);
 
 onMounted(async () => {
+  // Show wallet setup modal when in client mode with no key stored.
+  if (getWalletMode() === "client" && !localStorage.getItem(LS_PRIV)) {
+    showWalletSetup.value = true;
+  }
+
   try {
     const res = await fetch(`${getNodeUrl()}/ai-agent-auth/api/agents`);
     if (res.ok) {
@@ -100,6 +138,7 @@ function onAgentChanged(agentObj) {
 
 const showSettings = ref(false);
 const showWallet = ref(false);
+const showWalletSetup = ref(false);
 const walletKey = ref(0); // force reload when credential-issued
 const credentialCount = ref(getBookingCredentials().length);
 
@@ -126,11 +165,16 @@ function onSessionRotated() {
 }
 
 const sessionPillClass = computed(() => (sessionPubHex.value ? "ok" : "bad"));
-const sessionPillText = computed(() =>
-  sessionPubHex.value
-    ? "\uD83D\uDD13 " + sessionPubHex.value.slice(0, 16) + "..."
-    : "No key \u2014 /key-rotation",
-);
+const sessionPillText = computed(() => {
+  if (sessionPubHex.value) {
+    const prefix =
+      getWalletMode() === "client" ? "\uD83D\uDC64" : "\uD83D\uDD13";
+    return prefix + " " + sessionPubHex.value.slice(0, 16) + "...";
+  }
+  return getWalletMode() === "client"
+    ? "Setup wallet"
+    : "No key \u2014 /key-rotation";
+});
 
 const approvalState = ref(null);
 const approvalSteps = ref([]);
@@ -190,6 +234,15 @@ async function onApprove(payload) {
     onStep,
     onDone,
   );
+}
+
+function onWalletModeChanged() {
+  refreshSessionPill();
+}
+
+function onWalletSetupDone() {
+  showWalletSetup.value = false;
+  refreshSessionPill();
 }
 
 function onDeny() {
