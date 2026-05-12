@@ -351,7 +351,9 @@ class GraphTransactionHandler(BaseGraphHandler):
                     }
                 )
                 self.set_status(400)
-                return self.render_as_json({"status": False, "message": "KELException"})
+                return self.render_as_json(
+                    {"status": False, "message": f"KELException: {e}"}
+                )
 
             except MissingInputTransactionException:
                 pass

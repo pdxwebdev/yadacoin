@@ -1445,6 +1445,13 @@ class TestTransactionPureMethods(AsyncTestCase):
         )
         txn.miner_signature = "non_empty_sig"
         txn._contract_generated = True
+        # Force current_index < SMART_CONTRACT_REMOVAL_FORK so the early-return
+        # branch is exercised.
+        from unittest.mock import MagicMock
+
+        txn.config.LatestBlock = MagicMock()
+        txn.config.LatestBlock.block = MagicMock()
+        txn.config.LatestBlock.block.index = 0
         # Should complete without raising (returns at 735)
         await txn.verify()
 

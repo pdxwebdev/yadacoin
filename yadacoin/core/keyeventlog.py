@@ -12,11 +12,14 @@ Full license terms: see LICENSE.txt in this repository.
 """
 
 from enum import Enum
+from hashlib import sha256
 from typing import TYPE_CHECKING
 
 from bitcoin.wallet import P2PKHBitcoinAddress
 
+from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
+from yadacoin.core.locationrecovery import verify_proof as verify_recovery_proof
 from yadacoin.core.transaction import Transaction
 
 if TYPE_CHECKING:
@@ -132,6 +135,118 @@ class KELExceptionPredecessorNotYetInMempool(KELException):
     """
 
 
+# ── Location-recovery (KEL_RECOVERY_FORK) ────────────────────────────────────
+
+
+class KELRecoveryException(KELException):
+    """Base class for failures specific to location-recovery KEL delegation."""
+
+
+class KELRecoveryNotActivatedException(KELRecoveryException):
+    """{"recovers": ...} or {"recovery": ...} appeared before KEL_RECOVERY_FORK."""
+
+
+class KELRecoveryMalformedProofException(KELRecoveryException):
+    """Recovery proof is missing required fields or has wrong types."""
+
+
+class KELRecoveryInvalidProofException(KELRecoveryException):
+    """Schnorr verification failed, or the commitment does not match the
+    announced witness hash."""
+
+
+class KELRecoveryAnnouncementMissingException(KELRecoveryException):
+    """No active {"recovery": witnessHash} announcement was found in the
+    previous KEL for the recovers-inception to consume."""
+
+
+class KELRecoveryAlreadyConsumedException(KELRecoveryException):
+    """The previous KEL has already been recovered once — it is sealed."""
+
+
+class KELRecoveryUnknownPreviousKELException(KELRecoveryException):
+    """The recovers-inception's prev_public_key_hash does not match the
+    public_key_hash of any on-chain KEL tip."""
+
+
+def _relationship_dict(txn: Transaction):
+    """Return the txn's relationship as a plain dict, or None.
+
+    Recovery relationships are plain JSON dicts with a single top-level key
+    ("recovery" or "recovers").  They never get coerced into Contract /
+    NodeAnnouncement / AgentAnnouncement instances by Transaction.__init__
+    because none of those wrappers claim those keys.
+    """
+    rel = getattr(txn, "relationship", None)
+    if isinstance(rel, dict):
+        return rel
+    return None
+
+
+def get_recovery_announcement_witness_hash(txn: Transaction):
+    """If *txn* is a recovery announcement, return its witnessHash.
+
+    A recovery announcement is any KEL transaction whose relationship dict has
+    a top-level "recovery" key whose value is a hex string.  The chain only
+    treats it as the active announcement after the fork height (callers
+    should gate on CHAIN.KEL_RECOVERY_FORK).
+    """
+    rel = _relationship_dict(txn)
+    if rel is None:
+        return None
+    h = rel.get("recovery")
+    if isinstance(h, str) and h:
+        return h
+    return None
+
+
+def get_recovers_proof(txn: Transaction):
+    """If *txn* is a recovers-inception, return its proof dict.
+
+    The proof has the shape {commitment, R, s} — all hex strings.  Returns
+    None when the txn is not a recovers-inception or is malformed.
+    """
+    rel = _relationship_dict(txn)
+    if rel is None:
+        return None
+    proof = rel.get("recovers")
+    if not isinstance(proof, dict):
+        return None
+    if not all(
+        isinstance(proof.get(k), str) and proof.get(k) for k in ("commitment", "R", "s")
+    ):
+        return None
+    return proof
+
+
+def is_recovery_announcement(txn: Transaction) -> bool:
+    return get_recovery_announcement_witness_hash(txn) is not None
+
+
+def is_recovers_inception(txn: Transaction) -> bool:
+    """A recovers-inception has both prev_public_key_hash AND a {recovers: ...}
+    relationship.  This is the only KEL transaction that legally carries both.
+    """
+    return bool(txn.prev_public_key_hash) and get_recovers_proof(txn) is not None
+
+
+def find_active_recovery_witness_hash(log):
+    """Return the most recent witnessHash announced in *log*.
+
+    Walks the supplied KEL forward and returns the witnessHash from the LAST
+    transaction that carries a {"recovery": ...} relationship.  A newer
+    announcement supersedes any older one (per the design: only the latest
+    announcement is honoured at recovery time).  Returns None when the log
+    contains no announcements.
+    """
+    latest = None
+    for entry_txn in log:
+        h = get_recovery_announcement_witness_hash(entry_txn)
+        if h:
+            latest = h
+    return latest
+
+
 class KeyEvent:
     def __init__(
         self,
@@ -182,6 +297,139 @@ class KeyEvent:
             not onchain and self.status == KeyEventChainStatus.ONCHAIN
         ):
             raise KeyEventException("not a valid inception key event. Invalid status.")
+
+    async def verify_recovery_inception(self, onchain=False):
+        """Validate a {"recovers": ...} inception that delegates ownership from
+        a previous KEL whose keys were lost.
+
+        A recovery inception is structurally an inception transaction (single
+        output to its own prerotated_key_hash, no smart-contract relationship)
+        with two extra constraints:
+
+        * ``prev_public_key_hash`` MUST be the ``public_key_hash`` of the on-chain
+          tip of some previous KEL (the "delegator" KEL).
+        * ``relationship`` MUST contain ``{"recovers": {commitment, R, s}}``.
+          The Schnorr proof is verified against the latest ``{"recovery": ...}``
+          announcement in the delegator KEL, with the delegator's tip
+          public_key_hash bound into the Fiat-Shamir challenge to prevent
+          replay across KELs.
+
+        Single-use semantics: once any recovery successor exists on-chain for
+        the delegator KEL, no second recovery is permitted (the delegator KEL
+        is sealed).
+        """
+        # Basic field validation — all four KEL hash fields required.
+        self.verify_fields(prev_public_key_hash_required=True)
+
+        if len(self.txn.outputs) != 1:
+            raise KeyEventSingleOutputException(
+                "RECOVERY inception key event should only have a single output"
+            )
+        if self.txn.outputs[0].to != self.txn.prerotated_key_hash:
+            raise KeyEventPrerotatedKeyHashException(
+                "RECOVERY inception key event output should equal the prerotated_key_hash"
+            )
+
+        proof = get_recovers_proof(self.txn)
+        if proof is None:
+            raise KELRecoveryMalformedProofException(
+                "recovers inception missing well-formed {commitment, R, s} proof"
+            )
+
+        # Look up the delegator KEL's tip transaction by its public_key_hash
+        # (== our prev_public_key_hash).  Restrict to on-chain so a mempool
+        # forgery cannot satisfy the lookup.
+        config = Config()
+        cursor = config.mongo.async_db.blocks.aggregate(
+            [
+                {
+                    "$match": {
+                        BlocksQueryFields.PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash
+                    }
+                },
+                {"$unwind": "$transactions"},
+                {
+                    "$match": {
+                        BlocksQueryFields.PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash
+                    }
+                },
+                {"$limit": 1},
+            ]
+        )
+        rows = await cursor.to_list(length=1)
+        if not rows:
+            raise KELRecoveryUnknownPreviousKELException(
+                "recovery references prev_public_key_hash with no on-chain KEL entry"
+            )
+        delegator_tip_txn = Transaction.from_dict(rows[0]["transactions"])
+
+        # Reconstruct the delegator's full on-chain KEL and confirm the
+        # referenced entry really is its tip (latest entry with no successor).
+        delegator_log = await KeyEventLog.build_from_public_key(
+            delegator_tip_txn.public_key,
+            onchain_only=True,
+            follow_recovery=False,
+        )
+        if not delegator_log:
+            raise KELRecoveryUnknownPreviousKELException(
+                "could not reconstruct delegator KEL"
+            )
+        if delegator_log[-1].public_key_hash != self.txn.prev_public_key_hash:
+            raise KELRecoveryUnknownPreviousKELException(
+                "recovery does not point to the delegator KEL's latest entry"
+            )
+
+        # Single-use: reject if a recovery successor already exists on-chain.
+        existing_successor = await KeyEventLog.find_recovery_successor(
+            self.txn.prev_public_key_hash, onchain_only=True
+        )
+        if existing_successor and (
+            existing_successor.transaction_signature != self.txn.transaction_signature
+        ):
+            raise KELRecoveryAlreadyConsumedException(
+                "delegator KEL has already been recovered; it is sealed"
+            )
+
+        # Resolve the active witness hash from the latest announcement in the
+        # delegator KEL.  No announcement → no recovery permitted.
+        announced_witness_hash = find_active_recovery_witness_hash(delegator_log)
+        if not announced_witness_hash:
+            raise KELRecoveryAnnouncementMissingException(
+                "delegator KEL has no {recovery: witnessHash} announcement"
+            )
+
+        # Bind the proof's commitment to the announced witness hash:
+        #   witnessHash == SHA-256(commitment_compressed_bytes)
+        try:
+            commitment_bytes = bytes.fromhex(proof["commitment"])
+        except ValueError as exc:
+            raise KELRecoveryMalformedProofException(
+                f"recovers proof commitment is not valid hex: {exc}"
+            )
+        if sha256(commitment_bytes).hexdigest() != announced_witness_hash.lower():
+            raise KELRecoveryInvalidProofException(
+                "recovers proof commitment does not match announced witnessHash"
+            )
+
+        # Verify the Schnorr proof, binding the delegator's tip pkh into the
+        # Fiat-Shamir challenge so the proof cannot be replayed against any
+        # other KEL.
+        if not verify_recovery_proof(
+            commitment_hex=proof["commitment"],
+            R_hex=proof["R"],
+            s_hex=proof["s"],
+            prev_key_hash=self.txn.prev_public_key_hash,
+        ):
+            raise KELRecoveryInvalidProofException(
+                "Schnorr verification failed for recovers proof"
+            )
+
+        if (onchain and self.status == KeyEventChainStatus.MEMPOOL) or (
+            not onchain and self.status == KeyEventChainStatus.ONCHAIN
+        ):
+            raise KeyEventException(
+                "not a valid recovery inception key event. Invalid status."
+            )
 
     def verify_unconfirmed(self):
         self.verify_fields(prev_public_key_hash_required=True)
@@ -294,9 +542,18 @@ class KeyEvent:
                         )
                         if batch_parent:
                             return
+                    # Also allow parent already in the mempool (e.g. inception
+                    # not yet mined — practical for long block times).
+                    mempool_parent = await self.config.mongo.async_db.miner_transactions.find_one(
+                        {
+                            MempoolQueryFields.PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash
+                        }
+                    )
+                    if mempool_parent:
+                        return
                     raise KELException(
                         "Unconfirmed key event rejected: predecessor key event is not yet "
-                        "confirmed on-chain. Wait for the previous rotation to be mined before submitting."
+                        "confirmed on-chain or present in the mempool."
                     )
 
         if await self.txn.is_already_onchain():
@@ -388,6 +645,41 @@ class KeyEvent:
             return {
                 "key_event": key_event,
             }
+
+    async def get_mempool_parent(self):
+        """Return the mempool parent entry for this key event, or None.
+
+        Checks miner_transactions for an entry whose twice_prerotated_key_hash
+        matches our prerotated_key_hash, or whose prerotated_key_hash matches
+        our public_key_hash.  Used when the parent entry has been broadcast to
+        the mempool but not yet mined (e.g. inception not yet on-chain).
+        """
+        config = Config()
+        doc = await config.mongo.async_db.miner_transactions.find_one(
+            {
+                "$or": [
+                    {
+                        MempoolQueryFields.TWICE_PREROTATED_KEY_HASH.value: self.txn.prerotated_key_hash,
+                    },
+                    {
+                        MempoolQueryFields.PREROTATED_KEY_HASH.value: self.txn.public_key_hash,
+                    },
+                ]
+            }
+        )
+        if doc:
+            txn = Transaction.from_dict(doc)
+            key_event = KeyEvent(
+                txn,
+                flag=(
+                    KeyEventFlag.CONFIRMING
+                    if txn.prev_public_key_hash
+                    else KeyEventFlag.INCEPTION
+                ),
+                status=KeyEventChainStatus.MEMPOOL,
+            )
+            return {"key_event": key_event}
+        return None
 
     async def get_onchain_child(self):
         config = Config()
@@ -493,8 +785,29 @@ class KeyEventLog:
     ):
         self = KeyEventLog()
         self.config = Config()
+
+        # Recovery short-circuit: a {"recovers": ...} inception is a brand new
+        # KEL whose only structural link to the prior KEL is via
+        # prev_public_key_hash + the embedded ZKP.  Validate it specially so
+        # the normal parent/child / hash-collection checks do not reject it.
+        if is_recovers_inception(key_event.txn):
+            latest_index = self.config.LatestBlock.block.index
+            if latest_index < CHAIN.KEL_RECOVERY_FORK:
+                raise KELRecoveryNotActivatedException(
+                    "KEL recovery is not yet active at this block height"
+                )
+            await key_event.verify_recovery_inception()
+            key_event.flag = KeyEventFlag.INCEPTION
+            self.base_key_event = key_event
+            return self
+
         # step 1: if transaction is tracked on-chain in an existing key event log
         result = await key_event.get_onchain_parent()
+        # Only look for a mempool parent when there is no on-chain parent and
+        # this is not an inception (prev_public_key_hash must be set).
+        mempool_result = None
+        if not result and key_event.txn.prev_public_key_hash:
+            mempool_result = await key_event.get_mempool_parent()
         entire_log = await KeyEventLog.build_from_public_key(key_event.txn.public_key)
         if result and result["key_event"]:
             # step 1.1: If found, check that this entry is the latest entry, if not, raise exception
@@ -580,6 +893,81 @@ class KeyEventLog:
                         ),
                     )
 
+        # step 1.5: mempool parent found — inception (or previous rotation) not yet mined.
+        # Allows chaining KEL entries in the mempool before the parent is confirmed on-chain.
+        # Skip if the hash_collection already has a non-inception entry at
+        # key_event.txn.prerotated_key_hash — that means step 2.2 (hash_collection path)
+        # should handle it instead (e.g. unconfirmed + confirming in the same block).
+        elif (
+            mempool_result
+            and mempool_result["key_event"]
+            and not (
+                key_event.txn.prerotated_key_hash
+                in hash_collection.twice_prerotated_key_hashes
+                and hash_collection.twice_prerotated_key_hashes[
+                    key_event.txn.prerotated_key_hash
+                ].prev_public_key_hash
+            )
+        ):
+            parent_event = mempool_result["key_event"]
+
+            if parent_event.txn.public_key_hash != key_event.txn.prev_public_key_hash:
+                raise FatalKeyEventException(
+                    "key_event.txn mempool parent public_key_hash does not equal key_event.txn.prev_public_key_hash",
+                    other_txn_to_delete=hash_collection.prerotated_key_hashes.get(
+                        key_event.txn.twice_prerotated_key_hash
+                    ),
+                )
+
+            if (
+                not key_event.txn.relationship
+                and len(key_event.txn.outputs) == 1
+                and (
+                    key_event.txn.outputs[0].to == key_event.txn.prerotated_key_hash
+                    or (
+                        entire_log
+                        and key_event.txn.outputs[0].to
+                        == entire_log[-1].prerotated_key_hash
+                    )
+                )
+                and key_event.txn.prev_public_key_hash
+            ):
+                key_event.flag = KeyEventFlag.CONFIRMING
+                self.confirming_key_event = key_event
+                self.base_key_event = parent_event
+            else:
+                past_key_event = await key_event.sends_to_past_kel_entry()
+                if past_key_event:
+                    raise FatalKeyEventException(
+                        "Unconfirmed key event sends to past key event.",
+                        other_txn_to_delete=hash_collection.prerotated_key_hashes.get(
+                            key_event.txn.twice_prerotated_key_hash
+                        ),
+                    )
+
+                key_event.flag = KeyEventFlag.UNCONFIRMED
+                self.unconfirmed_key_event = key_event
+                self.base_key_event = parent_event
+
+                if (
+                    key_event.txn.twice_prerotated_key_hash
+                    in hash_collection.prerotated_key_hashes
+                ):
+                    self.confirming_key_event = KeyEvent(
+                        hash_collection.prerotated_key_hashes[
+                            key_event.txn.twice_prerotated_key_hash
+                        ],
+                        KeyEventFlag.CONFIRMING,
+                        KeyEventChainStatus.MEMPOOL,
+                    )
+                else:
+                    raise FatalKeyEventException(
+                        "No confirming key event present in hash_collection.",
+                        other_txn_to_delete=hash_collection.prerotated_key_hashes.get(
+                            key_event.txn.twice_prerotated_key_hash
+                        ),
+                    )
+
         # step 2: If onchain parent not found
         # Check within this hash_collection for an off-chain parent
         elif (
@@ -643,7 +1031,14 @@ class KeyEventLog:
             if result and result["key_event"]:
                 self.base_key_event = result["key_event"]
             else:
-                raise KELException("No onchain key event for unconfirmed key event.")
+                # Fall back to mempool parent (inception not yet on-chain)
+                mempool_base = await unconfirmed_key_event.get_mempool_parent()
+                if mempool_base and mempool_base["key_event"]:
+                    self.base_key_event = mempool_base["key_event"]
+                else:
+                    raise KELException(
+                        "No on-chain or mempool key event found for unconfirmed key event."
+                    )
 
         # check that KEL is one of five scenarios.
         # 1. Inception
@@ -716,6 +1111,68 @@ class KeyEventLog:
             and self.confirming_key_event.status == KeyEventChainStatus.MEMPOOL
         ):
             self.base_key_event.verify_confirming(entire_log, onchain=True)
+            self.unconfirmed_key_event.verify_unconfirmed()
+            self.confirming_key_event.verify_confirming(entire_log)
+            self.verify_links()
+
+        # 6. Mempool inception + confirming (mempool) — inception not yet mined
+        elif (
+            self.base_key_event
+            and self.base_key_event.flag == KeyEventFlag.INCEPTION
+            and self.base_key_event.status == KeyEventChainStatus.MEMPOOL
+            and not self.unconfirmed_key_event
+            and self.confirming_key_event
+            and self.confirming_key_event.flag == KeyEventFlag.CONFIRMING
+            and self.confirming_key_event.status == KeyEventChainStatus.MEMPOOL
+        ):
+            self.base_key_event.verify_inception()
+            self.confirming_key_event.verify_confirming(entire_log)
+            self.verify_links()
+
+        # 7. Mempool inception + unconfirmed (mempool) + confirming (mempool)
+        elif (
+            self.base_key_event
+            and self.base_key_event.flag == KeyEventFlag.INCEPTION
+            and self.base_key_event.status == KeyEventChainStatus.MEMPOOL
+            and self.unconfirmed_key_event
+            and self.unconfirmed_key_event.flag == KeyEventFlag.UNCONFIRMED
+            and self.unconfirmed_key_event.status == KeyEventChainStatus.MEMPOOL
+            and self.confirming_key_event
+            and self.confirming_key_event.flag == KeyEventFlag.CONFIRMING
+            and self.confirming_key_event.status == KeyEventChainStatus.MEMPOOL
+        ):
+            self.base_key_event.verify_inception()
+            self.unconfirmed_key_event.verify_unconfirmed()
+            self.confirming_key_event.verify_confirming(entire_log)
+            self.verify_links()
+
+        # 8. Mempool confirming base (prev rotation unconfirmed/not yet mined) + confirming (mempool)
+        elif (
+            self.base_key_event
+            and self.base_key_event.flag == KeyEventFlag.CONFIRMING
+            and self.base_key_event.status == KeyEventChainStatus.MEMPOOL
+            and not self.unconfirmed_key_event
+            and self.confirming_key_event
+            and self.confirming_key_event.flag == KeyEventFlag.CONFIRMING
+            and self.confirming_key_event.status == KeyEventChainStatus.MEMPOOL
+        ):
+            self.base_key_event.verify_confirming(entire_log)
+            self.confirming_key_event.verify_confirming(entire_log)
+            self.verify_links()
+
+        # 9. Mempool confirming base + unconfirmed (mempool) + confirming (mempool)
+        elif (
+            self.base_key_event
+            and self.base_key_event.flag == KeyEventFlag.CONFIRMING
+            and self.base_key_event.status == KeyEventChainStatus.MEMPOOL
+            and self.unconfirmed_key_event
+            and self.unconfirmed_key_event.flag == KeyEventFlag.UNCONFIRMED
+            and self.unconfirmed_key_event.status == KeyEventChainStatus.MEMPOOL
+            and self.confirming_key_event
+            and self.confirming_key_event.flag == KeyEventFlag.CONFIRMING
+            and self.confirming_key_event.status == KeyEventChainStatus.MEMPOOL
+        ):
+            self.base_key_event.verify_confirming(entire_log)
             self.unconfirmed_key_event.verify_unconfirmed()
             self.confirming_key_event.verify_confirming(entire_log)
             self.verify_links()
@@ -808,13 +1265,70 @@ class KeyEventLog:
             )
 
     @staticmethod
-    async def build_from_public_key(public_key, onchain_only=False):
+    async def find_recovery_successor(public_key_hash, onchain_only=False):
+        """Return the recovers-inception that succeeds the KEL whose tip is
+        *public_key_hash*, or None.
+
+        The successor is uniquely identified by:
+          * ``prev_public_key_hash == public_key_hash``
+          * a well-formed ``{"recovers": ...}`` relationship
+
+        Searches the on-chain blocks first, then the mempool (unless
+        *onchain_only*).  Returns the Transaction object or None.
+        """
+        config = Config()
+        cursor = config.mongo.async_db.blocks.aggregate(
+            [
+                {
+                    "$match": {
+                        BlocksQueryFields.PREV_PUBLIC_KEY_HASH.value: public_key_hash
+                    }
+                },
+                {"$unwind": "$transactions"},
+                {
+                    "$match": {
+                        BlocksQueryFields.PREV_PUBLIC_KEY_HASH.value: public_key_hash
+                    }
+                },
+            ]
+        )
+        rows = await cursor.to_list(length=None)
+        for row in rows:
+            txn = Transaction.from_dict(row["transactions"])
+            if is_recovers_inception(txn):
+                return txn
+
+        if onchain_only:
+            return None
+
+        mempool_cursor = config.mongo.async_db.miner_transactions.find(
+            {MempoolQueryFields.PREV_PUBLIC_KEY_HASH.value: public_key_hash}
+        )
+        async for doc in mempool_cursor:
+            txn = Transaction.from_dict(doc)
+            if is_recovers_inception(txn):
+                txn.mempool = True
+                return txn
+        return None
+
+    @staticmethod
+    async def build_from_public_key(
+        public_key, onchain_only=False, follow_recovery=True
+    ):
         """Build the ordered KEL for *public_key*.
 
         When *onchain_only* is True the forward-walk stops at the confirmed
         blockchain tip: mempool entries are never appended.  This is important
         for output-routing validation so that a pending (unconfirmed) rotation
         sitting in the mempool is never mistaken for the "latest" KEL entry.
+
+        When *follow_recovery* is True (default) the forward-walk crosses
+        ``{"recovers": ...}`` recovery boundaries: once the natural rotation
+        chain exhausts, the search looks for a recovers-inception whose
+        ``prev_public_key_hash`` equals the current tip's ``public_key_hash``
+        and continues walking into the new KEL.  Set False when validating a
+        recovery itself (to avoid feedback loops) or when consumers want only
+        the segment up to the first recovery boundary.
         """
         config = Config()
         log = []
@@ -853,6 +1367,9 @@ class KeyEventLog:
             res = await result.to_list(length=1)
             if res:
                 txn = Transaction.from_dict(res[0]["transactions"])
+                # A recovers-inception walks BACK through prev_public_key_hash
+                # into the delegator KEL, so we treat it like any other
+                # non-inception entry here.
                 if not txn.prev_public_key_hash:
                     inception = txn
                     break
@@ -906,18 +1423,32 @@ class KeyEventLog:
                 if res:
                     txn = Transaction.from_dict(res[0]["transactions"])
                     log.append(txn)
-                else:
-                    if onchain_only:
-                        break
+                    continue
+
+                if not onchain_only:
                     result_mempool = (
                         await config.mongo.async_db.miner_transactions.find_one(
                             {MempoolQueryFields.PUBLIC_KEY_HASH.value: address},
                         )
                     )
-                    if not result_mempool:
-                        break
-                    txn = Transaction.from_dict(result_mempool)
-                    txn.mempool = True
-                    log.append(txn)
+                    if result_mempool:
+                        txn = Transaction.from_dict(result_mempool)
+                        txn.mempool = True
+                        log.append(txn)
+                        continue
+
+                # Natural rotation chain exhausted.  If recovery-following is
+                # enabled, look for a {"recovers": ...} successor whose
+                # prev_public_key_hash references the current tip's pkh and
+                # continue walking forward from there.
+                if follow_recovery:
+                    successor = await KeyEventLog.find_recovery_successor(
+                        log[-1].public_key_hash, onchain_only=onchain_only
+                    )
+                    if successor is not None:
+                        log.append(successor)
+                        txn = successor
+                        continue
+                break  # pragma: no cover
 
         return log

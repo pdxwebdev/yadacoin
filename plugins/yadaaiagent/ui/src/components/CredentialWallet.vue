@@ -133,6 +133,8 @@ function toggleExpand(id) {
 
 const SERVICE_LABELS = {
   flight: "✈ Flight",
+  train: "🚆 Train",
+  ship: "🚢 Cruise",
   hotel: "🏨 Hotel",
   car: "🚗 Car Rental",
   legal: "⚖ Legal",
@@ -271,6 +273,12 @@ function formatVal(v) {
 }
 .cw-card.svc-flight {
   border-left-color: #38bdf8;
+}
+.cw-card.svc-train {
+  border-left-color: #facc15;
+}
+.cw-card.svc-ship {
+  border-left-color: #2dd4bf;
 }
 .cw-card.svc-hotel {
   border-left-color: #fb923c;

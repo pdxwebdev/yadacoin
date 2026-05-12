@@ -218,7 +218,7 @@ async function onApprove(payload) {
     setTimeout(function () {
       approvalState.value = null;
       approvalSteps.value = [];
-      if (chatPaneRef.value)
+      if (chatPaneRef.value && html)
         chatPaneRef.value.messages.push({
           role: "agent",
           html: html,
@@ -243,6 +243,7 @@ function onWalletModeChanged() {
 function onWalletSetupDone() {
   showWalletSetup.value = false;
   refreshSessionPill();
+  chatPaneRef.value?.notifyWalletReady();
 }
 
 function onDeny() {

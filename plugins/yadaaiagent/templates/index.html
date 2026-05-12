@@ -1936,14 +1936,14 @@
                 appendAgent(
                   `✅ <strong>All services booked!</strong><br><br>` +
                     `${resultLines}<br><br>` +
-                    `Scope committed on-chain: <code>${rotateData.transaction_id.slice(0, 24)}…</code><br>` +
+                    `Scope committed on-chain: <a href="/explorer?term=${rotateData.transaction_id}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);font-family:monospace;font-size:0.85em">${rotateData.transaction_id.slice(0, 24)}…</a><br>` +
                     `<span style="color:var(--muted);font-size:0.8rem">Each vendor independently verified your VP against the KEL</span>`,
                 );
               } else if (anyOk) {
                 appendAgent(
                   `⚠️ <strong>Partial success</strong><br><br>` +
                     `${resultLines}<br><br>` +
-                    `Scope committed on-chain: <code>${rotateData.transaction_id.slice(0, 24)}…</code>`,
+                    `Scope committed on-chain: <a href="/explorer?term=${rotateData.transaction_id}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);font-family:monospace;font-size:0.85em">${rotateData.transaction_id.slice(0, 24)}…</a>`,
                 );
               } else {
                 appendAgent(

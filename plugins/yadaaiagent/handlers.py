@@ -265,12 +265,12 @@ AGENT_TYPES = [
     {
         "id": "travel",
         "label": "Travel Booking",
-        "description": "Book flights, hotels, and car rentals with KEL-backed agent credentials.",
+        "description": "Book flights, trains, ships, hotels, and car rentals with KEL-backed agent credentials.",
         "icon": "✈️",
         "routing_hint": (
             "user mentions wanting to go somewhere, visit a destination, travel, "
-            "take a trip, book a flight/hotel/car, or asks about travel arrangements. "
-            "Examples: 'I want to go to Mexico', 'I'm planning a trip to Paris', 'book me a flight'"
+            "take a trip, book a flight/train/ship/hotel/car, or asks about travel arrangements. "
+            "Examples: 'I want to go to Mexico', 'I'm planning a trip to Paris', 'book me a flight', 'book a train to Berlin', 'cruise to the Bahamas'"
         ),
         "authorizationType": "TravelBookingAuthorization",
         "fields": [
@@ -281,10 +281,10 @@ AGENT_TYPES = [
                 "key": "services",
                 "label": "Services",
                 "type": "multiselect",
-                "options": ["hotel", "flight", "car"],
+                "options": ["hotel", "flight", "train", "ship", "car"],
             },
         ],
-        "services": ["hotel", "flight", "car"],
+        "services": ["hotel", "flight", "train", "ship", "car"],
         "systemPrompt": (
             "You are a travel booking assistant. Your ONLY job is to collect travel details.\n"
             "You CANNOT book anything, confirm any reservation, or process any payment.\n"
@@ -296,14 +296,14 @@ AGENT_TYPES = [
             '    "destination": "city/destination or null",\n'
             '    "checkin": "check-in date (e.g. May 10) or null",\n'
             '    "checkout": "check-out date (e.g. May 16) or null",\n'
-            '    "services": ["hotel","flight","car"] subset or null\n'
+            '    "services": ["hotel","flight","train","ship","car"] subset or null\n'
             "  },\n"
             '  "complete": false,\n'
             '  "detected_agent_type": "travel"\n'
             "}\n"
             "Rules:\n"
-            "- Only use service values: hotel, flight, car\n"
-            '- If the user says "all": services=["hotel","flight","car"]\n'
+            "- Only use service values: hotel, flight, train, ship, car\n"
+            '- If the user says "all": services=["hotel","flight","train","ship","car"]\n'
             "- complete MUST be false unless ALL FOUR fields are known\n"
             '- For date ranges like "May 10-16": checkin="May 10", checkout="May 16"\n'
             "- When complete=true: summarise all details and say the operator will approve\n"
@@ -822,6 +822,36 @@ VENDOR_REGISTRY = {
             "\n" + _VENDOR_CHAT_INSTRUCTION
         ),
     },
+    "train": {
+        "name": "RailEuro Express",
+        "available": True,
+        "prefix": "TRN",
+        "vendorPrompt": (
+            "You are the reservations agent for RailEuro Express. "
+            "A customer has been securely verified via YadaCoin KEL identity. "
+            "Collect their train preferences ONE question at a time. "
+            "Ask about: cabin class (standard / first / sleeper), "
+            "seat preference (window / aisle / table), "
+            "and bicycle or large luggage (yes / no). "
+            "Do not ask about things already in their scope. "
+            "\n" + _VENDOR_CHAT_INSTRUCTION
+        ),
+    },
+    "ship": {
+        "name": "BlueWave Cruises",
+        "available": True,
+        "prefix": "SHP",
+        "vendorPrompt": (
+            "You are the reservations agent for BlueWave Cruises. "
+            "A customer has been securely verified via YadaCoin KEL identity. "
+            "Collect their voyage preferences ONE question at a time. "
+            "Ask about: cabin type (interior / oceanview / balcony / suite), "
+            "dining seating (early / late / anytime), "
+            "and shore excursion package (yes / no). "
+            "Do not ask about things already in their scope. "
+            "\n" + _VENDOR_CHAT_INSTRUCTION
+        ),
+    },
     "hotel": {
         "name": "Grand Stay Hotels",
         "available": True,
@@ -1005,6 +1035,76 @@ def _flight_confirm(args: dict, scope: dict) -> dict:
     }
 
 
+def _train_check_seats(args: dict, scope: dict) -> dict:
+    cabin = args.get("cabin_class", "standard").lower()
+    options = {
+        "standard": [
+            {"code": "12A", "type": "window", "extra_usd": 0},
+            {"code": "12C", "type": "aisle", "extra_usd": 0},
+            {"code": "14T", "type": "table", "extra_usd": 5},
+        ],
+        "first": [
+            {"code": "3A", "type": "window", "extra_usd": 35},
+            {"code": "3D", "type": "aisle", "extra_usd": 35},
+        ],
+        "sleeper": [
+            {"code": "S2-L", "type": "lower berth", "extra_usd": 80},
+            {"code": "S2-U", "type": "upper berth", "extra_usd": 60},
+        ],
+    }
+    return {"cabin": cabin, "available_seats": options.get(cabin, options["standard"])}
+
+
+def _train_confirm(args: dict, scope: dict) -> dict:
+    holder = scope.get("holder", args.get("seat_code", ""))
+    return {
+        "confirmed": True,
+        "confirmation": _gen_confirmation("train", holder),
+        "seat": args.get("seat_code"),
+        "cabin_class": args.get("cabin_class", "standard"),
+        "large_luggage": args.get("large_luggage", False),
+        "destination": scope.get("destination"),
+        "dates": f"{scope.get('checkin')} → {scope.get('checkout')}",
+    }
+
+
+def _ship_check_cabins(args: dict, scope: dict) -> dict:
+    cabin = args.get("cabin_type", "interior").lower()
+    catalog = {
+        "interior": [
+            {"id": "INT-204", "deck": 2, "rate_usd": 499},
+            {"id": "INT-318", "deck": 3, "rate_usd": 549},
+        ],
+        "oceanview": [
+            {"id": "OV-512", "deck": 5, "rate_usd": 749},
+        ],
+        "balcony": [
+            {"id": "BAL-708", "deck": 7, "rate_usd": 999},
+            {"id": "BAL-812", "deck": 8, "rate_usd": 1099},
+        ],
+        "suite": [
+            {"id": "STE-1001", "deck": 10, "rate_usd": 1899},
+        ],
+    }
+    return {
+        "cabin_type": cabin,
+        "available_cabins": catalog.get(cabin, catalog["interior"]),
+    }
+
+
+def _ship_confirm(args: dict, scope: dict) -> dict:
+    holder = scope.get("holder", args.get("cabin_id", ""))
+    return {
+        "confirmed": True,
+        "confirmation": _gen_confirmation("ship", holder),
+        "cabin_id": args.get("cabin_id"),
+        "dining_seating": args.get("dining_seating", "anytime"),
+        "shore_excursions": args.get("shore_excursions", False),
+        "destination": scope.get("destination"),
+        "dates": f"{scope.get('checkin')} → {scope.get('checkout')}",
+    }
+
+
 def _hotel_check_rooms(args: dict, scope: dict) -> dict:
     room_type = args.get("room_type", "king").lower()
     catalog = {
@@ -1183,6 +1283,96 @@ _VENDOR_TOOLS = {
         "impl": {
             "check_seat_options": _flight_check_seats,
             "confirm_flight_booking": _flight_confirm,
+        },
+    },
+    "train": {
+        "confirm_tool": "confirm_train_booking",
+        "schemas": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "check_train_seat_options",
+                    "description": "Check available seats on the booked train for a cabin class.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "cabin_class": {
+                                "type": "string",
+                                "enum": ["standard", "first", "sleeper"],
+                            }
+                        },
+                        "required": [],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "confirm_train_booking",
+                    "description": "Confirm the train booking once all preferences are collected.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "seat_code": {"type": "string"},
+                            "cabin_class": {
+                                "type": "string",
+                                "enum": ["standard", "first", "sleeper"],
+                            },
+                            "large_luggage": {"type": "boolean"},
+                        },
+                        "required": ["seat_code", "cabin_class", "large_luggage"],
+                    },
+                },
+            },
+        ],
+        "impl": {
+            "check_train_seat_options": _train_check_seats,
+            "confirm_train_booking": _train_confirm,
+        },
+    },
+    "ship": {
+        "confirm_tool": "confirm_ship_booking",
+        "schemas": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "check_cabin_options",
+                    "description": "Check available cabins on the cruise for a cabin type.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "cabin_type": {
+                                "type": "string",
+                                "enum": ["interior", "oceanview", "balcony", "suite"],
+                            }
+                        },
+                        "required": ["cabin_type"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "confirm_ship_booking",
+                    "description": "Confirm the cruise booking once all preferences are collected.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "cabin_id": {"type": "string"},
+                            "dining_seating": {
+                                "type": "string",
+                                "enum": ["early", "late", "anytime"],
+                            },
+                            "shore_excursions": {"type": "boolean"},
+                        },
+                        "required": ["cabin_id", "dining_seating", "shore_excursions"],
+                    },
+                },
+            },
+        ],
+        "impl": {
+            "check_cabin_options": _ship_check_cabins,
+            "confirm_ship_booking": _ship_confirm,
         },
     },
     "hotel": {

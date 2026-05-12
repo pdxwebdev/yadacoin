@@ -1,4 +1,0 @@
-[report]
-exclude_also =
-    if TYPE_CHECKING:
-omit =

@@ -102,6 +102,12 @@ class CHAIN(object):
     )
     CHECK_KEL_OUTPUT_ROUTING_FORK = 591000
     SMART_CONTRACT_REMOVAL_FORK = 593600
+    # Enables location-recovery key event log delegation: a new KEL inception
+    # may carry {"recovers": {commitment, R, s}} in its relationship field and a
+    # populated prev_public_key_hash referring to the previous KEL's tip.  The
+    # ZKP is verified against the latest {"recovery": witnessHash} announcement
+    # in the previous KEL.  See yadacoin/core/locationrecovery.py.
+    KEL_RECOVERY_FORK = 597000
 
     @classmethod
     def target_block_time(cls, network: str):

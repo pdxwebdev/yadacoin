@@ -82,7 +82,11 @@ let chatHistory = [];
 const vendorState = ref(null);
 
 // ── Session ──────────────────────────────────────────────────────────────────
+// sessionTick is incremented externally (notifyWalletReady) to force the
+// computed to re-evaluate, since Vue does not track localStorage reads.
+const sessionTick = ref(0);
 const sessionReady = computed(() => {
+  sessionTick.value; // reactive dependency so we can force re-evaluation
   const p = localStorage.getItem(LS_PRIV);
   const c = localStorage.getItem(LS_CC);
   return !!(p && c);
@@ -800,12 +804,23 @@ async function doClientRotation(privBytes, ccBytes, sf, relationshipB64) {
   const kelData = await kelRes.json();
   if (!kelRes.ok) throw new Error(kelData.message || String(kelRes.status));
   const kel = kelData.key_event_log || [];
-  // prev_public_key_hash for the new K_n-signed txn is the public_key_hash
-  // of the KEL entry that pre-committed to K_n as its prerotated key —
-  // i.e. the LAST entry's public_key_hash (= P2PKH(K_{n-1})).
-  // Empty KEL = inception case → "".
+
+  // Use the last KEL entry's public_key_hash — that is the address which
+  // pre-committed to the current signing key, i.e. K_{n-1}'s address.
+  // The server handler (keyrotation/handlers.py) sets:
+  //   prev_public_key_hash = latest.public_key_hash
   const prevPublicKeyHash =
     kel.length > 0 ? (kel[kel.length - 1].public_key_hash ?? "") : "";
+
+  // Invariant: if prevPublicKeyHash === currentPkh the stored key hasn't been
+  // advanced past the inception (e.g. wallet re-imported after inception hit
+  // mempool but before localStorage was updated).  Advance LS_PRIV silently
+  // and re-run with the corrected key — no error surfaced to the user.
+  if (prevPublicKeyHash === currentPkh) {
+    localStorage.setItem(LS_PRIV, hex.fromBytes(child.priv));
+    localStorage.setItem(LS_CC, hex.fromBytes(child.cc));
+    return doClientRotation(child.priv, child.cc, sf, relationshipB64);
+  }
 
   // relationship_hash = sha256("") for empty relationship
   const enc = new TextEncoder();
@@ -858,18 +873,9 @@ async function doClientRotation(privBytes, ccBytes, sf, relationshipB64) {
   if (!bcastRes.ok || bcastData.status === false)
     throw new Error(bcastData.message || String(bcastRes.status));
 
-  // After broadcast:
-  //   unconfirmed txn signed by K_n (privBytes)     → prerotated = K_{n+1} (child)
-  //   confirming  txn signed by K_{n+1} (child)     → prerotated = K_{n+2} (gc1)
-  // After mining, kel[-1] = CONFIRMING with prerotated_key_hash = K_{n+2} (gc1).
-  // Next UNCONFIRMED signer must be K_{n+2} (the pre-committed key) → LS = gc1.
-  // Agent credential must match kel[-1].prerotated_key_hash → also gc1.
-  // (LS and agent share the same key here; client mode has no seed to re-derive,
-  // and the agent's off-chain VP signing doesn't conflict with the on-chain
-  // signer role for the next rotation.)
   return {
-    prevPrivHex: hex.fromBytes(gc1.priv),
-    prevCcHex: hex.fromBytes(gc1.cc),
+    prevPrivHex: hex.fromBytes(child.priv),
+    prevCcHex: hex.fromBytes(child.cc),
     provPrivBytes: gc1.priv,
     transactionId: unconfirmedTxn.id,
   };
@@ -1056,7 +1062,7 @@ async function runApprovalFlow(
         `✅ <strong>Config updated!</strong><br><br>` +
           `<strong>${escHtml(scope.config_key)}</strong> → <code>${escHtml(String(scope.new_value))}</code><br><br>` +
           `The node is restarting to apply the change.<br>` +
-          `Scope on-chain: <code>${rotateData0.transaction_id.slice(0, 24)}…</code>`,
+          `Scope on-chain: <a href="${origin}/explorer?term=${rotateData0.transaction_id}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);font-family:monospace;font-size:0.85em">${rotateData0.transaction_id.slice(0, 24)}…</a>`,
       );
     } catch (e) {
       onStep("Apply failed: " + e.message, "fail");
@@ -1287,14 +1293,14 @@ async function runApprovalFlow(
               (sendData.transaction_id
                 ? `<strong>Transaction ID:</strong> <code>${escHtml(String(sendData.transaction_id).slice(0, 32))}…</code><br>`
                 : "") +
-              `<br>KEL authorization on-chain: <code>${rotateDataW.transaction_id.slice(0, 24)}…</code>`
+              `<br>KEL authorization on-chain: <a href="${origin}/explorer?term=${rotateDataW.transaction_id}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);font-family:monospace;font-size:0.85em">${rotateDataW.transaction_id.slice(0, 24)}…</a>`
           : `✅ <strong>Transaction sent!</strong><br><br>` +
               `<strong>To:</strong> <code>${escHtml(toAddrW)}</code><br>` +
               `<strong>Amount:</strong> ${escHtml(String(amtW))} YDA<br>` +
               (sendData.transaction_id
                 ? `<strong>Transaction ID:</strong> <code>${escHtml(String(sendData.transaction_id).slice(0, 32))}…</code><br>`
                 : "") +
-              `<br>KEL authorization on-chain: <code>${rotateDataW.transaction_id.slice(0, 24)}…</code>`,
+              `<br>KEL authorization on-chain: <a href="${origin}/explorer?term=${rotateDataW.transaction_id}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);font-family:monospace;font-size:0.85em">${rotateDataW.transaction_id.slice(0, 24)}…</a>`,
       );
     } catch (e) {
       onStep("Send failed: " + e.message, "fail");
@@ -1593,9 +1599,18 @@ async function runApprovalFlow(
       .join("<br>");
     const summaryHtml =
       (confirmedLines ? confirmedLines + "<br>" : "") +
-      (errorLines ? errorLines + "<br>" : "") +
-      `Scope on-chain: <code>${txSnippet}</code>`;
-    onDone(true, summaryHtml.trim() || "Scope committed. Continuing below…");
+      (errorLines ? errorLines : "");
+    // Push summary directly so it lands in chat BEFORE the first vendor
+    // question, which is pushed synchronously right after.  Then call onDone
+    // with an empty string to just close the overlay (no duplicate message).
+    if (summaryHtml.trim()) pushAgent(summaryHtml.trim(), true);
+    // Push scope txid right here — after summary, before first vendor question
+    const snip0 = rotateData.transaction_id.slice(0, 24) + "\u2026";
+    pushAgent(
+      `Scope on-chain: <a href="${origin}/explorer?term=${rotateData.transaction_id}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);font-family:monospace;font-size:0.85em">${snip0}</a>`,
+      true,
+    );
+    onDone(true, ""); // close overlay only
 
     // Set vendor state — first pending service becomes current, rest go into queue
     const [first, ...rest] = pendingVendors;
@@ -1626,12 +1641,12 @@ async function runApprovalFlow(
     if (allOk) {
       onDone(
         true,
-        `✅ <strong>All services booked!</strong><br><br>${resultLines}<br><br>Scope on-chain: <code>${txSnippet}</code>`,
+        `✅ <strong>All services booked!</strong><br><br>${resultLines}<br><br>Scope on-chain: <a href="${origin}/explorer?term=${rotateData.transaction_id}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);font-family:monospace;font-size:0.85em">${txSnippet}</a>`,
       );
     } else if (anyOk) {
       onDone(
         true,
-        `⚠️ <strong>Partial success</strong><br><br>${resultLines}<br><br>Scope on-chain: <code>${txSnippet}</code>`,
+        `⚠️ <strong>Partial success</strong><br><br>${resultLines}<br><br>Scope on-chain: <a href="${origin}/explorer?term=${rotateData.transaction_id}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);font-family:monospace;font-size:0.85em">${txSnippet}</a>`,
       );
     } else {
       onDone(
@@ -1647,7 +1662,28 @@ async function runApprovalFlow(
   nextTick(() => inputEl.value?.focus());
 }
 
-defineExpose({ runApprovalFlow, messages, busy });
+/**
+ * Called by the parent after wallet setup completes so the chat reactivates
+ * without requiring a full page reload.
+ */
+function notifyWalletReady() {
+  sessionTick.value++; // forces sessionReady to re-evaluate
+  // Replace any "no wallet" warning messages with the normal greeting
+  messages.value = messages.value.filter(
+    (m) =>
+      !m.html?.includes("No wallet found") &&
+      !m.html?.includes("No operator key found") &&
+      !m.content?.includes("No wallet found") &&
+      !m.content?.includes("No operator key found") &&
+      !m.content?.includes("To get started, set up"),
+  );
+  pushAgent(
+    "Wallet ready! I'm your YadaCoin AI agent. How can I help you today?",
+  );
+  nextTick(() => inputEl.value?.focus());
+}
+
+defineExpose({ runApprovalFlow, messages, busy, notifyWalletReady });
 </script>
 
 <style scoped>

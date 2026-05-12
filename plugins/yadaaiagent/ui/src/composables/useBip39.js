@@ -101,12 +101,16 @@ export async function submitInceptionTransaction(k0, sf) {
   const k1Pkh = getP2PKH(hex.toBytes(getPublicKeyHex(k1.priv)));
   const k2Pkh = getP2PKH(hex.toBytes(getPublicKeyHex(k2.priv)));
 
-  // Skip if a KEL already exists (re-import of an existing wallet)
+  // Skip if a KEL already exists (re-import of an existing wallet or inception already in mempool)
   const kelRes = await fetch(
     `${nodeUrl}/key-event-log?username_signature=asdf&public_key=${encodeURIComponent(k0PubHex)}`,
   );
   const kelData = await kelRes.json();
   if (kelData.key_event_log?.length > 0) {
+    // Inception is already on-chain or in mempool.  Advance LS_PRIV to K_1
+    // so that the next doClientRotation call uses the correct signing key.
+    localStorage.setItem(LS_PRIV, hex.fromBytes(k1.priv));
+    localStorage.setItem(LS_CC, hex.fromBytes(k1.cc));
     return { skipped: true };
   }
 
@@ -140,4 +144,51 @@ export async function submitInceptionTransaction(k0, sf) {
   localStorage.setItem(LS_CC, hex.fromBytes(k1.cc));
 
   return { transactionId: inceptionTxn.id };
+}
+
+/**
+ * Initialize the server-side admin KEL wallet by calling the node's
+ * /key-rotation/init-derived-child-key endpoint.
+ *
+ * The node must have `seed` configured in config.json.  The node private key
+ * is used only for authentication and is never stored client-side.
+ *
+ * @param {string} nodePrivateKey - the node's configured private key (auth)
+ * @param {string} secondFactor   - second factor / password for key derivation
+ * @returns {Promise<{
+ *   address: string,
+ *   publicKey: string,
+ *   prerotatedAddress: string,
+ *   twicePrerotatedAddress: string,
+ *   transactionId: string,
+ *   adminKelHint: string,
+ * }>}
+ */
+export async function initAdminServerWallet(nodePrivateKey, secondFactor) {
+  const nodeUrl = getNodeUrl();
+  if (!nodeUrl)
+    throw new Error(
+      "Node URL not configured. Set it in Settings before initializing the admin wallet.",
+    );
+
+  const res = await fetch(`${nodeUrl}/key-rotation/init-derived-child-key`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      private_key: nodePrivateKey,
+      second_factor: secondFactor,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok || data.status === false)
+    throw new Error(data.message || `HTTP ${res.status}`);
+
+  return {
+    address: data.address,
+    publicKey: data.public_key,
+    prerotatedAddress: data.prerotated_address,
+    twicePrerotatedAddress: data.twice_prerotated_address,
+    transactionId: data.transaction_id,
+    adminKelHint: data.admin_kel_hint,
+  };
 }
