@@ -88,13 +88,46 @@
       </section>
 
       <section>
+        <h3>Web Search (Brave)</h3>
+        <div class="field-group">
+          <label>Brave Search API Key</label>
+          <input
+            v-model="braveApiKey"
+            type="password"
+            placeholder="BSA…"
+            autocomplete="off"
+          />
+          <div class="hint">
+            Enables real-time web search in the General Chat agent. Get a free
+            key at
+            <a
+              href="https://brave.com/search/api/"
+              target="_blank"
+              rel="noopener"
+              >brave.com/search/api</a
+            >. Stored in localStorage.
+            <strong
+              >⚠ This key is sent to the YadaCoin node with each search
+              request</strong
+            >
+            so the server can call Brave on your behalf. If you are using a
+            shared or public node (e.g. yadacoin.io), the node operator can see
+            your API key. Use a dedicated key or run your own node if that is a
+            concern.
+          </div>
+        </div>
+      </section>
+
+      <section>
         <h3>Wallet Mode</h3>
         <div class="field-group">
           <label>Active mode</label>
           <select v-model="walletMode">
             <option value="node">Node Wallet (server-managed key)</option>
             <option value="client">Personal Wallet (client-side seed)</option>
-            <option value="hardware">Hardware Wallet (air-gapped device)</option>
+            <option value="hardware">
+              Hardware Wallet (air-gapped device)
+            </option>
           </select>
           <div class="hint">
             <strong>Node Wallet</strong> — your node derives and stores your
@@ -197,6 +230,8 @@ import {
   getPaymentMethods,
   savePaymentMethods,
   getNodeUrl,
+  getBraveApiKey,
+  saveBraveApiKey,
   LS_NODE_URL,
   LS_PRIV,
   LS_HW_PUB,
@@ -212,6 +247,7 @@ const emit = defineEmits(["update:modelValue", "wallet-mode-changed"]);
 const form = ref({ ...getLlmSettings() });
 const nodeUrl = ref(getNodeUrl());
 const paymentMethods = ref(getPaymentMethods());
+const braveApiKey = ref(getBraveApiKey());
 const newPmLabel = ref("");
 const savedMsg = ref(false);
 const walletMode = ref(getWalletMode());
@@ -252,6 +288,7 @@ watch(
       form.value = { ...getLlmSettings() };
       nodeUrl.value = getNodeUrl();
       paymentMethods.value = getPaymentMethods();
+      braveApiKey.value = getBraveApiKey();
       walletMode.value = getWalletMode();
     }
   },
@@ -290,6 +327,7 @@ function close() {
 function save() {
   saveLlmSettings(form.value);
   localStorage.setItem(LS_NODE_URL, nodeUrl.value.trim().replace(/\/+$/, ""));
+  saveBraveApiKey(braveApiKey.value);
   setWalletMode(walletMode.value);
   emit("wallet-mode-changed");
   savedMsg.value = true;

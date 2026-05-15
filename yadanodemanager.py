@@ -3,12 +3,29 @@ import subprocess
 import time
 
 
+def _detect_compose_cmd():
+    """Return the docker compose command list for the current environment.
+
+    Prefers Compose V2 ('docker compose') when available, falls back to the
+    legacy 'docker-compose' v1 binary so existing nodes are not broken.
+    """
+    try:
+        subprocess.check_output(
+            ["docker", "compose", "version"],
+            stderr=subprocess.DEVNULL,
+        )
+        return ["docker", "compose"]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return ["docker-compose"]
+
+
 class YadaNodeManager:
     def __init__(self):
         self.repo_path = os.path.dirname(os.path.abspath(__file__))
         self.service_name = "yada-node"
         self.update_interval_seconds = 3600  # how often to check for git updates
         self.health_check_interval_seconds = 30  # how often to check container health
+        self.compose_cmd = _detect_compose_cmd()
 
     def stop_previous_containers(self):
         try:
@@ -45,6 +62,41 @@ class YadaNodeManager:
         except:
             return False
 
+    def ensure_compose_v2(self):
+        """Install Docker Compose V2 plugin if only v1 is present.
+
+        Called automatically after a successful git update so that existing
+        nodes migrate to V2 without requiring manual intervention.
+        """
+        try:
+            subprocess.check_output(
+                ["docker", "compose", "version"],
+                stderr=subprocess.DEVNULL,
+            )
+            return  # V2 already available
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+
+        print("Docker Compose V2 not found. Installing plugin...")
+        plugin_dir = "/usr/local/lib/docker/cli-plugins"
+        plugin_path = os.path.join(plugin_dir, "docker-compose")
+        os.makedirs(plugin_dir, exist_ok=True)
+        result = subprocess.run(
+            [
+                "curl",
+                "-fsSL",
+                "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64",
+                "-o",
+                plugin_path,
+            ]
+        )
+        if result.returncode == 0:
+            os.chmod(plugin_path, 0o755)
+            self.compose_cmd = ["docker", "compose"]
+            print("Docker Compose V2 installed successfully.")
+        else:
+            print("Failed to install Docker Compose V2. Continuing with v1.")
+
     def git_pull_latest(self):
         os.chdir(self.repo_path)
         subprocess.run(["git", "fetch", "origin", "--tags"])
@@ -78,27 +130,28 @@ class YadaNodeManager:
             subprocess.run(["git", "stash"])
             subprocess.run(["git", "checkout", latest_tag])
             subprocess.run(["git", "stash", "pop"])
+            self.ensure_compose_v2()
             return True
 
         return False
 
     def rebuild_docker_image(self):
         subprocess.run(
-            ["docker-compose", "down"],
+            self.compose_cmd + ["down"],
             cwd=self.repo_path,
         )
         subprocess.run(
-            ["docker-compose", "build", "--no-cache", self.service_name],
+            self.compose_cmd + ["build", "--no-cache", self.service_name],
             cwd=self.repo_path,
         )
         subprocess.run(
-            ["docker-compose", "up", "-d", self.service_name],
+            self.compose_cmd + ["up", "-d", self.service_name],
             cwd=self.repo_path,
         )
 
     def start_docker_image(self):
         subprocess.run(
-            ["docker-compose", "up", "-d", self.service_name],
+            self.compose_cmd + ["up", "-d", self.service_name],
             cwd=self.repo_path,
         )
 
@@ -108,7 +161,7 @@ class YadaNodeManager:
 
     def start_restore_service(self):
         subprocess.run(
-            ["docker-compose", "up", "restore"],
+            self.compose_cmd + ["up", "restore"],
             cwd=self.repo_path,
         )
         mongodump_path = os.path.join(self.repo_path, "dump")

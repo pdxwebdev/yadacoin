@@ -7,11 +7,102 @@
       :class="msg.role"
     >
       <div class="avatar">{{ msg.role === "user" ? "You" : "AI" }}</div>
-      <div
-        class="bubble"
-        :class="{ thinking: msg.thinking }"
-        v-html="renderBubble(msg)"
-      ></div>
+      <div class="bubble-wrap">
+        <div
+          class="bubble"
+          :class="{ thinking: msg.thinking }"
+          v-html="renderBubble(msg)"
+        ></div>
+        <div v-if="msg.choices?.length" class="choice-form">
+          <!-- Single-select: radio buttons -->
+          <template v-if="!msg.choicesMulti">
+            <label
+              v-for="(choice, ci) in msg.choices"
+              :key="ci"
+              class="choice-label"
+            >
+              <input
+                type="radio"
+                :name="`choice-${i}`"
+                :value="choice"
+                v-model="msg.radioSelected"
+                class="choice-input"
+              />
+              <span>{{ choice }}</span>
+            </label>
+            <button
+              class="choice-confirm-btn"
+              :disabled="!msg.radioSelected"
+              @click="confirmRadio(msg)"
+            >
+              Confirm
+            </button>
+          </template>
+          <!-- Multi-select: checkboxes -->
+          <template v-else>
+            <label
+              v-for="(choice, ci) in msg.choices"
+              :key="ci"
+              class="choice-label"
+            >
+              <input
+                type="checkbox"
+                :value="choice"
+                v-model="msg.checkSelected"
+                class="choice-input"
+              />
+              <span>{{ choice }}</span>
+            </label>
+            <button
+              class="choice-confirm-btn"
+              :disabled="!msg.checkSelected?.length"
+              @click="confirmCheckbox(msg)"
+            >
+              Confirm
+            </button>
+          </template>
+        </div>
+        <div v-if="msg.dateFields?.length" class="date-form">
+          <div
+            v-for="(field, fi) in msg.dateFields"
+            :key="fi"
+            class="date-field-row"
+          >
+            <label class="date-field-label">{{ field.label }}</label>
+            <input
+              :type="field.type"
+              v-model="field.value"
+              class="date-field-input"
+            />
+          </div>
+          <button
+            class="choice-confirm-btn"
+            :disabled="msg.dateFields.some((f) => !f.value)"
+            @click="confirmFields(msg)"
+          >
+            Confirm
+          </button>
+        </div>
+        <div v-if="msg.searchSources?.length" class="sources-row">
+          <button class="sources-toggle" @click="toggleSources(i)">
+            🔍 {{ openSources[i] ? "Hide" : "Show" }}
+            {{ msg.searchSources.length }} web source{{
+              msg.searchSources.length !== 1 ? "s" : ""
+            }}
+          </button>
+          <div v-if="openSources[i]" class="sources-list">
+            <a
+              v-for="(src, j) in msg.searchSources"
+              :key="j"
+              :href="src.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="source-item"
+              >{{ src.title || src.url }}</a
+            >
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -22,6 +113,11 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 
 marked.setOptions({ breaks: true, gfm: true });
+
+const openSources = ref({});
+function toggleSources(i) {
+  openSources.value[i] = !openSources.value[i];
+}
 
 const PURIFY_CONFIG = {
   ALLOWED_TAGS: [
@@ -66,6 +162,24 @@ function sanitize(html) {
 marked.setOptions({ breaks: true, gfm: true });
 
 const props = defineProps({ messages: Array });
+const emit = defineEmits(["choice-selected", "fields-confirmed"]);
+
+function confirmRadio(msg) {
+  if (!msg.radioSelected) return;
+  emit("choice-selected", msg.radioSelected);
+}
+
+function confirmCheckbox(msg) {
+  if (!msg.checkSelected?.length) return;
+  emit("choice-selected", [...msg.checkSelected]);
+}
+
+function confirmFields(msg) {
+  const parts = msg.dateFields
+    .filter((f) => f.value)
+    .map((f) => `${f.label}: ${f.value}`);
+  emit("fields-confirmed", parts.join(", "));
+}
 const chatEl = ref(null);
 
 function escHtml(s) {
@@ -117,6 +231,175 @@ defineExpose({ chatEl, escHtml });
 .msg-row.agent {
   flex-direction: row;
 }
+.bubble-wrap {
+  display: flex;
+  flex-direction: column;
+  max-width: 72%;
+  gap: 4px;
+}
+.sources-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sources-toggle {
+  align-self: flex-start;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--subtext);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 2px 10px;
+  font-family: inherit;
+  transition:
+    border-color 0.15s,
+    color 0.15s;
+}
+.sources-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sources-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 0 2px 4px;
+}
+.source-item {
+  font-size: 0.76rem;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 340px;
+}
+.source-item:hover {
+  text-decoration: underline;
+}
+.choice-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px 14px;
+  background: var(--agent-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.choice-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+  padding: 3px 0;
+}
+.choice-label:hover span {
+  color: var(--accent);
+}
+.choice-input[type="radio"],
+.choice-input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  transition: border-color 0.15s;
+}
+.choice-input[type="radio"] {
+  border-radius: 50%;
+}
+.choice-input[type="checkbox"] {
+  border-radius: 3px;
+}
+.choice-input:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.choice-input[type="radio"]:checked::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  background: #0d111a;
+  border-radius: 50%;
+}
+.choice-input[type="checkbox"]:checked::after {
+  content: "✓";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #0d111a;
+  font-weight: 700;
+  line-height: 1;
+  padding-left: 1px;
+}
+.choice-confirm-btn {
+  align-self: flex-start;
+  margin-top: 4px;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  color: #0d111a;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-family: inherit;
+  font-weight: 600;
+  padding: 5px 16px;
+  transition: opacity 0.15s;
+}
+.choice-confirm-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.choice-confirm-btn:not(:disabled):hover {
+  opacity: 0.85;
+}
+.date-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px 14px;
+  background: var(--agent-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.date-field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.date-field-label {
+  font-size: 0.78rem;
+  color: var(--subtext);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.date-field-input {
+  background: var(--input-bg, #0d111a);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 5px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+  color-scheme: dark;
+}
+.date-field-input:focus {
+  border-color: var(--accent);
+}
 .avatar {
   flex-shrink: 0;
   width: 30px;
@@ -138,7 +421,6 @@ defineExpose({ chatEl, escHtml });
   border: 1px solid var(--border);
 }
 .bubble {
-  max-width: 72%;
   padding: 10px 14px;
   border-radius: 12px;
   font-size: 0.88rem;

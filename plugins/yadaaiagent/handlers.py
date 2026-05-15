@@ -247,6 +247,8 @@ AGENT_TYPES = [
             '- "legal": user explicitly asks to DRAFT, REVIEW, or get help with a legal document, '
             "contract, NDA, terms of service, or privacy policy\n"
             '- "ecommerce": user explicitly asks to ORDER, BUY, or purchase a physical product\n'
+            '- "therapy": user mentions needing therapy, a therapist, mental health support, '
+            "counselling, or help with OCD, ADD, ADHD, anxiety, depression, or stress\n"
             "Keep detected_agent_type as 'general' for greetings, vague questions, or topics "
             "that don't clearly fit the above.\n"
             '- "agent_registration": user wants to register or list their AI agent on the blockchain, '
@@ -387,6 +389,49 @@ AGENT_TYPES = [
             "}\n"
             "complete=true only when ALL THREE fields are known.\n"
             "If the user clearly wants something other than shopping/orders, set detected_agent_type to 'general'."
+        ),
+    },
+    {
+        "id": "therapy",
+        "label": "Therapy Booking",
+        "description": "Book a therapy session with a YadaCoin-verified mental health professional.",
+        "icon": "🧠",
+        "routing_hint": (
+            "user mentions needing therapy, a therapist, mental health support, counselling, "
+            "or help with OCD, ADD, ADHD, anxiety, depression, or stress. "
+            "Examples: 'I need therapy', 'I need a therapist', 'I want to see a therapist', "
+            "'help with my anxiety', 'I'm struggling with OCD'"
+        ),
+        "authorizationType": "TherapyBookingAuthorization",
+        "fields": [
+            {
+                "key": "session_type",
+                "label": "Session Type",
+                "type": "select",
+                "options": ["individual_50min", "couples_80min"],
+            },
+            {"key": "preferred_day", "label": "Preferred Day", "type": "text"},
+        ],
+        "services": ["therapist"],
+        "systemPrompt": (
+            "You are a therapy scheduling intake assistant. Your ONLY job is to collect "
+            "the session type and a preferred day for the appointment. "
+            "Be warm, empathetic, and professional. "
+            "You CANNOT provide therapy, clinical advice, or diagnoses.\n"
+            "ALWAYS respond with ONLY a valid JSON object:\n"
+            "{\n"
+            '  "reply": "your conversational response",\n'
+            '  "extracted": {\n'
+            '    "session_type": "individual_50min|couples_80min or null",\n'
+            '    "preferred_day": "day of week or null"\n'
+            "  },\n"
+            '  "complete": false,\n'
+            '  "detected_agent_type": "therapy"\n'
+            "}\n"
+            "complete=true only when BOTH session_type AND preferred_day are known. "
+            "When complete=true, summarise and say the operator will confirm the booking.\n"
+            "If the user clearly wants something other than therapy scheduling (e.g. travel, shopping, legal help), "
+            "set detected_agent_type to 'general'."
         ),
     },
     {
@@ -789,6 +834,71 @@ def _build_general_prompt_dynamic(onchain_agents: list) -> str:
     )
 
 
+# ── Brave Search helper ───────────────────────────────────────────────────────
+
+import urllib.parse as _urlparse
+
+
+async def _brave_web_search(api_key: str, query: str, count: int = 5) -> list:
+    """
+    Call the Brave Search API and return a list of result dicts.
+    Each dict has keys: title, url, description.
+    Returns an empty list on any error so callers can treat search as best-effort.
+    """
+    params = _urlparse.urlencode(
+        {
+            "q": query,
+            "count": count,
+            "text_decorations": "false",
+            "search_lang": "en",
+            "safesearch": "moderate",
+            "freshness": "pm",  # prefer results from the past month
+        }
+    )
+    url = f"https://api.search.brave.com/res/v1/web/search?{params}"
+    client = AsyncHTTPClient()
+    req = HTTPRequest(
+        url=url,
+        method="GET",
+        headers={
+            "Accept": "application/json",
+            "Accept-Encoding": "identity",
+            "X-Subscription-Token": api_key,
+        },
+        request_timeout=8.0,
+    )
+    resp = await client.fetch(req, raise_error=False)
+    if resp.code != 200:
+        return []
+    try:
+        data = json.loads(resp.body)
+        raw = data.get("web", {}).get("results", [])
+        return [
+            {
+                "title": r.get("title", ""),
+                "url": r.get("url", ""),
+                "description": r.get("description", ""),
+            }
+            for r in raw[:count]
+        ]
+    except Exception:
+        return []
+
+
+def _build_search_context(results: list, query: str) -> str:
+    """Format Brave search results as a context block for the system prompt."""
+    lines = [
+        f'[Web search results for "{query}" — use these to answer factual/current-events questions. '
+        "Cite sources when helpful.]",
+    ]
+    for i, r in enumerate(results, 1):
+        lines.append(f"{i}. {r['title']}")
+        lines.append(f"   URL: {r['url']}")
+        if r.get("description"):
+            lines.append(f"   {r['description']}")
+    return "\n".join(lines)
+
+
 # ── Vendor registry ───────────────────────────────────────────────────────────
 # Maps service id → {name, available, confirmationPrefix}
 # Add new services here; a VendorHandler subclass is auto-generated below.
@@ -909,6 +1019,20 @@ VENDOR_REGISTRY = {
             "gift wrapping (yes / no), "
             "and delivery speed (standard / express / overnight). "
             "Do not ask about things already in their scope. "
+            "\n" + _VENDOR_CHAT_INSTRUCTION
+        ),
+    },
+    "therapist": {
+        "name": "YadaCoin Therapist",
+        "available": True,
+        "prefix": "THR",
+        "vendorPrompt": (
+            "You are a scheduling assistant for a mental health therapist "
+            "specializing in OCD, ADD, and ADHD. "
+            "A client has been securely verified via YadaCoin KEL identity. "
+            "Be warm, empathetic, and professional. Ask ONE question at a time. "
+            "Use the available tools to check availability and confirm a session. "
+            "Do NOT provide therapy, diagnoses, or clinical advice — you only handle scheduling. "
             "\n" + _VENDOR_CHAT_INSTRUCTION
         ),
     },
@@ -1239,6 +1363,54 @@ def _ecommerce_confirm(args: dict, scope: dict) -> dict:
     }
 
 
+def _therapist_check_availability(args: dict, scope: dict) -> dict:
+    day = (args.get("day") or "").strip().lower()
+    schedule = {
+        "monday": ["10:00 AM", "2:00 PM", "4:30 PM"],
+        "tuesday": ["9:00 AM", "11:00 AM", "3:00 PM"],
+        "wednesday": ["10:00 AM", "1:00 PM"],
+        "thursday": ["9:00 AM", "2:00 PM", "5:00 PM"],
+        "friday": ["10:00 AM", "12:00 PM"],
+    }
+    if day and day in schedule:
+        return {"day": day, "available_slots": schedule[day]}
+    return {
+        "availability": {d: slots for d, slots in schedule.items()},
+        "note": "All times local. Sessions are 50 minutes (individual) or 80 minutes (couples).",
+    }
+
+
+def _therapist_get_info(args: dict, scope: dict) -> dict:
+    return {
+        "name": "YadaCoin Therapist",
+        "specializations": ["OCD", "ADD", "ADHD", "anxiety", "stress management"],
+        "modalities": [
+            "Cognitive Behavioral Therapy (CBT)",
+            "Exposure and Response Prevention (ERP)",
+            "Dialectical Behavior Therapy (DBT)",
+        ],
+        "session_types": ["individual_50min", "couples_80min"],
+        "rate_usd": {"individual_50min": 150, "couples_80min": 220},
+    }
+
+
+def _therapist_confirm_session(args: dict, scope: dict) -> dict:
+    holder = scope.get("holder", args.get("session_type", ""))
+    is_couples = "couples" in str(args.get("session_type", ""))
+    return {
+        "confirmed": True,
+        "confirmation": _gen_confirmation("therapist", holder),
+        "day": args.get("day"),
+        "slot": args.get("slot"),
+        "session_type": args.get("session_type", "individual_50min"),
+        "duration_minutes": 80 if is_couples else 50,
+        "joining_instructions": (
+            "A secure encrypted video link will be sent to your registered contact "
+            "15 minutes before your session."
+        ),
+    }
+
+
 _VENDOR_TOOLS = {
     "flight": {
         "confirm_tool": "confirm_flight_booking",
@@ -1557,6 +1729,76 @@ _VENDOR_TOOLS = {
             "confirm_order": _ecommerce_confirm,
         },
     },
+    "therapist": {
+        "confirm_tool": "confirm_session",
+        "schemas": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "check_availability",
+                    "description": (
+                        "Check available therapy appointment slots. "
+                        "Optionally filter by day of week."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "day": {
+                                "type": "string",
+                                "description": "Optional day of week (monday, tuesday, wednesday, thursday, friday)",
+                            }
+                        },
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_therapist_info",
+                    "description": (
+                        "Get information about the therapist's specializations, "
+                        "treatment modalities, session types, and rates."
+                    ),
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "confirm_session",
+                    "description": "Book and confirm a therapy session once the client has chosen a day, time slot, and session type.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "day": {
+                                "type": "string",
+                                "description": "Day of the week e.g. 'monday'",
+                            },
+                            "slot": {
+                                "type": "string",
+                                "description": "Time slot e.g. '10:00 AM'",
+                            },
+                            "session_type": {
+                                "type": "string",
+                                "enum": ["individual_50min", "couples_80min"],
+                                "description": "Session format and duration",
+                            },
+                        },
+                        "required": ["day", "slot", "session_type"],
+                    },
+                },
+            },
+        ],
+        "impl": {
+            "check_availability": _therapist_check_availability,
+            "get_therapist_info": _therapist_get_info,
+            "confirm_session": _therapist_confirm_session,
+        },
+        # Set THERAPIST_MCP_ENDPOINT env-var to use a live MCP server instead of the mock impl.
+        # Example: export THERAPIST_MCP_ENDPOINT=http://localhost:8010/mcp
+        # Run the server: python plugins/yadaaiagent/mcp_server_therapist.py
+        "mcp_endpoint": os.environ.get("THERAPIST_MCP_ENDPOINT", ""),
+    },
 }
 
 
@@ -1713,6 +1955,40 @@ class AgentChatHandler(BaseHandler):
         ).rstrip("/")
         base_url = (llm_cfg.get("base_url") or "").rstrip("/")
 
+        # ── Brave Search context injection ────────────────────────────────────
+        # Runs only for the general agent when a Brave API key is available.
+        # Results are appended to the system prompt so the LLM can cite them.
+        brave_api_key = (body.get("brave_api_key") or "").strip() or os.environ.get(
+            "BRAVE_API_KEY", ""
+        )
+        search_sources: list = []  # populated below if search runs
+        if brave_api_key and agent_type_id == "general" and messages:
+            last_user_msg = next(
+                (
+                    m.get("content", "")
+                    for m in reversed(messages)
+                    if m.get("role") == "user"
+                ),
+                "",
+            ).strip()
+            # Skip search for very short inputs (greetings, single words, etc.)
+            if len(last_user_msg) >= 8:
+                try:
+                    search_results = await _brave_web_search(
+                        brave_api_key, last_user_msg, count=5
+                    )
+                    if search_results:
+                        system_prompt += "\n\n" + _build_search_context(
+                            search_results, last_user_msg
+                        )
+                        search_sources = [
+                            {"title": r["title"], "url": r["url"]}
+                            for r in search_results
+                            if r.get("url")
+                        ]
+                except Exception:
+                    pass  # search is best-effort — never block the chat
+
         full_messages = _sanitize_messages(
             [{"role": "system", "content": system_prompt}] + messages
         )
@@ -1797,6 +2073,7 @@ class AgentChatHandler(BaseHandler):
                 "extracted": extracted,
                 "complete": complete,
                 "detected_agent_type": detected_agent_type,
+                "search_sources": search_sources,
             }
         )
 

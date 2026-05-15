@@ -21,6 +21,15 @@ export const LS_PAYMENT_METHODS = "yadacoin_payment_methods";
 export const LS_ACTIVE_AGENT = "yadacoin_active_agent";
 export const LS_NODE_URL = "yadacoin_node_url";
 export const LS_BOOKING_CREDENTIALS = "yadacoin_booking_credentials";
+export const LS_BRAVE_API_KEY = "yadacoin_brave_api_key";
+
+export function getBraveApiKey() {
+  return localStorage.getItem(LS_BRAVE_API_KEY) || "";
+}
+
+export function saveBraveApiKey(key) {
+  localStorage.setItem(LS_BRAVE_API_KEY, key.trim());
+}
 
 export function getNodeUrl() {
   return (localStorage.getItem(LS_NODE_URL) || window.location.origin).replace(

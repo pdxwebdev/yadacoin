@@ -8,9 +8,9 @@ Install:
     pip install "fastmcp>=2.0"   # or: uvx fastmcp
 
 Run:
-    python plugins/yadaaiagenttherapist/mcp_server.py
+    python plugins/yadaaiagent/mcp_server_therapist.py
     # or:
-    uvx fastmcp run plugins/yadaaiagenttherapist/mcp_server.py --transport streamable-http --port 8010
+    uvx fastmcp run plugins/yadaaiagent/mcp_server_therapist.py --transport streamable-http --port 8010
 
 Then point the YadaCoin node at it:
     export THERAPIST_MCP_ENDPOINT=http://localhost:8010/mcp

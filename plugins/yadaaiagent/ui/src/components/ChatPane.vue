@@ -1,6 +1,11 @@
 <template>
   <div class="chat-pane">
-    <ChatWindow :messages="messages" ref="chatWindow" />
+    <ChatWindow
+      :messages="messages"
+      ref="chatWindow"
+      @choice-selected="handleChoice"
+      @fields-confirmed="handleFieldsConfirmed"
+    />
 
     <div class="input-area">
       <textarea
@@ -34,6 +39,7 @@ import {
   LS_WALLET_MODE,
   LS_ACTIVE_AGENT,
   getLlmSettings,
+  getBraveApiKey,
   getNodeUrl,
   saveBookingCredential,
   getWalletMode,
@@ -178,6 +184,152 @@ function removeMsg(index) {
   messages.value.splice(index, 1);
 }
 
+/**
+ * Parse vendor reply text for multiple-choice options.
+ * Returns { items: string[], multi: boolean } or null if none detected.
+ * multi=true → checkboxes (multiple allowed), false → radio buttons (pick one)
+ */
+function parseChoices(text) {
+  if (!text) return null;
+  // Strip HTML tags for plain-text analysis
+  const plain = text.replace(/<[^>]+>/g, " ");
+
+  // Detect multi-select intent: "which services", "services you need",
+  // "select all", "one or more", etc.
+  const multiRe =
+    /which\s+services?|services?\s+you\s+need|services?\s+you\s+want|services?\s+do\s+you\s+need|select\s+all|one\s+or\s+more|any\s+combination|multiple|\bservices\b/i;
+  const multi = multiRe.test(plain);
+
+  // 1. Parenthetical slash list: (window / middle / aisle)
+  const slashMatch = /\(([^)]{3,120})\)/.exec(plain);
+  if (slashMatch && slashMatch[1].includes("/")) {
+    const parts = slashMatch[1]
+      .split(/\s*\/\s*/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && s.length < 50);
+    if (parts.length >= 2 && parts.length <= 8) return { items: parts, multi };
+  }
+
+  // 2. Parenthetical comma/or list: (hotel, flight, train, ship, or car)
+  //    Also matches "such as hotel, flight..." or "like hotel, flight..."
+  const commaOrRe = /(?:such as|like|including|e\.g\.)?\s*\(([^)]{3,200})\)/i;
+  const commaOrMatch = commaOrRe.exec(plain);
+  if (commaOrMatch && /,/.test(commaOrMatch[1])) {
+    const raw = commaOrMatch[1].replace(/\bor\b/gi, ",");
+    const parts = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && s.length < 50);
+    if (parts.length >= 2 && parts.length <= 8) return { items: parts, multi };
+  }
+
+  // 3. Inline comma/or list after colon: "services: hotel, flight, train, or car"
+  const colonListRe =
+    /(?:options?|choices?|services?|modes?|types?)[^:]*:\s*([a-z0-9 ,/]+(\bor\b[a-z0-9 ]+))/i;
+  const colonMatch = colonListRe.exec(plain);
+  if (colonMatch) {
+    const raw = colonMatch[1].replace(/\bor\b/gi, ",");
+    const parts = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && s.length < 50);
+    if (parts.length >= 2 && parts.length <= 8) return { items: parts, multi };
+  }
+
+  // 4. Numbered list: "1. Option\n2. Option"
+  const numbered = [...plain.matchAll(/^\s*\d+\.\s+(.+)/gm)].map((m) =>
+    m[1].trim(),
+  );
+  if (numbered.length >= 2 && numbered.length <= 8)
+    return { items: numbered, multi };
+
+  return null;
+}
+
+/** Apply parsed choices to a message object. */
+function applyChoices(msg, text) {
+  const parsed = parseChoices(text);
+  if (parsed) {
+    msg.choices = parsed.items;
+    msg.choicesMulti = parsed.multi;
+    msg.checkSelected = [];
+    msg.radioSelected = null;
+  }
+}
+
+/**
+ * Detect fields that should be rendered as date/text inputs.
+ * Returns [{label, type, value}] or null.
+ */
+function parseDateFields(text) {
+  if (!text) return null;
+  const plain = text.replace(/<[^>]+>/g, " ").toLowerCase();
+  const fields = [];
+
+  if (/\bdestination\b/.test(plain))
+    fields.push({ label: "Destination", type: "text", value: "" });
+
+  if (/check[- ]?in\s+date|\barrival\s+date\b|\bcheck[- ]?in\b/.test(plain))
+    fields.push({ label: "Check-in date", type: "date", value: "" });
+
+  if (/check[- ]?out\s+date|\bdeparture\s+date\b|\bcheck[- ]?out\b/.test(plain))
+    fields.push({ label: "Check-out date", type: "date", value: "" });
+
+  // Generic travel/booking date pairs
+  if (/\btravel\s+dates?\b|\bdates?\s+of\s+travel\b/.test(plain)) {
+    if (!fields.find((f) => f.label === "Check-in date"))
+      fields.push({ label: "Check-in date", type: "date", value: "" });
+    if (!fields.find((f) => f.label === "Check-out date"))
+      fields.push({ label: "Check-out date", type: "date", value: "" });
+  }
+
+  if (
+    /\bdeparture\s+date\b/.test(plain) &&
+    !fields.find((f) => f.label === "Check-in date")
+  )
+    fields.push({ label: "Departure date", type: "date", value: "" });
+
+  if (/\breturn\s+date\b/.test(plain))
+    fields.push({ label: "Return date", type: "date", value: "" });
+
+  return fields.length > 0 ? fields : null;
+}
+
+/** Apply date/text input fields to a message object. */
+function applyDateFields(msg, text) {
+  const fields = parseDateFields(text);
+  if (fields) msg.dateFields = fields;
+}
+
+/** Clear choice buttons from the most recent agent message that has them. */
+function clearLastChoices() {
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    if (
+      messages.value[i].choices?.length ||
+      messages.value[i].dateFields?.length
+    ) {
+      messages.value[i].choices = [];
+      messages.value[i].dateFields = null;
+      break;
+    }
+  }
+}
+
+/** Called when the user confirms a choice (string for radio, array for checkboxes). */
+function handleChoice(choice) {
+  if (busy.value) return;
+  const text = Array.isArray(choice) ? choice.join(", ") : choice;
+  userInput.value = text;
+  send();
+}
+
+/** Called when the user confirms date/text fields. */
+function handleFieldsConfirmed(text) {
+  if (busy.value) return;
+  userInput.value = text;
+  send();
+}
+
 function escHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -249,6 +401,7 @@ async function send(overridePrompt) {
   const override = typeof overridePrompt === "string" ? overridePrompt : null;
   const prompt = override ?? userInput.value.trim();
   if (!prompt || busy.value || !sessionReady.value) return;
+  clearLastChoices();
   if (!override) {
     userInput.value = "";
     if (inputEl.value) {
@@ -287,6 +440,7 @@ async function send(overridePrompt) {
       body: JSON.stringify({
         messages: chatHistory,
         agent_type: currentAgentId.value || "general",
+        brave_api_key: getBraveApiKey() || undefined,
         llm: {
           provider: llmCfg.provider,
           model: llmCfg.model || undefined,
@@ -342,6 +496,7 @@ async function send(overridePrompt) {
         body: JSON.stringify({
           messages: chatHistory,
           agent_type: currentAgentId.value,
+          brave_api_key: getBraveApiKey() || undefined,
           llm: {
             provider: llmCfg2.provider,
             model: llmCfg2.model || undefined,
@@ -600,7 +755,13 @@ async function send(overridePrompt) {
     messages.value[messages.value.length - 1] = { ...summaryMsg };
     busy.value = false;
   } else {
-    pushAgent(data.reply);
+    const msg = pushAgent(data.reply);
+    applyChoices(msg, data.reply);
+    applyDateFields(msg, data.reply);
+    if (data.search_sources?.length) {
+      msg.searchSources = data.search_sources;
+      messages.value[messages.value.length - 1] = { ...msg };
+    }
     busy.value = false;
   }
   nextTick(() => inputEl.value?.focus());
@@ -723,10 +884,12 @@ async function advanceVendorQueue() {
       );
       await advanceVendorQueue();
     } else {
-      pushAgent(
+      const msg = pushAgent(
         `<strong>${escHtml(data.vendor)}:</strong><br>${marked.parse(data.reply)}`,
         true,
       );
+      applyChoices(msg, data.reply);
+      applyDateFields(msg, data.reply);
     }
   } catch (e) {
     removeMsg(thinkIdx);
@@ -772,10 +935,12 @@ async function sendVendorMessage(text) {
       );
       await advanceVendorQueue();
     } else {
-      pushAgent(
+      const msg = pushAgent(
         `<strong>${escHtml(data.vendor)}:</strong><br>${marked.parse(data.reply)}`,
         true,
       );
+      applyChoices(msg, data.reply);
+      applyDateFields(msg, data.reply);
     }
   } catch (e) {
     removeMsg(thinkIdx);
@@ -1842,10 +2007,14 @@ async function runApprovalFlow(
 
     // Post the first vendor question to the main chat
     await nextTick();
-    pushAgent(
-      `<strong>${escHtml(first.vendorName)}:</strong><br>${marked.parse(first.vendorMessages[first.vendorMessages.length - 1].content)}`,
+    const firstReply =
+      first.vendorMessages[first.vendorMessages.length - 1].content;
+    const firstMsg = pushAgent(
+      `<strong>${escHtml(first.vendorName)}:</strong><br>${marked.parse(firstReply)}`,
       true,
     );
+    applyChoices(firstMsg, firstReply);
+    applyDateFields(firstMsg, firstReply);
   } else {
     // All services resolved immediately — classic done flow
     const resultLines = allResults

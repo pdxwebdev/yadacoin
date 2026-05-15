@@ -11,7 +11,16 @@ sudo bash -c "echo vm.nr_hugepages=0 >> /etc/sysctl.conf"
 
 # Install required packages
 apt update
-apt install -y docker-compose python3-setuptools curl
+apt install -y docker.io python3-setuptools curl
+
+# Enable and start Docker daemon
+systemctl enable docker
+systemctl start docker
+
+# Install Docker Compose V2 plugin
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
 # Create the directory for your application
 DEFAULT_APP_DIR="/etc/yadacoin"
@@ -38,7 +47,7 @@ StartLimitBurst=5
 User=root
 WorkingDirectory=$APP_DIR
 ExecStart=/usr/bin/python3 yadanodemanager.py
-ExecStop=/usr/bin/docker-compose -f $APP_DIR/docker-compose.yml down
+ExecStop=/bin/sh -c 'docker compose -f $APP_DIR/docker-compose.yml down 2>/dev/null || docker-compose -f $APP_DIR/docker-compose.yml down'
 KillMode=process
 Restart=always
 Restart=on-failure
