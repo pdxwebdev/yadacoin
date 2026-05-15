@@ -2058,7 +2058,7 @@ class TestKeyEventLogInitAsyncBranches(AsyncTestCase):
         ):
             with self.assertRaises(KELException) as ctx:
                 await KeyEventLog.init_async(ke, hash_collection)
-            self.assertIn("cannot have inception", str(ctx.exception))
+            self.assertIn("No onchain key event", str(ctx.exception))
 
     async def test_init_async_step2_invalid_txn_raises(self):
         """Line 614: step 2.2 with txn that has relationship → KELException 'No onchain key event'."""
@@ -2829,6 +2829,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
             KeyEventFlag,
             KeyEventLog,
         )
+        from yadacoin.core.recoveryannouncement import RecoveryProof
         from yadacoin.core.transaction import Transaction
 
         prev_pkh = _VALID_ADDR_PKH2
@@ -2841,7 +2842,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
         txn.prerotated_key_hash = _VALID_ADDR_B
         txn.twice_prerotated_key_hash = _VALID_ADDR_B
         txn.prev_public_key_hash = prev_pkh
-        txn.relationship = {"recovers": {"commitment": C, "R": R, "s": s}}
+        txn.relationship = RecoveryProof(C, R, s)
         out = MagicMock()
         out.to = _VALID_ADDR_B
         txn.outputs = [out]
@@ -2905,6 +2906,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
             KeyEventFlag,
             KeyEventLog,
         )
+        from yadacoin.core.recoveryannouncement import RecoveryProof
         from yadacoin.core.transaction import Transaction
 
         prev_pkh = _VALID_ADDR_PKH2
@@ -2917,7 +2919,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
         txn.prerotated_key_hash = _VALID_ADDR_B
         txn.twice_prerotated_key_hash = _VALID_ADDR_B
         txn.prev_public_key_hash = prev_pkh
-        txn.relationship = {"recovers": {"commitment": C, "R": R, "s": s}}
+        txn.relationship = RecoveryProof(C, R, s)
         out = MagicMock()
         out.to = _VALID_ADDR_B
         txn.outputs = [out]
@@ -2987,6 +2989,10 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
             KeyEventFlag,
             KeyEventLog,
         )
+        from yadacoin.core.recoveryannouncement import (
+            RecoveryAnnouncement,
+            RecoveryProof,
+        )
         from yadacoin.core.transaction import Transaction
 
         prev_pkh = _VALID_ADDR_PKH2
@@ -3000,7 +3006,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
         txn.prerotated_key_hash = _VALID_ADDR_B
         txn.twice_prerotated_key_hash = _VALID_ADDR_B
         txn.prev_public_key_hash = prev_pkh
-        txn.relationship = {"recovers": {"commitment": C, "R": R, "s": s}}
+        txn.relationship = RecoveryProof(C, R, s)
         out = MagicMock()
         out.to = _VALID_ADDR_B
         txn.outputs = [out]
@@ -3045,7 +3051,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
 
         delegator_tip = MagicMock()
         delegator_tip.public_key_hash = prev_pkh
-        delegator_tip.relationship = {"recovery": wh}
+        delegator_tip.relationship = RecoveryAnnouncement(wh)
 
         with patch.object(
             KeyEventLog,
@@ -3097,6 +3103,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
             KeyEventChainStatus,
             KeyEventLog,
         )
+        from yadacoin.core.recoveryannouncement import RecoveryProof
         from yadacoin.core.transaction import Transaction
 
         Config().LatestBlock = MagicMock()
@@ -3109,7 +3116,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
         txn.prerotated_key_hash = _VALID_ADDR_B
         txn.twice_prerotated_key_hash = _VALID_ADDR_C
         txn.prev_public_key_hash = _VALID_ADDR_PKH2
-        txn.relationship = {"recovers": {"commitment": "ab", "R": "cd", "s": "ef"}}
+        txn.relationship = RecoveryProof("ab", "cd", "ef")
         out = MagicMock()
         out.to = _VALID_ADDR_B
         txn.outputs = [out]
@@ -3137,6 +3144,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
             KeyEventFlag,
             KeyEventLog,
         )
+        from yadacoin.core.recoveryannouncement import RecoveryProof
         from yadacoin.core.transaction import Transaction
 
         Config().LatestBlock = MagicMock()
@@ -3149,7 +3157,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
         txn.prerotated_key_hash = _VALID_ADDR_B
         txn.twice_prerotated_key_hash = _VALID_ADDR_C
         txn.prev_public_key_hash = _VALID_ADDR_PKH2
-        txn.relationship = {"recovers": {"commitment": "ab", "R": "cd", "s": "ef"}}
+        txn.relationship = RecoveryProof("ab", "cd", "ef")
         out = MagicMock()
         out.to = _VALID_ADDR_B
         txn.outputs = [out]
@@ -3493,3 +3501,178 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
 
         # Only inception in result; forward walk hit `break` at line 1447.
         self.assertEqual(len(result), 1)
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap tests: verify_recovery_inception mempool success path (359-360)
+# and verify() sends_to_past delete_one path (485-486)
+# ---------------------------------------------------------------------------
+
+
+class TestKeyEventLogCoverageGaps(AsyncTestCase):
+    """Cover remaining uncovered lines in keyeventlog.py."""
+
+    async def asyncSetUp(self):
+        import yadacoin.core.config
+
+        yadacoin.core.config.CONFIG = Config()
+        Config().mongo = Mongo()
+        Config().network = "regnet"
+        self.config = Config()
+
+        class AppLog:
+            def warning(self, msg):
+                pass
+
+            def info(self, msg):
+                pass
+
+        Config().app_log = AppLog()
+
+    async def test_verify_calls_verify_recovery_inception_for_recovers_inception(self):
+        """Lines 485-486: verify() with is_recovers_inception=True → calls verify_recovery_inception + return."""
+        from unittest.mock import AsyncMock, patch
+
+        from yadacoin.core.keyeventlog import KeyEventFlag
+        from yadacoin.core.recoveryannouncement import RecoveryProof
+
+        # Build a mock ke where is_recovers_inception returns True
+        ke = _make_mock_ke(
+            flag=KeyEventFlag.INCEPTION,
+            prev_public_key_hash=_VALID_ADDR_A,  # non-empty → is_recovers_inception may be True
+        )
+        # Must match public_key → public_key_hash for the address check
+        ke.txn.public_key_hash = _VALID_ADDR_A
+        ke.txn.relationship = RecoveryProof("aa", "bb", "cc")
+
+        with patch("yadacoin.core.keyeventlog.P2PKHBitcoinAddress") as mock_btc:
+            mock_btc.from_pubkey.return_value = _VALID_ADDR_A
+            ke.verify_recovery_inception = AsyncMock(return_value=None)
+            await ke.verify()
+            ke.verify_recovery_inception.assert_called_once()
+
+    async def test_verify_recovery_inception_mempool_delegator_success(self):
+        """Lines 359-360: blocks returns empty, mempool has delegator txn → continue processing."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from tests.unittests.core.test_kel_recovery import (
+            _make_proof,
+            _random_scalar,
+            _witness_hash_for,
+        )
+        from yadacoin.core.keyeventlog import (
+            KeyEvent,
+            KeyEventChainStatus,
+            KeyEventFlag,
+            KeyEventLog,
+        )
+        from yadacoin.core.recoveryannouncement import (
+            RecoveryAnnouncement,
+            RecoveryProof,
+        )
+        from yadacoin.core.transaction import Transaction
+
+        prev_pkh = _VALID_ADDR_PKH2
+        x = _random_scalar()
+        C, R, s = _make_proof(x, prev_key_hash=prev_pkh)
+        wh = _witness_hash_for(C)
+
+        txn = MagicMock(spec=Transaction)
+        txn.public_key = _VALID_PUBKEY
+        txn.public_key_hash = _VALID_ADDR_B
+        txn.prerotated_key_hash = _VALID_ADDR_B
+        txn.twice_prerotated_key_hash = _VALID_ADDR_B
+        txn.prev_public_key_hash = prev_pkh
+        txn.relationship = RecoveryProof(C, R, s)
+        out = MagicMock()
+        out.to = _VALID_ADDR_B
+        txn.outputs = [out]
+        txn.transaction_signature = "test_sig"
+
+        ke = KeyEvent.__new__(KeyEvent)
+        ke.txn = txn
+        ke.flag = KeyEventFlag.INCEPTION
+        ke.status = KeyEventChainStatus.MEMPOOL
+        ke.config = Config()
+
+        # Blocks cursor returns empty → triggers mempool fallback
+        empty_cursor = MagicMock()
+        empty_cursor.to_list = AsyncMock(return_value=[])
+
+        # Mempool doc for the delegator — must be a valid Transaction dict
+        mempool_delegator_doc = {
+            "time": 1,
+            "id": "mempool-delegator-id",
+            "rid": "",
+            "relationship": {"recovery": wh},
+            "public_key": _VALID_PUBKEY,
+            "dh_public_key": "",
+            "fee": 0.0,
+            "masternode_fee": 0.0,
+            "hash": "h",
+            "inputs": [],
+            "outputs": [{"to": prev_pkh, "value": 0}],
+            "version": 7,
+            "private": False,
+            "never_expire": False,
+            "prerotated_key_hash": _VALID_ADDR_B,
+            "twice_prerotated_key_hash": _VALID_ADDR_C,
+            "public_key_hash": prev_pkh,
+            "prev_public_key_hash": "",
+        }
+
+        mock_mongo = MagicMock()
+        mock_mongo.async_db.blocks.aggregate = MagicMock(return_value=empty_cursor)
+        mock_mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value=mempool_delegator_doc
+        )
+        original_mongo = self.config.mongo
+        Config().mongo = mock_mongo
+
+        # Build a minimal delegator log with the witness hash announcement
+        delegator_tip = MagicMock()
+        delegator_tip.public_key_hash = prev_pkh
+        delegator_tip.relationship = RecoveryAnnouncement(wh)
+
+        try:
+            with patch.object(
+                KeyEventLog,
+                "build_from_public_key",
+                new=AsyncMock(return_value=[delegator_tip]),
+            ):
+                with patch.object(
+                    KeyEventLog,
+                    "find_recovery_successor",
+                    new=AsyncMock(return_value=None),
+                ):
+                    # Should not raise — Schnorr proof verifies against the announced wh
+                    await ke.verify_recovery_inception()
+        finally:
+            Config().mongo = original_mongo
+
+    async def test_verify_sends_to_past_deletes_and_raises(self):
+        """Lines 485-486: verify() with sends_to_past_kel_entry=True → delete_one + KELException."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyeventlog import KELException, KeyEventFlag
+
+        ke = _make_mock_ke(
+            flag=KeyEventFlag.UNCONFIRMED,
+            prev_public_key_hash=_VALID_ADDR_A,
+            relationship="some_relationship",
+            outputs_to="DIFFERENT_ADDR",
+        )
+
+        mock_mongo = MagicMock()
+        mock_mongo.async_db.miner_transactions.delete_one = AsyncMock(return_value=None)
+        ke.config.mongo = mock_mongo
+
+        with patch("yadacoin.core.keyeventlog.P2PKHBitcoinAddress") as mock_btc:
+            mock_btc.from_pubkey.return_value = _VALID_ADDR_A
+            ke.sends_to_past_kel_entry = AsyncMock(return_value=True)
+
+            with self.assertRaises(KELException) as ctx:
+                await ke.verify()
+
+            self.assertIn("Unconfirmed", str(ctx.exception))
+            mock_mongo.async_db.miner_transactions.delete_one.assert_called_once()

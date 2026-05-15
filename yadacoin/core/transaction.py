@@ -29,7 +29,13 @@ from yadacoin.core.agentannouncement import AgentAnnouncement
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.config import Config
+from yadacoin.core.credentialreceipt import CredentialReceipt
 from yadacoin.core.nodeannouncement import NodeAnnouncement
+from yadacoin.core.recoveryannouncement import (
+    RecoveryAnnouncement,
+    RecoveryProof,
+    RecoveryTransition,
+)
 from yadacoin.core.transactionutils import TU
 
 
@@ -158,6 +164,56 @@ class Transaction(object):
         elif isinstance(self.relationship, dict) and "agent" in self.relationship:
             # Convert agent registration dict to AgentAnnouncement instance
             self.relationship = AgentAnnouncement.from_dict(self.relationship["agent"])
+        elif (
+            isinstance(self.relationship, dict)
+            and "recovery" in self.relationship
+            and "recovers" in self.relationship
+        ):
+            # Combined recovers-inception proof + new recovery announcement.
+            # The dict carries both keys — detect this BEFORE the individual
+            # 'recovery' and 'recovers' branches so neither eats the combined
+            # form prematurely.
+            try:
+                self.relationship = RecoveryTransition.from_relationship(
+                    self.relationship
+                )
+            except (ValueError, TypeError):
+                pass
+        elif isinstance(self.relationship, dict) and "recovery" in self.relationship:
+            # Location-recovery announcement: {"recovery": <witness_hash_hex>}
+            # embedded in a regular KEL rotation by the user's current key.
+            # If the payload is malformed we leave the raw dict in place so
+            # downstream KEL helpers (which isinstance-check for
+            # RecoveryAnnouncement) treat it as a non-recovery txn rather
+            # than crashing on garbage input.
+            try:
+                self.relationship = RecoveryAnnouncement.from_relationship(
+                    self.relationship
+                )
+            except (ValueError, TypeError):
+                pass
+        elif isinstance(self.relationship, dict) and "recovers" in self.relationship:
+            # Recovers-inception proof: {"recovers": {commitment, R, s}}
+            # carried by an inception-shaped txn whose prev_public_key_hash
+            # points at the lost KEL's tip pkh.  Same tolerance as above.
+            try:
+                self.relationship = RecoveryProof.from_relationship(self.relationship)
+            except (ValueError, TypeError):
+                pass
+        elif (
+            isinstance(self.relationship, dict)
+            and "credential_receipt" in self.relationship
+        ):
+            # Data-only encrypted VC receipt: {"credential_receipt": {lookup_key, iv, ct}}
+            # Not a key event — no KEL rotation, no UTXO spend.  Silently
+            # leave the raw dict in place on parse failure so the txn is
+            # treated as a plain relationship by downstream code.
+            try:
+                self.relationship = CredentialReceipt.from_relationship(
+                    self.relationship
+                )
+            except (ValueError, TypeError):
+                pass
         elif (
             isinstance(self.relationship, str)
             and len(self.relationship) > TransactionConsts.RELATIONSHIP_MAX_SIZE.value
@@ -582,9 +638,32 @@ class Transaction(object):
         if check_kel:
             from yadacoin.core.keyeventlog import KeyEvent
 
-            has_kel = await self.has_key_event_log(block, mempool)
+            has_kel = False
+            if isinstance(self.relationship, CredentialReceipt):
+                # Data-only receipt: no KEL rotation, no UTXO spend.  Only
+                # enforce the "no funds" invariant to prevent misuse as a
+                # covert value-transfer vehicle.
+                if self.inputs or any(float(o.value) > 0 for o in self.outputs):
+                    raise InvalidTransactionException(
+                        "CredentialReceipt transactions must not include "
+                        "inputs or value-bearing outputs."
+                    )
+            else:
+                has_kel = await self.has_key_event_log(block, mempool)
 
             if has_kel:
+                txn_key_event = KeyEvent(self)
+                await txn_key_event.verify(batch_txns=batch_txns)
+            elif isinstance(self.relationship, (RecoveryProof, RecoveryTransition)):
+                # A recovers-inception is signed by a brand-new K_0, so the
+                # signing key has no prior KEL of its own — has_key_event_log
+                # therefore returns False.  But it carries
+                # prev_public_key_hash pointing at the LOST delegator KEL's
+                # tip pkh and embeds the Schnorr proof that authorises the
+                # delegation.  Route it through KeyEvent.verify so
+                # KeyEventLog.init_async dispatches to
+                # verify_recovery_inception, which validates the ZKP against
+                # the on-chain {"recovery": <witness_hash>} announcement.
                 txn_key_event = KeyEvent(self)
                 await txn_key_event.verify(batch_txns=batch_txns)
             elif self.prev_public_key_hash:
@@ -592,15 +671,16 @@ class Transaction(object):
                     "Key event claims to have a key event log by specifying prev_public_key_hash, but no key event log found."
                 )
 
-            if block is not None:
-                _kel_index = block.index
-            elif mempool:
-                _kel_index = self.config.LatestBlock.block.index + 1
-            else:
-                _kel_index = self.config.LatestBlock.block.index
+            if has_kel:
+                if block is not None:
+                    _kel_index = block.index
+                elif mempool:
+                    _kel_index = self.config.LatestBlock.block.index + 1
+                else:
+                    _kel_index = self.config.LatestBlock.block.index
 
-            if _kel_index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
-                await self.verify_kel_output_rules(block=block, mempool=mempool)
+                if _kel_index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
+                    await self.verify_kel_output_rules(block=block, mempool=mempool)
 
         if verify_hash != self.hash:
             raise InvalidTransactionException(
@@ -644,6 +724,16 @@ class Transaction(object):
                 raise InvalidTransactionException(
                     "Agent registration transaction missing endpoint_url"
                 )
+        elif isinstance(
+            self.relationship, (RecoveryAnnouncement, RecoveryProof, RecoveryTransition)
+        ):
+            # Location-recovery announcements / recovers-inception proofs are
+            # validated structurally by the KEL pipeline (see
+            # KeyEvent.verify_recovery_inception); here we just normalise the
+            # relationship to its hash preimage so the size guard below works.
+            relationship = self.relationship.to_string()
+        elif isinstance(self.relationship, CredentialReceipt):
+            relationship = self.relationship.to_string()
 
         if len(relationship) > TransactionConsts.RELATIONSHIP_MAX_SIZE.value:
             raise MaxRelationshipSizeExceeded(
@@ -760,6 +850,12 @@ class Transaction(object):
         elif isinstance(self.relationship, NodeAnnouncement):
             relationship = self.relationship.to_string()
         elif isinstance(self.relationship, AgentAnnouncement):
+            relationship = self.relationship.to_string()
+        elif isinstance(
+            self.relationship, (RecoveryAnnouncement, RecoveryProof, RecoveryTransition)
+        ):
+            relationship = self.relationship.to_string()
+        elif isinstance(self.relationship, CredentialReceipt):
             relationship = self.relationship.to_string()
         else:
             relationship = self.relationship

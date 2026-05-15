@@ -74,8 +74,18 @@
         </div>
       </div>
 
-      <div v-if="credentials.length" class="cw-footer">
-        <button class="cw-clear-btn" @click="clearAll">Clear all</button>
+      <div class="cw-footer">
+        <button class="cw-resync-btn" :disabled="resyncing" @click="doResync">
+          {{ resyncing ? "Syncing\u2026" : "\u21bb Resync from chain" }}
+        </button>
+        <button
+          v-if="credentials.length"
+          class="cw-clear-btn"
+          @click="clearAll"
+        >
+          Clear all
+        </button>
+        <span v-if="resyncMsg" class="cw-resync-msg">{{ resyncMsg }}</span>
       </div>
     </div>
   </div>
@@ -86,8 +96,10 @@ import { ref, computed } from "vue";
 import {
   getBookingCredentials,
   deleteBookingCredential,
+  saveBookingCredential,
   LS_BOOKING_CREDENTIALS,
 } from "../composables/useStorage.js";
+import { resyncCredentials } from "../composables/useCredentialReceipts.js";
 
 const props = defineProps({ modelValue: Boolean });
 const emit = defineEmits(["update:modelValue"]);
@@ -118,6 +130,32 @@ function close() {
 function remove(id) {
   deleteBookingCredential(id);
   reload();
+}
+
+const resyncing = ref(false);
+const resyncMsg = ref("");
+
+async function doResync() {
+  resyncing.value = true;
+  resyncMsg.value = "";
+  try {
+    const vcs = await resyncCredentials();
+    let added = 0;
+    for (const vc of vcs) {
+      const before = getBookingCredentials().find((c) => c.id === vc.id);
+      saveBookingCredential(vc);
+      if (!before) added++;
+    }
+    reload();
+    resyncMsg.value =
+      vcs.length === 0
+        ? "No receipts found on chain."
+        : `Found ${vcs.length} receipt${vcs.length > 1 ? "s" : ""}, ${added} new.`;
+  } catch (e) {
+    resyncMsg.value = "Resync failed: " + String(e);
+  } finally {
+    resyncing.value = false;
+  }
 }
 
 function clearAll() {
@@ -438,5 +476,27 @@ function formatVal(v) {
 .cw-clear-btn:hover {
   border-color: var(--red);
   color: var(--red2);
+}
+.cw-resync-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--subtext);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.cw-resync-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.cw-resync-btn:not(:disabled):hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.cw-resync-msg {
+  font-size: 11px;
+  color: var(--subtext);
+  margin-left: 6px;
 }
 </style>

@@ -3694,6 +3694,246 @@ for _svc_id, _handler in _VENDOR_HANDLERS.items():
         (rf"/ai-agent-auth/api/vendor/{_svc_id}", _handler),
     ]
 
+
+# ── Location-recovery hints (deprecated) ─────────────────────────────────────
+# Encrypted hint labels are now embedded directly in the on-chain
+# {"recovery": ...} announcement (see RecoveryAnnouncement.hints_iv /
+# .hints_ct).  The previous server-side `location_recovery_hints` Mongo
+# collection has been removed; the LocationHintsHandler endpoint is gone.
+# Recovery clients now fetch hints via /api/find-recovery-tip?lookup_id=<hex>
+# and decrypt them locally with a key derived from the user's Recovery Code.
+
+
+# ── Recovery-tip lookup ────────────────────────────────────────────────────────
+# Given a witnessHash (the public commitment-of-commitment that the user
+# announced on-chain at setup time), find the announcing transaction's KEL
+# and return its current tip pkh + tip pubkey. The recovery client needs the
+# tip pkh to populate `prev_public_key_hash` on the new recovers-inception so
+# that consensus can verify the delegator KEL.
+#
+# This is a pure on-chain scan — no per-user state is stored server-side.
+
+
+class FindRecoveryTipHandler(BaseHandler):
+    """
+    GET /ai-agent-auth/api/find-recovery-tip?witness_hash=<hex>
+    GET /ai-agent-auth/api/find-recovery-tip?lookup_id=<hex>
+
+    Locate an on-chain `{"recovery": ...}` announcement and follow its KEL
+    forward to the current tip. Returns the tip's public key + pkh so a
+    recovers-inception can be built that points at it. When the matching
+    announcement carries encrypted hints (the new shape introduced when we
+    moved the hint storage on-chain), the ciphertext + IV are returned too
+    so the recovering client can decrypt them with the user's Recovery Code.
+
+    Either `witness_hash` (legacy / re-pin path) or `lookup_id` (Recovery
+    Code lookup path) is accepted; `lookup_id` is the sha256 of the
+    normalised Recovery Code and is what a fresh device queries with first
+    so it can show hint labels before the user re-pins anything.
+    """
+
+    async def get(self):
+        witness_hash = (self.get_argument("witness_hash", "") or "").strip().lower()
+        lookup_id = (self.get_argument("lookup_id", "") or "").strip().lower()
+        if not witness_hash and not lookup_id:
+            self.set_status(400)
+            return self.write({"error": "witness_hash or lookup_id required"})
+
+        # Match either:
+        #   • the legacy flat string form: relationship.recovery == witness_hash
+        #   • the extended dict form:      relationship.recovery.witness_hash
+        #                                  / relationship.recovery.lookup_id
+        if lookup_id:
+            match_clause = {
+                "relationship.recovery.lookup_id": lookup_id,
+            }
+            inner_match = {
+                "transactions.relationship.recovery.lookup_id": lookup_id,
+            }
+        else:
+            match_clause = {
+                "$or": [
+                    {"relationship.recovery": witness_hash},
+                    {"relationship.recovery.witness_hash": witness_hash},
+                ]
+            }
+            inner_match = {
+                "$or": [
+                    {"transactions.relationship.recovery": witness_hash},
+                    {"transactions.relationship.recovery.witness_hash": witness_hash},
+                ]
+            }
+
+        cursor = self.config.mongo.async_db.blocks.aggregate(
+            [
+                {"$match": {"transactions": {"$elemMatch": match_clause}}},
+                {"$unwind": "$transactions"},
+                {"$match": inner_match},
+                {"$sort": {"index": 1}},
+                {"$limit": 1},
+            ]
+        )
+        rows = await cursor.to_list(length=1)
+
+        from_mempool = False
+        if rows:
+            announce_doc = rows[0]["transactions"]
+        else:
+            # Fall back to the mempool so a freshly-broadcast announcement
+            # is discoverable before it has been mined.  miner_transactions
+            # docs are flat transaction dicts, so the un-prefixed
+            # `match_clause` matches directly.
+            mempool_doc = await self.config.mongo.async_db.miner_transactions.find_one(
+                match_clause
+            )
+            if not mempool_doc:
+                self.set_status(404)
+                return self.write(
+                    {
+                        "error": "no on-chain or mempool announcement matches the supplied identifier"
+                    }
+                )
+            announce_doc = mempool_doc
+            from_mempool = True
+
+        from yadacoin.core.keyeventlog import KeyEventLog
+        from yadacoin.core.recoveryannouncement import (
+            RecoveryAnnouncement,
+            RecoveryTransition,
+        )
+        from yadacoin.core.transaction import Transaction
+
+        announce_txn = Transaction.from_dict(announce_doc)
+
+        # Walk forward from the announcement's signing pubkey to the tip.
+        # follow_recovery=False so we don't cross any prior recovery boundary
+        # (we want the CURRENT delegator KEL, not its successor).  When the
+        # announcement itself is still in the mempool the chain alone won't
+        # see it, so we let the KEL builder include mempool entries in that
+        # case — the recovering client typically waits for confirmation
+        # before issuing the recovers-inception, but it can already decrypt
+        # + display the hint labels embedded in the announcement and see
+        # the announced tip.
+        log = await KeyEventLog.build_from_public_key(
+            announce_txn.public_key,
+            onchain_only=not from_mempool,
+            follow_recovery=False,
+        )
+        if not log:
+            self.set_status(404)
+            return self.write({"error": "could not reconstruct delegator KEL"})
+
+        tip = log[-1]
+        response = {
+            "public_key": tip.public_key,
+            "public_key_hash": tip.public_key_hash,
+            "prerotated_key_hash": tip.prerotated_key_hash,
+            "twice_prerotated_key_hash": tip.twice_prerotated_key_hash,
+            "depth": len(log),
+            "mempool": from_mempool,
+        }
+
+        # Surface witness_hash + encrypted hints from the announcement so the
+        # client can decrypt with the Recovery Code.  Tolerate either wire
+        # shape on the announcement txn, including the combined
+        # RecoveryTransition form where the recovery announcement is nested
+        # inside a recovers-inception.
+        ann = None
+        if isinstance(announce_txn.relationship, RecoveryAnnouncement):
+            ann = announce_txn.relationship
+        elif isinstance(announce_txn.relationship, RecoveryTransition):
+            ann = announce_txn.relationship.announcement
+        if ann:
+            response["witness_hash"] = ann.witness_hash
+            if ann.has_hints():
+                response["hints_iv"] = ann.hints_iv
+                response["hints_ct"] = ann.hints_ct
+            if ann.lookup_id:
+                response["lookup_id"] = ann.lookup_id
+
+        return self.render_as_json(response)
+
+
+class CredentialReceiptResyncHandler(BaseHandler):
+    """
+    GET /ai-agent-auth/api/resync-credentials?lookup_key=<hex>
+
+    Return all on-chain and mempool credential_receipt transactions whose
+    ``relationship.credential_receipt.lookup_key`` matches the supplied
+    value.  The lookup_key is a sha256-HKDF fingerprint derived from the
+    user's mnemonic (stable across KEL rotations; not reversible to the
+    mnemonic).
+
+    The server returns the raw ``{iv, ct}`` ciphertexts — only the wallet
+    owner (who holds the mnemonic) can decrypt them.  The endpoint is
+    intentionally unauthenticated: the lookup_key itself is a secret
+    derived from the mnemonic, and the ciphertexts are opaque without the
+    matching AES key.
+
+    Response
+    --------
+    {"receipts": [
+        {"iv": "<hex>", "ct": "<base64>",
+         "txn_id": "...", "block_height": <int|null>, "mempool": <bool>},
+        ...
+    ]}
+    """
+
+    async def get(self):
+        lookup_key = (self.get_argument("lookup_key", "") or "").strip().lower()
+        if not lookup_key:
+            self.set_status(400)
+            return self.write({"error": "lookup_key is required"})
+
+        match_clause = {
+            "relationship.credential_receipt.lookup_key": lookup_key,
+        }
+        inner_match = {
+            "transactions.relationship.credential_receipt.lookup_key": lookup_key,
+        }
+
+        receipts = []
+
+        # ── Confirmed blocks ────────────────────────────────────────────────
+        cursor = self.config.mongo.async_db.blocks.aggregate(
+            [
+                {"$match": {"transactions": {"$elemMatch": match_clause}}},
+                {"$unwind": "$transactions"},
+                {"$match": inner_match},
+                {"$sort": {"index": 1}},
+            ]
+        )
+        async for row in cursor:
+            txn = row["transactions"]
+            cr = txn.get("relationship", {}).get("credential_receipt", {})
+            receipts.append(
+                {
+                    "iv": cr.get("iv", ""),
+                    "ct": cr.get("ct", ""),
+                    "txn_id": txn.get("id", ""),
+                    "block_height": row.get("index"),
+                    "mempool": False,
+                }
+            )
+
+        # ── Mempool ─────────────────────────────────────────────────────────
+        async for txn in self.config.mongo.async_db.miner_transactions.find(
+            match_clause
+        ):
+            cr = txn.get("relationship", {}).get("credential_receipt", {})
+            receipts.append(
+                {
+                    "iv": cr.get("iv", ""),
+                    "ct": cr.get("ct", ""),
+                    "txn_id": txn.get("id", ""),
+                    "block_height": None,
+                    "mempool": True,
+                }
+            )
+
+        return self.render_as_json({"receipts": receipts})
+
+
 HANDLERS = [
     (r"/.well-known/did.json", WellKnownDidHandler),
     (r"/contexts/booking/v1", BookingContextHandler),
@@ -3713,6 +3953,8 @@ HANDLERS = [
     (r"/ai-agent-auth/api/node-config/apply", NodeConfigApplyHandler),
     (r"/ai-agent-auth/api/wallet/info", WalletInfoHandler),
     (r"/ai-agent-auth/api/wallet/send", WalletSendHandler),
+    (r"/ai-agent-auth/api/find-recovery-tip", FindRecoveryTipHandler),
+    (r"/ai-agent-auth/api/resync-credentials", CredentialReceiptResyncHandler),
     (r"/ai-agent-auth/api/travel", TravelBookingHandler),  # legacy endpoint
     *_vendor_routes,
 ]

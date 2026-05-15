@@ -107,7 +107,7 @@ class CHAIN(object):
     # populated prev_public_key_hash referring to the previous KEL's tip.  The
     # ZKP is verified against the latest {"recovery": witnessHash} announcement
     # in the previous KEL.  See yadacoin/core/locationrecovery.py.
-    KEL_RECOVERY_FORK = 597000
+    KEL_RECOVERY_FORK = 596000
 
     @classmethod
     def target_block_time(cls, network: str):

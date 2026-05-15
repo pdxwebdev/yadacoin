@@ -15,12 +15,14 @@
           class="session-pill"
           :class="sessionPillClass"
           :style="
-            !sessionPubHex && getWalletMode() === 'client'
+            !sessionPubHex &&
+            (getWalletMode() === 'client' || getWalletMode() === 'hardware')
               ? 'cursor:pointer'
               : ''
           "
           @click="
-            !sessionPubHex && getWalletMode() === 'client'
+            !sessionPubHex &&
+            (getWalletMode() === 'client' || getWalletMode() === 'hardware')
               ? (showWalletSetup = true)
               : null
           "
@@ -84,7 +86,7 @@
     <WalletSetup
       v-if="showWalletSetup"
       @done="onWalletSetupDone"
-      @close="showWalletSetup = false"
+      @close="onWalletSetupClose"
     />
   </div>
 </template>
@@ -98,6 +100,7 @@ import CredentialWallet from "./components/CredentialWallet.vue";
 import WalletSetup from "./components/WalletSetup.vue";
 import {
   LS_PRIV,
+  LS_HW_PUB,
   LS_WALLET_MODE,
   getNodeUrl,
   getBookingCredentials,
@@ -117,8 +120,12 @@ const agents = ref([]);
 const activeAgent = ref(null);
 
 onMounted(async () => {
-  // Show wallet setup modal when in client mode with no key stored.
-  if (getWalletMode() === "client" && !localStorage.getItem(LS_PRIV)) {
+  // Show wallet setup modal when in client mode with no key stored, or in
+  // hardware mode with no device paired yet.
+  const mode = getWalletMode();
+  if (mode === "client" && !localStorage.getItem(LS_PRIV)) {
+    showWalletSetup.value = true;
+  } else if (mode === "hardware" && !localStorage.getItem(LS_HW_PUB)) {
     showWalletSetup.value = true;
   }
 
@@ -149,6 +156,11 @@ function onCredentialIssued() {
 
 const sessionPubHex = ref("");
 function refreshSessionPill() {
+  const mode = getWalletMode();
+  if (mode === "hardware") {
+    sessionPubHex.value = localStorage.getItem(LS_HW_PUB) || "";
+    return;
+  }
   const priv = localStorage.getItem(LS_PRIV);
   if (!priv) {
     sessionPubHex.value = "";
@@ -166,14 +178,19 @@ function onSessionRotated() {
 
 const sessionPillClass = computed(() => (sessionPubHex.value ? "ok" : "bad"));
 const sessionPillText = computed(() => {
+  const mode = getWalletMode();
   if (sessionPubHex.value) {
     const prefix =
-      getWalletMode() === "client" ? "\uD83D\uDC64" : "\uD83D\uDD13";
+      mode === "client"
+        ? "\uD83D\uDC64"
+        : mode === "hardware"
+          ? "\uD83D\uDCDF"
+          : "\uD83D\uDD13";
     return prefix + " " + sessionPubHex.value.slice(0, 16) + "...";
   }
-  return getWalletMode() === "client"
-    ? "Setup wallet"
-    : "No key \u2014 /key-rotation";
+  if (mode === "client") return "Setup wallet";
+  if (mode === "hardware") return "Pair hardware wallet";
+  return "No key \u2014 /key-rotation";
 });
 
 const approvalState = ref(null);
@@ -244,6 +261,20 @@ function onWalletSetupDone() {
   showWalletSetup.value = false;
   refreshSessionPill();
   chatPaneRef.value?.notifyWalletReady();
+}
+
+function onWalletSetupClose() {
+  showWalletSetup.value = false;
+  // If the user dismissed the modal *after* a wallet was actually set up
+  // (e.g. they completed Generate/Import/Recover but skipped LLM config),
+  // refresh the session pill and notify ChatPane so the "No wallet found"
+  // warning is replaced with the normal greeting.
+  refreshSessionPill();
+  const mode = getWalletMode();
+  const hasKey =
+    (mode === "client" && !!localStorage.getItem(LS_PRIV)) ||
+    (mode === "hardware" && !!localStorage.getItem(LS_HW_PUB));
+  if (hasKey) chatPaneRef.value?.notifyWalletReady();
 }
 
 function onDeny() {

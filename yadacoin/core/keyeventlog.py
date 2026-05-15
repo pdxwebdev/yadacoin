@@ -20,6 +20,11 @@ from bitcoin.wallet import P2PKHBitcoinAddress
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.locationrecovery import verify_proof as verify_recovery_proof
+from yadacoin.core.recoveryannouncement import (
+    RecoveryAnnouncement,
+    RecoveryProof,
+    RecoveryTransition,
+)
 from yadacoin.core.transaction import Transaction
 
 if TYPE_CHECKING:
@@ -169,34 +174,20 @@ class KELRecoveryUnknownPreviousKELException(KELRecoveryException):
     public_key_hash of any on-chain KEL tip."""
 
 
-def _relationship_dict(txn: Transaction):
-    """Return the txn's relationship as a plain dict, or None.
-
-    Recovery relationships are plain JSON dicts with a single top-level key
-    ("recovery" or "recovers").  They never get coerced into Contract /
-    NodeAnnouncement / AgentAnnouncement instances by Transaction.__init__
-    because none of those wrappers claim those keys.
-    """
-    rel = getattr(txn, "relationship", None)
-    if isinstance(rel, dict):
-        return rel
-    return None
-
-
 def get_recovery_announcement_witness_hash(txn: Transaction):
     """If *txn* is a recovery announcement, return its witnessHash.
 
-    A recovery announcement is any KEL transaction whose relationship dict has
-    a top-level "recovery" key whose value is a hex string.  The chain only
-    treats it as the active announcement after the fork height (callers
-    should gate on CHAIN.KEL_RECOVERY_FORK).
+    A recovery announcement is any KEL transaction whose relationship has
+    been parsed into a RecoveryAnnouncement instance by
+    Transaction.__init__.  The chain only treats it as the active
+    announcement after the fork height (callers should gate on
+    CHAIN.KEL_RECOVERY_FORK).
     """
-    rel = _relationship_dict(txn)
-    if rel is None:
-        return None
-    h = rel.get("recovery")
-    if isinstance(h, str) and h:
-        return h
+    rel = getattr(txn, "relationship", None)
+    if isinstance(rel, RecoveryAnnouncement):
+        return rel.witness_hash
+    if isinstance(rel, RecoveryTransition):
+        return rel.announcement.witness_hash
     return None
 
 
@@ -204,19 +195,15 @@ def get_recovers_proof(txn: Transaction):
     """If *txn* is a recovers-inception, return its proof dict.
 
     The proof has the shape {commitment, R, s} — all hex strings.  Returns
-    None when the txn is not a recovers-inception or is malformed.
+    None when the txn is not a recovers-inception.
     """
-    rel = _relationship_dict(txn)
-    if rel is None:
-        return None
-    proof = rel.get("recovers")
-    if not isinstance(proof, dict):
-        return None
-    if not all(
-        isinstance(proof.get(k), str) and proof.get(k) for k in ("commitment", "R", "s")
-    ):
-        return None
-    return proof
+    rel = getattr(txn, "relationship", None)
+    if isinstance(rel, RecoveryProof):
+        return {"commitment": rel.commitment, "R": rel.R, "s": rel.s}
+    if isinstance(rel, RecoveryTransition):
+        p = rel.proof
+        return {"commitment": p.commitment, "R": p.R, "s": p.s}
+    return None
 
 
 def is_recovery_announcement(txn: Transaction) -> bool:
@@ -357,17 +344,28 @@ class KeyEvent:
             ]
         )
         rows = await cursor.to_list(length=1)
-        if not rows:
-            raise KELRecoveryUnknownPreviousKELException(
-                "recovery references prev_public_key_hash with no on-chain KEL entry"
+        delegator_in_mempool = False
+        if rows:
+            delegator_tip_txn = Transaction.from_dict(rows[0]["transactions"])
+        else:
+            # Fall back to mempool — delegator KEL tip may not yet be mined.
+            mempool_doc = await config.mongo.async_db.miner_transactions.find_one(
+                {
+                    MempoolQueryFields.PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash
+                }
             )
-        delegator_tip_txn = Transaction.from_dict(rows[0]["transactions"])
+            if not mempool_doc:
+                raise KELRecoveryUnknownPreviousKELException(
+                    "recovery references prev_public_key_hash with no on-chain or mempool KEL entry"
+                )
+            delegator_tip_txn = Transaction.from_dict(mempool_doc)
+            delegator_in_mempool = True
 
         # Reconstruct the delegator's full on-chain KEL and confirm the
         # referenced entry really is its tip (latest entry with no successor).
         delegator_log = await KeyEventLog.build_from_public_key(
             delegator_tip_txn.public_key,
-            onchain_only=True,
+            onchain_only=not delegator_in_mempool,
             follow_recovery=False,
         )
         if not delegator_log:
@@ -379,9 +377,9 @@ class KeyEvent:
                 "recovery does not point to the delegator KEL's latest entry"
             )
 
-        # Single-use: reject if a recovery successor already exists on-chain.
+        # Single-use: reject if a recovery successor already exists on-chain or in mempool.
         existing_successor = await KeyEventLog.find_recovery_successor(
-            self.txn.prev_public_key_hash, onchain_only=True
+            self.txn.prev_public_key_hash, onchain_only=False
         )
         if existing_successor and (
             existing_successor.transaction_signature != self.txn.transaction_signature
@@ -479,6 +477,15 @@ class KeyEvent:
             raise PublicKeyMismatchException(
                 "transaction public_key does not correspond to public_key_hash"
             )
+
+        # Short-circuit for recovers-inception.  The generic predecessor
+        # existence check below would fail because the recovering device's K_0
+        # is brand-new and has no prior on-chain parent keyed by its own pkh.
+        # All validation (delegator KEL lookup, Schnorr proof, single-use
+        # invariant) is handled inside verify_recovery_inception().
+        if is_recovers_inception(self.txn):
+            await self.verify_recovery_inception()
+            return
 
         if await self.sends_to_past_kel_entry():
             await self.config.mongo.async_db.miner_transactions.delete_one(
@@ -984,15 +991,16 @@ class KeyEventLog:
             self.base_key_event = key_event
         else:
             # step 2.2 if parent is not found in blockchain, this should be a confirming key event
-            # with an unconfirmed key event in the mempool as well
-            if (
-                key_event.txn.public_key_hash
-                in hash_collection.twice_prerotated_key_hashes
-            ):
-                # if grand parent is in hash_collection, raise exception
-                raise KELException(
-                    "cannot have inception/previous confirming and newest confirming in same hash_collection."
-                )
+            # with an unconfirmed key event in the mempool as well.
+            #
+            # Historically we rejected the case where the grandparent (an
+            # inception or previous confirming) was also present in the
+            # same hash_collection.  That restriction is no longer valid:
+            # the block-generation fixpoint cleanup pass intentionally
+            # admits inception + unconfirmed + confirming triplets in a
+            # single block, and the lookup below (prerotated_key_hash in
+            # twice_prerotated_key_hashes) still selects the correct
+            # unconfirmed parent in that case.
 
             if (
                 key_event.txn.relationship

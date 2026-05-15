@@ -81,7 +81,7 @@
       </div>
     </template>
 
-    <template v-if="!isRegistration">
+    <template v-if="!isRegistration && !isHardware">
       <div class="field-row">
         <label>Second factor</label>
         <input
@@ -95,8 +95,124 @@
       </div>
     </template>
 
+    <!-- Hardware-wallet flow: stored active key signs the unconfirmed tx
+         silently; user only scans the confirming + next-active keys. -->
+    <template v-if="!isRegistration && isHardware">
+      <div class="hw-block">
+        <div v-if="!hwActive" class="hw-row">
+          <span class="hw-label hw-err">
+            ⚠ No active hardware key on file. Re-pair your device in Settings.
+          </span>
+        </div>
+        <div v-else-if="hwStale" class="hw-row">
+          <span class="hw-label hw-err">
+            ⚠ Stored active hardware key is stale — the on-chain KEL has
+            <strong>{{ hwKelLength }}</strong> entries and its tip's
+            prerotated_key_hash no longer matches the stored key. Re-pair the
+            device from Settings (scan inception + the active key at idx
+            <strong>{{ hwKelLength }}</strong>) before approving.
+          </span>
+        </div>
+        <div v-else-if="hwExpectedIndex !== null" class="hw-row">
+          <span class="hw-label">
+            Stored active key: idx
+            <strong>{{ hwActive.rotationIndex }}</strong> — signs unconfirmed
+            silently. Device should now show idx
+            <strong>{{ hwExpectedIndex }}</strong> (confirming) then
+            <strong>{{ hwExpectedIndex + 1 }}</strong> (next active).
+          </span>
+        </div>
+        <div v-else-if="hwIndexLoading" class="hw-row">
+          <span class="hw-label">Looking up next rotation index…</span>
+        </div>
+        <div class="hw-row">
+          <span class="hw-label">
+            Step 1 — confirming key (idx
+            {{ hwExpectedIndex !== null ? hwExpectedIndex : "?" }})
+          </span>
+          <span v-if="hwScanConfirming" class="hw-status ok"
+            >✓ captured (idx {{ hwScanConfirming.rotationIndex }})</span
+          >
+          <span v-else class="hw-status">awaiting scan</span>
+        </div>
+        <div class="hw-row">
+          <span class="hw-label">
+            Step 2 — next active key (idx
+            {{ hwExpectedIndex !== null ? hwExpectedIndex + 1 : "?" }})
+          </span>
+          <span v-if="hwScanNextActive" class="hw-status ok"
+            >✓ captured (idx {{ hwScanNextActive.rotationIndex }})</span
+          >
+          <span v-else class="hw-status">awaiting scan</span>
+        </div>
+        <div class="hw-actions">
+          <button
+            class="btn scan"
+            :disabled="busy || !!showScanner || !hwActive || hwStale"
+            @click="
+              openScanner(hwScanConfirming ? 'nextActive' : 'confirming')
+            "
+          >
+            📷
+            {{
+              !hwScanConfirming
+                ? "Scan confirming QR"
+                : !hwScanNextActive
+                  ? "Scan next-active QR"
+                  : "Re-scan"
+            }}
+          </button>
+          <button
+            v-if="hwScanConfirming || hwScanNextActive"
+            class="btn reset"
+            :disabled="busy"
+            @click="resetHwScans"
+          >
+            Clear
+          </button>
+        </div>
+        <div v-if="hwError" class="hw-err">⚠ {{ hwError }}</div>
+      </div>
+
+      <QrScanner
+        v-if="showScanner"
+        :title="
+          showScanner === 'confirming'
+            ? 'Scan confirming QR (index ' +
+              (hwExpectedIndex !== null ? hwExpectedIndex : '?') +
+              ')'
+            : 'Scan next-active QR (index ' +
+              (hwScanConfirming
+                ? hwScanConfirming.rotationIndex + 1
+                : hwExpectedIndex !== null
+                  ? hwExpectedIndex + 1
+                  : '?') +
+              ')'
+        "
+        :hint="
+          showScanner === 'confirming'
+            ? 'On your hardware device, advance to rotation index ' +
+              (hwExpectedIndex !== null ? hwExpectedIndex : '?') +
+              ' and display its QR.'
+            : 'Now advance the device once more and display the QR for index ' +
+              (hwScanConfirming
+                ? hwScanConfirming.rotationIndex + 1
+                : hwExpectedIndex !== null
+                  ? hwExpectedIndex + 1
+                  : '?') +
+              '.'
+        "
+        @scanned="onQrScanned"
+        @cancel="showScanner = null"
+      />
+    </template>
+
     <div class="btn-row">
-      <button class="btn approve" :disabled="busy" @click="approve">
+      <button
+        class="btn approve"
+        :disabled="busy || !canApprove"
+        @click="approve"
+      >
         {{
           isRegistration
             ? "📡 Broadcast Registration"
@@ -118,13 +234,181 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import { getPaymentMethods } from "../composables/useStorage.js";
+import {
+  getPaymentMethods,
+  isHardwareWallet,
+  getNodeUrl,
+  getHardwareActive,
+} from "../composables/useStorage.js";
+import { parseHardwareQrPayload } from "../composables/useCrypto.js";
+import QrScanner from "./QrScanner.vue";
 
 const props = defineProps({
   agentType: Object,
   scope: Object,
 });
 const emit = defineEmits(["approve", "deny"]);
+
+const isHardware = computed(() => isHardwareWallet());
+// Stored "active" hardware key (parsed QR) — the K_n that will sign the
+// upcoming unconfirmed rotation tx. Loaded once on mount.
+const hwActive = ref(null);
+// User-scanned keys for THIS approval round.
+//   hwScanConfirming = K_{n+1} → signs the confirming tx
+//   hwScanNextActive = K_{n+2} → becomes the new stored active and the
+//                                agent DID for the VC/VP this round.
+const hwScanConfirming = ref(null);
+const hwScanNextActive = ref(null);
+const showScanner = ref(null); // null | 'confirming' | 'nextActive'
+const hwError = ref("");
+// Index resolved from on-chain KEL on mount.
+const hwExpectedIndex = ref(null);
+const hwIndexLoading = ref(false);
+// True when the locally-stored active key no longer matches the chain tip's
+// prerotated_key_hash — happens if the device rotated out-of-band or the
+// device was paired before the WalletSetup chain-aware fix. We block all
+// scans in that case and tell the user to re-pair.
+const hwStale = ref(false);
+const hwTipPkh = ref(null);
+const hwKelLength = ref(null);
+
+async function loadExpectedIndex() {
+  if (!isHardware.value) return;
+  hwActive.value = getHardwareActive();
+  if (!hwActive.value) return;
+  hwIndexLoading.value = true;
+  hwStale.value = false;
+  try {
+    const r = await fetch(
+      getNodeUrl() +
+        "/key-event-log?username_signature=asdf&public_key=" +
+        encodeURIComponent(hwActive.value.publicKeyHex),
+    );
+    if (r.ok) {
+      const j = await r.json();
+      const kel = j.key_event_log || [];
+      hwKelLength.value = kel.length;
+      if (kel.length === 0) {
+        // Stored active is K_1 (committed by an inception that hasn't been
+        // mined yet, or by no chain at all). Confirming index will be 1.
+        hwExpectedIndex.value = 1;
+        hwTipPkh.value = null;
+      } else {
+        const tip = kel[kel.length - 1];
+        const tipPrerotated =
+          tip.prerotated_key_hash || tip.prerotatedKeyHash || null;
+        hwTipPkh.value = tip.public_key_hash || tip.publicKeyHash || null;
+        // Stale check: the tip's prerotated_key_hash must equal the stored
+        // active key's public_key_hash. If not, the chain advanced beyond
+        // the stored key.
+        if (
+          tipPrerotated &&
+          tipPrerotated !== hwActive.value.publicKeyHash
+        ) {
+          hwStale.value = true;
+        }
+        // The KEL has kel.length entries (rotation_indexes 0..kel.length-1).
+        // The tip commits K_{kel.length} as the active key — that is the
+        // device's stored active key. Confirming will therefore be at
+        // rotation_index kel.length + 1, and next-active at kel.length + 2.
+        hwExpectedIndex.value = kel.length + 1;
+      }
+    } else {
+      hwExpectedIndex.value = (hwActive.value.rotationIndex ?? 0) + 1;
+    }
+  } catch {
+    hwExpectedIndex.value = (hwActive.value.rotationIndex ?? 0) + 1;
+  } finally {
+    hwIndexLoading.value = false;
+  }
+}
+
+function openScanner(which) {
+  hwError.value = "";
+  showScanner.value = which;
+}
+function resetHwScans() {
+  hwScanConfirming.value = null;
+  hwScanNextActive.value = null;
+  hwError.value = "";
+}
+function onQrScanned(raw) {
+  hwError.value = "";
+  if (hwStale.value) {
+    hwError.value =
+      "Stored active hardware key is stale (chain advanced past it). Re-pair your device from Settings before approving.";
+    return;
+  }
+  let parsed;
+  try {
+    parsed = parseHardwareQrPayload(raw);
+  } catch (e) {
+    hwError.value = "Invalid QR payload: " + (e?.message || String(e));
+    return;
+  }
+  const stored = hwActive.value;
+  // Use the chain-derived expected confirming index when available — it is
+  // authoritative. Fall back to stored.rotationIndex+1 only if the KEL
+  // lookup failed.
+  const expectedConfirmingIdx =
+    hwExpectedIndex.value !== null
+      ? hwExpectedIndex.value
+      : (stored?.rotationIndex ?? 0) + 1;
+  if (showScanner.value === "confirming") {
+    if (!stored) {
+      hwError.value =
+        "No stored active hardware key — re-pair your device first.";
+      return;
+    }
+    if (parsed.rotationIndex !== expectedConfirmingIdx) {
+      hwError.value =
+        "Confirming QR rotation_index must be " +
+        expectedConfirmingIdx +
+        " (got " +
+        parsed.rotationIndex +
+        ").";
+      return;
+    }
+    if (parsed.publicKeyHash !== stored.prerotatedKeyHash) {
+      hwError.value =
+        "Confirming QR's public key hash does not match the prerotated_key_hash committed by the stored active key.";
+      return;
+    }
+    if (parsed.prevPublicKeyHash !== stored.publicKeyHash) {
+      hwError.value =
+        "Confirming QR's prev_public_key_hash does not match the stored active key's public key hash.";
+      return;
+    }
+    hwScanConfirming.value = parsed;
+  } else if (showScanner.value === "nextActive") {
+    const conf = hwScanConfirming.value;
+    if (!conf) {
+      hwError.value = "Scan the confirming key first.";
+      return;
+    }
+    if (parsed.rotationIndex !== conf.rotationIndex + 1) {
+      hwError.value =
+        "Next-active QR rotation_index must be " +
+        (conf.rotationIndex + 1) +
+        " (got " +
+        parsed.rotationIndex +
+        ").";
+      return;
+    }
+    if (parsed.publicKeyHash !== conf.prerotatedKeyHash) {
+      hwError.value =
+        "Next-active QR's public key hash does not match the prerotated_key_hash committed by the confirming key.";
+      return;
+    }
+    if (parsed.prevPublicKeyHash !== conf.publicKeyHash) {
+      hwError.value =
+        "Next-active QR's prev_public_key_hash does not match the confirming key's public key hash.";
+      return;
+    }
+    hwScanNextActive.value = parsed;
+  }
+  showScanner.value = null;
+}
 
 const isRegistration = computed(
   () => props.agentType?.id === "agent_registration",
@@ -157,7 +441,12 @@ const defIdx = computed(() => {
 const selectedPmIdx = ref(defIdx.value);
 
 const sfInput = ref(null);
-onMounted(() => setTimeout(() => sfInput.value?.focus(), 50));
+onMounted(() => {
+  setTimeout(() => {
+    if (!isHardware.value) sfInput.value?.focus();
+  }, 50);
+  loadExpectedIndex();
+});
 
 const previewJson = computed(() => {
   const pm = paymentMethods.value[selectedPmIdx.value];
@@ -213,8 +502,30 @@ const previewJson = computed(() => {
   );
 });
 
+const canApprove = computed(() => {
+  if (isRegistration.value) return true;
+  if (isHardware.value)
+    return (
+      !!hwActive.value &&
+      !hwStale.value &&
+      !!hwScanConfirming.value &&
+      !!hwScanNextActive.value
+    );
+  return !!secondFactor.value;
+});
+
 function approve() {
-  if (!isRegistration.value && !secondFactor.value) {
+  if (isHardware.value && !isRegistration.value) {
+    if (!hwActive.value) {
+      hwError.value =
+        "No active hardware key on file. Re-pair your device first.";
+      return;
+    }
+    if (!hwScanConfirming.value || !hwScanNextActive.value) {
+      hwError.value = "Both QR codes must be scanned before approving.";
+      return;
+    }
+  } else if (!isRegistration.value && !secondFactor.value) {
     sfInput.value?.focus();
     return;
   }
@@ -223,6 +534,14 @@ function approve() {
   emit("approve", {
     secondFactor: secondFactor.value,
     paymentMethod: skipPayment.value ? null : pm,
+    hardware:
+      isHardware.value && !isRegistration.value
+        ? {
+            stored: hwActive.value,
+            confirming: hwScanConfirming.value,
+            nextActive: hwScanNextActive.value,
+          }
+        : null,
   });
 }
 </script>
@@ -358,5 +677,56 @@ function approve() {
   border-radius: 4px;
   font-size: 0.8rem;
   word-break: break-all;
+}
+
+/* ── Hardware-wallet block ── */
+.hw-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #0a0c12;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.hw-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+}
+.hw-label {
+  color: var(--subtext);
+}
+.hw-status {
+  font-size: 0.74rem;
+  color: var(--subtext);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.hw-status.ok {
+  color: var(--accent);
+}
+.hw-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.btn.scan {
+  background: var(--accent);
+  color: #fff;
+}
+.btn.reset {
+  background: transparent;
+  color: var(--subtext);
+  border: 1px solid var(--border);
+}
+.hw-err {
+  color: var(--red2, #ff7676);
+  font-size: 0.78rem;
+}
+.btn.approve:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

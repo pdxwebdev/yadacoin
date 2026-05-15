@@ -1,7 +1,16 @@
 // localStorage key constants shared across the app
 export const LS_PRIV = "yadacoin_derived_key";
 export const LS_CC = "yadacoin_derived_cc";
-// Wallet mode: "node" (default — server-managed key) or "client" (user-owned seed)
+// Public key (hex, compressed) of the hardware wallet's current active key.
+// Mirrors LS_HW_QR.publicKeyHex for fast UI access.
+export const LS_HW_PUB = "yadacoin_hw_pub";
+// Full parsed QR for the current active key (the one that will sign the next
+// unconfirmed rotation tx). JSON-serialised; privBytes stored as hex string.
+// On each approval round the active key is replaced with the freshly-scanned
+// "next active" QR (K_{n+2}).
+export const LS_HW_QR = "yadacoin_hw_qr";
+// Wallet mode: "node" (server-managed key), "client" (browser-side BIP39 seed),
+// or "hardware" (air-gapped device — every step's key material arrives via QR).
 export const LS_WALLET_MODE = "yadacoin_wallet_mode";
 export const LS_LLM_PROVIDER = "yadacoin_llm_provider";
 export const LS_LLM_MODEL = "yadacoin_llm_model";
@@ -85,16 +94,62 @@ export function getWalletMode() {
 }
 
 export function setWalletMode(mode) {
-  localStorage.setItem(LS_WALLET_MODE, mode === "client" ? "client" : "node");
+  const valid = mode === "client" || mode === "hardware" ? mode : "node";
+  localStorage.setItem(LS_WALLET_MODE, valid);
 }
 
 export function isClientWallet() {
   return getWalletMode() === "client";
 }
 
+export function isHardwareWallet() {
+  return getWalletMode() === "hardware";
+}
+
 /** Clear all client-side key material and reset to node-wallet mode. */
 export function clearClientWallet() {
   localStorage.removeItem(LS_PRIV);
   localStorage.removeItem(LS_CC);
+  localStorage.removeItem(LS_HW_PUB);
+  localStorage.removeItem(LS_HW_QR);
   localStorage.removeItem(LS_WALLET_MODE);
+}
+
+// ── Hardware-wallet active key (full parsed QR) ───────────────────────────────
+
+/**
+ * Persist the parsed hardware-wallet QR as the current active key.
+ * `parsed` is the object returned by parseHardwareQrPayload() — its privBytes
+ * (Uint8Array) is hex-encoded for storage.
+ */
+export function setHardwareActive(parsed) {
+  if (!parsed) return;
+  const out = { ...parsed };
+  if (parsed.privBytes && parsed.privBytes.length !== undefined) {
+    out.privBytes = Array.from(parsed.privBytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  }
+  localStorage.setItem(LS_HW_QR, JSON.stringify(out));
+  if (parsed.publicKeyHex) localStorage.setItem(LS_HW_PUB, parsed.publicKeyHex);
+}
+
+/** Return the current hardware-wallet active key (parsed QR), or null. */
+export function getHardwareActive() {
+  const raw = localStorage.getItem(LS_HW_QR);
+  if (!raw) return null;
+  try {
+    const obj = JSON.parse(raw);
+    if (typeof obj.privBytes === "string") {
+      const hexStr = obj.privBytes;
+      const bytes = new Uint8Array(hexStr.length / 2);
+      for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = parseInt(hexStr.substr(i * 2, 2), 16);
+      }
+      obj.privBytes = bytes;
+    }
+    return obj;
+  } catch {
+    return null;
+  }
 }

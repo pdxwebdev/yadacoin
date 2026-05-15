@@ -213,3 +213,60 @@ export async function buildRotationTxn({
 }
 
 export { secp, sha256 };
+
+// ── WIF (Wallet Import Format) decoding ──────────────────────────────────────
+// Decodes a Base58Check-encoded WIF string into a 32-byte private key.
+// Supports both mainnet (0x80) and testnet (0xEF) version bytes, and the
+// optional 0x01 "compressed-pubkey" suffix.
+export function wifToPrivBytes(wif) {
+  if (typeof wif !== "string" || !wif.trim()) throw new Error("WIF is empty");
+  let payload;
+  try {
+    payload = _b58check.decode(wif.trim());
+  } catch (e) {
+    throw new Error("Invalid WIF (Base58Check decode failed)");
+  }
+  if (payload.length !== 33 && payload.length !== 34)
+    throw new Error("Invalid WIF length: " + payload.length);
+  const version = payload[0];
+  if (version !== 0x80 && version !== 0xef)
+    throw new Error("Unexpected WIF version byte 0x" + version.toString(16));
+  // 33 bytes => uncompressed-pubkey WIF; 34 bytes => trailing 0x01 (compressed)
+  if (payload.length === 34 && payload[33] !== 0x01)
+    throw new Error("Invalid WIF compression flag");
+  return payload.slice(1, 33);
+}
+
+// ── Hardware-wallet QR payload parser ────────────────────────────────────────
+// Pipe-separated format produced by the air-gapped device:
+//   WIF | prerotated_key_hash | twice_prerotated_key_hash |
+//   prev_public_key_hash | rotation_index
+//
+// `prev_public_key_hash` is empty string for the inception step.
+// `rotation_index` is a non-negative integer (string form is fine).
+export function parseHardwareQrPayload(text) {
+  if (typeof text !== "string") throw new Error("QR payload must be a string");
+  const parts = text.trim().split("|");
+  if (parts.length !== 5)
+    throw new Error("Expected 5 pipe-separated fields, got " + parts.length);
+  const [wif, prerotated, twicePrerotated, prevPkh, rotIdxStr] = parts.map(
+    (s) => s.trim(),
+  );
+  if (!wif) throw new Error("WIF field is empty");
+  if (!prerotated) throw new Error("prerotated_key_hash is empty");
+  if (!twicePrerotated) throw new Error("twice_prerotated_key_hash is empty");
+  if (!/^\d+$/.test(rotIdxStr))
+    throw new Error("rotation_index must be a non-negative integer");
+  const privBytes = wifToPrivBytes(wif);
+  const publicKeyHex = getPublicKeyHex(privBytes);
+  const publicKeyHash = getP2PKH(hex.toBytes(publicKeyHex));
+  return {
+    privBytes,
+    publicKeyHex,
+    publicKeyHash,
+    twicePrerotatedKeyHash: twicePrerotated,
+    prerotatedKeyHash: prerotated,
+    prevPublicKeyHash: prevPkh, // may be ""
+    rotationIndex: Number(rotIdxStr),
+  };
+}

@@ -471,6 +471,55 @@ class Block(object):
                         )
                         block.transactions.remove(e.other_txn_to_delete)
 
+            # Cleanup pass: the loop above can leave orphan KEL siblings in
+            # the block when a non-init_async check (e.g. a transient
+            # verify_kel_output_rules failure) drops one half of an
+            # unconfirmed/confirming pair *after* the other half had already
+            # passed init_async against the now-stale hash_collection.  Rebuild
+            # hash_collection from the current block.transactions and re-run
+            # init_async until the set of transactions is stable, dropping any
+            # newly-orphaned entries so block.verify() does not later raise
+            # FatalKeyEventException on what is really a transient mempool
+            # ordering issue.  Capped at a small number of iterations as a
+            # safety net.
+            for _kel_pass in range(8):
+                pre_pass_sigs = {t.transaction_signature for t in block.transactions}
+                hash_collection = await KELHashCollection.init_async(block)
+                for txn in block.transactions[:]:
+                    if txn not in block.transactions:
+                        continue
+                    if not (
+                        await txn.has_key_event_log() or txn.are_kel_fields_populated()
+                    ):
+                        continue
+                    key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
+                    try:
+                        await KeyEventLog.init_async(key_event, hash_collection)
+                    except (KELException, KeyEventException) as e:
+                        config.app_log.info(
+                            f"KEL fixpoint pass {_kel_pass} dropped txn: {e}"
+                        )
+                        if txn in block.transactions:
+                            block.transactions.remove(txn)
+                    except FatalKeyEventException as e:
+                        config.app_log.info(
+                            f"KEL fixpoint pass {_kel_pass} dropped txn (fatal): {e}"
+                        )
+                        await config.mongo.async_db.miner_transactions.delete_one(
+                            {"id": txn.transaction_signature}
+                        )
+                        if txn in block.transactions:
+                            block.transactions.remove(txn)
+                        if e.other_txn_to_delete:
+                            await config.mongo.async_db.miner_transactions.delete_one(
+                                {"id": e.other_txn_to_delete.transaction_signature}
+                            )
+                            if e.other_txn_to_delete in block.transactions:
+                                block.transactions.remove(e.other_txn_to_delete)
+                post_pass_sigs = {t.transaction_signature for t in block.transactions}
+                if pre_pass_sigs == post_pass_sigs:
+                    break
+
         # Regenerate the coinbase now that all post-build transaction filtering
         # has completed. Transactions may have been removed after the coinbase
         # was first generated (Xeggex freeze, KEL failures, etc.), so the
@@ -948,7 +997,27 @@ class Block(object):
                             "Key event transactions must spent entire remaining balance to prerotated_key_hash."
                         )
 
-                if await txn.has_key_event_log(block=self):
+                has_kel = await txn.has_key_event_log(block=self)
+                if not has_kel and txn.prev_public_key_hash:
+                    # The parent KEL entry may live in a sibling transaction
+                    # of this same in-progress block (common when an inception
+                    # and its first rotation are mined together, or when a
+                    # batch of rotations queue up in the mempool).  Treat the
+                    # presence of a sibling whose prerotated_key_hash or
+                    # twice_prerotated_key_hash matches this txn's address as
+                    # a valid KEL ancestor so that block generation does not
+                    # fatally exit on transient mempool ordering.
+                    for sibling in self.transactions:
+                        if sibling.transaction_signature == txn.transaction_signature:
+                            continue
+                        if (
+                            sibling.prerotated_key_hash == txn.public_key_hash
+                            or sibling.twice_prerotated_key_hash == txn.public_key_hash
+                        ):
+                            has_kel = True
+                            break
+
+                if has_kel:
                     kel_hash_collection = await KELHashCollection.init_async(
                         self, verify_only=True
                     )

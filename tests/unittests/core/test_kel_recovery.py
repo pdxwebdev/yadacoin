@@ -221,6 +221,41 @@ class TestRecoveryRelationshipHelpers(unittest.TestCase):
     def test_find_active_recovery_witness_hash_none_when_empty(self):
         self.assertIsNone(find_active_recovery_witness_hash([_make_txn()]))
 
+    def test_get_recovery_announcement_witness_hash_from_recovery_transition(self):
+        """Line 190: RecoveryTransition relationship → returns announcement.witness_hash."""
+        from unittest.mock import MagicMock
+
+        from yadacoin.core.recoveryannouncement import (
+            RecoveryAnnouncement,
+            RecoveryProof,
+            RecoveryTransition,
+        )
+
+        proof = RecoveryProof("aa", "bb", "cc")
+        ann = RecoveryAnnouncement("eeffgghh")
+        rt = RecoveryTransition(proof, ann)
+        txn = MagicMock()
+        txn.relationship = rt
+        self.assertEqual(get_recovery_announcement_witness_hash(txn), "eeffgghh")
+
+    def test_get_recovers_proof_from_recovery_transition(self):
+        """Lines 204-205: RecoveryTransition relationship → returns proof dict."""
+        from unittest.mock import MagicMock
+
+        from yadacoin.core.recoveryannouncement import (
+            RecoveryAnnouncement,
+            RecoveryProof,
+            RecoveryTransition,
+        )
+
+        proof = RecoveryProof("aa", "bb", "cc")
+        ann = RecoveryAnnouncement("dd")
+        rt = RecoveryTransition(proof, ann)
+        txn = MagicMock()
+        txn.relationship = rt
+        result = get_recovers_proof(txn)
+        self.assertEqual(result, {"commitment": "aa", "R": "bb", "s": "cc"})
+
 
 # ── verify_recovery_inception (mocked DB) ─────────────────────────────────────
 
@@ -322,10 +357,14 @@ class TestVerifyRecoveryInception(AsyncTestCase):
         C, R, s = _make_proof(x, prev_key_hash=prev_pkh)
         ke = self._make_recovers_ke(C, R, s, prev_pkh)
 
-        # No delegator txn matches in DB
+        # No delegator txn matches in DB (blocks)
         cursor = MagicMock()
         cursor.to_list = AsyncMock(return_value=[])
         Config().mongo.async_db.blocks.aggregate = MagicMock(return_value=cursor)
+        # No delegator txn in mempool either → should raise
+        Config().mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value=None
+        )
 
         with self.assertRaises(KELRecoveryUnknownPreviousKELException):
             await ke.verify_recovery_inception()

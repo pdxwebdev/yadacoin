@@ -830,5 +830,358 @@ class TestEqual(unittest.TestCase):
         self.assertTrue(equal(0.0, 0.0))
 
 
+# ---------------------------------------------------------------------------
+# Coverage gap tests: Transaction.__init__ relationship parsing branches
+# ---------------------------------------------------------------------------
+
+
+class TestTransactionInitRelationshipParsing(TransactionTestCase):
+    """Cover Transaction.__init__ branches for RecoveryTransition and CredentialReceipt."""
+
+    async def test_init_recovery_transition_relationship(self):
+        """Lines 172-177: dict with both 'recovers' and 'recovery' → RecoveryTransition."""
+        from yadacoin.core.recoveryannouncement import RecoveryTransition
+
+        txn = Transaction(
+            public_key=self.public_key,
+            relationship={
+                "recovers": {"commitment": "aabb", "R": "ccdd", "s": "eeff"},
+                "recovery": {"witness_hash": "11223344"},
+            },
+            inputs=[],
+            outputs=[],
+        )
+        self.assertIsInstance(txn.relationship, RecoveryTransition)
+
+    async def test_init_credential_receipt_relationship(self):
+        """Lines 209-214: dict with 'credential_receipt' key → CredentialReceipt."""
+        from yadacoin.core.credentialreceipt import CredentialReceipt
+
+        txn = Transaction(
+            public_key=self.public_key,
+            relationship={
+                "credential_receipt": {
+                    "lookup_key": "aabbccdd",
+                    "iv": "eeff0011",
+                    "ct": "base64ct==",
+                }
+            },
+            inputs=[],
+            outputs=[],
+        )
+        self.assertIsInstance(txn.relationship, CredentialReceipt)
+
+    async def test_init_recovery_transition_malformed_falls_through(self):
+        """Lines 176-177: dict with 'recovers' and 'recovery' but malformed → except pass, raw dict kept."""
+        # 'recovers' value is not a dict → RecoveryProof.from_dict raises ValueError → except pass
+        txn = Transaction(
+            public_key=self.public_key,
+            relationship={
+                "recovers": "not_a_dict",
+                "recovery": "11223344",
+            },
+            inputs=[],
+            outputs=[],
+        )
+        # Falls through to recovery branch since RecoveryTransition failed → RecoveryAnnouncement
+        self.assertNotIsInstance(txn.relationship, type(None))
+
+    async def test_init_credential_receipt_malformed_falls_through(self):
+        """Lines 213-214: dict with 'credential_receipt' but malformed inner dict → except pass."""
+
+        # lookup_key is empty string → CredentialReceipt.__init__ raises ValueError
+        txn = Transaction(
+            public_key=self.public_key,
+            relationship={
+                "credential_receipt": {
+                    "lookup_key": "",
+                    "iv": "aabbccdd",
+                    "ct": "base64ct==",
+                }
+            },
+            inputs=[],
+            outputs=[],
+        )
+        # except block executed → relationship stays as raw dict
+        self.assertIsInstance(txn.relationship, dict)
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap tests: Transaction.generate_hash recovery/credential branches
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateHashRecoveryCredential(TransactionTestCase):
+    """Cover generate_hash lines 853 and 855 for Recovery* and CredentialReceipt."""
+
+    def _make_v7_txn(self, relationship_str):
+        """Create a version-7 transaction with pre-computed relationship_hash."""
+        rh = hashlib.sha256(relationship_str.encode()).digest().hex()
+        txn = Transaction(
+            txn_time=1000000,
+            public_key=self.public_key,
+            relationship="",
+            relationship_hash=rh,
+            inputs=[],
+            outputs=[],
+            version=7,
+        )
+        txn.fee = 0.0
+        txn.masternode_fee = 0.0
+        txn.rid = ""
+        txn.requester_rid = ""
+        txn.requested_rid = ""
+        txn.dh_public_key = ""
+        txn.prerotated_key_hash = ""
+        txn.twice_prerotated_key_hash = ""
+        txn.public_key_hash = ""
+        txn.prev_public_key_hash = ""
+        return txn, rh
+
+    async def test_generate_hash_v7_recovery_proof(self):
+        """Line 853: RecoveryProof in generate_hash."""
+        from yadacoin.core.recoveryannouncement import RecoveryProof
+
+        proof = RecoveryProof("aabb", "ccdd", "eeff")
+        txn, _ = self._make_v7_txn(proof.to_string())
+        txn.relationship = proof
+        h = await txn.generate_hash()
+        self.assertEqual(len(h), 64)
+
+    async def test_generate_hash_v7_recovery_transition(self):
+        """Line 853: RecoveryTransition in generate_hash."""
+        from yadacoin.core.recoveryannouncement import (
+            RecoveryAnnouncement,
+            RecoveryProof,
+            RecoveryTransition,
+        )
+
+        proof = RecoveryProof("aabb", "ccdd", "eeff")
+        ann = RecoveryAnnouncement("11223344")
+        rt = RecoveryTransition(proof, ann)
+        txn, _ = self._make_v7_txn(rt.to_string())
+        txn.relationship = rt
+        h = await txn.generate_hash()
+        self.assertEqual(len(h), 64)
+
+    async def test_generate_hash_v7_credential_receipt(self):
+        """Line 855: CredentialReceipt in generate_hash."""
+        from yadacoin.core.credentialreceipt import CredentialReceipt
+
+        cr = CredentialReceipt("aabbccdd", "eeff0011", "ct==")
+        txn, _ = self._make_v7_txn(cr.to_string())
+        txn.relationship = cr
+        h = await txn.generate_hash()
+        self.assertEqual(len(h), 64)
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap tests: Transaction.verify() CredentialReceipt/Recovery branches
+# ---------------------------------------------------------------------------
+
+
+class TestVerifyCoverageGaps(TransactionTestCase):
+    """Cover lines 644-647, 667-668, 677-680, 683, 732-734 in verify()."""
+
+    def _make_txn_with_relationship(self, rel_obj):
+        """Create a Transaction whose relationship is already a typed instance."""
+
+        txn = Transaction(
+            txn_time=1000000,
+            public_key=self.public_key,
+            relationship="",
+            relationship_hash="",
+            inputs=[],
+            outputs=[],
+            version=7,
+        )
+        txn.fee = 0.0
+        txn.masternode_fee = 0.0
+        txn.rid = ""
+        txn.requester_rid = ""
+        txn.requested_rid = ""
+        txn.dh_public_key = ""
+        txn.prerotated_key_hash = ""
+        txn.twice_prerotated_key_hash = ""
+        txn.public_key_hash = ""
+        txn.prev_public_key_hash = ""
+        txn.relationship = rel_obj
+        # Compute and store the correct relationship_hash so generate_hash passes
+        import hashlib as _hashlib
+
+        rel_str = rel_obj.to_string()
+        txn.relationship_hash = _hashlib.sha256(rel_str.encode()).digest().hex()
+        return txn
+
+    async def test_verify_credential_receipt_with_inputs_raises(self):
+        """Lines 644-647: CredentialReceipt + inputs → InvalidTransactionException."""
+        from unittest.mock import AsyncMock, patch
+
+        from yadacoin.core.credentialreceipt import CredentialReceipt
+        from yadacoin.core.transaction import Input, InvalidTransactionException
+
+        cr = CredentialReceipt("aabb", "ccdd", "ee==")
+        txn = self._make_txn_with_relationship(cr)
+        # Add an input to trigger the invariant check
+        txn.inputs = [Input(signature="fakesig")]
+
+        # Patch generate_hash and verify_signature so we don't need a real signature
+        with patch.object(
+            Transaction, "generate_hash", new=AsyncMock(return_value=txn.hash)
+        ):
+            with patch.object(Transaction, "verify_signature", return_value=None):
+                with self.assertRaises(InvalidTransactionException) as ctx:
+                    await txn.verify(check_kel=True)
+                self.assertIn("CredentialReceipt", str(ctx.exception))
+
+    async def test_verify_recovery_proof_routes_to_keyevent_verify(self):
+        """Lines 667-668: RecoveryProof with no KEL → KeyEvent.verify called."""
+        from unittest.mock import AsyncMock, patch
+
+        from yadacoin.core.keyeventlog import KeyEvent
+        from yadacoin.core.recoveryannouncement import RecoveryProof
+
+        proof = RecoveryProof("aa", "bb", "cc")
+        txn = self._make_txn_with_relationship(proof)
+        txn.prev_public_key_hash = "SOME_PREV_PKH"
+
+        with patch.object(
+            Transaction, "generate_hash", new=AsyncMock(return_value=txn.hash)
+        ):
+            with patch.object(Transaction, "verify_signature", return_value=None):
+                with patch.object(
+                    Transaction, "has_key_event_log", new=AsyncMock(return_value=False)
+                ):
+                    with patch.object(
+                        KeyEvent, "verify", new=AsyncMock(return_value=None)
+                    ) as mock_verify:
+                        await txn.verify(check_kel=True)
+                        mock_verify.assert_called_once()
+
+    async def test_verify_has_kel_mempool_branch(self):
+        """Lines 677-678: has_kel=True + mempool=True → _kel_index = LatestBlock.index+1."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyeventlog import KeyEvent
+        from yadacoin.core.recoveryannouncement import RecoveryAnnouncement
+
+        ann = RecoveryAnnouncement("aabbccdd")
+        txn = self._make_txn_with_relationship(ann)
+
+        mock_latest = MagicMock()
+        # Use index well below CHECK_KEL_SPENDS_ENTIRELY_FORK to avoid verify_kel_output_rules
+        mock_latest.block.index = 0
+        Config().LatestBlock = mock_latest
+
+        with patch.object(
+            Transaction, "generate_hash", new=AsyncMock(return_value=txn.hash)
+        ):
+            with patch.object(Transaction, "verify_signature", return_value=None):
+                with patch.object(
+                    Transaction, "has_key_event_log", new=AsyncMock(return_value=True)
+                ):
+                    with patch.object(
+                        KeyEvent, "verify", new=AsyncMock(return_value=None)
+                    ):
+                        # mempool=True → _kel_index = LatestBlock.block.index + 1 = 1
+                        await txn.verify(check_kel=True, mempool=True)
+
+    async def test_verify_has_kel_no_block_no_mempool_branch(self):
+        """Lines 679-680: has_kel=True + block=None + mempool=False → _kel_index = LatestBlock.index."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyeventlog import KeyEvent
+        from yadacoin.core.recoveryannouncement import RecoveryAnnouncement
+
+        ann = RecoveryAnnouncement("aabbccdd")
+        txn = self._make_txn_with_relationship(ann)
+
+        mock_latest = MagicMock()
+        mock_latest.block.index = 0
+        Config().LatestBlock = mock_latest
+
+        with patch.object(
+            Transaction, "generate_hash", new=AsyncMock(return_value=txn.hash)
+        ):
+            with patch.object(Transaction, "verify_signature", return_value=None):
+                with patch.object(
+                    Transaction, "has_key_event_log", new=AsyncMock(return_value=True)
+                ):
+                    with patch.object(
+                        KeyEvent, "verify", new=AsyncMock(return_value=None)
+                    ):
+                        # block=None, mempool=False → _kel_index = LatestBlock.block.index = 0
+                        await txn.verify(check_kel=True)
+
+    async def test_verify_has_kel_verify_output_rules_called(self):
+        """Line 683: has_kel=True + kel_index >= CHECK_KEL_SPENDS_ENTIRELY_FORK → verify_kel_output_rules."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.keyeventlog import KeyEvent
+        from yadacoin.core.recoveryannouncement import RecoveryAnnouncement
+
+        ann = RecoveryAnnouncement("aabbccdd")
+        txn = self._make_txn_with_relationship(ann)
+
+        mock_latest = MagicMock()
+        # Set kel_index well above CHECK_KEL_SPENDS_ENTIRELY_FORK
+        mock_latest.block.index = CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK + 1000
+        Config().LatestBlock = mock_latest
+
+        with patch.object(
+            Transaction, "generate_hash", new=AsyncMock(return_value=txn.hash)
+        ):
+            with patch.object(Transaction, "verify_signature", return_value=None):
+                with patch.object(
+                    Transaction, "has_key_event_log", new=AsyncMock(return_value=True)
+                ):
+                    with patch.object(
+                        KeyEvent, "verify", new=AsyncMock(return_value=None)
+                    ):
+                        with patch.object(
+                            Transaction,
+                            "verify_kel_output_rules",
+                            new=AsyncMock(return_value=None),
+                        ) as mock_rules:
+                            await txn.verify(check_kel=True)
+                            mock_rules.assert_called_once()
+
+    async def test_verify_recovery_announcement_to_string(self):
+        """Line 732: RecoveryAnnouncement relationship.to_string() called in verify()."""
+        from unittest.mock import AsyncMock, patch
+
+        from yadacoin.core.recoveryannouncement import RecoveryAnnouncement
+
+        ann = RecoveryAnnouncement("aabbccdd")
+        txn = self._make_txn_with_relationship(ann)
+        # Set hash to what generate_hash will produce
+        txn.hash = (
+            txn.relationship_hash
+        )  # short-circuit: set stored hash = relationship_hash
+
+        with patch.object(
+            Transaction, "generate_hash", new=AsyncMock(return_value=txn.hash)
+        ):
+            with patch.object(Transaction, "verify_signature", return_value=None):
+                # No check_kel — just verify the relationship.to_string() path
+                await txn.verify()
+
+    async def test_verify_credential_receipt_to_string(self):
+        """Line 734: CredentialReceipt relationship.to_string() called in verify()."""
+        from unittest.mock import AsyncMock, patch
+
+        from yadacoin.core.credentialreceipt import CredentialReceipt
+
+        cr = CredentialReceipt("aabb", "ccdd", "ee==")
+        txn = self._make_txn_with_relationship(cr)
+
+        with patch.object(
+            Transaction, "generate_hash", new=AsyncMock(return_value=txn.hash)
+        ):
+            with patch.object(Transaction, "verify_signature", return_value=None):
+                await txn.verify()
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

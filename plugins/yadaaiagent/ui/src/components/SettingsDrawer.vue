@@ -94,20 +94,56 @@
           <select v-model="walletMode">
             <option value="node">Node Wallet (server-managed key)</option>
             <option value="client">Personal Wallet (client-side seed)</option>
+            <option value="hardware">Hardware Wallet (air-gapped device)</option>
           </select>
           <div class="hint">
-            <strong>Node Wallet</strong> — your node derives and stores your key.<br/>
-            <strong>Personal Wallet</strong> — you hold your own BIP39 seed; all rotations happen in the browser.
+            <strong>Node Wallet</strong> — your node derives and stores your
+            key.<br />
+            <strong>Personal Wallet</strong> — you hold your own BIP39 seed; all
+            rotations happen in the browser.<br />
+            <strong>Hardware Wallet</strong> — every approval requires scanning
+            QR codes from an air-gapped device. Private keys never touch this
+            browser.
           </div>
         </div>
         <div v-if="walletMode === 'client' && hasClientKey" class="pm-list">
           <div class="pm-item">
-            <span class="pm-label" style="font-family:monospace;font-size:0.8em">{{ clientKeyPreview }}</span>
-            <span class="pm-action remove" @click="resetClientWallet">reset wallet</span>
+            <span
+              class="pm-label"
+              style="font-family: monospace; font-size: 0.8em"
+              >{{ clientKeyPreview }}</span
+            >
+            <span class="pm-action remove" @click="resetClientWallet"
+              >reset wallet</span
+            >
           </div>
         </div>
-        <div v-if="walletMode === 'client' && !hasClientKey" class="hint" style="color:var(--accent2)">
+        <div v-if="walletMode === 'hardware' && hasHardwarePub" class="pm-list">
+          <div class="pm-item">
+            <span
+              class="pm-label"
+              style="font-family: monospace; font-size: 0.8em"
+              >📟 {{ hardwarePubPreview }}</span
+            >
+            <span class="pm-action remove" @click="resetClientWallet"
+              >unpair device</span
+            >
+          </div>
+        </div>
+        <div
+          v-if="walletMode === 'client' && !hasClientKey"
+          class="hint"
+          style="color: var(--accent2)"
+        >
           No key found — click the session pill to set up your personal wallet.
+        </div>
+        <div
+          v-if="walletMode === 'hardware' && !hasHardwarePub"
+          class="hint"
+          style="color: var(--accent2)"
+        >
+          No device paired — click the session pill to scan your hardware
+          wallet's QR.
         </div>
       </section>
 
@@ -163,6 +199,7 @@ import {
   getNodeUrl,
   LS_NODE_URL,
   LS_PRIV,
+  LS_HW_PUB,
   getWalletMode,
   setWalletMode,
   clearClientWallet,
@@ -180,6 +217,11 @@ const savedMsg = ref(false);
 const walletMode = ref(getWalletMode());
 
 const hasClientKey = computed(() => !!localStorage.getItem(LS_PRIV));
+const hasHardwarePub = computed(() => !!localStorage.getItem(LS_HW_PUB));
+const hardwarePubPreview = computed(() => {
+  const pub = localStorage.getItem(LS_HW_PUB);
+  return pub ? pub.slice(0, 20) + "\u2026" : "";
+});
 const clientKeyPreview = computed(() => {
   const priv = localStorage.getItem(LS_PRIV);
   if (!priv) return "";
@@ -192,7 +234,12 @@ const clientKeyPreview = computed(() => {
 });
 
 function resetClientWallet() {
-  if (!confirm("This will delete your local key. Make sure you have your seed phrase. Continue?")) return;
+  if (
+    !confirm(
+      "This will delete your local key. Make sure you have your seed phrase. Continue?",
+    )
+  )
+    return;
   clearClientWallet();
   walletMode.value = "node";
   emit("wallet-mode-changed");

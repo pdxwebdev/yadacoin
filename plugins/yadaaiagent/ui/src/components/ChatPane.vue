@@ -30,6 +30,7 @@ import ChatWindow from "./ChatWindow.vue";
 import {
   LS_PRIV,
   LS_CC,
+  LS_HW_PUB,
   LS_WALLET_MODE,
   LS_ACTIVE_AGENT,
   getLlmSettings,
@@ -37,7 +38,11 @@ import {
   saveBookingCredential,
   getWalletMode,
   isClientWallet,
+  isHardwareWallet,
+  getHardwareActive,
+  setHardwareActive,
 } from "../composables/useStorage.js";
+import { postCredentialReceipt } from "../composables/useCredentialReceipts.js";
 import {
   hex,
   compactSigToDerBase64,
@@ -87,6 +92,9 @@ const vendorState = ref(null);
 const sessionTick = ref(0);
 const sessionReady = computed(() => {
   sessionTick.value; // reactive dependency so we can force re-evaluation
+  if (isHardwareWallet()) {
+    return !!getHardwareActive();
+  }
   const p = localStorage.getItem(LS_PRIV);
   const c = localStorage.getItem(LS_CC);
   return !!(p && c);
@@ -99,6 +107,13 @@ onMounted(() => {
       // Client wallet mode but no key yet — prompt setup
       pushAgent(
         "\u26A0 No wallet found. Click the session pill to set up your personal wallet, or switch to Node Wallet mode in Settings.",
+        true,
+      );
+      emit("setup-wallet");
+    } else if (storedMode === "hardware") {
+      // Hardware wallet mode but device not yet paired
+      pushAgent(
+        "\u26A0 No hardware wallet paired. Click the session pill to scan your device's QR and pair it.",
         true,
       );
       emit("setup-wallet");
@@ -698,6 +713,7 @@ async function advanceVendorQueue() {
     if (data.complete) {
       if (data.credential) {
         saveBookingCredential(data.credential);
+        postCredentialReceipt(data.credential).catch(() => {});
         emit("credential-issued");
       }
       pushAgent(
@@ -746,6 +762,7 @@ async function sendVendorMessage(text) {
     } else if (data.complete) {
       if (data.credential) {
         saveBookingCredential(data.credential);
+        postCredentialReceipt(data.credential).catch(() => {});
         emit("credential-issued");
       }
       pushAgent(
@@ -881,21 +898,124 @@ async function doClientRotation(privBytes, ccBytes, sf, relationshipB64) {
   };
 }
 
+// ── Hardware-wallet rotation helper ──────────────────────────────────────────
+// Active-key model:
+//   • `stored`     = K_n  — the locally-persisted active hardware key. Signs
+//                            the unconfirmed rotation tx silently (no scan).
+//   • `confirming` = K_{n+1} — scanned QR; signs the confirming tx.
+//   • `nextActive` = K_{n+2} — scanned QR; becomes the new stored active and
+//                              the agent DID for the VP this round.
+//
+// Returns { provPrivBytes, transactionId, nextPubHex } where provPrivBytes is
+// K_{n+2}'s private key (used to sign the VP for the action endpoint).
+async function doHardwareRotation(
+  stored,
+  confirming,
+  nextActive,
+  relationshipB64,
+) {
+  if (!stored || !confirming || !nextActive)
+    throw new Error(
+      "Hardware rotation requires stored active key plus two scanned QRs.",
+    );
+
+  async function lookupPrev(address) {
+    try {
+      const r = await fetch(
+        getNodeUrl() +
+          "/key-rotation/prev-key-hash?address=" +
+          encodeURIComponent(address),
+      );
+      if (!r.ok) return null;
+      const j = await r.json();
+      return j.prev_public_key_hash ?? null;
+    } catch {
+      return null;
+    }
+  }
+  const prevForUnconfirmed =
+    (await lookupPrev(stored.publicKeyHash)) ??
+    (stored.prevPublicKeyHash || "");
+
+  const enc = new TextEncoder();
+  const relStr = relationshipB64 || "";
+  const relHashBytes = sha256(enc.encode(relStr));
+  const relHashHex = hex.fromBytes(relHashBytes);
+
+  const txnTime = Math.floor(Date.now() / 1000);
+
+  // Unconfirmed tx — signed by K_n (stored), commits scope.
+  const unconfirmedTxn = await buildRotationTxn({
+    signerPrivBytes: stored.privBytes,
+    publicKeyHex: stored.publicKeyHex,
+    prerotatedPkh: stored.prerotatedKeyHash,
+    twicePrerotatedPkh: stored.twicePrerotatedKeyHash,
+    publicKeyHash: stored.publicKeyHash,
+    prevPublicKeyHash: prevForUnconfirmed,
+    relationship: relStr,
+    relationshipHash: relHashHex,
+    txnTime,
+    inputs: [],
+    outputs: [{ to: stored.prerotatedKeyHash, value: 0.0 }],
+  });
+
+  // Confirming tx — signed by K_{n+1} (confirming), no relationship payload.
+  const confirmingTxn = await buildRotationTxn({
+    signerPrivBytes: confirming.privBytes,
+    publicKeyHex: confirming.publicKeyHex,
+    prerotatedPkh: confirming.prerotatedKeyHash,
+    twicePrerotatedPkh: confirming.twicePrerotatedKeyHash,
+    publicKeyHash: confirming.publicKeyHash,
+    prevPublicKeyHash: stored.publicKeyHash,
+    relationship: "",
+    relationshipHash: "",
+    txnTime,
+    inputs: [],
+    outputs: [{ to: confirming.prerotatedKeyHash, value: 0.0 }],
+  });
+
+  const bcastRes = await fetch(
+    getNodeUrl() + "/transaction?username_signature=1",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([unconfirmedTxn, confirmingTxn]),
+    },
+  );
+  const bcastData = await bcastRes.json();
+  if (!bcastRes.ok || bcastData.status === false)
+    throw new Error(bcastData.message || String(bcastRes.status));
+
+  // Advance the stored active key to K_{n+2}. This persists nextActive's
+  // private key bytes so the next round can sign its unconfirmed tx silently.
+  setHardwareActive(nextActive);
+
+  // VP for this action is signed by K_{n+2} — the new active key. Its DID
+  // is K_{n+2}'s public key, which is committed in the chain only as the
+  // prerotated_key_hash of the confirming tx (so the verifier's revocation
+  // check passes — it has not yet appeared as any entry's public_key_hash).
+  return {
+    provPrivBytes: nextActive.privBytes,
+    transactionId: unconfirmedTxn.id,
+    nextPubHex: nextActive.publicKeyHex,
+  };
+}
+
 // ── Approval handler (called from App.vue overlay) ────────────────────────────
 // Exposed so parent can invoke from ApprovalCard emit
 async function runApprovalFlow(
   scope,
   agentType,
-  { secondFactor, paymentMethod },
+  { secondFactor, paymentMethod, hardware },
   onStep,
   onDone,
 ) {
   // ── Node config — key rotation then direct apply call, no vendor chat ────────
   if (agentType?.id === "node_config") {
-    if (isClientWallet()) {
+    if (isClientWallet() || isHardwareWallet()) {
       onDone(
         false,
-        "⚠ Node config changes are only available for node-wallet mode. Personal wallets cannot modify node settings.",
+        "⚠ Node config changes are only available for node-wallet mode. Personal and hardware wallets cannot modify node settings.",
       );
       busy.value = false;
       nextTick(() => inputEl.value?.focus());
@@ -1077,8 +1197,7 @@ async function runApprovalFlow(
 
   // ── Wallet agent — key rotation then send/wrap transaction ───────────────
   if (agentType?.id === "wallet_agent") {
-    const storedPrivW = localStorage.getItem(LS_PRIV);
-    const storedCcW = localStorage.getItem(LS_CC);
+    const hwMode = isHardwareWallet();
     const sfW = secondFactor;
     const isWrap = scope.action === "wrap";
     const WRAP_BRIDGE = "16U1gAmHazqqEkbRE9KFPShAperjJreMRA";
@@ -1086,23 +1205,49 @@ async function runApprovalFlow(
     const ethAddrW = isWrap ? scope.eth_address || "" : "";
     const amtW = parseFloat(scope.amount) || 0;
 
-    onStep("Deriving pre-committed child key…");
-    const privBytesW = hex.toBytes(storedPrivW);
-    const ccBytesW = hex.toBytes(storedCcW);
-    const childW = deriveSecurePath(privBytesW, ccBytesW, sfW);
-    const childPubHexW = getPublicKeyHex(childW.priv);
-    onStep(
-      "Pre-committed key derived: " + childPubHexW.slice(0, 20) + "…",
-      "done",
-    );
+    // Resolve operator/agent public keys + signing material based on mode.
+    let privBytesW = null;
+    let ccBytesW = null;
+    let childW = null;
+    let childPubHexW = "";
+    let operatorPubHexW = "";
+    let agentPubHexW = "";
+    if (hwMode) {
+      if (!hardware?.stored || !hardware?.confirming || !hardware?.nextActive) {
+        onDone(
+          false,
+          "Hardware wallet rotation requires the stored active key plus both QR scans.",
+        );
+        busy.value = false;
+        nextTick(() => inputEl.value?.focus());
+        return;
+      }
+      operatorPubHexW = hardware.stored.publicKeyHex;
+      agentPubHexW = hardware.nextActive.publicKeyHex;
+      childPubHexW = hardware.stored.publicKeyHex;
+    } else {
+      const storedPrivW = localStorage.getItem(LS_PRIV);
+      const storedCcW = localStorage.getItem(LS_CC);
+      onStep("Deriving pre-committed child key…");
+      privBytesW = hex.toBytes(storedPrivW);
+      ccBytesW = hex.toBytes(storedCcW);
+      childW = deriveSecurePath(privBytesW, ccBytesW, sfW);
+      childPubHexW = getPublicKeyHex(childW.priv);
+      onStep(
+        "Pre-committed key derived: " + childPubHexW.slice(0, 20) + "…",
+        "done",
+      );
+    }
 
     onStep("Broadcasting rotation transaction…");
     let rotateDataW;
     try {
-      const gc1W = deriveSecurePath(childW.priv, childW.cc, sfW);
-      const gc2W = deriveSecurePath(gc1W.priv, gc1W.cc, sfW);
-      const agentPubHexW = getPublicKeyHex(gc2W.priv);
-      const operatorPubHexW = getPublicKeyHex(privBytesW);
+      if (!hwMode) {
+        const gc1W = deriveSecurePath(childW.priv, childW.cc, sfW);
+        const gc2W = deriveSecurePath(gc1W.priv, gc1W.cc, sfW);
+        agentPubHexW = getPublicKeyHex(gc2W.priv);
+        operatorPubHexW = getPublicKeyHex(privBytesW);
+      }
 
       const vcW = {
         "@context": [
@@ -1127,7 +1272,21 @@ async function runApprovalFlow(
 
       const relB64W = btoa(unescape(encodeURIComponent(JSON.stringify(vcW))));
 
-      if (isClientWallet()) {
+      if (hwMode) {
+        const hwRot = await doHardwareRotation(
+          hardware.stored,
+          hardware.confirming,
+          hardware.nextActive,
+          relB64W,
+        );
+        rotateDataW = {
+          prev_private_key: null,
+          prev_chain_code: null,
+          prerotated_private_key: hex.fromBytes(hwRot.provPrivBytes),
+          transaction_id: hwRot.transactionId,
+          status: true,
+        };
+      } else if (isClientWallet()) {
         const clientRot = await doClientRotation(
           privBytesW,
           ccBytesW,
@@ -1172,10 +1331,17 @@ async function runApprovalFlow(
       return;
     }
 
-    localStorage.setItem(LS_PRIV, rotateDataW.prev_private_key);
-    if (rotateDataW.prev_chain_code)
-      localStorage.setItem(LS_CC, rotateDataW.prev_chain_code);
-    emit("session-rotated", rotateDataW.prev_private_key);
+    if (hwMode) {
+      // Hardware mode: doHardwareRotation already persisted nextActive as the
+      // new stored active key (via setHardwareActive). Mirror the public key
+      // for the App.vue session pill.
+      emit("session-rotated", hardware.nextActive.publicKeyHex);
+    } else {
+      localStorage.setItem(LS_PRIV, rotateDataW.prev_private_key);
+      if (rotateDataW.prev_chain_code)
+        localStorage.setItem(LS_CC, rotateDataW.prev_chain_code);
+      emit("session-rotated", rotateDataW.prev_private_key);
+    }
     onStep(
       "Rotation committed · txid " +
         rotateDataW.transaction_id.slice(0, 20) +
@@ -1186,11 +1352,10 @@ async function runApprovalFlow(
     onStep("Building Verifiable Presentation…");
     const provPrivBytesW = hex.toBytes(rotateDataW.prerotated_private_key);
     const provPubHexW = getPublicKeyHex(provPrivBytesW);
-    const operatorPubHexW2 = getPublicKeyHex(privBytesW);
-
-    const gc1W2 = deriveSecurePath(childW.priv, childW.cc, sfW);
-    const gc2W2 = deriveSecurePath(gc1W2.priv, gc1W2.cc, sfW);
-    const agentPubHexW2 = getPublicKeyHex(gc2W2.priv);
+    // Reuse the operator/agent public keys resolved earlier — they were
+    // computed differently for hardware vs. seed-backed wallets.
+    const operatorPubHexW2 = operatorPubHexW;
+    const agentPubHexW2 = agentPubHexW;
 
     const vcW2 = {
       "@context": [
@@ -1357,22 +1522,49 @@ async function runApprovalFlow(
     return;
   }
 
-  const storedPriv = localStorage.getItem(LS_PRIV);
-  const storedCc = localStorage.getItem(LS_CC);
+  const hwModeG = isHardwareWallet();
   const sf = secondFactor;
 
-  onStep("Deriving pre-committed child key…");
+  let privBytes = null;
+  let ccBytes = null;
+  let child = null;
+  let childPubHex = "";
+  let agentPubHex = "";
+  let operatorPubHex = "";
+  if (hwModeG) {
+    if (!hardware?.stored || !hardware?.confirming || !hardware?.nextActive) {
+      onStep(
+        "Hardware wallet rotation requires the stored active key plus both QR scans.",
+        "fail",
+      );
+      onDone(
+        false,
+        "Hardware wallet rotation requires the stored active key plus both QR scans.",
+      );
+      busy.value = false;
+      nextTick(() => inputEl.value?.focus());
+      return;
+    }
+    operatorPubHex = hardware.stored.publicKeyHex;
+    agentPubHex = hardware.nextActive.publicKeyHex;
+    childPubHex = hardware.stored.publicKeyHex;
+  } else {
+    const storedPriv = localStorage.getItem(LS_PRIV);
+    const storedCc = localStorage.getItem(LS_CC);
 
-  const privBytes = hex.toBytes(storedPriv);
-  const ccBytes = hex.toBytes(storedCc);
-  const child = deriveSecurePath(privBytes, ccBytes, sf);
-  const childPubHex = getPublicKeyHex(child.priv);
+    onStep("Deriving pre-committed child key…");
 
-  // Derive agent key (2 levels deeper) for the VC subject
-  const gc1 = deriveSecurePath(child.priv, child.cc, sf);
-  const gc2 = deriveSecurePath(gc1.priv, gc1.cc, sf);
-  const agentPubHex = getPublicKeyHex(gc2.priv);
-  const operatorPubHex = getPublicKeyHex(privBytes);
+    privBytes = hex.toBytes(storedPriv);
+    ccBytes = hex.toBytes(storedCc);
+    child = deriveSecurePath(privBytes, ccBytes, sf);
+    childPubHex = getPublicKeyHex(child.priv);
+
+    // Derive agent key (2 levels deeper) for the VC subject
+    const gc1 = deriveSecurePath(child.priv, child.cc, sf);
+    const gc2 = deriveSecurePath(gc1.priv, gc1.cc, sf);
+    agentPubHex = getPublicKeyHex(gc2.priv);
+    operatorPubHex = getPublicKeyHex(privBytes);
+  }
 
   const services = scope.services || [];
 
@@ -1405,16 +1597,32 @@ async function runApprovalFlow(
   const relationshipB64 = btoa(
     unescape(encodeURIComponent(JSON.stringify(vc))),
   );
-  onStep(
-    "Pre-committed key derived: " + childPubHex.slice(0, 20) + "…",
-    "done",
-  );
+  if (!hwModeG) {
+    onStep(
+      "Pre-committed key derived: " + childPubHex.slice(0, 20) + "…",
+      "done",
+    );
+  }
 
   // Step 2: Broadcast rotation
   onStep("Broadcasting rotation transaction with scope committed on-chain…");
   let rotateData;
   try {
-    if (isClientWallet()) {
+    if (hwModeG) {
+      const hwRot = await doHardwareRotation(
+        hardware.stored,
+        hardware.confirming,
+        hardware.nextActive,
+        relationshipB64,
+      );
+      rotateData = {
+        prev_private_key: null,
+        prev_chain_code: null,
+        prerotated_private_key: hex.fromBytes(hwRot.provPrivBytes),
+        transaction_id: hwRot.transactionId,
+        status: true,
+      };
+    } else if (isClientWallet()) {
       const clientRot = await doClientRotation(
         privBytes,
         ccBytes,
@@ -1471,7 +1679,10 @@ async function runApprovalFlow(
         html:
           `${scopeLines}<br><br>` +
           `To proceed I'll broadcast a rotation transaction committing this scope on-chain as a ` +
-          `W3C Verifiable Credential. Please enter your second factor to approve.`,
+          `W3C Verifiable Credential. ` +
+          (hwModeG
+            ? `Please scan your hardware device's confirming and next-active QR codes to approve.`
+            : `Please enter your second factor to approve.`),
         content: "",
         showApproval: true,
         approvalContext: { scope: retryScope, agentType: retryAgentType },
@@ -1489,10 +1700,17 @@ async function runApprovalFlow(
   );
 
   // Update stored keys
-  localStorage.setItem(LS_PRIV, rotateData.prev_private_key);
-  if (rotateData.prev_chain_code)
-    localStorage.setItem(LS_CC, rotateData.prev_chain_code);
-  emit("session-rotated", rotateData.prev_private_key);
+  if (hwModeG) {
+    // doHardwareRotation already persisted nextActive as the new stored
+    // active key (via setHardwareActive). Mirror the public key for the
+    // App.vue session pill.
+    emit("session-rotated", hardware.nextActive.publicKeyHex);
+  } else {
+    localStorage.setItem(LS_PRIV, rotateData.prev_private_key);
+    if (rotateData.prev_chain_code)
+      localStorage.setItem(LS_CC, rotateData.prev_chain_code);
+    emit("session-rotated", rotateData.prev_private_key);
+  }
 
   // Step 3: Build VP
   onStep("Building Verifiable Presentation…");
@@ -1554,6 +1772,7 @@ async function runApprovalFlow(
         onStep(`[${service}] Confirmed: ${data.confirmation}`, "done");
         if (data.credential) {
           saveBookingCredential(data.credential);
+          postCredentialReceipt(data.credential).catch(() => {});
           emit("credential-issued");
         }
         confirmedResults.push({
