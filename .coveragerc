@@ -1,0 +1,16 @@
+[run]
+branch = False
+
+[report]
+exclude_lines =
+    # Standard pragma
+    pragma: no cover
+
+    # TYPE_CHECKING blocks are never executed at runtime
+    if TYPE_CHECKING:
+
+    # Abstract methods
+    @abstractmethod
+
+    # Defensive programming
+    raise NotImplementedError
