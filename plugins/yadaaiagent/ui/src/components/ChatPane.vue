@@ -3,7 +3,6 @@
     <ChatWindow
       :messages="messages"
       ref="chatWindow"
-      @choice-selected="handleChoice"
       @fields-confirmed="handleFieldsConfirmed"
     />
 
@@ -185,131 +184,31 @@ function removeMsg(index) {
 }
 
 /**
- * Parse vendor reply text for multiple-choice options.
- * Returns { items: string[], multi: boolean } or null if none detected.
- * multi=true → checkboxes (multiple allowed), false → radio buttons (pick one)
+ * Apply UI hint fields from an API response directly onto a message.
+ * choices is an array of choice group objects built by the model.
  */
-function parseChoices(text) {
-  if (!text) return null;
-  // Strip HTML tags for plain-text analysis
-  const plain = text.replace(/<[^>]+>/g, " ");
-
-  // Detect multi-select intent: "which services", "services you need",
-  // "select all", "one or more", etc.
-  const multiRe =
-    /which\s+services?|services?\s+you\s+need|services?\s+you\s+want|services?\s+do\s+you\s+need|select\s+all|one\s+or\s+more|any\s+combination|multiple|\bservices\b/i;
-  const multi = multiRe.test(plain);
-
-  // 1. Parenthetical slash list: (window / middle / aisle)
-  const slashMatch = /\(([^)]{3,120})\)/.exec(plain);
-  if (slashMatch && slashMatch[1].includes("/")) {
-    const parts = slashMatch[1]
-      .split(/\s*\/\s*/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && s.length < 50);
-    if (parts.length >= 2 && parts.length <= 8) return { items: parts, multi };
-  }
-
-  // 2. Parenthetical comma/or list: (hotel, flight, train, ship, or car)
-  //    Also matches "such as hotel, flight..." or "like hotel, flight..."
-  const commaOrRe = /(?:such as|like|including|e\.g\.)?\s*\(([^)]{3,200})\)/i;
-  const commaOrMatch = commaOrRe.exec(plain);
-  if (commaOrMatch && /,/.test(commaOrMatch[1])) {
-    const raw = commaOrMatch[1].replace(/\bor\b/gi, ",");
-    const parts = raw
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && s.length < 50);
-    if (parts.length >= 2 && parts.length <= 8) return { items: parts, multi };
-  }
-
-  // 3. Inline comma/or list after colon: "services: hotel, flight, train, or car"
-  const colonListRe =
-    /(?:options?|choices?|services?|modes?|types?)[^:]*:\s*([a-z0-9 ,/]+(\bor\b[a-z0-9 ]+))/i;
-  const colonMatch = colonListRe.exec(plain);
-  if (colonMatch) {
-    const raw = colonMatch[1].replace(/\bor\b/gi, ",");
-    const parts = raw
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && s.length < 50);
-    if (parts.length >= 2 && parts.length <= 8) return { items: parts, multi };
-  }
-
-  // 4. Numbered list: "1. Option\n2. Option"
-  const numbered = [...plain.matchAll(/^\s*\d+\.\s+(.+)/gm)].map((m) =>
-    m[1].trim(),
-  );
-  if (numbered.length >= 2 && numbered.length <= 8)
-    return { items: numbered, multi };
-
-  return null;
-}
-
-/** Apply parsed choices to a message object. */
-function applyChoices(msg, text) {
-  const parsed = parseChoices(text);
-  if (parsed) {
-    msg.choices = parsed.items;
-    msg.choicesMulti = parsed.multi;
-    msg.checkSelected = [];
-    msg.radioSelected = null;
+function applyDataFields(msg, data) {
+  const groups = Array.isArray(data.choices) ? data.choices : [];
+  if (groups.length) {
+    msg.choices = groups;
+    // Initialize per-group selection state keyed by group.id
+    msg.selections = {};
+    for (const g of groups) {
+      if (g.input_type === "daterange") {
+        msg.selections[g.id] = { start: "", end: "" };
+      } else {
+        msg.selections[g.id] = g.multi ? [] : "";
+      }
+    }
   }
 }
 
-/**
- * Detect fields that should be rendered as date/text inputs.
- * Returns [{label, type, value}] or null.
- */
-function parseDateFields(text) {
-  if (!text) return null;
-  const plain = text.replace(/<[^>]+>/g, " ").toLowerCase();
-  const fields = [];
-
-  if (/\bdestination\b/.test(plain))
-    fields.push({ label: "Destination", type: "text", value: "" });
-
-  if (/check[- ]?in\s+date|\barrival\s+date\b|\bcheck[- ]?in\b/.test(plain))
-    fields.push({ label: "Check-in date", type: "date", value: "" });
-
-  if (/check[- ]?out\s+date|\bdeparture\s+date\b|\bcheck[- ]?out\b/.test(plain))
-    fields.push({ label: "Check-out date", type: "date", value: "" });
-
-  // Generic travel/booking date pairs
-  if (/\btravel\s+dates?\b|\bdates?\s+of\s+travel\b/.test(plain)) {
-    if (!fields.find((f) => f.label === "Check-in date"))
-      fields.push({ label: "Check-in date", type: "date", value: "" });
-    if (!fields.find((f) => f.label === "Check-out date"))
-      fields.push({ label: "Check-out date", type: "date", value: "" });
-  }
-
-  if (
-    /\bdeparture\s+date\b/.test(plain) &&
-    !fields.find((f) => f.label === "Check-in date")
-  )
-    fields.push({ label: "Departure date", type: "date", value: "" });
-
-  if (/\breturn\s+date\b/.test(plain))
-    fields.push({ label: "Return date", type: "date", value: "" });
-
-  return fields.length > 0 ? fields : null;
-}
-
-/** Apply date/text input fields to a message object. */
-function applyDateFields(msg, text) {
-  const fields = parseDateFields(text);
-  if (fields) msg.dateFields = fields;
-}
-
-/** Clear choice buttons from the most recent agent message that has them. */
+/** Clear choice form from the most recent agent message that has one. */
 function clearLastChoices() {
   for (let i = messages.value.length - 1; i >= 0; i--) {
-    if (
-      messages.value[i].choices?.length ||
-      messages.value[i].dateFields?.length
-    ) {
+    if (messages.value[i].choices?.length) {
       messages.value[i].choices = [];
-      messages.value[i].dateFields = null;
+      messages.value[i].selections = {};
       break;
     }
   }
@@ -324,8 +223,25 @@ function handleChoice(choice) {
 }
 
 /** Called when the user confirms date/text fields. */
-function handleFieldsConfirmed(text) {
+function handleFieldsConfirmed(text, extracted) {
   if (busy.value) return;
+  // Merge confirmed field values into the appropriate scope so the next API
+  // call sends them — skipping model re-extraction of already-answered fields.
+  if (extracted && typeof extracted === "object") {
+    if (vendorState.value) {
+      // Vendor turn: accumulate into vendor-specific scope
+      if (!vendorState.value.vendorScope) vendorState.value.vendorScope = {};
+      for (const [k, v] of Object.entries(extracted)) {
+        if (v != null && v !== "") vendorState.value.vendorScope[k] = v;
+      }
+    } else {
+      // Main agent turn: accumulate into travel scope
+      if (!extractedScope) extractedScope = {};
+      for (const [k, v] of Object.entries(extracted)) {
+        if (v != null && v !== "") extractedScope[k] = v;
+      }
+    }
+  }
   userInput.value = text;
   send();
 }
@@ -441,6 +357,7 @@ async function send(overridePrompt) {
         messages: chatHistory,
         agent_type: currentAgentId.value || "general",
         brave_api_key: getBraveApiKey() || undefined,
+        extracted_scope: extractedScope ? { ...extractedScope } : undefined,
         llm: {
           provider: llmCfg.provider,
           model: llmCfg.model || undefined,
@@ -497,6 +414,7 @@ async function send(overridePrompt) {
           messages: chatHistory,
           agent_type: currentAgentId.value,
           brave_api_key: getBraveApiKey() || undefined,
+          extracted_scope: extractedScope ? { ...extractedScope } : undefined,
           llm: {
             provider: llmCfg2.provider,
             model: llmCfg2.model || undefined,
@@ -756,11 +674,9 @@ async function send(overridePrompt) {
     busy.value = false;
   } else {
     const msg = pushAgent(data.reply);
-    applyChoices(msg, data.reply);
-    applyDateFields(msg, data.reply);
+    applyDataFields(msg, data);
     if (data.search_sources?.length) {
       msg.searchSources = data.search_sources;
-      messages.value[messages.value.length - 1] = { ...msg };
     }
     busy.value = false;
   }
@@ -805,7 +721,7 @@ async function buildSignedVP(
  * Call POST /api/vendor/<svc>/chat with a fresh challenge + re-signed VP.
  * Returns the parsed response data object.
  */
-async function callVendorChatApi(service, vpData, vendorMessages) {
+async function callVendorChatApi(service, vpData, vendorMessages, vendorScope) {
   const { vpBase, vpCanonicalBytes, provPrivBytes, provPubHex } = vpData;
   const llmCfg = getLlmSettings();
 
@@ -835,6 +751,7 @@ async function callVendorChatApi(service, vpData, vendorMessages) {
         challenge: chalData.challenge,
         vp,
         messages: vendorMessages,
+        vendor_scope: vendorScope || {},
         llm: {
           provider: llmCfg.provider,
           model: llmCfg.model || undefined,
@@ -862,12 +779,14 @@ async function advanceVendorQueue() {
     { role: "user", content: "Hello, I'm ready to continue my booking." },
   ];
 
+  vs.vendorScope = {};
   const { index: thinkIdx } = pushThinking();
   try {
     const data = await callVendorChatApi(
       vs.current.service,
       vs.vpData,
       vs.vendorMessages,
+      {},
     );
     removeMsg(thinkIdx);
     vs.vendorMessages.push({ role: "assistant", content: data.reply });
@@ -888,8 +807,7 @@ async function advanceVendorQueue() {
         `<strong>${escHtml(data.vendor)}:</strong><br>${marked.parse(data.reply)}`,
         true,
       );
-      applyChoices(msg, data.reply);
-      applyDateFields(msg, data.reply);
+      applyDataFields(msg, data);
     }
   } catch (e) {
     removeMsg(thinkIdx);
@@ -910,7 +828,12 @@ async function sendVendorMessage(text) {
 
   const { index: thinkIdx } = pushThinking();
   try {
-    const data = await callVendorChatApi(service, vs.vpData, vs.vendorMessages);
+    const data = await callVendorChatApi(
+      service,
+      vs.vpData,
+      vs.vendorMessages,
+      vs.vendorScope || {},
+    );
     removeMsg(thinkIdx);
     vs.vendorMessages.push({ role: "assistant", content: data.reply });
     if (data.exit_vendor) {
@@ -939,8 +862,7 @@ async function sendVendorMessage(text) {
         `<strong>${escHtml(data.vendor)}:</strong><br>${marked.parse(data.reply)}`,
         true,
       );
-      applyChoices(msg, data.reply);
-      applyDateFields(msg, data.reply);
+      applyDataFields(msg, data);
     }
   } catch (e) {
     removeMsg(thinkIdx);
@@ -1955,6 +1877,7 @@ async function runApprovalFlow(
             { role: "user", content: initGreeting },
             { role: "assistant", content: data.reply },
           ],
+          choices: Array.isArray(data.choices) ? data.choices : [],
         });
       }
     } catch (e) {
@@ -2003,6 +1926,7 @@ async function runApprovalFlow(
       queue: rest,
       vpData,
       vendorMessages: first.vendorMessages,
+      vendorScope: {},
     };
 
     // Post the first vendor question to the main chat
@@ -2013,8 +1937,7 @@ async function runApprovalFlow(
       `<strong>${escHtml(first.vendorName)}:</strong><br>${marked.parse(firstReply)}`,
       true,
     );
-    applyChoices(firstMsg, firstReply);
-    applyDateFields(firstMsg, firstReply);
+    applyDataFields(firstMsg, first);
   } else {
     // All services resolved immediately — classic done flow
     const resultLines = allResults

@@ -301,7 +301,8 @@ AGENT_TYPES = [
             '    "services": ["hotel","flight","train","ship","car"] subset or null\n'
             "  },\n"
             '  "complete": false,\n'
-            '  "detected_agent_type": "travel"\n'
+            '  "detected_agent_type": "travel",\n'
+            '  "choices": []\n'
             "}\n"
             "Rules:\n"
             "- Only use service values: hotel, flight, train, ship, car\n"
@@ -309,6 +310,11 @@ AGENT_TYPES = [
             "- complete MUST be false unless ALL FOUR fields are known\n"
             '- For date ranges like "May 10-16": checkin="May 10", checkout="May 16"\n'
             "- When complete=true: summarise all details and say the operator will approve\n"
+            "- ALWAYS populate choices[] when asking for any value:\n"
+            "  * Asking for destination or special requests → input_type='text'\n"
+            "  * Asking for travel dates → input_type='daterange'\n"
+            "  * Asking which services (hotel/flight/train/ship/car) → multi=true options list, include 'All services' option\n"
+            "  * Asking any yes/no question → multi=false options list\n"
             "- If the user clearly wants something other than travel (e.g. therapy, legal help, shopping), set detected_agent_type to 'general'"
         ),
     },
@@ -903,9 +909,50 @@ def _build_search_context(results: list, query: str) -> str:
 # Maps service id → {name, available, confirmationPrefix}
 # Add new services here; a VendorHandler subclass is auto-generated below.
 
+# Appended to every agent system prompt so the model returns structured UI hints.
+_UI_HINT_SUFFIX = (
+    '\n\nFor EVERY response you MUST include a top-level "choices" field in your JSON.\n'
+    "choices schema:\n"
+    '  "choices": [   <-- array of input groups, or empty [] when nothing to collect\n'
+    "    {\n"
+    '      "id": "snake_case_identifier",\n'
+    '      "choice_text": "The question or prompt shown to the user",\n'
+    '      "multi": false,          <-- true = checkboxes, false = radio buttons\n'
+    '      "options": [             <-- for select-type inputs\n'
+    '        {"id": "opt_id", "text": "Display label"}\n'
+    "      ]\n"
+    "      // OR for free-text / date inputs, omit options and add:\n"
+    '      "input_type": "text" | "date" | "daterange"\n'
+    "    }\n"
+    "  ]\n"
+    "Rules:\n"
+    "- CRITICAL: If your reply asks the user to choose, select, pick, specify, or provide any value, "
+    "you MUST populate choices[] with the appropriate input group(s). "
+    "choices=[] is ONLY allowed for acknowledgements or statements with no question.\n"
+    "- ONE question per turn. Your choices[] MUST contain exactly ONE entry. "
+    "Never ask two things at once — finish one question, wait for the answer, then ask the next.\n"
+    "- Use options[] when asking the user to pick from a finite set (e.g. seat type, room type, yes/no, service type).\n"
+    "- Use input_type='daterange' whenever you need BOTH a start date AND end date (e.g. check-in/check-out, departure/return). This renders a two-field date range picker as one group.\n"
+    "- Use input_type='date' only when a single date is needed (e.g. birthday, one-way departure).\n"
+    "- Use input_type='text' for open text answers such as destination or special requests.\n"
+    "- Set choices=[] (empty array) ONLY for purely conversational turns where no input is needed.\n"
+    "- Never mix options[] and input_type in the same entry.\n"
+    "Example — asking which travel services are needed:\n"
+    '  {"id": "services", "choice_text": "Which services do you need?", "multi": true, "options": [\n'
+    '    {"id": "hotel", "text": "Hotel"}, {"id": "flight", "text": "Flight"},\n'
+    '    {"id": "train", "text": "Train"}, {"id": "ship", "text": "Ship"},\n'
+    '    {"id": "car", "text": "Car"}, {"id": "all", "text": "All services"}\n'
+    "  ]}"
+)
+
 _VENDOR_CHAT_INSTRUCTION = (
-    "ALWAYS respond with ONLY a valid JSON object — no markdown, no extra text:\n"
-    '{"reply": "your message to the customer", "complete": false, "exit_vendor": false}\n'
+    "ALWAYS respond with ONLY a valid JSON object — no markdown, no extra text.\n"
+    "The JSON MUST include: reply, complete, exit_vendor, and choices (see schema below).\n"
+    'Example: {"reply": "...", "complete": false, "exit_vendor": false, "choices": []}\n'
+    "choices follows the same schema described above (array of choice group objects).\n"
+    "STRICT RULE: Ask EXACTLY ONE question per turn. choices[] must have at most ONE entry. "
+    "If you need to collect multiple pieces of information, ask about ONE of them now and wait "
+    "for the customer's answer before asking the next. Never combine two questions in one reply.\n"
     "Set complete=true ONLY when you have received all needed answers and are "
     "ready to confirm the booking. When setting complete=true your reply must "
     "include a friendly booking confirmation message.\n"
@@ -921,6 +968,26 @@ VENDOR_REGISTRY = {
         "name": "SkyLink Airlines",
         "available": True,
         "prefix": "FLT",
+        "vendorFields": [
+            {
+                "key": "seat_preference",
+                "label": "Seat preference",
+                "type": "select",
+                "options": ["window", "middle", "aisle"],
+            },
+            {
+                "key": "meal_preference",
+                "label": "Meal preference",
+                "type": "select",
+                "options": ["standard", "vegetarian", "vegan", "none"],
+            },
+            {
+                "key": "extra_baggage",
+                "label": "Extra checked baggage?",
+                "type": "select",
+                "options": ["yes", "no"],
+            },
+        ],
         "vendorPrompt": (
             "You are the reservations agent for SkyLink Airlines. "
             "A customer has been securely verified via YadaCoin KEL identity. "
@@ -936,6 +1003,26 @@ VENDOR_REGISTRY = {
         "name": "RailEuro Express",
         "available": True,
         "prefix": "TRN",
+        "vendorFields": [
+            {
+                "key": "cabin_class",
+                "label": "Cabin class",
+                "type": "select",
+                "options": ["standard", "first", "sleeper"],
+            },
+            {
+                "key": "seat_preference",
+                "label": "Seat preference",
+                "type": "select",
+                "options": ["window", "aisle", "table"],
+            },
+            {
+                "key": "large_luggage",
+                "label": "Bicycle or large luggage?",
+                "type": "select",
+                "options": ["yes", "no"],
+            },
+        ],
         "vendorPrompt": (
             "You are the reservations agent for RailEuro Express. "
             "A customer has been securely verified via YadaCoin KEL identity. "
@@ -951,6 +1038,26 @@ VENDOR_REGISTRY = {
         "name": "BlueWave Cruises",
         "available": True,
         "prefix": "SHP",
+        "vendorFields": [
+            {
+                "key": "cabin_type",
+                "label": "Cabin type",
+                "type": "select",
+                "options": ["interior", "oceanview", "balcony", "suite"],
+            },
+            {
+                "key": "dining_seating",
+                "label": "Dining seating",
+                "type": "select",
+                "options": ["early", "late", "anytime"],
+            },
+            {
+                "key": "shore_excursion",
+                "label": "Shore excursion package?",
+                "type": "select",
+                "options": ["yes", "no"],
+            },
+        ],
         "vendorPrompt": (
             "You are the reservations agent for BlueWave Cruises. "
             "A customer has been securely verified via YadaCoin KEL identity. "
@@ -966,6 +1073,21 @@ VENDOR_REGISTRY = {
         "name": "Grand Stay Hotels",
         "available": True,
         "prefix": "HTL",
+        "vendorFields": [
+            {
+                "key": "bed_type",
+                "label": "Bed type",
+                "type": "select",
+                "options": ["single king", "double queen", "twin beds"],
+            },
+            {
+                "key": "smoking",
+                "label": "Room type",
+                "type": "select",
+                "options": ["non-smoking", "smoking"],
+            },
+            {"key": "special_requests", "label": "Special requests", "type": "text"},
+        ],
         "vendorPrompt": (
             "You are the reservations agent for Grand Stay Hotels. "
             "A customer has been securely verified via YadaCoin KEL identity. "
@@ -981,6 +1103,26 @@ VENDOR_REGISTRY = {
         "name": "DriveEasy Rentals",
         "available": True,
         "prefix": "CAR",
+        "vendorFields": [
+            {
+                "key": "vehicle_size",
+                "label": "Vehicle size",
+                "type": "select",
+                "options": ["economy", "compact", "standard", "SUV", "luxury"],
+            },
+            {
+                "key": "gps",
+                "label": "GPS add-on?",
+                "type": "select",
+                "options": ["yes", "no"],
+            },
+            {
+                "key": "additional_driver",
+                "label": "Additional driver?",
+                "type": "select",
+                "options": ["yes", "no"],
+            },
+        ],
         "vendorPrompt": (
             "You are the rental agent for DriveEasy Rentals. "
             "A customer has been securely verified via YadaCoin KEL identity. "
@@ -996,6 +1138,24 @@ VENDOR_REGISTRY = {
         "name": "LexAI Legal",
         "available": True,
         "prefix": "LEX",
+        "vendorFields": [
+            {
+                "key": "jurisdiction",
+                "label": "Governing law / jurisdiction",
+                "type": "text",
+            },
+            {"key": "parties", "label": "Names of parties to include", "type": "text"},
+            {
+                "key": "urgency",
+                "label": "Urgency level",
+                "type": "select",
+                "options": [
+                    "standard (5 days)",
+                    "expedited (48h)",
+                    "urgent (same-day)",
+                ],
+            },
+        ],
         "vendorPrompt": (
             "You are the intake agent for LexAI Legal. "
             "A customer has been securely verified via YadaCoin KEL identity. "
@@ -1011,6 +1171,21 @@ VENDOR_REGISTRY = {
         "name": "QuickCart",
         "available": True,
         "prefix": "ORD",
+        "vendorFields": [
+            {"key": "variant", "label": "Color / size / variant", "type": "text"},
+            {
+                "key": "gift_wrap",
+                "label": "Gift wrapping?",
+                "type": "select",
+                "options": ["yes", "no"],
+            },
+            {
+                "key": "delivery_speed",
+                "label": "Delivery speed",
+                "type": "select",
+                "options": ["standard", "express", "overnight"],
+            },
+        ],
         "vendorPrompt": (
             "You are the order agent for QuickCart. "
             "A customer has been securely verified via YadaCoin KEL identity. "
@@ -1026,6 +1201,15 @@ VENDOR_REGISTRY = {
         "name": "YadaCoin Therapist",
         "available": True,
         "prefix": "THR",
+        "vendorFields": [
+            {
+                "key": "session_type",
+                "label": "Session type",
+                "type": "select",
+                "options": ["individual", "couples", "group"],
+            },
+            {"key": "preferred_time", "label": "Preferred time slot", "type": "text"},
+        ],
         "vendorPrompt": (
             "You are a scheduling assistant for a mental health therapist "
             "specializing in OCD, ADD, and ADHD. "
@@ -1873,6 +2057,79 @@ class AgentListHandler(BaseHandler):
         return self.render_as_json(result)
 
 
+def _is_filled(val):
+    """True when a value counts as already collected."""
+    if val is None or val == "null" or val == "":
+        return False
+    if isinstance(val, list) and len(val) == 0:
+        return False
+    return True
+
+
+def _auto_choices(fields, cumulative):
+    """Generate choice groups for agent fields that still have no value.
+
+    Uses the cumulative extracted scope (merged across all turns) so fields
+    collected in earlier turns are not asked again.
+    Returns only the FIRST unfilled field group to collect one thing at a time.
+    checkin/checkout are collapsed into a single daterange group.
+    """
+    date_fields = {"checkin", "checkout"}
+    date_seen = False
+    for field in fields:
+        key = field["key"]
+        val = cumulative.get(key)
+        if _is_filled(val):
+            continue
+        # Both date fields map to one group; skip the second once queued
+        if key in date_fields and date_seen:
+            continue
+        ftype = field.get("type", "text")
+        if key in date_fields:
+            date_seen = True
+            return [
+                {
+                    "id": "travel_dates",
+                    "choice_text": "Travel dates (check-in \u2192 check-out)",
+                    "input_type": "daterange",
+                }
+            ]
+        elif ftype == "multiselect":
+            options = [
+                {"id": o, "text": o.capitalize()} for o in field.get("options", [])
+            ]
+            options.append({"id": "all", "text": "All services"})
+            return [
+                {
+                    "id": key,
+                    "choice_text": field.get("label", f"Select {key}"),
+                    "multi": True,
+                    "options": options,
+                }
+            ]
+        elif ftype == "select":
+            return [
+                {
+                    "id": key,
+                    "choice_text": field.get("label", key),
+                    "multi": False,
+                    "options": [
+                        {"id": o, "text": o.replace("_", " ").title()}
+                        for o in field.get("options", [])
+                    ],
+                }
+            ]
+        else:
+            return [
+                {
+                    "id": key,
+                    "choice_text": field.get("label", key),
+                    "input_type": "text",
+                }
+            ]
+    return []
+
+
 class AgentChatHandler(BaseHandler):
     """
     POST /ai-agent-auth/api/chat
@@ -1923,6 +2180,11 @@ class AgentChatHandler(BaseHandler):
         agent_type_id = (body.get("agent_type") or "general").strip()
         agent_type = _AGENT_TYPE_MAP.get(agent_type_id)
 
+        # Cumulative extracted scope sent by the frontend (merged across all turns)
+        extracted_scope = body.get("extracted_scope") or {}
+        if not isinstance(extracted_scope, dict):
+            extracted_scope = {}
+
         if agent_type_id == "general":
             # Dynamically inject all on-chain registered types into the prompt
             _onchain = await _fetch_onchain_agents(self.config)
@@ -1943,6 +2205,12 @@ class AgentChatHandler(BaseHandler):
 
         # ── Read per-request LLM config sent from the browser ─────────────── #
         llm_cfg = body.get("llm") or {}
+
+        # Cumulative extracted scope sent by the frontend (merged across all turns)
+        extracted_scope = body.get("extracted_scope") or {}
+        if not isinstance(extracted_scope, dict):
+            extracted_scope = {}
+
         provider = (llm_cfg.get("provider") or "ollama").lower().strip()
         model = (llm_cfg.get("model") or "").strip() or self._DEFAULT_MODELS.get(
             provider, "gpt-4o-mini"
@@ -1990,7 +2258,7 @@ class AgentChatHandler(BaseHandler):
                     pass  # search is best-effort — never block the chat
 
         full_messages = _sanitize_messages(
-            [{"role": "system", "content": system_prompt}] + messages
+            [{"role": "system", "content": system_prompt + _UI_HINT_SUFFIX}] + messages
         )
 
         try:
@@ -2056,11 +2324,46 @@ class AgentChatHandler(BaseHandler):
             reply = str(parsed.get("reply", ""))
             extracted = parsed.get("extracted") or {}
             complete = bool(parsed.get("complete", False))
+            choices = (
+                parsed.get("choices") if isinstance(parsed.get("choices"), list) else []
+            )
         else:
             parsed = {}
             reply = content
             extracted = {}
             complete = False
+            choices = []
+
+        # Build cumulative filled set: frontend scope + current-turn extracted
+        filled = dict(extracted_scope)
+        for k, v in extracted.items():
+            if _is_filled(v):
+                filled[k] = v
+
+        # Filter model-returned choices: remove groups for fields already filled.
+        # travel_dates covers both checkin and checkout.
+        if choices and not complete and agent_type and agent_type.get("fields"):
+
+            def _group_needed(group):
+                gid = group.get("id", "")
+                if gid == "travel_dates":
+                    return not (
+                        _is_filled(filled.get("checkin"))
+                        and _is_filled(filled.get("checkout"))
+                    )
+                return not _is_filled(filled.get(gid))
+
+            choices = [g for g in choices if _group_needed(g)]
+
+        # Server-side fallback: for structured intake agents, always derive the
+        # next unfilled field from the agent's field definitions if the model
+        # didn't provide choices (or they were all filtered out).
+        # The "?" gate is intentionally removed — models often phrase requests
+        # as statements ("Please provide your destination.") with no question mark.
+        if not choices and not complete and agent_type and agent_type.get("fields"):
+            auto = _auto_choices(agent_type["fields"], filled)
+            if auto:
+                choices = auto
 
         detected_agent_type = (
             parsed.get("detected_agent_type", agent_type_id)
@@ -2074,6 +2377,7 @@ class AgentChatHandler(BaseHandler):
                 "complete": complete,
                 "detected_agent_type": detected_agent_type,
                 "search_sources": search_sources,
+                "choices": choices,
             }
         )
 
@@ -2922,6 +3226,22 @@ class VendorChatBaseHandler(AgentChatHandler):
 
         vendor_tools = _VENDOR_TOOLS.get(self.vendor_service)
 
+        # Pre-compute which vendorField the model should ask about this turn.
+        # This is injected into the system prompt so the model stays on-topic,
+        # and is also used to override v_choices after the LLM call.
+        _vf_list = vendor.get("vendorFields") or []
+        _vendor_scope = body.get("vendor_scope") or {}
+        _next_choices = _auto_choices(_vf_list, _vendor_scope)  # [] when all filled
+        _next_field_hint = (
+            f"\n\nYour ONLY task this turn is to ask about ONE field: "
+            f"\"{_next_choices[0]['choice_text']}\". "
+            f"Do NOT ask about any other field. Do NOT ask two questions at once."
+            if _next_choices
+            else ""
+        )
+
+        v_choices = []
+
         if vendor_tools:
             # ── MCP tool-calling mode ──────────────────────────────────────── #
             scope_ctx = json.dumps(auth.scope, separators=(",", ":"))
@@ -2931,6 +3251,7 @@ class VendorChatBaseHandler(AgentChatHandler):
                 f"Use the available tools to look up options and confirm the booking. "
                 f"Ask ONE question at a time. Be warm and professional. "
                 f"Customer's authorized scope: {scope_ctx}"
+                f"{_next_field_hint}"
             )
             try:
                 reply, confirmation, confirm_result = await self._run_tool_loop(
@@ -2961,7 +3282,7 @@ class VendorChatBaseHandler(AgentChatHandler):
                     'ALWAYS respond with ONLY valid JSON: {"reply": "...", "complete": false}'
                 ),
             )
-            system_prompt = f"{base_prompt}\n\nCustomer's authorized scope: {scope_ctx}"
+            system_prompt = f"{base_prompt}\n\nCustomer's authorized scope: {scope_ctx}{_next_field_hint}\n{_UI_HINT_SUFFIX}"
             full_messages = _sanitize_messages(
                 [{"role": "system", "content": system_prompt}] + messages
             )
@@ -3003,20 +3324,54 @@ class VendorChatBaseHandler(AgentChatHandler):
                 )
             if content.startswith("```"):
                 content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-            try:
-                parsed = json.loads(content)
+
+            # Reuse the same tolerant JSON extractor as the main handler
+            def _vextract(text):
+                start = text.find("{")
+                if start == -1:
+                    return None
+                try:
+                    return json.loads(text[start:])
+                except Exception:
+                    pass
+                end = text.rfind("}")
+                if end != -1 and end > start:
+                    try:
+                        return json.loads(text[start : end + 1])
+                    except Exception:
+                        pass
+                return None
+
+            parsed = _vextract(content)
+            if parsed:
                 reply = str(parsed.get("reply", ""))
                 complete = bool(parsed.get("complete", False))
                 exit_vendor = bool(parsed.get("exit_vendor", False))
-            except Exception:
+                v_choices = (
+                    parsed.get("choices")
+                    if isinstance(parsed.get("choices"), list)
+                    else []
+                )
+            else:
                 reply = content
                 complete = False
                 exit_vendor = False
+                v_choices = []
+
             confirmation = (
                 _gen_confirmation(self.vendor_service, auth.address)
                 if complete
                 else None
             )
+
+        # For vendor agents with vendorFields, always derive choices from the
+        # pre-computed next field rather than trusting the model to produce them.
+        # The model's reply text is kept; only choices[] is authoritative from us.
+        vendor_fields = vendor.get("vendorFields") or []
+        if vendor_fields and not complete:
+            v_choices = _next_choices  # already computed above
+        elif len(v_choices) > 1:
+            v_choices = v_choices[:1]
 
         # MCP tool-loop path does not expose exit_vendor
         if vendor_tools:
@@ -3029,6 +3384,7 @@ class VendorChatBaseHandler(AgentChatHandler):
             "exit_vendor": exit_vendor,
             "service": self.vendor_service,
             "vendor": vendor.get("name", self.vendor_service),
+            "choices": v_choices,
         }
         if confirmation:
             result["confirmation"] = confirmation

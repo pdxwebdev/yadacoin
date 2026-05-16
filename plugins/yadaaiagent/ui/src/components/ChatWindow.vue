@@ -14,71 +14,72 @@
           v-html="renderBubble(msg)"
         ></div>
         <div v-if="msg.choices?.length" class="choice-form">
-          <!-- Single-select: radio buttons -->
-          <template v-if="!msg.choicesMulti">
-            <label
-              v-for="(choice, ci) in msg.choices"
-              :key="ci"
-              class="choice-label"
-            >
-              <input
-                type="radio"
-                :name="`choice-${i}`"
-                :value="choice"
-                v-model="msg.radioSelected"
-                class="choice-input"
-              />
-              <span>{{ choice }}</span>
-            </label>
-            <button
-              class="choice-confirm-btn"
-              :disabled="!msg.radioSelected"
-              @click="confirmRadio(msg)"
-            >
-              Confirm
-            </button>
-          </template>
-          <!-- Multi-select: checkboxes -->
-          <template v-else>
-            <label
-              v-for="(choice, ci) in msg.choices"
-              :key="ci"
-              class="choice-label"
-            >
-              <input
-                type="checkbox"
-                :value="choice"
-                v-model="msg.checkSelected"
-                class="choice-input"
-              />
-              <span>{{ choice }}</span>
-            </label>
-            <button
-              class="choice-confirm-btn"
-              :disabled="!msg.checkSelected?.length"
-              @click="confirmCheckbox(msg)"
-            >
-              Confirm
-            </button>
-          </template>
-        </div>
-        <div v-if="msg.dateFields?.length" class="date-form">
+          <!-- Each element in choices is one input group -->
           <div
-            v-for="(field, fi) in msg.dateFields"
-            :key="fi"
-            class="date-field-row"
+            v-for="(group, gi) in msg.choices"
+            :key="gi"
+            class="choice-group"
           >
-            <label class="date-field-label">{{ field.label }}</label>
-            <input
-              :type="field.type"
-              v-model="field.value"
-              class="date-field-input"
-            />
+            <div class="choice-group-label">{{ group.choice_text }}</div>
+            <!-- Option select: radio or checkbox -->
+            <template v-if="group.options?.length">
+              <label
+                v-for="(opt, oi) in group.options"
+                :key="oi"
+                class="choice-label"
+              >
+                <input
+                  v-if="!group.multi"
+                  type="radio"
+                  :name="`choice-${i}-${gi}`"
+                  :value="opt.id"
+                  v-model="msg.selections[group.id]"
+                  class="choice-input"
+                />
+                <input
+                  v-else
+                  type="checkbox"
+                  :value="opt.id"
+                  v-model="msg.selections[group.id]"
+                  class="choice-input"
+                />
+                <span>{{ opt.text }}</span>
+              </label>
+            </template>
+            <!-- Date range picker (start + end) -->
+            <template v-else-if="group.input_type === 'daterange'">
+              <div class="daterange-row">
+                <input
+                  type="date"
+                  v-model="msg.selections[group.id].start"
+                  class="date-field-input"
+                />
+                <span class="daterange-sep">→</span>
+                <input
+                  type="date"
+                  v-model="msg.selections[group.id].end"
+                  class="date-field-input"
+                  :min="msg.selections[group.id].start || undefined"
+                />
+              </div>
+            </template>
+            <!-- Free-text or single date input -->
+            <template v-else-if="group.input_type">
+              <input
+                :type="group.input_type"
+                v-model="msg.selections[group.id]"
+                class="date-field-input"
+                :placeholder="
+                  group.input_type === 'text' ? group.choice_text : ''
+                "
+              />
+            </template>
           </div>
+          <!-- Single Confirm for everything -->
           <button
             class="choice-confirm-btn"
-            :disabled="msg.dateFields.some((f) => !f.value)"
-            @click="confirmFields(msg)"
+            :disabled="!allGroupsFilled(msg)"
+            @click="confirmAll(msg)"
           >
             Confirm
           </button>
@@ -162,23 +163,57 @@ function sanitize(html) {
 marked.setOptions({ breaks: true, gfm: true });
 
 const props = defineProps({ messages: Array });
-const emit = defineEmits(["choice-selected", "fields-confirmed"]);
+const emit = defineEmits(["fields-confirmed"]);
 
-function confirmRadio(msg) {
-  if (!msg.radioSelected) return;
-  emit("choice-selected", msg.radioSelected);
+function allGroupsFilled(msg) {
+  if (!msg.choices?.length) return false;
+  return msg.choices.every((group) => {
+    const val = msg.selections?.[group.id];
+    if (group.options?.length) {
+      // radio: non-empty string; checkbox: non-empty array
+      return group.multi ? Array.isArray(val) && val.length > 0 : !!val;
+    }
+    if (group.input_type === "daterange") {
+      return (
+        val &&
+        typeof val.start === "string" &&
+        val.start.trim() !== "" &&
+        typeof val.end === "string" &&
+        val.end.trim() !== ""
+      );
+    }
+    // text/date input
+    return typeof val === "string" && val.trim() !== "";
+  });
 }
 
-function confirmCheckbox(msg) {
-  if (!msg.checkSelected?.length) return;
-  emit("choice-selected", [...msg.checkSelected]);
-}
-
-function confirmFields(msg) {
-  const parts = msg.dateFields
-    .filter((f) => f.value)
-    .map((f) => `${f.label}: ${f.value}`);
-  emit("fields-confirmed", parts.join(", "));
+function confirmAll(msg) {
+  const parts = [];
+  // extracted: flat key→value map the frontend can merge into extractedScope
+  const extracted = {};
+  for (const group of msg.choices || []) {
+    const val = msg.selections?.[group.id];
+    if (group.options?.length) {
+      if (group.multi && Array.isArray(val) && val.length) {
+        parts.push(`${group.choice_text}: ${val.join(", ")}`);
+        extracted[group.id] = val.join(", ");
+      } else if (!group.multi && val) {
+        parts.push(`${group.choice_text}: ${val}`);
+        extracted[group.id] = val;
+      }
+    } else if (group.input_type === "daterange") {
+      if (val?.start && val?.end) {
+        parts.push(`${group.choice_text}: ${val.start} to ${val.end}`);
+        // travel_dates group maps to checkin/checkout fields
+        extracted.checkin = val.start;
+        extracted.checkout = val.end;
+      }
+    } else if (val?.trim()) {
+      parts.push(`${group.choice_text}: ${val.trim()}`);
+      extracted[group.id] = val.trim();
+    }
+  }
+  if (parts.length) emit("fields-confirmed", parts.join(" | "), extracted);
 }
 const chatEl = ref(null);
 
@@ -281,12 +316,24 @@ defineExpose({ chatEl, escHtml });
 .choice-form {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
   margin-top: 8px;
   padding: 10px 14px;
   background: var(--agent-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+.choice-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.choice-group-label {
+  font-size: 0.8rem;
+  color: var(--subtext);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-bottom: 2px;
 }
 .choice-label {
   display: flex;
@@ -363,6 +410,16 @@ defineExpose({ chatEl, escHtml });
 }
 .choice-confirm-btn:not(:disabled):hover {
   opacity: 0.85;
+}
+.daterange-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.daterange-sep {
+  color: var(--subtext);
+  font-size: 0.85rem;
+  flex-shrink: 0;
 }
 .date-form {
   display: flex;
