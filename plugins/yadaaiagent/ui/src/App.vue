@@ -568,4 +568,21 @@ body {
     opacity: 0.5;
   }
 }
+@media (max-width: 480px) {
+  .name {
+    display: none;
+  }
+  .header-center {
+    display: none;
+  }
+  .app-header {
+    padding: 0 10px;
+    gap: 8px;
+  }
+  .session-pill {
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
 </style>
