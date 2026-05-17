@@ -1,5 +1,5 @@
 <template>
-  <div class="cw-drawer" :class="{ open: modelValue }" @click.self="close">
+  <div class="cw-drawer" :class="{ open: modelValue }">
     <div class="cw-inner">
       <div class="cw-header">
         <h2>&#127760; Credential Wallet</h2>

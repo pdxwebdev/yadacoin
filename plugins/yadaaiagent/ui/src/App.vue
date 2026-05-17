@@ -259,12 +259,14 @@ function onWalletModeChanged() {
 
 function onWalletSetupDone() {
   showWalletSetup.value = false;
+  window.scrollTo(0, 0);
   refreshSessionPill();
   chatPaneRef.value?.notifyWalletReady();
 }
 
 function onWalletSetupClose() {
   showWalletSetup.value = false;
+  window.scrollTo(0, 0);
   // If the user dismissed the modal *after* a wallet was actually set up
   // (e.g. they completed Generate/Import/Recover but skipped LLM config),
   // refresh the session pill and notify ChatPane so the "No wallet found"
@@ -318,9 +320,6 @@ html,
 body {
   height: 100%;
   overflow: hidden;
-  /* Prevent mobile browsers from scrolling body when keyboard appears */
-  position: fixed;
-  width: 100%;
 }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;

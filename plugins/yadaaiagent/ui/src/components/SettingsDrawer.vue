@@ -1,9 +1,5 @@
 <template>
-  <div
-    class="settings-drawer"
-    :class="{ open: modelValue }"
-    @click.self="close"
-  >
+  <div class="settings-drawer" :class="{ open: modelValue }">
     <div class="drawer-inner">
       <h2>Settings</h2>
 

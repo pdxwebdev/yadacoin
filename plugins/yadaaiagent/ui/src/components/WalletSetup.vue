@@ -1,5 +1,5 @@
 <template>
-  <div class="wallet-setup-overlay" @click.self="close">
+  <div class="wallet-setup-overlay">
     <div class="wallet-setup-modal">
       <div class="ws-header">
         <h2>Wallet Setup</h2>
@@ -1941,6 +1941,7 @@ function saveLlmAndFinish() {
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
 }
 
