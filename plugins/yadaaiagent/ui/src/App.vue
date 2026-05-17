@@ -318,6 +318,9 @@ html,
 body {
   height: 100%;
   overflow: hidden;
+  /* Prevent mobile browsers from scrolling body when keyboard appears */
+  position: fixed;
+  width: 100%;
 }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -326,7 +329,7 @@ body {
   font-size: 14px;
 }
 #app {
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -369,7 +372,9 @@ body {
 .app-shell {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
   overflow: hidden;
 }
 .app-header {
