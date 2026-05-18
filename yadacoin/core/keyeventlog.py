@@ -363,10 +363,14 @@ class KeyEvent:
 
         # Reconstruct the delegator's full on-chain KEL and confirm the
         # referenced entry really is its tip (latest entry with no successor).
+        # Use segment_only=True so the backward walk stops at a recovers-inception
+        # boundary, building only the delegator's own KEL segment rather than
+        # walking all the way back to the original KEL's inception.
         delegator_log = await KeyEventLog.build_from_public_key(
             delegator_tip_txn.public_key,
             onchain_only=not delegator_in_mempool,
             follow_recovery=False,
+            segment_only=True,
         )
         if not delegator_log:
             raise KELRecoveryUnknownPreviousKELException(
@@ -378,15 +382,22 @@ class KeyEvent:
             )
 
         # Single-use: reject if a recovery successor already exists on-chain or in mempool.
+        # Exception: allow a second recovery when the same commitment (witness hash) is
+        # reused — the Schnorr proof is still bound to prev_public_key_hash, so cross-KEL
+        # replay is impossible even when the commitment is shared across recovery events.
         existing_successor = await KeyEventLog.find_recovery_successor(
             self.txn.prev_public_key_hash, onchain_only=False
         )
         if existing_successor and (
             existing_successor.transaction_signature != self.txn.transaction_signature
         ):
-            raise KELRecoveryAlreadyConsumedException(
-                "delegator KEL has already been recovered; it is sealed"
-            )
+            existing_proof = get_recovers_proof(existing_successor)
+            if existing_proof is None or existing_proof.get("commitment") != proof.get(
+                "commitment"
+            ):
+                raise KELRecoveryAlreadyConsumedException(
+                    "delegator KEL has already been recovered; it is sealed"
+                )
 
         # Resolve the active witness hash from the latest announcement in the
         # delegator KEL.  No announcement → no recovery permitted.
@@ -1281,10 +1292,23 @@ class KeyEventLog:
           * ``prev_public_key_hash == public_key_hash``
           * a well-formed ``{"recovers": ...}`` relationship
 
-        Searches the on-chain blocks first, then the mempool (unless
-        *onchain_only*).  Returns the Transaction object or None.
+        Searches the mempool first (unless *onchain_only*), then on-chain
+        blocks.  Checking mempool first ensures that a pending recovery whose
+        KEL tip is still unconfirmed is found correctly after multiple
+        consecutive recoveries.  Returns the Transaction object or None.
         """
         config = Config()
+
+        if not onchain_only:
+            mempool_cursor = config.mongo.async_db.miner_transactions.find(
+                {MempoolQueryFields.PREV_PUBLIC_KEY_HASH.value: public_key_hash}
+            )
+            async for doc in mempool_cursor:
+                txn = Transaction.from_dict(doc)
+                if is_recovers_inception(txn):
+                    txn.mempool = True
+                    return txn
+
         cursor = config.mongo.async_db.blocks.aggregate(
             [
                 {
@@ -1306,22 +1330,11 @@ class KeyEventLog:
             if is_recovers_inception(txn):
                 return txn
 
-        if onchain_only:
-            return None
-
-        mempool_cursor = config.mongo.async_db.miner_transactions.find(
-            {MempoolQueryFields.PREV_PUBLIC_KEY_HASH.value: public_key_hash}
-        )
-        async for doc in mempool_cursor:
-            txn = Transaction.from_dict(doc)
-            if is_recovers_inception(txn):
-                txn.mempool = True
-                return txn
         return None
 
     @staticmethod
     async def build_from_public_key(
-        public_key, onchain_only=False, follow_recovery=True
+        public_key, onchain_only=False, follow_recovery=True, segment_only=False
     ):
         """Build the ordered KEL for *public_key*.
 
@@ -1375,10 +1388,14 @@ class KeyEventLog:
             res = await result.to_list(length=1)
             if res:
                 txn = Transaction.from_dict(res[0]["transactions"])
-                # A recovers-inception walks BACK through prev_public_key_hash
-                # into the delegator KEL, so we treat it like any other
-                # non-inception entry here.
-                if not txn.prev_public_key_hash:
+                # When segment_only is True, treat a recovers-inception as the
+                # inception boundary for this KEL segment so the backward walk
+                # does not cross into the delegator KEL's history.  When
+                # segment_only is False (default), follow prev_public_key_hash
+                # across recovery boundaries to reach the original inception.
+                if not txn.prev_public_key_hash or (
+                    segment_only and is_recovers_inception(txn)
+                ):
                     inception = txn
                     break
                 address = txn.prev_public_key_hash
@@ -1401,7 +1418,9 @@ class KeyEventLog:
                     break
                 txn = Transaction.from_dict(result_mempool)
                 txn.mempool = True
-                if not txn.prev_public_key_hash:
+                if not txn.prev_public_key_hash or (
+                    segment_only and is_recovers_inception(txn)
+                ):
                     inception = txn
                     break
                 address = txn.prev_public_key_hash

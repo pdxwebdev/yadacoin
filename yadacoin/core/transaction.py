@@ -1090,7 +1090,15 @@ class Transaction(object):
                 }
             )
 
-        if self.prev_public_key_hash:
+        # For a recovers-inception, prev_public_key_hash points to the LOST
+        # delegator KEL's tip — a completely different KEL.  Once any prior
+        # recovery for that same delegator has been mined, this query would
+        # return True and silently discard a valid second recovery attempt.
+        # The single-use invariant is already enforced by
+        # verify_recovery_inception(); exclude prev_public_key_hash here so
+        # the transaction is not dropped before reaching that validation.
+        is_recovers = isinstance(self.relationship, (RecoveryProof, RecoveryTransition))
+        if self.prev_public_key_hash and not is_recovers:
             query.append(
                 {
                     BlocksQueryFields.PREV_PUBLIC_KEY_HASH.value: self.prev_public_key_hash,
@@ -1131,11 +1139,54 @@ class Transaction(object):
             )
 
         if self.prev_public_key_hash:
-            query.append(
-                {
-                    MempoolQueryFields.PREV_PUBLIC_KEY_HASH.value: self.prev_public_key_hash,
-                }
+            is_recovers = isinstance(
+                self.relationship, (RecoveryProof, RecoveryTransition)
             )
+            if is_recovers:
+                # For recovery transactions, walk the mempool recovery chain
+                # starting from prev_public_key_hash to find the current chain
+                # tip.  A second recovery is valid only when prev_public_key_hash
+                # IS that tip (nothing in the mempool has consumed it yet).
+                # If it is stale — because a prior mempool recovery already
+                # advanced the chain — treat it as a duplicate so the caller
+                # knows to chain from the tip's public_key_hash instead.
+                chain_tip = self.prev_public_key_hash
+                seen: set = set()
+                while chain_tip not in seen:
+                    seen.add(chain_tip)
+                    successor_doc = (
+                        await self.config.mongo.async_db.miner_transactions.find_one(
+                            {MempoolQueryFields.PREV_PUBLIC_KEY_HASH.value: chain_tip}
+                        )
+                    )
+                    if not successor_doc:
+                        break  # nothing consumed chain_tip → it IS the current tip
+                    successor_txn = Transaction.from_dict(successor_doc)
+                    if not isinstance(
+                        successor_txn.relationship, (RecoveryProof, RecoveryTransition)
+                    ):
+                        break  # non-recovery successor — stop walking
+                    if not successor_txn.public_key_hash:
+                        break
+                    chain_tip = successor_txn.public_key_hash
+
+                if chain_tip != self.prev_public_key_hash:
+                    # prev_public_key_hash is stale; the mempool chain has already
+                    # advanced to chain_tip.  A valid second recovery must use
+                    # chain_tip as its prev_public_key_hash.
+                    query.append(
+                        {
+                            MempoolQueryFields.PREV_PUBLIC_KEY_HASH.value: self.prev_public_key_hash,
+                        }
+                    )
+                # else: prev_public_key_hash IS the current chain tip → valid chain
+            else:
+                query.append(
+                    {
+                        MempoolQueryFields.PREV_PUBLIC_KEY_HASH.value: self.prev_public_key_hash,
+                    }
+                )
+
         if not query:
             return False
         result = await self.config.mongo.async_db.miner_transactions.find_one(

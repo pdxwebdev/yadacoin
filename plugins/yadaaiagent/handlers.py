@@ -4229,30 +4229,46 @@ class WalletSendHandler(BaseHandler):
             Transaction,
         )
 
-        try:
-            transaction = await Transaction.generate(
-                fee=fee,
-                public_key=self.config.public_key,
-                private_key=self.config.private_key,
-                inputs=[],
-                outputs=[{"to": to_address, "value": amount}],
-                relationship=eth_address if is_wrap else "",
-            )
-        except NotEnoughMoneyException:
-            self.set_status(400)
-            return self.render_as_json({"error": "not enough funds"})
-        except Exception as exc:
-            self.set_status(500)
-            return self.render_as_json(
-                {"error": f"transaction generation failed: {exc}"}
-            )
+        pre_signed_txn_dict = body.get("transaction")
+        if pre_signed_txn_dict:
+            # Client-wallet mode: the frontend built and signed the spending
+            # transaction using the client's own private key.  Accept it
+            # directly; KEL authorization was already verified via the VP above.
+            try:
+                transaction = Transaction.from_dict(pre_signed_txn_dict)
+            except Exception as exc:
+                self.set_status(400)
+                return self.render_as_json(
+                    {"error": f"invalid pre-signed transaction: {exc}"}
+                )
+        else:
+            # Node-wallet mode: build and sign using the node's keys.
+            try:
+                transaction = await Transaction.generate(
+                    fee=fee,
+                    public_key=self.config.public_key,
+                    private_key=self.config.private_key,
+                    inputs=[],
+                    outputs=[{"to": to_address, "value": amount}],
+                    relationship=eth_address if is_wrap else "",
+                )
+            except NotEnoughMoneyException:
+                self.set_status(400)
+                return self.render_as_json({"error": "not enough funds"})
+            except Exception as exc:
+                self.set_status(500)
+                return self.render_as_json(
+                    {"error": f"transaction generation failed: {exc}"}
+                )
 
         try:
             await transaction.verify(
                 check_input_spent=True,
                 check_masternode_fee=True,
                 check_max_inputs=True,
-                check_kel=True,
+                # Skip KEL check for client-signed transactions — KEL
+                # authorization is already proven by the VP validation above.
+                check_kel=pre_signed_txn_dict is None,
                 mempool=True,
             )
         except TooManyInputsException as exc:
@@ -4457,6 +4473,23 @@ class FindRecoveryTipHandler(BaseHandler):
             return self.write({"error": "could not reconstruct delegator KEL"})
 
         tip = log[-1]
+
+        # Walk forward through any mempool recovery chain so that a second
+        # consecutive recovery (while the first is still pending) receives
+        # the correct prev_public_key_hash — the first recovery's
+        # public_key_hash, not the original delegator KEL tip.
+        seen_pkhs = {tip.public_key_hash}
+        current_pkh = tip.public_key_hash
+        while True:
+            successor = await KeyEventLog.find_recovery_successor(
+                current_pkh, onchain_only=False
+            )
+            if successor is None or successor.public_key_hash in seen_pkhs:
+                break
+            seen_pkhs.add(successor.public_key_hash)
+            tip = successor
+            current_pkh = successor.public_key_hash
+
         response = {
             "public_key": tip.public_key,
             "public_key_hash": tip.public_key_hash,
@@ -4493,14 +4526,14 @@ class CredentialReceiptResyncHandler(BaseHandler):
 
     Return all on-chain and mempool credential_receipt transactions whose
     ``relationship.credential_receipt.lookup_key`` matches the supplied
-    value.  The lookup_key is a sha256-HKDF fingerprint derived from the
-    user's mnemonic (stable across KEL rotations; not reversible to the
-    mnemonic).
+    value.  The lookup_key is an HKDF fingerprint derived from the wallet
+    owner's witness secret (itself derived from recovery locations +
+    secondFactor), making it stable across key rotations and recoveries
+    as long as the same locations and secondFactor are reused.
 
     The server returns the raw ``{iv, ct}`` ciphertexts — only the wallet
-    owner (who holds the mnemonic) can decrypt them.  The endpoint is
-    intentionally unauthenticated: the lookup_key itself is a secret
-    derived from the mnemonic, and the ciphertexts are opaque without the
+    owner (who holds the witness secret) can decrypt them.  The endpoint is
+    intentionally unauthenticated: the ciphertexts are opaque without the
     matching AES key.
 
     Response
@@ -4526,6 +4559,23 @@ class CredentialReceiptResyncHandler(BaseHandler):
         }
 
         receipts = []
+        seen_txn_ids = set()
+
+        def _append(txn_doc, block_height, mempool):
+            txn_id = txn_doc.get("id", "")
+            if txn_id in seen_txn_ids:
+                return
+            seen_txn_ids.add(txn_id)
+            cr = txn_doc.get("relationship", {}).get("credential_receipt", {})
+            receipts.append(
+                {
+                    "iv": cr.get("iv", ""),
+                    "ct": cr.get("ct", ""),
+                    "txn_id": txn_id,
+                    "block_height": block_height,
+                    "mempool": mempool,
+                }
+            )
 
         # ── Confirmed blocks ────────────────────────────────────────────────
         cursor = self.config.mongo.async_db.blocks.aggregate(
@@ -4537,32 +4587,13 @@ class CredentialReceiptResyncHandler(BaseHandler):
             ]
         )
         async for row in cursor:
-            txn = row["transactions"]
-            cr = txn.get("relationship", {}).get("credential_receipt", {})
-            receipts.append(
-                {
-                    "iv": cr.get("iv", ""),
-                    "ct": cr.get("ct", ""),
-                    "txn_id": txn.get("id", ""),
-                    "block_height": row.get("index"),
-                    "mempool": False,
-                }
-            )
+            _append(row["transactions"], row.get("index"), False)
 
         # ── Mempool ─────────────────────────────────────────────────────────
         async for txn in self.config.mongo.async_db.miner_transactions.find(
             match_clause
         ):
-            cr = txn.get("relationship", {}).get("credential_receipt", {})
-            receipts.append(
-                {
-                    "iv": cr.get("iv", ""),
-                    "ct": cr.get("ct", ""),
-                    "txn_id": txn.get("id", ""),
-                    "block_height": None,
-                    "mempool": True,
-                }
-            )
+            _append(txn, None, True)
 
         return self.render_as_json({"receipts": receipts})
 

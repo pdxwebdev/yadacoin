@@ -122,6 +122,9 @@ export function clearClientWallet() {
   localStorage.removeItem(LS_HW_PUB);
   localStorage.removeItem(LS_HW_QR);
   localStorage.removeItem(LS_WALLET_MODE);
+  // Clear the witness secret so a stale value from a previous wallet session
+  // cannot produce a mismatched lookup_key for credential receipt queries.
+  localStorage.removeItem("yadacoin_witness_secret");
 }
 
 // ── Hardware-wallet active key (full parsed QR) ───────────────────────────────

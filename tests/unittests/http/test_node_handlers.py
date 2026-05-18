@@ -607,6 +607,36 @@ class TestMineBlockHandler(HttpTestCase):
         self.assertFalse(data["status"])
         self.assertIn("regnet", data["message"])
 
+    def test_mp_not_initialized_returns_error(self):
+        # Auth passes and network is regnet but mp is None → returns error
+        self.config.network = "regnet"
+        self.config.mp = None
+        with patch(
+            "yadacoin.http.node.MineBlockHandler.get_secure_cookie",
+            return_value=b"true",
+        ):
+            response = self.fetch("/mine-block")
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertFalse(data["status"])
+        self.assertIn("not initialized", data["message"])
+
+    def test_mp_block_factory_none_returns_error(self):
+        # Auth passes and network is regnet but mp.block_factory is None → returns error
+        self.config.network = "regnet"
+        mock_mp = MagicMock()
+        mock_mp.block_factory = None
+        self.config.mp = mock_mp
+        with patch(
+            "yadacoin.http.node.MineBlockHandler.get_secure_cookie",
+            return_value=b"true",
+        ):
+            response = self.fetch("/mine-block")
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertFalse(data["status"])
+        self.assertIn("not initialized", data["message"])
+
     def test_regnet_mines_block(self):
         # Auth passes and network is regnet → runs mining logic (lines 501-516)
         self.config.network = "regnet"

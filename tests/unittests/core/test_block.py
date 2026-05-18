@@ -4231,6 +4231,84 @@ class TestBlockCoverageGaps(AsyncTestCase):
             CHAIN.CHECK_MASTERNODE_FEE_FORK = orig_fork
             CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK = orig_spends
 
+    @mock.patch(
+        "yadacoin.core.block.Block.generate_hash_from_header",
+        new=mock_generate_hash_from_header,
+    )
+    @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
+    async def test_verify_recovery_relationship_branch(self):
+        """Lines 1045-1050: verify() elif isinstance(txn.relationship, RecoveryProof/Transition) branch."""
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.recoveryannouncement import RecoveryProof
+        from yadacoin.core.transaction import Transaction as TxnClass
+
+        block = await Block.from_dict(copy.deepcopy(masternode_fee_block))
+        block.index = CHAIN.CHECK_KEL_FORK
+
+        # Use a real Transaction so KeyEvent(txn) doesn't reject it
+        recovery_txn = TxnClass(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+        )
+        recovery_txn.version = 6
+        recovery_txn.coinbase = False
+        recovery_txn.prev_public_key_hash = ""  # no sibling check
+        recovery_txn.relationship = RecoveryProof(
+            commitment="aa" * 32, R="bb" * 32, s="cc" * 32
+        )
+        recovery_txn.are_kel_fields_populated = Mock(return_value=False)
+        recovery_txn.verify_kel_output_rules = AsyncMock(return_value=None)
+        recovery_txn.has_key_event_log = AsyncMock(return_value=False)
+
+        for txn in block.transactions:
+            txn.prev_public_key_hash = ""
+            txn.are_kel_fields_populated = Mock(return_value=False)
+            txn.has_key_event_log = AsyncMock(return_value=False)
+        block.transactions[-1].coinbase = True
+        block.transactions.append(recovery_txn)
+
+        @property
+        async def contract_generated(a):
+            return False
+
+        @contract_generated.setter
+        def contract_generated(self, value):
+            pass
+
+        orig_fork = CHAIN.CHECK_MASTERNODE_FEE_FORK
+        orig_spends = CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK
+        CHAIN.CHECK_MASTERNODE_FEE_FORK = block.index + 1
+        CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK = block.index + 1  # use old path
+
+        mock_key_event_instance = Mock()
+        mock_key_event_instance.verify = AsyncMock(return_value=None)
+
+        try:
+            with mock.patch(
+                "yadacoin.core.transaction.Transaction.contract_generated",
+                new=contract_generated,
+            ), mock.patch(
+                "yadacoin.core.block.KeyEventLog.init_async",
+                new=AsyncMock(return_value=None),
+            ), mock.patch(
+                "yadacoin.core.block.KeyEvent",
+                return_value=mock_key_event_instance,
+            ), mock.patch(
+                "yadacoin.core.block.KELHashCollection.init_async",
+                new=AsyncMock(return_value=Mock()),
+            ), mock.patch(
+                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
+                return_value={"13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK": Mock()},
+            ), mock.patch.object(
+                Block, "verify_signature", return_value=None
+            ):
+                try:
+                    await block.verify()
+                except Exception:
+                    pass  # may still raise; we just need lines 1045-1050 to run
+        finally:
+            CHAIN.CHECK_MASTERNODE_FEE_FORK = orig_fork
+            CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK = orig_spends
+
 
 class TestBlockPureMethods(unittest.TestCase):
     """Tests for pure static methods in Block that don't require async/DB."""

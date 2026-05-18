@@ -2171,6 +2171,88 @@ class TestTransactionPureMethods(AsyncTestCase):
         result = await txn.is_already_in_mempool()
         self.assertFalse(result)
 
+    async def test_is_already_in_mempool_recovery_stale_tip(self):
+        """Lines 1153-1183: is_recovers=True, chain walks one step, stale tip appended to query."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.recoveryannouncement import RecoveryProof
+
+        recovery_proof = RecoveryProof(commitment="aa" * 32, R="bb" * 32, s="cc" * 32)
+        txn = Transaction(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            prev_public_key_hash="tip_hash",
+        )
+        txn.relationship = recovery_proof
+
+        successor_mock = MagicMock()
+        successor_mock.relationship = recovery_proof
+        successor_mock.public_key_hash = "new_tip"
+
+        mock_mongo = MagicMock()
+        # Call 1: successor found for "tip_hash"; Call 2: None for "new_tip"; Call 3: None for final $or
+        mock_mongo.async_db.miner_transactions.find_one = AsyncMock(
+            side_effect=[{"id": "succ"}, None, None]
+        )
+        txn.config.mongo = mock_mongo
+
+        with patch.object(Transaction, "from_dict", return_value=successor_mock):
+            result = await txn.is_already_in_mempool()
+        self.assertFalse(result)
+
+    async def test_is_already_in_mempool_recovery_non_recovery_successor(self):
+        """Line 1170: successor_txn is not a recovery type → break."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.recoveryannouncement import RecoveryProof
+
+        recovery_proof = RecoveryProof(commitment="aa" * 32, R="bb" * 32, s="cc" * 32)
+        txn = Transaction(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            prev_public_key_hash="tip_hash",
+        )
+        txn.relationship = recovery_proof
+
+        successor_mock = MagicMock()
+        successor_mock.relationship = "not_a_recovery"  # not RecoveryProof/Transition
+        successor_mock.public_key_hash = "new_tip"
+
+        mock_mongo = MagicMock()
+        mock_mongo.async_db.miner_transactions.find_one = AsyncMock(
+            side_effect=[{"id": "succ"}, None]
+        )
+        txn.config.mongo = mock_mongo
+
+        with patch.object(Transaction, "from_dict", return_value=successor_mock):
+            result = await txn.is_already_in_mempool()
+        self.assertFalse(result)
+
+    async def test_is_already_in_mempool_recovery_successor_no_pubkey(self):
+        """Line 1172: successor_txn has no public_key_hash → break."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.recoveryannouncement import RecoveryProof
+
+        recovery_proof = RecoveryProof(commitment="aa" * 32, R="bb" * 32, s="cc" * 32)
+        txn = Transaction(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            prev_public_key_hash="tip_hash",
+        )
+        txn.relationship = recovery_proof
+
+        successor_mock = MagicMock()
+        successor_mock.relationship = recovery_proof
+        successor_mock.public_key_hash = ""  # falsy → break
+
+        mock_mongo = MagicMock()
+        mock_mongo.async_db.miner_transactions.find_one = AsyncMock(
+            side_effect=[{"id": "succ"}, None]
+        )
+        txn.config.mongo = mock_mongo
+
+        with patch.object(Transaction, "from_dict", return_value=successor_mock):
+            result = await txn.is_already_in_mempool()
+        self.assertFalse(result)
+
     async def test_has_key_event_log_extra_block_index_too_high_returns_false(self):
         """Line 1167: extra_block.index >= block.index → returns False."""
         from unittest.mock import AsyncMock, MagicMock

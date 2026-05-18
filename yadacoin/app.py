@@ -29,6 +29,28 @@ try:
     resource.setrlimit(resource.RLIMIT_NOFILE, (131072, 131072))
 except:
     pass
+
+# ── Python 3.9 macOS workaround ───────────────────────────────────────────────
+# On the Xcode Python 3.9 macOS build, asyncio._check_callback calls
+# coroutines.iscoroutine() which calls isinstance(obj, _COROUTINE_TYPES).
+# _COROUTINE_TYPES includes collections.abc.Coroutine (an ABC), and the ABC
+# machinery's __instancecheck__ recurses infinitely due to a platform bug in
+# that Python build (RecursionError: maximum recursion depth exceeded).
+# Patching iscoroutine early with a try/except guards against this.
+import asyncio.coroutines as _asyncio_coroutines
+
+_original_iscoroutine = _asyncio_coroutines.iscoroutine
+
+
+def _safe_iscoroutine(obj):
+    try:
+        return _original_iscoroutine(obj)
+    except RecursionError:
+        return False
+
+
+_asyncio_coroutines.iscoroutine = _safe_iscoroutine
+# ─────────────────────────────────────────────────────────────────────────────
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from hashlib import sha256
@@ -1253,10 +1275,24 @@ class NodeApplication(Application):
         StratumServer.inbound_streams[Miner.__name__] = {}
         self.config.pool_server = StratumServer()
         StratumServer.config = self.config
-        StratumServer.config.mp = tornado.ioloop.IOLoop.current().run_sync(
-            MiningPool.init_async
-        )
+        # Schedule pool initialization as a proper async task on the running
+        # event loop.  Using run_sync here triggers concurrent.futures bridging
+        # (_chain_future) inside motor/asyncio that causes a RecursionError in
+        # Python 3.9's abc.ABCMeta.__instancecheck__ on macOS.
+        StratumServer.config.mp = None
+        tornado.ioloop.IOLoop.current().add_callback(self._init_pool_async)
         self.config.pool_server.listen(self.config.stratum_pool_port)
+
+    async def _init_pool_async(self):
+        try:
+            self.config.mp = await MiningPool.init_async()
+            StratumServer.config.mp = self.config.mp
+        except Exception:
+            from traceback import format_exc
+
+            self.config.app_log.error(
+                "Pool initialization failed: {}".format(format_exc())
+            )
 
     def init_peer(self):
         self.config.peer = Peer.my_peer()

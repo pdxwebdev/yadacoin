@@ -236,6 +236,12 @@ export async function postCredentialReceipt(vc) {
  * Fetch all credential receipts for this wallet from the chain + mempool,
  * decrypt each one, and return the array of VC objects.
  *
+ * Sends the HKDF lookup_key derived from the witness secret.  The witness
+ * secret is derived from the user's recovery locations + secondFactor and
+ * is stable across KEL rotations and recoveries as long as the same inputs
+ * are used.  This makes the lookup independent of the current signing key
+ * and works even before a fresh-device recovers-inception is mined.
+ *
  * The caller is responsible for saving them via saveBookingCredential().
  *
  * @returns {Promise<Array>} decrypted VC objects (already-known credentials

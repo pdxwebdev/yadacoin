@@ -1513,6 +1513,85 @@ async function runApprovalFlow(
       chalDataW.challenge,
     );
 
+    // ── Client wallet: build and sign the spending transaction on the client ──
+    // The KEL rotation above proves authorization; here we spend from the
+    // client's own address (K_n) so the backend never touches node keys.
+    let clientSignedTxn = null;
+    if (isClientWallet()) {
+      onStep("Building spending transaction…");
+      try {
+        // privBytesW = K_n (key before rotation) — UTXOs are at its address.
+        const spendPubBytes = secp.getPublicKey(privBytesW, true);
+        const spendPubHex = hex.fromBytes(spendPubBytes);
+        const spendAddr = getP2PKH(spendPubBytes);
+
+        // Change address = K_{n+1} (new active key after rotation).
+        // rotateDataW.prev_private_key stores the child key that became LS_PRIV.
+        const newActivePrivBytes = hex.toBytes(rotateDataW.prev_private_key);
+        const changeAddr = getP2PKH(
+          secp.getPublicKey(newActivePrivBytes, true),
+        );
+
+        // Fetch UTXOs for K_n's address.
+        const utxoRes = await fetch(
+          getNodeUrl() +
+            `/get-graph-wallet?address=${encodeURIComponent(spendAddr)}&amount_needed=${encodeURIComponent(amtW)}`,
+        );
+        if (!utxoRes.ok)
+          throw new Error("UTXO fetch failed: " + utxoRes.status);
+        const utxoData = await utxoRes.json();
+        const utxos = utxoData.unspent_transactions || [];
+
+        let inputSum = 0;
+        const selectedInputs = [];
+        for (const utxo of utxos) {
+          const utxoValue = (utxo.outputs || []).reduce(
+            (s, o) => s + parseFloat(o.value || 0),
+            0,
+          );
+          selectedInputs.push({ id: utxo.id });
+          inputSum += utxoValue;
+          if (inputSum >= amtW) break;
+        }
+
+        if (inputSum < amtW) {
+          throw new Error(
+            `Not enough funds: have ${inputSum.toFixed(8)} YDA, need ${amtW.toFixed(8)} YDA`,
+          );
+        }
+
+        const txnOutputs = [{ to: toAddrW, value: amtW }];
+        const change = parseFloat((inputSum - amtW).toFixed(8));
+        if (change > 1e-8) txnOutputs.push({ to: changeAddr, value: change });
+
+        let relHash = "";
+        if (isWrap) {
+          relHash = hex.fromBytes(sha256(new TextEncoder().encode(ethAddrW)));
+        }
+
+        clientSignedTxn = await buildRotationTxn({
+          signerPrivBytes: privBytesW,
+          publicKeyHex: spendPubHex,
+          prerotatedPkh: "",
+          twicePrerotatedPkh: "",
+          publicKeyHash: "",
+          prevPublicKeyHash: "",
+          relationship: isWrap ? ethAddrW : "",
+          relationshipHash: relHash,
+          txnTime: Math.floor(Date.now() / 1000),
+          inputs: selectedInputs,
+          outputs: txnOutputs,
+        });
+        onStep("Spending transaction signed", "done");
+      } catch (e) {
+        onStep("Build failed: " + e.message, "fail");
+        onDone(false, "Transaction build failed: " + escHtml(e.message));
+        busy.value = false;
+        nextTick(() => inputEl.value?.focus());
+        return;
+      }
+    }
+
     onStep("Submitting transaction…");
     try {
       const sendRes = await fetch(
@@ -1524,6 +1603,7 @@ async function runApprovalFlow(
             public_key: provPubHexW,
             challenge: chalDataW.challenge,
             vp: vpW,
+            ...(clientSignedTxn ? { transaction: clientSignedTxn } : {}),
             ...(isWrap
               ? { eth_address: ethAddrW, amount: amtW }
               : { to_address: toAddrW, amount: amtW }),

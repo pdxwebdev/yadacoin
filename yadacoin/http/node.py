@@ -472,6 +472,10 @@ class MineBlockHandler(BaseHandler):
             return self.render_as_json(
                 {"status": False, "message": "Node not in regnet mode."}
             )
+        if not self.config.mp or not self.config.mp.block_factory:
+            return self.render_as_json(
+                {"status": False, "message": "Mining pool not initialized."}
+            )
         self.config.mp.block_factory.hash = (
             await self.config.mp.block_factory.generate_hash_from_header(
                 self.config.mp.block_factory.index,

@@ -44,6 +44,7 @@ from yadacoin.core.keyeventlog import (
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.nodes import Nodes
 from yadacoin.core.nodestester import NodesTester
+from yadacoin.core.recoveryannouncement import RecoveryProof, RecoveryTransition
 from yadacoin.core.transaction import (
     InvalidTransactionException,
     Output,
@@ -420,14 +421,25 @@ class Block(object):
 
                 # test if already on chain
                 if await txn.is_already_onchain():
-                    key_log = await KeyEventLog.build_from_public_key(txn.public_key)
-                    if (
-                        len(txn.outputs) != 1
-                        or key_log[-1].prerotated_key_hash != txn.outputs[0].to
-                    ):
-                        config.app_log.warning(
-                            f"KEL remove reason [is_already_onchain]: outputs={[o.to for o in txn.outputs]} key_log_last_prerotated={key_log[-1].prerotated_key_hash if key_log else None} | txn={txn.transaction_signature}"
+                    # For a recovers-inception the output goes to prerotated_key_hash
+                    # (k1) but build_from_public_key follows prev_public_key_hash into
+                    # the old delegator KEL, so key_log[-1] resolves to the delegator's
+                    # tip — not this txn.  Skip the mismatch warning in that case since
+                    # the removal below is correct and the warning would be misleading.
+                    is_recovers = isinstance(
+                        txn.relationship, (RecoveryProof, RecoveryTransition)
+                    )
+                    if not is_recovers:
+                        key_log = await KeyEventLog.build_from_public_key(
+                            txn.public_key
                         )
+                        if (
+                            len(txn.outputs) != 1
+                            or key_log[-1].prerotated_key_hash != txn.outputs[0].to
+                        ):
+                            config.app_log.warning(
+                                f"KEL remove reason [is_already_onchain]: outputs={[o.to for o in txn.outputs]} key_log_last_prerotated={key_log[-1].prerotated_key_hash if key_log else None} | txn={txn.transaction_signature}"
+                            )
                     # This is a stale mempool copy of an already-confirmed txn.
                     # Remove only this txn — do NOT cascade-delete linked transactions
                     # via remove_transaction(), as those may be legitimate next-step
@@ -1018,6 +1030,20 @@ class Block(object):
                             break
 
                 if has_kel:
+                    kel_hash_collection = await KELHashCollection.init_async(
+                        self, verify_only=True
+                    )
+                    txn_key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
+                    await txn_key_event.verify(batch_txns=self.transactions)
+                    await KeyEventLog.init_async(txn_key_event, kel_hash_collection)
+                elif isinstance(txn.relationship, (RecoveryProof, RecoveryTransition)):
+                    # A recovers-inception is signed by a brand-new K_0 whose signing
+                    # key has no prior KEL — has_key_event_log returns False and the
+                    # sibling-match heuristic also finds nothing.  But it carries
+                    # prev_public_key_hash pointing at the lost KEL's tip and embeds
+                    # the Schnorr proof that authorises the delegation.  Route it
+                    # through the same pipeline; KeyEventLog.init_async has its own
+                    # recovers short-circuit that calls verify_recovery_inception().
                     kel_hash_collection = await KELHashCollection.init_async(
                         self, verify_only=True
                     )

@@ -448,14 +448,20 @@ class TestVerifyRecoveryInception(AsyncTestCase):
                     await ke.verify_recovery_inception()
 
     async def test_already_consumed_raises(self):
+        """A second recovery from the same KEL with a DIFFERENT commitment is rejected."""
         prev_pkh = "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8"
         x = _random_scalar()
         C, R, s = _make_proof(x, prev_key_hash=prev_pkh)
         wh = _witness_hash_for(C)
         ke = self._make_recovers_ke(C, R, s, prev_pkh)
 
+        # Existing successor used a DIFFERENT commitment — sealed.
+        other_x = _random_scalar()
+        other_C, other_R, other_s = _make_proof(other_x, prev_key_hash=prev_pkh)
         prior_successor = _make_txn(
-            relationship={"recovers": {"commitment": "x", "R": "y", "s": "z"}},
+            relationship={
+                "recovers": {"commitment": other_C, "R": other_R, "s": other_s}
+            },
             public_key_hash="1NewKeyHashBxxxxxxxxxxxxxxxxxxxxx",
             prev_public_key_hash=prev_pkh,
             prerotated="1NewKeyHashBxxxxxxxxxxxxxxxxxxxxx",
@@ -471,6 +477,35 @@ class TestVerifyRecoveryInception(AsyncTestCase):
             ):
                 with self.assertRaises(KELRecoveryAlreadyConsumedException):
                     await ke.verify_recovery_inception()
+
+    async def test_same_commitment_allows_second_recovery(self):
+        """A second recovery from the same KEL is allowed when the same commitment
+        (witness hash) is reused.  The Schnorr proof is still bound to
+        prev_public_key_hash so cross-KEL replay is not possible."""
+        prev_pkh = "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8"
+        x = _random_scalar()
+        C, R, s = _make_proof(x, prev_key_hash=prev_pkh)
+        wh = _witness_hash_for(C)
+        ke = self._make_recovers_ke(C, R, s, prev_pkh)
+
+        # Existing successor used the SAME commitment — allow re-recovery.
+        prior_successor = _make_txn(
+            relationship={"recovers": {"commitment": C, "R": "aabbcc", "s": "ddeeff"}},
+            public_key_hash="1NewKeyHashBxxxxxxxxxxxxxxxxxxxxx",
+            prev_public_key_hash=prev_pkh,
+            prerotated="1NewKeyHashBxxxxxxxxxxxxxxxxxxxxx",
+            twice_prerotated="1NewKeyHashBxxxxxxxxxxxxxxxxxxxxx",
+            txn_id="prior-successor-id",
+        )
+
+        with self._patch_delegator(self._delegator_log(prev_pkh, wh)):
+            with patch.object(
+                KeyEventLog,
+                "find_recovery_successor",
+                new=AsyncMock(return_value=prior_successor),
+            ):
+                # Should NOT raise — same commitment means same recovery credential.
+                await ke.verify_recovery_inception()
 
     async def test_idempotent_self_is_not_already_consumed(self):
         """If find_recovery_successor returns *this* same txn, it counts as
