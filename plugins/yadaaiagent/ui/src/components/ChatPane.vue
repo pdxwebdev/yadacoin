@@ -191,6 +191,13 @@ onMounted(() => {
         `<span class="welcome-agent-desc">Balance, transactions, send YDA &amp; cross-chain wrapping</span>` +
         `<div class="welcome-triggers"><span class="disc-chip">What is my balance?</span><span class="disc-chip">Show my transactions</span><span class="disc-chip">Send 5 YDA to...</span><span class="disc-chip">Wrap 10 YDA</span></div>` +
         `</div></div>` +
+        `<div class="welcome-agent-row">` +
+        `<span class="welcome-agent-icon">🪙</span>` +
+        `<div class="welcome-agent-info">` +
+        `<span class="welcome-agent-label">YadaCoin Help Desk</span>` +
+        `<span class="welcome-agent-desc">Expert Q&amp;A on protocol, setup, mining, KEL, wallets &amp; more</span>` +
+        `<div class="welcome-triggers"><span class="disc-chip">What is YadaCoin?</span><span class="disc-chip">How do I mine YDA?</span><span class="disc-chip">Explain the KEL</span><span class="disc-chip">How do I set up a node?</span></div>` +
+        `</div></div>` +
         `</div></div>`,
       true,
     );
