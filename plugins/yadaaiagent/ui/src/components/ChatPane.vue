@@ -137,7 +137,63 @@ onMounted(() => {
       );
     }
   } else {
-    pushAgent("Hello! I'm your YadaCoin AI agent. How can I help you today?");
+    pushAgent(
+      `<div class="welcome-card">` +
+        `<div class="welcome-title">👋 Welcome to YadaCoin AI</div>` +
+        `<div class="welcome-subtitle">I auto-detect your intent and route to the right agent. Just speak naturally — or try a trigger phrase below:</div>` +
+        `<div class="welcome-agents">` +
+        `<div class="welcome-agent-row">` +
+        `<span class="welcome-agent-icon">💬</span>` +
+        `<div class="welcome-agent-info">` +
+        `<span class="welcome-agent-label">General Chat</span>` +
+        `<span class="welcome-agent-desc">Open-ended questions and conversation</span>` +
+        `<div class="welcome-triggers"><span class="disc-chip">What is YadaCoin?</span><span class="disc-chip">Hello!</span><span class="disc-chip">How does KEL work?</span></div>` +
+        `</div></div>` +
+        `<div class="welcome-agent-row">` +
+        `<span class="welcome-agent-icon">✈️</span>` +
+        `<div class="welcome-agent-info">` +
+        `<span class="welcome-agent-label">Travel Booking</span>` +
+        `<span class="welcome-agent-desc">Flights, trains, ships, hotels &amp; car rentals</span>` +
+        `<div class="welcome-triggers"><span class="disc-chip">I want to go to Paris</span><span class="disc-chip">Book me a flight</span><span class="disc-chip">Train to Berlin</span><span class="disc-chip">Cruise to the Bahamas</span></div>` +
+        `</div></div>` +
+        `<div class="welcome-agent-row">` +
+        `<span class="welcome-agent-icon">⚖️</span>` +
+        `<div class="welcome-agent-info">` +
+        `<span class="welcome-agent-label">Legal Services</span>` +
+        `<span class="welcome-agent-desc">Contract drafting, NDAs, terms &amp; privacy policies</span>` +
+        `<div class="welcome-triggers"><span class="disc-chip">Draft me an NDA</span><span class="disc-chip">Review this contract</span><span class="disc-chip">I need a privacy policy</span><span class="disc-chip">Terms of service</span></div>` +
+        `</div></div>` +
+        `<div class="welcome-agent-row">` +
+        `<span class="welcome-agent-icon">🛒</span>` +
+        `<div class="welcome-agent-info">` +
+        `<span class="welcome-agent-label">E-Commerce</span>` +
+        `<span class="welcome-agent-desc">Order and purchase physical products</span>` +
+        `<div class="welcome-triggers"><span class="disc-chip">Order me some shoes</span><span class="disc-chip">Buy this item</span><span class="disc-chip">I want to purchase...</span></div>` +
+        `</div></div>` +
+        `<div class="welcome-agent-row">` +
+        `<span class="welcome-agent-icon">🧠</span>` +
+        `<div class="welcome-agent-info">` +
+        `<span class="welcome-agent-label">Therapy Booking</span>` +
+        `<span class="welcome-agent-desc">Mental health sessions with verified professionals</span>` +
+        `<div class="welcome-triggers"><span class="disc-chip">I need therapy</span><span class="disc-chip">Help with my anxiety</span><span class="disc-chip">I'm struggling with OCD</span><span class="disc-chip">I want to see a therapist</span></div>` +
+        `</div></div>` +
+        `<div class="welcome-agent-row">` +
+        `<span class="welcome-agent-icon">📡</span>` +
+        `<div class="welcome-agent-info">` +
+        `<span class="welcome-agent-label">Register AI Agent</span>` +
+        `<span class="welcome-agent-desc">Publish your AI agent on the YadaCoin blockchain</span>` +
+        `<div class="welcome-triggers"><span class="disc-chip">Register my agent</span><span class="disc-chip">Add my AI to the blockchain</span><span class="disc-chip">I want to list my agent</span></div>` +
+        `</div></div>` +
+        `<div class="welcome-agent-row">` +
+        `<span class="welcome-agent-icon">💰</span>` +
+        `<div class="welcome-agent-info">` +
+        `<span class="welcome-agent-label">Wallet Assistant</span>` +
+        `<span class="welcome-agent-desc">Balance, transactions, send YDA &amp; cross-chain wrapping</span>` +
+        `<div class="welcome-triggers"><span class="disc-chip">What is my balance?</span><span class="disc-chip">Show my transactions</span><span class="disc-chip">Send 5 YDA to...</span><span class="disc-chip">Wrap 10 YDA</span></div>` +
+        `</div></div>` +
+        `</div></div>`,
+      true,
+    );
   }
   nextTick(() => inputEl.value?.focus());
 });

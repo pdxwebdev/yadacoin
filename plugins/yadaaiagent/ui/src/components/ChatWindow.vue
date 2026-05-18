@@ -644,4 +644,61 @@ defineExpose({ chatEl, escHtml });
   border-radius: 4px;
   padding: 1px 6px;
 }
+
+/* Welcome card */
+.agent .bubble :deep(.welcome-card) {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.agent .bubble :deep(.welcome-title) {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.agent .bubble :deep(.welcome-subtitle) {
+  font-size: 0.8rem;
+  color: var(--subtext);
+  margin-bottom: 2px;
+}
+.agent .bubble :deep(.welcome-agents) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agent .bubble :deep(.welcome-agent-row) {
+  display: flex;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  align-items: flex-start;
+}
+.agent .bubble :deep(.welcome-agent-icon) {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+.agent .bubble :deep(.welcome-agent-info) {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.agent .bubble :deep(.welcome-agent-label) {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+.agent .bubble :deep(.welcome-agent-desc) {
+  font-size: 0.78rem;
+  color: var(--subtext);
+}
+.agent .bubble :deep(.welcome-triggers) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
 </style>
