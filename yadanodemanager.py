@@ -135,6 +135,21 @@ class YadaNodeManager:
 
         return False
 
+    def cleanup_docker(self):
+        """Remove dangling images and build cache left over from previous builds."""
+        try:
+            subprocess.run(
+                ["docker", "image", "prune", "-f"],
+                cwd=self.repo_path,
+            )
+            subprocess.run(
+                ["docker", "builder", "prune", "-f"],
+                cwd=self.repo_path,
+            )
+            print("Docker cleanup complete.")
+        except Exception as e:
+            print(f"Warning: Docker cleanup encountered an error: {e}")
+
     def rebuild_docker_image(self):
         subprocess.run(
             self.compose_cmd + ["down"],
@@ -148,6 +163,7 @@ class YadaNodeManager:
             self.compose_cmd + ["up", "-d", self.service_name],
             cwd=self.repo_path,
         )
+        self.cleanup_docker()
 
     def start_docker_image(self):
         subprocess.run(
