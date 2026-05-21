@@ -275,7 +275,7 @@ class KeyEvent:
             raise KeyEventPrerotatedKeyHashException(
                 f"{self.flag.value.upper()} key event output should equal the prerotated_key_hash"
             )
-        if self.txn.relationship != "":
+        if self.txn.relationship != "" and not is_recovers_inception(self.txn):
             raise KeyEventTransactionRelationshipException(
                 f"{self.flag.value.upper()} key event attempts to populate relationship field. This is not allowed."
             )
@@ -503,7 +503,7 @@ class KeyEvent:
             raise KeyEventPrerotatedKeyHashException(
                 f"{self.flag.value.upper()} key event output should equal the prerotated_key_hash"
             )
-        if self.txn.relationship != "":
+        if self.txn.relationship != "" and not is_recovers_inception(self.txn):
             raise KeyEventTransactionRelationshipException(
                 f"{self.flag.value.upper()} key event attempts to populate relationship field. This is not allowed."
             )
