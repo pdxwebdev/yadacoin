@@ -58,3 +58,17 @@ Dockerfile
 
 # Node modules (if any)
 node_modules/
+
+# Large artifacts not needed in container
+kel_server/.aws-sam/
+AWSCLIV2.pkg
+Yadacoin.zip
+tests/
+sdk/
+proposals/
+winlibs/
+specs/
+docs/
+debug.trace
+*.zip
+*.pkg

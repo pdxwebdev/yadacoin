@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Use an official Python runtime as the base image
 FROM python:3.9-slim-bookworm
 
@@ -11,13 +12,14 @@ WORKDIR /app
 
 # Install the required Python packages
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt --src /usr/local/src
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt --src /usr/local/src
 
-# Copy the application code into the container
-COPY . .
-
-# Find and install requirements.txt files in the plugins subfolder
-RUN find plugins -name "requirements.txt" -exec pip install --no-cache-dir -r {} \;
+# Copy plugins directory to install plugin-specific requirements
+# (app source code is provided at runtime via the volume mount: - .:/app)
+COPY plugins/ ./plugins/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    find plugins -name "requirements.txt" -exec pip install -r {} \;
 
 # Command to run the application
 CMD ["python", "yadacoin/app.py", "--config=config/config.json", "--mongohost=mongodb"]

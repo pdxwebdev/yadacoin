@@ -136,14 +136,10 @@ class YadaNodeManager:
         return False
 
     def cleanup_docker(self):
-        """Remove dangling images and build cache left over from previous builds."""
+        """Remove dangling images left over from previous builds."""
         try:
             subprocess.run(
                 ["docker", "image", "prune", "-f"],
-                cwd=self.repo_path,
-            )
-            subprocess.run(
-                ["docker", "builder", "prune", "-f"],
                 cwd=self.repo_path,
             )
             print("Docker cleanup complete.")
@@ -156,7 +152,7 @@ class YadaNodeManager:
             cwd=self.repo_path,
         )
         subprocess.run(
-            self.compose_cmd + ["build", "--no-cache", self.service_name],
+            self.compose_cmd + ["build", self.service_name],
             cwd=self.repo_path,
         )
         subprocess.run(
