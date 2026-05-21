@@ -928,7 +928,9 @@ class KeyEventLog:
 
             # assign unconfirmed key event and flag
             else:
-                past_key_event = await key_event.sends_to_past_kel_entry()
+                past_key_event = await key_event.sends_to_past_kel_entry(
+                    block_index=block_index
+                )
                 if past_key_event:
                     raise FatalKeyEventException(
                         "Unconfirmed key event sends to past key event.",
@@ -1004,7 +1006,9 @@ class KeyEventLog:
                 self.confirming_key_event = key_event
                 self.base_key_event = parent_event
             else:
-                past_key_event = await key_event.sends_to_past_kel_entry()
+                past_key_event = await key_event.sends_to_past_kel_entry(
+                    block_index=block_index
+                )
                 if past_key_event:
                     raise FatalKeyEventException(
                         "Unconfirmed key event sends to past key event.",

@@ -1,0 +1,60 @@
+# Virtual environments
+venv37/
+venv/
+.venv/
+env/
+
+# Logs
+*.log
+*.log.*
+yada_access.log*
+yada_app.log*
+tests/yada_access.log*
+tests/yada_app.log*
+
+# Backups
+*.bak
+*.backup
+*.dump
+*.sql
+backup.tar.gz
+sdk/python/dist/*.tar.gz
+
+# Git
+.git/
+.gitignore
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Test artifacts
+.coverage
+.pytest_cache/
+htmlcov/
+coverage.xml
+cov_block_current.json
+coverage.json
+
+# OS/IDE
+.DS_Store
+.env
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Docker files (not needed inside container)
+docker-compose.yml
+docker/
+Dockerfile
+
+# Node modules (if any)
+node_modules/
