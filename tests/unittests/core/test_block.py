@@ -2723,7 +2723,7 @@ class TestBlock(AsyncTestCase):
         from yadacoin.core.chain import CHAIN
 
         block = await Block.from_dict(copy.deepcopy(masternode_fee_block))
-        block.index = CHAIN.CHECK_KEL_FORK
+        block.index = CHAIN.CHECK_KEL_PREV_HASH_FORK
 
         @property
         async def contract_generated(a):
@@ -2742,7 +2742,7 @@ class TestBlock(AsyncTestCase):
         bad_txn.transaction_signature = "prev_pk_hash_sig"
         bad_txn.inputs = []
         bad_txn.outputs = []
-        bad_txn.public_key_hash = None
+        bad_txn.public_key_hash = "uniquekeyhash_no_sibling_will_match"
         bad_txn.prev_public_key_hash = "some_prev_hash"  # triggers the raise
         bad_txn.are_kel_fields_populated = Mock(return_value=False)
         bad_txn.has_key_event_log = AsyncMock(
@@ -2751,6 +2751,11 @@ class TestBlock(AsyncTestCase):
         bad_txn.verify_kel_output_rules = AsyncMock(return_value=None)
         bad_txn.time = block.time
         bad_txn.hash = "aaa" * 21
+
+        async def _false_cg():
+            return False
+
+        bad_txn.contract_generated = _false_cg()
 
         orig_txns = block.transactions[:]
         block.transactions.insert(0, bad_txn)

@@ -3676,3 +3676,107 @@ class TestKeyEventLogCoverageGaps(AsyncTestCase):
 
             self.assertIn("Unconfirmed", str(ctx.exception))
             mock_mongo.async_db.miner_transactions.delete_one.assert_called_once()
+
+    async def test_verify_recovery_inception_below_fork_skips_delegator_check(self):
+        """verify_recovery_inception with block_index < CHECK_KEL_PREV_HASH_FORK returns early."""
+        from unittest.mock import MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.keyeventlog import KeyEventFlag
+        from yadacoin.core.recoveryannouncement import RecoveryProof
+
+        ke = _make_mock_ke(
+            flag=KeyEventFlag.INCEPTION,
+            prev_public_key_hash=_VALID_ADDR_A,
+        )
+        ke.txn.public_key_hash = _VALID_ADDR_A
+        ke.txn.outputs = [MagicMock(to=_VALID_ADDR_A)]
+        ke.txn.prerotated_key_hash = _VALID_ADDR_A
+        ke.txn.relationship = RecoveryProof("aa" * 32, "bb" * 32, "cc" * 32)
+
+        with patch(
+            "yadacoin.core.keyeventlog.get_recovers_proof",
+            return_value={"commitment": "aa", "R": "bb", "s": "cc"},
+        ):
+            # Should return without raising even though delegator lookup would fail
+            await ke.verify_recovery_inception(
+                block_index=CHAIN.CHECK_KEL_PREV_HASH_FORK - 1
+            )
+
+    async def test_verify_recovery_inception_delegator_found_in_batch_txns(self):
+        """verify_recovery_inception finds delegator in batch_txns (same block, not yet on-chain)."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from tests.unittests.core.test_kel_recovery import (
+            _make_proof,
+            _random_scalar,
+            _witness_hash_for,
+        )
+        from yadacoin.core.keyeventlog import (
+            KeyEvent,
+            KeyEventChainStatus,
+            KeyEventFlag,
+            KeyEventLog,
+        )
+        from yadacoin.core.recoveryannouncement import (
+            RecoveryAnnouncement,
+            RecoveryProof,
+        )
+        from yadacoin.core.transaction import Transaction
+
+        prev_pkh = _VALID_ADDR_PKH2
+        x = _random_scalar()
+        C, R, s = _make_proof(x, prev_key_hash=prev_pkh)
+        wh = _witness_hash_for(C)
+
+        txn = MagicMock(spec=Transaction)
+        txn.public_key = _VALID_PUBKEY
+        txn.public_key_hash = _VALID_ADDR_B
+        txn.prerotated_key_hash = _VALID_ADDR_B
+        txn.twice_prerotated_key_hash = _VALID_ADDR_B
+        txn.prev_public_key_hash = prev_pkh
+        txn.relationship = RecoveryProof(C, R, s)
+        out = MagicMock()
+        out.to = _VALID_ADDR_B
+        txn.outputs = [out]
+        txn.transaction_signature = "test_sig"
+
+        ke = KeyEvent.__new__(KeyEvent)
+        ke.txn = txn
+        ke.flag = KeyEventFlag.INCEPTION
+        ke.status = KeyEventChainStatus.MEMPOOL
+        ke.config = Config()
+
+        # Delegator is in the same block (batch_txns), not yet on-chain.
+        delegator_txn = MagicMock(spec=Transaction)
+        delegator_txn.public_key = _VALID_PUBKEY
+        delegator_txn.public_key_hash = prev_pkh
+        delegator_txn.relationship = RecoveryAnnouncement(wh)
+        batch = [delegator_txn]
+
+        # On-chain lookup returns nothing — delegator is only in batch_txns.
+        empty_cursor = MagicMock()
+        empty_cursor.to_list = AsyncMock(return_value=[])
+        mock_mongo = MagicMock()
+        mock_mongo.async_db.blocks.aggregate = MagicMock(return_value=empty_cursor)
+        original_mongo = self.config.mongo
+        Config().mongo = mock_mongo
+
+        delegator_tip = MagicMock()
+        delegator_tip.public_key_hash = prev_pkh
+        delegator_tip.relationship = RecoveryAnnouncement(wh)
+
+        try:
+            with patch.object(
+                KeyEventLog,
+                "build_from_public_key",
+                new=AsyncMock(return_value=[delegator_tip]),
+            ):
+                with patch.object(
+                    KeyEventLog,
+                    "find_recovery_successor",
+                    new=AsyncMock(return_value=None),
+                ):
+                    await ke.verify_recovery_inception(batch_txns=batch)
+        finally:
+            Config().mongo = original_mongo

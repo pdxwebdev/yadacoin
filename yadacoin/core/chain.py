@@ -112,6 +112,10 @@ class CHAIN(object):
     # key event address.  Introduced after block 597214 was accepted on-chain
     # without this check, so the guard is only enforced for newer blocks.
     CHECK_KEL_EXPIRED_SEND_FORK = 597300
+    # Reject transactions whose prev_public_key_hash references a KEL that
+    # cannot be found on-chain.  Block 597213 was accepted without a fully
+    # resolved KEL chain, so this guard only applies to newer blocks.
+    CHECK_KEL_PREV_HASH_FORK = 597300
     # Latest KEL key (kel[-1].prerotated_key_hash) is authorised to spend UTXOs
     # locked to any previous KEL address, allowing balances to carry forward
     # through key rotations without requiring the holder to pre-rotate first.

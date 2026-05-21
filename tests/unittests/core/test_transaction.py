@@ -1547,6 +1547,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         """Lines 591-594: check_kel=True, has_kel=False, prev_public_key_hash set → KEL raises."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
+        from yadacoin.core.chain import CHAIN
         from yadacoin.core.keyeventlog import (
             KELExceptionPreviousKeyHashReferenceMissing,
         )
@@ -1561,13 +1562,34 @@ class TestTransactionPureMethods(AsyncTestCase):
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         mock_block = MagicMock()
-        mock_block.index = 10
+        mock_block.index = CHAIN.CHECK_KEL_PREV_HASH_FORK
 
         with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=False)):
             with self.assertRaises(KELExceptionPreviousKeyHashReferenceMissing):
                 await txn.verify(check_kel=True, block=mock_block)
 
-    async def test_verify_check_kel_above_spends_fork(self):
+    async def test_verify_check_kel_prev_key_hash_below_fork_no_raise(self):
+        """Lines 670-673: below CHECK_KEL_PREV_HASH_FORK, prev_public_key_hash does not raise."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.transactionutils import TU
+
+        txn = Transaction(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            prev_public_key_hash="some_prev_hash",
+        )
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = TU.generate_signature_with_private_key(
+            yadacoin.core.config.CONFIG.private_key, txn.hash
+        )
+        mock_block = MagicMock()
+        mock_block.index = CHAIN.CHECK_KEL_PREV_HASH_FORK - 1  # below fork, no raise
+
+        with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=False)):
+            # Should complete without raising
+            await txn.verify(check_kel=True, block=mock_block)
+
         """Line 604: _kel_index >= CHECK_KEL_SPENDS_ENTIRELY_FORK triggers verify_kel_output_rules."""
         from unittest.mock import AsyncMock, MagicMock, patch
 

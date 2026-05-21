@@ -653,7 +653,10 @@ class Transaction(object):
 
             if has_kel:
                 txn_key_event = KeyEvent(self)
-                await txn_key_event.verify(batch_txns=batch_txns)
+                await txn_key_event.verify(
+                    batch_txns=batch_txns,
+                    block_index=block.index if block is not None else None,
+                )
             elif isinstance(self.relationship, (RecoveryProof, RecoveryTransition)):
                 # A recovers-inception is signed by a brand-new K_0, so the
                 # signing key has no prior KEL of its own — has_key_event_log
@@ -665,8 +668,13 @@ class Transaction(object):
                 # verify_recovery_inception, which validates the ZKP against
                 # the on-chain {"recovery": <witness_hash>} announcement.
                 txn_key_event = KeyEvent(self)
-                await txn_key_event.verify(batch_txns=batch_txns)
-            elif self.prev_public_key_hash:
+                await txn_key_event.verify(
+                    batch_txns=batch_txns,
+                    block_index=block.index if block is not None else None,
+                )
+            elif self.prev_public_key_hash and (
+                block is None or block.index >= CHAIN.CHECK_KEL_PREV_HASH_FORK
+            ):
                 raise KELExceptionPreviousKeyHashReferenceMissing(
                     "Key event claims to have a key event log by specifying prev_public_key_hash, but no key event log found."
                 )

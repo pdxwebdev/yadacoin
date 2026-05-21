@@ -285,7 +285,9 @@ class KeyEvent:
         ):
             raise KeyEventException("not a valid inception key event. Invalid status.")
 
-    async def verify_recovery_inception(self, onchain=False):
+    async def verify_recovery_inception(
+        self, onchain=False, block_index=None, batch_txns=None
+    ):
         """Validate a {"recovers": ...} inception that delegates ownership from
         a previous KEL whose keys were lost.
 
@@ -323,43 +325,70 @@ class KeyEvent:
                 "recovers inception missing well-formed {commitment, R, s} proof"
             )
 
+        # Blocks accepted before CHECK_KEL_PREV_HASH_FORK (e.g. block 597214) may
+        # reference a delegator KEL that cannot be found on-chain.  Skip the full
+        # delegator-lookup and proof-verification for those legacy blocks.
+        if block_index is not None and block_index < CHAIN.CHECK_KEL_PREV_HASH_FORK:
+            return
+
         # Look up the delegator KEL's tip transaction by its public_key_hash
-        # (== our prev_public_key_hash).  Restrict to on-chain so a mempool
-        # forgery cannot satisfy the lookup.
+        # (== our prev_public_key_hash).
+        #
+        # Priority order:
+        #   1. Current block's transactions (batch_txns) — the delegator KEL tip
+        #      may be in the same block as the recovery inception, not yet on-chain.
+        #   2. On-chain (blocks collection) — the normal case.
+        #   3. Mempool (miner_transactions) — ONLY when validating a mempool
+        #      submission (block_index is None).  Block verification must never
+        #      trust unconfirmed mempool entries for the delegator.
         config = Config()
-        cursor = config.mongo.async_db.blocks.aggregate(
-            [
-                {
-                    "$match": {
-                        BlocksQueryFields.PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash
-                    }
-                },
-                {"$unwind": "$transactions"},
-                {
-                    "$match": {
-                        BlocksQueryFields.PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash
-                    }
-                },
-                {"$limit": 1},
-            ]
-        )
-        rows = await cursor.to_list(length=1)
+        delegator_tip_txn = None
         delegator_in_mempool = False
-        if rows:
-            delegator_tip_txn = Transaction.from_dict(rows[0]["transactions"])
-        else:
-            # Fall back to mempool — delegator KEL tip may not yet be mined.
+
+        # 1. Check the block being validated first.
+        if batch_txns:
+            for btxn in batch_txns:
+                if btxn.public_key_hash == self.txn.prev_public_key_hash:
+                    delegator_tip_txn = btxn
+                    break
+
+        # 2. Check on-chain.
+        if delegator_tip_txn is None:
+            cursor = config.mongo.async_db.blocks.aggregate(
+                [
+                    {
+                        "$match": {
+                            BlocksQueryFields.PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash
+                        }
+                    },
+                    {"$unwind": "$transactions"},
+                    {
+                        "$match": {
+                            BlocksQueryFields.PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash
+                        }
+                    },
+                    {"$limit": 1},
+                ]
+            )
+            rows = await cursor.to_list(length=1)
+            if rows:
+                delegator_tip_txn = Transaction.from_dict(rows[0]["transactions"])
+
+        # 3. Fall back to mempool only for mempool submissions.
+        if delegator_tip_txn is None and block_index is None:
             mempool_doc = await config.mongo.async_db.miner_transactions.find_one(
                 {
                     MempoolQueryFields.PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash
                 }
             )
-            if not mempool_doc:
-                raise KELRecoveryUnknownPreviousKELException(
-                    "recovery references prev_public_key_hash with no on-chain or mempool KEL entry"
-                )
-            delegator_tip_txn = Transaction.from_dict(mempool_doc)
-            delegator_in_mempool = True
+            if mempool_doc:
+                delegator_tip_txn = Transaction.from_dict(mempool_doc)
+                delegator_in_mempool = True
+
+        if delegator_tip_txn is None:
+            raise KELRecoveryUnknownPreviousKELException(
+                "recovery references prev_public_key_hash with no on-chain or mempool KEL entry"
+            )
 
         # Reconstruct the delegator's full on-chain KEL and confirm the
         # referenced entry really is its tip (latest entry with no successor).
@@ -495,7 +524,9 @@ class KeyEvent:
         # All validation (delegator KEL lookup, Schnorr proof, single-use
         # invariant) is handled inside verify_recovery_inception().
         if is_recovers_inception(self.txn):
-            await self.verify_recovery_inception()
+            await self.verify_recovery_inception(
+                block_index=block_index, batch_txns=batch_txns
+            )
             return
 
         # Only enforce the expired-key-event check for blocks at or above the
@@ -806,7 +837,10 @@ class KeyEventLog:
 
     @staticmethod
     async def init_async(
-        key_event: KeyEvent = None, hash_collection: KELHashCollection = None
+        key_event: KeyEvent = None,
+        hash_collection: KELHashCollection = None,
+        block_index: int = None,
+        batch_txns=None,
     ):
         self = KeyEventLog()
         self.config = Config()
@@ -821,7 +855,9 @@ class KeyEventLog:
                 raise KELRecoveryNotActivatedException(
                     "KEL recovery is not yet active at this block height"
                 )
-            await key_event.verify_recovery_inception()
+            await key_event.verify_recovery_inception(
+                block_index=block_index, batch_txns=batch_txns
+            )
             key_event.flag = KeyEventFlag.INCEPTION
             self.base_key_event = key_event
             return self

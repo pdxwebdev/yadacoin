@@ -1037,7 +1037,12 @@ class Block(object):
                     await txn_key_event.verify(
                         batch_txns=self.transactions, block_index=self.index
                     )
-                    await KeyEventLog.init_async(txn_key_event, kel_hash_collection)
+                    await KeyEventLog.init_async(
+                        txn_key_event,
+                        kel_hash_collection,
+                        block_index=self.index,
+                        batch_txns=self.transactions,
+                    )
                 elif isinstance(txn.relationship, (RecoveryProof, RecoveryTransition)):
                     # A recovers-inception is signed by a brand-new K_0 whose signing
                     # key has no prior KEL — has_key_event_log returns False and the
@@ -1053,7 +1058,12 @@ class Block(object):
                     await txn_key_event.verify(
                         batch_txns=self.transactions, block_index=self.index
                     )
-                    await KeyEventLog.init_async(txn_key_event, kel_hash_collection)
+                    await KeyEventLog.init_async(
+                        txn_key_event,
+                        kel_hash_collection,
+                        block_index=self.index,
+                        batch_txns=self.transactions,
+                    )
                 elif txn.prev_public_key_hash:
                     raise KELExceptionPreviousKeyHashReferenceMissing(
                         "Key event claims to have a key event log by specifying prev_public_key_hash, but no key event log found."
