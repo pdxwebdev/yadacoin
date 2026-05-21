@@ -1095,7 +1095,7 @@ class Transaction(object):
             return True
         return False
 
-    async def is_already_onchain(self):
+    async def is_already_onchain(self, block_index=None):
         from yadacoin.core.keyeventlog import BlocksQueryFields
 
         config = Config()
@@ -1135,11 +1135,10 @@ class Transaction(object):
             )
         if not query:
             return False
-        result = await config.mongo.async_db.blocks.find_one(
-            {
-                "$or": query,
-            }
-        )
+        match = {"$or": query}
+        if block_index is not None:
+            match["index"] = {"$lt": block_index}
+        result = await config.mongo.async_db.blocks.find_one(match)
         if result:
             return True
         return False

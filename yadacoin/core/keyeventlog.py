@@ -540,7 +540,7 @@ class KeyEvent:
         # means the call came from mempool validation, where the check always
         # applies.
         if block_index is None or block_index >= CHAIN.CHECK_KEL_EXPIRED_SEND_FORK:
-            if await self.sends_to_past_kel_entry():
+            if await self.sends_to_past_kel_entry(block_index=block_index):
                 await self.config.mongo.async_db.miner_transactions.delete_one(
                     {"id": self.txn.transaction_signature}
                 )
@@ -616,7 +616,7 @@ class KeyEvent:
                         "confirmed on-chain or present in the mempool."
                     )
 
-        if await self.txn.is_already_onchain():
+        if await self.txn.is_already_onchain(block_index=block_index):
             key_log = await KeyEventLog.build_from_public_key(self.txn.public_key)
             if (
                 len(self.txn.outputs) != 1
@@ -624,15 +624,18 @@ class KeyEvent:
             ):
                 raise KELException("Key event is already onchain")
 
-    async def sends_to_past_kel_entry(self):
+    async def sends_to_past_kel_entry(self, block_index=None):
         for output in self.txn.outputs:
             config = Config()
+            match_clause = {
+                BlocksQueryFields.PUBLIC_KEY_HASH.value: output.to,
+            }
+            if block_index is not None:
+                match_clause["index"] = {"$lt": block_index}
             result = config.mongo.async_db.blocks.aggregate(
                 [
                     {
-                        "$match": {
-                            BlocksQueryFields.PUBLIC_KEY_HASH.value: output.to,
-                        },
+                        "$match": match_clause,
                     },
                     {"$unwind": "$transactions"},
                     {
