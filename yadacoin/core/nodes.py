@@ -29,6 +29,8 @@ class Nodes:
         for NODE in cls()._NODES:
             for rng in NODE["ranges"]:
                 cls().fork_points.append(rng[0])
+                if rng[1]:
+                    cls().fork_points.append(rng[1])
         cls().fork_points = sorted(list(set(cls().fork_points)))
 
     @classmethod
