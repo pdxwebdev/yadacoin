@@ -286,7 +286,7 @@ class KeyEvent:
             raise KeyEventException("not a valid inception key event. Invalid status.")
 
     async def verify_recovery_inception(
-        self, onchain=False, block_index=None, batch_txns=None
+        self, onchain=False, block_index=None, batch_txns=None, use_mempool=False
     ):
         """Validate a {"recovers": ...} inception that delegates ownership from
         a previous KEL whose keys were lost.
@@ -374,16 +374,20 @@ class KeyEvent:
             if rows:
                 delegator_tip_txn = Transaction.from_dict(rows[0]["transactions"])
 
-        # 3. Fall back to mempool only for mempool submissions.
-        if delegator_tip_txn is None and block_index is None:
+        # 3. For mempool submissions (use_mempool=True), always check the
+        #    miner_transactions collection.  delegator_in_mempool is set only
+        #    when the delegator is confirmed to be there — it is never inferred
+        #    from batch_txns, which can represent block-level data.
+        if use_mempool:
             mempool_doc = await config.mongo.async_db.miner_transactions.find_one(
                 {
                     MempoolQueryFields.PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash
                 }
             )
             if mempool_doc:
-                delegator_tip_txn = Transaction.from_dict(mempool_doc)
                 delegator_in_mempool = True
+                if delegator_tip_txn is None:
+                    delegator_tip_txn = Transaction.from_dict(mempool_doc)
 
         if delegator_tip_txn is None:
             raise KELRecoveryUnknownPreviousKELException(
@@ -509,7 +513,7 @@ class KeyEvent:
         ):
             raise KeyEventException("not a valid confirming key event. Invalid status.")
 
-    async def verify(self, batch_txns=None, block_index=None):
+    async def verify(self, batch_txns=None, block_index=None, use_mempool=False):
         address = str(
             P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.txn.public_key))
         )
@@ -525,7 +529,7 @@ class KeyEvent:
         # invariant) is handled inside verify_recovery_inception().
         if is_recovers_inception(self.txn):
             await self.verify_recovery_inception(
-                block_index=block_index, batch_txns=batch_txns
+                block_index=block_index, batch_txns=batch_txns, use_mempool=use_mempool
             )
             return
 

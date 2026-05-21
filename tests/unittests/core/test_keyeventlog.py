@@ -2883,6 +2883,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
         )
         mock_mongo = MagicMock()
         mock_mongo.async_db.blocks.aggregate = MagicMock(return_value=cursor)
+        mock_mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
         Config().mongo = mock_mongo
 
         with patch.object(
@@ -2960,6 +2961,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
         )
         mock_mongo = MagicMock()
         mock_mongo.async_db.blocks.aggregate = MagicMock(return_value=cursor)
+        mock_mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
         Config().mongo = mock_mongo
 
         wrong_tip = MagicMock()
@@ -3047,6 +3049,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
         )
         mock_mongo = MagicMock()
         mock_mongo.async_db.blocks.aggregate = MagicMock(return_value=cursor)
+        mock_mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
         Config().mongo = mock_mongo
 
         delegator_tip = MagicMock()
@@ -3646,7 +3649,7 @@ class TestKeyEventLogCoverageGaps(AsyncTestCase):
                     new=AsyncMock(return_value=None),
                 ):
                     # Should not raise — Schnorr proof verifies against the announced wh
-                    await ke.verify_recovery_inception()
+                    await ke.verify_recovery_inception(use_mempool=True)
         finally:
             Config().mongo = original_mongo
 
@@ -3759,6 +3762,7 @@ class TestKeyEventLogCoverageGaps(AsyncTestCase):
         empty_cursor.to_list = AsyncMock(return_value=[])
         mock_mongo = MagicMock()
         mock_mongo.async_db.blocks.aggregate = MagicMock(return_value=empty_cursor)
+        mock_mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
         original_mongo = self.config.mongo
         Config().mongo = mock_mongo
 

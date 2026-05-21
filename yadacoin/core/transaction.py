@@ -656,6 +656,7 @@ class Transaction(object):
                 await txn_key_event.verify(
                     batch_txns=batch_txns,
                     block_index=block.index if block is not None else None,
+                    use_mempool=mempool,
                 )
             elif isinstance(self.relationship, (RecoveryProof, RecoveryTransition)):
                 # A recovers-inception is signed by a brand-new K_0, so the
@@ -671,6 +672,7 @@ class Transaction(object):
                 await txn_key_event.verify(
                     batch_txns=batch_txns,
                     block_index=block.index if block is not None else None,
+                    use_mempool=mempool,
                 )
             elif self.prev_public_key_hash and (
                 block is None or block.index >= CHAIN.CHECK_KEL_PREV_HASH_FORK

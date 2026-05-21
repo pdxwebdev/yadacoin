@@ -274,6 +274,8 @@ class TestVerifyRecoveryInception(AsyncTestCase):
         # Mock mongo so we don't need a live DB; aggregate is patched per-test.
         mock_mongo = MagicMock()
         mock_mongo.async_db = MagicMock()
+        # verify_recovery_inception always checks miner_transactions when block_index is None.
+        mock_mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
         Config().mongo = mock_mongo
         self.config = Config()
 
