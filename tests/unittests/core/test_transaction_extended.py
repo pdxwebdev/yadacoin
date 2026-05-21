@@ -1182,6 +1182,114 @@ class TestVerifyCoverageGaps(TransactionTestCase):
             with patch.object(Transaction, "verify_signature", return_value=None):
                 await txn.verify()
 
+    async def test_get_kel_cross_key_auth_block_branch(self):
+        """Line 1229: get_kel_cross_key_auth uses block.index when block is not None."""
+        from unittest.mock import MagicMock
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(public_key=self.public_key)
+        mock_block = MagicMock()
+        # Below fork: should return (None, None) after setting effective_index = block.index
+        mock_block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK - 1
+
+        result = await txn.get_kel_cross_key_auth("some_address", block=mock_block)
+
+        self.assertEqual(result, (None, None))
+
+    async def test_get_kel_cross_key_auth_returns_authorized_keys(self):
+        """Lines 1238-1247: get_kel_cross_key_auth returns authorized sets when KEL found."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(public_key=self.public_key)
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK
+
+        address = "1TargetAddress"
+        kel_entry = MagicMock()
+        kel_entry.prerotated_key_hash = (
+            address  # kel[-1].prerotated_key_hash == address
+        )
+        kel_entry.public_key_hash = "1PrevKeyHash"
+        kel_entry.public_key = "prevpubkey"
+
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+                new=AsyncMock(return_value=[kel_entry]),
+            ):
+                auth_addrs, auth_pks = await txn.get_kel_cross_key_auth(address)
+
+        self.assertIn(address, auth_addrs)
+        self.assertIn("1PrevKeyHash", auth_addrs)
+        self.assertIn(self.public_key, auth_pks)
+        self.assertIn("prevpubkey", auth_pks)
+
+    async def test_get_kel_cross_key_auth_no_match_returns_none(self):
+        """Line 1247: get_kel_cross_key_auth returns (None, None) when KEL address mismatch."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(public_key=self.public_key)
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK
+
+        kel_entry = MagicMock()
+        kel_entry.prerotated_key_hash = "1SomeOtherAddress"
+
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+                new=AsyncMock(return_value=[kel_entry]),
+            ):
+                result = await txn.get_kel_cross_key_auth("1NotMatching")
+
+        self.assertEqual(result, (None, None))
+
+    async def test_verify_kel_authorized_output_found(self):
+        """Lines 799-801: kel_authorized_addresses is not None and output.to matches."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH
+
+        from yadacoin.core.transactionutils import TU
+
+        address = str(_P2PKH.from_pubkey(bytes.fromhex(self.public_key)))
+
+        # Input transaction whose output goes to `address`
+        input_txn_obj = Transaction(
+            public_key=self.public_key,
+            outputs=[Output(to=address, value=2.0)],
+        )
+        txn = Transaction(
+            public_key=self.public_key,
+            outputs=[Output(to=address, value=2.0)],
+        )
+        txn.inputs = [Input(signature="sig1", input_txn=input_txn_obj)]
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = TU.generate_signature_with_private_key(
+            self.private_key, txn.hash
+        )
+
+        mock_lb = MagicMock()
+        mock_lb.block.index = 100
+
+        # Return address in authorized set so kel_authorized_addresses is not None
+        authorized_addresses = {address, "1OtherAddr"}
+        authorized_pub_keys = {self.public_key}
+
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch.object(
+                txn,
+                "get_kel_cross_key_auth",
+                new=AsyncMock(return_value=(authorized_addresses, authorized_pub_keys)),
+            ):
+                # check_input_spent=False avoids needing to mock BU.is_input_spent
+                await txn.verify(check_input_spent=False)
+
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

@@ -742,6 +742,16 @@ class Transaction(object):
         # verify spend
         total_input = 0
         exclude_recovered_ids = []
+
+        # KEL cross-key spending: if the signer is the latest KEL key its
+        # address equals kel[-1].prerotated_key_hash, and it is authorised to
+        # spend UTXOs locked to any previous KEL address.
+        kel_authorized_addresses, kel_authorized_pub_keys = (
+            await self.get_kel_cross_key_auth(address, block=block, mempool=mempool)
+            if self.inputs
+            else (None, None)
+        )
+
         async for txn in self.get_inputs(self.inputs):
             txn_input = None
             if txn.input_txn:
@@ -774,13 +784,22 @@ class Transaction(object):
                         if self.extra_blocks
                         else self.config.LatestBlock.block.index
                     ),
+                    extra_public_keys=(
+                        kel_authorized_pub_keys - {self.public_key}
+                        if kel_authorized_pub_keys
+                        else None
+                    ),
                 )
                 if is_input_spent:
                     raise Exception("Input already spent")
 
             found = False
             for output in txn_input.outputs:
-                if str(output.to) == str(address):
+                if kel_authorized_addresses is not None:
+                    if str(output.to) in kel_authorized_addresses:
+                        found = True
+                        total_input += float(output.value)
+                elif str(output.to) == str(address):
                     found = True
                     total_input += float(output.value)
 
@@ -1197,6 +1216,37 @@ class Transaction(object):
         if result:
             return True
         return False
+
+    async def get_kel_cross_key_auth(self, address, block=None, mempool=False):
+        """Return (authorized_addresses, authorized_pub_keys) when the signer is
+        the latest KEL key (its address equals kel[-1].prerotated_key_hash),
+        enabling it to spend UTXOs locked to any previous KEL address.
+
+        Returns (None, None) when cross-key spending does not apply (non-KEL
+        signer, or below the KEL_CROSS_KEY_SPENDING_FORK height).
+        """
+        if block is not None:
+            effective_index = block.index
+        elif mempool:
+            effective_index = self.config.LatestBlock.block.index + 1
+        else:
+            effective_index = self.config.LatestBlock.block.index
+
+        if effective_index < CHAIN.KEL_CROSS_KEY_SPENDING_FORK:
+            return None, None
+
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        kel = await KeyEventLog.build_from_public_key(
+            self.public_key, onchain_only=True
+        )
+        if kel and kel[-1].prerotated_key_hash == address:
+            authorized_addresses = {entry.public_key_hash for entry in kel} | {address}
+            authorized_pub_keys = {entry.public_key for entry in kel} | {
+                self.public_key
+            }
+            return authorized_addresses, authorized_pub_keys
+        return None, None
 
     async def has_key_event_log(self, block=None, mempool=False):
         from yadacoin.core.keyeventlog import BlocksQueryFields, MempoolQueryFields

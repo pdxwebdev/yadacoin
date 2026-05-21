@@ -773,21 +773,29 @@ class BlockChainUtils(object):
         inc_mempool=False,
         from_index=None,
         extra_blocks=None,
+        extra_public_keys=None,
     ):
         if not isinstance(input_ids, list):
             input_ids = [input_ids]
+        # When extra_public_keys is provided (KEL cross-key spending), check
+        # whether the input was spent by ANY of the authorised public keys so
+        # that a spend by a previous KEL key is correctly detected.
+        if extra_public_keys:
+            pk_filter = {"$in": [public_key] + list(extra_public_keys)}
+        else:
+            pk_filter = public_key
         query = [
             {
                 "$match": {
                     "transactions.inputs.id": {"$in": input_ids},
-                    "transactions.public_key": public_key,
+                    "transactions.public_key": pk_filter,
                 }
             },
             {"$unwind": "$transactions"},
             {
                 "$match": {
                     "transactions.inputs.id": {"$in": input_ids},
-                    "transactions.public_key": public_key,
+                    "transactions.public_key": pk_filter,
                 }
             },
         ]
@@ -810,13 +818,21 @@ class BlockChainUtils(object):
             return True
 
         if inc_mempool:
-            if await self.get_mempool_transactions(public_key, input_ids):
+            if await self.get_mempool_transactions(
+                public_key, input_ids, extra_public_keys=extra_public_keys
+            ):
                 return True
         return False
 
-    async def get_mempool_transactions(self, public_key, input_ids):
+    async def get_mempool_transactions(
+        self, public_key, input_ids, extra_public_keys=None
+    ):
+        if extra_public_keys:
+            pk_filter = {"$in": [public_key] + list(extra_public_keys)}
+        else:
+            pk_filter = public_key
         return await self.mongo.async_db.miner_transactions.find_one(
-            {"inputs.id": {"$in": input_ids}, "public_key": public_key}
+            {"inputs.id": {"$in": input_ids}, "public_key": pk_filter}
         )
 
     async def get_unspent_outputs(

@@ -1034,7 +1034,9 @@ class Block(object):
                         self, verify_only=True
                     )
                     txn_key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
-                    await txn_key_event.verify(batch_txns=self.transactions)
+                    await txn_key_event.verify(
+                        batch_txns=self.transactions, block_index=self.index
+                    )
                     await KeyEventLog.init_async(txn_key_event, kel_hash_collection)
                 elif isinstance(txn.relationship, (RecoveryProof, RecoveryTransition)):
                     # A recovers-inception is signed by a brand-new K_0 whose signing
@@ -1048,7 +1050,9 @@ class Block(object):
                         self, verify_only=True
                     )
                     txn_key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
-                    await txn_key_event.verify(batch_txns=self.transactions)
+                    await txn_key_event.verify(
+                        batch_txns=self.transactions, block_index=self.index
+                    )
                     await KeyEventLog.init_async(txn_key_event, kel_hash_collection)
                 elif txn.prev_public_key_hash:
                     raise KELExceptionPreviousKeyHashReferenceMissing(

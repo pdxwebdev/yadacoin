@@ -1054,7 +1054,10 @@ class TestVerifyPendingTransaction(AsyncTestCase):
         txn.version = 999
         txn.transaction_signature = "s"
         txn.inputs = [MagicMock(id="i1")]
-        txn.public_key = "pk"
+        txn.public_key = (
+            "02fa9550f57055c96c7ce4c6c9cd1411856beba5c7d5a07417e980a39aa03da3dc"
+        )
+        txn.get_kel_cross_key_auth = AsyncMock(return_value=(None, None))
         txn.verify = AsyncMock()
         txn.coinbase = False
         txn.to_dict = MagicMock(return_value={})
@@ -1073,7 +1076,10 @@ class TestVerifyPendingTransaction(AsyncTestCase):
         txn.version = 999
         txn.transaction_signature = "s"
         txn.inputs = [MagicMock(id="i1"), MagicMock(id="i1")]
-        txn.public_key = "pk"
+        txn.public_key = (
+            "02fa9550f57055c96c7ce4c6c9cd1411856beba5c7d5a07417e980a39aa03da3dc"
+        )
+        txn.get_kel_cross_key_auth = AsyncMock(return_value=(None, None))
         txn.verify = AsyncMock()
         txn.coinbase = False
         txn.to_dict = MagicMock(return_value={})

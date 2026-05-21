@@ -108,6 +108,14 @@ class CHAIN(object):
     # ZKP is verified against the latest {"recovery": witnessHash} announcement
     # in the previous KEL.  See yadacoin/core/locationrecovery.py.
     KEL_RECOVERY_FORK = 596000
+    # Reject unconfirmed key events that send to an already-confirmed (expired)
+    # key event address.  Introduced after block 597214 was accepted on-chain
+    # without this check, so the guard is only enforced for newer blocks.
+    CHECK_KEL_EXPIRED_SEND_FORK = 597300
+    # Latest KEL key (kel[-1].prerotated_key_hash) is authorised to spend UTXOs
+    # locked to any previous KEL address, allowing balances to carry forward
+    # through key rotations without requiring the holder to pre-rotate first.
+    KEL_CROSS_KEY_SPENDING_FORK = 599000
 
     @classmethod
     def target_block_time(cls, network: str):

@@ -480,7 +480,7 @@ class KeyEvent:
         ):
             raise KeyEventException("not a valid confirming key event. Invalid status.")
 
-    async def verify(self, batch_txns=None):
+    async def verify(self, batch_txns=None, block_index=None):
         address = str(
             P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.txn.public_key))
         )
@@ -498,13 +498,20 @@ class KeyEvent:
             await self.verify_recovery_inception()
             return
 
-        if await self.sends_to_past_kel_entry():
-            await self.config.mongo.async_db.miner_transactions.delete_one(
-                {"id": self.txn.transaction_signature}
-            )
-            raise KELException(
-                "Unconfirmed key event sends to an expired key event. Removing."
-            )
+        # Only enforce the expired-key-event check for blocks at or above the
+        # fork height.  Blocks accepted before this check was introduced (e.g.
+        # block 597214) must still sync successfully, so we skip the check when
+        # block_index is below CHECK_KEL_EXPIRED_SEND_FORK.  A None block_index
+        # means the call came from mempool validation, where the check always
+        # applies.
+        if block_index is None or block_index >= CHAIN.CHECK_KEL_EXPIRED_SEND_FORK:
+            if await self.sends_to_past_kel_entry():
+                await self.config.mongo.async_db.miner_transactions.delete_one(
+                    {"id": self.txn.transaction_signature}
+                )
+                raise KELException(
+                    "Unconfirmed key event sends to an expired key event. Removing."
+                )
 
         # Non-inception key events: enforce predecessor-existence rules.
         # Confirming entries (single output to prerotated_key_hash, no relationship) allow

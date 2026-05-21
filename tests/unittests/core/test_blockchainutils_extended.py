@@ -408,6 +408,29 @@ class TestIsInputSpent(BUTestCase):
             )
         self.assertFalse(result)
 
+    async def test_extra_public_keys_builds_in_filter(self):
+        """Line 784: extra_public_keys branch uses $in filter."""
+
+        async def empty_iter(*args, **kwargs):
+            return
+            yield
+
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__aiter__ = lambda self: empty_iter()
+        mock_db.blocks.aggregate.return_value = mock_cursor
+
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            result = await self.bu.is_input_spent(
+                "input_id", "pk1", extra_public_keys={"pk2"}
+            )
+        self.assertFalse(result)
+        call_pipeline = mock_db.blocks.aggregate.call_args[0][0]
+        first_match = call_pipeline[0]["$match"]
+        self.assertEqual(
+            first_match["transactions.public_key"], {"$in": ["pk1", "pk2"]}
+        )
+
 
 # ---------------------------------------------------------------------------
 # get_mempool_transactions
@@ -428,6 +451,17 @@ class TestGetMempoolTransactions(BUTestCase):
         with patch.object(self.config.mongo, "async_db", new=mock_db):
             result = await self.bu.get_mempool_transactions("pk1", ["inp1"])
         self.assertIsNone(result)
+
+    async def test_extra_public_keys_builds_in_filter(self):
+        """Line 831: extra_public_keys branch uses $in filter."""
+        mock_db = MagicMock()
+        mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            await self.bu.get_mempool_transactions(
+                "pk1", ["inp1"], extra_public_keys={"pk2"}
+            )
+        call_kwargs = mock_db.miner_transactions.find_one.call_args[0][0]
+        self.assertEqual(call_kwargs["public_key"], {"$in": ["pk1", "pk2"]})
 
 
 # ---------------------------------------------------------------------------

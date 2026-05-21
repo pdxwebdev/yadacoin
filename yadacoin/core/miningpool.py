@@ -17,6 +17,8 @@ import uuid
 from logging import getLogger
 from time import time
 
+from bitcoin.wallet import P2PKHBitcoinAddress
+
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
@@ -680,9 +682,28 @@ class MiningPool(object):
             failed2 = False
             used_ids_in_this_txn = []
 
+            # For KEL cross-key spending, gather all authorised public keys so
+            # that a prior spend by any previous KEL key is detected correctly.
+            _kel_auth_pks = None
+            if transaction_obj.inputs:
+                _txn_address = str(
+                    P2PKHBitcoinAddress.from_pubkey(
+                        bytes.fromhex(transaction_obj.public_key)
+                    )
+                )
+                _, _kel_auth_pks = await transaction_obj.get_kel_cross_key_auth(
+                    _txn_address
+                )
+
             async for x in self.get_inputs(transaction_obj.inputs):
                 is_input_spent = await self.config.BU.is_input_spent(
-                    x.id, transaction_obj.public_key
+                    x.id,
+                    transaction_obj.public_key,
+                    extra_public_keys=(
+                        _kel_auth_pks - {transaction_obj.public_key}
+                        if _kel_auth_pks
+                        else None
+                    ),
                 )
                 if is_input_spent:
                     failed1 = True
