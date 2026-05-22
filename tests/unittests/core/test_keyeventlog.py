@@ -2294,6 +2294,68 @@ class TestKeyEventLogInitAsyncBranches(AsyncTestCase):
                 await KeyEventLog.init_async(ke, hash_collection)
             self.assertIn("Invalid KEL scenario", str(ctx.exception))
 
+    async def test_init_async_scenario3b_onchain_unconfirmed_base_and_confirming(self):
+        """Scenario 3b: onchain UNCONFIRMED base + CONFIRMING+MEMPOOL.
+
+        Covers lines 1173-1174 (verify_confirming + verify_links inside Scenario 3b).
+        This scenario arises in fork situations where an unconfirmed event and its
+        confirming pair were already mined in a different block at the same height;
+        get_onchain_parent now returns the unconfirmed event with UNCONFIRMED flag,
+        so Scenario 3b fires instead of the old Scenario 3 path that incorrectly
+        called verify_confirming on the unconfirmed base.
+        """
+        from unittest.mock import AsyncMock, patch
+
+        from yadacoin.core.keyeventlog import (
+            KeyEventChainStatus,
+            KeyEventFlag,
+            KeyEventLog,
+        )
+
+        # On-chain unconfirmed base: pkh=A, pkr=B, tpkr=C, relationship present.
+        # Mirrors a recovery-announcement or any UNCONFIRMED event that was mined.
+        unconfirmed_base = _make_mock_ke(
+            flag=KeyEventFlag.UNCONFIRMED,
+            status=KeyEventChainStatus.ONCHAIN,
+            public_key_hash=_VALID_ADDR_A,
+            prerotated_key_hash=_VALID_ADDR_B,
+            twice_prerotated_key_hash=_VALID_ADDR_C,
+            prev_public_key_hash=_VALID_ADDR_PKH2,
+            relationship="some_relationship_data",
+            outputs_to=_VALID_ADDR_PKR2,
+        )
+        unconfirmed_base.get_onchain_child = AsyncMock(return_value=None)
+
+        # Confirming ke being validated: pkh=B (==base.pkr), pkr=C (==base.tpkr),
+        # prev=A (==base.pkh), no relationship, output to prerotated.
+        confirming_ke = _make_mock_ke(
+            status=KeyEventChainStatus.MEMPOOL,
+            public_key_hash=_VALID_ADDR_B,
+            prerotated_key_hash=_VALID_ADDR_C,
+            twice_prerotated_key_hash=_VALID_ADDR_PKH2,
+            prev_public_key_hash=_VALID_ADDR_A,
+            relationship="",
+            outputs_to=_VALID_ADDR_C,
+        )
+        confirming_ke.get_onchain_parent = AsyncMock(
+            return_value={"key_event": unconfirmed_base}
+        )
+
+        hash_collection = _make_hash_collection()
+
+        with patch.object(
+            KeyEventLog,
+            "build_from_public_key",
+            new=AsyncMock(return_value=[]),
+        ):
+            kel = await KeyEventLog.init_async(confirming_ke, hash_collection)
+
+        self.assertEqual(kel.base_key_event.flag, KeyEventFlag.UNCONFIRMED)
+        self.assertEqual(kel.base_key_event.status, KeyEventChainStatus.ONCHAIN)
+        self.assertIsNone(kel.unconfirmed_key_event)
+        self.assertEqual(kel.confirming_key_event.flag, KeyEventFlag.CONFIRMING)
+        self.assertEqual(kel.confirming_key_event.status, KeyEventChainStatus.MEMPOOL)
+
     async def test_init_async_scenario6_mempool_inception_and_confirming(self):
         """Scenario 6: step1.5 path → INCEPTION+MEMPOOL base, no unconfirmed, CONFIRMING+MEMPOOL confirming."""
         from unittest.mock import AsyncMock, patch
