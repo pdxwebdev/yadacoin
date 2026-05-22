@@ -698,9 +698,11 @@ class KeyEvent:
             key_event = KeyEvent(
                 txn,
                 flag=(
-                    KeyEventFlag.CONFIRMING
-                    if txn.prev_public_key_hash
-                    else KeyEventFlag.INCEPTION
+                    KeyEventFlag.INCEPTION
+                    if not txn.prev_public_key_hash or is_recovers_inception(txn)
+                    else KeyEventFlag.UNCONFIRMED
+                    if txn.relationship
+                    else KeyEventFlag.CONFIRMING
                 ),
                 status=KeyEventChainStatus.ONCHAIN,
             )
@@ -1151,6 +1153,23 @@ class KeyEventLog:
             and self.confirming_key_event.status == KeyEventChainStatus.MEMPOOL
         ):
             self.base_key_event.verify_confirming(entire_log, onchain=True)
+            self.confirming_key_event.verify_confirming(entire_log)
+            self.verify_links()
+
+        # 3b. Onchain unconfirmed base + confirming (mempool).
+        # Occurs in fork scenarios where the unconfirmed event was already mined
+        # (along with its original confirming pair) in a different block at the same
+        # height.  The on-chain unconfirmed base has already been validated; only the
+        # incoming confirming event needs to be checked.
+        elif (
+            self.base_key_event
+            and self.base_key_event.flag == KeyEventFlag.UNCONFIRMED
+            and self.base_key_event.status == KeyEventChainStatus.ONCHAIN
+            and not self.unconfirmed_key_event
+            and self.confirming_key_event
+            and self.confirming_key_event.flag == KeyEventFlag.CONFIRMING
+            and self.confirming_key_event.status == KeyEventChainStatus.MEMPOOL
+        ):
             self.confirming_key_event.verify_confirming(entire_log)
             self.verify_links()
 
