@@ -147,18 +147,27 @@ class YadaNodeManager:
             print(f"Warning: Docker cleanup encountered an error: {e}")
 
     def rebuild_docker_image(self):
+        # Stop first to free memory for the build (avoids OOM on constrained VPS).
+        # With proper layer caching all layers should be cache hits for code-only
+        # changes, so the build completes in seconds and downtime is minimal.
         subprocess.run(
             self.compose_cmd + ["down"],
             cwd=self.repo_path,
         )
+        # Enable BuildKit so --mount=type=cache in the Dockerfile works.
+        build_env = {**os.environ, "DOCKER_BUILDKIT": "1"}
         subprocess.run(
             self.compose_cmd + ["build", self.service_name],
             cwd=self.repo_path,
+            env=build_env,
         )
         subprocess.run(
             self.compose_cmd + ["up", "-d", self.service_name],
             cwd=self.repo_path,
         )
+        # With BuildKit enabled, the build cache is stored separately from
+        # images, so image prune safely removes only the old app image without
+        # destroying the layer cache.
         self.cleanup_docker()
 
     def start_docker_image(self):
