@@ -46,24 +46,7 @@
                 <span>{{ opt.text }}</span>
               </label>
             </template>
-            <!-- Date range picker (start + end) -->
-            <template v-else-if="group.input_type === 'daterange'">
-              <div class="daterange-row">
-                <input
-                  type="date"
-                  v-model="msg.selections[group.id].start"
-                  class="date-field-input"
-                />
-                <span class="daterange-sep">→</span>
-                <input
-                  type="date"
-                  v-model="msg.selections[group.id].end"
-                  class="date-field-input"
-                  :min="msg.selections[group.id].start || undefined"
-                />
-              </div>
-            </template>
-            <!-- Free-text or single date input -->
+            <!-- Free-text or date input -->
             <template v-else-if="group.input_type">
               <input
                 :type="group.input_type"
@@ -102,6 +85,57 @@
               >{{ src.title || src.url }}</a
             >
           </div>
+        </div>
+        <!-- Web 2.0 auth connect button (triggers device flow) -->
+        <div v-if="msg.authRequired?.provider" class="auth-required-row">
+          <button
+            class="auth-connect-btn"
+            @click="
+              emit('auth-connect', { provider: msg.authRequired.provider })
+            "
+          >
+            <span class="auth-provider-icon">{{
+              providerIcon(msg.authRequired.provider)
+            }}</span>
+            Connect {{ providerLabel(msg.authRequired.provider) }}
+          </button>
+        </div>
+        <!-- Device Authorization Grant card — shown while user completes auth -->
+        <div v-if="msg.deviceCode" class="device-code-card">
+          <div class="dc-header">
+            <span class="dc-icon">{{
+              providerIcon(msg.deviceCode.provider)
+            }}</span>
+            <span class="dc-title"
+              >Connect {{ providerLabel(msg.deviceCode.provider) }}</span
+            >
+          </div>
+          <template v-if="msg.deviceCode.status === 'starting'">
+            <div class="dc-status">Starting…</div>
+          </template>
+          <template v-else-if="msg.deviceCode.status === 'pending'">
+            <div class="dc-instructions">
+              Visit
+              <a
+                :href="msg.deviceCode.verification_uri"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="dc-link"
+                >{{ msg.deviceCode.verification_uri }}</a
+              >
+              and enter this code:
+            </div>
+            <div class="dc-code">{{ msg.deviceCode.user_code }}</div>
+            <div class="dc-status dc-waiting">
+              <span class="dc-spinner">⟳</span> Waiting for authorization…
+            </div>
+          </template>
+          <template v-else-if="msg.deviceCode.status === 'authorized'">
+            <div class="dc-status dc-success">✓ Connected successfully</div>
+          </template>
+          <template v-else-if="msg.deviceCode.status === 'error'">
+            <div class="dc-status dc-error">⚠ {{ msg.deviceCode.message }}</div>
+          </template>
         </div>
       </div>
     </div>
@@ -163,7 +197,18 @@ function sanitize(html) {
 marked.setOptions({ breaks: true, gfm: true });
 
 const props = defineProps({ messages: Array });
-const emit = defineEmits(["fields-confirmed"]);
+const emit = defineEmits(["fields-confirmed", "auth-connect"]);
+
+const _PROVIDER_META = {
+  github: { label: "GitHub", icon: "🐙" },
+  microsoft: { label: "Microsoft", icon: "🟦" },
+};
+function providerLabel(p) {
+  return (_PROVIDER_META[p] || {}).label || p;
+}
+function providerIcon(p) {
+  return (_PROVIDER_META[p] || {}).icon || "🔑";
+}
 
 function allGroupsFilled(msg) {
   if (!msg.choices?.length) return false;
@@ -173,15 +218,6 @@ function allGroupsFilled(msg) {
       // radio: non-empty string; checkbox: non-empty array
       return group.multi ? Array.isArray(val) && val.length > 0 : !!val;
     }
-    if (group.input_type === "daterange") {
-      return (
-        val &&
-        typeof val.start === "string" &&
-        val.start.trim() !== "" &&
-        typeof val.end === "string" &&
-        val.end.trim() !== ""
-      );
-    }
     // text/date input
     return typeof val === "string" && val.trim() !== "";
   });
@@ -189,31 +225,17 @@ function allGroupsFilled(msg) {
 
 function confirmAll(msg) {
   const parts = [];
-  // extracted: flat key→value map the frontend can merge into extractedScope
-  const extracted = {};
   for (const group of msg.choices || []) {
     const val = msg.selections?.[group.id];
     if (group.options?.length) {
-      if (group.multi && Array.isArray(val) && val.length) {
+      if (group.multi && Array.isArray(val) && val.length)
         parts.push(`${group.choice_text}: ${val.join(", ")}`);
-        extracted[group.id] = val.join(", ");
-      } else if (!group.multi && val) {
-        parts.push(`${group.choice_text}: ${val}`);
-        extracted[group.id] = val;
-      }
-    } else if (group.input_type === "daterange") {
-      if (val?.start && val?.end) {
-        parts.push(`${group.choice_text}: ${val.start} to ${val.end}`);
-        // travel_dates group maps to checkin/checkout fields
-        extracted.checkin = val.start;
-        extracted.checkout = val.end;
-      }
+      else if (!group.multi && val) parts.push(`${group.choice_text}: ${val}`);
     } else if (val?.trim()) {
       parts.push(`${group.choice_text}: ${val.trim()}`);
-      extracted[group.id] = val.trim();
     }
   }
-  if (parts.length) emit("fields-confirmed", parts.join(" | "), extracted);
+  if (parts.length) emit("fields-confirmed", parts.join(" | "));
 }
 const chatEl = ref(null);
 
@@ -410,16 +432,6 @@ defineExpose({ chatEl, escHtml });
 }
 .choice-confirm-btn:not(:disabled):hover {
   opacity: 0.85;
-}
-.daterange-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.daterange-sep {
-  color: var(--subtext);
-  font-size: 0.85rem;
-  flex-shrink: 0;
 }
 .date-form {
   display: flex;
@@ -645,60 +657,228 @@ defineExpose({ chatEl, escHtml });
   padding: 1px 6px;
 }
 
-/* Welcome card */
-.agent .bubble :deep(.welcome-card) {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* ── Web 2.0 auth connect button ─────────────────────────────── */
+.auth-required-row {
+  margin-top: 10px;
 }
-.agent .bubble :deep(.welcome-title) {
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--text);
-}
-.agent .bubble :deep(.welcome-subtitle) {
-  font-size: 0.8rem;
-  color: var(--subtext);
-  margin-bottom: 2px;
-}
-.agent .bubble :deep(.welcome-agents) {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.agent .bubble :deep(.welcome-agent-row) {
-  display: flex;
-  gap: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border);
+.auth-connect-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #161b22;
+  border: 1px solid #30363d;
   border-radius: 8px;
-  padding: 8px 10px;
-  align-items: flex-start;
+  color: #e6edf3;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  padding: 7px 14px;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
-.agent .bubble :deep(.welcome-agent-icon) {
-  font-size: 1.3rem;
-  flex-shrink: 0;
-  line-height: 1.2;
+.auth-connect-btn:hover {
+  background: #21262d;
+  border-color: #58a6ff;
 }
-.agent .bubble :deep(.welcome-agent-info) {
+.auth-provider-icon {
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+/* ── Device Authorization Grant card ─────────────────────────── */
+.device-code-card {
+  background: rgba(22, 27, 34, 0.95);
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-top: 8px;
+  font-size: 0.86rem;
+  max-width: 380px;
+}
+.dc-header {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
 }
-.agent .bubble :deep(.welcome-agent-label) {
+.dc-icon {
+  font-size: 1.3rem;
+}
+.dc-title {
   font-weight: 700;
-  font-size: 0.88rem;
-  color: var(--text);
+  font-size: 0.95rem;
+  color: #e6edf3;
 }
-.agent .bubble :deep(.welcome-agent-desc) {
-  font-size: 0.78rem;
-  color: var(--subtext);
+.dc-instructions {
+  color: #8b949e;
+  margin-bottom: 8px;
+  line-height: 1.5;
 }
-.agent .bubble :deep(.welcome-triggers) {
+.dc-link {
+  color: #58a6ff;
+  text-decoration: none;
+  word-break: break-all;
+}
+.dc-link:hover {
+  text-decoration: underline;
+}
+.dc-code {
+  font-family: ui-monospace, monospace;
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #e6edf3;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 8px 14px;
+  display: inline-block;
+  margin-bottom: 10px;
+  user-select: all;
+}
+.dc-status {
+  font-size: 0.82rem;
+  color: #8b949e;
+}
+.dc-waiting {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dc-spinner {
+  display: inline-block;
+  animation: dc-spin 1.2s linear infinite;
+}
+@keyframes dc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.dc-success {
+  color: #3fb950;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.dc-error {
+  color: #f85149;
+}
+
+/* ── GitHub data cards ────────────────────────────────────────── */
+.agent .bubble :deep(.gh-card) {
+  background: rgba(22, 27, 34, 0.9);
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 6px;
+  font-size: 0.84rem;
+}
+.agent .bubble :deep(.gh-title) {
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+  color: #e6edf3;
+}
+.agent .bubble :deep(.gh-title a) {
+  color: #58a6ff;
+  text-decoration: none;
+}
+.agent .bubble :deep(.gh-title a:hover) {
+  text-decoration: underline;
+}
+.agent .bubble :deep(.gh-row) {
+  padding: 7px 0;
+  border-bottom: 1px solid #21262d;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 4px;
+  align-items: baseline;
+  gap: 6px;
+}
+.agent .bubble :deep(.gh-row:last-child) {
+  border-bottom: none;
+}
+.agent .bubble :deep(.gh-name) {
+  font-weight: 600;
+  color: #58a6ff;
+  text-decoration: none;
+  flex: 1 1 180px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent .bubble :deep(.gh-name:hover) {
+  text-decoration: underline;
+}
+.agent .bubble :deep(.gh-num) {
+  color: #8b949e;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+.agent .bubble :deep(.gh-desc) {
+  color: #8b949e;
+  font-size: 0.78rem;
+  width: 100%;
+  margin-top: 2px;
+}
+.agent .bubble :deep(.gh-meta) {
+  color: #8b949e;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.agent .bubble :deep(.gh-badge) {
+  font-size: 0.68rem;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.agent .bubble :deep(.gh-public) {
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+.agent .bubble :deep(.gh-private) {
+  background: rgba(248, 81, 73, 0.12);
+  color: #f85149;
+  border: 1px solid rgba(248, 81, 73, 0.3);
+}
+.agent .bubble :deep(.gh-lang) {
+  background: rgba(99, 179, 237, 0.12);
+  color: #79c0ff;
+  border: 1px solid rgba(99, 179, 237, 0.25);
+}
+.agent .bubble :deep(.gh-draft) {
+  background: rgba(188, 140, 82, 0.15);
+  color: #d29922;
+  border: 1px solid rgba(188, 140, 82, 0.3);
+}
+.agent .bubble :deep(.gh-topics) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.agent .bubble :deep(.gh-chip) {
+  font-size: 0.68rem;
+  background: rgba(56, 139, 253, 0.1);
+  color: #388bfd;
+  border: 1px solid rgba(56, 139, 253, 0.25);
+  border-radius: 4px;
+  padding: 1px 7px;
+}
+.agent .bubble :deep(.gh-empty) {
+  color: #8b949e;
+  font-style: italic;
+}
+.agent .bubble :deep(.gh-unread-dot) {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #58a6ff;
+  flex-shrink: 0;
+  margin-right: 2px;
 }
 </style>

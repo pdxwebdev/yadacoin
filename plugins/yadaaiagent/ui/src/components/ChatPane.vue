@@ -4,9 +4,11 @@
       :messages="messages"
       ref="chatWindow"
       @fields-confirmed="handleFieldsConfirmed"
+      @auth-connect="handleAuthConnect"
     />
 
     <div class="input-area">
+      <button class="help-btn" title="Integration help" @click="showDocs = true">?</button>
       <textarea
         ref="inputEl"
         v-model="userInput"
@@ -24,6 +26,91 @@
         ↑
       </button>
     </div>
+
+    <!-- ── Integration docs modal ───────────────────────────────────────── -->
+    <Teleport to="body">
+      <div v-if="showDocs" class="docs-backdrop" @click.self="showDocs = false">
+        <div class="docs-modal">
+          <div class="docs-header">
+            <span class="docs-title">Integrations &amp; Setup</span>
+            <button class="docs-close" @click="showDocs = false">✕</button>
+          </div>
+          <div class="docs-body">
+
+            <!-- GitHub accordion -->
+            <div class="docs-accordion">
+              <button class="docs-acc-header" @click="openSection = openSection === 'github' ? null : 'github'">
+                <span>🐙 GitHub Integration</span>
+                <span class="docs-acc-chevron" :class="{ open: openSection === 'github' }">›</span>
+              </button>
+              <div v-show="openSection === 'github'" class="docs-acc-body">
+                <p>Connect your GitHub account to let the AI agent read issues, pull requests, repositories, and discussions on your behalf.</p>
+                <h3>Connecting</h3>
+                <ol>
+                  <li>Switch to the <strong>GitHub</strong> agent type in the agent selector.</li>
+                  <li>The agent detects GitHub is not connected and prompts you to authorize.</li>
+                  <li>A device code appears — visit <code>https://github.com/login/device</code> and enter it.</li>
+                  <li>Once authorized, your token is stored securely in the local database.</li>
+                </ol>
+                <h3>What it can do</h3>
+                <ul>
+                  <li>List and search repositories, issues, and pull requests</li>
+                  <li>Read issue and PR details, comments, and diffs</li>
+                  <li>Search GitHub Discussions</li>
+                </ul>
+                <h3>🔒 Use Your Own GitHub OAuth App (Better Privacy)</h3>
+                <p>By default this app uses a shared OAuth client ID. For better privacy, register your own:</p>
+                <ol>
+                  <li>Go to <strong>GitHub → Settings → Developer settings → OAuth Apps → New OAuth App</strong></li>
+                  <li>Set <em>Authorization callback URL</em> to <code>http://localhost</code> (device flow doesn't use it)</li>
+                  <li>Copy the <strong>Client ID</strong></li>
+                  <li>Open <code>config/config2.json</code> and set <code>"github_device_client_id"</code> to your Client ID</li>
+                  <li>Restart the server and reconnect GitHub</li>
+                </ol>
+              </div>
+            </div>
+
+            <!-- Microsoft accordion -->
+            <div class="docs-accordion">
+              <button class="docs-acc-header" @click="openSection = openSection === 'microsoft' ? null : 'microsoft'">
+                <span>🟦 Microsoft / Outlook Integration</span>
+                <span class="docs-acc-chevron" :class="{ open: openSection === 'microsoft' }">›</span>
+              </button>
+              <div v-show="openSection === 'microsoft'" class="docs-acc-body">
+                <p>Connect your Microsoft 365 or Outlook account to read email, send email, manage calendar events, and work with Microsoft To Do.</p>
+                <h3>Connecting</h3>
+                <ol>
+                  <li>Switch to the <strong>Microsoft / Outlook</strong> agent type.</li>
+                  <li>The agent prompts you to connect — a device code appears.</li>
+                  <li>Visit <code>https://microsoft.com/devicelogin</code> and enter the code.</li>
+                  <li>Sign in with your Microsoft account and grant the requested permissions.</li>
+                </ol>
+                <h3>What it can do</h3>
+                <ul>
+                  <li><strong>Email:</strong> show inbox, read emails, summarize N emails, send email</li>
+                  <li><strong>Calendar:</strong> list upcoming events</li>
+                  <li><strong>Microsoft To Do:</strong> add tasks, complete tasks, delete tasks, push email action items to To Do</li>
+                </ul>
+                <h3>Permissions requested</h3>
+                <p><code>user.read</code> · <code>Mail.Read</code> · <code>Mail.Send</code> · <code>Calendars.ReadWrite</code> · <code>Tasks.ReadWrite</code></p>
+                <h3>🔒 Use Your Own Azure AD App (Better Privacy)</h3>
+                <p>By default this app uses a shared Azure app registration. To use your own:</p>
+                <ol>
+                  <li>Go to <strong>Azure Portal → Azure Active Directory → App registrations → New registration</strong></li>
+                  <li>Set <em>Supported account types</em> to <strong>Accounts in any org directory and personal Microsoft accounts</strong></li>
+                  <li>Under <strong>Authentication → Advanced settings</strong>, enable <strong>Allow public client flows</strong></li>
+                  <li>Under <strong>API Permissions</strong>, add Delegated: <code>User.Read</code>, <code>Mail.Read</code>, <code>Mail.Send</code>, <code>Calendars.ReadWrite</code>, <code>Tasks.ReadWrite</code></li>
+                  <li>Copy the <strong>Application (client) ID</strong></li>
+                  <li>Open <code>config/config2.json</code> and set <code>"microsoft_device_client_id"</code> to your Application ID</li>
+                  <li>Restart the server and reconnect Microsoft</li>
+                </ol>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -48,6 +135,7 @@ import {
   setHardwareActive,
 } from "../composables/useStorage.js";
 import { postCredentialReceipt } from "../composables/useCredentialReceipts.js";
+import { useWeb2Auth } from "../composables/useWeb2Auth.js";
 import {
   hex,
   compactSigToDerBase64,
@@ -72,6 +160,8 @@ const emit = defineEmits([
 
 // ── Current agent (auto-detected) ────────────────────────────────────────────
 const currentAgentId = ref("general");
+const showDocs = ref(false);
+const openSection = ref(null);
 const currentAgentType = computed(
   () => props.agents?.find((a) => a.id === currentAgentId.value) || null,
 );
@@ -90,6 +180,12 @@ let chatHistory = [];
 // Vendor follow-up conversation state
 // null | { queue, current: {service, vendorName}, vpData, vendorMessages }
 const vendorState = ref(null);
+
+// ── Web 2.0 OAuth sessions ────────────────────────────────────────────────────
+const { activeSessions: web2Sessions, connect: web2Connect } = useWeb2Auth();
+
+// Prompt that triggered a pending auth (re-sent after connecting)
+let pendingAuthPrompt = "";
 
 // ── Session ──────────────────────────────────────────────────────────────────
 // sessionTick is incremented externally (notifyWalletReady) to force the
@@ -137,7 +233,7 @@ onMounted(() => {
       );
     }
   } else {
-    pushAgent(buildWelcomeHtml(), true);
+    pushAgent("Hello! I'm your YadaCoin AI agent. How can I help you today?");
   }
   nextTick(() => inputEl.value?.focus());
 });
@@ -153,73 +249,6 @@ watch(
   },
   { immediate: true },
 );
-
-// ── Welcome card ─────────────────────────────────────────────────────────────
-function buildWelcomeHtml() {
-  return (
-    `<div class="welcome-card">` +
-    `<div class="welcome-title">👋 Welcome to YadaCoin AI</div>` +
-    `<div class="welcome-subtitle">I auto-detect your intent and route to the right agent. Just speak naturally — or try a trigger phrase below:</div>` +
-    `<div class="welcome-agents">` +
-    `<div class="welcome-agent-row">` +
-    `<span class="welcome-agent-icon">💬</span>` +
-    `<div class="welcome-agent-info">` +
-    `<span class="welcome-agent-label">General Chat</span>` +
-    `<span class="welcome-agent-desc">Open-ended questions and conversation</span>` +
-    `<div class="welcome-triggers"><span class="disc-chip">What is YadaCoin?</span><span class="disc-chip">Hello!</span><span class="disc-chip">How does KEL work?</span></div>` +
-    `</div></div>` +
-    `<div class="welcome-agent-row">` +
-    `<span class="welcome-agent-icon">✈️</span>` +
-    `<div class="welcome-agent-info">` +
-    `<span class="welcome-agent-label">Travel Booking</span>` +
-    `<span class="welcome-agent-desc">Flights, trains, ships, hotels &amp; car rentals</span>` +
-    `<div class="welcome-triggers"><span class="disc-chip">I want to go to Paris</span><span class="disc-chip">Book me a flight</span><span class="disc-chip">Train to Berlin</span><span class="disc-chip">Cruise to the Bahamas</span></div>` +
-    `</div></div>` +
-    `<div class="welcome-agent-row">` +
-    `<span class="welcome-agent-icon">⚖️</span>` +
-    `<div class="welcome-agent-info">` +
-    `<span class="welcome-agent-label">Legal Services</span>` +
-    `<span class="welcome-agent-desc">Contract drafting, NDAs, terms &amp; privacy policies</span>` +
-    `<div class="welcome-triggers"><span class="disc-chip">Draft me an NDA</span><span class="disc-chip">Review this contract</span><span class="disc-chip">I need a privacy policy</span><span class="disc-chip">Terms of service</span></div>` +
-    `</div></div>` +
-    `<div class="welcome-agent-row">` +
-    `<span class="welcome-agent-icon">🛒</span>` +
-    `<div class="welcome-agent-info">` +
-    `<span class="welcome-agent-label">E-Commerce</span>` +
-    `<span class="welcome-agent-desc">Order and purchase physical products</span>` +
-    `<div class="welcome-triggers"><span class="disc-chip">Order me some shoes</span><span class="disc-chip">Buy this item</span><span class="disc-chip">I want to purchase...</span></div>` +
-    `</div></div>` +
-    `<div class="welcome-agent-row">` +
-    `<span class="welcome-agent-icon">🧠</span>` +
-    `<div class="welcome-agent-info">` +
-    `<span class="welcome-agent-label">Therapy Booking</span>` +
-    `<span class="welcome-agent-desc">Mental health sessions with verified professionals</span>` +
-    `<div class="welcome-triggers"><span class="disc-chip">I need therapy</span><span class="disc-chip">Help with my anxiety</span><span class="disc-chip">I'm struggling with OCD</span><span class="disc-chip">I want to see a therapist</span></div>` +
-    `</div></div>` +
-    `<div class="welcome-agent-row">` +
-    `<span class="welcome-agent-icon">📡</span>` +
-    `<div class="welcome-agent-info">` +
-    `<span class="welcome-agent-label">Register AI Agent</span>` +
-    `<span class="welcome-agent-desc">Publish your AI agent on the YadaCoin blockchain</span>` +
-    `<div class="welcome-triggers"><span class="disc-chip">Register my agent</span><span class="disc-chip">Add my AI to the blockchain</span><span class="disc-chip">I want to list my agent</span></div>` +
-    `</div></div>` +
-    `<div class="welcome-agent-row">` +
-    `<span class="welcome-agent-icon">💰</span>` +
-    `<div class="welcome-agent-info">` +
-    `<span class="welcome-agent-label">Wallet Assistant</span>` +
-    `<span class="welcome-agent-desc">Balance, transactions, send YDA &amp; cross-chain wrapping</span>` +
-    `<div class="welcome-triggers"><span class="disc-chip">What is my balance?</span><span class="disc-chip">Show my transactions</span><span class="disc-chip">Send 5 YDA to...</span><span class="disc-chip">Wrap 10 YDA</span></div>` +
-    `</div></div>` +
-    `<div class="welcome-agent-row">` +
-    `<span class="welcome-agent-icon">🪙</span>` +
-    `<div class="welcome-agent-info">` +
-    `<span class="welcome-agent-label">YadaCoin Help Desk</span>` +
-    `<span class="welcome-agent-desc">Expert Q&amp;A on protocol, setup, mining, KEL, wallets &amp; more</span>` +
-    `<div class="welcome-triggers"><span class="disc-chip">What is YadaCoin?</span><span class="disc-chip">How do I mine YDA?</span><span class="disc-chip">Explain the KEL</span><span class="disc-chip">How do I set up a node?</span></div>` +
-    `</div></div>` +
-    `</div></div>`
-  );
-}
 
 // ── Message helpers ───────────────────────────────────────────────────────────
 function pushUser(text) {
@@ -261,11 +290,7 @@ function applyDataFields(msg, data) {
     // Initialize per-group selection state keyed by group.id
     msg.selections = {};
     for (const g of groups) {
-      if (g.input_type === "daterange") {
-        msg.selections[g.id] = { start: "", end: "" };
-      } else {
-        msg.selections[g.id] = g.multi ? [] : "";
-      }
+      msg.selections[g.id] = g.multi ? [] : "";
     }
   }
 }
@@ -290,25 +315,8 @@ function handleChoice(choice) {
 }
 
 /** Called when the user confirms date/text fields. */
-function handleFieldsConfirmed(text, extracted) {
+function handleFieldsConfirmed(text) {
   if (busy.value) return;
-  // Merge confirmed field values into the appropriate scope so the next API
-  // call sends them — skipping model re-extraction of already-answered fields.
-  if (extracted && typeof extracted === "object") {
-    if (vendorState.value) {
-      // Vendor turn: accumulate into vendor-specific scope
-      if (!vendorState.value.vendorScope) vendorState.value.vendorScope = {};
-      for (const [k, v] of Object.entries(extracted)) {
-        if (v != null && v !== "") vendorState.value.vendorScope[k] = v;
-      }
-    } else {
-      // Main agent turn: accumulate into travel scope
-      if (!extractedScope) extractedScope = {};
-      for (const [k, v] of Object.entries(extracted)) {
-        if (v != null && v !== "") extractedScope[k] = v;
-      }
-    }
-  }
   userInput.value = text;
   send();
 }
@@ -319,6 +327,293 @@ function escHtml(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
+
+// ── GitHub data card renderer ─────────────────────────────────────────────────
+function renderGithubData(gd) {
+  const { type } = gd;
+  if (type === "repos") {
+    if (!gd.items?.length)
+      return `<div class="gh-card"><div class="gh-title">🐙 Repositories</div><div class="gh-empty">No repositories found.</div></div>`;
+    const rows = gd.items
+      .map(
+        (r) =>
+          `<div class="gh-row">` +
+          `<a class="gh-name" href="${escHtml(r.url)}" target="_blank" rel="noopener noreferrer">${escHtml(r.full_name)}</a>` +
+          (r.private
+            ? `<span class="gh-badge gh-private">private</span>`
+            : `<span class="gh-badge gh-public">public</span>`) +
+          (r.language
+            ? `<span class="gh-badge gh-lang">${escHtml(r.language)}</span>`
+            : "") +
+          `<span class="gh-meta">⭐ ${r.stars}  🐛 ${r.open_issues}</span>` +
+          (r.description
+            ? `<div class="gh-desc">${escHtml(r.description)}</div>`
+            : "") +
+          `</div>`,
+      )
+      .join("");
+    return `<div class="gh-card"><div class="gh-title">🐙 Your Repositories (${gd.items.length})</div>${rows}</div>`;
+  }
+  if (type === "repo") {
+    return (
+      `<div class="gh-card">` +
+      `<div class="gh-title">🐙 <a href="${escHtml(gd.url)}" target="_blank" rel="noopener noreferrer">${escHtml(gd.full_name)}</a></div>` +
+      (gd.description
+        ? `<div class="gh-desc">${escHtml(gd.description)}</div>`
+        : "") +
+      `<div class="gh-meta">⭐ ${gd.stars} &nbsp; 🍴 ${gd.forks} &nbsp; 🐛 ${gd.open_issues} open issues &nbsp; 🌿 ${escHtml(gd.default_branch)}</div>` +
+      (gd.language
+        ? `<span class="gh-badge gh-lang">${escHtml(gd.language)}</span>`
+        : "") +
+      (gd.topics?.length
+        ? `<div class="gh-topics">${gd.topics.map((t) => `<span class="gh-chip">${escHtml(t)}</span>`).join("")}</div>`
+        : "") +
+      `</div>`
+    );
+  }
+  if (type === "issues") {
+    if (!gd.items?.length)
+      return `<div class="gh-card"><div class="gh-title">🐛 Issues — ${escHtml(gd.repo)}</div><div class="gh-empty">No ${gd.state} issues found.</div></div>`;
+    const rows = gd.items
+      .map(
+        (i) =>
+          `<div class="gh-row">` +
+          `<span class="gh-num">#${i.number}</span> ` +
+          `<a class="gh-name" href="${escHtml(i.url)}" target="_blank" rel="noopener noreferrer">${escHtml(i.title)}</a>` +
+          `<span class="gh-meta">${escHtml(i.author)} · ${escHtml(i.created_at)} · 💬 ${i.comments}</span>` +
+          `</div>`,
+      )
+      .join("");
+    return `<div class="gh-card"><div class="gh-title">🐛 Issues — ${escHtml(gd.repo)} (${gd.state})</div>${rows}</div>`;
+  }
+  if (type === "prs") {
+    if (!gd.items?.length)
+      return `<div class="gh-card"><div class="gh-title">🔀 Pull Requests — ${escHtml(gd.repo)}</div><div class="gh-empty">No ${gd.state} pull requests found.</div></div>`;
+    const rows = gd.items
+      .map(
+        (p) =>
+          `<div class="gh-row">` +
+          `<span class="gh-num">#${p.number}</span> ` +
+          `<a class="gh-name" href="${escHtml(p.url)}" target="_blank" rel="noopener noreferrer">${escHtml(p.title)}</a>` +
+          (p.draft ? `<span class="gh-badge gh-draft">draft</span>` : "") +
+          `<span class="gh-meta">${escHtml(p.author)} · ${escHtml(p.created_at)}</span>` +
+          `</div>`,
+      )
+      .join("");
+    return `<div class="gh-card"><div class="gh-title">🔀 Pull Requests — ${escHtml(gd.repo)} (${gd.state})</div>${rows}</div>`;
+  }
+  if (type === "notifications") {
+    if (!gd.items?.length)
+      return `<div class="gh-card"><div class="gh-title">🔔 Notifications</div><div class="gh-empty">No notifications.</div></div>`;
+    const rows = gd.items
+      .map(
+        (n) =>
+          `<div class="gh-row">` +
+          (n.unread ? `<span class="gh-unread-dot"></span>` : "") +
+          `<span class="gh-name">${escHtml(n.title)}</span>` +
+          `<span class="gh-meta">${escHtml(n.repo)} · ${escHtml(n.type)} · ${escHtml(n.reason)}</span>` +
+          `</div>`,
+      )
+      .join("");
+    return `<div class="gh-card"><div class="gh-title">🔔 GitHub Notifications</div>${rows}</div>`;
+  }
+  return "";
+}
+
+function renderMicrosoftData(md) {
+  const { type } = md;
+  if (type === "emails") {
+    if (!md.items?.length)
+      return `<div class="ms-card"><div class="ms-title">📧 Inbox</div><div class="ms-empty">No emails found.</div></div>`;
+    const rows = md.items
+      .map(
+        (m) =>
+          `<div class="ms-row${m.is_read ? "" : " ms-unread"}">` +
+          (!m.is_read
+            ? `<span class="ms-dot"></span>`
+            : `<span class="ms-dot-placeholder"></span>`) +
+          `<div class="ms-row-main">` +
+          `<div class="ms-row-top">` +
+          `<span class="ms-from">${escHtml(m.from_name || m.from)}</span>` +
+          `<span class="ms-date">${escHtml(m.received)}</span>` +
+          `</div>` +
+          `<div class="ms-subject">${escHtml(m.subject)}</div>` +
+          (m.preview
+            ? `<div class="ms-preview">${escHtml(m.preview)}</div>`
+            : "") +
+          `</div>` +
+          `</div>`,
+      )
+      .join("");
+    return `<div class="ms-card"><div class="ms-title">📧 Inbox (${md.items.length})</div>${rows}</div>`;
+  }
+  if (type === "email") {
+    return (
+      `<div class="ms-card">` +
+      `<div class="ms-title">📧 ${escHtml(md.subject)}</div>` +
+      `<div class="ms-meta">From: <strong>${escHtml(md.from_name || md.from)}</strong> · ${escHtml(md.received)}</div>` +
+      `<div class="ms-body">${escHtml(md.body)}</div>` +
+      `</div>`
+    );
+  }
+  if (type === "events") {
+    if (!md.items?.length)
+      return `<div class="ms-card"><div class="ms-title">📅 Calendar</div><div class="ms-empty">No upcoming events.</div></div>`;
+    const rows = md.items
+      .map(
+        (e) =>
+          `<div class="ms-row">` +
+          `<div class="ms-row-main">` +
+          `<div class="ms-row-top">` +
+          `<span class="ms-subject">${escHtml(e.subject)}</span>` +
+          (e.online ? `<span class="ms-badge ms-online">online</span>` : "") +
+          `</div>` +
+          `<div class="ms-meta">${escHtml(e.start)} – ${escHtml(e.end.slice(11))}` +
+          (e.location ? ` · 📍 ${escHtml(e.location)}` : "") +
+          `</div>` +
+          `</div>` +
+          `</div>`,
+      )
+      .join("");
+    return `<div class="ms-card"><div class="ms-title">📅 Upcoming Events (${md.items.length})</div>${rows}</div>`;
+  }
+  if (type === "sent") {
+    return `<div class="ms-card"><div class="ms-title">✅ Email Sent</div><div class="ms-meta">To: ${escHtml(md.to)} · Subject: ${escHtml(md.subject)}</div></div>`;
+  }
+  if (type === "email_summary") {
+    const subjects = md.subjects || [];
+    const rows = subjects
+      .map(
+        (s, i) =>
+          `<div class="ms-row">` +
+          `<div class="ms-row-main">` +
+          `<div class="ms-row-top">` +
+          `<span class="ms-from">${escHtml(s.from_name || s.from)}</span>` +
+          `<span class="ms-date">${escHtml(s.received)}</span>` +
+          `</div>` +
+          `<div class="ms-subject">${escHtml(s.subject)}</div>` +
+          `</div>` +
+          `</div>`,
+      )
+      .join("");
+    const title =
+      md.count === 1
+        ? "📧 Summarized Email"
+        : `📧 Summarized ${md.count} Emails`;
+    return rows
+      ? `<div class="ms-card"><div class="ms-title">${title}</div>${rows}</div>`
+      : `<div class="ms-card"><div class="ms-title">${title}</div></div>`;
+  }
+  if (type === "todo_list") {
+    const subjects = md.subjects || [];
+    const rows = subjects
+      .map(
+        (s) =>
+          `<div class="ms-row">` +
+          `<div class="ms-row-main">` +
+          `<div class="ms-row-top">` +
+          `<span class="ms-from">${escHtml(s.from_name || s.from)}</span>` +
+          `<span class="ms-date">${escHtml(s.received)}</span>` +
+          `</div>` +
+          `<div class="ms-subject">${escHtml(s.subject)}</div>` +
+          `</div>` +
+          `</div>`,
+      )
+      .join("");
+    const title = `✅ To-Do List (from ${md.count} email${md.count === 1 ? "" : "s"})`;
+    return rows
+      ? `<div class="ms-card"><div class="ms-title">${title}</div>${rows}</div>`
+      : `<div class="ms-card"><div class="ms-title">${title}</div></div>`;
+  }
+  if (type === "todo_pushed") {
+    const tasks = md.tasks || [];
+    const listName = md.list_name || "Tasks";
+    const rows = tasks
+      .map(
+        (t) =>
+          `<div class="ms-row"><div class="ms-row-main"><div class="ms-subject">☑ ${escHtml(t)}</div></div></div>`,
+      )
+      .join("");
+    const title = `✅ ${tasks.length} Task${tasks.length === 1 ? "" : "s"} added to "${escHtml(listName)}"`;
+    return rows
+      ? `<div class="ms-card"><div class="ms-title">${title}</div>${rows}</div>`
+      : `<div class="ms-card"><div class="ms-title">${title}</div></div>`;
+  }
+  if (type === "task_added") {
+    const listName = md.list_name || "Tasks";
+    const task = md.task || "";
+    return (
+      `<div class="ms-card">` +
+      `<div class="ms-title">☑ Task Added to "${escHtml(listName)}"</div>` +
+      `<div class="ms-row"><div class="ms-row-main"><div class="ms-subject">${escHtml(task)}</div></div></div>` +
+      `</div>`
+    );
+  }
+  if (type === "task_completed") {
+    const listName = md.list_name || "Tasks";
+    const task = md.task || "";
+    return (
+      `<div class="ms-card">` +
+      `<div class="ms-title">✅ Task Completed in "${escHtml(listName)}"</div>` +
+      `<div class="ms-row"><div class="ms-row-main"><div class="ms-subject" style="text-decoration:line-through;opacity:0.7">${escHtml(task)}</div></div></div>` +
+      `</div>`
+    );
+  }
+  if (type === "task_deleted") {
+    const listName = md.list_name || "Tasks";
+    const task = md.task || "";
+    return (
+      `<div class="ms-card">` +
+      `<div class="ms-title">🗑 Task Deleted from "${escHtml(listName)}"</div>` +
+      `<div class="ms-row"><div class="ms-row-main"><div class="ms-subject" style="text-decoration:line-through;opacity:0.5">${escHtml(task)}</div></div></div>` +
+      `</div>`
+    );
+  }
+  return "";
+}
+
+// ── Web2 device auth connect handler (called from ChatWindow via emit) ─────────
+async function handleAuthConnect({ provider }) {
+  const savedPrompt = pendingAuthPrompt;
+
+  // Push a device code card message — we'll update it reactively as state changes
+  const idx = messages.value.length;
+  messages.value.push({
+    role: "agent",
+    html: "",
+    deviceCode: { provider, status: "starting" },
+  });
+
+  try {
+    const deviceInfo = await web2Connect(provider, getNodeUrl());
+    // Show the user code + verification URL
+    messages.value[idx].deviceCode = {
+      provider,
+      status: "pending",
+      user_code: deviceInfo.user_code,
+      verification_uri: deviceInfo.verification_uri,
+      expires_in: deviceInfo.expires_in,
+    };
+
+    // Poll in the background until the user approves on the provider's site
+    await deviceInfo.poll();
+
+    messages.value[idx].deviceCode = { provider, status: "authorized" };
+
+    if (savedPrompt) {
+      pendingAuthPrompt = "";
+      await send(savedPrompt);
+    }
+  } catch (err) {
+    messages.value[idx].deviceCode = {
+      provider,
+      status: "error",
+      message: String(err),
+    };
+  }
+}
+
+// Expose handleAuthConnect so ChatWindow can emit up to ChatPane
 
 // ── Input auto-grow ──────────────────────────────────────────────────────────
 function autoGrow(e) {
@@ -424,7 +719,9 @@ async function send(overridePrompt) {
         messages: chatHistory,
         agent_type: currentAgentId.value || "general",
         brave_api_key: getBraveApiKey() || undefined,
-        extracted_scope: extractedScope ? { ...extractedScope } : undefined,
+        web2_sessions: Object.keys(web2Sessions.value).length
+          ? web2Sessions.value
+          : undefined,
         llm: {
           provider: llmCfg.provider,
           model: llmCfg.model || undefined,
@@ -481,7 +778,9 @@ async function send(overridePrompt) {
           messages: chatHistory,
           agent_type: currentAgentId.value,
           brave_api_key: getBraveApiKey() || undefined,
-          extracted_scope: extractedScope ? { ...extractedScope } : undefined,
+          web2_sessions: Object.keys(web2Sessions.value).length
+            ? web2Sessions.value
+            : undefined,
           llm: {
             provider: llmCfg2.provider,
             model: llmCfg2.model || undefined,
@@ -691,6 +990,56 @@ async function send(overridePrompt) {
     return;
   }
 
+  // ── auth_required — attach connect button to the AI message ──────────────
+  if (data.auth_required?.provider) {
+    const provider = data.auth_required.provider;
+    pendingAuthPrompt = prompt; // re-send after connecting
+    const msg = pushAgent(data.reply);
+    msg.authRequired = { provider };
+    messages.value[messages.value.length - 1] = { ...msg };
+    busy.value = false;
+    nextTick(() => inputEl.value?.focus());
+    return;
+  }
+
+  // ── GitHub inline data card ───────────────────────────────────────────────
+  if (data.github_data && data.github_data.type !== "error") {
+    pushAgent(data.reply);
+    pushAgent(renderGithubData(data.github_data), true);
+    busy.value = false;
+    nextTick(() => inputEl.value?.focus());
+    return;
+  }
+  if (data.github_data?.type === "error") {
+    pushAgent(data.reply);
+    pushAgent(
+      `<span style="color:var(--red2)">⚠ GitHub API error: ${escHtml(data.github_data.message)}</span>`,
+      true,
+    );
+    busy.value = false;
+    nextTick(() => inputEl.value?.focus());
+    return;
+  }
+
+  // ── Microsoft inline data card ───────────────────────────────────────────
+  if (data.microsoft_data && data.microsoft_data.type !== "error") {
+    pushAgent(data.reply);
+    pushAgent(renderMicrosoftData(data.microsoft_data), true);
+    busy.value = false;
+    nextTick(() => inputEl.value?.focus());
+    return;
+  }
+  if (data.microsoft_data?.type === "error") {
+    pushAgent(data.reply);
+    pushAgent(
+      `<span style="color:var(--red2)">⚠ Microsoft API error: ${escHtml(data.microsoft_data.message)}</span>`,
+      true,
+    );
+    busy.value = false;
+    nextTick(() => inputEl.value?.focus());
+    return;
+  }
+
   if (data.complete && extractedScope && Object.keys(extractedScope).length) {
     // Show the reply + scope summary inline as an HTML message
     const scopeLines = Object.entries(extractedScope)
@@ -788,7 +1137,7 @@ async function buildSignedVP(
  * Call POST /api/vendor/<svc>/chat with a fresh challenge + re-signed VP.
  * Returns the parsed response data object.
  */
-async function callVendorChatApi(service, vpData, vendorMessages, vendorScope) {
+async function callVendorChatApi(service, vpData, vendorMessages) {
   const { vpBase, vpCanonicalBytes, provPrivBytes, provPubHex } = vpData;
   const llmCfg = getLlmSettings();
 
@@ -818,7 +1167,6 @@ async function callVendorChatApi(service, vpData, vendorMessages, vendorScope) {
         challenge: chalData.challenge,
         vp,
         messages: vendorMessages,
-        vendor_scope: vendorScope || {},
         llm: {
           provider: llmCfg.provider,
           model: llmCfg.model || undefined,
@@ -846,14 +1194,12 @@ async function advanceVendorQueue() {
     { role: "user", content: "Hello, I'm ready to continue my booking." },
   ];
 
-  vs.vendorScope = {};
   const { index: thinkIdx } = pushThinking();
   try {
     const data = await callVendorChatApi(
       vs.current.service,
       vs.vpData,
       vs.vendorMessages,
-      {},
     );
     removeMsg(thinkIdx);
     vs.vendorMessages.push({ role: "assistant", content: data.reply });
@@ -895,12 +1241,7 @@ async function sendVendorMessage(text) {
 
   const { index: thinkIdx } = pushThinking();
   try {
-    const data = await callVendorChatApi(
-      service,
-      vs.vpData,
-      vs.vendorMessages,
-      vs.vendorScope || {},
-    );
+    const data = await callVendorChatApi(service, vs.vpData, vs.vendorMessages);
     removeMsg(thinkIdx);
     vs.vendorMessages.push({ role: "assistant", content: data.reply });
     if (data.exit_vendor) {
@@ -1580,85 +1921,6 @@ async function runApprovalFlow(
       chalDataW.challenge,
     );
 
-    // ── Client wallet: build and sign the spending transaction on the client ──
-    // The KEL rotation above proves authorization; here we spend from the
-    // client's own address (K_n) so the backend never touches node keys.
-    let clientSignedTxn = null;
-    if (isClientWallet()) {
-      onStep("Building spending transaction…");
-      try {
-        // privBytesW = K_n (key before rotation) — UTXOs are at its address.
-        const spendPubBytes = secp.getPublicKey(privBytesW, true);
-        const spendPubHex = hex.fromBytes(spendPubBytes);
-        const spendAddr = getP2PKH(spendPubBytes);
-
-        // Change address = K_{n+1} (new active key after rotation).
-        // rotateDataW.prev_private_key stores the child key that became LS_PRIV.
-        const newActivePrivBytes = hex.toBytes(rotateDataW.prev_private_key);
-        const changeAddr = getP2PKH(
-          secp.getPublicKey(newActivePrivBytes, true),
-        );
-
-        // Fetch UTXOs for K_n's address.
-        const utxoRes = await fetch(
-          getNodeUrl() +
-            `/get-graph-wallet?address=${encodeURIComponent(spendAddr)}&amount_needed=${encodeURIComponent(amtW)}`,
-        );
-        if (!utxoRes.ok)
-          throw new Error("UTXO fetch failed: " + utxoRes.status);
-        const utxoData = await utxoRes.json();
-        const utxos = utxoData.unspent_transactions || [];
-
-        let inputSum = 0;
-        const selectedInputs = [];
-        for (const utxo of utxos) {
-          const utxoValue = (utxo.outputs || []).reduce(
-            (s, o) => s + parseFloat(o.value || 0),
-            0,
-          );
-          selectedInputs.push({ id: utxo.id });
-          inputSum += utxoValue;
-          if (inputSum >= amtW) break;
-        }
-
-        if (inputSum < amtW) {
-          throw new Error(
-            `Not enough funds: have ${inputSum.toFixed(8)} YDA, need ${amtW.toFixed(8)} YDA`,
-          );
-        }
-
-        const txnOutputs = [{ to: toAddrW, value: amtW }];
-        const change = parseFloat((inputSum - amtW).toFixed(8));
-        if (change > 1e-8) txnOutputs.push({ to: changeAddr, value: change });
-
-        let relHash = "";
-        if (isWrap) {
-          relHash = hex.fromBytes(sha256(new TextEncoder().encode(ethAddrW)));
-        }
-
-        clientSignedTxn = await buildRotationTxn({
-          signerPrivBytes: privBytesW,
-          publicKeyHex: spendPubHex,
-          prerotatedPkh: "",
-          twicePrerotatedPkh: "",
-          publicKeyHash: "",
-          prevPublicKeyHash: "",
-          relationship: isWrap ? ethAddrW : "",
-          relationshipHash: relHash,
-          txnTime: Math.floor(Date.now() / 1000),
-          inputs: selectedInputs,
-          outputs: txnOutputs,
-        });
-        onStep("Spending transaction signed", "done");
-      } catch (e) {
-        onStep("Build failed: " + e.message, "fail");
-        onDone(false, "Transaction build failed: " + escHtml(e.message));
-        busy.value = false;
-        nextTick(() => inputEl.value?.focus());
-        return;
-      }
-    }
-
     onStep("Submitting transaction…");
     try {
       const sendRes = await fetch(
@@ -1670,7 +1932,6 @@ async function runApprovalFlow(
             public_key: provPubHexW,
             challenge: chalDataW.challenge,
             vp: vpW,
-            ...(clientSignedTxn ? { transaction: clientSignedTxn } : {}),
             ...(isWrap
               ? { eth_address: ethAddrW, amount: amtW }
               : { to_address: toAddrW, amount: amtW }),
@@ -2073,7 +2334,6 @@ async function runApprovalFlow(
       queue: rest,
       vpData,
       vendorMessages: first.vendorMessages,
-      vendorScope: {},
     };
 
     // Post the first vendor question to the main chat
@@ -2135,11 +2395,19 @@ function notifyWalletReady() {
       !m.content?.includes("No operator key found") &&
       !m.content?.includes("To get started, set up"),
   );
-  pushAgent(buildWelcomeHtml(), true);
+  pushAgent(
+    "Wallet ready! I'm your YadaCoin AI agent. How can I help you today?",
+  );
   nextTick(() => inputEl.value?.focus());
 }
 
-defineExpose({ runApprovalFlow, messages, busy, notifyWalletReady });
+defineExpose({
+  runApprovalFlow,
+  messages,
+  busy,
+  notifyWalletReady,
+  handleAuthConnect,
+});
 </script>
 
 <style scoped>
@@ -2294,4 +2562,372 @@ defineExpose({ runApprovalFlow, messages, busy, notifyWalletReady });
   color: #6e7681;
   font-style: italic;
 }
+
+/* GitHub data cards — injected via renderGithubData() v-html output */
+.gh-card {
+  background: rgba(22, 27, 34, 0.9);
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 6px;
+  font-size: 0.84rem;
+}
+.gh-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+  color: #e6edf3;
+}
+.gh-title a {
+  color: #58a6ff;
+  text-decoration: none;
+}
+.gh-title a:hover {
+  text-decoration: underline;
+}
+.gh-row {
+  padding: 7px 0;
+  border-bottom: 1px solid #21262d;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+.gh-row:last-child {
+  border-bottom: none;
+}
+.gh-name {
+  font-weight: 600;
+  color: #58a6ff;
+  text-decoration: none;
+  flex: 1 1 180px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gh-name:hover {
+  text-decoration: underline;
+}
+.gh-num {
+  color: #8b949e;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+.gh-desc {
+  color: #8b949e;
+  font-size: 0.78rem;
+  width: 100%;
+  margin-top: 2px;
+}
+.gh-meta {
+  color: #8b949e;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.gh-badge {
+  font-size: 0.68rem;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.gh-public {
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+.gh-private {
+  background: rgba(248, 81, 73, 0.12);
+  color: #f85149;
+  border: 1px solid rgba(248, 81, 73, 0.3);
+}
+.gh-lang {
+  background: rgba(99, 179, 237, 0.12);
+  color: #79c0ff;
+  border: 1px solid rgba(99, 179, 237, 0.25);
+}
+.gh-draft {
+  background: rgba(188, 140, 82, 0.15);
+  color: #d29922;
+  border: 1px solid rgba(188, 140, 82, 0.3);
+}
+.gh-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.gh-chip {
+  font-size: 0.68rem;
+  background: rgba(56, 139, 253, 0.1);
+  color: #388bfd;
+  border: 1px solid rgba(56, 139, 253, 0.25);
+  border-radius: 4px;
+  padding: 1px 7px;
+}
+.gh-empty {
+  color: #8b949e;
+  font-style: italic;
+}
+.gh-unread-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #58a6ff;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+/* Microsoft data cards — injected via renderMicrosoftData() */
+.ms-card {
+  background: rgba(0, 120, 212, 0.06);
+  border: 1px solid rgba(0, 120, 212, 0.25);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 6px;
+  font-size: 0.84rem;
+}
+.ms-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+  color: #e6edf3;
+}
+.ms-row {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(0, 120, 212, 0.12);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.ms-row:last-child {
+  border-bottom: none;
+}
+.ms-unread .ms-subject {
+  font-weight: 700;
+  color: #e6edf3;
+}
+.ms-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #0078d4;
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+.ms-dot-placeholder {
+  display: inline-block;
+  width: 8px;
+  flex-shrink: 0;
+}
+.ms-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.ms-row-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+.ms-from {
+  font-weight: 600;
+  color: #cdd9e5;
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.ms-subject {
+  color: #cdd9e5;
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ms-date {
+  color: #8b949e;
+  font-size: 0.73rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.ms-preview {
+  color: #8b949e;
+  font-size: 0.76rem;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ms-meta {
+  color: #8b949e;
+  font-size: 0.76rem;
+  margin-top: 3px;
+}
+.ms-body {
+  color: #cdd9e5;
+  font-size: 0.8rem;
+  margin-top: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.ms-badge {
+  font-size: 0.68rem;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ms-online {
+  background: rgba(0, 120, 212, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(0, 120, 212, 0.3);
+}
+.ms-empty {
+  color: #8b949e;
+  font-style: italic;
+}
+
+/* ── Help button ───────────────────────────────────────────────────────────── */
+.help-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted, #8b949e);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.help-btn:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* ── Docs modal ────────────────────────────────────────────────────────────── */
+.docs-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.docs-modal {
+  background: var(--surface, #161b22);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 12px;
+  width: min(700px, 96vw);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.docs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--border, #30363d);
+  flex-shrink: 0;
+}
+.docs-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text, #e6edf3);
+}
+.docs-close {
+  background: none;
+  border: none;
+  color: var(--text-muted, #8b949e);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.docs-close:hover { background: var(--border, #30363d); color: var(--text, #e6edf3); }
+.docs-body {
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.87rem;
+  color: var(--text, #e6edf3);
+  line-height: 1.6;
+}
+
+/* ── Accordion ─────────────────────────────────────────────────────────────── */
+.docs-accordion {
+  border: 1px solid var(--border, #30363d);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg, #0d1117);
+}
+.docs-acc-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  background: var(--surface, #161b22);
+  border: none;
+  color: var(--text, #e6edf3);
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+.docs-acc-header:hover { background: var(--border, #30363d); }
+.docs-acc-chevron {
+  font-size: 1.1rem;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+.docs-acc-chevron.open { transform: rotate(90deg); }
+.docs-acc-body {
+  padding: 14px 18px 16px;
+  border-top: 1px solid var(--border, #30363d);
+}
+.docs-acc-body h3 {
+  margin: 12px 0 5px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent, #58a6ff);
+}
+.docs-acc-body p { margin: 0 0 6px; color: #8b949e; }
+.docs-acc-body ol,
+.docs-acc-body ul {
+  margin: 0 0 6px;
+  padding-left: 20px;
+  color: #8b949e;
+}
+.docs-acc-body li { margin-bottom: 4px; }
+.docs-acc-body code {
+  background: rgba(88, 166, 255, 0.1);
+  border: 1px solid rgba(88, 166, 255, 0.2);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: monospace;
+  font-size: 0.82rem;
+  color: #79c0ff;
+}
+.docs-acc-body strong { color: var(--text, #e6edf3); }
 </style>

@@ -339,6 +339,14 @@ The simulator is essential for testing dynamic nodes, network partitions, and hi
   - type: integer
   - default: 1
   - description: This value determines the minimum amount of yada for a UTXO for it to be included in the list of available UTXOs
+- github_device_client_id
+  - type: string
+  - default: ""
+  - description: The OAuth Client ID for the GitHub Device Flow used by the AI agent to authenticate on behalf of users. By default the shared YadaCoin app registration is used. For better privacy, register your own OAuth App under GitHub → Settings → Developer settings → OAuth Apps, enable Device Flow, and paste the Client ID here. Changing this value requires existing GitHub tokens to be revoked and re-authorized.
+- microsoft_device_client_id
+  - type: string
+  - default: ""
+  - description: The Application (client) ID for the Microsoft Azure AD app registration used by the AI agent to access Outlook email, Calendar, and Microsoft To Do via the Device Code Flow. By default the shared YadaCoin Azure app is used. For better privacy, register your own app under Azure Portal → Azure Active Directory → App registrations. Required settings: Supported account types = "Accounts in any organizational directory and personal Microsoft accounts"; Authentication → Advanced settings → Allow public client flows = Yes; API Permissions (Delegated) = User.Read, Mail.Read, Mail.Send, Calendars.ReadWrite, Tasks.ReadWrite. Changing this value requires existing Microsoft tokens to be revoked and re-authorized.
 
 ## Development Environment
 

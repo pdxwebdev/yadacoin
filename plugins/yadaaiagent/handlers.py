@@ -35,11 +35,14 @@ POST /ai-agent-auth/api/vendor/<svc>               — per-vendor VP booking
 """
 
 import asyncio
+import datetime as _datetime
 import hashlib
 import inspect
 import json
 import os
 import re
+import secrets as _secrets
+import urllib.parse as _oauthparse
 
 import tornado.web
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
@@ -57,6 +60,171 @@ _validator = AgentAuthValidator(
     challenge_secret=_CHALLENGE_SECRET,
     kel_provider=YadaCoinNodeKelProvider(),
 )
+
+# ── Web 2.0 OAuth2 Device Authorization Grant registry (RFC 8628) ─────────────
+# Public clients only — no client_secret required or distributed.
+# No callback URL needed — no per-node app registration.
+#
+# GitHub:    register a GitHub OAuth App (no callback URL needed for device flow)
+#            at https://github.com/settings/applications/new
+#            → set "github_device_client_id" in config.json.
+# Microsoft: register a public client app in Azure AD at
+#            https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps
+#            → set "microsoft_device_client_id" in config.json.
+#
+# Google is intentionally excluded: their device flow requires a client_secret
+# which cannot be safely distributed in open-source software.
+#
+# client_id is resolved at request time from self.config using config_key.
+_OAUTH_PROVIDERS: dict = {
+    "github": {
+        "name": "GitHub",
+        "icon": "🐙",
+        "config_key": "github_device_client_id",
+        "device_auth_url": "https://github.com/login/device/code",
+        "token_url": "https://github.com/login/oauth/access_token",
+        "scope": "repo read:user user:email notifications",
+    },
+    "microsoft": {
+        "name": "Microsoft",
+        "icon": "🪟",
+        "config_key": "microsoft_device_client_id",
+        "device_auth_url": "https://login.microsoftonline.com/common/oauth2/v2.0/devicecode",
+        "token_url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        "scope": "user.read offline_access Mail.Read Mail.Send Calendars.ReadWrite Tasks.ReadWrite",
+    },
+}
+
+
+async def _github_api_get(access_token: str, path: str, params=None) -> dict:
+    """Make an authenticated GET request to the GitHub REST API."""
+    client = AsyncHTTPClient()
+    url = f"https://api.github.com{path}"
+    if params:
+        url += "?" + _oauthparse.urlencode(params)
+    req = HTTPRequest(
+        url=url,
+        method="GET",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "YadaCoin-AI-Agent/1.0",
+        },
+        request_timeout=15.0,
+    )
+    resp = await client.fetch(req, raise_error=False)
+    body = resp.body.decode("utf-8", errors="replace")
+    if resp.code not in (200, 201, 204):
+        raise ValueError(f"GitHub API {resp.code}: {body[:200]}")
+    return json.loads(body) if body.strip() else {}
+
+
+async def _github_api_post(access_token: str, path: str, payload: dict) -> dict:
+    """Make an authenticated POST request to the GitHub REST API."""
+    client = AsyncHTTPClient()
+    req = HTTPRequest(
+        url=f"https://api.github.com{path}",
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Content-Type": "application/json",
+            "User-Agent": "YadaCoin-AI-Agent/1.0",
+        },
+        body=json.dumps(payload),
+        request_timeout=15.0,
+    )
+    resp = await client.fetch(req, raise_error=False)
+    body = resp.body.decode("utf-8", errors="replace")
+    if resp.code not in (200, 201, 204):
+        raise ValueError(f"GitHub API {resp.code}: {body[:200]}")
+    return json.loads(body) if body.strip() else {}
+
+
+async def _msgraph_api_get(access_token: str, path: str, params=None) -> dict:
+    """Make an authenticated GET request to the Microsoft Graph REST API."""
+    client = AsyncHTTPClient()
+    url = f"https://graph.microsoft.com/v1.0{path}"
+    if params:
+        url += "?" + _oauthparse.urlencode(params)
+    req = HTTPRequest(
+        url=url,
+        method="GET",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+        },
+        request_timeout=15.0,
+    )
+    resp = await client.fetch(req, raise_error=False)
+    body = resp.body.decode("utf-8", errors="replace")
+    if resp.code not in (200, 201, 204):
+        raise ValueError(f"Graph API {resp.code}: {body[:200]}")
+    return json.loads(body) if body.strip() else {}
+
+
+async def _msgraph_api_post(access_token: str, path: str, payload: dict) -> dict:
+    """Make an authenticated POST request to the Microsoft Graph REST API."""
+    client = AsyncHTTPClient()
+    req = HTTPRequest(
+        url=f"https://graph.microsoft.com/v1.0{path}",
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        body=json.dumps(payload),
+        request_timeout=15.0,
+    )
+    resp = await client.fetch(req, raise_error=False)
+    body = resp.body.decode("utf-8", errors="replace")
+    if resp.code not in (200, 201, 202, 204):
+        raise ValueError(f"Graph API {resp.code}: {body[:200]}")
+    return json.loads(body) if body.strip() else {}
+
+
+async def _msgraph_api_delete(access_token: str, path: str) -> None:
+    """Make an authenticated DELETE request to the Microsoft Graph REST API."""
+    client = AsyncHTTPClient()
+    req = HTTPRequest(
+        url=f"https://graph.microsoft.com/v1.0{path}",
+        method="DELETE",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+        },
+        allow_nonstandard_methods=True,
+        body=b"",
+        request_timeout=15.0,
+    )
+    resp = await client.fetch(req, raise_error=False)
+    if resp.code not in (200, 201, 202, 204):
+        body = resp.body.decode("utf-8", errors="replace")
+        raise ValueError(f"Graph API {resp.code}: {body[:200]}")
+
+
+async def _msgraph_api_patch(access_token: str, path: str, payload: dict) -> dict:
+    """Make an authenticated PATCH request to the Microsoft Graph REST API."""
+    client = AsyncHTTPClient()
+    req = HTTPRequest(
+        url=f"https://graph.microsoft.com/v1.0{path}",
+        method="PATCH",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        body=json.dumps(payload),
+        request_timeout=15.0,
+    )
+    resp = await client.fetch(req, raise_error=False)
+    body = resp.body.decode("utf-8", errors="replace")
+    if resp.code not in (200, 201, 202, 204):
+        raise ValueError(f"Graph API {resp.code}: {body[:200]}")
+    return json.loads(body) if body.strip() else {}
 
 
 # ── MCP client ────────────────────────────────────────────────────────────────
@@ -83,7 +251,7 @@ class MCPClient:
     def __init__(self, endpoint: str, timeout: float = 30.0):
         self.endpoint = endpoint.rstrip("/")
         self.timeout = timeout
-        self._session_id: str | None = None
+        self._session_id = None  # type: str
         self._http = AsyncHTTPClient()
 
     async def __aenter__(self):
@@ -259,15 +427,6 @@ AGENT_TYPES = [
             "transaction history, pending transactions, sending coins, transferring YDA, "
             "or wrapping/unwrapping tokens. "
             "Examples: 'what is my balance', 'show my transactions', 'send 5 YDA to ...'\n"
-            '- "node_config": user wants to change a node setting, update config.json, '
-            "modify a config value, or asks about changing combined_address, pool settings, "
-            "peer limits, or any node parameter. "
-            "Examples: 'change my combined address', 'update pool_take', 'set max_miners to 50'\n"
-            '- "helpdesk": user asks a question about YadaCoin — how it works, what YDA is, '
-            "mining, the KEL, DID method, wallet setup, block rewards, transactions, the protocol, "
-            "peer types, or any YadaCoin concept. "
-            "Examples: 'what is YadaCoin', 'how do I mine YDA', 'explain the KEL', "
-            "'how do I set up a node', 'what is a prerotated key', 'what is xprv'\n"
             "Keep detected_agent_type as 'general' for greetings, vague questions, or topics "
             "that don't clearly fit the above.\n"
             "complete MUST always be false."
@@ -310,8 +469,7 @@ AGENT_TYPES = [
             '    "services": ["hotel","flight","train","ship","car"] subset or null\n'
             "  },\n"
             '  "complete": false,\n'
-            '  "detected_agent_type": "travel",\n'
-            '  "choices": []\n'
+            '  "detected_agent_type": "travel"\n'
             "}\n"
             "Rules:\n"
             "- Only use service values: hotel, flight, train, ship, car\n"
@@ -319,11 +477,6 @@ AGENT_TYPES = [
             "- complete MUST be false unless ALL FOUR fields are known\n"
             '- For date ranges like "May 10-16": checkin="May 10", checkout="May 16"\n'
             "- When complete=true: summarise all details and say the operator will approve\n"
-            "- ALWAYS populate choices[] when asking for any value:\n"
-            "  * Asking for destination or special requests → input_type='text'\n"
-            "  * Asking for travel dates → input_type='daterange'\n"
-            "  * Asking which services (hotel/flight/train/ship/car) → multi=true options list, include 'All services' option\n"
-            "  * Asking any yes/no question → multi=false options list\n"
             "- If the user clearly wants something other than travel (e.g. therapy, legal help, shopping), set detected_agent_type to 'general'"
         ),
     },
@@ -635,158 +788,128 @@ AGENT_TYPES = [
         ),
     },
     {
-        "id": "helpdesk",
-        "label": "YadaCoin Help Desk",
-        "description": "Expert Q&A on all things YadaCoin — protocol, setup, mining, wallet, KEL identity, and more.",
-        "icon": "🪙",
+        "id": "github",
+        "label": "GitHub",
+        "description": "Interact with GitHub: list repos, view issues/PRs, create issues, check CI status.",
+        "icon": "🐙",
         "routing_hint": (
-            "user asks a question about YadaCoin, how it works, what YDA is, how to set up a node, "
-            "mining, the KEL, DID method, wallet setup, block rewards, transactions, the protocol, "
-            "peer types, config settings, or anything else related to the YadaCoin ecosystem. "
-            "Examples: 'what is YadaCoin', 'how do I mine YDA', 'explain the KEL', "
-            "'how do I set up a node on Ubuntu', 'what is a prerotated key', 'what is xprv', "
-            "'what are block rewards', 'how does pool payout work', 'what is did:yadacoin'"
+            "user asks about GitHub repos, issues, pull requests, CI status, commits, branches, "
+            "code search, or wants to create/close an issue on GitHub. "
+            "Examples: 'show my repos', 'list open issues in myrepo', 'create an issue', "
+            "'what PRs are open', 'check my GitHub notifications'"
         ),
         "authorizationType": None,
         "fields": [],
-        "services": [],
+        "services": ["github"],
         "systemPrompt": (
-            "You are the YadaCoin Help Desk — an expert on all things YadaCoin. "
-            "Answer every question thoroughly and accurately using the knowledge below. "
-            "You NEVER collect booking fields or mark complete=true.\n"
-            "\n"
-            "=== YADACOIN KNOWLEDGE BASE ===\n"
-            "\n"
-            "## What is YadaCoin?\n"
-            "YadaCoin (ticker: YDA) is a proof-of-work blockchain modelled after Bitcoin "
-            "but with a built-in decentralised identity layer based on the Key Event Log (KEL). "
-            "It uses a UTXO transaction model, secp256k1 cryptography, and Bitcoin-style P2PKH "
-            "addresses. Networks: mainnet, testnet, regnet.\n"
-            "\n"
-            "## Key Event Log (KEL)\n"
-            "The KEL is a chain of version-7 transactions that records key rotations and "
-            "pre-rotation commitments. Each KEL entry contains:\n"
-            "- public_key: current compressed secp256k1 public key (hex)\n"
-            "- public_key_hash: P2PKH address of the current key — once this appears in the KEL the key is REVOKED\n"
-            "- prerotated_key_hash: P2PKH address of the NEXT authorised key\n"
-            "- twice_prerotated_key_hash: P2PKH address of the key after next\n"
-            "- relationship: optional base64-encoded W3C Verifiable Credential scope document\n"
-            "Pre-rotation means each transaction commits a cryptographic hash of the next key "
-            "before the current key is exposed, bounding the damage from key compromise.\n"
-            "\n"
-            "## did:yadacoin DID Method\n"
-            "YadaCoin implements the W3C DID specification as did:yadacoin:<66-hex-char-compressed-pubkey>. "
-            "The DID Document is derived deterministically from the KEL — no trusted registry needed. "
-            "Supports creation, resolution, key rotation (update), and deactivation via the "
-            "YadaCoin peer-to-peer network alone.\n"
-            "\n"
-            "## Wallet & Key Fields\n"
-            "- seed: BIP39-style word list representing the root private key (auto-generated at install)\n"
-            "- xprv: extended private key enabling a hierarchy of child keys (useful for exchanges)\n"
-            "- public_key: compressed secp256k1 public key\n"
-            "- address: Bitcoin-style P2PKH address derived from public_key\n"
-            "- private_key: raw private key (hex)\n"
-            "- wif: Wallet Import Format encoding of private_key\n"
-            "- username_signature: the node's signature of its username field\n"
-            "NEVER share private_key, seed, wif, or xprv with anyone.\n"
-            "\n"
-            "## Node Setup\n"
-            "Ubuntu 22/24: curl -fsSL https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/yadanodesetup.sh | sudo bash\n"
-            "Windows: download installer at https://yadacoin.io/download\n"
-            "Docker: docker-compose.yml is included in the repository root. "
-            "A bootstrapped setup script is also available: setupwithbootstrap.sh\n"
-            "\n"
-            "## Node Types (peer_type in config)\n"
-            "- user: standard node (default)\n"
-            "- service_provider: provides services on the network\n"
-            "- seed_gateway: routes traffic to seed nodes\n"
-            "- seed: well-connected stable nodes; requires running service_provider and seed_gateway "
-            "  on separate servers, plus a pull request to add to the network seed list\n"
-            "\n"
-            "## Key Config Settings (config/config.json)\n"
-            "- modes (array): modules to initialise, e.g. ['node','web','pool']\n"
-            "- root_app (string): which plugin owns the root / HTTP path\n"
-            "- network (string): mainnet | testnet | regnet\n"
-            "- mongodb_host/username/password: MongoDB connection details\n"
-            "- database (string): main MongoDB database, default 'yadacoin'\n"
-            "- site_database (string): plugin/app database, default 'yadacoinsite'\n"
-            "- peer_host / peer_port (8000): public address this node advertises to peers\n"
-            "- serve_host / serve_port (8000): address/port the HTTP server binds to\n"
-            "- public_ip: public IP when behind NAT\n"
-            "- max_inbound / max_outbound (10 each): peer connection limits\n"
-            "- max_miners (100): max concurrent pool miners; set -1 to disable pool\n"
-            "- api_whitelist (array): IP addresses allowed to access the node API\n"
-            "- ssl: object with cafile, certfile, keyfile, common_name, port for HTTPS\n"
-            "- wallet_host_port: URL for wallet UI to contact the node, default 'http://localhost:8001'\n"
-            "- peers_seed (array): explicit seed nodes, e.g. [{host, port}]\n"
-            "- pool_payout (bool, default false): enable payouts to miners\n"
-            "- pool_take (decimal, default 0.01): operator's cut per block (0.01 = 1%)\n"
-            "- payout_frequency (int, default 6): blocks between pool payouts\n"
-            "- stratum_pool_port (int, default 3333): port for mining rigs (stratum protocol)\n"
-            "- pool_diff (int, default 100000): pool share difficulty\n"
-            "- credits_per_share (decimal, default 5): credits earned per mining share\n"
-            "- shares_required (bool, default false): require shares to use node apps\n"
-            "- combined_address (string): wallet address for transaction consolidation\n"
-            "- web_jwt_expiry (int, default 23040): JWT validity in seconds\n"
-            "- restrict_graph_api (bool, default false): restrict graph API access\n"
-            "\n"
-            "## Mining\n"
-            "YadaCoin uses proof-of-work (SHA-256 based). Miners connect to the stratum pool "
-            "port (default 3333). Block rewards decrease over time. The pool operator "
-            "earns pool_take of each block reward. If pool_payout=true, the remainder is "
-            "distributed to miners proportionally by shares. Block config: block_rewards.json.\n"
-            "\n"
-            "## Transactions\n"
-            "UTXO model, similar to Bitcoin. Transaction types:\n"
-            "- Standard: coin transfers between addresses\n"
-            "- Version 7 (KEL): key rotation / agent provisioning; carries relationship field\n"
-            "The relationship field in v7 transactions carries base64-encoded JSON (W3C VC) "
-            "describing agent authorisation scope.\n"
-            "\n"
-            "## KEL Agent Auth Protocol\n"
-            "Allows AI agents to be authenticated without the operator's private key leaving "
-            "the device. Flow: operator commits an agent key on-chain via two KEL transactions, "
-            "the agent uses challenge-response with that one-time key, the service verifies "
-            "against the KEL. Credential modes:\n"
-            "- rotation: one-time-use (key revoked after use) — for short-lived agent credentials\n"
-            "- temporal: persists across rotations — for long-lived professional credentials\n"
-            "\n"
-            "## Plugins / Apps\n"
-            "- yadacoinpool: built-in mining pool UI\n"
-            "- yadacoinwallet: whale wallet UI\n"
-            "- yadaaiagent: AI agent platform with KEL-backed authorisation\n"
-            "- explorer: blockchain explorer\n"
-            "- keyrotation: key rotation tooling\n"
-            "\n"
-            "## CLI\n"
-            "Run via the cli/ directory. Covers node management, configuration, and key operations. "
-            "See cli/INDEX.md for full command reference and cli/QUICKSTART.md for common workflows.\n"
-            "\n"
-            "## Common Questions\n"
-            "Q: How do I get YDA? A: Mine it (join a pool or run your own), or trade on supported exchanges.\n"
-            "Q: What is xprv? A: Extended private key for deterministic child-key derivation (like Bitcoin HD wallets).\n"
-            "Q: What is a prerotated key? A: The hash of the next key committed in the current transaction, "
-            "so even if the current key is stolen the attacker cannot rotate to their own key.\n"
-            "Q: What does 'modes' control? A: Which subsystems start — 'node' for P2P networking, "
-            "'web' for the HTTP interface, 'pool' for the mining pool.\n"
-            "Q: How do I enable HTTPS? A: Add an 'ssl' object to config.json with certfile, keyfile, cafile, common_name, port.\n"
-            "Q: What's the default peer port? A: 8000 for both peer_port and serve_port.\n"
-            "Q: How do I restrict API access? A: Set api_whitelist to an array of allowed IPs.\n"
-            "=== END KNOWLEDGE BASE ===\n"
-            "\n"
+            "{github_context}"
+            "You are a GitHub assistant. Help the user interact with their GitHub account.\n"
             "ALWAYS respond with ONLY a valid JSON object:\n"
             "{\n"
-            '  "reply": "your detailed answer",\n'
-            '  "extracted": {},\n'
+            '  "reply": "your conversational response",\n'
+            '  "extracted": {\n'
+            '    "action": "list_repos|get_repo|list_issues|create_issue|list_prs|list_notifications or null",\n'
+            '    "owner": "repo owner login or null",\n'
+            '    "repo": "repo name or null",\n'
+            '    "title": "issue title or null",\n'
+            '    "body": "issue body or null",\n'
+            '    "state": "open|closed|all or null",\n'
+            '    "visibility": "public|private|all or null"\n'
+            "  },\n"
             '  "complete": false,\n'
-            '  "detected_agent_type": "helpdesk"\n'
+            '  "detected_agent_type": "github",\n'
+            '  "auth_required": null\n'
             "}\n"
             "Rules:\n"
-            "- complete MUST always be false\n"
-            "- If the user asks something unrelated to YadaCoin, answer helpfully and keep detected_agent_type as 'helpdesk'\n"
-            "- If the user clearly wants a wallet action (send, balance, wrap), set detected_agent_type to 'wallet_agent'\n"
-            "- If the user clearly wants to change a node config setting, set detected_agent_type to 'node_config'\n"
-            "- Never ask for private_key, seed, wif, or xprv"
+            "- If GitHub is NOT connected (see context above), set auth_required to "
+            '  {"provider": "github"} and reply asking the user to connect their GitHub account.\n'
+            "  Do NOT set an action until GitHub is connected.\n"
+            "- For list_repos and list_notifications: no owner/repo needed.\n"
+            "- For list_repos: if the user says 'public', 'only public', or 'public repos' set "
+            "  visibility='public'; if they say 'private' set visibility='private'; "
+            "  otherwise leave visibility=null (returns all).\n"
+            "- For get_repo, list_issues, list_prs: collect owner and repo.\n"
+            "- For create_issue: collect owner, repo, title, and body. "
+            "  Ask for confirmation before setting complete=true.\n"
+            "- complete MUST stay false for read-only actions (list_repos, get_repo, list_issues, "
+            "  list_prs, list_notifications) — the system fetches and displays them automatically.\n"
+            "- complete=true only for create_issue when ALL fields are known AND user confirmed.\n"
+            "- If the user wants something other than GitHub actions, set detected_agent_type to 'general'."
+        ),
+    },
+    {
+        "id": "microsoft",
+        "label": "Microsoft / Outlook",
+        "description": "Read and send Outlook email, manage calendar events via Microsoft 365.",
+        "icon": "🟦",
+        "routing_hint": (
+            "user asks about Outlook, Microsoft email, Microsoft 365, Office 365, Exchange, "
+            "their inbox, emails, mail, calendar events, meetings, or wants to send an email, "
+            "or wants to create a todo list, action items, tasks, or reminders from their emails, "
+            "or wants to add a task, reminder, or to-do item to Microsoft To Do. "
+            "Examples: 'check my email', 'show my inbox', 'send an email', 'read my outlook', "
+            "'what meetings do I have', 'show my calendar', 'microsoft email', 'outlook email', "
+            "'create a todo list from my emails', 'add something to my to do list', "
+            "'add a task to To Do', 'remind me to go to the store', 'add to my tasks'"
+        ),
+        "authorizationType": None,
+        "fields": [],
+        "services": ["microsoft"],
+        "systemPrompt": (
+            "{microsoft_context}"
+            "You are a Microsoft 365 / Outlook assistant. Help the user read email, send email, "
+            "and manage calendar events.\n"
+            "ALWAYS respond with ONLY a valid JSON object:\n"
+            "{\n"
+            '  "reply": "your conversational response",\n'
+            '  "extracted": {\n'
+            '    "action": "list_emails|read_email|summarize_email|create_todo|push_todo|add_todo_task|complete_todo_task|delete_todo_task|send_email|list_events|create_event or null",\n'
+            '    "message_id": "email message id or null",\n'
+            '    "to": "recipient email address or null",\n'
+            '    "subject": "email subject or null",\n'
+            '    "body": "email body or null",\n'
+            '    "folder": "inbox|sentitems|drafts or null",\n'
+            '    "top": number of items to fetch or null,\n'
+            '    "task_title": "title of the task to add (for add_todo_task) or null"\n'
+            "  },\n"
+            '  "complete": false,\n'
+            '  "detected_agent_type": "microsoft",\n'
+            '  "auth_required": null\n'
+            "}\n"
+            "Rules:\n"
+            "- If Microsoft is NOT connected (see context above), set auth_required to "
+            '  {"provider": "microsoft"} and reply asking the user to connect their Microsoft account.\n'
+            "  Do NOT set an action until Microsoft is connected.\n"
+            "- For list_emails: use folder='inbox' by default unless user specifies otherwise. top defaults to 10.\n"
+            "- For summarize_email: ALWAYS use this action when the user asks to summarize, review, "
+            "  describe, or tell them what email(s) say. This action handles ANY number of emails — "
+            "  set 'top' to the exact number requested (e.g. 'summarize latest 6' -> top=6). "
+            "  Max top=10. NEVER say you can only summarize one email. "
+            "  NEVER use list_emails for summarize requests. "
+            "  Set reply to 'Summarizing your latest N emails...' replacing N with the count.\n"
+            "- For create_todo: use when user asks to create or show a todo list, action items, or tasks "
+            "  from their emails WITHOUT saving them anywhere. Set 'top' to number of emails to scan (default 10). "
+            "  Set reply to 'Building your to-do list from the latest N emails...'.\n"
+            "- For delete_todo_task: use when the user asks to delete, remove, or get rid of a task. "
+            "  Use task_title to identify which task. Set reply to 'Deleting \"<task>\"...'.\n"
+            "- For complete_todo_task: use when the user asks to mark a task as done, complete, "
+            "  finished, or checked off. Use task_title to specify which task. "
+            "  Set reply to 'Marking \"<task>\" as complete...'.\n"
+            "- For add_todo_task: use when the user wants to add a specific task or reminder to "
+            "  Microsoft To Do. Collect the task title from the user (use task_title field). "
+            "  If the user hasn't stated the task yet, ask them what to add. "
+            "  Set reply to 'Adding \"<task>\" to your Microsoft To Do list...'.\n"
+            "- For push_todo: ALWAYS use when user asks to push, save, add, or send tasks/action items "
+            "  TO Microsoft To Do. Scans emails and creates real tasks in Microsoft To Do. "
+            "  Set 'top' to number of emails to scan (default 10). "
+            "  Set reply to 'Extracting action items and saving them to Microsoft To Do...'.\n"
+            "- For read_email: collect message_id.\n"
+            "- For send_email: collect to, subject, and body. Ask for confirmation before setting complete=true.\n"
+            "- For list_events: no extra fields needed (returns upcoming calendar events).\n"
+            "- For create_event: not yet supported — tell the user politely.\n"
+            "- complete MUST stay false for read-only actions (list_emails, read_email, summarize_email, list_events).\n"
+            "- complete=true only for send_email when ALL fields are known AND user confirmed.\n"
+            "- If the user wants something other than Microsoft/Outlook actions, set detected_agent_type to 'general'."
         ),
     },
 ]
@@ -1086,27 +1209,16 @@ _UI_HINT_SUFFIX = (
     '        {"id": "opt_id", "text": "Display label"}\n'
     "      ]\n"
     "      // OR for free-text / date inputs, omit options and add:\n"
-    '      "input_type": "text" | "date" | "daterange"\n'
+    '      "input_type": "text" | "date"\n'
     "    }\n"
     "  ]\n"
     "Rules:\n"
-    "- CRITICAL: If your reply asks the user to choose, select, pick, specify, or provide any value, "
-    "you MUST populate choices[] with the appropriate input group(s). "
-    "choices=[] is ONLY allowed for acknowledgements or statements with no question.\n"
-    "- ONE question per turn. Your choices[] MUST contain exactly ONE entry. "
-    "Never ask two things at once — finish one question, wait for the answer, then ask the next.\n"
-    "- Use options[] when asking the user to pick from a finite set (e.g. seat type, room type, yes/no, service type).\n"
-    "- Use input_type='daterange' whenever you need BOTH a start date AND end date (e.g. check-in/check-out, departure/return). This renders a two-field date range picker as one group.\n"
-    "- Use input_type='date' only when a single date is needed (e.g. birthday, one-way departure).\n"
+    "- Add one entry per question you are asking right now.\n"
+    "- Use options[] when asking the user to pick from a finite set (e.g. seat type, room type, yes/no).\n"
+    "- Use input_type='date' for check-in, check-out, departure, return dates.\n"
     "- Use input_type='text' for open text answers such as destination or special requests.\n"
-    "- Set choices=[] (empty array) ONLY for purely conversational turns where no input is needed.\n"
-    "- Never mix options[] and input_type in the same entry.\n"
-    "Example — asking which travel services are needed:\n"
-    '  {"id": "services", "choice_text": "Which services do you need?", "multi": true, "options": [\n'
-    '    {"id": "hotel", "text": "Hotel"}, {"id": "flight", "text": "Flight"},\n'
-    '    {"id": "train", "text": "Train"}, {"id": "ship", "text": "Ship"},\n'
-    '    {"id": "car", "text": "Car"}, {"id": "all", "text": "All services"}\n'
-    "  ]}"
+    "- Set choices=[] (empty array) for purely conversational turns where no input is needed.\n"
+    "- Never mix options[] and input_type in the same entry."
 )
 
 _VENDOR_CHAT_INSTRUCTION = (
@@ -1114,9 +1226,6 @@ _VENDOR_CHAT_INSTRUCTION = (
     "The JSON MUST include: reply, complete, exit_vendor, and choices (see schema below).\n"
     'Example: {"reply": "...", "complete": false, "exit_vendor": false, "choices": []}\n'
     "choices follows the same schema described above (array of choice group objects).\n"
-    "STRICT RULE: Ask EXACTLY ONE question per turn. choices[] must have at most ONE entry. "
-    "If you need to collect multiple pieces of information, ask about ONE of them now and wait "
-    "for the customer's answer before asking the next. Never combine two questions in one reply.\n"
     "Set complete=true ONLY when you have received all needed answers and are "
     "ready to confirm the booking. When setting complete=true your reply must "
     "include a friendly booking confirmation message.\n"
@@ -1132,26 +1241,6 @@ VENDOR_REGISTRY = {
         "name": "SkyLink Airlines",
         "available": True,
         "prefix": "FLT",
-        "vendorFields": [
-            {
-                "key": "seat_preference",
-                "label": "Seat preference",
-                "type": "select",
-                "options": ["window", "middle", "aisle"],
-            },
-            {
-                "key": "meal_preference",
-                "label": "Meal preference",
-                "type": "select",
-                "options": ["standard", "vegetarian", "vegan", "none"],
-            },
-            {
-                "key": "extra_baggage",
-                "label": "Extra checked baggage?",
-                "type": "select",
-                "options": ["yes", "no"],
-            },
-        ],
         "vendorPrompt": (
             "You are the reservations agent for SkyLink Airlines. "
             "A customer has been securely verified via YadaCoin KEL identity. "
@@ -1167,26 +1256,6 @@ VENDOR_REGISTRY = {
         "name": "RailEuro Express",
         "available": True,
         "prefix": "TRN",
-        "vendorFields": [
-            {
-                "key": "cabin_class",
-                "label": "Cabin class",
-                "type": "select",
-                "options": ["standard", "first", "sleeper"],
-            },
-            {
-                "key": "seat_preference",
-                "label": "Seat preference",
-                "type": "select",
-                "options": ["window", "aisle", "table"],
-            },
-            {
-                "key": "large_luggage",
-                "label": "Bicycle or large luggage?",
-                "type": "select",
-                "options": ["yes", "no"],
-            },
-        ],
         "vendorPrompt": (
             "You are the reservations agent for RailEuro Express. "
             "A customer has been securely verified via YadaCoin KEL identity. "
@@ -1202,26 +1271,6 @@ VENDOR_REGISTRY = {
         "name": "BlueWave Cruises",
         "available": True,
         "prefix": "SHP",
-        "vendorFields": [
-            {
-                "key": "cabin_type",
-                "label": "Cabin type",
-                "type": "select",
-                "options": ["interior", "oceanview", "balcony", "suite"],
-            },
-            {
-                "key": "dining_seating",
-                "label": "Dining seating",
-                "type": "select",
-                "options": ["early", "late", "anytime"],
-            },
-            {
-                "key": "shore_excursion",
-                "label": "Shore excursion package?",
-                "type": "select",
-                "options": ["yes", "no"],
-            },
-        ],
         "vendorPrompt": (
             "You are the reservations agent for BlueWave Cruises. "
             "A customer has been securely verified via YadaCoin KEL identity. "
@@ -1237,21 +1286,6 @@ VENDOR_REGISTRY = {
         "name": "Grand Stay Hotels",
         "available": True,
         "prefix": "HTL",
-        "vendorFields": [
-            {
-                "key": "bed_type",
-                "label": "Bed type",
-                "type": "select",
-                "options": ["single king", "double queen", "twin beds"],
-            },
-            {
-                "key": "smoking",
-                "label": "Room type",
-                "type": "select",
-                "options": ["non-smoking", "smoking"],
-            },
-            {"key": "special_requests", "label": "Special requests", "type": "text"},
-        ],
         "vendorPrompt": (
             "You are the reservations agent for Grand Stay Hotels. "
             "A customer has been securely verified via YadaCoin KEL identity. "
@@ -1267,26 +1301,6 @@ VENDOR_REGISTRY = {
         "name": "DriveEasy Rentals",
         "available": True,
         "prefix": "CAR",
-        "vendorFields": [
-            {
-                "key": "vehicle_size",
-                "label": "Vehicle size",
-                "type": "select",
-                "options": ["economy", "compact", "standard", "SUV", "luxury"],
-            },
-            {
-                "key": "gps",
-                "label": "GPS add-on?",
-                "type": "select",
-                "options": ["yes", "no"],
-            },
-            {
-                "key": "additional_driver",
-                "label": "Additional driver?",
-                "type": "select",
-                "options": ["yes", "no"],
-            },
-        ],
         "vendorPrompt": (
             "You are the rental agent for DriveEasy Rentals. "
             "A customer has been securely verified via YadaCoin KEL identity. "
@@ -1302,24 +1316,6 @@ VENDOR_REGISTRY = {
         "name": "LexAI Legal",
         "available": True,
         "prefix": "LEX",
-        "vendorFields": [
-            {
-                "key": "jurisdiction",
-                "label": "Governing law / jurisdiction",
-                "type": "text",
-            },
-            {"key": "parties", "label": "Names of parties to include", "type": "text"},
-            {
-                "key": "urgency",
-                "label": "Urgency level",
-                "type": "select",
-                "options": [
-                    "standard (5 days)",
-                    "expedited (48h)",
-                    "urgent (same-day)",
-                ],
-            },
-        ],
         "vendorPrompt": (
             "You are the intake agent for LexAI Legal. "
             "A customer has been securely verified via YadaCoin KEL identity. "
@@ -1335,21 +1331,6 @@ VENDOR_REGISTRY = {
         "name": "QuickCart",
         "available": True,
         "prefix": "ORD",
-        "vendorFields": [
-            {"key": "variant", "label": "Color / size / variant", "type": "text"},
-            {
-                "key": "gift_wrap",
-                "label": "Gift wrapping?",
-                "type": "select",
-                "options": ["yes", "no"],
-            },
-            {
-                "key": "delivery_speed",
-                "label": "Delivery speed",
-                "type": "select",
-                "options": ["standard", "express", "overnight"],
-            },
-        ],
         "vendorPrompt": (
             "You are the order agent for QuickCart. "
             "A customer has been securely verified via YadaCoin KEL identity. "
@@ -1365,15 +1346,6 @@ VENDOR_REGISTRY = {
         "name": "YadaCoin Therapist",
         "available": True,
         "prefix": "THR",
-        "vendorFields": [
-            {
-                "key": "session_type",
-                "label": "Session type",
-                "type": "select",
-                "options": ["individual", "couples", "group"],
-            },
-            {"key": "preferred_time", "label": "Preferred time slot", "type": "text"},
-        ],
         "vendorPrompt": (
             "You are a scheduling assistant for a mental health therapist "
             "specializing in OCD, ADD, and ADHD. "
@@ -2221,79 +2193,6 @@ class AgentListHandler(BaseHandler):
         return self.render_as_json(result)
 
 
-def _is_filled(val):
-    """True when a value counts as already collected."""
-    if val is None or val == "null" or val == "":
-        return False
-    if isinstance(val, list) and len(val) == 0:
-        return False
-    return True
-
-
-def _auto_choices(fields, cumulative):
-    """Generate choice groups for agent fields that still have no value.
-
-    Uses the cumulative extracted scope (merged across all turns) so fields
-    collected in earlier turns are not asked again.
-    Returns only the FIRST unfilled field group to collect one thing at a time.
-    checkin/checkout are collapsed into a single daterange group.
-    """
-    date_fields = {"checkin", "checkout"}
-    date_seen = False
-    for field in fields:
-        key = field["key"]
-        val = cumulative.get(key)
-        if _is_filled(val):
-            continue
-        # Both date fields map to one group; skip the second once queued
-        if key in date_fields and date_seen:
-            continue
-        ftype = field.get("type", "text")
-        if key in date_fields:
-            date_seen = True
-            return [
-                {
-                    "id": "travel_dates",
-                    "choice_text": "Travel dates (check-in \u2192 check-out)",
-                    "input_type": "daterange",
-                }
-            ]
-        elif ftype == "multiselect":
-            options = [
-                {"id": o, "text": o.capitalize()} for o in field.get("options", [])
-            ]
-            options.append({"id": "all", "text": "All services"})
-            return [
-                {
-                    "id": key,
-                    "choice_text": field.get("label", f"Select {key}"),
-                    "multi": True,
-                    "options": options,
-                }
-            ]
-        elif ftype == "select":
-            return [
-                {
-                    "id": key,
-                    "choice_text": field.get("label", key),
-                    "multi": False,
-                    "options": [
-                        {"id": o, "text": o.replace("_", " ").title()}
-                        for o in field.get("options", [])
-                    ],
-                }
-            ]
-        else:
-            return [
-                {
-                    "id": key,
-                    "choice_text": field.get("label", key),
-                    "input_type": "text",
-                }
-            ]
-    return []
-
-
 class AgentChatHandler(BaseHandler):
     """
     POST /ai-agent-auth/api/chat
@@ -2340,14 +2239,71 @@ class AgentChatHandler(BaseHandler):
             self.set_status(400)
             return self.render_as_json({"error": "messages must be a list"})
 
+        # ── Resolve Web 2.0 sessions ─────────────────────────────────────── #
+        # web2_sessions: { "github": "<nonce>", ... } supplied by the browser.
+        # The nonce is an opaque server-side reference — the real OAuth token
+        # never leaves the server.
+        web2_sessions: dict = body.get("web2_sessions") or {}
+        github_access_token = None  # type: str
+        github_user = None  # type: dict
+        microsoft_access_token = None  # type: str
+
+        github_nonce = (web2_sessions.get("github") or "").strip()
+        if github_nonce:
+            try:
+                session_doc = (
+                    await self.config.mongo.async_db.web2_oauth_sessions.find_one(
+                        {
+                            "nonce": github_nonce,
+                            "provider": "github",
+                            "status": "authorized",
+                        }
+                    )
+                )
+                if session_doc:
+                    github_access_token = session_doc.get("access_token", "")
+                    # Refresh expiry on each use (sliding window)
+                    await self.config.mongo.async_db.web2_oauth_sessions.update_one(
+                        {"_id": session_doc["_id"]},
+                        {
+                            "$set": {
+                                "expires_at": _datetime.datetime.utcnow()
+                                + _datetime.timedelta(hours=1)
+                            }
+                        },
+                    )
+            except Exception:
+                pass  # treat as unauthenticated — never hard-fail
+
+        microsoft_nonce = (web2_sessions.get("microsoft") or "").strip()
+        if microsoft_nonce:
+            try:
+                session_doc = (
+                    await self.config.mongo.async_db.web2_oauth_sessions.find_one(
+                        {
+                            "nonce": microsoft_nonce,
+                            "provider": "microsoft",
+                            "status": "authorized",
+                        }
+                    )
+                )
+                if session_doc:
+                    microsoft_access_token = session_doc.get("access_token", "")
+                    await self.config.mongo.async_db.web2_oauth_sessions.update_one(
+                        {"_id": session_doc["_id"]},
+                        {
+                            "$set": {
+                                "expires_at": _datetime.datetime.utcnow()
+                                + _datetime.timedelta(hours=1)
+                            }
+                        },
+                    )
+            except Exception:
+                pass
+
         # ── Resolve agent type and its system prompt ──────────────────────── #
         agent_type_id = (body.get("agent_type") or "general").strip()
         agent_type = _AGENT_TYPE_MAP.get(agent_type_id)
-
-        # Cumulative extracted scope sent by the frontend (merged across all turns)
-        extracted_scope = body.get("extracted_scope") or {}
-        if not isinstance(extracted_scope, dict):
-            extracted_scope = {}
 
         if agent_type_id == "general":
             # Dynamically inject all on-chain registered types into the prompt
@@ -2355,7 +2311,36 @@ class AgentChatHandler(BaseHandler):
             system_prompt = _build_general_prompt_dynamic(_onchain)
         elif agent_type and agent_type.get("systemPrompt"):
             # Hardcoded or plugin-registered type with a known intake prompt
-            system_prompt = agent_type["systemPrompt"]
+            raw_prompt = agent_type["systemPrompt"]
+            # Inject GitHub connectivity context for the github agent type
+            if agent_type_id == "github":
+                if github_access_token:
+                    github_ctx = (
+                        "CONTEXT: GitHub IS connected. You have full access to the GitHub API on behalf of the user. "
+                        "Do NOT emit auth_required.\n\n"
+                    )
+                else:
+                    github_ctx = (
+                        "CONTEXT: GitHub is NOT connected. You do NOT have a GitHub access token. "
+                        'Set auth_required to {"provider": "github"} and ask the user to connect.\n\n'
+                    )
+                system_prompt = raw_prompt.replace("{github_context}", github_ctx)
+            elif agent_type_id == "microsoft":
+                if microsoft_access_token:
+                    ms_ctx = (
+                        "CONTEXT: Microsoft IS connected. You have full access to Microsoft Graph "
+                        "on behalf of the user. Do NOT emit auth_required.\n\n"
+                    )
+                else:
+                    ms_ctx = (
+                        "CONTEXT: Microsoft is NOT connected. You do NOT have a Microsoft access token. "
+                        'Set auth_required to {"provider": "microsoft"} and ask the user to connect.\n\n'
+                    )
+                system_prompt = raw_prompt.replace("{microsoft_context}", ms_ctx)
+            else:
+                system_prompt = raw_prompt.replace("{github_context}", "").replace(
+                    "{microsoft_context}", ""
+                )
         else:
             # Unknown type — look up on-chain agents of this type and synthesise
             _onchain = await _fetch_onchain_agents(self.config)
@@ -2369,12 +2354,6 @@ class AgentChatHandler(BaseHandler):
 
         # ── Read per-request LLM config sent from the browser ─────────────── #
         llm_cfg = body.get("llm") or {}
-
-        # Cumulative extracted scope sent by the frontend (merged across all turns)
-        extracted_scope = body.get("extracted_scope") or {}
-        if not isinstance(extracted_scope, dict):
-            extracted_scope = {}
-
         provider = (llm_cfg.get("provider") or "ollama").lower().strip()
         model = (llm_cfg.get("model") or "").strip() or self._DEFAULT_MODELS.get(
             provider, "gpt-4o-mini"
@@ -2498,42 +2477,792 @@ class AgentChatHandler(BaseHandler):
             complete = False
             choices = []
 
-        # Build cumulative filled set: frontend scope + current-turn extracted
-        filled = dict(extracted_scope)
-        for k, v in extracted.items():
-            if _is_filled(v):
-                filled[k] = v
-
-        # Filter model-returned choices: remove groups for fields already filled.
-        # travel_dates covers both checkin and checkout.
-        if choices and not complete and agent_type and agent_type.get("fields"):
-
-            def _group_needed(group):
-                gid = group.get("id", "")
-                if gid == "travel_dates":
-                    return not (
-                        _is_filled(filled.get("checkin"))
-                        and _is_filled(filled.get("checkout"))
-                    )
-                return not _is_filled(filled.get(gid))
-
-            choices = [g for g in choices if _group_needed(g)]
-
-        # Server-side fallback: for structured intake agents, always derive the
-        # next unfilled field from the agent's field definitions if the model
-        # didn't provide choices (or they were all filtered out).
-        # The "?" gate is intentionally removed — models often phrase requests
-        # as statements ("Please provide your destination.") with no question mark.
-        if not choices and not complete and agent_type and agent_type.get("fields"):
-            auto = _auto_choices(agent_type["fields"], filled)
-            if auto:
-                choices = auto
-
         detected_agent_type = (
             parsed.get("detected_agent_type", agent_type_id)
             if isinstance(parsed, dict)
             else agent_type_id
         )
+
+        # ── auth_required passthrough ─────────────────────────────────────────
+        # If the LLM signals the frontend needs to connect a Web2 account,
+        # pass that signal straight through in the response.
+        auth_required = None
+        if isinstance(parsed, dict) and isinstance(parsed.get("auth_required"), dict):
+            ar = parsed["auth_required"]
+            if isinstance(ar.get("provider"), str) and ar["provider"]:
+                auth_required = {"provider": ar["provider"]}
+
+        # ── GitHub inline actions (read-only, no approval needed) ─────────────
+        # Mirror the wallet-agent pattern: the LLM sets extracted.action and
+        # complete=false; the server fetches the data and returns github_data.
+        github_data = None  # type: dict
+        _GH_READ_ACTIONS = {
+            "list_repos",
+            "get_repo",
+            "list_issues",
+            "list_prs",
+            "list_notifications",
+        }
+        if (
+            detected_agent_type == "github"
+            and github_access_token
+            and isinstance(extracted, dict)
+            and extracted.get("action") in _GH_READ_ACTIONS
+        ):
+            action = extracted["action"]
+            owner = (extracted.get("owner") or "").strip()
+            repo = (extracted.get("repo") or "").strip()
+            state = (extracted.get("state") or "open").strip()
+            visibility = (extracted.get("visibility") or "all").strip().lower()
+            if visibility not in ("public", "private", "all"):
+                visibility = "all"
+            try:
+                if action == "list_repos":
+                    repo_params = {
+                        "sort": "updated",
+                        "per_page": 10,
+                        "affiliation": "owner,collaborator",
+                    }
+                    if visibility != "all":
+                        repo_params["visibility"] = visibility
+                    data_raw = await _github_api_get(
+                        github_access_token,
+                        "/user/repos",
+                        repo_params,
+                    )
+                    github_data = {
+                        "type": "repos",
+                        "items": [
+                            {
+                                "full_name": r.get("full_name", ""),
+                                "description": (r.get("description") or "")[:120],
+                                "stars": r.get("stargazers_count", 0),
+                                "open_issues": r.get("open_issues_count", 0),
+                                "language": r.get("language") or "",
+                                "private": r.get("private", False),
+                                "url": r.get("html_url", ""),
+                                "updated_at": (r.get("updated_at") or "")[:10],
+                            }
+                            for r in (data_raw if isinstance(data_raw, list) else [])[
+                                :10
+                            ]
+                        ],
+                    }
+                elif action == "get_repo" and owner and repo:
+                    r = await _github_api_get(
+                        github_access_token, f"/repos/{owner}/{repo}"
+                    )
+                    github_data = {
+                        "type": "repo",
+                        "full_name": r.get("full_name", ""),
+                        "description": (r.get("description") or "")[:200],
+                        "stars": r.get("stargazers_count", 0),
+                        "forks": r.get("forks_count", 0),
+                        "open_issues": r.get("open_issues_count", 0),
+                        "language": r.get("language") or "",
+                        "default_branch": r.get("default_branch", "main"),
+                        "topics": r.get("topics", [])[:8],
+                        "url": r.get("html_url", ""),
+                    }
+                elif action == "list_issues" and owner and repo:
+                    data_raw = await _github_api_get(
+                        github_access_token,
+                        f"/repos/{owner}/{repo}/issues",
+                        {"state": state, "per_page": 10, "pulls": "false"},
+                    )
+                    github_data = {
+                        "type": "issues",
+                        "repo": f"{owner}/{repo}",
+                        "state": state,
+                        "items": [
+                            {
+                                "number": i.get("number"),
+                                "title": (i.get("title") or "")[:100],
+                                "state": i.get("state", ""),
+                                "author": (i.get("user") or {}).get("login", ""),
+                                "comments": i.get("comments", 0),
+                                "created_at": (i.get("created_at") or "")[:10],
+                                "url": i.get("html_url", ""),
+                            }
+                            for i in (data_raw if isinstance(data_raw, list) else [])[
+                                :10
+                            ]
+                            if not i.get("pull_request")  # exclude PRs from /issues
+                        ],
+                    }
+                elif action == "list_prs" and owner and repo:
+                    data_raw = await _github_api_get(
+                        github_access_token,
+                        f"/repos/{owner}/{repo}/pulls",
+                        {"state": state, "per_page": 10},
+                    )
+                    github_data = {
+                        "type": "prs",
+                        "repo": f"{owner}/{repo}",
+                        "state": state,
+                        "items": [
+                            {
+                                "number": p.get("number"),
+                                "title": (p.get("title") or "")[:100],
+                                "state": p.get("state", ""),
+                                "author": (p.get("user") or {}).get("login", ""),
+                                "draft": p.get("draft", False),
+                                "created_at": (p.get("created_at") or "")[:10],
+                                "url": p.get("html_url", ""),
+                            }
+                            for p in (data_raw if isinstance(data_raw, list) else [])[
+                                :10
+                            ]
+                        ],
+                    }
+                elif action == "list_notifications":
+                    data_raw = await _github_api_get(
+                        github_access_token,
+                        "/notifications",
+                        {"participating": "false", "per_page": 10},
+                    )
+                    github_data = {
+                        "type": "notifications",
+                        "items": [
+                            {
+                                "title": (n.get("subject") or {}).get("title", "")[
+                                    :100
+                                ],
+                                "type": (n.get("subject") or {}).get("type", ""),
+                                "repo": (n.get("repository") or {}).get(
+                                    "full_name", ""
+                                ),
+                                "reason": n.get("reason", ""),
+                                "unread": n.get("unread", False),
+                                "updated_at": (n.get("updated_at") or "")[:10],
+                            }
+                            for n in (data_raw if isinstance(data_raw, list) else [])[
+                                :10
+                            ]
+                        ],
+                    }
+            except Exception as _gh_exc:
+                github_data = {"type": "error", "message": str(_gh_exc)[:200]}
+
+        # ── Microsoft inline actions (read-only + send_email + summarize) ──────
+        microsoft_data = None  # type: dict
+        _MS_READ_ACTIONS = {
+            "list_emails",
+            "read_email",
+            "list_events",
+            "summarize_email",
+            "create_todo",
+        }
+        _MS_WRITE_ACTIONS = {
+            "send_email",
+            "push_todo",
+            "add_todo_task",
+            "complete_todo_task",
+            "delete_todo_task",
+        }
+        _MS_ALL_ACTIONS = _MS_READ_ACTIONS | _MS_WRITE_ACTIONS
+        if (
+            detected_agent_type == "microsoft"
+            and microsoft_access_token
+            and isinstance(extracted, dict)
+            and extracted.get("action") in _MS_ALL_ACTIONS
+        ):
+            action = extracted["action"]
+            folder = (extracted.get("folder") or "inbox").strip().lower()
+            top = int(extracted.get("top") or 10)
+            if top > 25:
+                top = 25
+            message_id = (extracted.get("message_id") or "").strip()
+            try:
+                if action == "list_emails":
+                    folder_path = {
+                        "inbox": "inbox",
+                        "sentitems": "sentItems",
+                        "drafts": "drafts",
+                    }.get(folder, "inbox")
+                    data_raw = await _msgraph_api_get(
+                        microsoft_access_token,
+                        f"/me/mailFolders/{folder_path}/messages",
+                        {
+                            "$top": top,
+                            "$select": "id,subject,from,receivedDateTime,isRead,bodyPreview",
+                            "$orderby": "receivedDateTime desc",
+                        },
+                    )
+                    items = data_raw.get("value", [])
+                    microsoft_data = {
+                        "type": "emails",
+                        "folder": folder,
+                        "items": [
+                            {
+                                "id": m.get("id", ""),
+                                "subject": (m.get("subject") or "(no subject)")[:120],
+                                "from": (
+                                    (m.get("from") or {}).get("emailAddress") or {}
+                                ).get("address", ""),
+                                "from_name": (
+                                    (m.get("from") or {}).get("emailAddress") or {}
+                                ).get("name", ""),
+                                "received": (m.get("receivedDateTime") or "")[
+                                    :16
+                                ].replace("T", " "),
+                                "is_read": m.get("isRead", True),
+                                "preview": (m.get("bodyPreview") or "")[:150],
+                            }
+                            for m in items[:top]
+                        ],
+                    }
+                elif action == "summarize_email":
+                    # Fetch latest N emails with full body, then summarize via a second LLM call
+                    sum_top = int(extracted.get("top") or 1)
+                    if sum_top > 10:
+                        sum_top = 10
+                    sr = await _msgraph_api_get(
+                        microsoft_access_token,
+                        "/me/mailFolders/inbox/messages",
+                        {
+                            "$top": sum_top,
+                            "$select": "id,subject,from,receivedDateTime,body",
+                            "$orderby": "receivedDateTime desc",
+                        },
+                    )
+                    sr_items = sr.get("value", [])
+                    if sr_items:
+                        # Build a single prompt block for all fetched emails
+                        email_blocks = []
+                        for idx, m in enumerate(sr_items, 1):
+                            body_content = (m.get("body") or {}).get("content", "")
+                            body_type = (m.get("body") or {}).get("contentType", "text")
+                            if body_type == "html":
+                                body_text = _re.sub(r"<[^>]+>", " ", body_content)
+                                body_text = " ".join(body_text.split())[:1500]
+                            else:
+                                body_text = body_content[:1500]
+                            em_subj = (m.get("subject") or "(no subject)")[:120]
+                            em_from = (
+                                (m.get("from") or {}).get("emailAddress") or {}
+                            ).get("name", "") or (
+                                (m.get("from") or {}).get("emailAddress") or {}
+                            ).get(
+                                "address", ""
+                            )
+                            em_date = (m.get("receivedDateTime") or "")[:10]
+                            email_blocks.append(
+                                f"--- Email {idx} ---\nFrom: {em_from}\nSubject: {em_subj}\nDate: {em_date}\n\n{body_text}"
+                            )
+                        if sum_top == 1:
+                            sum_instruction = "Summarize the following email in 2-4 sentences. Highlight the key points, any requests, and action items."
+                        else:
+                            sum_instruction = (
+                                f"Summarize each of the following {len(sr_items)} emails in 1-2 sentences. "
+                                "For each, state who it is from, what it is about, and any action required. "
+                                "Format as a numbered list."
+                            )
+                        sum_msgs = _sanitize_messages(
+                            [
+                                {
+                                    "role": "system",
+                                    "content": "You are an email assistant. "
+                                    + sum_instruction,
+                                },
+                                {"role": "user", "content": "\n\n".join(email_blocks)},
+                            ]
+                        )
+                        try:
+                            if provider == "ollama":
+                                reply = await self._call_ollama(
+                                    ollama_host, model, sum_msgs
+                                )
+                            elif provider == "openai":
+                                reply = await self._call_openai_compat(
+                                    "https://api.openai.com/v1",
+                                    model,
+                                    api_key,
+                                    sum_msgs,
+                                )
+                            elif provider == "anthropic":
+                                reply = await self._call_anthropic(
+                                    model, api_key, sum_msgs
+                                )
+                            elif provider in ("openai_compat", "github_models"):
+                                _su = (
+                                    self._GITHUB_MODELS_BASE_URL
+                                    if provider == "github_models"
+                                    else base_url
+                                )
+                                reply = await self._call_openai_compat(
+                                    _su, model, api_key, sum_msgs
+                                )
+                        except Exception:
+                            reply = f"Fetched {len(sr_items)} email(s) but could not summarize. Please try again."
+                        microsoft_data = {
+                            "type": "email_summary",
+                            "count": len(sr_items),
+                            "subjects": [
+                                {
+                                    "subject": (m.get("subject") or "(no subject)")[
+                                        :120
+                                    ],
+                                    "from_name": (
+                                        (m.get("from") or {}).get("emailAddress") or {}
+                                    ).get("name", ""),
+                                    "from": (
+                                        (m.get("from") or {}).get("emailAddress") or {}
+                                    ).get("address", ""),
+                                    "received": (m.get("receivedDateTime") or "")[:10],
+                                }
+                                for m in sr_items
+                            ],
+                        }
+                    else:
+                        reply = "Your inbox appears to be empty."
+                elif action == "create_todo":
+                    # Fetch latest N emails, extract action items via LLM
+                    todo_top = int(extracted.get("top") or 10)
+                    if todo_top > 25:
+                        todo_top = 25
+                    tr = await _msgraph_api_get(
+                        microsoft_access_token,
+                        "/me/mailFolders/inbox/messages",
+                        {
+                            "$top": todo_top,
+                            "$select": "id,subject,from,receivedDateTime,body",
+                            "$orderby": "receivedDateTime desc",
+                        },
+                    )
+                    tr_items = tr.get("value", [])
+                    if tr_items:
+                        todo_blocks = []
+                        for idx, m in enumerate(tr_items, 1):
+                            body_content = (m.get("body") or {}).get("content", "")
+                            body_type = (m.get("body") or {}).get("contentType", "text")
+                            if body_type == "html":
+                                body_text = _re.sub(r"<[^>]+>", " ", body_content)
+                                body_text = " ".join(body_text.split())[:1200]
+                            else:
+                                body_text = body_content[:1200]
+                            em_subj = (m.get("subject") or "(no subject)")[:120]
+                            em_from = (
+                                (m.get("from") or {}).get("emailAddress") or {}
+                            ).get("name", "") or (
+                                (m.get("from") or {}).get("emailAddress") or {}
+                            ).get(
+                                "address", ""
+                            )
+                            em_date = (m.get("receivedDateTime") or "")[:10]
+                            todo_blocks.append(
+                                f"--- Email {idx} ---\nFrom: {em_from}\nSubject: {em_subj}\nDate: {em_date}\n\n{body_text}"
+                            )
+                        todo_instruction = (
+                            f"You are a task extraction assistant. Review the following {len(tr_items)} emails "
+                            "and extract a concise to-do list of action items the recipient needs to act on. "
+                            "Group items by urgency if possible. Format as a numbered list. "
+                            "Only include genuine action items — skip newsletters, automated notifications, and FYI emails."
+                        )
+                        todo_msgs = _sanitize_messages(
+                            [
+                                {"role": "system", "content": todo_instruction},
+                                {"role": "user", "content": "\n\n".join(todo_blocks)},
+                            ]
+                        )
+                        try:
+                            if provider == "ollama":
+                                reply = await self._call_ollama(
+                                    ollama_host, model, todo_msgs
+                                )
+                            elif provider == "openai":
+                                reply = await self._call_openai_compat(
+                                    "https://api.openai.com/v1",
+                                    model,
+                                    api_key,
+                                    todo_msgs,
+                                )
+                            elif provider == "anthropic":
+                                reply = await self._call_anthropic(
+                                    model, api_key, todo_msgs
+                                )
+                            elif provider in ("openai_compat", "github_models"):
+                                _tu = (
+                                    self._GITHUB_MODELS_BASE_URL
+                                    if provider == "github_models"
+                                    else base_url
+                                )
+                                reply = await self._call_openai_compat(
+                                    _tu, model, api_key, todo_msgs
+                                )
+                        except Exception:
+                            reply = f"Fetched {len(tr_items)} email(s) but could not extract tasks. Please try again."
+                        microsoft_data = {
+                            "type": "todo_list",
+                            "count": len(tr_items),
+                            "subjects": [
+                                {
+                                    "subject": (m.get("subject") or "(no subject)")[
+                                        :120
+                                    ],
+                                    "from_name": (
+                                        (m.get("from") or {}).get("emailAddress") or {}
+                                    ).get("name", ""),
+                                    "from": (
+                                        (m.get("from") or {}).get("emailAddress") or {}
+                                    ).get("address", ""),
+                                    "received": (m.get("receivedDateTime") or "")[:10],
+                                }
+                                for m in tr_items
+                            ],
+                        }
+                    else:
+                        reply = "Your inbox appears to be empty."
+                elif action == "read_email" and message_id:
+                    m = await _msgraph_api_get(
+                        microsoft_access_token,
+                        f"/me/messages/{message_id}",
+                        {
+                            "$select": "id,subject,from,toRecipients,receivedDateTime,body"
+                        },
+                    )
+                    microsoft_data = {
+                        "type": "email",
+                        "id": m.get("id", ""),
+                        "subject": (m.get("subject") or "(no subject)")[:200],
+                        "from": ((m.get("from") or {}).get("emailAddress") or {}).get(
+                            "address", ""
+                        ),
+                        "from_name": (
+                            (m.get("from") or {}).get("emailAddress") or {}
+                        ).get("name", ""),
+                        "received": (m.get("receivedDateTime") or "")[:16].replace(
+                            "T", " "
+                        ),
+                        "body": (m.get("body") or {}).get("content", "")[:2000],
+                        "body_type": (m.get("body") or {}).get("contentType", "text"),
+                    }
+                elif action == "list_events":
+                    data_raw = await _msgraph_api_get(
+                        microsoft_access_token,
+                        "/me/calendarView",
+                        {
+                            "$top": top,
+                            "$select": "id,subject,start,end,location,isOnlineMeeting,organizer",
+                            "$orderby": "start/dateTime",
+                            "startDateTime": _datetime.datetime.utcnow().strftime(
+                                "%Y-%m-%dT00:00:00Z"
+                            ),
+                            "endDateTime": (
+                                _datetime.datetime.utcnow()
+                                + _datetime.timedelta(days=14)
+                            ).strftime("%Y-%m-%dT00:00:00Z"),
+                        },
+                    )
+                    items = data_raw.get("value", [])
+                    microsoft_data = {
+                        "type": "events",
+                        "items": [
+                            {
+                                "id": e.get("id", ""),
+                                "subject": (e.get("subject") or "(no subject)")[:120],
+                                "start": (e.get("start") or {})
+                                .get("dateTime", "")[:16]
+                                .replace("T", " "),
+                                "end": (e.get("end") or {})
+                                .get("dateTime", "")[:16]
+                                .replace("T", " "),
+                                "location": (
+                                    (e.get("location") or {}).get("displayName") or ""
+                                )[:80],
+                                "online": e.get("isOnlineMeeting", False),
+                                "organizer": (
+                                    (e.get("organizer") or {}).get("emailAddress") or {}
+                                ).get("address", ""),
+                            }
+                            for e in items[:top]
+                        ],
+                    }
+                elif action == "push_todo":
+                    # Fetch emails, extract action items via LLM, then create tasks in Microsoft To Do
+                    pt_top = int(extracted.get("top") or 10)
+                    if pt_top > 25:
+                        pt_top = 25
+                    ptr = await _msgraph_api_get(
+                        microsoft_access_token,
+                        "/me/mailFolders/inbox/messages",
+                        {
+                            "$top": pt_top,
+                            "$select": "id,subject,from,receivedDateTime,body",
+                            "$orderby": "receivedDateTime desc",
+                        },
+                    )
+                    pt_items = ptr.get("value", [])
+                    if pt_items:
+                        pt_blocks = []
+                        for idx, m in enumerate(pt_items, 1):
+                            body_content = (m.get("body") or {}).get("content", "")
+                            body_type = (m.get("body") or {}).get("contentType", "text")
+                            if body_type == "html":
+                                body_text = _re.sub(r"<[^>]+>", " ", body_content)
+                                body_text = " ".join(body_text.split())[:1200]
+                            else:
+                                body_text = body_content[:1200]
+                            em_subj = (m.get("subject") or "(no subject)")[:120]
+                            em_from = (
+                                (m.get("from") or {}).get("emailAddress") or {}
+                            ).get("name", "") or (
+                                (m.get("from") or {}).get("emailAddress") or {}
+                            ).get(
+                                "address", ""
+                            )
+                            em_date = (m.get("receivedDateTime") or "")[:10]
+                            pt_blocks.append(
+                                f"--- Email {idx} ---\nFrom: {em_from}\nSubject: {em_subj}\nDate: {em_date}\n\n{body_text}"
+                            )
+                        pt_instruction = (
+                            f"You are a task extraction assistant. Review the following {len(pt_items)} emails "
+                            "and extract a concise list of action items the recipient needs to act on. "
+                            "Output ONLY a JSON array of strings, where each string is one task title "
+                            "(short, under 255 characters). Skip newsletters, automated notifications, and FYI emails. "
+                            'Example: ["Reply to John about budget approval", "Submit expense report by Friday"]'
+                        )
+                        pt_msgs = _sanitize_messages(
+                            [
+                                {"role": "system", "content": pt_instruction},
+                                {"role": "user", "content": "\n\n".join(pt_blocks)},
+                            ]
+                        )
+                        task_titles = []
+                        try:
+                            if provider == "ollama":
+                                raw_tasks = await self._call_ollama(
+                                    ollama_host, model, pt_msgs
+                                )
+                            elif provider == "openai":
+                                raw_tasks = await self._call_openai_compat(
+                                    "https://api.openai.com/v1", model, api_key, pt_msgs
+                                )
+                            elif provider == "anthropic":
+                                raw_tasks = await self._call_anthropic(
+                                    model, api_key, pt_msgs
+                                )
+                            elif provider in ("openai_compat", "github_models"):
+                                _pt_u = (
+                                    self._GITHUB_MODELS_BASE_URL
+                                    if provider == "github_models"
+                                    else base_url
+                                )
+                                raw_tasks = await self._call_openai_compat(
+                                    _pt_u, model, api_key, pt_msgs
+                                )
+                            else:
+                                raw_tasks = "[]"
+                            # Parse JSON array from LLM response
+                            json_match = _re.search(r"\[.*\]", raw_tasks, _re.DOTALL)
+                            if json_match:
+                                task_titles = json.loads(json_match.group(0))
+                                task_titles = [str(t)[:255] for t in task_titles if t]
+                        except Exception:
+                            task_titles = []
+                        if task_titles:
+                            # Get or create the default To Do task list
+                            lists_resp = await _msgraph_api_get(
+                                microsoft_access_token, "/me/todo/lists", {}
+                            )
+                            todo_lists = lists_resp.get("value", [])
+                            # Prefer "Tasks" list (default), otherwise use first list
+                            default_list = next(
+                                (
+                                    l
+                                    for l in todo_lists
+                                    if l.get("wellknownListName") == "defaultList"
+                                ),
+                                todo_lists[0] if todo_lists else None,
+                            )
+                            if not default_list:
+                                # Create a new list if none exist
+                                default_list = await _msgraph_api_post(
+                                    microsoft_access_token,
+                                    "/me/todo/lists",
+                                    {"displayName": "Email Action Items"},
+                                )
+                            list_id = default_list.get("id", "")
+                            created = []
+                            for title in task_titles[:20]:  # max 20 tasks per run
+                                try:
+                                    await _msgraph_api_post(
+                                        microsoft_access_token,
+                                        f"/me/todo/lists/{list_id}/tasks",
+                                        {"title": title},
+                                    )
+                                    created.append(title)
+                                except Exception:
+                                    pass
+                            list_name = default_list.get("displayName", "Tasks")
+                            reply = (
+                                f"Done! Added {len(created)} task{'s' if len(created) != 1 else ''} "
+                                f'to your "{list_name}" list in Microsoft To Do.'
+                            )
+                            microsoft_data = {
+                                "type": "todo_pushed",
+                                "list_name": list_name,
+                                "tasks": created,
+                            }
+                        else:
+                            reply = "No action items were found in your recent emails."
+                    else:
+                        reply = "Your inbox appears to be empty."
+                elif action == "add_todo_task":
+                    task_title = (extracted.get("task_title") or "").strip()
+                    if task_title:
+                        # Get default To Do list
+                        lists_resp = await _msgraph_api_get(
+                            microsoft_access_token, "/me/todo/lists", {}
+                        )
+                        todo_lists = lists_resp.get("value", [])
+                        default_list = next(
+                            (
+                                l
+                                for l in todo_lists
+                                if l.get("wellknownListName") == "defaultList"
+                            ),
+                            todo_lists[0] if todo_lists else None,
+                        )
+                        if not default_list:
+                            default_list = await _msgraph_api_post(
+                                microsoft_access_token,
+                                "/me/todo/lists",
+                                {"displayName": "Tasks"},
+                            )
+                        list_id = default_list.get("id", "")
+                        list_name = default_list.get("displayName", "Tasks")
+                        await _msgraph_api_post(
+                            microsoft_access_token,
+                            f"/me/todo/lists/{list_id}/tasks",
+                            {"title": task_title[:255]},
+                        )
+                        reply = (
+                            f'Done! Added "{task_title}" to your "{list_name}" list.'
+                        )
+                        microsoft_data = {
+                            "type": "task_added",
+                            "list_name": list_name,
+                            "task": task_title,
+                        }
+                    else:
+                        reply = "What would you like to add to your To Do list?"
+                elif action == "complete_todo_task":
+                    task_title = (extracted.get("task_title") or "").strip()
+                    if task_title:
+                        # Search all To Do lists for a task matching the title
+                        lists_resp = await _msgraph_api_get(
+                            microsoft_access_token, "/me/todo/lists", {}
+                        )
+                        todo_lists = lists_resp.get("value", [])
+                        matched_list_id = None
+                        matched_list_name = None
+                        matched_task_id = None
+                        search_lower = task_title.lower()
+                        for tl in todo_lists:
+                            list_id = tl.get("id", "")
+                            tasks_resp = await _msgraph_api_get(
+                                microsoft_access_token,
+                                f"/me/todo/lists/{list_id}/tasks",
+                                {"$top": 100, "$filter": "status ne 'completed'"},
+                            )
+                            for task in tasks_resp.get("value", []):
+                                if search_lower in (task.get("title") or "").lower():
+                                    matched_list_id = list_id
+                                    matched_list_name = tl.get("displayName", "Tasks")
+                                    matched_task_id = task.get("id", "")
+                                    task_title = task.get("title", task_title)
+                                    break
+                            if matched_task_id:
+                                break
+                        if matched_task_id:
+                            await _msgraph_api_patch(
+                                microsoft_access_token,
+                                f"/me/todo/lists/{matched_list_id}/tasks/{matched_task_id}",
+                                {"status": "completed"},
+                            )
+                            reply = f'Done! Marked "{task_title}" as complete in "{matched_list_name}".'
+                            microsoft_data = {
+                                "type": "task_completed",
+                                "list_name": matched_list_name,
+                                "task": task_title,
+                            }
+                        else:
+                            reply = f'I couldn\'t find a task matching "{task_title}" in your To Do lists.'
+                    else:
+                        reply = "Which task would you like to mark as complete?"
+                elif action == "delete_todo_task":
+                    task_title = (extracted.get("task_title") or "").strip()
+                    if task_title:
+                        lists_resp = await _msgraph_api_get(
+                            microsoft_access_token, "/me/todo/lists", {}
+                        )
+                        todo_lists = lists_resp.get("value", [])
+                        matched_list_id = None
+                        matched_list_name = None
+                        matched_task_id = None
+                        search_lower = task_title.lower()
+                        for tl in todo_lists:
+                            list_id = tl.get("id", "")
+                            tasks_resp = await _msgraph_api_get(
+                                microsoft_access_token,
+                                f"/me/todo/lists/{list_id}/tasks",
+                                {"$top": 100},
+                            )
+                            for task in tasks_resp.get("value", []):
+                                if search_lower in (task.get("title") or "").lower():
+                                    matched_list_id = list_id
+                                    matched_list_name = tl.get("displayName", "Tasks")
+                                    matched_task_id = task.get("id", "")
+                                    task_title = task.get("title", task_title)
+                                    break
+                            if matched_task_id:
+                                break
+                        if matched_task_id:
+                            await _msgraph_api_delete(
+                                microsoft_access_token,
+                                f"/me/todo/lists/{matched_list_id}/tasks/{matched_task_id}",
+                            )
+                            reply = f'Done! Deleted "{task_title}" from "{matched_list_name}".'
+                            microsoft_data = {
+                                "type": "task_deleted",
+                                "list_name": matched_list_name,
+                                "task": task_title,
+                            }
+                        else:
+                            reply = f'I couldn\'t find a task matching "{task_title}" in your To Do lists.'
+                    else:
+                        reply = "Which task would you like to delete?"
+                elif action == "send_email" and complete:
+                    to_addr = (extracted.get("to") or "").strip()
+                    subject = (extracted.get("subject") or "").strip()
+                    email_body = (extracted.get("body") or "").strip()
+                    if to_addr and subject and email_body:
+                        await _msgraph_api_post(
+                            microsoft_access_token,
+                            "/me/sendMail",
+                            {
+                                "message": {
+                                    "subject": subject,
+                                    "body": {
+                                        "contentType": "Text",
+                                        "content": email_body,
+                                    },
+                                    "toRecipients": [
+                                        {"emailAddress": {"address": to_addr}}
+                                    ],
+                                },
+                                "saveToSentItems": True,
+                            },
+                        )
+                        microsoft_data = {
+                            "type": "sent",
+                            "to": to_addr,
+                            "subject": subject,
+                        }
+            except Exception as _ms_exc:
+                microsoft_data = {"type": "error", "message": str(_ms_exc)[:200]}
+
         return self.render_as_json(
             {
                 "reply": reply,
@@ -2542,6 +3271,9 @@ class AgentChatHandler(BaseHandler):
                 "detected_agent_type": detected_agent_type,
                 "search_sources": search_sources,
                 "choices": choices,
+                "auth_required": auth_required,
+                "github_data": github_data,
+                "microsoft_data": microsoft_data,
             }
         )
 
@@ -3390,20 +4122,6 @@ class VendorChatBaseHandler(AgentChatHandler):
 
         vendor_tools = _VENDOR_TOOLS.get(self.vendor_service)
 
-        # Pre-compute which vendorField the model should ask about this turn.
-        # This is injected into the system prompt so the model stays on-topic,
-        # and is also used to override v_choices after the LLM call.
-        _vf_list = vendor.get("vendorFields") or []
-        _vendor_scope = body.get("vendor_scope") or {}
-        _next_choices = _auto_choices(_vf_list, _vendor_scope)  # [] when all filled
-        _next_field_hint = (
-            f"\n\nYour ONLY task this turn is to ask about ONE field: "
-            f"\"{_next_choices[0]['choice_text']}\". "
-            f"Do NOT ask about any other field. Do NOT ask two questions at once."
-            if _next_choices
-            else ""
-        )
-
         v_choices = []
 
         if vendor_tools:
@@ -3415,7 +4133,6 @@ class VendorChatBaseHandler(AgentChatHandler):
                 f"Use the available tools to look up options and confirm the booking. "
                 f"Ask ONE question at a time. Be warm and professional. "
                 f"Customer's authorized scope: {scope_ctx}"
-                f"{_next_field_hint}"
             )
             try:
                 reply, confirmation, confirm_result = await self._run_tool_loop(
@@ -3446,7 +4163,7 @@ class VendorChatBaseHandler(AgentChatHandler):
                     'ALWAYS respond with ONLY valid JSON: {"reply": "...", "complete": false}'
                 ),
             )
-            system_prompt = f"{base_prompt}\n\nCustomer's authorized scope: {scope_ctx}{_next_field_hint}\n{_UI_HINT_SUFFIX}"
+            system_prompt = f"{base_prompt}\n\nCustomer's authorized scope: {scope_ctx}\n{_UI_HINT_SUFFIX}"
             full_messages = _sanitize_messages(
                 [{"role": "system", "content": system_prompt}] + messages
             )
@@ -3488,26 +4205,8 @@ class VendorChatBaseHandler(AgentChatHandler):
                 )
             if content.startswith("```"):
                 content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-
-            # Reuse the same tolerant JSON extractor as the main handler
-            def _vextract(text):
-                start = text.find("{")
-                if start == -1:
-                    return None
-                try:
-                    return json.loads(text[start:])
-                except Exception:
-                    pass
-                end = text.rfind("}")
-                if end != -1 and end > start:
-                    try:
-                        return json.loads(text[start : end + 1])
-                    except Exception:
-                        pass
-                return None
-
-            parsed = _vextract(content)
-            if parsed:
+            try:
+                parsed = json.loads(content)
                 reply = str(parsed.get("reply", ""))
                 complete = bool(parsed.get("complete", False))
                 exit_vendor = bool(parsed.get("exit_vendor", False))
@@ -3516,26 +4215,16 @@ class VendorChatBaseHandler(AgentChatHandler):
                     if isinstance(parsed.get("choices"), list)
                     else []
                 )
-            else:
+            except Exception:
                 reply = content
                 complete = False
                 exit_vendor = False
                 v_choices = []
-
             confirmation = (
                 _gen_confirmation(self.vendor_service, auth.address)
                 if complete
                 else None
             )
-
-        # For vendor agents with vendorFields, always derive choices from the
-        # pre-computed next field rather than trusting the model to produce them.
-        # The model's reply text is kept; only choices[] is authoritative from us.
-        vendor_fields = vendor.get("vendorFields") or []
-        if vendor_fields and not complete:
-            v_choices = _next_choices  # already computed above
-        elif len(v_choices) > 1:
-            v_choices = v_choices[:1]
 
         # MCP tool-loop path does not expose exit_vendor
         if vendor_tools:
@@ -4393,46 +5082,30 @@ class WalletSendHandler(BaseHandler):
             Transaction,
         )
 
-        pre_signed_txn_dict = body.get("transaction")
-        if pre_signed_txn_dict:
-            # Client-wallet mode: the frontend built and signed the spending
-            # transaction using the client's own private key.  Accept it
-            # directly; KEL authorization was already verified via the VP above.
-            try:
-                transaction = Transaction.from_dict(pre_signed_txn_dict)
-            except Exception as exc:
-                self.set_status(400)
-                return self.render_as_json(
-                    {"error": f"invalid pre-signed transaction: {exc}"}
-                )
-        else:
-            # Node-wallet mode: build and sign using the node's keys.
-            try:
-                transaction = await Transaction.generate(
-                    fee=fee,
-                    public_key=self.config.public_key,
-                    private_key=self.config.private_key,
-                    inputs=[],
-                    outputs=[{"to": to_address, "value": amount}],
-                    relationship=eth_address if is_wrap else "",
-                )
-            except NotEnoughMoneyException:
-                self.set_status(400)
-                return self.render_as_json({"error": "not enough funds"})
-            except Exception as exc:
-                self.set_status(500)
-                return self.render_as_json(
-                    {"error": f"transaction generation failed: {exc}"}
-                )
+        try:
+            transaction = await Transaction.generate(
+                fee=fee,
+                public_key=self.config.public_key,
+                private_key=self.config.private_key,
+                inputs=[],
+                outputs=[{"to": to_address, "value": amount}],
+                relationship=eth_address if is_wrap else "",
+            )
+        except NotEnoughMoneyException:
+            self.set_status(400)
+            return self.render_as_json({"error": "not enough funds"})
+        except Exception as exc:
+            self.set_status(500)
+            return self.render_as_json(
+                {"error": f"transaction generation failed: {exc}"}
+            )
 
         try:
             await transaction.verify(
                 check_input_spent=True,
                 check_masternode_fee=True,
                 check_max_inputs=True,
-                # Skip KEL check for client-signed transactions — KEL
-                # authorization is already proven by the VP validation above.
-                check_kel=pre_signed_txn_dict is None,
+                check_kel=True,
                 mempool=True,
             )
         except TooManyInputsException as exc:
@@ -4637,23 +5310,6 @@ class FindRecoveryTipHandler(BaseHandler):
             return self.write({"error": "could not reconstruct delegator KEL"})
 
         tip = log[-1]
-
-        # Walk forward through any mempool recovery chain so that a second
-        # consecutive recovery (while the first is still pending) receives
-        # the correct prev_public_key_hash — the first recovery's
-        # public_key_hash, not the original delegator KEL tip.
-        seen_pkhs = {tip.public_key_hash}
-        current_pkh = tip.public_key_hash
-        while True:
-            successor = await KeyEventLog.find_recovery_successor(
-                current_pkh, onchain_only=False
-            )
-            if successor is None or successor.public_key_hash in seen_pkhs:
-                break
-            seen_pkhs.add(successor.public_key_hash)
-            tip = successor
-            current_pkh = successor.public_key_hash
-
         response = {
             "public_key": tip.public_key,
             "public_key_hash": tip.public_key_hash,
@@ -4690,14 +5346,14 @@ class CredentialReceiptResyncHandler(BaseHandler):
 
     Return all on-chain and mempool credential_receipt transactions whose
     ``relationship.credential_receipt.lookup_key`` matches the supplied
-    value.  The lookup_key is an HKDF fingerprint derived from the wallet
-    owner's witness secret (itself derived from recovery locations +
-    secondFactor), making it stable across key rotations and recoveries
-    as long as the same locations and secondFactor are reused.
+    value.  The lookup_key is a sha256-HKDF fingerprint derived from the
+    user's mnemonic (stable across KEL rotations; not reversible to the
+    mnemonic).
 
     The server returns the raw ``{iv, ct}`` ciphertexts — only the wallet
-    owner (who holds the witness secret) can decrypt them.  The endpoint is
-    intentionally unauthenticated: the ciphertexts are opaque without the
+    owner (who holds the mnemonic) can decrypt them.  The endpoint is
+    intentionally unauthenticated: the lookup_key itself is a secret
+    derived from the mnemonic, and the ciphertexts are opaque without the
     matching AES key.
 
     Response
@@ -4723,23 +5379,6 @@ class CredentialReceiptResyncHandler(BaseHandler):
         }
 
         receipts = []
-        seen_txn_ids = set()
-
-        def _append(txn_doc, block_height, mempool):
-            txn_id = txn_doc.get("id", "")
-            if txn_id in seen_txn_ids:
-                return
-            seen_txn_ids.add(txn_id)
-            cr = txn_doc.get("relationship", {}).get("credential_receipt", {})
-            receipts.append(
-                {
-                    "iv": cr.get("iv", ""),
-                    "ct": cr.get("ct", ""),
-                    "txn_id": txn_id,
-                    "block_height": block_height,
-                    "mempool": mempool,
-                }
-            )
 
         # ── Confirmed blocks ────────────────────────────────────────────────
         cursor = self.config.mongo.async_db.blocks.aggregate(
@@ -4751,15 +5390,274 @@ class CredentialReceiptResyncHandler(BaseHandler):
             ]
         )
         async for row in cursor:
-            _append(row["transactions"], row.get("index"), False)
+            txn = row["transactions"]
+            cr = txn.get("relationship", {}).get("credential_receipt", {})
+            receipts.append(
+                {
+                    "iv": cr.get("iv", ""),
+                    "ct": cr.get("ct", ""),
+                    "txn_id": txn.get("id", ""),
+                    "block_height": row.get("index"),
+                    "mempool": False,
+                }
+            )
 
         # ── Mempool ─────────────────────────────────────────────────────────
         async for txn in self.config.mongo.async_db.miner_transactions.find(
             match_clause
         ):
-            _append(txn, None, True)
+            cr = txn.get("relationship", {}).get("credential_receipt", {})
+            receipts.append(
+                {
+                    "iv": cr.get("iv", ""),
+                    "ct": cr.get("ct", ""),
+                    "txn_id": txn.get("id", ""),
+                    "block_height": None,
+                    "mempool": True,
+                }
+            )
 
         return self.render_as_json({"receipts": receipts})
+
+
+# ── OAuth2 Device Authorization Grant handlers (RFC 8628) ─────────────────────
+
+
+class OAuthDeviceStartHandler(BaseHandler):
+    """
+    POST /ai-agent-auth/api/oauth/<provider>/device/start
+
+    Initiates the Device Authorization Grant flow.  Calls the provider's
+    device authorization endpoint, stores the device_code in MongoDB (keyed
+    by an opaque session_nonce), and returns the user-facing code + URL to
+    the browser.  No client_secret or callback URL required.
+    """
+
+    async def post(self, provider: str):
+        provider = provider.lower().strip()
+        cfg = _OAUTH_PROVIDERS.get(provider)
+        if not cfg:
+            self.set_status(404)
+            return self.render_as_json({"error": f"unknown provider '{provider}'"})
+        client_id = (getattr(self.config, cfg["config_key"], "") or "").strip()
+        if not client_id:
+            self.set_status(503)
+            return self.render_as_json(
+                {
+                    "error": f"{provider} OAuth not configured on this server. "
+                    f"Set '{cfg['config_key']}' in config.json."
+                }
+            )
+        cfg = dict(cfg, client_id=client_id)
+
+        try:
+            device_data = await self._start_device_flow(cfg)
+        except Exception as exc:
+            self.set_status(502)
+            return self.render_as_json({"error": f"Device flow init failed: {exc}"})
+
+        # Normalize field name differences across providers
+        # (Google uses 'verification_url'; RFC 8628 standard is 'verification_uri')
+        verification_uri = (
+            device_data.get("verification_uri")
+            or device_data.get("verification_url")
+            or "https://github.com/login/device"
+        )
+        expires_in = int(device_data.get("expires_in", 300))
+
+        session_nonce = _secrets.token_urlsafe(32)
+        try:
+            await self.config.mongo.async_db.web2_oauth_sessions.insert_one(
+                {
+                    "nonce": session_nonce,
+                    "provider": provider,
+                    "status": "pending",
+                    "device_code": device_data["device_code"],
+                    "expires_at": _datetime.datetime.utcnow()
+                    + _datetime.timedelta(seconds=expires_in),
+                }
+            )
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).error(
+                "OAuthDeviceStartHandler: DB insert failed: %s", exc
+            )
+            self.set_status(500)
+            return self.render_as_json({"error": "session store unavailable"})
+
+        return self.render_as_json(
+            {
+                "session_nonce": session_nonce,
+                "user_code": device_data.get("user_code", ""),
+                "verification_uri": verification_uri,
+                "expires_in": expires_in,
+                "interval": int(device_data.get("interval", 5)),
+            }
+        )
+
+    async def _start_device_flow(self, cfg: dict) -> dict:
+        client = AsyncHTTPClient()
+        req = HTTPRequest(
+            url=cfg["device_auth_url"],
+            method="POST",
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json",
+            },
+            body=_oauthparse.urlencode(
+                {
+                    "client_id": cfg["client_id"],
+                    "scope": cfg.get("scope", ""),
+                }
+            ),
+            request_timeout=15.0,
+        )
+        resp = await client.fetch(req, raise_error=False)
+        body_str = resp.body.decode("utf-8", errors="replace")
+        if resp.code not in (200, 201):
+            raise ValueError(f"HTTP {resp.code}: {body_str[:200]}")
+        data = json.loads(body_str)
+        if "error" in data:
+            raise ValueError(data.get("error_description") or data["error"])
+        if not data.get("device_code"):
+            raise ValueError("No device_code in provider response")
+        return data
+
+
+class OAuthDevicePollHandler(BaseHandler):
+    """
+    POST /ai-agent-auth/api/oauth/<provider>/device/poll
+    Body: {"session_nonce": "<nonce>"}
+
+    Called by the browser every `interval` seconds while the user is
+    completing the device authorization on the provider's website.
+    Returns {"status": "pending"|"authorized"|"slow_down"|"error"}.
+
+    On "authorized", the access_token is stored in MongoDB under the same
+    nonce so it can be resolved by AgentChatHandler when the client passes
+    web2_sessions: {provider: nonce} in /api/chat requests.
+    """
+
+    async def post(self, provider: str):
+        provider = provider.lower().strip()
+        cfg = _OAUTH_PROVIDERS.get(provider)
+        if not cfg:
+            self.set_status(404)
+            return self.render_as_json({"error": f"unknown provider '{provider}'"})
+        client_id = (getattr(self.config, cfg["config_key"], "") or "").strip()
+        cfg = dict(cfg, client_id=client_id)
+
+        try:
+            body = json.loads(self.request.body)
+        except Exception:
+            self.set_status(400)
+            return self.render_as_json({"error": "invalid JSON body"})
+
+        nonce = (body.get("session_nonce") or "").strip()
+        if not nonce:
+            self.set_status(400)
+            return self.render_as_json({"error": "session_nonce required"})
+
+        try:
+            session_doc = await self.config.mongo.async_db.web2_oauth_sessions.find_one(
+                {"nonce": nonce, "provider": provider}
+            )
+        except Exception:
+            self.set_status(500)
+            return self.render_as_json({"error": "session store error"})
+
+        if not session_doc:
+            self.set_status(404)
+            return self.render_as_json({"error": "session not found or expired"})
+
+        if session_doc.get("status") == "authorized":
+            return self.render_as_json({"status": "authorized"})
+
+        device_code = session_doc.get("device_code", "")
+        if not device_code:
+            self.set_status(500)
+            return self.render_as_json({"error": "corrupt session: no device_code"})
+
+        try:
+            token_data = await self._poll_token(cfg, device_code)
+        except Exception as exc:
+            return self.render_as_json({"status": "error", "message": str(exc)})
+
+        error_code = token_data.get("error", "")
+        if error_code == "authorization_pending":
+            return self.render_as_json({"status": "pending"})
+        if error_code == "slow_down":
+            return self.render_as_json({"status": "slow_down"})
+        if error_code in ("expired_token", "access_denied"):
+            return self.render_as_json(
+                {
+                    "status": "error",
+                    "message": f"Authorization {error_code.replace('_', ' ')}",
+                }
+            )
+        if error_code:
+            return self.render_as_json(
+                {
+                    "status": "error",
+                    "message": token_data.get("error_description", error_code),
+                }
+            )
+
+        access_token = token_data.get("access_token", "")
+        if not access_token:
+            return self.render_as_json(
+                {"status": "error", "message": "No access_token in provider response"}
+            )
+
+        try:
+            await self.config.mongo.async_db.web2_oauth_sessions.update_one(
+                {"_id": session_doc["_id"]},
+                {
+                    "$set": {
+                        "access_token": access_token,
+                        "refresh_token": token_data.get("refresh_token", ""),
+                        "token_scope": token_data.get("scope", ""),
+                        "status": "authorized",
+                        "authorized_at": _datetime.datetime.utcnow(),
+                        "expires_at": _datetime.datetime.utcnow()
+                        + _datetime.timedelta(hours=8),
+                    },
+                    "$unset": {"device_code": ""},
+                },
+            )
+        except Exception as exc:
+            return self.render_as_json(
+                {"status": "error", "message": f"Failed to store token: {exc}"}
+            )
+
+        return self.render_as_json({"status": "authorized"})
+
+    async def _poll_token(self, cfg: dict, device_code: str) -> dict:
+        client = AsyncHTTPClient()
+        payload = {
+            "client_id": cfg["client_id"],
+            "device_code": device_code,
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        }
+        if cfg.get("client_secret"):
+            payload["client_secret"] = cfg["client_secret"]
+        req = HTTPRequest(
+            url=cfg["token_url"],
+            method="POST",
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json",
+            },
+            body=_oauthparse.urlencode(payload),
+            request_timeout=15.0,
+        )
+        resp = await client.fetch(req, raise_error=False)
+        body_str = resp.body.decode("utf-8", errors="replace")
+        # 400 is valid — it carries authorization_pending / slow_down error codes
+        if resp.code not in (200, 400):
+            raise ValueError(f"HTTP {resp.code}: {body_str[:200]}")
+        return json.loads(body_str)
 
 
 HANDLERS = [
@@ -4781,6 +5679,8 @@ HANDLERS = [
     (r"/ai-agent-auth/api/node-config/apply", NodeConfigApplyHandler),
     (r"/ai-agent-auth/api/wallet/info", WalletInfoHandler),
     (r"/ai-agent-auth/api/wallet/send", WalletSendHandler),
+    (r"/ai-agent-auth/api/oauth/([a-z]+)/device/start", OAuthDeviceStartHandler),
+    (r"/ai-agent-auth/api/oauth/([a-z]+)/device/poll", OAuthDevicePollHandler),
     (r"/ai-agent-auth/api/find-recovery-tip", FindRecoveryTipHandler),
     (r"/ai-agent-auth/api/resync-credentials", CredentialReceiptResyncHandler),
     (r"/ai-agent-auth/api/travel", TravelBookingHandler),  # legacy endpoint
