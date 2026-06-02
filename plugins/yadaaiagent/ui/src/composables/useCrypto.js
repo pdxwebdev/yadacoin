@@ -110,6 +110,30 @@ export async function signMessage(msgBytes, privBytes) {
   return secp.signAsync(msgBytes, privBytes);
 }
 
+/**
+ * Derive a KEL (Key Event Log) slot key from wallet root material.
+ * Each slotIndex produces a unique, deterministic key pair.
+ * slotIndex 0 is used for session binding; subsequent slots for write actions.
+ */
+export function kelDeriveKey(rootPrivHex, rootCcHex, slotIndex) {
+  const priv = hex.toBytes(rootPrivHex);
+  const cc = hex.toBytes(rootCcHex);
+  const { priv: keyPriv } = deriveSecurePath(
+    priv,
+    cc,
+    `kel_oauth_v1_${slotIndex}`,
+  );
+  return { privBytes: keyPriv, pubHex: getPublicKeyHex(keyPriv) };
+}
+
+/**
+ * Returns the SHA-256 hex digest of a hex-encoded byte string.
+ * i.e. sha256Hex(pubkeyHex) = hex(sha256(bytes.fromhex(pubkeyHex)))
+ */
+export function sha256Hex(hexInput) {
+  return hex.fromBytes(sha256(hex.toBytes(hexInput)));
+}
+
 // ── P2PKH address from compressed public key bytes ───────────────────────────
 const _b58check = createBase58check(sha256);
 

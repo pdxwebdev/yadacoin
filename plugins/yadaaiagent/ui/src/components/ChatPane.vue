@@ -7,8 +7,55 @@
       @auth-connect="handleAuthConnect"
     />
 
+    <div
+      v-if="web2Sessions.github || (web2Sessions.microsoft || []).length"
+      class="accounts-bar"
+    >
+      <!-- GitHub pill -->
+      <span v-if="web2Sessions.github" class="acct-pill acct-github">
+        🐙 GitHub
+        <button
+          class="acct-x"
+          @click="web2Disconnect('github')"
+          title="Disconnect GitHub"
+        >
+          ✕
+        </button>
+      </span>
+      <!-- Microsoft pills — one per connected account -->
+      <span
+        v-for="acct in web2Sessions.microsoft || []"
+        :key="acct.nonce"
+        class="acct-pill acct-microsoft"
+      >
+        🟦 {{ acct.label || "Microsoft" }}
+        <button
+          class="acct-x"
+          @click="web2DisconnectAccount('microsoft', acct.nonce)"
+          title="Disconnect"
+        >
+          ✕
+        </button>
+      </span>
+      <!-- Add another Microsoft account -->
+      <button
+        v-if="(web2Sessions.microsoft || []).length"
+        class="acct-add"
+        @click="handleAuthConnect({ provider: 'microsoft' })"
+        title="Connect another Microsoft account"
+      >
+        + Add account
+      </button>
+    </div>
+
     <div class="input-area">
-      <button class="help-btn" title="Integration help" @click="showDocs = true">?</button>
+      <button
+        class="help-btn"
+        title="Integration help"
+        @click="showDocs = true"
+      >
+        ?
+      </button>
       <textarea
         ref="inputEl"
         v-model="userInput"
@@ -36,35 +83,75 @@
             <button class="docs-close" @click="showDocs = false">✕</button>
           </div>
           <div class="docs-body">
-
             <!-- GitHub accordion -->
             <div class="docs-accordion">
-              <button class="docs-acc-header" @click="openSection = openSection === 'github' ? null : 'github'">
+              <button
+                class="docs-acc-header"
+                @click="
+                  openSection = openSection === 'github' ? null : 'github'
+                "
+              >
                 <span>🐙 GitHub Integration</span>
-                <span class="docs-acc-chevron" :class="{ open: openSection === 'github' }">›</span>
+                <span
+                  class="docs-acc-chevron"
+                  :class="{ open: openSection === 'github' }"
+                  >›</span
+                >
               </button>
               <div v-show="openSection === 'github'" class="docs-acc-body">
-                <p>Connect your GitHub account to let the AI agent read issues, pull requests, repositories, and discussions on your behalf.</p>
+                <p>
+                  Connect your GitHub account to let the AI agent read issues,
+                  pull requests, repositories, and discussions on your behalf.
+                </p>
                 <h3>Connecting</h3>
                 <ol>
-                  <li>Switch to the <strong>GitHub</strong> agent type in the agent selector.</li>
-                  <li>The agent detects GitHub is not connected and prompts you to authorize.</li>
-                  <li>A device code appears — visit <code>https://github.com/login/device</code> and enter it.</li>
-                  <li>Once authorized, your token is stored securely in the local database.</li>
+                  <li>
+                    Switch to the <strong>GitHub</strong> agent type in the
+                    agent selector.
+                  </li>
+                  <li>
+                    The agent detects GitHub is not connected and prompts you to
+                    authorize.
+                  </li>
+                  <li>
+                    A device code appears — visit
+                    <code>https://github.com/login/device</code> and enter it.
+                  </li>
+                  <li>
+                    Once authorized, your token is stored securely in the local
+                    database.
+                  </li>
                 </ol>
                 <h3>What it can do</h3>
                 <ul>
-                  <li>List and search repositories, issues, and pull requests</li>
+                  <li>
+                    List and search repositories, issues, and pull requests
+                  </li>
                   <li>Read issue and PR details, comments, and diffs</li>
                   <li>Search GitHub Discussions</li>
                 </ul>
                 <h3>🔒 Use Your Own GitHub OAuth App (Better Privacy)</h3>
-                <p>By default this app uses a shared OAuth client ID. For better privacy, register your own:</p>
+                <p>
+                  By default this app uses a shared OAuth client ID. For better
+                  privacy, register your own:
+                </p>
                 <ol>
-                  <li>Go to <strong>GitHub → Settings → Developer settings → OAuth Apps → New OAuth App</strong></li>
-                  <li>Set <em>Authorization callback URL</em> to <code>http://localhost</code> (device flow doesn't use it)</li>
+                  <li>
+                    Go to
+                    <strong
+                      >GitHub → Settings → Developer settings → OAuth Apps → New
+                      OAuth App</strong
+                    >
+                  </li>
+                  <li>
+                    Set <em>Authorization callback URL</em> to
+                    <code>http://localhost</code> (device flow doesn't use it)
+                  </li>
                   <li>Copy the <strong>Client ID</strong></li>
-                  <li>Open <code>config/config2.json</code> and set <code>"github_device_client_id"</code> to your Client ID</li>
+                  <li>
+                    Open <code>config/config2.json</code> and set
+                    <code>"github_device_client_id"</code> to your Client ID
+                  </li>
                   <li>Restart the server and reconnect GitHub</li>
                 </ol>
               </div>
@@ -72,41 +159,101 @@
 
             <!-- Microsoft accordion -->
             <div class="docs-accordion">
-              <button class="docs-acc-header" @click="openSection = openSection === 'microsoft' ? null : 'microsoft'">
+              <button
+                class="docs-acc-header"
+                @click="
+                  openSection = openSection === 'microsoft' ? null : 'microsoft'
+                "
+              >
                 <span>🟦 Microsoft / Outlook Integration</span>
-                <span class="docs-acc-chevron" :class="{ open: openSection === 'microsoft' }">›</span>
+                <span
+                  class="docs-acc-chevron"
+                  :class="{ open: openSection === 'microsoft' }"
+                  >›</span
+                >
               </button>
               <div v-show="openSection === 'microsoft'" class="docs-acc-body">
-                <p>Connect your Microsoft 365 or Outlook account to read email, send email, manage calendar events, and work with Microsoft To Do.</p>
+                <p>
+                  Connect your Microsoft 365 or Outlook account to read email,
+                  send email, manage calendar events, and work with Microsoft To
+                  Do.
+                </p>
                 <h3>Connecting</h3>
                 <ol>
-                  <li>Switch to the <strong>Microsoft / Outlook</strong> agent type.</li>
-                  <li>The agent prompts you to connect — a device code appears.</li>
-                  <li>Visit <code>https://microsoft.com/devicelogin</code> and enter the code.</li>
-                  <li>Sign in with your Microsoft account and grant the requested permissions.</li>
+                  <li>
+                    Switch to the <strong>Microsoft / Outlook</strong> agent
+                    type.
+                  </li>
+                  <li>
+                    The agent prompts you to connect — a device code appears.
+                  </li>
+                  <li>
+                    Visit <code>https://microsoft.com/devicelogin</code> and
+                    enter the code.
+                  </li>
+                  <li>
+                    Sign in with your Microsoft account and grant the requested
+                    permissions.
+                  </li>
                 </ol>
                 <h3>What it can do</h3>
                 <ul>
-                  <li><strong>Email:</strong> show inbox, read emails, summarize N emails, send email</li>
+                  <li>
+                    <strong>Email:</strong> show inbox, read emails, summarize N
+                    emails, send email
+                  </li>
                   <li><strong>Calendar:</strong> list upcoming events</li>
-                  <li><strong>Microsoft To Do:</strong> add tasks, complete tasks, delete tasks, push email action items to To Do</li>
+                  <li>
+                    <strong>Microsoft To Do:</strong> add tasks, complete tasks,
+                    delete tasks, push email action items to To Do
+                  </li>
                 </ul>
                 <h3>Permissions requested</h3>
-                <p><code>user.read</code> · <code>Mail.Read</code> · <code>Mail.Send</code> · <code>Calendars.ReadWrite</code> · <code>Tasks.ReadWrite</code></p>
+                <p>
+                  <code>user.read</code> · <code>Mail.Read</code> ·
+                  <code>Mail.Send</code> · <code>Calendars.ReadWrite</code> ·
+                  <code>Tasks.ReadWrite</code>
+                </p>
                 <h3>🔒 Use Your Own Azure AD App (Better Privacy)</h3>
-                <p>By default this app uses a shared Azure app registration. To use your own:</p>
+                <p>
+                  By default this app uses a shared Azure app registration. To
+                  use your own:
+                </p>
                 <ol>
-                  <li>Go to <strong>Azure Portal → Azure Active Directory → App registrations → New registration</strong></li>
-                  <li>Set <em>Supported account types</em> to <strong>Accounts in any org directory and personal Microsoft accounts</strong></li>
-                  <li>Under <strong>Authentication → Advanced settings</strong>, enable <strong>Allow public client flows</strong></li>
-                  <li>Under <strong>API Permissions</strong>, add Delegated: <code>User.Read</code>, <code>Mail.Read</code>, <code>Mail.Send</code>, <code>Calendars.ReadWrite</code>, <code>Tasks.ReadWrite</code></li>
+                  <li>
+                    Go to
+                    <strong
+                      >Azure Portal → Azure Active Directory → App registrations
+                      → New registration</strong
+                    >
+                  </li>
+                  <li>
+                    Set <em>Supported account types</em> to
+                    <strong
+                      >Accounts in any org directory and personal Microsoft
+                      accounts</strong
+                    >
+                  </li>
+                  <li>
+                    Under <strong>Authentication → Advanced settings</strong>,
+                    enable <strong>Allow public client flows</strong>
+                  </li>
+                  <li>
+                    Under <strong>API Permissions</strong>, add Delegated:
+                    <code>User.Read</code>, <code>Mail.Read</code>,
+                    <code>Mail.Send</code>, <code>Calendars.ReadWrite</code>,
+                    <code>Tasks.ReadWrite</code>
+                  </li>
                   <li>Copy the <strong>Application (client) ID</strong></li>
-                  <li>Open <code>config/config2.json</code> and set <code>"microsoft_device_client_id"</code> to your Application ID</li>
+                  <li>
+                    Open <code>config/config2.json</code> and set
+                    <code>"microsoft_device_client_id"</code> to your
+                    Application ID
+                  </li>
                   <li>Restart the server and reconnect Microsoft</li>
                 </ol>
               </div>
             </div>
-
           </div>
         </div>
       </div>
@@ -182,7 +329,13 @@ let chatHistory = [];
 const vendorState = ref(null);
 
 // ── Web 2.0 OAuth sessions ────────────────────────────────────────────────────
-const { activeSessions: web2Sessions, connect: web2Connect } = useWeb2Auth();
+const {
+  activeSessions: web2Sessions,
+  connect: web2Connect,
+  disconnectAccount: web2DisconnectAccount,
+  disconnect: web2Disconnect,
+  rekeyActiveSessions: web2RekeyActiveSessions,
+} = useWeb2Auth();
 
 // Prompt that triggered a pending auth (re-sent after connecting)
 let pendingAuthPrompt = "";
@@ -576,7 +729,60 @@ function renderMicrosoftData(md) {
 async function handleAuthConnect({ provider }) {
   const savedPrompt = pendingAuthPrompt;
 
-  // Push a device code card message — we'll update it reactively as state changes
+  if (provider === "microsoft") {
+    const privHex = localStorage.getItem(LS_PRIV) || "";
+    const ccHex = localStorage.getItem(LS_CC) || "";
+    if (!privHex || !ccHex) {
+      messages.value.push({
+        role: "agent",
+        html: "",
+        deviceCode: {
+          provider,
+          status: "error",
+          message:
+            "YadaCoin wallet not loaded. Open your wallet and log in before connecting Microsoft.",
+        },
+      });
+      return;
+    }
+
+    // The device code card — runApprovalFlow will update this reactively after rotation.
+    const deviceCardIdx = messages.value.length;
+    messages.value.push({
+      role: "agent",
+      html: "",
+      deviceCode: { provider, status: "starting" },
+    });
+
+    // Show the W3C ApprovalCard so the connect rotation is recorded on-chain
+    // with an OAuthTokenBinding VC.  Private metadata for runApprovalFlow is
+    // stored in agentType._meta (not spread into the VC preview).
+    pendingAuthPrompt = "";
+    messages.value.push({
+      role: "agent",
+      html: "",
+      showApproval: true,
+      approvalContext: {
+        scope: {
+          type: "OAuthTokenBinding",
+          services: ["OAuthTokenBinding"],
+          provider: "microsoft",
+        },
+        agentType: {
+          id: "microsoft_connect",
+          authorizationType: "OAuthTokenBinding",
+          _meta: { deviceCardIdx, savedPrompt },
+        },
+      },
+    });
+    // Trigger App.vue watcher by re-assigning the last element
+    messages.value[messages.value.length - 1] = {
+      ...messages.value[messages.value.length - 1],
+    };
+    return;
+  }
+
+  // ── Non-Microsoft providers: simple connect flow ─────────────────────────
   const idx = messages.value.length;
   messages.value.push({
     role: "agent",
@@ -585,8 +791,16 @@ async function handleAuthConnect({ provider }) {
   });
 
   try {
-    const deviceInfo = await web2Connect(provider, getNodeUrl());
-    // Show the user code + verification URL
+    // If the wallet is loaded, derive an encryption key so the server can
+    // encrypt the access token before storing it (wallet mode).  Without a
+    // wallet the token remains server-side only (plain nonce approach).
+    const privHex = localStorage.getItem(LS_PRIV) || "";
+    let connectKelOpts = {};
+    if (privHex) {
+      const buf = await crypto.subtle.digest("SHA-256", hex.toBytes(privHex));
+      connectKelOpts.tokenEncKeyHex = hex.fromBytes(new Uint8Array(buf));
+    }
+    const deviceInfo = await web2Connect(provider, getNodeUrl(), connectKelOpts);
     messages.value[idx].deviceCode = {
       provider,
       status: "pending",
@@ -594,14 +808,21 @@ async function handleAuthConnect({ provider }) {
       verification_uri: deviceInfo.verification_uri,
       expires_in: deviceInfo.expires_in,
     };
-
-    // Poll in the background until the user approves on the provider's site
     await deviceInfo.poll();
-
     messages.value[idx].deviceCode = { provider, status: "authorized" };
-
     if (savedPrompt) {
       pendingAuthPrompt = "";
+      // Remove the stale "Please connect" auth_required exchange from
+      // chatHistory so the LLM doesn't see it as context for the re-send.
+      // The exchange is always: [..., user(prompt), assistant(auth_required_reply)]
+      if (
+        chatHistory.length >= 2 &&
+        chatHistory[chatHistory.length - 1]?.role === "assistant" &&
+        chatHistory[chatHistory.length - 2]?.role === "user"
+      ) {
+        chatHistory.pop(); // remove auth_required assistant reply
+        chatHistory.pop(); // remove the user prompt that triggered it
+      }
       await send(savedPrompt);
     }
   } catch (err) {
@@ -709,6 +930,17 @@ async function send(overridePrompt) {
 
   const { index: thinkIdx } = pushThinking();
 
+  // Derive token encryption key so the server can decrypt the MS access token
+  // for inline read operations (list_emails, read_email, etc.).
+  let tokenEncKeyMs;
+  if ((web2Sessions.value.microsoft || []).length > 0) {
+    const privHex = localStorage.getItem(LS_PRIV) || "";
+    if (privHex) {
+      const buf = await crypto.subtle.digest("SHA-256", hex.toBytes(privHex));
+      tokenEncKeyMs = hex.fromBytes(new Uint8Array(buf));
+    }
+  }
+
   let data;
   try {
     const llmCfg = getLlmSettings();
@@ -722,6 +954,7 @@ async function send(overridePrompt) {
         web2_sessions: Object.keys(web2Sessions.value).length
           ? web2Sessions.value
           : undefined,
+        token_enc_key_ms: tokenEncKeyMs || undefined,
         llm: {
           provider: llmCfg.provider,
           model: llmCfg.model || undefined,
@@ -781,6 +1014,7 @@ async function send(overridePrompt) {
           web2_sessions: Object.keys(web2Sessions.value).length
             ? web2Sessions.value
             : undefined,
+          token_enc_key_ms: tokenEncKeyMs || undefined,
           llm: {
             provider: llmCfg2.provider,
             model: llmCfg2.model || undefined,
@@ -1505,6 +1739,162 @@ async function runApprovalFlow(
   onStep,
   onDone,
 ) {
+  // ── Microsoft OAuth connect — rotation + device flow ──────────────────────
+  if (agentType?.id === "microsoft_connect") {
+    const sf = secondFactor;
+    const { deviceCardIdx, savedPrompt: connectSavedPrompt } =
+      agentType._meta || {};
+    const storedPriv = localStorage.getItem(LS_PRIV);
+    const storedCc = localStorage.getItem(LS_CC);
+
+    const privBytes = hex.toBytes(storedPriv);
+    const ccBytes = hex.toBytes(storedCc);
+    const child = deriveSecurePath(privBytes, ccBytes, sf);
+    const childPubHex = getPublicKeyHex(child.priv);
+    const gc1 = deriveSecurePath(child.priv, child.cc, sf);
+    const gc2 = deriveSecurePath(gc1.priv, gc1.cc, sf);
+    const agentPubHex = getPublicKeyHex(gc2.priv);
+    const operatorPubHex = getPublicKeyHex(privBytes);
+
+    const vcBind = {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://yadacoin.io/contexts/agent-auth/v1",
+      ],
+      type: ["VerifiableCredential", "AgentAuthorizationCredential"],
+      issuer: `did:yadacoin:${operatorPubHex}`,
+      validFrom: new Date().toISOString(),
+      credentialStatus: { type: "YadaKELStatus", mode: "rotation" },
+      credentialSubject: {
+        id: `did:yadacoin:${agentPubHex}`,
+        agentAuthorization: {
+          type: "OAuthTokenBinding",
+          services: ["OAuthTokenBinding"],
+          provider: "microsoft",
+        },
+      },
+    };
+    const relB64 = btoa(unescape(encodeURIComponent(JSON.stringify(vcBind))));
+
+    onStep("Broadcasting OAuthTokenBinding rotation on-chain…");
+    let rotateData;
+    try {
+      if (isClientWallet()) {
+        const clientRot = await doClientRotation(
+          privBytes,
+          ccBytes,
+          sf,
+          relB64,
+        );
+        rotateData = {
+          prev_private_key: clientRot.prevPrivHex,
+          prev_chain_code: clientRot.prevCcHex,
+          transaction_id: clientRot.transactionId,
+          status: true,
+        };
+      } else {
+        const rotRes = await fetch(
+          getNodeUrl() + "/key-rotation/derived-child-key",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              public_key: childPubHex,
+              second_factor: sf,
+              signature: "",
+              relationship: relB64,
+            }),
+          },
+        );
+        rotateData = await rotRes.json();
+        if (!rotRes.ok || !rotateData.status) {
+          throw new Error(rotateData.message || String(rotRes.status));
+        }
+      }
+    } catch (e) {
+      onStep("Rotation failed: " + e.message, "fail");
+      onDone(false, "Rotation failed: " + escHtml(e.message));
+      if (deviceCardIdx != null && messages.value[deviceCardIdx]) {
+        messages.value[deviceCardIdx].deviceCode = {
+          provider: "microsoft",
+          status: "error",
+          message: "Rotation failed: " + e.message,
+        };
+      }
+      busy.value = false;
+      nextTick(() => inputEl.value?.focus());
+      return;
+    }
+
+    // Advance LS_PRIV to the post-rotation key.
+    // tokenEncKey is derived from this new key so it matches what runApprovalFlow
+    // (execute time) reads as storedPrivMs — i.e. LS_PRIV before the execute rotation.
+    await web2RekeyActiveSessions(
+      storedPriv,
+      rotateData.prev_private_key,
+      getNodeUrl(),
+      isClientWallet(),
+    );
+    localStorage.setItem(LS_PRIV, rotateData.prev_private_key);
+    if (rotateData.prev_chain_code)
+      localStorage.setItem(LS_CC, rotateData.prev_chain_code);
+    emit("session-rotated", rotateData.prev_private_key);
+    onStep(
+      "Rotation committed · txid " +
+        (rotateData.transaction_id || "").slice(0, 20) +
+        "…",
+      "done",
+    );
+
+    const tokenEncKeyBuf = await crypto.subtle.digest(
+      "SHA-256",
+      hex.toBytes(rotateData.prev_private_key),
+    );
+    const tokenEncKeyHex = hex.fromBytes(new Uint8Array(tokenEncKeyBuf));
+
+    // Dismiss the approval overlay — device card becomes visible
+    onDone(true, "");
+
+    // Start device flow
+    try {
+      const deviceInfo = await web2Connect("microsoft", getNodeUrl(), {
+        rootPrivHex: rotateData.prev_private_key,
+        rootCcHex: rotateData.prev_chain_code || storedCc,
+        tokenEncKeyHex,
+      });
+      if (deviceCardIdx != null && messages.value[deviceCardIdx]) {
+        messages.value[deviceCardIdx].deviceCode = {
+          provider: "microsoft",
+          status: "pending",
+          user_code: deviceInfo.user_code,
+          verification_uri: deviceInfo.verification_uri,
+          expires_in: deviceInfo.expires_in,
+        };
+      }
+      await deviceInfo.poll();
+      if (deviceCardIdx != null && messages.value[deviceCardIdx]) {
+        messages.value[deviceCardIdx].deviceCode = {
+          provider: "microsoft",
+          status: "authorized",
+        };
+      }
+      if (connectSavedPrompt) {
+        await send(connectSavedPrompt);
+      }
+    } catch (err) {
+      if (deviceCardIdx != null && messages.value[deviceCardIdx]) {
+        messages.value[deviceCardIdx].deviceCode = {
+          provider: "microsoft",
+          status: "error",
+          message: String(err),
+        };
+      }
+    }
+    busy.value = false;
+    nextTick(() => inputEl.value?.focus());
+    return;
+  }
+
   // ── Node config — key rotation then direct apply call, no vendor chat ────────
   if (agentType?.id === "node_config") {
     if (isClientWallet() || isHardwareWallet()) {
@@ -1562,6 +1952,12 @@ async function runApprovalFlow(
       return;
     }
 
+    await web2RekeyActiveSessions(
+      storedPriv0,
+      rotateData0.prev_private_key,
+      getNodeUrl(),
+      false,
+    );
     localStorage.setItem(LS_PRIV, rotateData0.prev_private_key);
     if (rotateData0.prev_chain_code)
       localStorage.setItem(LS_CC, rotateData0.prev_chain_code);
@@ -1832,6 +2228,12 @@ async function runApprovalFlow(
       // for the App.vue session pill.
       emit("session-rotated", hardware.nextActive.publicKeyHex);
     } else {
+      await web2RekeyActiveSessions(
+        storedPrivW,
+        rotateDataW.prev_private_key,
+        getNodeUrl(),
+        isClientWallet(),
+      );
       localStorage.setItem(LS_PRIV, rotateDataW.prev_private_key);
       if (rotateDataW.prev_chain_code)
         localStorage.setItem(LS_CC, rotateDataW.prev_chain_code);
@@ -2009,6 +2411,231 @@ async function runApprovalFlow(
     } catch (e) {
       onStep("Registration failed: " + e.message, "fail");
       onDone(false, "Registration failed: " + escHtml(e.message));
+    }
+    extractedScope = null;
+    chatHistory = [];
+    busy.value = false;
+    nextTick(() => inputEl.value?.focus());
+    return;
+  }
+
+  // ── Microsoft write action — rotation then execute ────────────────────────
+  if (currentAgentId.value === "microsoft") {
+    const sfMs = secondFactor;
+    const storedPrivMs = localStorage.getItem(LS_PRIV);
+    const storedCcMs = localStorage.getItem(LS_CC);
+
+    // Derive tokenEncKey = sha256(current LS_PRIV) BEFORE the action rotation
+    // changes LS_PRIV.  This key was used to encrypt the access_token at
+    // connect time.  After the rotation, the old key is gone from the browser,
+    // making the token permanently inaccessible without this key.
+    const tokenEncKeyBuf = await crypto.subtle.digest(
+      "SHA-256",
+      hex.toBytes(storedPrivMs),
+    );
+    const tokenEncKeyHexMs = hex.fromBytes(new Uint8Array(tokenEncKeyBuf));
+
+    // Get the encrypted token and IV from the active session entry.
+    const msArr = web2Sessions.value.microsoft || [];
+    const msEntry = Array.isArray(msArr) ? msArr[0] || {} : {};
+    const msNonce = msEntry.nonce || "";
+    const encryptedTokenMs = msEntry.encrypted_token || "";
+    const tokenIvMs = msEntry.iv || "";
+
+    onStep("Deriving pre-committed child key…");
+    const privBytesMs = hex.toBytes(storedPrivMs);
+    const ccBytesMs = hex.toBytes(storedCcMs);
+    const childMs = deriveSecurePath(privBytesMs, ccBytesMs, sfMs);
+    const childPubHexMs = getPublicKeyHex(childMs.priv);
+    const gc1Ms = deriveSecurePath(childMs.priv, childMs.cc, sfMs);
+    const gc2Ms = deriveSecurePath(gc1Ms.priv, gc1Ms.cc, sfMs);
+    const agentPubHexMs = getPublicKeyHex(gc2Ms.priv);
+    const operatorPubHexMs = getPublicKeyHex(privBytesMs);
+    onStep(
+      "Pre-committed key derived: " + childPubHexMs.slice(0, 20) + "…",
+      "done",
+    );
+
+    const vcMs = {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://yadacoin.io/contexts/agent-auth/v1",
+      ],
+      type: ["VerifiableCredential", "AgentAuthorizationCredential"],
+      issuer: `did:yadacoin:${operatorPubHexMs}`,
+      validFrom: new Date().toISOString(),
+      credentialStatus: { type: "YadaKELStatus", mode: "rotation" },
+      credentialSubject: {
+        id: `did:yadacoin:${agentPubHexMs}`,
+        agentAuthorization: {
+          type: "MicrosoftWriteAction",
+          services: ["MicrosoftWriteAction"],
+          ...scope,
+        },
+      },
+    };
+    const relB64Ms = btoa(unescape(encodeURIComponent(JSON.stringify(vcMs))));
+
+    onStep("Broadcasting rotation transaction with scope committed on-chain…");
+    let rotateDataMs;
+    try {
+      if (isClientWallet()) {
+        const clientRot = await doClientRotation(
+          privBytesMs,
+          ccBytesMs,
+          sfMs,
+          relB64Ms,
+        );
+        rotateDataMs = {
+          prev_private_key: clientRot.prevPrivHex,
+          prev_chain_code: clientRot.prevCcHex,
+          prerotated_private_key: hex.fromBytes(clientRot.provPrivBytes),
+          transaction_id: clientRot.transactionId,
+          status: true,
+        };
+      } else {
+        const rotResMs = await fetch(
+          getNodeUrl() + "/key-rotation/derived-child-key",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              public_key: childPubHexMs,
+              second_factor: sfMs,
+              signature: "",
+              relationship: relB64Ms,
+            }),
+          },
+        );
+        rotateDataMs = await rotResMs.json();
+        if (
+          !rotResMs.ok ||
+          !rotateDataMs.status ||
+          !rotateDataMs.prerotated_private_key
+        ) {
+          throw new Error(rotateDataMs.message || String(rotResMs.status));
+        }
+      }
+    } catch (e) {
+      onStep("Rotation failed: " + e.message, "fail");
+      onDone(false, "Rotation failed: " + escHtml(e.message));
+      busy.value = false;
+      nextTick(() => inputEl.value?.focus());
+      return;
+    }
+
+    await web2RekeyActiveSessions(
+      storedPrivMs,
+      rotateDataMs.prev_private_key,
+      getNodeUrl(),
+      isClientWallet(),
+    );
+    localStorage.setItem(LS_PRIV, rotateDataMs.prev_private_key);
+    if (rotateDataMs.prev_chain_code)
+      localStorage.setItem(LS_CC, rotateDataMs.prev_chain_code);
+    emit("session-rotated", rotateDataMs.prev_private_key);
+    onStep(
+      "Rotation committed · txid " +
+        rotateDataMs.transaction_id.slice(0, 20) +
+        "…",
+      "done",
+    );
+
+    onStep("Building Verifiable Presentation…");
+    const provPrivBytesMs = hex.toBytes(rotateDataMs.prerotated_private_key);
+    const provPubHexMs = getPublicKeyHex(provPrivBytesMs);
+
+    function deepSortKeysMs(obj) {
+      if (Array.isArray(obj)) return obj.map(deepSortKeysMs);
+      if (obj !== null && typeof obj === "object") {
+        const s = {};
+        Object.keys(obj)
+          .sort()
+          .forEach((k) => (s[k] = deepSortKeysMs(obj[k])));
+        return s;
+      }
+      return obj;
+    }
+
+    // Re-build VC with finalised agent key id (same as vcMs, already correct)
+    const vpBaseMs = {
+      "@context": ["https://www.w3.org/ns/credentials/v2"],
+      type: ["VerifiablePresentation"],
+      holder: `did:yadacoin:${provPubHexMs}`,
+      verifiableCredential: [vcMs],
+    };
+    const vpCanonicalBytesMs = new TextEncoder().encode(
+      JSON.stringify(deepSortKeysMs(vpBaseMs)),
+    );
+
+    onStep("Fetching challenge…");
+    let chalDataMs;
+    try {
+      const chalResMs = await fetch(
+        getNodeUrl() +
+          `/ai-agent-auth/api/challenge?public_key=${encodeURIComponent(provPubHexMs)}`,
+      );
+      chalDataMs = await chalResMs.json();
+      if (!chalResMs.ok || !chalDataMs.challenge)
+        throw new Error("no challenge");
+    } catch (e) {
+      onStep("Challenge failed: " + e.message, "fail");
+      onDone(false, "Challenge failed: " + escHtml(e.message));
+      busy.value = false;
+      nextTick(() => inputEl.value?.focus());
+      return;
+    }
+
+    const vpMs = await buildSignedVP(
+      vpBaseMs,
+      vpCanonicalBytesMs,
+      provPrivBytesMs,
+      provPubHexMs,
+      chalDataMs.challenge,
+    );
+
+    onStep("Executing Microsoft action…");
+    const llmCfgMs = getLlmSettings();
+    try {
+      const execRes = await fetch(
+        getNodeUrl() + "/ai-agent-auth/api/microsoft/execute",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            public_key: provPubHexMs,
+            challenge: chalDataMs.challenge,
+            vp: vpMs,
+            nonce: msNonce,
+            token_enc_key: tokenEncKeyHexMs,
+            encrypted_token: encryptedTokenMs,
+            iv: tokenIvMs,
+            action: scope.action,
+            scope,
+            llm: {
+              provider: llmCfgMs.provider,
+              model: llmCfgMs.model || undefined,
+              api_key: llmCfgMs.api_key || undefined,
+              ollama_host: llmCfgMs.ollama_host || undefined,
+              base_url: llmCfgMs.base_url || undefined,
+            },
+          }),
+        },
+      );
+      const execData = await execRes.json();
+      if (!execRes.ok)
+        throw new Error(execData.error || String(execRes.status));
+      onStep("Action completed", "done");
+      // Session is re-keyed — keep it active so the user can continue
+      // using Microsoft without reconnecting after a write action.
+      onDone(
+        true,
+        `✅ <strong>${escHtml(execData.reply || execData.message || "Done!")}</strong><br><br>` +
+          `KEL authorization on-chain: <a href="${origin}/explorer?term=${rotateDataMs.transaction_id}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);font-family:monospace;font-size:0.85em">${rotateDataMs.transaction_id.slice(0, 24)}…</a>`,
+      );
+    } catch (e) {
+      onStep("Execution failed: " + e.message, "fail");
+      onDone(false, "Action failed: " + escHtml(e.message));
     }
     extractedScope = null;
     chatHistory = [];
@@ -2795,6 +3422,66 @@ defineExpose({
 }
 
 /* ── Help button ───────────────────────────────────────────────────────────── */
+/* ── Connected accounts bar ───────────────────────────────────────────────── */
+.accounts-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.acct-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.74rem;
+  padding: 2px 8px 2px 6px;
+  border-radius: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.acct-github {
+  background: rgba(88, 166, 255, 0.1);
+  color: #79c0ff;
+  border: 1px solid rgba(88, 166, 255, 0.2);
+}
+.acct-microsoft {
+  background: rgba(0, 120, 212, 0.12);
+  color: #60a5fa;
+  border: 1px solid rgba(0, 120, 212, 0.25);
+}
+.acct-x {
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  font-size: 0.65rem;
+  padding: 0;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+.acct-x:hover {
+  opacity: 1;
+}
+.acct-add {
+  background: none;
+  border: 1px dashed rgba(88, 166, 255, 0.3);
+  color: #79c0ff;
+  border-radius: 12px;
+  font-size: 0.74rem;
+  padding: 2px 8px;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.15s;
+}
+.acct-add:hover {
+  opacity: 1;
+}
+
 .help-btn {
   flex-shrink: 0;
   width: 32px;
@@ -2809,7 +3496,9 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 .help-btn:hover {
   background: var(--accent);
@@ -2859,7 +3548,10 @@ defineExpose({
   padding: 2px 6px;
   border-radius: 4px;
 }
-.docs-close:hover { background: var(--border, #30363d); color: var(--text, #e6edf3); }
+.docs-close:hover {
+  background: var(--border, #30363d);
+  color: var(--text, #e6edf3);
+}
 .docs-body {
   overflow-y: auto;
   padding: 16px;
@@ -2893,13 +3585,17 @@ defineExpose({
   text-align: left;
   transition: background 0.15s;
 }
-.docs-acc-header:hover { background: var(--border, #30363d); }
+.docs-acc-header:hover {
+  background: var(--border, #30363d);
+}
 .docs-acc-chevron {
   font-size: 1.1rem;
   transition: transform 0.2s;
   display: inline-block;
 }
-.docs-acc-chevron.open { transform: rotate(90deg); }
+.docs-acc-chevron.open {
+  transform: rotate(90deg);
+}
 .docs-acc-body {
   padding: 14px 18px 16px;
   border-top: 1px solid var(--border, #30363d);
@@ -2912,14 +3608,19 @@ defineExpose({
   letter-spacing: 0.05em;
   color: var(--accent, #58a6ff);
 }
-.docs-acc-body p { margin: 0 0 6px; color: #8b949e; }
+.docs-acc-body p {
+  margin: 0 0 6px;
+  color: #8b949e;
+}
 .docs-acc-body ol,
 .docs-acc-body ul {
   margin: 0 0 6px;
   padding-left: 20px;
   color: #8b949e;
 }
-.docs-acc-body li { margin-bottom: 4px; }
+.docs-acc-body li {
+  margin-bottom: 4px;
+}
 .docs-acc-body code {
   background: rgba(88, 166, 255, 0.1);
   border: 1px solid rgba(88, 166, 255, 0.2);
@@ -2929,5 +3630,7 @@ defineExpose({
   font-size: 0.82rem;
   color: #79c0ff;
 }
-.docs-acc-body strong { color: var(--text, #e6edf3); }
+.docs-acc-body strong {
+  color: var(--text, #e6edf3);
+}
 </style>

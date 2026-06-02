@@ -111,7 +111,34 @@
             >
           </div>
           <template v-if="msg.deviceCode.status === 'starting'">
-            <div class="dc-status">Starting…</div>
+            <div class="dc-status">{{ msg.deviceCode.message || "Starting…" }}</div>
+          </template>
+          <template v-else-if="msg.deviceCode.status === 'needs_rotation'">
+            <div class="dc-instructions">
+              A key rotation is required to bind this account to the YadaCoin
+              blockchain. Enter your second factor to proceed.
+            </div>
+            <input
+              :value="msg.deviceCode.sfValue"
+              @input="msg.deviceCode.sfValue = $event.target.value"
+              @keydown.enter="
+                msg.deviceCode.onApprove &&
+                  msg.deviceCode.onApprove(msg.deviceCode.sfValue)
+              "
+              type="password"
+              class="dc-sf-input"
+              placeholder="Second factor"
+              autocomplete="current-password"
+            />
+            <button
+              class="dc-connect-btn"
+              @click="
+                msg.deviceCode.onApprove &&
+                  msg.deviceCode.onApprove(msg.deviceCode.sfValue)
+              "
+            >
+              🔐 Rotate &amp; Connect
+            </button>
           </template>
           <template v-else-if="msg.deviceCode.status === 'pending'">
             <div class="dc-instructions">
@@ -763,6 +790,40 @@ defineExpose({ chatEl, escHtml });
 }
 .dc-error {
   color: #f85149;
+}
+.dc-sf-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #e6edf3;
+  font-family: inherit;
+  font-size: 0.87rem;
+  padding: 7px 10px;
+  margin-bottom: 10px;
+  outline: none;
+}
+.dc-sf-input:focus {
+  border-color: #58a6ff;
+}
+.dc-connect-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #1f6feb;
+  border: 1px solid #388bfd;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.87rem;
+  font-weight: 600;
+  padding: 7px 14px;
+  transition: background 0.15s;
+}
+.dc-connect-btn:hover {
+  background: #388bfd;
 }
 
 /* ── GitHub data cards ────────────────────────────────────────── */

@@ -416,7 +416,8 @@ const isRegistration = computed(
 const isNodeConfig = computed(() => props.agentType?.id === "node_config");
 const isWalletAgent = computed(() => props.agentType?.id === "wallet_agent");
 const skipPayment = computed(
-  () => isRegistration.value || isNodeConfig.value || isWalletAgent.value,
+  () => isRegistration.value || isNodeConfig.value || isWalletAgent.value ||
+    props.agentType?.id === "microsoft_connect",
 );
 
 // Keys that warrant an explicit "verify this value" warning

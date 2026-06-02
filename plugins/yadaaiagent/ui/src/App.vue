@@ -39,6 +39,12 @@
             credentialCount
           }}</span>
         </button>
+        <button class="icon-btn" title="Agent Loop" @click="showLoop = true">
+          &#9889;
+        </button>
+        <button class="icon-btn" title="Skills" @click="showSkills = true">
+          &#10024;
+        </button>
         <button class="icon-btn" title="Settings" @click="showSettings = true">
           &#9881;
         </button>
@@ -82,6 +88,8 @@
       v-model="showSettings"
       @wallet-mode-changed="onWalletModeChanged"
     />
+    <SkillsDrawer v-model="showSkills" />
+    <AgentLoopPanel v-model="showLoop" />
     <CredentialWallet v-model="showWallet" :key="walletKey" />
     <WalletSetup
       v-if="showWalletSetup"
@@ -96,6 +104,8 @@ import { ref, computed, watch, onMounted } from "vue";
 import ChatPane from "./components/ChatPane.vue";
 import ApprovalCard from "./components/ApprovalCard.vue";
 import SettingsDrawer from "./components/SettingsDrawer.vue";
+import SkillsDrawer from "./components/SkillsDrawer.vue";
+import AgentLoopPanel from "./components/AgentLoopPanel.vue";
 import CredentialWallet from "./components/CredentialWallet.vue";
 import WalletSetup from "./components/WalletSetup.vue";
 import {
@@ -144,6 +154,8 @@ function onAgentChanged(agentObj) {
 }
 
 const showSettings = ref(false);
+const showSkills = ref(false);
+const showLoop = ref(false);
 const showWallet = ref(false);
 const showWalletSetup = ref(false);
 const walletKey = ref(0); // force reload when credential-issued
