@@ -7,71 +7,33 @@
       @auth-connect="handleAuthConnect"
     />
 
-    <div
-      v-if="web2Sessions.github || (web2Sessions.microsoft || []).length"
-      class="accounts-bar"
-    >
-      <!-- GitHub pill -->
-      <span v-if="web2Sessions.github" class="acct-pill acct-github">
-        🐙 GitHub
-        <button
-          class="acct-x"
-          @click="web2Disconnect('github')"
-          title="Disconnect GitHub"
-        >
-          ✕
-        </button>
-      </span>
-      <!-- Microsoft pills — one per connected account -->
-      <span
-        v-for="acct in web2Sessions.microsoft || []"
-        :key="acct.nonce"
-        class="acct-pill acct-microsoft"
-      >
-        🟦 {{ acct.label || "Microsoft" }}
-        <button
-          class="acct-x"
-          @click="web2DisconnectAccount('microsoft', acct.nonce)"
-          title="Disconnect"
-        >
-          ✕
-        </button>
-      </span>
-      <!-- Add another Microsoft account -->
-      <button
-        v-if="(web2Sessions.microsoft || []).length"
-        class="acct-add"
-        @click="handleAuthConnect({ provider: 'microsoft' })"
-        title="Connect another Microsoft account"
-      >
-        + Add account
-      </button>
-    </div>
-
     <div class="input-area">
-      <button
-        class="help-btn"
-        title="Integration help"
-        @click="showDocs = true"
-      >
-        ?
-      </button>
-      <textarea
-        ref="inputEl"
-        v-model="userInput"
-        :disabled="!sessionReady || busy"
-        placeholder="Type a message…"
-        rows="1"
-        @keydown.enter.exact.prevent="send"
-        @input="autoGrow"
-      ></textarea>
-      <button
-        class="send-btn"
-        :disabled="!sessionReady || !userInput.trim() || busy"
-        @click="send"
-      >
-        ↑
-      </button>
+      <!-- ── Input row ───────────────────────────────────────────────── -->
+      <div class="input-row">
+        <button
+          class="help-btn"
+          title="Integration help"
+          @click="showDocs = true"
+        >
+          ?
+        </button>
+        <textarea
+          ref="inputEl"
+          v-model="userInput"
+          :disabled="!sessionReady || busy"
+          placeholder="Describe a goal for the agent…"
+          rows="1"
+          @keydown.enter.exact.prevent="runLoop()"
+          @input="autoGrow"
+        ></textarea>
+        <button
+          class="send-btn"
+          :disabled="!sessionReady || !userInput.trim() || busy"
+          @click="runLoop()"
+        >
+          ⚡
+        </button>
+      </div>
     </div>
 
     <!-- ── Integration docs modal ───────────────────────────────────────── -->
@@ -319,6 +281,8 @@ const userInput = ref("");
 const busy = ref(false);
 const inputEl = ref(null);
 const chatWindow = ref(null);
+
+// ── Agent Loop mode (always on) ──────────────────────────────────────────────
 
 // Per-conversation "extracted" scope (travel details, legal params, etc.)
 let extractedScope = null;
@@ -800,7 +764,11 @@ async function handleAuthConnect({ provider }) {
       const buf = await crypto.subtle.digest("SHA-256", hex.toBytes(privHex));
       connectKelOpts.tokenEncKeyHex = hex.fromBytes(new Uint8Array(buf));
     }
-    const deviceInfo = await web2Connect(provider, getNodeUrl(), connectKelOpts);
+    const deviceInfo = await web2Connect(
+      provider,
+      getNodeUrl(),
+      connectKelOpts,
+    );
     messages.value[idx].deviceCode = {
       provider,
       status: "pending",
@@ -891,6 +859,206 @@ async function discoverAndPushAgents(intent, agentTypeId) {
     );
   } catch {
     // silent — discovery is best-effort
+  }
+}
+
+// ── Agent Loop run ────────────────────────────────────────────────────────────
+function _loopGetPublicKey() {
+  const mode = getWalletMode();
+  if (mode === "hardware") return localStorage.getItem(LS_HW_PUB) || "";
+  const priv = localStorage.getItem(LS_PRIV);
+  if (!priv) return "";
+  try {
+    return getPublicKeyHex(hex.toBytes(priv));
+  } catch {
+    return "";
+  }
+}
+
+function _buildLoopHtml(
+  loopPlan,
+  loopStepResults,
+  loopActiveSteps,
+  loopFinalReply,
+  loopError,
+  loopStatus,
+  loopWarnings,
+) {
+  let h = '<div class="loop-result">';
+  if (loopWarnings && loopWarnings.length) {
+    for (const w of loopWarnings) {
+      h += `<div class="loop-warning">${escHtml(w)}</div>`;
+    }
+  }
+  if (loopStatus && !loopFinalReply && !loopError) {
+    h += `<div class="loop-status"><span class="loop-spinner"></span>${escHtml(loopStatus)}</div>`;
+  }
+  if (loopPlan) {
+    h += '<div class="loop-plan">';
+    if (loopPlan.reasoning)
+      h += `<div class="loop-plan-reasoning">${escHtml(loopPlan.reasoning)}</div>`;
+    h += '<ol class="loop-steps">';
+    for (const s of loopPlan.steps || []) {
+      const isDone = s.step in loopStepResults;
+      const isActive = loopActiveSteps.has(s.step);
+      const cls = isDone ? "lp-done" : isActive ? "lp-active" : "";
+      const ind = isDone ? "✓" : isActive ? "●" : String(s.step);
+      h += `<li class="loop-step ${cls}">`;
+      h += `<span class="ls-num">${escHtml(ind)}</span>`;
+      h += `<span class="ls-desc">${escHtml(s.description)}</span>`;
+      h += `<span class="ls-badge">${escHtml(s.skill)}/${escHtml(s.action)}</span>`;
+      if (isDone) {
+        const r = loopStepResults[s.step];
+        const rs = typeof r === "string" ? r : JSON.stringify(r, null, 2);
+        h += `<div class="ls-result">${escHtml(rs.length > 220 ? rs.slice(0, 220) + "…" : rs)}</div>`;
+      }
+      h += "</li>";
+    }
+    h += "</ol></div>";
+  }
+  if (loopFinalReply) {
+    h += `<div class="loop-final"><div class="loop-final-title">✓ Result</div><div class="loop-final-body">${escHtml(loopFinalReply)}</div></div>`;
+  }
+  if (loopError) {
+    h += `<div class="loop-error">⚠ ${escHtml(loopError)}</div>`;
+  }
+  h += "</div>";
+  return h;
+}
+
+async function runLoop() {
+  const goal = userInput.value.trim();
+  if (!goal || busy.value || !sessionReady.value) return;
+  userInput.value = "";
+  if (inputEl.value) inputEl.value.style.height = "auto";
+  busy.value = true;
+  pushUser(goal);
+
+  const msgIdx = messages.value.length;
+  messages.value.push({
+    role: "agent",
+    html: _buildLoopHtml(null, {}, new Set(), "", "", "Starting…", []),
+  });
+
+  let loopPlan = null;
+  const loopStepResults = {};
+  const loopActiveSteps = new Set();
+  let loopStatus = "Starting…";
+  let loopFinalReply = "";
+  let loopError = "";
+  const loopWarnings = [];
+
+  function updateLoopMsg() {
+    if (messages.value[msgIdx]) {
+      messages.value[msgIdx] = {
+        role: "agent",
+        html: _buildLoopHtml(
+          loopPlan,
+          loopStepResults,
+          loopActiveSteps,
+          loopFinalReply,
+          loopError,
+          loopStatus,
+          loopWarnings,
+        ),
+      };
+    }
+  }
+
+  const llmCfg = getLlmSettings();
+
+  // Derive Microsoft token decryption key (same as in send())
+  let loopTokenEncKeyMs;
+  if ((web2Sessions.value.microsoft || []).length > 0) {
+    const privHex = localStorage.getItem(LS_PRIV) || "";
+    if (privHex) {
+      const buf = await crypto.subtle.digest("SHA-256", hex.toBytes(privHex));
+      loopTokenEncKeyMs = hex.fromBytes(new Uint8Array(buf));
+    }
+  }
+
+  const body = {
+    mode: "loop",
+    goal,
+    llm: {
+      provider: llmCfg.provider,
+      model: llmCfg.model || undefined,
+      api_key: llmCfg.api_key || undefined,
+      ollama_host: llmCfg.ollama_host || undefined,
+      base_url: llmCfg.base_url || undefined,
+    },
+    brave_api_key: getBraveApiKey() || undefined,
+    web2_sessions: Object.keys(web2Sessions.value || {}).length
+      ? web2Sessions.value
+      : undefined,
+    token_enc_key_ms: loopTokenEncKeyMs || undefined,
+    public_key: _loopGetPublicKey() || undefined,
+  };
+
+  try {
+    const resp = await fetch(getNodeUrl() + "/ai-agent-auth/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${resp.status}`);
+    }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const raw = line.slice(6).trim();
+        if (!raw) continue;
+        try {
+          const evt = JSON.parse(raw);
+          switch (evt.type) {
+            case "status":
+              loopStatus = evt.message;
+              break;
+            case "warning":
+              loopWarnings.push(evt.message);
+              break;
+            case "plan":
+              loopPlan = { reasoning: evt.reasoning, steps: evt.steps || [] };
+              loopStatus = "";
+              break;
+            case "step_start":
+              loopActiveSteps.add(evt.step);
+              break;
+            case "step_result":
+              loopStepResults[evt.step] = evt.output;
+              loopActiveSteps.delete(evt.step);
+              break;
+            case "done":
+              loopFinalReply = evt.reply || "";
+              loopStatus = "";
+              break;
+            case "error":
+              loopError = evt.message || evt.error || "Unknown error";
+              loopStatus = "";
+              break;
+          }
+          updateLoopMsg();
+        } catch {
+          // skip malformed lines
+        }
+      }
+    }
+  } catch (e) {
+    loopError = String(e);
+    updateLoopMsg();
+  } finally {
+    busy.value = false;
+    nextTick(() => inputEl.value?.focus());
   }
 }
 
@@ -3047,12 +3215,17 @@ defineExpose({
 }
 .input-area {
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 12px 16px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 16px 12px;
   border-top: 1px solid var(--border);
   background: var(--surface);
   flex-shrink: 0;
+}
+.input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
 }
 .input-area textarea {
   flex: 1 1 0;
@@ -3422,66 +3595,6 @@ defineExpose({
 }
 
 /* ── Help button ───────────────────────────────────────────────────────────── */
-/* ── Connected accounts bar ───────────────────────────────────────────────── */
-.accounts-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-}
-.acct-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.74rem;
-  padding: 2px 8px 2px 6px;
-  border-radius: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.acct-github {
-  background: rgba(88, 166, 255, 0.1);
-  color: #79c0ff;
-  border: 1px solid rgba(88, 166, 255, 0.2);
-}
-.acct-microsoft {
-  background: rgba(0, 120, 212, 0.12);
-  color: #60a5fa;
-  border: 1px solid rgba(0, 120, 212, 0.25);
-}
-.acct-x {
-  background: none;
-  border: none;
-  color: inherit;
-  opacity: 0.6;
-  cursor: pointer;
-  font-size: 0.65rem;
-  padding: 0;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-}
-.acct-x:hover {
-  opacity: 1;
-}
-.acct-add {
-  background: none;
-  border: 1px dashed rgba(88, 166, 255, 0.3);
-  color: #79c0ff;
-  border-radius: 12px;
-  font-size: 0.74rem;
-  padding: 2px 8px;
-  cursor: pointer;
-  opacity: 0.75;
-  transition: opacity 0.15s;
-}
-.acct-add:hover {
-  opacity: 1;
-}
-
 .help-btn {
   flex-shrink: 0;
   width: 32px;
@@ -3632,5 +3745,139 @@ defineExpose({
 }
 .docs-acc-body strong {
   color: var(--text, #e6edf3);
+}
+
+/* ── Agent Loop inline result ──────────────────────────────────────────────── */
+.loop-result {
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.loop-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #8b949e;
+  font-style: italic;
+}
+.loop-spinner {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #58a6ff);
+  animation: lp-pulse 1s ease-in-out infinite;
+}
+@keyframes lp-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+.loop-plan {
+  border: 1px solid var(--border, #30363d);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.loop-plan-reasoning {
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  color: #8b949e;
+  background: var(--bg, #0d1117);
+  border-bottom: 1px solid var(--border, #30363d);
+}
+.loop-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.loop-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border, #30363d);
+  font-size: 0.82rem;
+  color: #8b949e;
+}
+.loop-step:last-child {
+  border-bottom: none;
+}
+.loop-step.lp-done {
+  color: var(--text, #e6edf3);
+}
+.loop-step.lp-active {
+  color: var(--accent, #58a6ff);
+}
+.ls-num {
+  width: 20px;
+  text-align: center;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.ls-desc {
+  flex: 1 1 0;
+}
+.ls-badge {
+  font-size: 0.72rem;
+  background: rgba(88, 166, 255, 0.08);
+  border: 1px solid rgba(88, 166, 255, 0.18);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: #79c0ff;
+  white-space: nowrap;
+}
+.ls-result {
+  width: 100%;
+  font-size: 0.78rem;
+  color: #8b949e;
+  background: var(--bg, #0d1117);
+  border-radius: 4px;
+  padding: 5px 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 2px;
+}
+.loop-final {
+  border: 1px solid rgba(63, 185, 80, 0.25);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.loop-final-title {
+  background: rgba(63, 185, 80, 0.08);
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #3fb950;
+  border-bottom: 1px solid rgba(63, 185, 80, 0.2);
+}
+.loop-final-body {
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text, #e6edf3);
+  line-height: 1.6;
+}
+.loop-error {
+  color: #f85149;
+  font-size: 0.83rem;
+  padding: 6px 10px;
+  background: rgba(248, 81, 73, 0.08);
+  border: 1px solid rgba(248, 81, 73, 0.2);
+  border-radius: 6px;
+}
+.loop-warning {
+  color: #e3b341;
+  font-size: 0.83rem;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  background: rgba(227, 179, 65, 0.08);
+  border: 1px solid rgba(227, 179, 65, 0.25);
+  border-radius: 6px;
 }
 </style>

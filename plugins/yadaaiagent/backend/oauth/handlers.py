@@ -1,5 +1,6 @@
 """oauth_handlers.py — OAuth 2.0 Device Authorization Grant handlers (RFC 8628)."""
 import datetime as _datetime
+import hashlib as _hashlib
 import json
 import os
 import secrets as _secrets
@@ -11,6 +12,49 @@ from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from yadacoin.http.base import BaseHandler
 
 from ..core.auth import _OAUTH_PROVIDERS
+
+
+def _compact_to_der(sig64: bytes) -> bytes:
+    """Convert a 64-byte compact (R‖S) secp256k1 signature to DER encoding."""
+    r = sig64[:32].lstrip(b"\x00") or b"\x00"
+    s = sig64[32:].lstrip(b"\x00") or b"\x00"
+    if r[0] & 0x80:
+        r = b"\x00" + r
+    if s[0] & 0x80:
+        s = b"\x00" + s
+    body = b"\x02" + bytes([len(r)]) + r + b"\x02" + bytes([len(s)]) + s
+    return b"\x30" + bytes([len(body)]) + body
+
+
+def _verify_secp256k1(pubkey_hex: str, message_hex: str, sig_hex: str) -> bool:
+    """Verify a compact secp256k1 ECDSA signature.
+
+    The frontend uses noble/secp256k1 v3 with prehash=true (the default), so it
+    SHA-256 hashes the raw message bytes before signing.  The signature is the
+    64-byte compact (R‖S) representation, hex-encoded.
+
+    coincurve.verify_signature expects DER-encoded signatures, so we convert.
+
+    Args:
+        pubkey_hex:  Compressed public key (33 bytes, 66 hex chars).
+        message_hex: Raw message bytes as hex (NOT the hash).
+        sig_hex:     Compact 64-byte ECDSA signature as hex.
+
+    Returns:
+        True if the signature is valid, False otherwise.
+    """
+    try:
+        from coincurve import verify_signature as _cc_verify  # type: ignore
+
+        compact_sig = bytes.fromhex(sig_hex)
+        if len(compact_sig) != 64:
+            return False
+        der_sig = _compact_to_der(compact_sig)
+        msg_hash = _hashlib.sha256(bytes.fromhex(message_hex)).digest()
+        pub_bytes = bytes.fromhex(pubkey_hex)
+        return bool(_cc_verify(der_sig, msg_hash, pub_bytes, hasher=None))
+    except Exception:
+        return False
 
 
 class OAuthDeviceStartHandler(BaseHandler):
@@ -231,6 +275,51 @@ class OAuthDevicePollHandler(BaseHandler):
                 {"status": "error", "message": "No access_token in provider response"}
             )
 
+        # ── Fetch profile while we still have the plaintext token ─────────
+        # This is cached in the session doc so the /me endpoint can return
+        # the account label even after the token is encrypted.
+        display_name = ""
+        identifier = ""
+        try:
+            _profile_client = AsyncHTTPClient()
+            if provider == "microsoft":
+                _pr = await _profile_client.fetch(
+                    HTTPRequest(
+                        url="https://graph.microsoft.com/v1.0/me",
+                        method="GET",
+                        headers={
+                            "Authorization": f"Bearer {access_token}",
+                            "Accept": "application/json",
+                        },
+                        request_timeout=8.0,
+                    ),
+                    raise_error=False,
+                )
+                if _pr.code == 200:
+                    _me = json.loads(_pr.body)
+                    identifier = _me.get("mail") or _me.get("userPrincipalName") or ""
+                    display_name = _me.get("displayName") or identifier
+            elif provider == "github":
+                _pr = await _profile_client.fetch(
+                    HTTPRequest(
+                        url="https://api.github.com/user",
+                        method="GET",
+                        headers={
+                            "Authorization": f"Bearer {access_token}",
+                            "Accept": "application/vnd.github+json",
+                            "User-Agent": "YadaCoin",
+                        },
+                        request_timeout=8.0,
+                    ),
+                    raise_error=False,
+                )
+                if _pr.code == 200:
+                    _user = json.loads(_pr.body)
+                    identifier = _user.get("login") or ""
+                    display_name = _user.get("name") or identifier
+        except Exception:
+            pass  # profile fetch is best-effort; label falls back to empty
+
         # ── Wallet-mode encryption ─────────────────────────────────────────
         # If the browser supplied a token_enc_key at device/start time it is
         # stored in session_doc.  Encrypt the plaintext token with AES-256-GCM
@@ -261,10 +350,14 @@ class OAuthDevicePollHandler(BaseHandler):
                 "status": "authorized",
                 "authorized_at": _datetime.datetime.utcnow(),
                 "expires_at": _datetime.datetime.utcnow()
-                + _datetime.timedelta(hours=8),
+                + _datetime.timedelta(days=30),
             }
             if token_iv_hex:
                 set_fields["token_iv"] = token_iv_hex
+            if display_name:
+                set_fields["display_name"] = display_name
+            if identifier:
+                set_fields["identifier"] = identifier
             await self.config.mongo.async_db.web2_oauth_sessions.update_one(
                 {"_id": session_doc["_id"]},
                 {"$set": set_fields, "$unset": {"device_code": ""}},

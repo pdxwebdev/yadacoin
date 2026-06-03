@@ -3,8 +3,11 @@ import asyncio
 import datetime as _datetime
 import inspect
 import json
+import logging as _logging
 import os
 import re
+
+_log = _logging.getLogger("yadaaiagent.agent")
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM as _AESGCM
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
@@ -186,13 +189,13 @@ class AgentChatHandler(BaseHandler):
                             pass  # decryption failed — treat as unauthenticated
                     else:
                         github_access_token = raw_token  # server-side plain token
-                    # Refresh expiry on each use (sliding window)
+                    # Refresh expiry on each use (sliding 30-day window)
                     await self.config.mongo.async_db.web2_oauth_sessions.update_one(
                         {"_id": session_doc["_id"]},
                         {
                             "$set": {
                                 "expires_at": _datetime.datetime.utcnow()
-                                + _datetime.timedelta(hours=1)
+                                + _datetime.timedelta(days=30)
                             }
                         },
                     )
@@ -201,24 +204,45 @@ class AgentChatHandler(BaseHandler):
 
         _ms_raw = web2_sessions.get("microsoft") or ""
         if isinstance(_ms_raw, list):
-            microsoft_nonce = (_ms_raw[0].get("nonce", "") if _ms_raw else "").strip()
+            # Try each entry in order; use the first one with a live authorized session.
+            _ms_nonce_candidates = [
+                e.get("nonce", "").strip()
+                for e in _ms_raw
+                if isinstance(e, dict) and e.get("nonce", "").strip()
+            ]
+            microsoft_nonce = _ms_nonce_candidates[0] if _ms_nonce_candidates else ""
         else:
+            _ms_nonce_candidates = [_ms_raw.strip()] if _ms_raw else []
             microsoft_nonce = _ms_raw.strip()
-        if microsoft_nonce:
-            try:
-                session_doc = (
-                    await self.config.mongo.async_db.web2_oauth_sessions.find_one(
-                        {
-                            "nonce": microsoft_nonce,
-                            "provider": "microsoft",
-                            "status": "authorized",
-                        }
+        if _ms_nonce_candidates:
+            for _candidate_nonce in _ms_nonce_candidates:
+                try:
+                    session_doc = (
+                        await self.config.mongo.async_db.web2_oauth_sessions.find_one(
+                            {
+                                "nonce": _candidate_nonce,
+                                "provider": "microsoft",
+                                "status": "authorized",
+                            }
+                        )
                     )
-                )
-                if session_doc:
+                    if not session_doc:
+                        _log.debug(
+                            "MS nonce %r not found in DB, trying next",
+                            _candidate_nonce[:8] + "…",
+                        )
+                        continue
                     ms_raw_token = session_doc.get("access_token", "")
                     ms_token_iv = session_doc.get("token_iv", "")
                     ms_enc_key_hex = (session_doc.get("token_enc_key") or "").strip()
+                    _log.debug(
+                        "MS session found for nonce %r — has_token=%s has_iv=%s has_key=%s key_len=%s",
+                        _candidate_nonce[:8] + "…",
+                        bool(ms_raw_token),
+                        bool(ms_token_iv),
+                        bool(ms_enc_key_hex),
+                        len(ms_enc_key_hex),
+                    )
                     if ms_raw_token and ms_token_iv and ms_enc_key_hex:
                         try:
                             aesgcm = _AESGCM(bytes.fromhex(ms_enc_key_hex))
@@ -227,21 +251,45 @@ class AgentChatHandler(BaseHandler):
                                 bytes.fromhex(ms_raw_token),
                                 None,
                             ).decode("utf-8")
-                        except Exception:
-                            pass
+                        except Exception as _dec_err:
+                            _log.warning(
+                                "MS token decrypt failed for nonce %r: %s | key_len=%d iv_len=%d ct_len=%d",
+                                _candidate_nonce[:8] + "…",
+                                _dec_err,
+                                len(ms_enc_key_hex),
+                                len(ms_token_iv),
+                                len(ms_raw_token),
+                            )
+                            continue  # try next candidate
                     else:
                         microsoft_access_token = ms_raw_token
+                        _log.debug(
+                            "MS token using plaintext fallback for nonce %r (no iv/key in session)",
+                            _candidate_nonce[:8] + "…",
+                        )
+                    microsoft_nonce = _candidate_nonce
+                    # Slide the 30-day expiry window
                     await self.config.mongo.async_db.web2_oauth_sessions.update_one(
                         {"_id": session_doc["_id"]},
                         {
                             "$set": {
                                 "expires_at": _datetime.datetime.utcnow()
-                                + _datetime.timedelta(hours=1)
+                                + _datetime.timedelta(days=30)
                             }
                         },
                     )
-            except Exception:
-                pass
+                    break  # found a working session
+                except Exception as _outer_ms_err:
+                    _log.warning(
+                        "MS session lookup error for nonce %r: %s",
+                        _candidate_nonce[:8] + "…",
+                        _outer_ms_err,
+                    )
+            if microsoft_access_token is None and _ms_nonce_candidates:
+                _log.warning(
+                    "MS: tried %d nonce(s), none yielded a valid token",
+                    len(_ms_nonce_candidates),
+                )
 
         # ── Agent loop mode ───────────────────────────────────────────────── #
         if body.get("mode") == "loop":
@@ -1492,8 +1540,37 @@ class AgentChatHandler(BaseHandler):
             "microsoft_access_token": microsoft_access_token,
             "brave_api_key": brave_api_key,
             "public_key": public_key,
+            "llm_call": lambda msgs, max_tokens=800: self._llm_call(
+                provider, model, api_key, ollama_host, base_url, msgs
+            ),
         }
         available_skills = build_available_skills(skill_context)
+
+        # Warn the user if a connected account's session has expired in MongoDB
+        _web2 = body.get("web2_sessions") or {}
+        _ms_sessions = _web2.get("microsoft") or []
+        if _ms_sessions and not microsoft_access_token:
+            await sse(
+                {
+                    "type": "warning",
+                    "message": (
+                        "⚠ Microsoft session expired — please disconnect and reconnect "
+                        "your Outlook account, then try again."
+                    ),
+                }
+            )
+        _gh_nonce = _web2.get("github") or ""
+        if _gh_nonce and not github_access_token:
+            await sse(
+                {
+                    "type": "warning",
+                    "message": (
+                        "⚠ GitHub session expired — please disconnect and reconnect "
+                        "your GitHub account, then try again."
+                    ),
+                }
+            )
+
         # web_fetch is always available — ensure it's included
         if not available_skills:
             await sse(

@@ -144,6 +144,20 @@ SKILL_REGISTRY = {
             },
         },
     },
+    "generate_text": {
+        "description": "Use the AI to generate, summarize, or rewrite text based on provided data",
+        "requires": None,
+        "actions": {
+            "summarize": {
+                "description": "Summarize or rewrite provided data into human-readable prose",
+                "params": {
+                    "instruction": "string (required) — what to write, e.g. 'Write a 2-paragraph summary of these commits'",
+                    "data": "any (required) — the data to summarize (can be a $stepN reference)",
+                },
+                "returns": "{text} containing the generated prose",
+            },
+        },
+    },
 }
 
 
@@ -188,8 +202,12 @@ def build_planner_prompt(available_skills: dict) -> str:
         "- Never add steps just to display data — the system handles presentation.\n"
         "- NEVER use brave_search or web_fetch to look up data that a connected skill "
         "(github, microsoft, wallet) can fetch directly via its API.\n"
-        "- To get commits for a specific user, use github/get_authenticated_user first "
-        'to get the login, then github/list_commits with author="$step1.login".\n\n'
+        "- For multi-step plans that fetch data and then email it: use generate_text/summarize "
+        "as an intermediate step to convert raw data into prose, then pass $stepN.text as the email body.\n"
+        "- To get commits by the authenticated user, ALWAYS use github/get_authenticated_user first "
+        "to obtain their login. Then call github/list_commits with "
+        'owner="$step1.login" AND author="$step1.login". '
+        "Never assume an owner from the repo name alone — the owner must come from step 1.\n"
         "Return ONLY a valid JSON object:\n"
         "{\n"
         '  "reasoning": "brief explanation of your approach",\n'
@@ -226,19 +244,50 @@ def _resolve_path(obj, path: str):
 
 
 def resolve_param_refs(params: dict, step_results: dict) -> dict:
-    """Substitute $stepN or $stepN.path references in param string values."""
+    """Substitute $stepN or $stepN.path references in param string values.
+
+    Handles two forms:
+      - Whole-value: "$step1.commits" → replaced with the resolved object
+      - Inline:      "Summary of $step1.commits" → resolved value serialised
+                     as compact JSON and interpolated into the string
+    """
     if not step_results or not params:
         return params
+
+    import json as _json
+
+    # Regex for a single $stepN or $stepN.some.path reference
+    _ref_re = _re.compile(r"\$step(\d+)(?:\.([A-Za-z0-9_.[\]]+))?")
+
+    def _replace_inline(text: str) -> object:
+        # If the entire string is a single reference, return the raw object
+        m = _re.fullmatch(r"\$step(\d+)(?:\.(.+))?", text)
+        if m:
+            step_num = int(m.group(1))
+            path = m.group(2)
+            step_out = step_results.get(step_num)
+            if step_out is not None:
+                return _resolve_path(step_out, path) if path else step_out
+            return text
+
+        # Otherwise substitute each reference inline as a JSON-serialised string
+        def _sub(match):
+            step_num = int(match.group(1))
+            path = match.group(2)
+            step_out = step_results.get(step_num)
+            if step_out is None:
+                return match.group(0)
+            val = _resolve_path(step_out, path) if path else step_out
+            if isinstance(val, str):
+                return val
+            return _json.dumps(val, ensure_ascii=False)
+
+        return _ref_re.sub(_sub, text)
+
     resolved = {}
     for k, v in params.items():
         if isinstance(v, str):
-            m = _re.match(r"^\$step(\d+)(?:\.(.+))?$", v)
-            if m:
-                step_num = int(m.group(1))
-                path = m.group(2)
-                step_out = step_results.get(step_num)
-                if step_out is not None:
-                    v = _resolve_path(step_out, path) if path else step_out
+            v = _replace_inline(v)
         resolved[k] = v
     return resolved
 
@@ -623,5 +672,31 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
             except Exception as exc:
                 return {"ok": False, "error": str(exc)[:200]}
             return {"ok": True, "address": address, "transactions": results}
+
+    elif skill == "generate_text":
+        if action == "summarize":
+            import json as _json
+
+            instruction = str(
+                params.get("instruction") or "Summarize the following data."
+            )
+            data = params.get("data", "")
+            if not isinstance(data, str):
+                data = _json.dumps(data, ensure_ascii=False)
+            llm_caller = context.get("llm_call")
+            if llm_caller is None:
+                return {"ok": False, "error": "LLM not available"}
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are a helpful writing assistant. Respond with only the requested text, no extra commentary.",
+                },
+                {"role": "user", "content": f"{instruction}\n\nData:\n{data}"},
+            ]
+            try:
+                text = await llm_caller(messages, max_tokens=800)
+                return {"ok": True, "text": text}
+            except Exception as exc:
+                return {"ok": False, "error": str(exc)[:200]}
 
     return {"ok": False, "error": f"Unknown skill/action: {skill}/{action}"}

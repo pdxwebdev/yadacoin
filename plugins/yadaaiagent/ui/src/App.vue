@@ -39,9 +39,6 @@
             credentialCount
           }}</span>
         </button>
-        <button class="icon-btn" title="Agent Loop" @click="showLoop = true">
-          &#9889;
-        </button>
         <button class="icon-btn" title="Skills" @click="showSkills = true">
           &#10024;
         </button>
@@ -88,8 +85,7 @@
       v-model="showSettings"
       @wallet-mode-changed="onWalletModeChanged"
     />
-    <SkillsDrawer v-model="showSkills" />
-    <AgentLoopPanel v-model="showLoop" />
+    <SkillsDrawer v-model="showSkills" @auth-connect="onSkillsAuthConnect" />
     <CredentialWallet v-model="showWallet" :key="walletKey" />
     <WalletSetup
       v-if="showWalletSetup"
@@ -105,7 +101,6 @@ import ChatPane from "./components/ChatPane.vue";
 import ApprovalCard from "./components/ApprovalCard.vue";
 import SettingsDrawer from "./components/SettingsDrawer.vue";
 import SkillsDrawer from "./components/SkillsDrawer.vue";
-import AgentLoopPanel from "./components/AgentLoopPanel.vue";
 import CredentialWallet from "./components/CredentialWallet.vue";
 import WalletSetup from "./components/WalletSetup.vue";
 import {
@@ -155,7 +150,6 @@ function onAgentChanged(agentObj) {
 
 const showSettings = ref(false);
 const showSkills = ref(false);
-const showLoop = ref(false);
 const showWallet = ref(false);
 const showWalletSetup = ref(false);
 const walletKey = ref(0); // force reload when credential-issued
@@ -267,6 +261,10 @@ async function onApprove(payload) {
 
 function onWalletModeChanged() {
   refreshSessionPill();
+}
+
+function onSkillsAuthConnect(provider) {
+  chatPaneRef.value?.handleAuthConnect({ provider });
 }
 
 function onWalletSetupDone() {
