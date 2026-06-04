@@ -961,6 +961,8 @@ async function runLoop() {
           loopStatus,
           loopWarnings,
         ),
+        // Preserve confirmPending across html rebuilds
+        confirmPending: messages.value[msgIdx]?.confirmPending ?? null,
       };
     }
   }
@@ -977,7 +979,7 @@ async function runLoop() {
     }
   }
 
-  const body = {
+  const baseBody = {
     mode: "loop",
     goal,
     llm: {
@@ -995,68 +997,130 @@ async function runLoop() {
     public_key: _loopGetPublicKey() || undefined,
   };
 
-  try {
-    const resp = await fetch(getNodeUrl() + "/ai-agent-auth/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.error || `HTTP ${resp.status}`);
-    }
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const raw = line.slice(6).trim();
-        if (!raw) continue;
-        try {
-          const evt = JSON.parse(raw);
-          switch (evt.type) {
-            case "status":
-              loopStatus = evt.message;
-              break;
-            case "warning":
-              loopWarnings.push(evt.message);
-              break;
-            case "plan":
-              loopPlan = { reasoning: evt.reasoning, steps: evt.steps || [] };
-              loopStatus = "";
-              break;
-            case "step_start":
-              loopActiveSteps.add(evt.step);
-              break;
-            case "step_result":
-              loopStepResults[evt.step] = evt.output;
-              loopActiveSteps.delete(evt.step);
-              break;
-            case "done":
-              loopFinalReply = evt.reply || "";
-              loopStatus = "";
-              break;
-            case "error":
-              loopError = evt.message || evt.error || "Unknown error";
-              loopStatus = "";
-              break;
+  /**
+   * Stream one agent loop pass.
+   * Returns true if we should release busy (done/error), false if paused for confirmation.
+   */
+  async function doStream(fetchBody) {
+    try {
+      const resp = await fetch(getNodeUrl() + "/ai-agent-auth/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fetchBody),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${resp.status}`);
+      }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let awaitingConfirm = false;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done || awaitingConfirm) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (!raw) continue;
+          try {
+            const evt = JSON.parse(raw);
+            switch (evt.type) {
+              case "status":
+                loopStatus = evt.message;
+                break;
+              case "warning":
+                loopWarnings.push(evt.message);
+                break;
+              case "plan":
+                loopPlan = { reasoning: evt.reasoning, steps: evt.steps || [] };
+                loopStatus = "";
+                break;
+              case "step_start":
+                loopActiveSteps.add(evt.step);
+                break;
+              case "step_result":
+                loopStepResults[evt.step] = evt.output;
+                loopActiveSteps.delete(evt.step);
+                break;
+              case "done":
+                loopFinalReply = evt.reply || "";
+                loopStatus = "";
+                break;
+              case "error":
+                loopError = evt.message || evt.error || "Unknown error";
+                loopStatus = "";
+                break;
+              case "confirm":
+                awaitingConfirm = true;
+                loopStatus = "";
+                updateLoopMsg();
+                if (messages.value[msgIdx]) {
+                  messages.value[msgIdx] = {
+                    ...messages.value[msgIdx],
+                    confirmPending: {
+                      message:
+                        evt.message ||
+                        "Please review and confirm the following actions.",
+                      destructive_steps: evt.destructive_steps || [],
+                      onConfirm: async () => {
+                        if (messages.value[msgIdx]) {
+                          messages.value[msgIdx] = {
+                            ...messages.value[msgIdx],
+                            confirmPending: null,
+                          };
+                        }
+                        loopStatus = "Executing…";
+                        updateLoopMsg();
+                        busy.value = true;
+                        const resumeBody = {
+                          ...fetchBody,
+                          confirmed: true,
+                          confirmed_plan: evt.plan,
+                        };
+                        const releaseBusy = await doStream(resumeBody);
+                        if (releaseBusy) {
+                          busy.value = false;
+                          nextTick(() => inputEl.value?.focus());
+                        }
+                      },
+                      onCancel: () => {
+                        if (messages.value[msgIdx]) {
+                          messages.value[msgIdx] = {
+                            ...messages.value[msgIdx],
+                            confirmPending: null,
+                          };
+                        }
+                        loopError = "Cancelled.";
+                        loopStatus = "";
+                        updateLoopMsg();
+                        busy.value = false;
+                        nextTick(() => inputEl.value?.focus());
+                      },
+                    },
+                  };
+                }
+                break;
+            }
+            if (!awaitingConfirm) updateLoopMsg();
+          } catch {
+            // skip malformed lines
           }
-          updateLoopMsg();
-        } catch {
-          // skip malformed lines
         }
       }
+    } catch (e) {
+      loopError = String(e);
+      updateLoopMsg();
     }
-  } catch (e) {
-    loopError = String(e);
-    updateLoopMsg();
-  } finally {
+    // Return true if caller should release busy, false if waiting for confirm
+    return !messages.value[msgIdx]?.confirmPending;
+  }
+
+  const releaseBusy = await doStream(baseBody);
+  if (releaseBusy) {
     busy.value = false;
     nextTick(() => inputEl.value?.focus());
   }

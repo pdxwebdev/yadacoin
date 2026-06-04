@@ -37,10 +37,12 @@
           <input
             v-model="form.ollama_host"
             type="text"
-            placeholder="http://localhost:11434"
+            placeholder="http://127.0.0.1:11434"
           />
           <div class="hint">
-            Run <code>ollama list</code> to see available models.
+            Use <code>http://127.0.0.1:11434</code> (not <code>localhost</code>)
+            to avoid IPv6 issues. Run <code>ollama list</code> to see available
+            models.
           </div>
         </div>
         <div class="field-group" v-if="form.provider === 'openai_compat'">

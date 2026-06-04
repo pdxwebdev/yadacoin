@@ -67,6 +67,44 @@
             Confirm
           </button>
         </div>
+        <!-- Confirmation gate for destructive agent actions -->
+        <div v-if="msg.confirmPending" class="confirm-gate">
+          <div class="cg-title">⚠ Confirm Actions</div>
+          <p class="cg-message">{{ msg.confirmPending.message }}</p>
+          <ul class="cg-steps">
+            <li
+              v-for="s in msg.confirmPending.destructive_steps"
+              :key="s.step"
+              class="cg-step"
+            >
+              <span class="cg-step-badge">{{ s.skill }}/{{ s.action }}</span>
+              {{ s.description }}
+              <div
+                v-if="s.params && Object.keys(s.params).length"
+                class="cg-params"
+              >
+                <span v-for="(v, k) in s.params" :key="k" class="cg-param"
+                  ><strong>{{ k }}</strong
+                  >: {{ v }}</span
+                >
+              </div>
+            </li>
+          </ul>
+          <div class="cg-buttons">
+            <button
+              class="cg-confirm-btn"
+              @click="msg.confirmPending.onConfirm()"
+            >
+              Confirm &amp; Run
+            </button>
+            <button
+              class="cg-cancel-btn"
+              @click="msg.confirmPending.onCancel()"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
         <div v-if="msg.searchSources?.length" class="sources-row">
           <button class="sources-toggle" @click="toggleSources(i)">
             🔍 {{ openSources[i] ? "Hide" : "Show" }}
@@ -111,7 +149,9 @@
             >
           </div>
           <template v-if="msg.deviceCode.status === 'starting'">
-            <div class="dc-status">{{ msg.deviceCode.message || "Starting…" }}</div>
+            <div class="dc-status">
+              {{ msg.deviceCode.message || "Starting…" }}
+            </div>
           </template>
           <template v-else-if="msg.deviceCode.status === 'needs_rotation'">
             <div class="dc-instructions">
@@ -123,7 +163,7 @@
               @input="msg.deviceCode.sfValue = $event.target.value"
               @keydown.enter="
                 msg.deviceCode.onApprove &&
-                  msg.deviceCode.onApprove(msg.deviceCode.sfValue)
+                msg.deviceCode.onApprove(msg.deviceCode.sfValue)
               "
               type="password"
               class="dc-sf-input"
@@ -134,7 +174,7 @@
               class="dc-connect-btn"
               @click="
                 msg.deviceCode.onApprove &&
-                  msg.deviceCode.onApprove(msg.deviceCode.sfValue)
+                msg.deviceCode.onApprove(msg.deviceCode.sfValue)
               "
             >
               🔐 Rotate &amp; Connect
@@ -459,6 +499,95 @@ defineExpose({ chatEl, escHtml });
 }
 .choice-confirm-btn:not(:disabled):hover {
   opacity: 0.85;
+}
+/* ── Confirmation gate ────────────────────────────────────────────────── */
+.confirm-gate {
+  margin-top: 10px;
+  border: 1px solid #e07b00;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: rgba(224, 123, 0, 0.08);
+}
+.cg-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #e07b00;
+  margin-bottom: 6px;
+}
+.cg-message {
+  font-size: 0.82rem;
+  margin: 0 0 8px;
+  color: var(--fg, #e0e0e0);
+}
+.cg-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cg-step {
+  font-size: 0.82rem;
+  color: var(--fg, #e0e0e0);
+}
+.cg-step-badge {
+  display: inline-block;
+  background: rgba(224, 123, 0, 0.2);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: monospace;
+  font-size: 0.78rem;
+  margin-right: 6px;
+  color: #e07b00;
+}
+.cg-params {
+  margin-top: 3px;
+  padding-left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.cg-param {
+  font-size: 0.77rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: monospace;
+}
+.cg-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.cg-confirm-btn {
+  background: #e07b00;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-family: inherit;
+  font-weight: 600;
+  padding: 5px 16px;
+  transition: opacity 0.15s;
+}
+.cg-confirm-btn:hover {
+  opacity: 0.85;
+}
+.cg-cancel-btn {
+  background: transparent;
+  border: 1px solid #888;
+  border-radius: 6px;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-family: inherit;
+  padding: 5px 14px;
+  transition: opacity 0.15s;
+}
+.cg-cancel-btn:hover {
+  opacity: 0.7;
 }
 .date-form {
   display: flex;

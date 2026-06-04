@@ -536,6 +536,11 @@ _AGENT_TYPE_MAP = {a["id"]: a for a in AGENT_TYPES}
 
 # ── On-chain agent discovery helpers ─────────────────────────────────────────
 
+import time as _time
+
+_ONCHAIN_AGENTS_CACHE: dict = {"ts": 0.0, "data": []}
+_ONCHAIN_AGENTS_TTL = 60  # seconds
+
 
 async def _fetch_onchain_agents(config) -> list:
     """Query confirmed blocks + mempool for AgentAnnouncement transactions.
@@ -543,7 +548,14 @@ async def _fetch_onchain_agents(config) -> list:
     Returns a list of unique agent announcement blobs.  The most-recently-
     confirmed version of each agent_id wins; mempool entries fill in agents
     not yet included in a block.
+
+    Results are cached for _ONCHAIN_AGENTS_TTL seconds to avoid a full
+    collection scan on every page load.
     """
+    now = _time.monotonic()
+    if now - _ONCHAIN_AGENTS_CACHE["ts"] < _ONCHAIN_AGENTS_TTL:
+        return list(_ONCHAIN_AGENTS_CACHE["data"])
+
     agents: dict = {}
     try:
         cursor = (
@@ -591,7 +603,10 @@ async def _fetch_onchain_agents(config) -> list:
 
         logging.getLogger(__name__).warning("_fetch_onchain_agents: %s", exc)
 
-    return list(agents.values())
+    result = list(agents.values())
+    _ONCHAIN_AGENTS_CACHE["data"] = result
+    _ONCHAIN_AGENTS_CACHE["ts"] = _time.monotonic()
+    return result
 
 
 def _sanitize_messages(messages: list) -> list:

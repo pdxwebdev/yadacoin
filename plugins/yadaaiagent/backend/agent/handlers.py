@@ -210,10 +210,10 @@ class AgentChatHandler(BaseHandler):
                 for e in _ms_raw
                 if isinstance(e, dict) and e.get("nonce", "").strip()
             ]
-            microsoft_nonce = _ms_nonce_candidates[0] if _ms_nonce_candidates else ""
+            _ms_nonce_candidates[0] if _ms_nonce_candidates else ""
         else:
             _ms_nonce_candidates = [_ms_raw.strip()] if _ms_raw else []
-            microsoft_nonce = _ms_raw.strip()
+            _ms_raw.strip()
         if _ms_nonce_candidates:
             for _candidate_nonce in _ms_nonce_candidates:
                 try:
@@ -267,7 +267,6 @@ class AgentChatHandler(BaseHandler):
                             "MS token using plaintext fallback for nonce %r (no iv/key in session)",
                             _candidate_nonce[:8] + "…",
                         )
-                    microsoft_nonce = _candidate_nonce
                     # Slide the 30-day expiry window
                     await self.config.mongo.async_db.web2_oauth_sessions.update_one(
                         {"_id": session_doc["_id"]},
@@ -361,7 +360,7 @@ class AgentChatHandler(BaseHandler):
         ollama_host = (
             llm_cfg.get("ollama_host")
             or getattr(self.config, "ollama_host", None)
-            or "http://localhost:11434"
+            or "http://127.0.0.1:11434"
         ).rstrip("/")
         base_url = (llm_cfg.get("base_url") or "").rstrip("/")
 
@@ -1480,8 +1479,16 @@ class AgentChatHandler(BaseHandler):
         {"type": "plan",        "reasoning": str, "steps": list}
         {"type": "step_start",  "step": int, "skill": str, "action": str, "description": str}
         {"type": "step_result", "step": int, "skill": str, "action": str, "output": dict}
+        {"type": "confirm",     "message": str, "destructive_steps": list, "plan": dict}
         {"type": "done",        "reply": str}
         {"type": "error",       "message": str}
+
+        Confirmation gate
+        -----------------
+        If the plan includes steps whose action has ``side_effects: True`` in the
+        skill registry, the server emits a ``confirm`` event and stops.  The client
+        must re-POST with ``confirmed: true`` and ``confirmed_plan: <plan>`` to
+        resume execution with the same plan (skipping the planning LLM call).
         """
         from .skills import (
             build_available_skills,
@@ -1525,7 +1532,7 @@ class AgentChatHandler(BaseHandler):
         ollama_host = (
             llm_cfg.get("ollama_host")
             or getattr(self.config, "ollama_host", None)
-            or "http://localhost:11434"
+            or "http://127.0.0.1:11434"
         ).rstrip("/")
         base_url = (llm_cfg.get("base_url") or "").rstrip("/")
 
@@ -1584,37 +1591,46 @@ class AgentChatHandler(BaseHandler):
             )
             return self.finish()
 
-        # ── 1. Planning call ─────────────────────────────────────────────── #
-        await sse({"type": "status", "message": "Planning..."})
-        planner_messages = _sanitize_messages(
-            [
-                {"role": "system", "content": build_planner_prompt(available_skills)},
-                {"role": "user", "content": goal},
-            ]
-        )
-        try:
-            plan_raw = await self._llm_call(
-                provider, model, api_key, ollama_host, base_url, planner_messages
+        # ── 1. Planning call (or resume with confirmed plan) ─────────────── #
+        confirmed_plan = body.get("confirmed_plan")
+        if (
+            confirmed_plan
+            and isinstance(confirmed_plan, dict)
+            and isinstance(confirmed_plan.get("steps"), list)
+        ):
+            # Client confirmed a pending plan — skip the LLM planning call
+            plan_parsed = confirmed_plan
+        else:
+            await sse({"type": "status", "message": "Planning..."})
+            planner_messages = _sanitize_messages(
+                [
+                    {"role": "system", "content": build_planner_prompt(available_skills)},
+                    {"role": "user", "content": goal},
+                ]
             )
-        except Exception as exc:
-            await sse({"type": "error", "message": f"Planning failed: {exc}"})
-            return self.finish()
-
-        # Strip markdown fences if present
-        if plan_raw.startswith("```"):
-            plan_raw = plan_raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-        start = plan_raw.find("{")
-        end = plan_raw.rfind("}")
-        plan_parsed = None
-        if start != -1 and end > start:
             try:
-                plan_parsed = json.loads(plan_raw[start : end + 1])
-            except Exception:
-                pass
+                plan_raw = await self._llm_call(
+                    provider, model, api_key, ollama_host, base_url, planner_messages
+                )
+            except Exception as exc:
+                await sse({"type": "error", "message": f"Planning failed: {exc}"})
+                return self.finish()
 
-        if not plan_parsed or not isinstance(plan_parsed.get("steps"), list):
-            await sse({"type": "error", "message": "Planner returned an invalid plan."})
-            return self.finish()
+            # Strip markdown fences if present
+            if plan_raw.startswith("```"):
+                plan_raw = plan_raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            start = plan_raw.find("{")
+            end = plan_raw.rfind("}")
+            plan_parsed = None
+            if start != -1 and end > start:
+                try:
+                    plan_parsed = json.loads(plan_raw[start : end + 1])
+                except Exception:
+                    pass
+
+            if not plan_parsed or not isinstance(plan_parsed.get("steps"), list):
+                await sse({"type": "error", "message": "Planner returned an invalid plan."})
+                return self.finish()
 
         steps = plan_parsed["steps"]
         await sse(
@@ -1624,6 +1640,43 @@ class AgentChatHandler(BaseHandler):
                 "steps": steps,
             }
         )
+
+        # ── Confirmation gate ─────────────────────────────────────────────── #
+        # If any step performs a side-effecting action and the client hasn't
+        # explicitly confirmed, pause and ask for approval.
+        if not body.get("confirmed"):
+            destructive = []
+            for step_def in steps:
+                s_name = str(step_def.get("skill", ""))
+                a_name = str(step_def.get("action", ""))
+                action_def = (
+                    available_skills.get(s_name, {})
+                    .get("actions", {})
+                    .get(a_name, {})
+                )
+                if action_def.get("side_effects"):
+                    destructive.append(
+                        {
+                            "step": step_def.get("step"),
+                            "skill": s_name,
+                            "action": a_name,
+                            "description": str(step_def.get("description", "")),
+                            "params": dict(step_def.get("params") or {}),
+                        }
+                    )
+            if destructive:
+                await sse(
+                    {
+                        "type": "confirm",
+                        "message": (
+                            "This plan will perform the following real-world actions. "
+                            "Please review and confirm to proceed."
+                        ),
+                        "destructive_steps": destructive,
+                        "plan": plan_parsed,
+                    }
+                )
+                return self.finish()
 
         # ── 2. Execute steps ─────────────────────────────────────────────── #
         step_results: dict = {}
@@ -1668,7 +1721,11 @@ class AgentChatHandler(BaseHandler):
         synthesis_system = (
             "You are a helpful assistant. A plan was executed on behalf of the user. "
             "Synthesize a clear, helpful, and concise answer using the execution results below. "
-            "Reference specific data from the results where useful.\n\n"
+            "Reference specific data from the results where useful. "
+            "All steps (including any emails or side-effecting actions) have already been completed — "
+            "report what was done in past tense. "
+            "Do NOT ask the user if they want to proceed, confirm, or take any further action. "
+            "Do NOT end with a question.\n\n"
             f"User goal: {goal}\n\n"
             "Execution results:\n"
             + json.dumps(step_results, indent=2, default=str)[:6000]

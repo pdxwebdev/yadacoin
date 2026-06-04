@@ -71,6 +71,7 @@ SKILL_REGISTRY = {
             },
             "create_issue": {
                 "description": "Create a new GitHub issue (requires user confirmation in plan)",
+                "side_effects": True,
                 "params": {
                     "owner": "string (required) — repository owner login",
                     "repo": "string (required) — repository name",
@@ -110,6 +111,7 @@ SKILL_REGISTRY = {
             },
             "send_email": {
                 "description": "Send an email via Outlook",
+                "side_effects": True,
                 "params": {
                     "to": "string (required) — recipient email address",
                     "subject": "string (required) — email subject",
@@ -181,6 +183,8 @@ def build_planner_prompt(available_skills: dict) -> str:
         for action_name, action_def in skill_def["actions"].items():
             lines.append(f"\n  Action: {action_name}")
             lines.append(f"  Description: {action_def['description']}")
+            if action_def.get("side_effects"):
+                lines.append("  ⚠ side_effects: true — system will pause for user confirmation before this action runs")
             if action_def.get("params"):
                 lines.append("  Parameters:")
                 for p_name, p_desc in action_def["params"].items():
@@ -208,6 +212,15 @@ def build_planner_prompt(available_skills: dict) -> str:
         "to obtain their login. Then call github/list_commits with "
         'owner="$step1.login" AND author="$step1.login". '
         "Never assume an owner from the repo name alone — the owner must come from step 1.\n"
+        "- The 'skill' field in each step MUST exactly match one of the top-level skill names "
+        "shown in the skill list above (e.g. 'github', 'microsoft', 'generate_text', 'wallet'). "
+        "NEVER use an action name as the skill name. For example, to send email use "
+        "skill='microsoft' action='send_email', NOT skill='send_email' action='send_email'.\n"
+        "- IMPORTANT: Some actions are marked as side-effecting (e.g. microsoft/send_email, github/create_issue). "
+        "The system will automatically pause before executing those steps and show the user a "
+        "confirmation dialog — you do NOT need to ask for confirmation in your plan or in text. "
+        "Always include the full end-to-end plan with all steps, including side-effecting ones. "
+        "Never end a plan with a question or omit a step because you think you should ask first.\n"
         "Return ONLY a valid JSON object:\n"
         "{\n"
         '  "reasoning": "brief explanation of your approach",\n'
