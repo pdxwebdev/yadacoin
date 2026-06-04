@@ -40,8 +40,8 @@
             placeholder="http://127.0.0.1:11434"
           />
           <div class="hint">
-            Use <code>http://127.0.0.1:11434</code> (not
-            <code>localhost</code>) to avoid IPv6 resolution issues.<br /><br />
+            Use <code>http://127.0.0.1:11434</code> (not <code>localhost</code>)
+            to avoid IPv6 resolution issues.<br /><br />
             <strong>⚠ Remote node detected:</strong> if this UI is served from a
             node that is not running on your local machine (e.g. a VPS or
             yadacoin.io), the node cannot reach your local Ollama directly. You
@@ -65,8 +65,8 @@
             Download the installer from
             <a href="https://ngrok.com/download" target="_blank" rel="noopener"
               >ngrok.com/download</a
-            >, run it, authenticate with <code>ngrok config add-authtoken
-            &lt;token&gt;</code>, then run
+            >, run it, authenticate with
+            <code>ngrok config add-authtoken &lt;token&gt;</code>, then run
             <code>ngrok http 11434</code> in a terminal and paste the HTTPS URL
             here.<br /><br />
             Run <code>ollama list</code> to see available models.
