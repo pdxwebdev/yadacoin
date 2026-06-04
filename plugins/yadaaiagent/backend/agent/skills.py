@@ -213,7 +213,14 @@ def build_planner_prompt(available_skills: dict) -> str:
         "- When looking for an email address or contact info on a specific website: "
         "(a) if you already know the domain, use web_fetch/fetch directly on the contact or staff page URL; "
         "(b) otherwise use brave_search/search with fetch_content=true so you get full page text in one step — "
-        "do NOT do a search then separately call web_fetch; the content is already in the results.\n"
+        "do NOT do a search then separately call web_fetch; the content is already in the results. "
+        "When searching for a specific department or function email (e.g. code violations, permits, billing), "
+        "include that exact function in the search query "
+        "(e.g. 'Kern County code compliance violations contact email', "
+        "'Kern Public Works code enforcement email address') — "
+        "never use a generic 'contact' query when you need a specific department. "
+        "Pages often contain multiple email addresses; always identify the one whose "
+        "surrounding text matches the specific function requested, not just the first email found.\n"
         "- For multi-step plans that fetch data and then email it: use generate_text/summarize "
         "as an intermediate step to convert raw data into prose, then pass $stepN.text as the email body.\n"
         "- To get commits by the authenticated user, ALWAYS use github/get_authenticated_user first "
@@ -351,7 +358,7 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                         if fresp.code == 200:
                             raw = fresp.body.decode("utf-8", errors="replace")
                             text = _re.sub(r"<[^>]+>", " ", raw)
-                            text = _re.sub(r"\s+", " ", text).strip()[:3000]
+                            text = _re.sub(r"\s+", " ", text).strip()[:8000]
                             r["content"] = text
                         else:
                             r["content"] = ""
