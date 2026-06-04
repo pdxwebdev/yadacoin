@@ -13,6 +13,14 @@
           :class="{ thinking: msg.thinking }"
           v-html="renderBubble(msg)"
         ></div>
+        <button
+          v-if="msg.role === 'user'"
+          class="replay-btn"
+          title="Edit & resend"
+          @click="emit('replay', msg.content)"
+        >
+          ↩ reuse
+        </button>
         <div v-if="msg.choices?.length" class="choice-form">
           <!-- Each element in choices is one input group -->
           <div
@@ -264,7 +272,7 @@ function sanitize(html) {
 marked.setOptions({ breaks: true, gfm: true });
 
 const props = defineProps({ messages: Array });
-const emit = defineEmits(["fields-confirmed", "auth-connect"]);
+const emit = defineEmits(["fields-confirmed", "auth-connect", "replay"]);
 
 const _PROVIDER_META = {
   github: { label: "GitHub", icon: "🐙" },
@@ -588,6 +596,27 @@ defineExpose({ chatEl, escHtml });
 }
 .cg-cancel-btn:hover {
   opacity: 0.7;
+}
+/* ── Replay button ────────────────────────────────────────────────────── */
+.replay-btn {
+  align-self: flex-end;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--subtext);
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-family: inherit;
+  padding: 1px 8px;
+  margin-top: 2px;
+  transition:
+    border-color 0.15s,
+    color 0.15s;
+  line-height: 1.6;
+}
+.replay-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .date-form {
   display: flex;

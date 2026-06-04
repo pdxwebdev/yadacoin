@@ -83,6 +83,24 @@ class NodeConfigApplyHandler(BaseHandler):
 
         import tornado.ioloop
 
+        # ── Guard: admin_kel must be configured ────────────────────────────
+        # This endpoint modifies server config. It is only available when the
+        # node has an admin key event log (admin_kel) configured, which is set
+        # during initial node setup. Without it the operator hasn't established
+        # admin identity and the endpoint must not be accessible.
+        admin_kel = getattr(self.config, "admin_kel", None)
+        if not admin_kel:
+            self.set_status(403)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": (
+                        "Node config changes are disabled: admin_kel is not set. "
+                        "Initialize the admin wallet first."
+                    ),
+                }
+            )
+
         try:
             body = json.loads(self.request.body)
         except Exception:
@@ -141,6 +159,20 @@ class NodeConfigApplyHandler(BaseHandler):
             self.set_status(exc.http_status)
             return self.render_as_json(
                 {"status": False, "message": str(exc), "scope": auth.scope}
+            )
+
+        # ── Verify this is the server admin ────────────────────────────────
+        # The admin_kel config value is the inception transaction ID of the
+        # admin's key event log. After KEL validation, confirm the authenticated
+        # KEL roots at that same inception transaction — any other KEL holder is
+        # rejected even if their VP is otherwise valid.
+        if auth.kel_txid != admin_kel:
+            self.set_status(403)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": "Unauthorized: only the configured node admin may change the config.",
+                }
             )
 
         # ── Locate the config file ──────────────────────────────────────────

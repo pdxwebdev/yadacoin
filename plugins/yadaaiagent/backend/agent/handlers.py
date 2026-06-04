@@ -67,10 +67,17 @@ class AgentListHandler(BaseHandler):
                 continue
             type_to_agents.setdefault(at, []).append(blob)
 
+        # node_config is only surfaced when admin_kel is configured on this node.
+        _admin_kel_set = bool(getattr(self.config, "admin_kel", None))
+        _ADMIN_ONLY_TYPES = {"node_config"}
+
         # For each discovered type: use hardcoded entry if available, else synthesise
         seen = set(_META_IDS)
         for type_id, agents_of_type in type_to_agents.items():
             if type_id in seen:
+                continue
+            # Skip admin-only types when admin_kel is not configured
+            if type_id in _ADMIN_ONLY_TYPES and not _admin_kel_set:
                 continue
             seen.add(type_id)
             hardcoded = next((a for a in AGENT_TYPES if a["id"] == type_id), None)
@@ -95,6 +102,9 @@ class AgentListHandler(BaseHandler):
         # Include hardcoded non-meta types not yet seen (no on-chain registration yet)
         for entry in AGENT_TYPES:
             if entry["id"] not in seen:
+                # Skip admin-only types when admin_kel is not configured
+                if entry["id"] in _ADMIN_ONLY_TYPES and not _admin_kel_set:
+                    continue
                 result.append({k: v for k, v in entry.items() if k != "systemPrompt"})
                 seen.add(entry["id"])
 
@@ -367,8 +377,11 @@ class AgentChatHandler(BaseHandler):
         # ── Brave Search context injection ────────────────────────────────────
         # Runs only for the general agent when a Brave API key is available.
         # Results are appended to the system prompt so the LLM can cite them.
-        brave_api_key = (body.get("brave_api_key") or "").strip() or os.environ.get(
-            "BRAVE_API_KEY", ""
+        brave_api_key = (
+            (body.get("brave_api_key") or "").strip()
+            or os.environ.get("BRAVE_API_KEY", "")
+            or getattr(self.config, "brave_api_key", "")
+            or ""
         )
         search_sources: list = []  # populated below if search runs
         if brave_api_key and agent_type_id == "general" and messages:
@@ -1537,8 +1550,11 @@ class AgentChatHandler(BaseHandler):
         base_url = (llm_cfg.get("base_url") or "").rstrip("/")
 
         # ── Build skill context ───────────────────────────────────────────── #
-        brave_api_key = (body.get("brave_api_key") or "").strip() or os.environ.get(
-            "BRAVE_API_KEY", ""
+        brave_api_key = (
+            (body.get("brave_api_key") or "").strip()
+            or os.environ.get("BRAVE_API_KEY", "")
+            or getattr(self.config, "brave_api_key", "")
+            or ""
         )
         public_key = (body.get("public_key") or "").strip()
         skill_context = {
@@ -1604,7 +1620,10 @@ class AgentChatHandler(BaseHandler):
             await sse({"type": "status", "message": "Planning..."})
             planner_messages = _sanitize_messages(
                 [
-                    {"role": "system", "content": build_planner_prompt(available_skills)},
+                    {
+                        "role": "system",
+                        "content": build_planner_prompt(available_skills),
+                    },
                     {"role": "user", "content": goal},
                 ]
             )
@@ -1629,7 +1648,9 @@ class AgentChatHandler(BaseHandler):
                     pass
 
             if not plan_parsed or not isinstance(plan_parsed.get("steps"), list):
-                await sse({"type": "error", "message": "Planner returned an invalid plan."})
+                await sse(
+                    {"type": "error", "message": "Planner returned an invalid plan."}
+                )
                 return self.finish()
 
         steps = plan_parsed["steps"]
@@ -1650,9 +1671,7 @@ class AgentChatHandler(BaseHandler):
                 s_name = str(step_def.get("skill", ""))
                 a_name = str(step_def.get("action", ""))
                 action_def = (
-                    available_skills.get(s_name, {})
-                    .get("actions", {})
-                    .get(a_name, {})
+                    available_skills.get(s_name, {}).get("actions", {}).get(a_name, {})
                 )
                 if action_def.get("side_effects"):
                     destructive.append(
@@ -1718,17 +1737,54 @@ class AgentChatHandler(BaseHandler):
 
         # ── 3. Synthesis call ────────────────────────────────────────────── #
         await sse({"type": "status", "message": "Synthesizing results..."})
+
+        # Build a compact version of step_results so that all results are
+        # visible to the synthesis LLM.  Search steps can return many results
+        # each with thousands of characters of fetched page content — without
+        # this cap, the raw JSON blows through the context budget and later
+        # results (which may contain the very data we need) are silently dropped.
+        def _compact_step_results(sr: dict) -> dict:
+            import copy
+
+            out = {}
+            for k, v in sr.items():
+                if (
+                    isinstance(v, dict)
+                    and "results" in v
+                    and isinstance(v["results"], list)
+                ):
+                    compacted = copy.copy(v)
+                    compacted["results"] = []
+                    for r in v["results"]:
+                        rc = {kk: vv for kk, vv in r.items() if kk != "content"}
+                        if "content" in r and r["content"]:
+                            rc["content"] = r["content"][:800]
+                        compacted["results"].append(rc)
+                    out[k] = compacted
+                else:
+                    out[k] = v
+            return out
+
         synthesis_system = (
             "You are a helpful assistant. A plan was executed on behalf of the user. "
             "Synthesize a clear, helpful, and concise answer using the execution results below. "
             "Reference specific data from the results where useful. "
+            "When searching for contact details (emails, phone numbers): check BOTH the "
+            "'description' snippet AND the 'content' field of every result — pages that block "
+            "automated fetching will have empty content but may have the email address in their "
+            "description snippet. Results with 'blocked': true were blocked by a WAF/CDN at the "
+            "TLS level and cannot be fetched; rely only on their 'description' and 'emails_found' fields. "
+            "Always check 'emails_found' on every result — emails are extracted programmatically from "
+            "both description and content. Scan all results, not just the first one. "
             "All steps (including any emails or side-effecting actions) have already been completed — "
             "report what was done in past tense. "
             "Do NOT ask the user if they want to proceed, confirm, or take any further action. "
             "Do NOT end with a question.\n\n"
             f"User goal: {goal}\n\n"
             "Execution results:\n"
-            + json.dumps(step_results, indent=2, default=str)[:6000]
+            + json.dumps(_compact_step_results(step_results), indent=2, default=str)[
+                :20000
+            ]
         )
         synth_messages = _sanitize_messages(
             [

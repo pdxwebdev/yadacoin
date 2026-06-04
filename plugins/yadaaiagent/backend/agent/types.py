@@ -763,22 +763,27 @@ def _build_general_prompt_dynamic(onchain_agents: list) -> str:
 import urllib.parse as _urlparse
 
 
-async def _brave_web_search(api_key: str, query: str, count: int = 5) -> list:
+async def _brave_web_search(
+    api_key: str, query: str, count: int = 5, country: str = "us"
+) -> list:
     """
     Call the Brave Search API and return a list of result dicts.
     Each dict has keys: title, url, description.
     Returns an empty list on any error so callers can treat search as best-effort.
     """
-    params = _urlparse.urlencode(
-        {
-            "q": query,
-            "count": count,
-            "text_decorations": "false",
-            "search_lang": "en",
-            "safesearch": "moderate",
-            "freshness": "pm",  # prefer results from the past month
-        }
-    )
+    q_params = {
+        "q": query,
+        "count": count,
+        "text_decorations": "false",
+        "search_lang": "en",
+        "safesearch": "moderate",
+        # freshness intentionally omitted — static pages (e.g. government contact
+        # pages) may not have been re-indexed recently and would be silently
+        # excluded by a "pm" (past month) filter.
+    }
+    if country:
+        q_params["country"] = country.lower()
+    params = _urlparse.urlencode(q_params)
     url = f"https://api.search.brave.com/res/v1/web/search?{params}"
     client = AsyncHTTPClient()
     req = HTTPRequest(

@@ -840,7 +840,7 @@ class Block(object):
 
     async def generate_hash_from_header(self, height, header, nonce):
         config = Config()
-        if config.network == "regnet":
+        if config.network == "mainnet":
             hash_server = getattr(config, "hash_server_domain", None) or getattr(
                 config, "hash_server", None
             )

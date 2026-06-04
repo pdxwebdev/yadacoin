@@ -21,7 +21,8 @@ SKILL_REGISTRY = {
                 "description": "Perform a web search and return top results",
                 "params": {
                     "query": "string (required) — what to search for",
-                    "count": "integer (optional, 1-10, default 5) — number of results",
+                    "count": "integer (optional, 1-20, default 10) — number of results",
+                    "country": "string (optional, ISO 3166-1 alpha-2, default 'us') — bias results toward this country, e.g. 'us', 'ca', 'gb'",
                     "fetch_content": "boolean (optional, default false) — if true, fetches and includes the full text content of each result page; use when you need actual page text, e.g. to find email addresses or contact details",
                 },
                 "returns": "List of {title, url, snippet} web results; each result also has 'content' when fetch_content=true",
@@ -185,7 +186,9 @@ def build_planner_prompt(available_skills: dict) -> str:
             lines.append(f"\n  Action: {action_name}")
             lines.append(f"  Description: {action_def['description']}")
             if action_def.get("side_effects"):
-                lines.append("  ⚠ side_effects: true — system will pause for user confirmation before this action runs")
+                lines.append(
+                    "  ⚠ side_effects: true — system will pause for user confirmation before this action runs"
+                )
             if action_def.get("params"):
                 lines.append("  Parameters:")
                 for p_name, p_desc in action_def["params"].items():
@@ -208,17 +211,25 @@ def build_planner_prompt(available_skills: dict) -> str:
         "- NEVER use brave_search or web_fetch to look up data that a connected skill "
         "(github, microsoft, wallet) can fetch directly via its API.\n"
         "- brave_search does NOT support 'site:' query operators — they return zero results. "
-        "NEVER use 'site:example.com' in a query. Instead, use natural language (e.g. "
-        "'kernpublicworks code violations contact email') and let the search find the right pages.\n"
-        "- When looking for an email address or contact info on a specific website: "
-        "(a) if you already know the domain, use web_fetch/fetch directly on the contact or staff page URL; "
+        "NEVER use 'site:example.com' in a query. Instead, use descriptive natural language "
+        "and let the search find the right pages.\n"
+        "- When looking for an email address or contact info: "
+        "(a) if you already know the exact URL, use web_fetch/fetch directly on that page; "
         "(b) otherwise use brave_search/search with fetch_content=true so you get full page text in one step — "
         "do NOT do a search then separately call web_fetch; the content is already in the results. "
-        "When searching for a specific department or function email (e.g. code violations, permits, billing), "
-        "include that exact function in the search query "
-        "(e.g. 'Kern County code compliance violations contact email', "
-        "'Kern Public Works code enforcement email address') — "
-        "never use a generic 'contact' query when you need a specific department. "
+        "When searching for a specific department or function (e.g. code violations, permits, billing), "
+        "include the exact function name in the search query rather than using a generic 'contact' query. "
+        "Official government and institutional websites are often blocked by WAF/CDN filters that prevent "
+        "automated fetching; when fetch_content returns blocked=true or empty content for a URL, rely on "
+        "the 'description' snippet and 'emails_found' fields — the search engine may have the email in "
+        "its cached snippet even when the live page is inaccessible. "
+        "Third-party reference sites (e.g. citizen portals, service directories, agency listings) are "
+        "usually NOT WAF-blocked and often list the same contact details as the official site. "
+        "To surface these third-party pages, include terms like 'directory', 'agency', or the "
+        "specific department name in your query alongside the organisation name. "
+        "When multiple results are returned, prefer results whose URL path contains words matching "
+        "the specific department or function rather than a generic home or contact page. "
+        "Always check every result's 'emails_found' list before concluding no email was found. "
         "Pages often contain multiple email addresses; always identify the one whose "
         "surrounding text matches the specific function requested, not just the first email found.\n"
         "- For multi-step plans that fetch data and then email it: use generate_text/summarize "
@@ -335,9 +346,12 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
             if not api_key:
                 return {"ok": False, "error": "Brave API key not configured"}
             query = str(params.get("query", ""))
-            count = min(int(params.get("count") or 5), 10)
+            count = min(int(params.get("count") or 10), 20)
+            country = str(params.get("country") or "us")
             fetch_content = bool(params.get("fetch_content", False))
-            results = await _brave_web_search(api_key, query, count=count)
+            results = await _brave_web_search(
+                api_key, query, count=count, country=country
+            )
             if fetch_content and results:
                 fetch_client = AsyncHTTPClient()
                 for r in results:
@@ -349,21 +363,137 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                         freq = HTTPRequest(
                             url,
                             method="GET",
-                            headers={"User-Agent": "YadaAgent/1.0"},
+                            headers={
+                                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                                "Accept-Language": "en-US,en;q=0.9",
+                                "Accept-Encoding": "gzip, deflate, br",
+                                "Cache-Control": "no-cache",
+                                "Pragma": "no-cache",
+                                "Upgrade-Insecure-Requests": "1",
+                                "Sec-Fetch-Dest": "document",
+                                "Sec-Fetch-Mode": "navigate",
+                                "Sec-Fetch-Site": "none",
+                                "Sec-Fetch-User": "?1",
+                                "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+                                "sec-ch-ua-mobile": "?0",
+                                "sec-ch-ua-platform": '"macOS"',
+                            },
                             request_timeout=10.0,
                             follow_redirects=True,
                             max_redirects=5,
+                            decompress_response=True,
                         )
                         fresp = await fetch_client.fetch(freq, raise_error=False)
-                        if fresp.code == 200:
+                        r["fetch_status"] = fresp.code
+                        if fresp.code == 403 or fresp.code == 503:
+                            # WAF/CDN block — mark as blocked so the LLM falls
+                            # back to the description snippet and emails_found.
+                            r["content"] = ""
+                            r["blocked"] = True
+                        elif fresp.body:
                             raw = fresp.body.decode("utf-8", errors="replace")
                             text = _re.sub(r"<[^>]+>", " ", raw)
                             text = _re.sub(r"\s+", " ", text).strip()[:8000]
-                            r["content"] = text
+                            r["content"] = text if text else ""
                         else:
                             r["content"] = ""
-                    except Exception:
+                    except Exception as _fe:
                         r["content"] = ""
+                        r["fetch_error"] = str(_fe)[:120]
+
+                # Programmatically extract all email addresses from both the
+                # description snippet and page content for every result.
+                # This gives the synthesis LLM a clean list to work from
+                # rather than requiring it to scan raw text blobs.
+                _email_re = _re.compile(
+                    r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
+                )
+                for r in results:
+                    found = []
+                    for field in ("description", "content"):
+                        found.extend(_email_re.findall(r.get(field) or ""))
+                    # deduplicate while preserving order
+                    seen = set()
+                    deduped = []
+                    for e in found:
+                        el = e.lower()
+                        if el not in seen:
+                            seen.add(el)
+                            deduped.append(e)
+                    if deduped:
+                        r["emails_found"] = deduped
+
+                # Re-sort results to prefer URLs whose path contains query keywords.
+                # This counteracts search engines returning off-topic pages (e.g. a
+                # legal notices / contracts page) ahead of the specific department page.
+                _stopwords = {
+                    "a",
+                    "an",
+                    "the",
+                    "and",
+                    "or",
+                    "for",
+                    "to",
+                    "in",
+                    "on",
+                    "of",
+                    "with",
+                    "find",
+                    "search",
+                    "website",
+                    "page",
+                    "contact",
+                    "us",
+                    "how",
+                    "what",
+                    "where",
+                    "is",
+                    "are",
+                    "send",
+                    "get",
+                    "me",
+                }
+                _query_words = [
+                    w.lower()
+                    for w in _re.split(r"\W+", query)
+                    if len(w) > 2 and w.lower() not in _stopwords
+                ]
+
+                def _url_score(r):
+                    try:
+                        from urllib.parse import urlparse
+
+                        path = urlparse(r.get("url", "")).path.lower()
+                        keyword_hits = sum(1 for w in _query_words if w in path)
+                        # Strongly prefer unblocked results — a blocked page with a
+                        # great URL is useless; an unblocked third-party page that
+                        # mentions the same contact details is far more valuable.
+                        blocked_penalty = -100 if r.get("blocked") else 0
+                        # Bonus for results that already have emails extracted
+                        email_bonus = 50 if r.get("emails_found") else 0
+                        return keyword_hits + blocked_penalty + email_bonus
+                    except Exception:
+                        return 0
+
+                if len(results) > 1:
+                    results.sort(key=_url_score, reverse=True)
+            else:
+                # Even without fetch_content, extract emails from description snippets.
+                _email_re = _re.compile(
+                    r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
+                )
+                for r in results:
+                    found = _email_re.findall(r.get("description") or "")
+                    seen = set()
+                    deduped = []
+                    for e in found:
+                        el = e.lower()
+                        if el not in seen:
+                            seen.add(el)
+                            deduped.append(e)
+                    if deduped:
+                        r["emails_found"] = deduped
             return {"ok": True, "query": query, "results": results}
 
     # ── web_fetch ─────────────────────────────────────────────────────────── #
@@ -377,10 +507,26 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                 req = HTTPRequest(
                     url,
                     method="GET",
-                    headers={"User-Agent": "YadaAgent/1.0"},
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                        "Accept-Language": "en-US,en;q=0.9",
+                        "Accept-Encoding": "gzip, deflate, br",
+                        "Cache-Control": "no-cache",
+                        "Pragma": "no-cache",
+                        "Upgrade-Insecure-Requests": "1",
+                        "Sec-Fetch-Dest": "document",
+                        "Sec-Fetch-Mode": "navigate",
+                        "Sec-Fetch-Site": "none",
+                        "Sec-Fetch-User": "?1",
+                        "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+                        "sec-ch-ua-mobile": "?0",
+                        "sec-ch-ua-platform": '"macOS"',
+                    },
                     request_timeout=15.0,
                     follow_redirects=True,
                     max_redirects=5,
+                    decompress_response=True,
                 )
                 resp = await client.fetch(req, raise_error=False)
                 if resp.code != 200:

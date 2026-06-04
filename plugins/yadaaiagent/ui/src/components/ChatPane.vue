@@ -5,6 +5,7 @@
       ref="chatWindow"
       @fields-confirmed="handleFieldsConfirmed"
       @auth-connect="handleAuthConnect"
+      @replay="handleReplay"
     />
 
     <div class="input-area">
@@ -436,6 +437,15 @@ function handleFieldsConfirmed(text) {
   if (busy.value) return;
   userInput.value = text;
   send();
+}
+
+/** Populate the input with a previous user message so it can be edited and resent. */
+function handleReplay(content) {
+  userInput.value = content;
+  nextTick(() => {
+    inputEl.value?.focus();
+    autoGrow({ target: inputEl.value });
+  });
 }
 
 function escHtml(s) {
@@ -910,7 +920,7 @@ function _buildLoopHtml(
       if (isDone) {
         const r = loopStepResults[s.step];
         const rs = typeof r === "string" ? r : JSON.stringify(r, null, 2);
-        h += `<div class="ls-result">${escHtml(rs.length > 220 ? rs.slice(0, 220) + "…" : rs)}</div>`;
+        h += `<div class="ls-result">${escHtml(rs)}</div>`;
       }
       h += "</li>";
     }
@@ -3898,6 +3908,8 @@ defineExpose({
 }
 .ls-result {
   width: 100%;
+  max-height: 200px;
+  overflow-y: auto;
   font-size: 0.78rem;
   color: #8b949e;
   background: var(--bg, #0d1117);
