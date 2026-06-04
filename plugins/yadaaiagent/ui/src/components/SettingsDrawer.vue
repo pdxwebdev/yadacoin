@@ -40,9 +40,36 @@
             placeholder="http://127.0.0.1:11434"
           />
           <div class="hint">
-            Use <code>http://127.0.0.1:11434</code> (not <code>localhost</code>)
-            to avoid IPv6 issues. Run <code>ollama list</code> to see available
-            models.
+            Use <code>http://127.0.0.1:11434</code> (not
+            <code>localhost</code>) to avoid IPv6 resolution issues.<br /><br />
+            <strong>⚠ Remote node detected:</strong> if this UI is served from a
+            node that is not running on your local machine (e.g. a VPS or
+            yadacoin.io), the node cannot reach your local Ollama directly. You
+            must expose it with
+            <a href="https://ngrok.com/download" target="_blank" rel="noopener"
+              >ngrok</a
+            >
+            (free tier is sufficient) and paste the tunnel URL here.<br /><br />
+            <strong>macOS / Linux</strong><br />
+            <code>brew install ngrok</code> &nbsp;or&nbsp;
+            <code
+              >curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo
+              tee /etc/apt/trusted.gpg.d/ngrok.asc &gt;/dev/null &amp;&amp; echo
+              "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee
+              /etc/apt/sources.list.d/ngrok.list &amp;&amp; sudo apt install
+              ngrok</code
+            ><br />
+            Then: <code>ngrok http 11434</code> — copy the
+            <code>https://…ngrok-free.app</code> URL into this field.<br /><br />
+            <strong>Windows</strong><br />
+            Download the installer from
+            <a href="https://ngrok.com/download" target="_blank" rel="noopener"
+              >ngrok.com/download</a
+            >, run it, authenticate with <code>ngrok config add-authtoken
+            &lt;token&gt;</code>, then run
+            <code>ngrok http 11434</code> in a terminal and paste the HTTPS URL
+            here.<br /><br />
+            Run <code>ollama list</code> to see available models.
           </div>
         </div>
         <div class="field-group" v-if="form.provider === 'openai_compat'">
