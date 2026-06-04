@@ -22,8 +22,9 @@ SKILL_REGISTRY = {
                 "params": {
                     "query": "string (required) — what to search for",
                     "count": "integer (optional, 1-10, default 5) — number of results",
+                    "fetch_content": "boolean (optional, default false) — if true, fetches and includes the full text content of each result page; use when you need actual page text, e.g. to find email addresses or contact details",
                 },
-                "returns": "List of {title, url, snippet} web results",
+                "returns": "List of {title, url, snippet} web results; each result also has 'content' when fetch_content=true",
             }
         },
     },
@@ -321,7 +322,34 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                 return {"ok": False, "error": "Brave API key not configured"}
             query = str(params.get("query", ""))
             count = min(int(params.get("count") or 5), 10)
+            fetch_content = bool(params.get("fetch_content", False))
             results = await _brave_web_search(api_key, query, count=count)
+            if fetch_content and results:
+                fetch_client = AsyncHTTPClient()
+                for r in results:
+                    url = r.get("url", "")
+                    if not url.startswith(("http://", "https://")):
+                        r["content"] = ""
+                        continue
+                    try:
+                        freq = HTTPRequest(
+                            url,
+                            method="GET",
+                            headers={"User-Agent": "YadaAgent/1.0"},
+                            request_timeout=10.0,
+                            follow_redirects=True,
+                            max_redirects=5,
+                        )
+                        fresp = await fetch_client.fetch(freq, raise_error=False)
+                        if fresp.code == 200:
+                            raw = fresp.body.decode("utf-8", errors="replace")
+                            text = _re.sub(r"<[^>]+>", " ", raw)
+                            text = _re.sub(r"\s+", " ", text).strip()[:3000]
+                            r["content"] = text
+                        else:
+                            r["content"] = ""
+                    except Exception:
+                        r["content"] = ""
             return {"ok": True, "query": query, "results": results}
 
     # ── web_fetch ─────────────────────────────────────────────────────────── #
