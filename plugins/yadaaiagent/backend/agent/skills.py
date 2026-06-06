@@ -6,13 +6,26 @@ from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 
 from ..github.api import _github_api_get, _github_api_post
 from ..microsoft.api import _msgraph_api_get, _msgraph_api_post
-from .types import _brave_web_search
+from .types import _brave_answers, _brave_web_search
 
 # ── Skill registry ─────────────────────────────────────────────────────────── #
 # Each entry documents what the skill can do for the planner LLM.
 # "requires" maps to a context key that must be non-empty for the skill to appear.
 
 SKILL_REGISTRY = {
+    "brave_answers": {
+        "description": "Get a direct AI-generated answer/summary from Brave for a query — higher confidence than web search results",
+        "requires": "brave_answers_api_key",
+        "actions": {
+            "answer": {
+                "description": "Ask a question and get a concise summarized answer directly from Brave",
+                "params": {
+                    "query": "string (required) — the question or topic to get an answer for",
+                },
+                "returns": "A plain-text answer/summary string, or null if unavailable",
+            }
+        },
+    },
     "brave_search": {
         "description": "Search the web for current information, news, and facts using Brave Search",
         "requires": "brave_api_key",
@@ -162,6 +175,42 @@ SKILL_REGISTRY = {
             },
         },
     },
+    "key_rotation": {
+        "description": (
+            "YadaCoin Key Event Log (KEL) operations. "
+            "check_status verifies whether the current address is still active (not yet spent). "
+            "rotate advances the KEL to the next pre-committed key, proving identity on-chain. "
+            "The second_factor is supplied server-side and must NOT be passed as a tool argument."
+        ),
+        "requires": "public_key",
+        "actions": {
+            "check_status": {
+                "description": (
+                    "Check whether the current YadaCoin address has already submitted a "
+                    "key-rotation transaction ('spent'). Returns {address, spent, source}. "
+                    "Call this before any sensitive or authenticated action when key rotation "
+                    "is required."
+                ),
+                "params": {},
+                "side_effects": False,
+            },
+            "rotate": {
+                "description": (
+                    "Perform a YadaCoin key rotation — broadcast a signed transaction that "
+                    "advances the Key Event Log to the next pre-committed key. "
+                    "The second_factor is supplied server-side; do NOT include it in arguments. "
+                    "Returns {ok, new_address, new_public_key, txid}."
+                ),
+                "params": {
+                    "relationship": (
+                        "string (optional). Non-empty value creates an UNCONFIRMED+CONFIRMING "
+                        "key-event pair for agent authorization."
+                    ),
+                },
+                "side_effects": True,
+            },
+        },
+    },
 }
 
 
@@ -174,6 +223,56 @@ def build_available_skills(context: dict) -> dict:
         if req is None or context.get(req):
             available[skill_name] = skill_def
     return available
+
+
+def build_tool_schemas(available_skills: dict) -> list:
+    """Convert available skills to OpenAI-format tool schemas for ReAct tool-calling.
+
+    Tool names use the format ``skill__action`` (double underscore separator)
+    so they can be unambiguously split back into (skill, action) at call time.
+    Tool names must match ``^[a-zA-Z0-9_-]{1,64}$``.
+    """
+    tools = []
+    for skill_name, skill_def in available_skills.items():
+        for action_name, action_def in skill_def["actions"].items():
+            fn_name = f"{skill_name}__{action_name}"
+            props: dict = {}
+            required: list = []
+            for p_name, p_desc in (action_def.get("params") or {}).items():
+                desc_lower = p_desc.lower()
+                if "integer" in desc_lower or "int," in desc_lower:
+                    p_type = "integer"
+                elif (
+                    "boolean" in desc_lower
+                    or "bool," in desc_lower
+                    or "true|false" in desc_lower
+                ):
+                    p_type = "boolean"
+                else:
+                    p_type = "string"
+                props[p_name] = {"type": p_type, "description": p_desc}
+                if "required" in p_desc.lower():
+                    required.append(p_name)
+            side_note = (
+                " ⚠ This action has real-world side effects and requires user confirmation."
+                if action_def.get("side_effects")
+                else ""
+            )
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": fn_name,
+                        "description": action_def["description"] + side_note,
+                        "parameters": {
+                            "type": "object",
+                            "properties": props,
+                            "required": required,
+                        },
+                    },
+                }
+            )
+    return tools
 
 
 def build_planner_prompt(available_skills: dict) -> str:
@@ -210,6 +309,13 @@ def build_planner_prompt(available_skills: dict) -> str:
         "- Never add steps just to display data — the system handles presentation.\n"
         "- NEVER use brave_search or web_fetch to look up data that a connected skill "
         "(github, microsoft, wallet) can fetch directly via its API.\n"
+        "- If 'brave_answers' is available, prefer it over 'brave_search' for direct "
+        "factual or informational questions (e.g. 'what is X', 'list Y', 'how does Z work'). "
+        "brave_answers returns a concise AI-generated summary in a single step. "
+        "Use 'brave_search' instead when you need source URLs, multiple results to compare, "
+        "contact details/email addresses, or when brave_answers returns no result. "
+        "You may follow a brave_answers step with a brave_search step if the answer needs "
+        "supporting sources or more detail.\n"
         "- brave_search does NOT support 'site:' query operators — they return zero results. "
         "NEVER use 'site:example.com' in a query. Instead, use descriptive natural language "
         "and let the search find the right pages.\n"
@@ -247,6 +353,15 @@ def build_planner_prompt(available_skills: dict) -> str:
         "confirmation dialog — you do NOT need to ask for confirmation in your plan or in text. "
         "Always include the full end-to-end plan with all steps, including side-effecting ones. "
         "Never end a plan with a question or omit a step because you think you should ask first.\n"
+        "- If the conversation history already contains everything needed to answer the current goal "
+        "(e.g. the user is reformatting, filtering, or summarizing a previous result), return an "
+        "EMPTY steps list. The synthesizer will answer directly from history. Example: "
+        '{"reasoning": "answer already in history", "steps": []}\n'
+        "- NEVER return empty steps when the goal asks for email addresses, phone numbers, or "
+        "contact details for entities NOT already confirmed in the conversation history or "
+        "pre-fetched context. If the goal names multiple counties/organisations and their "
+        "contact info is not ALL explicitly present, plan brave_search steps to look them up. "
+        "Partially-known data is NOT sufficient — plan steps for ALL missing items.\n"
         "Return ONLY a valid JSON object:\n"
         "{\n"
         '  "reasoning": "brief explanation of your approach",\n'
@@ -338,6 +453,24 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
     On failure returns {"ok": False, "error": "..."}.
     """
     params = params or {}
+
+    # ── brave_answers ─────────────────────────────────────────────────────── #
+    if skill == "brave_answers":
+        if action == "answer":
+            api_key = context.get("brave_answers_api_key", "")
+            if not api_key:
+                return {"ok": False, "error": "Brave Answers API key not configured"}
+            query = str(params.get("query", ""))
+            if not query:
+                return {"ok": False, "error": "query parameter is required"}
+            answer = await _brave_answers(api_key, query)
+            if answer is None:
+                return {
+                    "ok": True,
+                    "answer": None,
+                    "note": "No summary available for this query",
+                }
+            return {"ok": True, "answer": answer}
 
     # ── brave_search ──────────────────────────────────────────────────────── #
     if skill == "brave_search":
@@ -494,7 +627,21 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                             deduped.append(e)
                     if deduped:
                         r["emails_found"] = deduped
-            return {"ok": True, "query": query, "results": results}
+
+            # Aggregate all emails across all results into a top-level field
+            # so the synthesis LLM cannot miss them regardless of result ordering.
+            _all_emails: list = []
+            _seen_all: set = set()
+            for r in results:
+                for e in r.get("emails_found") or []:
+                    if e.lower() not in _seen_all:
+                        _seen_all.add(e.lower())
+                        _all_emails.append(e)
+
+            result_payload: dict = {"ok": True, "query": query, "results": results}
+            if _all_emails:
+                result_payload["all_emails_found"] = _all_emails
+            return result_payload
 
     # ── web_fetch ─────────────────────────────────────────────────────────── #
     elif skill == "web_fetch":
@@ -897,6 +1044,104 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
             try:
                 text = await llm_caller(messages, max_tokens=800)
                 return {"ok": True, "text": text}
+            except Exception as exc:
+                return {"ok": False, "error": str(exc)[:200]}
+
+    # ── key_rotation ──────────────────────────────────────────────────────── #
+    elif skill == "key_rotation":
+        import json as _json
+
+        public_key = context.get("public_key", "")
+        if not public_key:
+            return {"ok": False, "error": "public_key not provided"}
+        try:
+            from bitcoin.wallet import P2PKHBitcoinAddress
+
+            address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+        except Exception as exc:
+            return {"ok": False, "error": f"invalid public_key: {exc}"}
+        config = context.get("config")
+        if config is None:
+            return {"ok": False, "error": "config not available"}
+
+        if action == "check_status":
+            try:
+                # Check mempool first
+                mempool_hit = await config.mongo.async_db.miner_transactions.find_one(
+                    {"public_key_hash": address},
+                    {"_id": 0, "id": 1, "prerotated_key_hash": 1},
+                )
+                if mempool_hit:
+                    return {
+                        "ok": True,
+                        "address": address,
+                        "spent": True,
+                        "source": "mempool",
+                        "txid": mempool_hit.get("id", ""),
+                    }
+                # Check confirmed blockchain
+                chain_hit = await config.mongo.async_db.blocks.find_one(
+                    {"transactions": {"$elemMatch": {"public_key_hash": address}}},
+                    {"_id": 0, "transactions.$": 1},
+                )
+                if chain_hit:
+                    txns = chain_hit.get("transactions", [])
+                    txn = txns[0] if txns else {}
+                    return {
+                        "ok": True,
+                        "address": address,
+                        "spent": True,
+                        "source": "blockchain",
+                        "txid": txn.get("id", ""),
+                    }
+                return {"ok": True, "address": address, "spent": False, "source": None}
+            except Exception as exc:
+                return {"ok": False, "error": str(exc)[:200]}
+
+        elif action == "rotate":
+            second_factor = context.get("key_rotation_second_factor", "")
+            if not second_factor:
+                return {
+                    "ok": False,
+                    "error": (
+                        "second_factor not configured — provide it in the agent request body "
+                        "as 'key_rotation_second_factor'."
+                    ),
+                }
+            relationship = str(params.get("relationship") or "")
+            # POST to the running key-rotation endpoint (server-side logic lives there)
+            server_port = getattr(config, "web_server_port", 8000)
+            base_url = f"http://127.0.0.1:{server_port}"
+            try:
+                import json as _json2
+
+                client = AsyncHTTPClient()
+                payload: dict = {
+                    "public_key": public_key,
+                    "second_factor": second_factor,
+                }
+                if relationship:
+                    payload["relationship"] = relationship
+                req = HTTPRequest(
+                    f"{base_url}/key-rotation/derived-child-key",
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                    body=_json2.dumps(payload),
+                    request_timeout=30.0,
+                )
+                resp = await client.fetch(req, raise_error=False)
+                data = _json2.loads(resp.body)
+                if resp.code != 200 or not data.get("status"):
+                    return {
+                        "ok": False,
+                        "error": data.get("message", f"HTTP {resp.code}"),
+                    }
+                return {
+                    "ok": True,
+                    "new_address": data.get("new_address", ""),
+                    "new_public_key": data.get("new_public_key", ""),
+                    "txid": data.get("id", ""),
+                }
             except Exception as exc:
                 return {"ok": False, "error": str(exc)[:200]}
 

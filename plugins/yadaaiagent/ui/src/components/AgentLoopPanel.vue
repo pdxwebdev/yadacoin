@@ -36,7 +36,7 @@
           <button
             v-if="events.length && !running"
             class="clear-btn"
-            @click="clearOutput"
+            @click="clearAll"
           >
             Clear
           </button>
@@ -117,6 +117,7 @@ import { ref, computed } from "vue";
 import {
   getLlmSettings,
   getBraveApiKey,
+  getBraveAnswersApiKey,
   getNodeUrl,
   getWalletMode,
   LS_PRIV,
@@ -142,6 +143,13 @@ const stepResults = ref({});
 const activeSteps = ref(new Set());
 const finalReply = ref("");
 const errorMsg = ref("");
+
+// ── Conversation history (goal/reply pairs for multi-turn context) ────────────
+// Persisted in sessionStorage so it survives page refreshes and cache busts.
+const _HISTORY_KEY = "agent_loop_conv_history";
+const conversationHistory = ref(
+  JSON.parse(sessionStorage.getItem(_HISTORY_KEY) || "[]"),
+);
 
 // ── Available skills (derived from configured services) ───────────────────────
 const SKILL_META = {
@@ -233,6 +241,12 @@ function clearOutput() {
   errorMsg.value = "";
 }
 
+function clearAll() {
+  clearOutput();
+  conversationHistory.value = [];
+  sessionStorage.removeItem(_HISTORY_KEY);
+}
+
 // ── SSE event handler ─────────────────────────────────────────────────────────
 function handleEvent(evt) {
   switch (evt.type) {
@@ -265,11 +279,15 @@ async function runLoop() {
   if (!goal.value.trim() || running.value) return;
   clearOutput();
   running.value = true;
+  const currentGoal = goal.value.trim(); // capture before any async work
 
   const llmCfg = getLlmSettings();
   const body = {
     mode: "loop",
     goal: goal.value.trim(),
+    messages: conversationHistory.value.length
+      ? conversationHistory.value
+      : undefined,
     llm: {
       provider: llmCfg.provider,
       model: llmCfg.model || undefined,
@@ -278,6 +296,7 @@ async function runLoop() {
       base_url: llmCfg.base_url || undefined,
     },
     brave_api_key: getBraveApiKey() || undefined,
+    brave_answers_api_key: getBraveAnswersApiKey() || undefined,
     web2_sessions: Object.keys(web2Sessions.value || {}).length
       ? web2Sessions.value
       : undefined,
@@ -322,6 +341,19 @@ async function runLoop() {
   } catch (e) {
     errorMsg.value = String(e);
   } finally {
+    // Append this turn to conversation history so follow-up goals get context
+    const reply = finalReply.value;
+    if (currentGoal) {
+      conversationHistory.value.push({ role: "user", content: currentGoal });
+      if (reply) {
+        conversationHistory.value.push({ role: "assistant", content: reply });
+      }
+      // Persist to sessionStorage so history survives page refreshes
+      sessionStorage.setItem(
+        _HISTORY_KEY,
+        JSON.stringify(conversationHistory.value),
+      );
+    }
     running.value = false;
     statusMsg.value = "";
   }

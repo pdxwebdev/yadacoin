@@ -22,6 +22,7 @@ export const LS_ACTIVE_AGENT = "yadacoin_active_agent";
 export const LS_NODE_URL = "yadacoin_node_url";
 export const LS_BOOKING_CREDENTIALS = "yadacoin_booking_credentials";
 export const LS_BRAVE_API_KEY = "yadacoin_brave_api_key";
+export const LS_BRAVE_ANSWERS_API_KEY = "yadacoin_brave_answers_api_key";
 export const LS_SKILLS = "yadacoin_skills";
 
 export function getBraveApiKey() {
@@ -30,6 +31,14 @@ export function getBraveApiKey() {
 
 export function saveBraveApiKey(key) {
   localStorage.setItem(LS_BRAVE_API_KEY, key.trim());
+}
+
+export function getBraveAnswersApiKey() {
+  return localStorage.getItem(LS_BRAVE_ANSWERS_API_KEY) || "";
+}
+
+export function saveBraveAnswersApiKey(key) {
+  localStorage.setItem(LS_BRAVE_ANSWERS_API_KEY, key.trim());
 }
 
 // ── Skills (OAuth client IDs provided by the user) ────────────────────────────
@@ -41,17 +50,23 @@ const _SKILLS_DEFAULTS = {
 
 export function getSkillsSettings() {
   try {
-    return { ..._SKILLS_DEFAULTS, ...JSON.parse(localStorage.getItem(LS_SKILLS) || "{}") };
+    return {
+      ..._SKILLS_DEFAULTS,
+      ...JSON.parse(localStorage.getItem(LS_SKILLS) || "{}"),
+    };
   } catch {
     return { ..._SKILLS_DEFAULTS };
   }
 }
 
 export function saveSkillsSettings(s) {
-  localStorage.setItem(LS_SKILLS, JSON.stringify({
-    github_client_id: (s.github_client_id || "").trim(),
-    microsoft_client_id: (s.microsoft_client_id || "").trim(),
-  }));
+  localStorage.setItem(
+    LS_SKILLS,
+    JSON.stringify({
+      github_client_id: (s.github_client_id || "").trim(),
+      microsoft_client_id: (s.microsoft_client_id || "").trim(),
+    }),
+  );
 }
 
 export function getNodeUrl() {

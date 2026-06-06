@@ -18,6 +18,14 @@
         >
           ?
         </button>
+        <button
+          class="new-chat-btn"
+          title="New chat (clears conversation history)"
+          :disabled="busy"
+          @click="newChat()"
+        >
+          ✕
+        </button>
         <textarea
           ref="inputEl"
           v-model="userInput"
@@ -236,6 +244,7 @@ import {
   LS_ACTIVE_AGENT,
   getLlmSettings,
   getBraveApiKey,
+  getBraveAnswersApiKey,
   getNodeUrl,
   saveBookingCredential,
   getWalletMode,
@@ -282,6 +291,12 @@ const userInput = ref("");
 const busy = ref(false);
 const inputEl = ref(null);
 const chatWindow = ref(null);
+
+// ── Loop conversation history (persisted across page refreshes) ───────────────
+const _LOOP_HISTORY_KEY = "agent_loop_conv_history";
+const loopHistory = ref(
+  JSON.parse(sessionStorage.getItem(_LOOP_HISTORY_KEY) || "[]"),
+);
 
 // ── Agent Loop mode (always on) ──────────────────────────────────────────────
 
@@ -411,6 +426,14 @@ function applyDataFields(msg, data) {
       msg.selections[g.id] = g.multi ? [] : "";
     }
   }
+}
+
+/** Start a new conversation — clears chat UI and persisted loop history. */
+function newChat() {
+  if (busy.value) return;
+  messages.value = [];
+  loopHistory.value = [];
+  sessionStorage.removeItem(_LOOP_HISTORY_KEY);
 }
 
 /** Clear choice form from the most recent agent message that has one. */
@@ -893,6 +916,7 @@ function _buildLoopHtml(
   loopError,
   loopStatus,
   loopWarnings,
+  loopStreamingText,
 ) {
   let h = '<div class="loop-result">';
   if (loopWarnings && loopWarnings.length) {
@@ -902,6 +926,9 @@ function _buildLoopHtml(
   }
   if (loopStatus && !loopFinalReply && !loopError) {
     h += `<div class="loop-status"><span class="loop-spinner"></span>${escHtml(loopStatus)}</div>`;
+  }
+  if (loopStreamingText && !loopFinalReply && !loopError) {
+    h += `<div class="loop-streaming-text">${escHtml(loopStreamingText)}</div>`;
   }
   if (loopPlan) {
     h += '<div class="loop-plan">';
@@ -957,6 +984,7 @@ async function runLoop() {
   let loopFinalReply = "";
   let loopError = "";
   const loopWarnings = [];
+  let loopStreamingText = "";
 
   function updateLoopMsg() {
     if (messages.value[msgIdx]) {
@@ -970,6 +998,7 @@ async function runLoop() {
           loopError,
           loopStatus,
           loopWarnings,
+          loopStreamingText,
         ),
         // Preserve confirmPending across html rebuilds
         confirmPending: messages.value[msgIdx]?.confirmPending ?? null,
@@ -992,6 +1021,7 @@ async function runLoop() {
   const baseBody = {
     mode: "loop",
     goal,
+    messages: loopHistory.value.length ? loopHistory.value : undefined,
     llm: {
       provider: llmCfg.provider,
       model: llmCfg.model || undefined,
@@ -1000,6 +1030,7 @@ async function runLoop() {
       base_url: llmCfg.base_url || undefined,
     },
     brave_api_key: getBraveApiKey() || undefined,
+    brave_answers_api_key: getBraveAnswersApiKey() || undefined,
     web2_sessions: Object.keys(web2Sessions.value || {}).length
       ? web2Sessions.value
       : undefined,
@@ -1064,6 +1095,72 @@ async function runLoop() {
                 loopError = evt.message || evt.error || "Unknown error";
                 loopStatus = "";
                 break;
+              case "llm_needed": {
+                // ollama_browser provider: call Ollama locally in the browser,
+                // then re-POST with the result so the server can execute tools.
+                awaitingConfirm = true; // pause the SSE reader
+                const ollamaHost = (
+                  fetchBody.llm?.ollama_host || "http://localhost:11434"
+                ).replace(/\/$/, "");
+                const ollamaModel = fetchBody.llm?.model || "llama3.2";
+                loopStatus = "Calling local Ollama...";
+                updateLoopMsg();
+                try {
+                  const ollamaResp = await fetch(`${ollamaHost}/api/chat`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      model: ollamaModel,
+                      messages: evt.messages,
+                      tools: evt.tools,
+                      stream: false,
+                    }),
+                  });
+                  if (!ollamaResp.ok)
+                    throw new Error(`Ollama HTTP ${ollamaResp.status}`);
+                  const data = await ollamaResp.json();
+                  const msg = data.message || {};
+                  const rawToolCalls = msg.tool_calls || [];
+                  // Normalise to the same shape the server uses internally
+                  const toolCalls = rawToolCalls.map((tc, i) => {
+                    const fn = tc.function || {};
+                    let args = fn.arguments || {};
+                    if (typeof args === "string") {
+                      try {
+                        args = JSON.parse(args);
+                      } catch {
+                        args = {};
+                      }
+                    }
+                    return {
+                      id: tc.id || `ollama_browser_${i}`,
+                      name: fn.name || "",
+                      arguments: args,
+                    };
+                  });
+                  const llmResponse = {
+                    reply: (msg.content || "").trim() || null,
+                    tool_calls: toolCalls.length ? toolCalls : null,
+                    assistant_message: msg,
+                  };
+                  loopStatus = "Thinking...";
+                  updateLoopMsg();
+                  const resumeBody = {
+                    ...fetchBody,
+                    llm_response: llmResponse,
+                    resume_messages: evt.messages,
+                  };
+                  const releaseBusy2 = await doStream(resumeBody);
+                  if (releaseBusy2) {
+                    // nothing extra needed; outer caller will release busy
+                  }
+                } catch (ollamaErr) {
+                  loopError = `Local Ollama error: ${ollamaErr}`;
+                  loopStatus = "";
+                  updateLoopMsg();
+                }
+                break;
+              }
               case "confirm":
                 awaitingConfirm = true;
                 loopStatus = "";
@@ -1130,6 +1227,15 @@ async function runLoop() {
   }
 
   const releaseBusy = await doStream(baseBody);
+  // Persist this turn to conversation history for follow-up queries
+  if (loopFinalReply) {
+    loopHistory.value.push({ role: "user", content: goal });
+    loopHistory.value.push({ role: "assistant", content: loopFinalReply });
+    sessionStorage.setItem(
+      _LOOP_HISTORY_KEY,
+      JSON.stringify(loopHistory.value),
+    );
+  }
   if (releaseBusy) {
     busy.value = false;
     nextTick(() => inputEl.value?.focus());
@@ -1193,6 +1299,7 @@ async function send(overridePrompt) {
         messages: chatHistory,
         agent_type: currentAgentId.value || "general",
         brave_api_key: getBraveApiKey() || undefined,
+        brave_answers_api_key: getBraveAnswersApiKey() || undefined,
         web2_sessions: Object.keys(web2Sessions.value).length
           ? web2Sessions.value
           : undefined,
@@ -1253,6 +1360,7 @@ async function send(overridePrompt) {
           messages: chatHistory,
           agent_type: currentAgentId.value,
           brave_api_key: getBraveApiKey() || undefined,
+          brave_answers_api_key: getBraveAnswersApiKey() || undefined,
           web2_sessions: Object.keys(web2Sessions.value).length
             ? web2Sessions.value
             : undefined,
@@ -3692,6 +3800,33 @@ defineExpose({
   color: #fff;
   border-color: var(--accent);
 }
+.new-chat-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted, #8b949e);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.new-chat-btn:hover:not(:disabled) {
+  background: #da3633;
+  color: #fff;
+  border-color: #da3633;
+}
+.new-chat-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 /* ── Docs modal ────────────────────────────────────────────────────────────── */
 .docs-backdrop {
@@ -3834,6 +3969,16 @@ defineExpose({
   gap: 8px;
   color: #8b949e;
   font-style: italic;
+}
+.loop-streaming-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #c9d1d9;
+  font-size: 0.92em;
+  opacity: 0.85;
+  border-left: 2px solid var(--accent, #58a6ff);
+  padding: 4px 10px;
+  margin: 4px 0;
 }
 .loop-spinner {
   display: inline-block;

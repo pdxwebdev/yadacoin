@@ -9,6 +9,12 @@ import re
 
 _log = _logging.getLogger("yadaaiagent.agent")
 
+
+async def _async_none():
+    """No-op coroutine used as a placeholder in asyncio.gather calls."""
+    return None
+
+
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM as _AESGCM
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 
@@ -21,7 +27,9 @@ from ..github.api import _github_api_get
 from .types import (
     _AGENT_TYPE_MAP,
     AGENT_TYPES,
+    _brave_answers,
     _brave_web_search,
+    _build_answers_context,
     _build_general_prompt_dynamic,
     _build_generic_intake_prompt,
     _build_search_context,
@@ -383,8 +391,18 @@ class AgentChatHandler(BaseHandler):
             or getattr(self.config, "brave_api_key", "")
             or ""
         )
+        brave_answers_api_key = (
+            (body.get("brave_answers_api_key") or "").strip()
+            or os.environ.get("BRAVE_ANSWERS_API_KEY", "")
+            or getattr(self.config, "brave_answers_api_key", "")
+            or ""
+        )
         search_sources: list = []  # populated below if search runs
-        if brave_api_key and agent_type_id == "general" and messages:
+        if (
+            (brave_api_key or brave_answers_api_key)
+            and agent_type_id == "general"
+            and messages
+        ):
             last_user_msg = next(
                 (
                     m.get("content", "")
@@ -395,21 +413,48 @@ class AgentChatHandler(BaseHandler):
             ).strip()
             # Skip search for very short inputs (greetings, single words, etc.)
             if len(last_user_msg) >= 8:
+                # Run Brave Answers and Brave Search in parallel for best coverage.
+                # Both results are included so the LLM can compare and pick the
+                # most accurate / relevant answer relative to the original query.
+                _answers_coro = (
+                    _brave_answers(brave_answers_api_key, last_user_msg)
+                    if brave_answers_api_key
+                    else _async_none()
+                )
+                _search_coro = (
+                    _brave_web_search(brave_api_key, last_user_msg, count=5)
+                    if brave_api_key
+                    else _async_none()
+                )
                 try:
-                    search_results = await _brave_web_search(
-                        brave_api_key, last_user_msg, count=5
+                    _answers_result, _search_result = await asyncio.gather(
+                        _answers_coro, _search_coro, return_exceptions=True
                     )
-                    if search_results:
-                        system_prompt += "\n\n" + _build_search_context(
-                            search_results, last_user_msg
-                        )
-                        search_sources = [
-                            {"title": r["title"], "url": r["url"]}
-                            for r in search_results
-                            if r.get("url")
-                        ]
                 except Exception:
-                    pass  # search is best-effort — never block the chat
+                    _answers_result, _search_result = None, None
+
+                _has_answers = isinstance(_answers_result, str) and _answers_result
+                _has_search = isinstance(_search_result, list) and _search_result
+
+                if _has_answers or _has_search:
+                    system_prompt += (
+                        "\n\n[The following web context was retrieved for this query. "
+                        "Compare both sources against the user's question and use "
+                        "whichever is most accurate and relevant. Cite sources when helpful.]"
+                    )
+                if _has_answers:
+                    system_prompt += "\n\n" + _build_answers_context(
+                        _answers_result, last_user_msg
+                    )
+                if _has_search:
+                    system_prompt += "\n\n" + _build_search_context(
+                        _search_result, last_user_msg
+                    )
+                    search_sources = [
+                        {"title": r["title"], "url": r["url"]}
+                        for r in _search_result
+                        if r.get("url")
+                    ]
 
         full_messages = _sanitize_messages(
             [{"role": "system", "content": system_prompt + _UI_HINT_SUFFIX}] + messages
@@ -1334,6 +1379,7 @@ class AgentChatHandler(BaseHandler):
                     "keep_alive": "10m",  # keep model loaded for 10 minutes after last request
                 }
             ),
+            connect_timeout=15.0,
             request_timeout=480.0,
         )
         resp = await client.fetch(req, raise_error=False)
@@ -1450,6 +1496,271 @@ class AgentChatHandler(BaseHandler):
         data = json.loads(resp.body)
         return data["content"][0]["text"].strip()
 
+    # ── Tool-calling helpers for ReAct loop ─────────────────────────────── #
+
+    async def _openai_call_with_tools(
+        self, base_url: str, model: str, api_key: str, messages: list, tools: list
+    ) -> dict:
+        """OpenAI-format tool-calling (also used for GitHub Models / compat providers).
+        Returns {"reply", "tool_calls", "assistant_message"}.
+        """
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        payload = {
+            "model": model,
+            "messages": messages,
+            "tools": tools,
+            "tool_choice": "auto",
+        }
+        client = AsyncHTTPClient()
+        req = HTTPRequest(
+            url=f"{base_url}/chat/completions",
+            method="POST",
+            headers=headers,
+            body=json.dumps(payload),
+            request_timeout=120.0,
+        )
+        for attempt in range(3):
+            resp = await client.fetch(req, raise_error=False)
+            if resp.code == 200:
+                break
+            if resp.code == 429 and attempt < 2:
+                wait = self._parse_retry_after(resp.body)
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                    continue
+            try:
+                err = json.loads(resp.body)
+                msg = err.get("error", {}).get("message") or resp.body.decode(
+                    "utf-8", errors="replace"
+                )
+            except Exception:
+                msg = resp.body.decode("utf-8", errors="replace")
+            raise ValueError(f"OpenAI {resp.code}: {msg}")
+        data = json.loads(resp.body)
+        choice_msg = data["choices"][0]["message"]
+        text = (choice_msg.get("content") or "").strip()
+        raw_tool_calls = choice_msg.get("tool_calls") or []
+        if not raw_tool_calls:
+            return {"reply": text, "tool_calls": None, "assistant_message": None}
+        tool_calls = []
+        for tc in raw_tool_calls:
+            fn = tc["function"]
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except Exception:
+                args = {}
+            tool_calls.append({"id": tc["id"], "name": fn["name"], "arguments": args})
+        assistant_msg = {
+            "role": "assistant",
+            "content": text or None,
+            "tool_calls": raw_tool_calls,
+        }
+        return {
+            "reply": text or None,
+            "tool_calls": tool_calls,
+            "assistant_message": assistant_msg,
+        }
+
+    @staticmethod
+    def _is_tool_schema_echo(text: str) -> bool:
+        """Return True if the LLM reply looks like an echoed tool schema rather
+        than a real answer.  Some models (e.g. llama3.1:8b via Ollama) emit the
+        tool definitions verbatim in content when they decide not to call any tool.
+        """
+        t = text.strip()
+        # Pattern produced by llama3.1:8b: "{function TOOL_NAME Description ..."
+        if t.startswith("{function ") or "{function " in t[:80]:
+            return True
+        # JSON object/array that has tool-schema shape
+        if t.startswith(("{", "[")):
+            try:
+                parsed = json.loads(t)
+                if isinstance(parsed, dict) and any(
+                    k in parsed for k in ("function", "parameters", "tool_calls")
+                ):
+                    return True
+                if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+                    first = parsed[0]
+                    if any(k in first for k in ("function", "type", "name")):
+                        return True
+            except Exception:
+                pass
+        return False
+
+    async def _ollama_call_with_tools(
+        self, host: str, model: str, messages: list, tools: list
+    ) -> dict:
+        """Ollama /api/chat tool-calling (same OpenAI-style format).
+        Returns {"reply", "tool_calls", "assistant_message"}.
+        """
+        client = AsyncHTTPClient()
+        req = HTTPRequest(
+            url=f"{host}/api/chat",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps(
+                {
+                    "model": model,
+                    "messages": messages,
+                    "tools": tools,
+                    "stream": False,
+                    "keep_alive": "10m",
+                }
+            ),
+            connect_timeout=15.0,
+            request_timeout=480.0,
+        )
+        resp = await client.fetch(req, raise_error=False)
+        if resp.code != 200:
+            raise ValueError(
+                f"Ollama {resp.code}: {resp.body.decode('utf-8', errors='replace')[:200]}"
+            )
+        data = json.loads(resp.body)
+        msg = data.get("message", {})
+        text = (msg.get("content") or "").strip()
+        raw_tool_calls = msg.get("tool_calls") or []
+        if not raw_tool_calls:
+            return {"reply": text, "tool_calls": None, "assistant_message": None}
+        tool_calls = []
+        for i, tc in enumerate(raw_tool_calls):
+            fn = tc.get("function") or {}
+            args = fn.get("arguments") or {}
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except Exception:
+                    args = {}
+            call_id = tc.get("id") or f"ollama_{fn.get('name', 'tool')}_{i}"
+            tool_calls.append(
+                {"id": call_id, "name": fn.get("name", ""), "arguments": args}
+            )
+        return {
+            "reply": text or None,
+            "tool_calls": tool_calls,
+            "assistant_message": msg,
+        }
+
+    async def _anthropic_call_with_tools(
+        self, model: str, api_key: str, messages: list, tools: list
+    ) -> dict:
+        """Anthropic messages API with tool_use support.
+        Returns {"reply", "tool_calls", "assistant_message"}.
+        """
+        # Convert OpenAI tool schemas to Anthropic format
+        anthropic_tools = [
+            {
+                "name": t["function"]["name"],
+                "description": t["function"]["description"],
+                "input_schema": t["function"]["parameters"],
+            }
+            for t in tools
+        ]
+        # Extract system message
+        system_content = ""
+        filtered = []
+        for m in messages:
+            if m.get("role") == "system":
+                system_content = m.get("content", "")
+            else:
+                filtered.append(m)
+        if not filtered or filtered[0].get("role") != "user":
+            raise ValueError("Anthropic requires the first message to have role 'user'")
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "anthropic-beta": "prompt-caching-2024-07-31",
+        }
+        body: dict = {
+            "model": model,
+            "max_tokens": 1024,
+            "messages": filtered,
+            "tools": anthropic_tools,
+            "tool_choice": {"type": "auto"},
+        }
+        if system_content:
+            body["system"] = [
+                {
+                    "type": "text",
+                    "text": system_content,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+        client = AsyncHTTPClient()
+        req = HTTPRequest(
+            url="https://api.anthropic.com/v1/messages",
+            method="POST",
+            headers=headers,
+            body=json.dumps(body),
+            request_timeout=120.0,
+        )
+        resp = await client.fetch(req, raise_error=False)
+        if resp.code != 200:
+            try:
+                err = json.loads(resp.body)
+                msg = err.get("error", {}).get("message") or resp.body.decode(
+                    "utf-8", errors="replace"
+                )
+            except Exception:
+                msg = resp.body.decode("utf-8", errors="replace")
+            raise ValueError(f"Anthropic {resp.code}: {msg}")
+        data = json.loads(resp.body)
+        content_blocks = data.get("content", [])
+        text = " ".join(
+            b["text"] for b in content_blocks if b.get("type") == "text"
+        ).strip()
+        tool_use_blocks = [b for b in content_blocks if b.get("type") == "tool_use"]
+        if not tool_use_blocks:
+            return {"reply": text, "tool_calls": None, "assistant_message": None}
+        tool_calls = [
+            {"id": b["id"], "name": b["name"], "arguments": b.get("input") or {}}
+            for b in tool_use_blocks
+        ]
+        assistant_msg = {"role": "assistant", "content": content_blocks}
+        return {
+            "reply": text or None,
+            "tool_calls": tool_calls,
+            "assistant_message": assistant_msg,
+        }
+
+    async def _llm_call_with_tools(
+        self,
+        provider: str,
+        model: str,
+        api_key: str,
+        ollama_host: str,
+        base_url: str,
+        messages: list,
+        tools: list,
+    ) -> dict:
+        """Dispatcher for tool-calling LLM calls across all supported providers.
+        Returns {"reply", "tool_calls", "assistant_message"}.
+        """
+        if provider == "anthropic":
+            return await self._anthropic_call_with_tools(
+                model, api_key, messages, tools
+            )
+        elif provider == "ollama":
+            return await self._ollama_call_with_tools(
+                ollama_host, model, messages, tools
+            )
+        elif provider == "openai":
+            return await self._openai_call_with_tools(
+                "https://api.openai.com/v1", model, api_key, messages, tools
+            )
+        elif provider == "github_models":
+            return await self._openai_call_with_tools(
+                self._GITHUB_MODELS_BASE_URL, model, api_key, messages, tools
+            )
+        elif provider == "openai_compat":
+            return await self._openai_call_with_tools(
+                base_url, model, api_key, messages, tools
+            )
+        else:
+            raise ValueError(f"unknown provider '{provider}'")
+
     async def _llm_call(
         self,
         provider: str,
@@ -1484,7 +1795,11 @@ class AgentChatHandler(BaseHandler):
         microsoft_access_token,
         llm_cfg: dict,
     ):
-        """Plan-then-Execute agent loop with SSE streaming.
+        """ReAct (Reason+Act) agent loop with SSE streaming.
+
+        The LLM is given the available skills as tools and autonomously decides
+        which tools to call, sees their results, and iterates until it produces
+        a final answer — no separate planning phase.
 
         SSE event shapes
         ----------------
@@ -1498,17 +1813,16 @@ class AgentChatHandler(BaseHandler):
 
         Confirmation gate
         -----------------
-        If the plan includes steps whose action has ``side_effects: True`` in the
-        skill registry, the server emits a ``confirm`` event and stops.  The client
-        must re-POST with ``confirmed: true`` and ``confirmed_plan: <plan>`` to
-        resume execution with the same plan (skipping the planning LLM call).
+        When the LLM requests a side-effecting tool and the client has not yet
+        confirmed, the server emits a ``confirm`` event with
+        ``plan.resume_messages`` (messages up to that point, including the
+        assistant tool-call message) and ``plan.pending_tool_calls`` (the tool
+        calls that need confirmation).  The client re-POSTs with
+        ``confirmed: true`` and
+        ``confirmed_plan: {resume_messages: [...], pending_tool_calls: [...]}``
+        to resume execution.
         """
-        from .skills import (
-            build_available_skills,
-            build_planner_prompt,
-            execute_skill,
-            resolve_param_refs,
-        )
+        from .skills import build_available_skills, build_tool_schemas, execute_skill
 
         # ── SSE helpers ───────────────────────────────────────────────────── #
         self.set_header("Content-Type", "text/event-stream")
@@ -1521,9 +1835,14 @@ class AgentChatHandler(BaseHandler):
 
         # ── Resolve goal ──────────────────────────────────────────────────── #
         goal = (body.get("goal") or "").strip()
+        conversation_history = [
+            m
+            for m in (body.get("messages") or [])
+            if m.get("role") in ("user", "assistant")
+            and (m.get("content") or "").strip()
+        ]
         if not goal:
-            messages = body.get("messages") or []
-            for m in reversed(messages):
+            for m in reversed(conversation_history):
                 if m.get("role") == "user":
                     goal = (m.get("content") or "").strip()
                     break
@@ -1538,8 +1857,12 @@ class AgentChatHandler(BaseHandler):
 
         # ── LLM config ────────────────────────────────────────────────────── #
         provider = (llm_cfg.get("provider") or "ollama").lower().strip()
+        # ollama_browser: LLM call happens in the browser (user's local Ollama);
+        # the server emits a "llm_needed" SSE event and waits for the browser to
+        # re-POST with the result.  For all other processing, treat it like ollama.
+        browser_llm = provider == "ollama_browser"
         model = (llm_cfg.get("model") or "").strip() or self._DEFAULT_MODELS.get(
-            provider, "gpt-4o-mini"
+            "ollama" if browser_llm else provider, "gpt-4o-mini"
         )
         api_key = (llm_cfg.get("api_key") or "").strip()
         ollama_host = (
@@ -1556,20 +1879,32 @@ class AgentChatHandler(BaseHandler):
             or getattr(self.config, "brave_api_key", "")
             or ""
         )
+        brave_answers_api_key = (
+            (body.get("brave_answers_api_key") or "").strip()
+            or os.environ.get("BRAVE_ANSWERS_API_KEY", "")
+            or getattr(self.config, "brave_answers_api_key", "")
+            or ""
+        )
         public_key = (body.get("public_key") or "").strip()
+        # second_factor is kept server-side and never surfaced as an LLM tool argument
+        key_rotation_second_factor = (
+            body.get("key_rotation_second_factor") or ""
+        ).strip()
         skill_context = {
             "config": self.config,
             "github_access_token": github_access_token,
             "microsoft_access_token": microsoft_access_token,
             "brave_api_key": brave_api_key,
+            "brave_answers_api_key": brave_answers_api_key,
             "public_key": public_key,
+            "key_rotation_second_factor": key_rotation_second_factor,
             "llm_call": lambda msgs, max_tokens=800: self._llm_call(
                 provider, model, api_key, ollama_host, base_url, msgs
             ),
         }
         available_skills = build_available_skills(skill_context)
 
-        # Warn the user if a connected account's session has expired in MongoDB
+        # ── Warn about expired sessions ───────────────────────────────────── #
         _web2 = body.get("web2_sessions") or {}
         _ms_sessions = _web2.get("microsoft") or []
         if _ms_sessions and not microsoft_access_token:
@@ -1594,7 +1929,6 @@ class AgentChatHandler(BaseHandler):
                 }
             )
 
-        # web_fetch is always available — ensure it's included
         if not available_skills:
             await sse(
                 {
@@ -1607,199 +1941,324 @@ class AgentChatHandler(BaseHandler):
             )
             return self.finish()
 
-        # ── 1. Planning call (or resume with confirmed plan) ─────────────── #
+        tools = build_tool_schemas(available_skills)
+
+        # ── Key-rotation trigger set ───────────────────────────────────────── #
+        # Collect tools that should be gated behind a key-rotation check.
+        # Sources (merged):
+        #   1. SKILL_REGISTRY action flag  triggers_key_rotation: True
+        #   2. body["key_rotation_triggers"] list of "skill__action" strings
+        key_rotation_triggers: set = set()
+        if "key_rotation" in available_skills:
+            for _s_name, _s_def in available_skills.items():
+                for _a_name, _a_def in _s_def["actions"].items():
+                    if _a_def.get("triggers_key_rotation"):
+                        key_rotation_triggers.add(f"{_s_name}__{_a_name}")
+            for _t in body.get("key_rotation_triggers") or []:
+                key_rotation_triggers.add(str(_t))
+
+        # ── System prompt ─────────────────────────────────────────────────── #
+        system_prompt = (
+            "You are a helpful assistant with access to tools. "
+            "Use the tools to accomplish the user's goal. "
+            "Call tools one at a time; after seeing each result decide whether "
+            "to call another tool or provide a final answer. "
+            "When you have enough information, write a clear final answer — "
+            "do NOT call another tool. "
+            "CRITICAL — NEVER hallucinate or invent contact information: "
+            "Email addresses, phone numbers, and URLs MUST come ONLY from tool "
+            "results or conversation history. If a contact detail was NOT found "
+            "in a tool result, say 'not found' — do NOT guess or construct a "
+            "plausible-looking address. "
+            "CRITICAL — when reporting emails: always check 'all_emails_found' "
+            "and 'emails_found' fields in tool results — these contain "
+            "programmatically extracted emails. Never say 'no email found' if "
+            "these lists are non-empty. "
+            "Do NOT end your final reply with a question."
+        )
+        if key_rotation_triggers:
+            system_prompt += (
+                "\n\nKEY ROTATION POLICY: Before calling any of these tools — "
+                + ", ".join(sorted(key_rotation_triggers))
+                + " — you MUST first call key_rotation__check_status. "
+                "If it returns {spent: true} the current key is already used; "
+                "call key_rotation__rotate before proceeding. "
+                "If key_rotation__rotate fails, do NOT proceed with the "
+                "triggering tool — report the error to the user instead."
+            )
+
+        # ── Build initial messages (or resume from confirmation) ──────────── #
         confirmed_plan = body.get("confirmed_plan")
+        resume_messages = None
+        pending_tool_calls = None
         if (
             confirmed_plan
             and isinstance(confirmed_plan, dict)
-            and isinstance(confirmed_plan.get("steps"), list)
+            and isinstance(confirmed_plan.get("resume_messages"), list)
         ):
-            # Client confirmed a pending plan — skip the LLM planning call
-            plan_parsed = confirmed_plan
+            resume_messages = confirmed_plan["resume_messages"]
+            pending_tool_calls = confirmed_plan.get("pending_tool_calls") or []
+
+        # For ollama_browser: resume_messages sent directly in body (after llm_needed)
+        if resume_messages is None and isinstance(body.get("resume_messages"), list):
+            resume_messages = body["resume_messages"]
+
+        if resume_messages is not None:
+            messages = resume_messages
         else:
-            await sse({"type": "status", "message": "Planning..."})
-            planner_messages = _sanitize_messages(
-                [
-                    {
-                        "role": "system",
-                        "content": build_planner_prompt(available_skills),
-                    },
-                    {"role": "user", "content": goal},
-                ]
-            )
-            try:
-                plan_raw = await self._llm_call(
-                    provider, model, api_key, ollama_host, base_url, planner_messages
-                )
-            except Exception as exc:
-                await sse({"type": "error", "message": f"Planning failed: {exc}"})
-                return self.finish()
+            messages = [{"role": "system", "content": system_prompt}]
+            for m in conversation_history:
+                messages.append({"role": m["role"], "content": m["content"].strip()})
+            messages.append({"role": "user", "content": goal})
+            messages = _sanitize_messages(messages)
 
-            # Strip markdown fences if present
-            if plan_raw.startswith("```"):
-                plan_raw = plan_raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-            start = plan_raw.find("{")
-            end = plan_raw.rfind("}")
-            plan_parsed = None
-            if start != -1 and end > start:
-                try:
-                    plan_parsed = json.loads(plan_raw[start : end + 1])
-                except Exception:
-                    pass
+        await sse({"type": "status", "message": "Thinking..."})
 
-            if not plan_parsed or not isinstance(plan_parsed.get("steps"), list):
-                await sse(
-                    {"type": "error", "message": "Planner returned an invalid plan."}
-                )
-                return self.finish()
+        # ── ReAct loop ────────────────────────────────────────────────────── #
+        MAX_ROUNDS = 10
+        step_counter = 0
+        _plan_emitted = resume_messages is not None  # don't re-emit plan on resume
 
-        steps = plan_parsed["steps"]
-        await sse(
-            {
-                "type": "plan",
-                "reasoning": plan_parsed.get("reasoning", ""),
-                "steps": steps,
-            }
-        )
+        # For ollama_browser provider: on the very first call the browser may
+        # have already supplied the LLM response so we don't need to emit
+        # llm_needed before doing any work.
+        _browser_llm_response = body.get("llm_response") or None
 
-        # ── Confirmation gate ─────────────────────────────────────────────── #
-        # If any step performs a side-effecting action and the client hasn't
-        # explicitly confirmed, pause and ask for approval.
-        if not body.get("confirmed"):
-            destructive = []
-            for step_def in steps:
-                s_name = str(step_def.get("skill", ""))
-                a_name = str(step_def.get("action", ""))
-                action_def = (
-                    available_skills.get(s_name, {}).get("actions", {}).get(a_name, {})
-                )
-                if action_def.get("side_effects"):
-                    destructive.append(
+        for round_num in range(MAX_ROUNDS):
+            if pending_tool_calls:
+                # Resuming after user confirmed a side-effecting action
+                tc_list = pending_tool_calls
+                pending_tool_calls = None
+            else:
+                # ── Obtain LLM decision ──────────────────────────────────── #
+                if browser_llm:
+                    if _browser_llm_response:
+                        # Browser already called Ollama and sent us the result
+                        llm_result = _browser_llm_response
+                        _browser_llm_response = None  # consume it
+                    else:
+                        # Ask the browser to call Ollama and re-POST the result
+                        await sse(
+                            {"type": "llm_needed", "messages": messages, "tools": tools}
+                        )
+                        return self.finish()
+                else:
+                    try:
+                        llm_result = await self._llm_call_with_tools(
+                            provider,
+                            model,
+                            api_key,
+                            ollama_host,
+                            base_url,
+                            messages,
+                            tools,
+                        )
+                    except Exception as exc:
+                        await sse(
+                            {"type": "error", "message": f"LLM call failed: {exc}"}
+                        )
+                        return self.finish()
+
+                reply = llm_result.get("reply")
+                tc_list = llm_result.get("tool_calls") or []
+                raw_assistant_msg = llm_result.get("assistant_message")
+
+                if not tc_list:
+                    # LLM gave a final answer — we're done.
+                    # Some models (e.g. llama3.1:8b) echo tool schemas as content
+                    # when they choose not to call any tool.  Detect this and
+                    # retry once without tools to get a real conversational reply.
+                    if reply and self._is_tool_schema_echo(reply):
+                        reply = None
+                        if browser_llm:
+                            # Ask the browser to call Ollama again, this time without tools
+                            await sse(
+                                {
+                                    "type": "llm_needed",
+                                    "messages": messages,
+                                    "tools": [],
+                                }
+                            )
+                            return self.finish()
+                        else:
+                            try:
+                                fallback = await self._llm_call_with_tools(
+                                    provider,
+                                    model,
+                                    api_key,
+                                    ollama_host,
+                                    base_url,
+                                    messages,
+                                    [],
+                                )
+                                reply = fallback.get("reply")
+                            except Exception:
+                                pass
+                    await sse({"type": "done", "reply": reply or "(no reply)"})
+                    return self.finish()
+
+                # Append the assistant message (containing tool calls) to history
+                if raw_assistant_msg:
+                    messages.append(raw_assistant_msg)
+
+                # Emit a plan event on the first round to show what will happen
+                if not _plan_emitted:
+                    _plan_emitted = True
+                    plan_steps = [
                         {
-                            "step": step_def.get("step"),
-                            "skill": s_name,
-                            "action": a_name,
-                            "description": str(step_def.get("description", "")),
-                            "params": dict(step_def.get("params") or {}),
+                            "step": i + 1,
+                            "skill": (
+                                tc["name"].split("__")[0]
+                                if "__" in tc["name"]
+                                else tc["name"]
+                            ),
+                            "action": (
+                                tc["name"].split("__", 1)[1]
+                                if "__" in tc["name"]
+                                else ""
+                            ),
+                            "description": json.dumps(tc.get("arguments") or {})[:120],
+                        }
+                        for i, tc in enumerate(tc_list)
+                    ]
+                    await sse(
+                        {
+                            "type": "plan",
+                            "reasoning": reply
+                            or "Calling tools to answer your question.",
+                            "steps": plan_steps,
                         }
                     )
-            if destructive:
+
+            # ── Execute each tool call ─────────────────────────────────── #
+            tool_results_for_msg: list = []
+            for tc in tc_list:
+                tc_id = tc.get("id") or f"call_{step_counter}"
+                raw_name = tc.get("name") or ""
+                args = tc.get("arguments") or {}
+
+                if "__" in raw_name:
+                    skill_name, action_name = raw_name.split("__", 1)
+                else:
+                    skill_name = raw_name
+                    action_name = ""
+
+                action_def = (
+                    available_skills.get(skill_name, {})
+                    .get("actions", {})
+                    .get(action_name, {})
+                )
+                is_side_effecting = bool(action_def.get("side_effects"))
+
+                # ── Confirmation gate ───────────────────────────────────── #
+                if is_side_effecting and not body.get("confirmed"):
+                    await sse(
+                        {
+                            "type": "confirm",
+                            "message": (
+                                "The assistant wants to perform the following "
+                                "real-world action. Please review and confirm to proceed."
+                            ),
+                            "destructive_steps": [
+                                {
+                                    "step": step_counter + 1,
+                                    "skill": skill_name,
+                                    "action": action_name,
+                                    "description": json.dumps(args)[:200],
+                                    "params": args,
+                                }
+                            ],
+                            "plan": {
+                                "resume_messages": messages,
+                                "pending_tool_calls": [tc],
+                            },
+                        }
+                    )
+                    return self.finish()
+
+                step_counter += 1
                 await sse(
                     {
-                        "type": "confirm",
-                        "message": (
-                            "This plan will perform the following real-world actions. "
-                            "Please review and confirm to proceed."
-                        ),
-                        "destructive_steps": destructive,
-                        "plan": plan_parsed,
+                        "type": "step_start",
+                        "step": step_counter,
+                        "skill": skill_name,
+                        "action": action_name,
+                        "description": json.dumps(args)[:200],
                     }
                 )
+                await sse(
+                    {
+                        "type": "status",
+                        "message": f"Running {skill_name}/{action_name}...",
+                    }
+                )
+
+                try:
+                    result = await execute_skill(
+                        skill_name, action_name, args, skill_context
+                    )
+                except Exception as exc:
+                    result = {"ok": False, "error": str(exc)[:200]}
+
+                await sse(
+                    {
+                        "type": "step_result",
+                        "step": step_counter,
+                        "skill": skill_name,
+                        "action": action_name,
+                        "output": result,
+                    }
+                )
+                tool_results_for_msg.append(
+                    {
+                        "tool_call_id": tc_id,
+                        "content": json.dumps(result, default=str)[:6000],
+                    }
+                )
+
+            # ── Append tool results to messages (provider-specific) ──────── #
+            if tool_results_for_msg:
+                if provider == "anthropic":
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": r["tool_call_id"],
+                                    "content": r["content"],
+                                }
+                                for r in tool_results_for_msg
+                            ],
+                        }
+                    )
+                else:
+                    # OpenAI / Ollama: one "tool" role message per tool call
+                    for r in tool_results_for_msg:
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": r["tool_call_id"],
+                                "content": r["content"],
+                            }
+                        )
+
+            if browser_llm:
+                # Browser needs to call Ollama with the updated messages.
+                # Emit llm_needed and end this SSE connection; the browser will
+                # re-POST with llm_response + resume_messages to continue.
+                await sse({"type": "llm_needed", "messages": messages, "tools": tools})
                 return self.finish()
 
-        # ── 2. Execute steps ─────────────────────────────────────────────── #
-        step_results: dict = {}
-        for step_def in steps:
-            step_num = int(step_def.get("step", len(step_results) + 1))
-            skill_name = str(step_def.get("skill", ""))
-            action_name = str(step_def.get("action", ""))
-            params = resolve_param_refs(
-                dict(step_def.get("params") or {}), step_results
-            )
-            description = str(step_def.get("description", ""))
+            await sse({"type": "status", "message": "Thinking..."})
 
-            await sse(
-                {
-                    "type": "step_start",
-                    "step": step_num,
-                    "skill": skill_name,
-                    "action": action_name,
-                    "description": description,
-                }
-            )
-            try:
-                result = await execute_skill(
-                    skill_name, action_name, params, skill_context
-                )
-            except Exception as exc:
-                result = {"ok": False, "error": str(exc)[:200]}
-
-            step_results[step_num] = result
-            await sse(
-                {
-                    "type": "step_result",
-                    "step": step_num,
-                    "skill": skill_name,
-                    "action": action_name,
-                    "output": result,
-                }
-            )
-
-        # ── 3. Synthesis call ────────────────────────────────────────────── #
-        await sse({"type": "status", "message": "Synthesizing results..."})
-
-        # Build a compact version of step_results so that all results are
-        # visible to the synthesis LLM.  Search steps can return many results
-        # each with thousands of characters of fetched page content — without
-        # this cap, the raw JSON blows through the context budget and later
-        # results (which may contain the very data we need) are silently dropped.
-        def _compact_step_results(sr: dict) -> dict:
-            import copy
-
-            out = {}
-            for k, v in sr.items():
-                if (
-                    isinstance(v, dict)
-                    and "results" in v
-                    and isinstance(v["results"], list)
-                ):
-                    compacted = copy.copy(v)
-                    compacted["results"] = []
-                    for r in v["results"]:
-                        rc = {kk: vv for kk, vv in r.items() if kk != "content"}
-                        if "content" in r and r["content"]:
-                            rc["content"] = r["content"][:800]
-                        compacted["results"].append(rc)
-                    out[k] = compacted
-                else:
-                    out[k] = v
-            return out
-
-        synthesis_system = (
-            "You are a helpful assistant. A plan was executed on behalf of the user. "
-            "Synthesize a clear, helpful, and concise answer using the execution results below. "
-            "Reference specific data from the results where useful. "
-            "When searching for contact details (emails, phone numbers): check BOTH the "
-            "'description' snippet AND the 'content' field of every result — pages that block "
-            "automated fetching will have empty content but may have the email address in their "
-            "description snippet. Results with 'blocked': true were blocked by a WAF/CDN at the "
-            "TLS level and cannot be fetched; rely only on their 'description' and 'emails_found' fields. "
-            "Always check 'emails_found' on every result — emails are extracted programmatically from "
-            "both description and content. Scan all results, not just the first one. "
-            "All steps (including any emails or side-effecting actions) have already been completed — "
-            "report what was done in past tense. "
-            "Do NOT ask the user if they want to proceed, confirm, or take any further action. "
-            "Do NOT end with a question.\n\n"
-            f"User goal: {goal}\n\n"
-            "Execution results:\n"
-            + json.dumps(_compact_step_results(step_results), indent=2, default=str)[
-                :20000
-            ]
+        # ── Max rounds exceeded ───────────────────────────────────────────── #
+        await sse(
+            {
+                "type": "done",
+                "reply": "I was unable to complete the task within the allowed number of steps.",
+            }
         )
-        synth_messages = _sanitize_messages(
-            [
-                {"role": "system", "content": synthesis_system},
-                {"role": "user", "content": "Please summarize the results clearly."},
-            ]
-        )
-        try:
-            final_reply = await self._llm_call(
-                provider, model, api_key, ollama_host, base_url, synth_messages
-            )
-        except Exception as exc:
-            final_reply = f"Results retrieved but synthesis failed: {exc}"
-
-        await sse({"type": "done", "reply": final_reply})
         self.finish()
 
     # ── Tool-calling loops ──────────────────────────────────────────────────── #

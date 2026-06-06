@@ -25,12 +25,36 @@
         <div class="field-group">
           <label>Provider</label>
           <select v-model="form.provider" @change="onProviderChange">
-            <option value="ollama">Ollama (local)</option>
+            <option value="ollama_browser">
+              Ollama — browser calls local (recommended for local Ollama)
+            </option>
+            <option value="ollama">
+              Ollama — server calls remote (requires server-side access)
+            </option>
             <option value="openai">OpenAI</option>
             <option value="anthropic">Anthropic</option>
             <option value="github_models">GitHub Models</option>
             <option value="openai_compat">OpenAI-compatible (custom)</option>
           </select>
+        </div>
+        <div class="field-group" v-if="form.provider === 'ollama_browser'">
+          <label>Ollama host (browser-side)</label>
+          <input
+            v-model="form.ollama_host"
+            type="text"
+            placeholder="http://localhost:11434"
+          />
+          <div class="hint">
+            The browser calls your local Ollama directly — the YadaCoin server
+            is never involved in the LLM call. This works even when the server
+            is hosted remotely (e.g. yadacoin.io).<br /><br />
+            Make sure Ollama is running: <code>ollama serve</code><br />
+            Run <code>ollama list</code> to see available models.<br /><br />
+            <strong>CORS note:</strong> Ollama must allow browser requests. Set
+            <code>OLLAMA_ORIGINS=*</code> before starting Ollama, or run:<br />
+            <code>launchctl setenv OLLAMA_ORIGINS "*"</code> (macOS) /
+            <code>export OLLAMA_ORIGINS="*"</code> (Linux)
+          </div>
         </div>
         <div class="field-group" v-if="form.provider === 'ollama'">
           <label>Ollama host</label>
@@ -89,7 +113,12 @@
           />
           <div class="hint" v-html="modelHint"></div>
         </div>
-        <div class="field-group" v-if="form.provider !== 'ollama'">
+        <div
+          class="field-group"
+          v-if="
+            form.provider !== 'ollama' && form.provider !== 'ollama_browser'
+          "
+        >
           <label>API Key</label>
           <input
             v-model="form.api_key"
@@ -139,6 +168,28 @@
             shared or public node (e.g. yadacoin.io), the node operator can see
             your API key. Use a dedicated key or run your own node if that is a
             concern.
+          </div>
+        </div>
+        <div class="field-group">
+          <label>Brave Answers API Key</label>
+          <input
+            v-model="braveAnswersApiKey"
+            type="password"
+            placeholder="BSA…"
+            autocomplete="off"
+          />
+          <div class="hint">
+            Enables the Brave Answers endpoint for direct answers. Get a key at
+            <a
+              href="https://brave.com/search/api/"
+              target="_blank"
+              rel="noopener"
+              >brave.com/search/api</a
+            >. Stored in localStorage.
+            <strong
+              >⚠ This key is sent to the YadaCoin node with each request</strong
+            >
+            so the server can call Brave on your behalf.
           </div>
         </div>
       </section>
@@ -257,6 +308,8 @@ import {
   getNodeUrl,
   getBraveApiKey,
   saveBraveApiKey,
+  getBraveAnswersApiKey,
+  saveBraveAnswersApiKey,
   LS_NODE_URL,
   LS_PRIV,
   LS_HW_PUB,
@@ -273,6 +326,7 @@ const form = ref({ ...getLlmSettings() });
 const nodeUrl = ref(getNodeUrl());
 const paymentMethods = ref(getPaymentMethods());
 const braveApiKey = ref(getBraveApiKey());
+const braveAnswersApiKey = ref(getBraveAnswersApiKey());
 const newPmLabel = ref("");
 const savedMsg = ref(false);
 const walletMode = ref(getWalletMode());
@@ -314,12 +368,15 @@ watch(
       nodeUrl.value = getNodeUrl();
       paymentMethods.value = getPaymentMethods();
       braveApiKey.value = getBraveApiKey();
+      braveAnswersApiKey.value = getBraveAnswersApiKey();
       walletMode.value = getWalletMode();
     }
   },
 );
 
 const MODEL_HINTS = {
+  ollama_browser:
+    "Default: llama3.2 — must be pulled locally first (<code>ollama pull llama3.2</code>)",
   ollama: "Default: llama3.2",
   openai: "e.g. gpt-4o, gpt-4o-mini, gpt-3.5-turbo",
   anthropic: "e.g. claude-3-5-sonnet-20241022, claude-3-haiku-20240307",
@@ -331,6 +388,7 @@ const MODEL_HINTS = {
     "<code>gpt-4.1-mini</code>, <code>Meta-Llama-3.1-70B-Instruct</code>, <code>Mistral-Nemo</code>.",
 };
 const MODEL_PLACEHOLDERS = {
+  ollama_browser: "llama3.2",
   ollama: "llama3.2",
   openai: "gpt-4o-mini",
   anthropic: "claude-3-haiku-20240307",
@@ -353,6 +411,7 @@ function save() {
   saveLlmSettings(form.value);
   localStorage.setItem(LS_NODE_URL, nodeUrl.value.trim().replace(/\/+$/, ""));
   saveBraveApiKey(braveApiKey.value);
+  saveBraveAnswersApiKey(braveAnswersApiKey.value);
   setWalletMode(walletMode.value);
   emit("wallet-mode-changed");
   savedMsg.value = true;

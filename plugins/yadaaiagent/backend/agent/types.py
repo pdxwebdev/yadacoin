@@ -828,6 +828,83 @@ def _build_search_context(results: list, query: str) -> str:
     return "\n".join(lines)
 
 
+async def _brave_answers(api_key: str, query: str) -> "str | None":
+    """
+    Call the Brave Summarizer API (two-step) and return a plain-text answer/summary.
+
+    Step 1: Web search with summary=1 → get summarizer.key from the response.
+    Step 2: Fetch the summarizer endpoint with that key → extract the answer text.
+
+    Returns None on any error or when no summary is available.
+    """
+    client = AsyncHTTPClient()
+    headers = {
+        "Accept": "application/json",
+        "Accept-Encoding": "identity",
+        "X-Subscription-Token": api_key,
+    }
+
+    # Step 1 — web search with summary=1
+    params = _urlparse.urlencode(
+        {
+            "q": query,
+            "summary": 1,
+            "text_decorations": "false",
+            "search_lang": "en",
+            "safesearch": "moderate",
+        }
+    )
+    req1 = HTTPRequest(
+        url=f"https://api.search.brave.com/res/v1/web/search?{params}",
+        method="GET",
+        headers=headers,
+        request_timeout=8.0,
+    )
+    resp1 = await client.fetch(req1, raise_error=False)
+    if resp1.code != 200:
+        return None
+    try:
+        data1 = json.loads(resp1.body)
+        summarizer_key = (data1.get("summarizer") or {}).get("key")
+        if not summarizer_key:
+            return None
+    except Exception:
+        return None
+
+    # Step 2 — summarizer endpoint
+    summ_params = _urlparse.urlencode({"key": summarizer_key, "entity_info": 1})
+    req2 = HTTPRequest(
+        url=f"https://api.search.brave.com/res/v1/summarizer/search?{summ_params}",
+        method="GET",
+        headers=headers,
+        request_timeout=8.0,
+    )
+    resp2 = await client.fetch(req2, raise_error=False)
+    if resp2.code != 200:
+        return None
+    try:
+        data2 = json.loads(resp2.body)
+        # Response message is a list of typed tokens
+        parts = [
+            item.get("text", "")
+            for item in (data2.get("message") or [])
+            if isinstance(item, dict) and item.get("type") == "token"
+        ]
+        answer = "".join(parts).strip()
+        return answer if answer else None
+    except Exception:
+        return None
+
+
+def _build_answers_context(answer: str, query: str) -> str:
+    """Format a Brave Answers summary as a context block for the system prompt."""
+    return (
+        f'[Brave Answers summary for "{query}" — a direct AI-generated answer '
+        "from Brave. Treat this as a high-confidence reference for factual and "
+        "current-events questions; prefer it over speculative reasoning.]\n" + answer
+    )
+
+
 # ── Vendor registry ───────────────────────────────────────────────────────────
 # Maps service id → {name, available, confirmationPrefix}
 # Add new services here; a VendorHandler subclass is auto-generated below.
