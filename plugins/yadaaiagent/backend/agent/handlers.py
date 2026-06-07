@@ -2151,6 +2151,10 @@ class AgentChatHandler(BaseHandler):
                 is_side_effecting = bool(action_def.get("side_effects"))
 
                 # ── Confirmation gate ───────────────────────────────────── #
+                needs_second_factor = bool(
+                    raw_name == "key_rotation__rotate"
+                    and not skill_context.get("key_rotation_second_factor")
+                )
                 if is_side_effecting and not body.get("confirmed"):
                     await sse(
                         {
@@ -2159,6 +2163,7 @@ class AgentChatHandler(BaseHandler):
                                 "The assistant wants to perform the following "
                                 "real-world action. Please review and confirm to proceed."
                             ),
+                            "needs_second_factor": needs_second_factor,
                             "destructive_steps": [
                                 {
                                     "step": step_counter + 1,

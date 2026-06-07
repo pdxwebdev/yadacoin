@@ -206,6 +206,12 @@ SKILL_REGISTRY = {
                         "string (optional). Non-empty value creates an UNCONFIRMED+CONFIRMING "
                         "key-event pair for agent authorization."
                     ),
+                    "outputs": (
+                        "array (optional). Additional transaction outputs to include, e.g. "
+                        '[{"to": "1Abc...", "value": 1.5}]. Use this to send YDA coins '
+                        "as part of the rotation. Any output not going to the prerotated address "
+                        "automatically triggers a confirming transaction."
+                    ),
                 },
                 "side_effects": True,
             },
@@ -242,15 +248,22 @@ def build_tool_schemas(available_skills: dict) -> list:
                 desc_lower = p_desc.lower()
                 if "integer" in desc_lower or "int," in desc_lower:
                     p_type = "integer"
+                    props[p_name] = {"type": p_type, "description": p_desc}
                 elif (
                     "boolean" in desc_lower
                     or "bool," in desc_lower
                     or "true|false" in desc_lower
                 ):
                     p_type = "boolean"
+                    props[p_name] = {"type": p_type, "description": p_desc}
+                elif "array" in desc_lower:
+                    props[p_name] = {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": p_desc,
+                    }
                 else:
-                    p_type = "string"
-                props[p_name] = {"type": p_type, "description": p_desc}
+                    props[p_name] = {"type": "string", "description": p_desc}
                 if "required" in p_desc.lower():
                     required.append(p_name)
             side_note = (
@@ -353,6 +366,10 @@ def build_planner_prompt(available_skills: dict) -> str:
         "confirmation dialog — you do NOT need to ask for confirmation in your plan or in text. "
         "Always include the full end-to-end plan with all steps, including side-effecting ones. "
         "Never end a plan with a question or omit a step because you think you should ask first.\n"
+        "- To send YDA coins to an address, use key_rotation/rotate with an 'outputs' parameter "
+        'containing [{"to": "<address>", "value": <amount>}]. '
+        "There is no separate 'send' action — sending is always done as part of a key rotation. "
+        "Always call key_rotation/check_status first to confirm the address is active before rotating.\n"
         "- If the conversation history already contains everything needed to answer the current goal "
         "(e.g. the user is reformatting, filtering, or summarizing a previous result), return an "
         "EMPTY steps list. The synthesizer will answer directly from history. Example: "
@@ -1109,40 +1126,181 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                     ),
                 }
             relationship = str(params.get("relationship") or "")
-            # POST to the running key-rotation endpoint (server-side logic lives there)
-            server_port = getattr(config, "web_server_port", 8000)
-            base_url = f"http://127.0.0.1:{server_port}"
+            # Call the rotation logic directly (avoids loopback HTTP call)
             try:
-                import json as _json2
+                import hashlib as _hashlib
+                import time as _time
 
-                client = AsyncHTTPClient()
-                payload: dict = {
-                    "public_key": public_key,
-                    "second_factor": second_factor,
-                }
-                if relationship:
-                    payload["relationship"] = relationship
-                req = HTTPRequest(
-                    f"{base_url}/key-rotation/derived-child-key",
-                    method="POST",
-                    headers={"Content-Type": "application/json"},
-                    body=_json2.dumps(payload),
-                    request_timeout=30.0,
-                )
-                resp = await client.fetch(req, raise_error=False)
-                data = _json2.loads(resp.body)
-                if resp.code != 200 or not data.get("status"):
+                from bip32utils import BIP32Key as _BIP32Key
+                from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH
+                from coincurve import PrivateKey as _CCP
+                from mnemonic import Mnemonic as _Mnemonic
+
+                from plugins.keyrotation.handlers import derive_secure_path
+                from yadacoin.core.keyeventlog import KeyEventLog
+                from yadacoin.core.transaction import Transaction
+                from yadacoin.core.transactionutils import TU
+
+                seed = getattr(config, "seed", "") or ""
+                if not seed:
+                    return {"ok": False, "error": "seed not configured in config.json"}
+
+                _mn = _Mnemonic("english")
+                _entropy = _mn.to_entropy(seed)
+                _bip32_root = _BIP32Key.fromEntropy(_entropy)
+                _root_priv = _bip32_root.PrivateKey()
+                _root_cc = _bip32_root.ChainCode()
+
+                # Build KEL including mempool entries to determine current depth.
+                # public_key is the CURRENT signer (K_n); the pre-committed next
+                # signer (K_{n+1}) is latest.prerotated_key_hash.
+                kel = await KeyEventLog.build_from_public_key(public_key)
+                if not kel:
                     return {
                         "ok": False,
-                        "error": data.get("message", f"HTTP {resp.code}"),
+                        "error": "no key event log found for public_key",
                     }
+
+                latest = kel[-1]
+
+                # Derive K_{n+1} (the pre-committed next signer) from root + second_factor.
+                # Walk len(kel) steps: root → K0 → K1 → … → K_{n+1}
+                _n = len(kel)
+                _cur = derive_secure_path(_root_priv, _root_cc, second_factor)  # K0
+                for _i in range(_n):
+                    _cur = derive_secure_path(
+                        _cur["private_key"], _cur["chain_code"], second_factor
+                    )
+                # _cur is now K_{n+1} — verify second factor by checking its address
+                _next_priv_obj = _CCP(_cur["private_key"])
+                _next_pub_bytes = _next_priv_obj.public_key.format(compressed=True)
+                _next_pub_hex = _next_pub_bytes.hex()
+                address = str(_P2PKH.from_pubkey(_next_pub_bytes))  # K_{n+1}'s address
+                if address != latest.prerotated_key_hash:
+                    return {"ok": False, "error": "second factor is incorrect"}
+
+                # _cur = K_{n+1} (signs the rotation txn)
+                # Derive K_{n+2} (child) and K_{n+3} (grandchild)
+                _child = derive_secure_path(
+                    _cur["private_key"], _cur["chain_code"], second_factor
+                )
+                _child_priv = _CCP(_child["private_key"])
+                _child_pub_bytes = _child_priv.public_key.format(compressed=True)
+                _child_pub_hex = _child_pub_bytes.hex()
+                _child_address = str(_P2PKH.from_pubkey(_child_pub_bytes))
+
+                _grandchild = derive_secure_path(
+                    _child["private_key"], _child["chain_code"], second_factor
+                )
+                _gc_priv = _CCP(_grandchild["private_key"])
+                _gc_pub_bytes = _gc_priv.public_key.format(compressed=True)
+                _gc_pub_bytes.hex()
+                _gc_address = str(_P2PKH.from_pubkey(_gc_pub_bytes))
+
+                # public_key for the transaction = K_{n+1}'s pubkey (the signer)
+                # prev_public_key_hash = K_n's address (the current signer = latest.public_key_hash)
+                public_key = _next_pub_hex
+                _prev_public_key_hash = latest.public_key_hash
+                _rel_hash = (
+                    _hashlib.sha256(relationship.encode()).digest().hex()
+                    if relationship
+                    else ""
+                )
+                _now = int(_time.time())
+
+                # Build full outputs list: rotation output + any custom outputs from params
+                _custom_outputs = [
+                    {"to": str(o.get("to", "")), "value": float(o.get("value", 0))}
+                    for o in (params.get("outputs") or [])
+                ]
+                _all_outputs = [{"to": _child_address, "value": 0.0}] + _custom_outputs
+
+                # Confirming txn needed if relationship is set OR any output goes
+                # to an address other than this txn's own prerotated_key_hash (_child_address).
+                _output_outside_kel = any(
+                    str(o.get("to", "")) != _child_address for o in _all_outputs
+                )
+                _needs_confirming = bool(relationship) or _output_outside_kel
+
+                txn = Transaction(
+                    txn_time=_now,
+                    public_key=public_key,
+                    outputs=_all_outputs,
+                    inputs=[],
+                    fee=0.0,
+                    masternode_fee=0.0,
+                    version=7,
+                    prerotated_key_hash=_child_address,
+                    twice_prerotated_key_hash=_gc_address,
+                    public_key_hash=address,
+                    prev_public_key_hash=_prev_public_key_hash,
+                    relationship=relationship,
+                    relationship_hash=_rel_hash,
+                    rid="",
+                    dh_public_key="",
+                )
+                txn.hash = await txn.generate_hash()
+                txn.transaction_signature = TU.generate_signature_with_private_key(
+                    _cur["private_key"].hex(), txn.hash
+                )
+                await config.mongo.async_db.miner_transactions.replace_one(
+                    {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
+                )
+
+                # Build confirming txn if relationship set OR outputs include an external address
+                confirming_txn = None
+                if _needs_confirming:
+                    _ggc = derive_secure_path(
+                        _grandchild["private_key"],
+                        _grandchild["chain_code"],
+                        second_factor,
+                    )
+                    _ggc_pub_bytes = _CCP(_ggc["private_key"]).public_key.format(
+                        compressed=True
+                    )
+                    _ggc_address = str(_P2PKH.from_pubkey(_ggc_pub_bytes))
+
+                    confirming_txn = Transaction(
+                        txn_time=_now,
+                        public_key=_child_pub_hex,
+                        outputs=[{"to": _gc_address, "value": 0.0}],
+                        inputs=[],
+                        fee=0.0,
+                        masternode_fee=0.0,
+                        version=7,
+                        prerotated_key_hash=_gc_address,
+                        twice_prerotated_key_hash=_ggc_address,
+                        public_key_hash=_child_address,
+                        prev_public_key_hash=address,
+                        relationship="",
+                        relationship_hash="",
+                        rid="",
+                        dh_public_key="",
+                    )
+                    confirming_txn.hash = await confirming_txn.generate_hash()
+                    confirming_txn.transaction_signature = (
+                        TU.generate_signature_with_private_key(
+                            _child["private_key"].hex(), confirming_txn.hash
+                        )
+                    )
+                    await config.mongo.async_db.miner_transactions.replace_one(
+                        {"id": confirming_txn.transaction_signature},
+                        confirming_txn.to_dict(),
+                        upsert=True,
+                    )
+
                 return {
                     "ok": True,
-                    "new_address": data.get("new_address", ""),
-                    "new_public_key": data.get("new_public_key", ""),
-                    "txid": data.get("id", ""),
+                    "new_address": _child_address,
+                    "new_public_key": _child_pub_hex,
+                    "txid": txn.transaction_signature,
+                    **(
+                        {"confirming_txid": confirming_txn.transaction_signature}
+                        if confirming_txn
+                        else {}
+                    ),
                 }
             except Exception as exc:
-                return {"ok": False, "error": str(exc)[:200]}
+                return {"ok": False, "error": str(exc)[:300]}
 
     return {"ok": False, "error": f"Unknown skill/action: {skill}/{action}"}

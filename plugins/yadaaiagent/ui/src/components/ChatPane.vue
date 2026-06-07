@@ -1172,8 +1172,9 @@ async function runLoop() {
                       message:
                         evt.message ||
                         "Please review and confirm the following actions.",
+                      needs_second_factor: evt.needs_second_factor || false,
                       destructive_steps: evt.destructive_steps || [],
-                      onConfirm: async () => {
+                      onConfirm: async (secondFactor) => {
                         if (messages.value[msgIdx]) {
                           messages.value[msgIdx] = {
                             ...messages.value[msgIdx],
@@ -1187,6 +1188,9 @@ async function runLoop() {
                           ...fetchBody,
                           confirmed: true,
                           confirmed_plan: evt.plan,
+                          ...(secondFactor
+                            ? { key_rotation_second_factor: secondFactor }
+                            : {}),
                         };
                         const releaseBusy = await doStream(resumeBody);
                         if (releaseBusy) {

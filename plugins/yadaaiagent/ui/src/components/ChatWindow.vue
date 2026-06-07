@@ -98,10 +98,33 @@
               </div>
             </li>
           </ul>
+          <div v-if="msg.confirmPending.needs_second_factor" class="cg-sf-row">
+            <label class="cg-sf-label">Second factor (passphrase)</label>
+            <input
+              :id="'cg-sf-' + i"
+              type="password"
+              class="cg-sf-input"
+              placeholder="Enter your second factor…"
+              v-model="confirmSecondFactors[i]"
+              @keydown.enter.prevent="
+                msg.confirmPending.onConfirm(confirmSecondFactors[i])
+              "
+            />
+          </div>
           <div class="cg-buttons">
             <button
               class="cg-confirm-btn"
-              @click="msg.confirmPending.onConfirm()"
+              @click="
+                msg.confirmPending.onConfirm(
+                  msg.confirmPending.needs_second_factor
+                    ? confirmSecondFactors[i]
+                    : undefined,
+                )
+              "
+              :disabled="
+                msg.confirmPending.needs_second_factor &&
+                !confirmSecondFactors[i]
+              "
             >
               Confirm &amp; Run
             </button>
@@ -228,6 +251,10 @@ const openSources = ref({});
 function toggleSources(i) {
   openSources.value[i] = !openSources.value[i];
 }
+
+// Keyed by message index — stores the second-factor value entered by the user
+// in the confirm gate when needs_second_factor is true.
+const confirmSecondFactors = ref({});
 
 const PURIFY_CONFIG = {
   ALLOWED_TAGS: [
@@ -562,6 +589,31 @@ defineExpose({ chatEl, escHtml });
   border-radius: 4px;
   padding: 1px 6px;
   font-family: monospace;
+}
+.cg-sf-row {
+  margin: 8px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cg-sf-label {
+  font-size: 0.75rem;
+  color: var(--text-muted, #8b949e);
+}
+.cg-sf-input {
+  background: var(--bg, #0d1117);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 6px;
+  color: var(--text, #e6edf3);
+  font-family: inherit;
+  font-size: 0.82rem;
+  padding: 5px 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.cg-sf-input:focus {
+  outline: none;
+  border-color: var(--accent, #1f6feb);
 }
 .cg-buttons {
   display: flex;
