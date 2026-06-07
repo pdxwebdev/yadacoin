@@ -830,68 +830,54 @@ def _build_search_context(results: list, query: str) -> str:
 
 async def _brave_answers(api_key: str, query: str) -> "str | None":
     """
-    Call the Brave Summarizer API (two-step) and return a plain-text answer/summary.
+    Call the Brave Answers API via the OpenAI-compatible streaming endpoint.
 
-    Step 1: Web search with summary=1 → get summarizer.key from the response.
-    Step 2: Fetch the summarizer endpoint with that key → extract the answer text.
+    Uses POST /res/v1/chat/completions with model="brave", stream=True,
+    enable_research=True, enable_citations=True.
+    The streamed content may contain <citation>JSON</citation>, <entity>JSON</entity>,
+    and <usage>JSON</usage> tags which are stripped to return clean prose.
 
-    Returns None on any error or when no summary is available.
+    Returns None on any error or when no answer is available.
     """
-    client = AsyncHTTPClient()
-    headers = {
-        "Accept": "application/json",
-        "Accept-Encoding": "identity",
-        "X-Subscription-Token": api_key,
-    }
+    import re as _re2
 
-    # Step 1 — web search with summary=1
-    params = _urlparse.urlencode(
-        {
-            "q": query,
-            "summary": 1,
-            "text_decorations": "false",
-            "search_lang": "en",
-            "safesearch": "moderate",
-        }
-    )
-    req1 = HTTPRequest(
-        url=f"https://api.search.brave.com/res/v1/web/search?{params}",
-        method="GET",
-        headers=headers,
-        request_timeout=8.0,
-    )
-    resp1 = await client.fetch(req1, raise_error=False)
-    if resp1.code != 200:
-        return None
     try:
-        data1 = json.loads(resp1.body)
-        summarizer_key = (data1.get("summarizer") or {}).get("key")
-        if not summarizer_key:
+        from openai import AsyncOpenAI as _AsyncOpenAI
+    except ImportError:
+        return None
+
+    try:
+        oai = _AsyncOpenAI(
+            api_key=api_key,
+            base_url="https://api.search.brave.com/res/v1",
+        )
+        text_parts: list = []
+        stream = await oai.chat.completions.create(
+            messages=[{"role": "user", "content": query}],
+            model="brave",
+            stream=True,
+            extra_body={
+                "country": "us",
+                "language": "en",
+            },
+        )
+        async for chunk in stream:
+            choices = chunk.choices
+            if not choices:
+                continue
+            delta = choices[0].delta.content
+            if delta:
+                text_parts.append(delta)
+
+        raw = "".join(text_parts)
+        if not raw:
             return None
-    except Exception:
-        return None
-
-    # Step 2 — summarizer endpoint
-    summ_params = _urlparse.urlencode({"key": summarizer_key, "entity_info": 1})
-    req2 = HTTPRequest(
-        url=f"https://api.search.brave.com/res/v1/summarizer/search?{summ_params}",
-        method="GET",
-        headers=headers,
-        request_timeout=8.0,
-    )
-    resp2 = await client.fetch(req2, raise_error=False)
-    if resp2.code != 200:
-        return None
-    try:
-        data2 = json.loads(resp2.body)
-        # Response message is a list of typed tokens
-        parts = [
-            item.get("text", "")
-            for item in (data2.get("message") or [])
-            if isinstance(item, dict) and item.get("type") == "token"
-        ]
-        answer = "".join(parts).strip()
-        return answer if answer else None
+        # Strip <citation>...</citation>, <entity>...</entity>, <usage>...</usage> blocks
+        clean = _re2.sub(
+            r"<(citation|entity|usage)>.*?</\1>", "", raw, flags=_re2.DOTALL
+        )
+        clean = _re2.sub(r"\n{3,}", "\n\n", clean).strip()
+        return clean if clean else None
     except Exception:
         return None
 

@@ -8,6 +8,62 @@ from ..github.api import _github_api_get, _github_api_post
 from ..microsoft.api import _msgraph_api_get, _msgraph_api_post
 from .types import _brave_answers, _brave_web_search
 
+
+def _decode_cf_emails(html: str) -> str:
+    """Decode Cloudflare email-obfuscation placeholders in raw HTML.
+
+    Cloudflare replaces email addresses with
+    ``<span data-cfemail="HEXENCODED">[email\xa0protected]</span>``.
+    The encoding is a simple XOR: first byte is the key; each subsequent
+    byte pair XOR-ed with the key gives the ASCII character.
+
+    This runs on the raw HTML *before* tag-stripping so the plain-text
+    result contains the real email address.
+    """
+
+    def _decode(m):
+        encoded = m.group(1)
+        try:
+            key = int(encoded[:2], 16)
+            return "".join(
+                chr(int(encoded[i : i + 2], 16) ^ key)
+                for i in range(2, len(encoded), 2)
+            )
+        except Exception:
+            return m.group(0)
+
+    return _re.sub(
+        r'data-cfemail="([0-9a-fA-F]+)"[^>]*>\[email[^]]*protected\]',
+        _decode,
+        html,
+    )
+
+
+# Patterns that indicate a page is an error / WAF block rather than real content
+_BLOCK_PATTERNS = (
+    "access denied",
+    "you don't have permission",
+    "403 forbidden",
+    "reference #18.",  # Akamai edge error reference
+    "errors.edgesuite.net",
+    "error 403",
+    "blocked by",
+)
+
+# Pre-compiled regex for stripping <script>/<style> blocks and then all tags
+_SCRIPT_RE = _re.compile(
+    r"<(script|style)[^>]*>.*?</(script|style)>", _re.DOTALL | _re.IGNORECASE
+)
+_TAG_RE = _re.compile(r"<[^>]+>")
+
+
+def _html_to_text(html: str, max_chars: int = 8000) -> str:
+    """Strip <script>/<style> blocks, all HTML tags, then collapse whitespace."""
+    html = _SCRIPT_RE.sub(" ", html)
+    text = _TAG_RE.sub(" ", html)
+    return _re.sub(r"\s+", " ", text).strip()[:max_chars]
+
+
 # ── Skill registry ─────────────────────────────────────────────────────────── #
 # Each entry documents what the skill can do for the planner LLM.
 # "requires" maps to a context key that must be non-empty for the skill to appear.
@@ -52,6 +108,56 @@ SKILL_REGISTRY = {
                     "url": "string (required) — the URL to fetch",
                 },
                 "returns": "Text content of the page (up to 4000 characters)",
+            }
+        },
+    },
+    "web_crawl": {
+        "description": (
+            "Crawl a web page using a real headless browser (Chromium via Playwright). "
+            "Use this when web_fetch or brave_search fetch_content fails due to Cloudflare "
+            "or other anti-bot protection (403/503 responses, JS challenges, CAPTCHAs). "
+            "Slower than web_fetch but bypasses most bot-detection systems."
+        ),
+        "requires": None,
+        "actions": {
+            "fetch": {
+                "description": (
+                    "Load a URL in a real headless Chromium browser, wait for the page to "
+                    "fully render (including Cloudflare JS challenges), and return cleaned text"
+                ),
+                "params": {
+                    "url": "string (required) — the URL to crawl",
+                    "wait_for": "string (optional) — CSS selector to wait for before extracting text, e.g. 'body', 'main', '#content'",
+                    "timeout": "integer (optional, default 20) — max seconds to wait for page load",
+                },
+                "returns": "Cleaned text content of the rendered page (up to 8000 characters)",
+            }
+        },
+    },
+    "email_web_scraper": {
+        "description": (
+            "Specialized email-finding scraper for official contact emails. "
+            "Runs a deterministic pipeline: brave_search(fetch_content=true) + targeted web_crawl "
+            "on the best-matching URL, then returns a single recommended email with evidence."
+        ),
+        "requires": "brave_api_key",
+        "actions": {
+            "find_email": {
+                "description": (
+                    "Find the most relevant contact email for a specific function/department "
+                    "(e.g. code compliance records, permit desk, billing)."
+                ),
+                "params": {
+                    "query": "string (required) — specific email intent, e.g. 'kern county code compliance records request email'",
+                    "count": "integer (optional, 1-20, default 10) — number of search results",
+                    "country": "string (optional, ISO 3166-1 alpha-2, default 'us') — search country bias",
+                    "crawl_url": "string (optional) — explicit URL to crawl for final verification",
+                    "crawl_timeout": "integer (optional, default 25) — max seconds for verification crawl",
+                },
+                "returns": (
+                    "{ok, email, confidence, source, evidence, search, crawl}; includes "
+                    "recommended_email and supporting source URL"
+                ),
             }
         },
     },
@@ -325,10 +431,13 @@ def build_planner_prompt(available_skills: dict) -> str:
         "- If 'brave_answers' is available, prefer it over 'brave_search' for direct "
         "factual or informational questions (e.g. 'what is X', 'list Y', 'how does Z work'). "
         "brave_answers returns a concise AI-generated summary in a single step. "
-        "Use 'brave_search' instead when you need source URLs, multiple results to compare, "
-        "contact details/email addresses, or when brave_answers returns no result. "
-        "You may follow a brave_answers step with a brave_search step if the answer needs "
-        "supporting sources or more detail.\n"
+        "Use 'brave_search' for source URLs, multiple results, or when brave_answers returns no result.\n"
+        "- FOR CONTACT INFORMATION (email, phone, address): if 'email_web_scraper' is available, "
+        "use email_web_scraper/find_email FIRST as the default specialized path. "
+        "It already orchestrates brave_search(fetch_content=true) + targeted web_crawl and returns "
+        "a single evidence-backed email. "
+        "Only plan manual brave_search/web_crawl chaining when email_web_scraper is unavailable or "
+        "returns no email.\n"
         "- brave_search does NOT support 'site:' query operators — they return zero results. "
         "NEVER use 'site:example.com' in a query. Instead, use descriptive natural language "
         "and let the search find the right pages.\n"
@@ -339,9 +448,10 @@ def build_planner_prompt(available_skills: dict) -> str:
         "When searching for a specific department or function (e.g. code violations, permits, billing), "
         "include the exact function name in the search query rather than using a generic 'contact' query. "
         "Official government and institutional websites are often blocked by WAF/CDN filters that prevent "
-        "automated fetching; when fetch_content returns blocked=true or empty content for a URL, rely on "
-        "the 'description' snippet and 'emails_found' fields — the search engine may have the email in "
-        "its cached snippet even when the live page is inaccessible. "
+        "automated fetching; when fetch_content returns blocked=true or empty content for a URL, "
+        "FIRST try web_crawl/fetch on that specific URL — it uses a real headless browser that bypasses "
+        "Cloudflare and most anti-bot systems. Only fall back to description snippets and emails_found "
+        "if web_crawl also fails. "
         "Third-party reference sites (e.g. citizen portals, service directories, agency listings) are "
         "usually NOT WAF-blocked and often list the same contact details as the official site. "
         "To surface these third-party pages, include terms like 'directory', 'agency', or the "
@@ -487,7 +597,18 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                     "answer": None,
                     "note": "No summary available for this query",
                 }
-            return {"ok": True, "answer": answer}
+            # Programmatically extract any email addresses from the answer text
+            # so they appear in a structured field the validator and LLM can rely on.
+            _ba_email_re = _re.compile(
+                r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
+            )
+            _ba_emails_found = list(
+                dict.fromkeys(e.lower() for e in _ba_email_re.findall(answer))
+            )
+            result: dict = {"ok": True, "answer": answer}
+            if _ba_emails_found:
+                result["emails_found"] = _ba_emails_found
+            return result
 
     # ── brave_search ──────────────────────────────────────────────────────── #
     if skill == "brave_search":
@@ -503,54 +624,224 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                 api_key, query, count=count, country=country
             )
             if fetch_content and results:
-                fetch_client = AsyncHTTPClient()
-                for r in results:
-                    url = r.get("url", "")
-                    if not url.startswith(("http://", "https://")):
-                        r["content"] = ""
-                        continue
+                import asyncio as _asyncio
+
+                async def _fetch_one_plain(url: str, client: AsyncHTTPClient):
+                    """Fetch via plain Tornado HTTP. Returns (text, status, method) or None."""
                     try:
                         freq = HTTPRequest(
                             url,
                             method="GET",
                             headers={
-                                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+                                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                                 "Accept-Language": "en-US,en;q=0.9",
                                 "Accept-Encoding": "gzip, deflate, br",
                                 "Cache-Control": "no-cache",
-                                "Pragma": "no-cache",
                                 "Upgrade-Insecure-Requests": "1",
                                 "Sec-Fetch-Dest": "document",
                                 "Sec-Fetch-Mode": "navigate",
                                 "Sec-Fetch-Site": "none",
                                 "Sec-Fetch-User": "?1",
-                                "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-                                "sec-ch-ua-mobile": "?0",
-                                "sec-ch-ua-platform": '"macOS"',
                             },
                             request_timeout=10.0,
                             follow_redirects=True,
                             max_redirects=5,
                             decompress_response=True,
                         )
-                        fresp = await fetch_client.fetch(freq, raise_error=False)
-                        r["fetch_status"] = fresp.code
-                        if fresp.code == 403 or fresp.code == 503:
-                            # WAF/CDN block — mark as blocked so the LLM falls
-                            # back to the description snippet and emails_found.
-                            r["content"] = ""
-                            r["blocked"] = True
-                        elif fresp.body:
-                            raw = fresp.body.decode("utf-8", errors="replace")
-                            text = _re.sub(r"<[^>]+>", " ", raw)
-                            text = _re.sub(r"\s+", " ", text).strip()[:8000]
-                            r["content"] = text if text else ""
-                        else:
-                            r["content"] = ""
-                    except Exception as _fe:
+                        resp = await client.fetch(freq, raise_error=False)
+                        if resp.code == 200 and resp.body:
+                            raw = _decode_cf_emails(
+                                resp.body.decode("utf-8", errors="replace")
+                            )
+                            text = _html_to_text(raw)
+                            if text and not any(
+                                p in text.lower() for p in _BLOCK_PATTERNS
+                            ):
+                                return (text, resp.code, "plain")
+                        return (None, resp.code, "plain")
+                    except Exception:
+                        return (None, 0, "plain")
+
+                async def _fetch_one_tls(url: str, session):
+                    """Fetch via curl-cffi TLS impersonation. Returns (text, status, method) or None."""
+                    try:
+                        resp = await session.get(url, timeout=12)
+                        if resp.status_code == 200:
+                            raw = _decode_cf_emails(resp.text)
+                            text = _html_to_text(raw)
+                            if text and not any(
+                                p in text.lower() for p in _BLOCK_PATTERNS
+                            ):
+                                return (text, resp.status_code, "tls")
+                        return (None, resp.status_code, "tls")
+                    except Exception:
+                        return (None, 0, "tls")
+
+                def _best_result(candidates):
+                    """Pick the result with the most content (emails first, then length)."""
+                    _email_re_inner = _re.compile(
+                        r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
+                    )
+                    valid = [(t, s, m) for t, s, m in candidates if t]
+                    if not valid:
+                        return None
+                    # Prefer results that contain email addresses, then longest content
+                    valid.sort(
+                        key=lambda x: (len(_email_re_inner.findall(x[0])), len(x[0])),
+                        reverse=True,
+                    )
+                    return valid[0]
+
+                # Fire plain HTTP + curl-cffi in parallel for ALL URLs at once
+                fetch_client = AsyncHTTPClient()
+                try:
+                    from curl_cffi.requests import AsyncSession as _ParallelCurlSession
+
+                    _curl_available = True
+                except Exception:
+                    _curl_available = False
+
+                async def _fetch_url_parallel(url: str, curl_session=None):
+                    tasks = [_fetch_one_plain(url, fetch_client)]
+                    if curl_session is not None:
+                        tasks.append(_fetch_one_tls(url, curl_session))
+                    return await _asyncio.gather(*tasks, return_exceptions=True)
+
+                # Gather all URLs in parallel
+                all_urls = [r.get("url", "") for r in results]
+
+                if _curl_available:
+                    async with _ParallelCurlSession(impersonate="chrome136") as _ps:
+                        all_fetch_results = await _asyncio.gather(
+                            *[_fetch_url_parallel(u, _ps) for u in all_urls],
+                            return_exceptions=True,
+                        )
+                else:
+                    all_fetch_results = await _asyncio.gather(
+                        *[_fetch_url_parallel(u) for u in all_urls],
+                        return_exceptions=True,
+                    )
+
+                # Assign best content to each result
+                needs_playwright = []
+                for idx, r in enumerate(results):
+                    url = r.get("url", "")
+                    if not url.startswith(("http://", "https://")):
                         r["content"] = ""
-                        r["fetch_error"] = str(_fe)[:120]
+                        continue
+                    fetch_outputs = all_fetch_results[idx]
+                    if isinstance(fetch_outputs, Exception) or not fetch_outputs:
+                        r["content"] = ""
+                        r["blocked"] = True
+                        needs_playwright.append(idx)
+                        continue
+                    # Filter out exceptions from individual tasks
+                    candidates = [
+                        x
+                        for x in fetch_outputs
+                        if isinstance(x, (tuple, list)) and len(x) == 3
+                    ]
+                    best = _best_result(candidates)
+                    if best:
+                        text, status, method = best
+                        r["content"] = text
+                        r["fetch_status"] = status
+                        r["fetch_method"] = method
+                        r["blocked"] = False
+                    else:
+                        # All methods failed or returned blocked content
+                        statuses = [
+                            x[1] for x in candidates if isinstance(x, (tuple, list))
+                        ]
+                        r["fetch_status"] = max(statuses) if statuses else 0
+                        r["content"] = ""
+                        r["blocked"] = True
+                        needs_playwright.append(idx)
+
+                # ── Playwright tier: only for URLs all other methods failed on ── #
+                # Up to 3 URLs, used for JS-challenge sites (Cloudflare Turnstile etc.)
+                _crawl_limit = 3
+                pw_indices = needs_playwright[:_crawl_limit]
+                if pw_indices:
+                    try:
+                        from playwright.async_api import async_playwright as _apw
+
+                        async with _apw() as _pw:
+                            _browser = await _pw.chromium.launch(
+                                headless=True,
+                                args=[
+                                    "--no-sandbox",
+                                    "--disable-setuid-sandbox",
+                                    "--disable-dev-shm-usage",
+                                    "--disable-blink-features=AutomationControlled",
+                                ],
+                            )
+                            _ctx = await _browser.new_context(
+                                user_agent=(
+                                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                    "Chrome/136.0.0.0 Safari/537.36"
+                                ),
+                                viewport={"width": 1280, "height": 800},
+                                locale="en-US",
+                                java_script_enabled=True,
+                            )
+                            try:
+                                from playwright_stealth import Stealth as _Stealth
+
+                                await _Stealth(
+                                    navigator_platform_override="MacIntel",
+                                    navigator_user_agent_override=(
+                                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                        "Chrome/136.0.0.0 Safari/537.36"
+                                    ),
+                                ).hook_playwright_context(_ctx)
+                            except Exception:
+                                await _ctx.add_init_script(
+                                    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+                                )
+                            for _bi in pw_indices:
+                                _r = results[_bi]
+                                _curl = _r.get("url", "")
+                                try:
+                                    _page = await _ctx.new_page()
+                                    _cresp = await _page.goto(
+                                        _curl,
+                                        wait_until="domcontentloaded",
+                                        timeout=20000,
+                                    )
+                                    await _page.wait_for_timeout(1500)
+                                    _raw_text = await _page.evaluate(
+                                        "() => document.body ? document.body.innerText : document.documentElement.innerText"
+                                    )
+                                    await _page.close()
+                                    _text = _re.sub(
+                                        r"\s+", " ", _raw_text or ""
+                                    ).strip()[:8000]
+                                    if not _text:
+                                        _html = await _page.content()
+                                        _text = _html_to_text(_decode_cf_emails(_html))
+                                    _text_lower = _text.lower()
+                                    if _text and not any(
+                                        p in _text_lower for p in _BLOCK_PATTERNS
+                                    ):
+                                        _r["content"] = _text
+                                        _r["blocked"] = False
+                                        _r["fetch_method"] = "playwright"
+                                        if _cresp:
+                                            _r["fetch_status"] = _cresp.status
+                                    else:
+                                        _r["blocked"] = True
+                                        _r["content"] = ""
+                                        _r["crawl_blocked"] = True
+                                except Exception as _ce:
+                                    _r["crawl_error"] = str(_ce)[:120]
+                            await _ctx.close()
+                            await _browser.close()
+                    except Exception:
+                        pass
 
                 # Programmatically extract all email addresses from both the
                 # description snippet and page content for every result.
@@ -655,10 +946,290 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                         _seen_all.add(e.lower())
                         _all_emails.append(e)
 
+            # ── Programmatic best-email selection ───────────────────────── #
+            # When multiple emails are found, score each by how well its
+            # source page URL/title matches the TOPIC of the query (ignoring
+            # generic words like "email", "contact", "records", "request").
+            # This surfaces the department-specific email above generic inboxes
+            # (e.g. caomailbox@) even when those pages rank first in search.
+            _topic_stopwords = {
+                "a",
+                "an",
+                "the",
+                "and",
+                "or",
+                "for",
+                "to",
+                "in",
+                "on",
+                "of",
+                "with",
+                "find",
+                "search",
+                "website",
+                "page",
+                "contact",
+                "us",
+                "how",
+                "what",
+                "where",
+                "is",
+                "are",
+                "send",
+                "get",
+                "me",
+                "email",
+                "address",
+                "phone",
+                "number",
+                "records",
+                "request",
+                "public",
+                "give",
+                "list",
+                "not",
+                "where",
+                "report",
+                "from",
+            }
+            _topic_words = [
+                w.lower()
+                for w in _re.split(r"\W+", query)
+                if len(w) > 2 and w.lower() not in _topic_stopwords
+            ]
+
+            _email_scores: dict = {}  # email_lower -> best score
+            _email_source: dict = {}  # email_lower -> source description
+            for _er in results:
+                _er_url = (_er.get("url") or "").lower()
+                _er_title = (_er.get("title") or "").lower()
+                _er_emails = _er.get("emails_found") or []
+                if not _er_emails:
+                    continue
+                _topic_hits = sum(
+                    1 for w in _topic_words if w in _er_url or w in _er_title
+                )
+                # Penalise known generic mailboxes (public records catch-alls)
+                _generic_penalty = sum(
+                    1
+                    for pat in (
+                        "public-records",
+                        "public_records",
+                        "publicrecords",
+                        "records-request",
+                        "countywide",
+                        "communications",
+                    )
+                    if pat in _er_url
+                )
+                _score = _topic_hits - (_generic_penalty * 2)
+                for _e in _er_emails:
+                    _el = _e.lower()
+                    if _el not in _email_scores or _score > _email_scores[_el]:
+                        _email_scores[_el] = _score
+                        _email_source[_el] = _er.get("url", "")
+
+            _recommended_email: str = ""
+            if _email_scores:
+                _best_el = max(_email_scores, key=lambda k: _email_scores[k])
+                # Only promote if it outscores all others; ties keep original order
+                _best_score = _email_scores[_best_el]
+                _others = [s for k, s in _email_scores.items() if k != _best_el]
+                if not _others or _best_score > max(_others):
+                    _recommended_email = _best_el
+                    # Surface the recommended email first in all_emails_found
+                    _all_emails_reordered = [_recommended_email] + [
+                        e for e in _all_emails if e.lower() != _recommended_email
+                    ]
+                    _all_emails = _all_emails_reordered
+
             result_payload: dict = {"ok": True, "query": query, "results": results}
             if _all_emails:
                 result_payload["all_emails_found"] = _all_emails
+            if _recommended_email:
+                result_payload["recommended_email"] = _recommended_email
+                result_payload["recommended_email_source"] = _email_source.get(
+                    _recommended_email, ""
+                )
+                result_payload["recommended_email_note"] = (
+                    f"Programmatically selected as best match for the query topic. "
+                    f"Use this email unless web_crawl result contradicts it."
+                )
             return result_payload
+
+    # ── email_web_scraper (specialized contact-email finder) ─────────────── #
+    elif skill == "email_web_scraper":
+        if action == "find_email":
+            query = str(params.get("query") or "").strip()
+            if not query:
+                return {"ok": False, "error": "query parameter is required"}
+
+            count = min(max(int(params.get("count") or 10), 1), 20)
+            country = str(params.get("country") or "us")
+            crawl_timeout = min(max(int(params.get("crawl_timeout") or 25), 10), 60)
+
+            # 1) Fetch broad candidates + extracted emails using the hardened search pipeline
+            search_payload = await execute_skill(
+                "brave_search",
+                "search",
+                {
+                    "query": query,
+                    "count": count,
+                    "country": country,
+                    "fetch_content": True,
+                },
+                context,
+            )
+            if not search_payload.get("ok"):
+                return {
+                    "ok": False,
+                    "error": search_payload.get("error", "search failed"),
+                    "search": search_payload,
+                }
+
+            results = search_payload.get("results") or []
+            all_emails = search_payload.get("all_emails_found") or []
+            recommended_email = (search_payload.get("recommended_email") or "").lower()
+            recommended_source = search_payload.get("recommended_email_source") or ""
+
+            # 2) Verify on a single best URL with web_crawl (deterministic final check)
+            crawl_url = str(params.get("crawl_url") or "").strip()
+            if not crawl_url:
+                crawl_url = recommended_source
+            if not crawl_url and results:
+                crawl_url = str(results[0].get("url") or "")
+
+            crawl_payload = {}
+            crawled_emails = []
+            if crawl_url.startswith(("http://", "https://")):
+                crawl_payload = await execute_skill(
+                    "web_crawl",
+                    "fetch",
+                    {"url": crawl_url, "timeout": crawl_timeout},
+                    context,
+                )
+                if crawl_payload.get("ok"):
+                    _raw = crawl_payload.get("content") or ""
+                    seen = set()
+                    for e in _re.findall(
+                        r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", _raw
+                    ):
+                        el = e.lower()
+                        if el not in seen:
+                            seen.add(el)
+                            crawled_emails.append(el)
+
+            # 3) Choose a final email with deterministic priority order
+            #    web_crawl evidence > brave_search recommended_email > first extracted
+            chosen_email = ""
+            chosen_source = ""
+            confidence = "low"
+
+            if crawled_emails:
+                # Prefer addresses with topic overlap in nearby context
+                _topic_stopwords = {
+                    "a",
+                    "an",
+                    "the",
+                    "and",
+                    "or",
+                    "for",
+                    "to",
+                    "in",
+                    "on",
+                    "of",
+                    "with",
+                    "find",
+                    "search",
+                    "website",
+                    "page",
+                    "contact",
+                    "us",
+                    "how",
+                    "what",
+                    "where",
+                    "is",
+                    "are",
+                    "send",
+                    "get",
+                    "me",
+                    "email",
+                    "address",
+                    "phone",
+                    "number",
+                    "records",
+                    "request",
+                    "public",
+                    "give",
+                    "list",
+                    "not",
+                    "where",
+                    "report",
+                    "from",
+                }
+                _topic_words = [
+                    w.lower()
+                    for w in _re.split(r"\W+", query)
+                    if len(w) > 2 and w.lower() not in _topic_stopwords
+                ]
+                _text = (crawl_payload.get("content") or "").lower()
+
+                def _ctx_score(email: str) -> int:
+                    score = 0
+                    for m in _re.finditer(_re.escape(email), _text):
+                        s = max(0, m.start() - 180)
+                        e = min(len(_text), m.end() + 180)
+                        window = _text[s:e]
+                        score = max(score, sum(1 for w in _topic_words if w in window))
+                    return score
+
+                crawled_emails.sort(key=_ctx_score, reverse=True)
+                chosen_email = crawled_emails[0]
+                chosen_source = crawl_url
+                confidence = "high"
+            elif recommended_email:
+                chosen_email = recommended_email
+                chosen_source = recommended_source
+                confidence = "medium"
+            elif all_emails:
+                chosen_email = str(all_emails[0]).lower()
+                # source lookup if available
+                for r in results:
+                    if chosen_email in [
+                        e.lower() for e in (r.get("emails_found") or [])
+                    ]:
+                        chosen_source = r.get("url", "")
+                        break
+                confidence = "low"
+
+            return {
+                "ok": bool(chosen_email),
+                "query": query,
+                "email": chosen_email or None,
+                "confidence": confidence,
+                "source": chosen_source,
+                "method": "email_web_scraper",
+                "evidence": {
+                    "recommended_email": recommended_email or None,
+                    "recommended_email_source": recommended_source or None,
+                    "crawl_url": crawl_url or None,
+                    "crawled_emails": crawled_emails,
+                },
+                "search": {
+                    "recommended_email": search_payload.get("recommended_email"),
+                    "recommended_email_source": search_payload.get(
+                        "recommended_email_source"
+                    ),
+                    "all_emails_found": all_emails,
+                    "top_urls": [r.get("url") for r in results[:5] if r.get("url")],
+                },
+                "crawl": {
+                    "ok": bool(crawl_payload.get("ok")),
+                    "url": crawl_url or None,
+                    "method": crawl_payload.get("method"),
+                    "http_status": crawl_payload.get("http_status"),
+                },
+            }
 
     # ── web_fetch ─────────────────────────────────────────────────────────── #
     elif skill == "web_fetch":
@@ -696,11 +1267,122 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                 if resp.code != 200:
                     return {"ok": False, "error": f"HTTP {resp.code}"}
                 raw = resp.body.decode("utf-8", errors="replace")
-                text = _re.sub(r"<[^>]+>", " ", raw)
-                text = _re.sub(r"\s+", " ", text).strip()[:4000]
+                raw = _decode_cf_emails(raw)
+                text = _html_to_text(raw, max_chars=4000)
                 return {"ok": True, "url": url, "content": text}
             except Exception as exc:
                 return {"ok": False, "error": str(exc)[:200]}
+
+    # ── web_crawl (headless browser — Cloudflare/Akamai bypass) ──────────── #
+    elif skill == "web_crawl":
+        if action == "fetch":
+            url = str(params.get("url", ""))
+            if not url.startswith(("http://", "https://")):
+                return {"ok": False, "error": "url must start with http:// or https://"}
+            wait_for = str(params.get("wait_for") or "body")
+            timeout_s = min(int(params.get("timeout") or 20), 60)
+
+            # ── Tier 1: curl-cffi TLS impersonation (fast, beats Akamai) ── #
+            try:
+                from curl_cffi.requests import AsyncSession as _WCCurlSession
+
+                async with _WCCurlSession(impersonate="chrome136") as _wcs:
+                    _wcr = await _wcs.get(url, timeout=min(timeout_s, 15))
+                    if _wcr.status_code == 200:
+                        _raw = _decode_cf_emails(_wcr.text)
+                        _text = _html_to_text(_raw)
+                        _text_lower = _text.lower()
+                        if _text and not any(p in _text_lower for p in _BLOCK_PATTERNS):
+                            return {
+                                "ok": True,
+                                "url": url,
+                                "http_status": 200,
+                                "content": _text,
+                                "method": "tls_impersonation",
+                            }
+            except Exception:
+                pass
+            try:
+                from playwright.async_api import async_playwright
+
+                _stealth_ua = (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/136.0.0.0 Safari/537.36"
+                )
+                async with async_playwright() as pw:
+                    browser = await pw.chromium.launch(
+                        headless=True,
+                        args=[
+                            "--no-sandbox",
+                            "--disable-setuid-sandbox",
+                            "--disable-dev-shm-usage",
+                            "--disable-blink-features=AutomationControlled",
+                        ],
+                    )
+                    ctx = await browser.new_context(
+                        user_agent=_stealth_ua,
+                        viewport={"width": 1280, "height": 800},
+                        locale="en-US",
+                        java_script_enabled=True,
+                    )
+                    try:
+                        from playwright_stealth import Stealth as _Stealth
+
+                        _st = _Stealth(
+                            navigator_platform_override="MacIntel",
+                            navigator_user_agent_override=_stealth_ua,
+                        )
+                        await _st.hook_playwright_context(ctx)
+                    except Exception:
+                        await ctx.add_init_script(
+                            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+                        )
+                    page = await ctx.new_page()
+                    try:
+                        resp = await page.goto(
+                            url,
+                            wait_until="domcontentloaded",
+                            timeout=timeout_s * 1000,
+                        )
+                        http_status = resp.status if resp else 0
+                        # Wait for the selector or a short idle period so
+                        # Cloudflare JS challenges have time to resolve
+                        try:
+                            await page.wait_for_selector(
+                                wait_for, timeout=min(timeout_s * 500, 10000)
+                            )
+                        except Exception:
+                            # Selector not found — still try to extract whatever rendered
+                            pass
+                        # Extra settle time for heavy JS / Cloudflare turnstile
+                        await page.wait_for_timeout(1500)
+                        raw_text = await page.evaluate(
+                            "() => document.body ? document.body.innerText : document.documentElement.innerText"
+                        )
+                        text = _re.sub(r"\s+", " ", raw_text or "").strip()[:8000]
+                        if not text:
+                            # Fall back to HTML-strip if innerText is empty
+                            html = await page.content()
+                            html = _decode_cf_emails(html)
+                            text = _html_to_text(html)
+                    finally:
+                        await ctx.close()
+                        await browser.close()
+
+                if not text:
+                    return {
+                        "ok": False,
+                        "error": f"Page rendered empty (HTTP {http_status})",
+                    }
+                return {
+                    "ok": True,
+                    "url": url,
+                    "http_status": http_status,
+                    "content": text,
+                }
+            except Exception as exc:
+                return {"ok": False, "error": str(exc)[:300]}
 
     # ── github ────────────────────────────────────────────────────────────── #
     elif skill == "github":

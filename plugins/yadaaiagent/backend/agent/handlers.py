@@ -1725,6 +1725,185 @@ class AgentChatHandler(BaseHandler):
             "assistant_message": assistant_msg,
         }
 
+    @staticmethod
+    def _validate_reply_contacts(reply: str, messages: list) -> str:
+        """Scan the reply for email addresses and remove any that weren't
+        present in the tool results.  When hallucinated emails are found and
+        real extracted emails exist, append a correction note so the user gets
+        accurate information rather than a silently wrong answer.
+        """
+        import json as _json
+        import re as _re
+
+        _email_re = _re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
+
+        # Collect every email that was actually found in tool results
+        verified_emails: set = set()
+        for m in messages:
+            content = m.get("content")
+            # Tool result messages have string content (JSON-serialised result)
+            if m.get("role") == "tool" and isinstance(content, str):
+                try:
+                    result = _json.loads(content)
+                except Exception:
+                    result = {}
+                # Top-level all_emails_found (programmatically extracted)
+                for e in result.get("all_emails_found") or []:
+                    verified_emails.add(e.lower())
+                # Per-result emails_found (programmatically extracted per page)
+                for r in result.get("results") or []:
+                    for e in r.get("emails_found") or []:
+                        verified_emails.add(e.lower())
+                # For web_crawl results: the email is in the top-level result
+                for e in _email_re.findall(result.get("content") or ""):
+                    verified_emails.add(e.lower())
+                # For brave_answers results: emails extracted from the answer text
+                for e in result.get("emails_found") or []:
+                    verified_emails.add(e.lower())
+                # NOTE: intentionally NOT scanning the full raw JSON string —
+                # doing so whitelists every email that appears on ANY crawled
+                # page, including general county mailboxes that aren't the
+                # answer (e.g. caomailbox@kerncounty.com on info pages).
+
+        if not verified_emails:
+            # No tool results had emails — can't validate, return as-is
+            return reply
+
+        # Find emails the LLM mentioned in its reply
+        reply_emails = _email_re.findall(reply)
+        if not reply_emails:
+            return reply
+
+        hallucinated = [e for e in reply_emails if e.lower() not in verified_emails]
+        if not hallucinated:
+            return reply
+
+        # Build a correction: strike out hallucinated emails and append the
+        # real extracted ones so the user can see both.
+        corrected = reply
+        for bad in hallucinated:
+            corrected = corrected.replace(bad, f"~~{bad}~~")
+
+        real_list = ", ".join(sorted(verified_emails))
+        corrected += (
+            f"\n\n⚠ **Correction:** The email(s) marked above were not found in "
+            f"the actual page content and may be incorrect. "
+            f"Emails verified from tool results: **{real_list}**"
+        )
+        return corrected
+
+    @staticmethod
+    def _trim_messages_to_token_budget(
+        messages: list,
+        max_chars: int = 18000,
+        tools_chars: int = 0,
+    ) -> list:
+        """Trim accumulated message history so the total request body stays within
+        the provider's token limit.
+
+        ``max_chars`` is the estimated total char budget for the whole request
+        (≈ 7 000 tokens at 4 chars/token for an 8 000-token cap, leaving slack
+        for JSON framing and system prompt).  ``tools_chars`` is the serialised
+        length of the tool-schema list that will be sent alongside the messages
+        and must be subtracted from the budget.
+
+        Strategy (applied in order until budget is met):
+          1. Hard-cap ALL tool-result messages to 800 chars — large JSON blobs
+             from web-scraper results are the primary cause of 413 errors.
+          2. Truncate the ``content`` of tool-result messages in older rounds
+             further (newest two kept at 800; older ones shrunk more).
+          3. Drop entire old rounds (assistant tool-call + tool result messages)
+             while always keeping the system prompt and the latest user message.
+        """
+        # Effective budget for messages after reserving space for tool schemas
+        budget = max(max_chars - tools_chars, 4000)
+
+        # Hard cap per tool-result message — keeps each email_web_scraper blob
+        # from consuming the entire budget on its own.
+        _TOOL_RESULT_HARD_CAP = 800
+
+        def _total(msgs: list) -> int:
+            total = 0
+            for m in msgs:
+                c = m.get("content")
+                if isinstance(c, str):
+                    total += len(c)
+                elif isinstance(c, list):
+                    for block in c:
+                        if isinstance(block, dict):
+                            total += len(
+                                str(block.get("content") or block.get("text") or "")
+                            )
+                tc = m.get("tool_calls")
+                if tc:
+                    total += len(json.dumps(tc))
+            return total
+
+        # Work on a shallow copy so callers aren't surprised
+        messages = list(messages)
+
+        # ── Step 1: hard-cap ALL tool-result messages ───────────────────── #
+        for idx, m in enumerate(messages):
+            if m.get("role") != "tool":
+                continue
+            content = m.get("content", "")
+            if isinstance(content, str) and len(content) > _TOOL_RESULT_HARD_CAP:
+                messages[idx] = {
+                    **m,
+                    "content": content[:_TOOL_RESULT_HARD_CAP] + " …[truncated]",
+                }
+
+        if _total(messages) <= budget:
+            return messages
+
+        # ── Step 2: drop whole old ReAct rounds (assistant tool-call + results) ─ #
+        while _total(messages) > budget:
+            # Find the oldest assistant message that carries tool_calls
+            drop_idx = None
+            for i, m in enumerate(messages):
+                if m.get("role") == "assistant" and m.get("tool_calls"):
+                    drop_idx = i
+                    break
+            if drop_idx is None:
+                break
+            # Drop that message plus all consecutive tool messages that follow it
+            end_idx = drop_idx + 1
+            while end_idx < len(messages) and messages[end_idx].get("role") == "tool":
+                end_idx += 1
+            messages = messages[:drop_idx] + messages[end_idx:]
+
+        if _total(messages) <= budget:
+            return messages
+
+        # ── Step 3: drop old conversation-history user/assistant pairs ──────── #
+        # History pairs appear AFTER the system prompt and BEFORE the current
+        # user goal.  Find the oldest adjacent user+assistant (or user-only)
+        # pair that is NOT the system prompt and NOT the last user message,
+        # and drop it.
+        while _total(messages) > budget and len(messages) > 3:
+            # System prompt is always messages[0]; last user message must be kept.
+            # Find the first non-system, non-tool, non-tool_calls message to drop.
+            drop_idx = None
+            for i, m in enumerate(messages):
+                if i == 0:
+                    continue  # keep system prompt
+                if m.get("role") in ("user", "assistant") and not m.get("tool_calls"):
+                    drop_idx = i
+                    break
+            if drop_idx is None:
+                break
+            # Drop it (and the immediately following assistant reply if present)
+            end_idx = drop_idx + 1
+            if (
+                end_idx < len(messages)
+                and messages[end_idx].get("role") == "assistant"
+                and not messages[end_idx].get("tool_calls")
+            ):
+                end_idx += 1
+            messages = messages[:drop_idx] + messages[end_idx:]
+
+        return messages
+
     async def _llm_call_with_tools(
         self,
         provider: str,
@@ -1738,6 +1917,11 @@ class AgentChatHandler(BaseHandler):
         """Dispatcher for tool-calling LLM calls across all supported providers.
         Returns {"reply", "tool_calls", "assistant_message"}.
         """
+        # Compute tool schema size so the trim function can reserve that space
+        _tools_chars = len(json.dumps(tools)) if tools else 0
+        messages = self._trim_messages_to_token_budget(
+            messages, tools_chars=_tools_chars
+        )
         if provider == "anthropic":
             return await self._anthropic_call_with_tools(
                 model, api_key, messages, tools
@@ -1855,6 +2039,38 @@ class AgentChatHandler(BaseHandler):
             )
             return self.finish()
 
+        # Strip the last user message from history if it matches the goal —
+        # it will be appended explicitly below, so we don't want it twice.
+        if (
+            conversation_history
+            and conversation_history[-1].get("role") == "user"
+            and conversation_history[-1].get("content", "").strip() == goal
+        ):
+            conversation_history = conversation_history[:-1]
+
+        # If the immediately preceding assistant turn said "not found" or was
+        # a dead-end answer (no tool calls were made that turn), drop it so the
+        # agent re-searches rather than just agreeing with itself.
+        _NOT_FOUND_PHRASES = (
+            "not found",
+            "no email",
+            "unable to find",
+            "could not find",
+            "i couldn't find",
+            "i was unable",
+            "no public email",
+            "i don't have",
+            "i do not have",
+        )
+        if conversation_history and conversation_history[-1].get("role") == "assistant":
+            _last_reply = conversation_history[-1].get("content", "").lower()
+            if any(p in _last_reply for p in _NOT_FOUND_PHRASES):
+                conversation_history = conversation_history[:-1]
+
+        # Cap conversation history to the 3 most recent turns (6 messages) so
+        # old exchanges don't consume the LLM's token budget.
+        conversation_history = conversation_history[-6:]
+
         # ── LLM config ────────────────────────────────────────────────────── #
         provider = (llm_cfg.get("provider") or "ollama").lower().strip()
         # ollama_browser: LLM call happens in the browser (user's local Ollama);
@@ -1961,19 +2177,67 @@ class AgentChatHandler(BaseHandler):
         system_prompt = (
             "You are a helpful assistant with access to tools. "
             "Use the tools to accomplish the user's goal. "
+            "MANDATORY: For ANY question about facts, contact details, current information, "
+            "web content, emails, phone numbers, addresses, or anything you cannot answer "
+            "with absolute certainty from the current conversation alone — you MUST call "
+            "a tool first. NEVER answer factual questions from memory or training data. "
+            "FOR CONTACT INFORMATION QUERIES (email, phone, address, hours): if the "
+            "email_web_scraper tool is available, call email_web_scraper/find_email FIRST. "
+            "This is a specialized email-scraping workflow that performs search + crawl "
+            "verification and returns one recommended email with evidence. "
+            "If email_web_scraper is unavailable or returns no email, then use the manual chain "
+            "(brave_answers -> brave_search with fetch_content=true -> web_crawl). "
+            "When comparing results, prefer emails from 'emails_found'/'all_emails_found' fields "
+            "(extracted directly from page text) over brave_answers AI-generated summaries. "
             "Call tools one at a time; after seeing each result decide whether "
             "to call another tool or provide a final answer. "
-            "When you have enough information, write a clear final answer — "
-            "do NOT call another tool. "
+            "When you have enough information FROM TOOL RESULTS and the task is "
+            "ONLY to report information, write a clear final answer — do NOT call another tool. "
+            "However, if the task also requires performing an ACTION (e.g. sending an email, "
+            "creating an issue), do NOT write a text answer — call the action tool immediately. "
+            "CRITICAL — DO NOT RE-SEARCH: Once email_web_scraper or brave_search has returned "
+            "an email address (even if 'recommended_email' is null in the evidence), that IS "
+            "the answer. Do NOT call email_web_scraper or brave_search again for the same entity. "
+            "The top-level 'email' field with confidence=high from email_web_scraper is definitive. "
+            "Proceed immediately to the next step in the task. "
+            "CRITICAL — TOOL UNAVAILABLE: If the action tool needed to complete the task is "
+            "not in your tool list (e.g. microsoft__send_email is not available), do NOT loop. "
+            "Report what information you found and clearly state that the required action "
+            "tool is not available. "
             "CRITICAL — NEVER hallucinate or invent contact information: "
             "Email addresses, phone numbers, and URLs MUST come ONLY from tool "
             "results or conversation history. If a contact detail was NOT found "
             "in a tool result, say 'not found' — do NOT guess or construct a "
             "plausible-looking address. "
-            "CRITICAL — when reporting emails: always check 'all_emails_found' "
-            "and 'emails_found' fields in tool results — these contain "
-            "programmatically extracted emails. Never say 'no email found' if "
-            "these lists are non-empty. "
+            "CRITICAL — when reporting emails: the tool results include "
+            "'all_emails_found' and per-result 'emails_found' lists — these are "
+            "programmatically extracted verbatim from the pages. You MUST quote "
+            "one of those exact strings. NEVER invent, modify, or guess an email "
+            "address that does not appear in those lists. If those lists are "
+            "non-empty, you MUST use one of them as the answer. "
+            "CRITICAL — when a tool result contains a 'recommended_email' field: "
+            "that email was programmatically selected as the best match for the "
+            "query topic by scoring each source URL against the query keywords. "
+            "You MUST use that email as your answer unless a subsequent web_crawl "
+            "result explicitly shows a different email on the relevant department page. "
+            "CRITICAL — when multiple emails are found: prefer the email whose "
+            "surrounding page context specifically matches the department/function "
+            "in the user's query. A general public records inbox (e.g. caomailbox@, "
+            "info@, contact@) should ONLY be used when no department-specific email "
+            "was found. If a result from the official department page (e.g. "
+            "kernpublicworks.com for code compliance, not kerncounty.com/public-records) "
+            "contains an email in its 'emails_found', that department-page email is the "
+            "correct answer — not a generic county records mailbox. "
+            "CRITICAL — FOLLOW INSTRUCTIONS END-TO-END: When the user's request "
+            "includes BOTH finding information AND performing an action (e.g. look up "
+            "an email then send an email to that address), you MUST do both. Do NOT "
+            "stop halfway and ask if you should continue. Side-effecting actions "
+            "(like sending email) have an automatic confirmation dialog — you do NOT "
+            "need to ask for permission. Simply proceed with the full task. "
+            "CRITICAL — DO NOT EDITORIALIZE: Do NOT add unsolicited commentary about "
+            "whether the request is appropriate, likely to succeed, or whether the "
+            "recipient can fulfill it. Draft and send what the user asked for. The "
+            "user is responsible for the content of their own request. "
             "Do NOT end your final reply with a question."
         )
         if key_rotation_triggers:
@@ -2023,6 +2287,99 @@ class AgentChatHandler(BaseHandler):
         # have already supplied the LLM response so we don't need to emit
         # llm_needed before doing any work.
         _browser_llm_response = body.get("llm_response") or None
+
+        _pre_run_step_count = 0  # tracks steps added before the ReAct loop
+
+        # ── Auto-run brave_answers before the ReAct loop ──────────────────── #
+        # Ensures brave_answers always appears as a distinct visible step in the
+        # UI and its result is available to the LLM before it calls brave_search.
+        if (
+            resume_messages is None
+            and not browser_llm
+            and "brave_answers" in available_skills
+            and brave_answers_api_key
+        ):
+            _ba_pre_args = {"query": goal}
+            _ba_pre_id = "auto_brave_answers_0"
+            step_counter += 1
+            await sse(
+                {
+                    "type": "step_start",
+                    "step": step_counter,
+                    "skill": "brave_answers",
+                    "action": "answer",
+                    "description": json.dumps(_ba_pre_args)[:200],
+                }
+            )
+            await sse({"type": "status", "message": "Running brave_answers/answer..."})
+            try:
+                _ba_pre_result = await execute_skill(
+                    "brave_answers", "answer", _ba_pre_args, skill_context
+                )
+            except Exception as _bap_exc:
+                _ba_pre_result = {"ok": False, "error": str(_bap_exc)[:200]}
+            await sse(
+                {
+                    "type": "step_result",
+                    "step": step_counter,
+                    "skill": "brave_answers",
+                    "action": "answer",
+                    "output": _ba_pre_result,
+                }
+            )
+            _pre_run_step_count = step_counter  # remember offset for plan numbering
+            if provider == "anthropic":
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": _ba_pre_id,
+                                "name": "brave_answers__answer",
+                                "input": _ba_pre_args,
+                            }
+                        ],
+                    }
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": _ba_pre_id,
+                                "content": json.dumps(_ba_pre_result, default=str)[
+                                    :3000
+                                ],
+                            }
+                        ],
+                    }
+                )
+            else:
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": _ba_pre_id,
+                                "type": "function",
+                                "function": {
+                                    "name": "brave_answers__answer",
+                                    "arguments": json.dumps(_ba_pre_args),
+                                },
+                            }
+                        ],
+                    }
+                )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": _ba_pre_id,
+                        "content": json.dumps(_ba_pre_result, default=str)[:3000],
+                    }
+                )
 
         for round_num in range(MAX_ROUNDS):
             if pending_tool_calls:
@@ -2094,7 +2451,10 @@ class AgentChatHandler(BaseHandler):
                                 reply = fallback.get("reply")
                             except Exception:
                                 pass
-                    await sse({"type": "done", "reply": reply or "(no reply)"})
+                    reply = self._validate_reply_contacts(
+                        reply or "(no reply)", messages
+                    )
+                    await sse({"type": "done", "reply": reply})
                     return self.finish()
 
                 # Append the assistant message (containing tool calls) to history
@@ -2104,23 +2464,37 @@ class AgentChatHandler(BaseHandler):
                 # Emit a plan event on the first round to show what will happen
                 if not _plan_emitted:
                     _plan_emitted = True
-                    plan_steps = [
-                        {
-                            "step": i + 1,
-                            "skill": (
-                                tc["name"].split("__")[0]
-                                if "__" in tc["name"]
-                                else tc["name"]
-                            ),
-                            "action": (
-                                tc["name"].split("__", 1)[1]
-                                if "__" in tc["name"]
-                                else ""
-                            ),
-                            "description": json.dumps(tc.get("arguments") or {})[:120],
-                        }
-                        for i, tc in enumerate(tc_list)
-                    ]
+                    # Pre-run steps (e.g. brave_answers) already executed before
+                    # the loop — include them in the plan so the UI numbers match.
+                    plan_steps = []
+                    if _pre_run_step_count > 0:
+                        plan_steps.append(
+                            {
+                                "step": 1,
+                                "skill": "brave_answers",
+                                "action": "answer",
+                                "description": json.dumps({"query": goal})[:120],
+                            }
+                        )
+                    for i, tc in enumerate(tc_list):
+                        plan_steps.append(
+                            {
+                                "step": _pre_run_step_count + i + 1,
+                                "skill": (
+                                    tc["name"].split("__")[0]
+                                    if "__" in tc["name"]
+                                    else tc["name"]
+                                ),
+                                "action": (
+                                    tc["name"].split("__", 1)[1]
+                                    if "__" in tc["name"]
+                                    else ""
+                                ),
+                                "description": json.dumps(tc.get("arguments") or {})[
+                                    :120
+                                ],
+                            }
+                        )
                     await sse(
                         {
                             "type": "plan",
@@ -2217,7 +2591,7 @@ class AgentChatHandler(BaseHandler):
                 tool_results_for_msg.append(
                     {
                         "tool_call_id": tc_id,
-                        "content": json.dumps(result, default=str)[:6000],
+                        "content": json.dumps(result, default=str)[:3000],
                     }
                 )
 
@@ -2247,6 +2621,200 @@ class AgentChatHandler(BaseHandler):
                                 "content": r["content"],
                             }
                         )
+
+            # ── De-dup guard: if LLM re-called the same email-lookup skill ─── #
+            # If the LLM has now called email_web_scraper or brave_search twice or
+            # more during this session, inject a nudge so it stops re-searching
+            # and proceeds to the action tool (e.g. send_email).
+            if tool_results_for_msg and not browser_llm:
+                _email_lookup_skills = {
+                    "email_web_scraper__find_email",
+                    "brave_search__search",
+                }
+                _last_tc_name = (tc_list[-1].get("name") or "") if tc_list else ""
+                if _last_tc_name in _email_lookup_skills:
+                    _lookup_calls = 0
+                    for _m in messages:
+                        if _m.get("role") != "assistant":
+                            continue
+                        # OpenAI/Ollama style
+                        for _tc in _m.get("tool_calls") or []:
+                            _fn = (
+                                _tc.get("function", {}).get("name")
+                                or _tc.get("name")
+                                or ""
+                            )
+                            if _fn in _email_lookup_skills:
+                                _lookup_calls += 1
+                        # Anthropic style
+                        for _c in _m.get("content") or []:
+                            if isinstance(_c, dict) and _c.get("type") == "tool_use":
+                                if _c.get("name") in _email_lookup_skills:
+                                    _lookup_calls += 1
+                    if _lookup_calls >= 1:
+                        _nudge = (
+                            "[SYSTEM NOTE] The email address has already been found in the "
+                            "previous tool result. Do NOT call email_web_scraper or "
+                            "brave_search again. Use the email from the result above and "
+                            "immediately call the next required action tool "
+                            "(e.g. microsoft__send_email to send the email). "
+                            "If that tool is not in your tool list, stop and report what "
+                            "you found — do NOT keep searching."
+                        )
+                        messages.append({"role": "user", "content": _nudge})
+
+            # ── Auto-crawl after brave_search when emails conflict ─────────── #
+            # If brave_search returned multiple candidate emails, automatically
+            # run web_crawl on the most query-relevant URL so the LLM has direct
+            # page evidence for picking the correct one.
+            if "web_crawl" in available_skills and not browser_llm:
+                for _auto_tc in tc_list:
+                    if _auto_tc.get("name") != "brave_search__search":
+                        continue
+                    # Find the matching tool result
+                    _auto_bs = None
+                    for _auto_r in tool_results_for_msg:
+                        if _auto_r.get("tool_call_id") == _auto_tc.get("id"):
+                            try:
+                                _auto_bs = json.loads(_auto_r["content"])
+                            except Exception:
+                                pass
+                            break
+                    if not _auto_bs:
+                        break
+                    _auto_emails = _auto_bs.get("all_emails_found") or []
+                    if len(set(_auto_emails)) < 2:
+                        break  # Only one email candidate — no conflict to resolve
+                    # Score each result URL by keyword overlap with the query
+                    import re as _re_rank
+
+                    _auto_query = _auto_bs.get("query") or goal
+                    _auto_qwords = set(
+                        _re_rank.sub(r"[^a-z0-9 ]", "", _auto_query.lower()).split()
+                    ) - {
+                        "a",
+                        "an",
+                        "the",
+                        "and",
+                        "or",
+                        "for",
+                        "in",
+                        "of",
+                        "to",
+                        "email",
+                        "address",
+                        "contact",
+                        "phone",
+                        "number",
+                    }
+
+                    def _auto_score(r):
+                        _u = r.get("url", "").lower()
+                        s = sum(1 for w in _auto_qwords if w in _u)
+                        if r.get("emails_found"):
+                            s += 3
+                        return s
+
+                    _auto_sorted = sorted(
+                        (
+                            r
+                            for r in (_auto_bs.get("results") or [])
+                            if r.get("url", "").startswith("http")
+                        ),
+                        key=_auto_score,
+                        reverse=True,
+                    )
+                    _auto_best_url = _auto_sorted[0]["url"] if _auto_sorted else None
+                    if not _auto_best_url:
+                        break
+                    _auto_wc_id = f"auto_web_crawl_{step_counter + 1}"
+                    step_counter += 1
+                    _auto_wc_args = {"url": _auto_best_url}
+                    await sse(
+                        {
+                            "type": "step_start",
+                            "step": step_counter,
+                            "skill": "web_crawl",
+                            "action": "fetch",
+                            "description": json.dumps(_auto_wc_args)[:200],
+                        }
+                    )
+                    await sse(
+                        {
+                            "type": "status",
+                            "message": "Verifying page with web_crawl...",
+                        }
+                    )
+                    try:
+                        _auto_wc_result = await execute_skill(
+                            "web_crawl", "fetch", _auto_wc_args, skill_context
+                        )
+                    except Exception as _auto_wce:
+                        _auto_wc_result = {"ok": False, "error": str(_auto_wce)[:200]}
+                    await sse(
+                        {
+                            "type": "step_result",
+                            "step": step_counter,
+                            "skill": "web_crawl",
+                            "action": "fetch",
+                            "output": _auto_wc_result,
+                        }
+                    )
+                    if provider == "anthropic":
+                        messages.append(
+                            {
+                                "role": "assistant",
+                                "content": [
+                                    {
+                                        "type": "tool_use",
+                                        "id": _auto_wc_id,
+                                        "name": "web_crawl__fetch",
+                                        "input": _auto_wc_args,
+                                    }
+                                ],
+                            }
+                        )
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "tool_result",
+                                        "tool_use_id": _auto_wc_id,
+                                        "content": json.dumps(
+                                            _auto_wc_result, default=str
+                                        )[:3000],
+                                    }
+                                ],
+                            }
+                        )
+                    else:
+                        messages.append(
+                            {
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [
+                                    {
+                                        "id": _auto_wc_id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": "web_crawl__fetch",
+                                            "arguments": json.dumps(_auto_wc_args),
+                                        },
+                                    }
+                                ],
+                            }
+                        )
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": _auto_wc_id,
+                                "content": json.dumps(_auto_wc_result, default=str)[
+                                    :3000
+                                ],
+                            }
+                        )
+                    break  # Only crawl once per brave_search call
 
             if browser_llm:
                 # Browser needs to call Ollama with the updated messages.
