@@ -166,6 +166,47 @@ async def sia_download(app_key_hex: str, object_id: str) -> dict:
     return result
 
 
+async def sia_download_shared(app_key_hex: str, sia_signed_url: str) -> dict:
+    """Download an object from a sia:// signed URL shared by another user.
+
+    The recipient uses their own app key to connect, but the signed URL
+    grants access to the specific object without exposing the sharer's key.
+
+    Returns
+    -------
+    dict with keys: ok, size, content (UTF-8 text) or content_b64, metadata
+    """
+    sdk = await _get_sdk(app_key_hex)
+    try:
+        from sia_storage import DownloadOptions  # type: ignore[import]
+    except ImportError as exc:
+        raise ImportError("sia-storage SDK is not installed") from exc
+
+    obj = sdk.shared_object(sia_signed_url.strip())
+    async with sdk.download(obj, DownloadOptions()) as d:
+        raw = await d.read_all()
+
+    meta: dict = {}
+    try:
+        meta_bytes = obj.metadata()
+        if meta_bytes:
+            meta = json.loads(meta_bytes.decode("utf-8", errors="replace"))
+    except Exception:
+        pass
+
+    result = {
+        "ok": True,
+        "size": len(raw),
+        "metadata": meta,
+    }
+    try:
+        result["content"] = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        result["content_b64"] = base64.b64encode(raw).decode("ascii")
+        result["note"] = "Binary content encoded as base64"
+    return result
+
+
 async def sia_list_objects(app_key_hex: str) -> dict:
     """List all pinned objects in this app's account.
 
@@ -245,25 +286,53 @@ async def sia_delete(app_key_hex: str, object_id: str) -> dict:
     return {"ok": True, "object_id": object_id}
 
 
-async def sia_share(app_key_hex: str, object_id: str, expires_hours: int = 24) -> dict:
+async def sia_share(
+    app_key_hex: str,
+    object_id: str,
+    expires_hours: int = 24,
+    base_url: str = "https://yadacoin.io",
+) -> dict:
     """Generate a time-limited public share URL for a Sia object.
 
-    The URL is publicly accessible by anyone who has it — do not share
-    sensitive files via this mechanism without additional access controls.
+    Stores a token in MongoDB so the download proxy can retrieve the file
+    using the app key without exposing it in the URL.  The returned URL
+    points to the YadaCoin node's /ai-agent-auth/sia/download/<token>
+    endpoint which anyone can open in a browser.
 
     Returns
     -------
-    dict with keys: ok, share_url, expires_at
+    dict with keys: ok, object_id, share_url, expires_at
     """
-    sdk = await _get_sdk(app_key_hex)
-    obj = await sdk.object(object_id.strip())
+    import secrets
+
+    import yadacoin.core.config as _cfg
+
     expires = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
         hours=max(1, expires_hours)
     )
-    share_url = sdk.share_object(obj, expires)
+    token = secrets.token_urlsafe(32)
+
+    # Also get the SDK's native signed URL — usable by other node operators via
+    # sdk.shared_object(sia_signed_url) without needing the sharer's app key.
+    sdk = await _get_sdk(app_key_hex)
+    obj = await sdk.object(object_id.strip())
+    sia_signed_url = str(sdk.share_object(obj, expires))
+
+    config = _cfg.Config()
+    await config.mongo.async_db.sia_share_tokens.insert_one(
+        {
+            "token": token,
+            "object_id": object_id.strip(),
+            "app_key_hex": app_key_hex,
+            "expires_at": expires,
+        }
+    )
+
+    share_url = f"{base_url.rstrip('/')}/ai-agent-auth/sia/download/{token}"
     return {
         "ok": True,
         "object_id": object_id,
-        "share_url": str(share_url),
-        "expires_at": expires.isoformat() + "Z",
+        "share_url": share_url,
+        "sia_signed_url": sia_signed_url,
+        "expires_at": expires.isoformat(),
     }

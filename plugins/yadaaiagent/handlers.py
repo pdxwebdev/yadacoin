@@ -31,6 +31,7 @@ from .backend.oauth.handlers import (
     OAuthSessionBindHandler,
     RekeySessionsHandler,
 )
+from .backend.sia.handlers import SiaDownloadHandler
 from .backend.wallet.handlers import (
     CredentialReceiptResyncHandler,
     FindRecoveryTipHandler,
@@ -65,5 +66,6 @@ HANDLERS = [
     (r"/ai-agent-auth/api/find-recovery-tip", FindRecoveryTipHandler),
     (r"/ai-agent-auth/api/resync-credentials", CredentialReceiptResyncHandler),
     (r"/ai-agent-auth/api/travel", TravelBookingHandler),
+    (r"/ai-agent-auth/sia/download/([^/]+)", SiaDownloadHandler),
     *_vendor_routes,
 ]

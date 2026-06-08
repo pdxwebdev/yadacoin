@@ -368,6 +368,17 @@ SKILL_REGISTRY = {
                 "params": {},
                 "returns": "{ok, objects: [{object_id, metadata, created_at}], count}",
             },
+            "download_shared": {
+                "description": (
+                    "Download a file from a sia:// signed URL shared by another user. "
+                    "Use this when the user pastes a sia:// URL into chat and wants to retrieve its contents. "
+                    "The recipient uses their own app key — no access to the sharer's other files."
+                ),
+                "params": {
+                    "sia_signed_url": "string (required) — the sia:// signed URL from another user's share",
+                },
+                "returns": "{ok, size, metadata, content} — content is UTF-8 text; binary files include content_b64",
+            },
             "delete": {
                 "description": (
                     "Delete a file from the user's Sia storage by its object_id. "
@@ -388,7 +399,13 @@ SKILL_REGISTRY = {
                     "object_id": "string (required) — the 64-character hex object ID to share",
                     "expires_hours": "integer (optional, default 24) — how many hours until the share URL expires",
                 },
-                "returns": "{ok, object_id, share_url, expires_at}",
+                "returns": (
+                    "{ok, object_id, share_url, sia_signed_url, expires_at} — "
+                    "Present share_url as a clickable markdown link [Download file](share_url) for browser users. "
+                    "Also show sia_signed_url for recipients who run their own YadaCoin node — "
+                    "they can import it via sdk.shared_object(sia_signed_url) without needing the sharer's app key. "
+                    "The link expires at expires_at."
+                ),
             },
         },
     },
@@ -2169,6 +2186,7 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
         from ..sia.api import (
             sia_delete,
             sia_download,
+            sia_download_shared,
             sia_list_objects,
             sia_share,
             sia_upload,
@@ -2198,6 +2216,15 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                     return {"ok": False, "error": "object_id parameter is required"}
                 return await sia_download(app_key_hex, object_id)
 
+            if action == "download_shared":
+                sia_signed_url = str(params.get("sia_signed_url") or "").strip()
+                if not sia_signed_url:
+                    return {
+                        "ok": False,
+                        "error": "sia_signed_url parameter is required",
+                    }
+                return await sia_download_shared(app_key_hex, sia_signed_url)
+
             if action == "list_objects":
                 return await sia_list_objects(app_key_hex)
 
@@ -2212,7 +2239,18 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                 if not object_id:
                     return {"ok": False, "error": "object_id parameter is required"}
                 expires_hours = int(params.get("expires_hours") or 24)
-                return await sia_share(app_key_hex, object_id, expires_hours)
+                from yadacoin.core.config import Config as _Config
+
+                _cfg = _Config()
+                _host = getattr(_cfg, "peer_host", None) or "yadacoin.io"
+                _port = getattr(_cfg, "peer_port", None)
+                if _port and int(_port) not in (80, 443):
+                    _base_url = f"https://{_host}:{_port}"
+                else:
+                    _base_url = f"https://{_host}"
+                return await sia_share(
+                    app_key_hex, object_id, expires_hours, base_url=_base_url
+                )
 
         except ImportError as exc:
             return {"ok": False, "error": str(exc)}
