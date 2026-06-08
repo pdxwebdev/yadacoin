@@ -170,6 +170,66 @@
         </div>
       </section>
 
+      <!-- ── Sia Storage ─────────────────────────────────────── -->
+      <section v-show="isSectionVisible('sia_storage')">
+        <button class="section-header" @click="toggleSection('sia_storage')">
+          <span class="section-title">📁 Sia Storage</span>
+          <span class="chevron" :class="{ open: openSections.sia_storage }"
+            >›</span
+          >
+        </button>
+        <div class="section-body" v-show="openSections.sia_storage">
+          <p class="skill-desc">
+            Decentralized, encrypted file storage on the Sia network. Upload,
+            download, list, share, and delete objects.
+          </p>
+
+          <!-- Connected state -->
+          <div v-if="siaAppKey" class="connected-row">
+            <span class="acct-pill acct-sia">📁 Sia connected</span>
+            <button class="btn-disconnect" @click="disconnectSia">
+              Disconnect
+            </button>
+          </div>
+
+          <!-- Key entry form -->
+          <div v-else class="sia-connect-form">
+            <div class="field-group">
+              <label>App Key <span class="optional">(64-char hex)</span></label>
+              <input
+                v-model="siaKeyInput"
+                type="password"
+                placeholder="Paste your 64-character Sia App Key…"
+                autocomplete="off"
+                spellcheck="false"
+                class="sia-key-input"
+              />
+              <div class="hint">
+                Obtain your App Key at
+                <a
+                  href="https://sia.storage/dashboard"
+                  target="_blank"
+                  rel="noopener"
+                  >sia.storage/dashboard</a
+                >. Sign in, approve the YadaCoin AI Agent app connection, then
+                export and paste the 32-byte (64-char hex) App Key here.<br /><br />
+                <strong>Privacy:</strong> the key is stored only in your
+                browser's localStorage and sent only to the YadaCoin node. Your
+                recovery phrase must never be shared with anyone.
+              </div>
+            </div>
+            <div v-if="siaKeyError" class="sia-error">{{ siaKeyError }}</div>
+            <button
+              class="btn-connect"
+              :disabled="!siaKeyInput.trim()"
+              @click="connectSia"
+            >
+              Connect Sia
+            </button>
+          </div>
+        </div>
+      </section>
+
       <div class="btn-row">
         <button class="btn-save" @click="save">Save</button>
         <button class="btn-close" @click="close">Close</button>
@@ -185,6 +245,9 @@ import {
   getSkillsSettings,
   saveSkillsSettings,
   getNodeUrl,
+  getSiaAppKey,
+  saveSiaAppKey,
+  clearSiaAppKey,
 } from "../composables/useStorage.js";
 import { useWeb2Auth } from "../composables/useWeb2Auth.js";
 
@@ -201,11 +264,23 @@ const SKILLS = [
     keywords: "github repos issues prs pull requests notifications discussions",
   },
   { id: "microsoft", keywords: "microsoft outlook email calendar todo tasks" },
+  {
+    id: "sia_storage",
+    keywords: "sia storage file upload download decentralized encrypted",
+  },
 ];
 
 const filterText = ref("");
-const openSections = ref({ github: false, microsoft: false });
-const manuallyOpen = ref({ github: false, microsoft: false });
+const openSections = ref({
+  github: false,
+  microsoft: false,
+  sia_storage: false,
+});
+const manuallyOpen = ref({
+  github: false,
+  microsoft: false,
+  sia_storage: false,
+});
 
 function isSectionVisible(id) {
   const q = filterText.value.trim().toLowerCase();
@@ -228,6 +303,34 @@ watch(filterText, (q) => {
   }
   // When filtering, sections are shown/hidden but stay collapsed until manually opened
 });
+
+// ── Sia Storage connection ───────────────────────────────────────────────────
+// The App Key is a 64-char hex string (32 bytes) — derived once from the
+// user's BIP-39 recovery phrase and the YadaCoin App ID. It is stored only
+// in localStorage and sent to the YadaCoin node on each agent loop request.
+const siaAppKey = ref(getSiaAppKey());
+const siaKeyInput = ref("");
+const siaKeyError = ref("");
+
+function connectSia() {
+  const key = siaKeyInput.value.trim();
+  siaKeyError.value = "";
+  if (!/^[0-9a-fA-F]{64}$/.test(key)) {
+    siaKeyError.value =
+      "App Key must be exactly 64 hexadecimal characters (32 bytes).";
+    return;
+  }
+  saveSiaAppKey(key);
+  siaAppKey.value = key;
+  siaKeyInput.value = "";
+}
+
+function disconnectSia() {
+  clearSiaAppKey();
+  siaAppKey.value = "";
+  siaKeyInput.value = "";
+  siaKeyError.value = "";
+}
 
 // ── Web2 auth ──────────────────────────────────────────────────────────────
 const { activeSessions, connect, disconnect, disconnectAccount } =
@@ -304,8 +407,19 @@ watch(
       form.value = { ...getSkillsSettings() };
       githubFlow.value = { status: "idle" };
       filterText.value = "";
-      openSections.value = { github: false, microsoft: false };
-      manuallyOpen.value = { github: false, microsoft: false };
+      openSections.value = {
+        github: false,
+        microsoft: false,
+        sia_storage: false,
+      };
+      manuallyOpen.value = {
+        github: false,
+        microsoft: false,
+        sia_storage: false,
+      };
+      siaAppKey.value = getSiaAppKey();
+      siaKeyInput.value = "";
+      siaKeyError.value = "";
       refreshMicrosoftLabels();
     }
   },
@@ -541,6 +655,11 @@ section {
   color: #60a5fa;
   border: 1px solid rgba(0, 120, 212, 0.25);
 }
+.acct-sia {
+  background: rgba(34, 197, 94, 0.1);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.22);
+}
 .btn-connect {
   background: var(--accent);
   color: var(--bg);
@@ -609,5 +728,19 @@ section {
   border-color: rgba(248, 81, 73, 0.35);
   color: #f85149;
   font-size: 0.75rem;
+}
+.sia-connect-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sia-key-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.sia-error {
+  font-size: 0.72rem;
+  color: #f85149;
+  padding: 4px 0;
 }
 </style>

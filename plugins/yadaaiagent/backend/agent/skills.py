@@ -323,6 +323,75 @@ SKILL_REGISTRY = {
             },
         },
     },
+    "sia_storage": {
+        "description": (
+            "Sia decentralized file storage — upload, download, list, share, and delete "
+            "files on the Sia encrypted storage network (https://sia.storage). "
+            "All data is encrypted client-side before upload. Requires a Sia App Key."
+        ),
+        "requires": "sia_app_key",
+        "actions": {
+            "upload": {
+                "description": (
+                    "Store, save, or upload content to the user's Sia decentralized storage. "
+                    "Use this when the user says: 'store this', 'save this', 'upload this', "
+                    "'put this in my storage', 'keep this', or similar. "
+                    "Pass the content as a string. Returns a permanent object_id."
+                ),
+                "params": {
+                    "content": "string (required) — the text content to upload",
+                    "filename": "string (optional) — a human-readable filename to attach as metadata",
+                    "mime_type": "string (optional) — MIME type to attach as metadata, e.g. 'text/plain'",
+                },
+                "returns": "{ok, object_id, size} — object_id is the permanent content-addressed ID",
+            },
+            "download": {
+                "description": (
+                    "Retrieve or download a file from the user's Sia storage by its object_id. "
+                    "Use this when the user says: 'get this file', 'download', 'retrieve', 'read file'. "
+                    "Requires the object_id returned from a previous upload."
+                ),
+                "params": {
+                    "object_id": "string (required) — the 64-character hex object ID returned from upload",
+                },
+                "returns": (
+                    "{ok, object_id, size, metadata, content} — content is the UTF-8 text; "
+                    "binary files include content_b64 (base64-encoded) instead"
+                ),
+            },
+            "list_objects": {
+                "description": (
+                    "List all files stored in the user's Sia account. "
+                    "Use this when the user says: 'list my files', 'show my storage', "
+                    "'what have I stored', 'what files do I have'."
+                ),
+                "params": {},
+                "returns": "{ok, objects: [{object_id, metadata, created_at}], count}",
+            },
+            "delete": {
+                "description": (
+                    "Delete a file from the user's Sia storage by its object_id. "
+                    "Use this when the user says: 'delete this file', 'remove', 'erase'."
+                ),
+                "side_effects": True,
+                "params": {
+                    "object_id": "string (required) — the 64-character hex object ID to delete",
+                },
+                "returns": "{ok, object_id}",
+            },
+            "share": {
+                "description": (
+                    "Generate a time-limited public share URL for a file in the user's Sia storage. "
+                    "Use this when the user says: 'share this file', 'get a link', 'make it public'."
+                ),
+                "params": {
+                    "object_id": "string (required) — the 64-character hex object ID to share",
+                    "expires_hours": "integer (optional, default 24) — how many hours until the share URL expires",
+                },
+                "returns": "{ok, object_id, share_url, expires_at}",
+            },
+        },
+    },
 }
 
 
@@ -335,6 +404,116 @@ def build_available_skills(context: dict) -> dict:
         if req is None or context.get(req):
             available[skill_name] = skill_def
     return available
+
+
+# ── Skill routing ─────────────────────────────────────────────────────────── #
+# Maps skill names to keyword sets that strongly indicate that skill should
+# be the PRIMARY tool for the goal.  Used by route_skills() to present a
+# focused tool subset to the LLM rather than the full list.
+
+_SKILL_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "sia_storage": (
+        "upload",
+        "store",
+        "save",
+        "download",
+        "retrieve",
+        "list files",
+        "list objects",
+        "my files",
+        "my storage",
+        "delete file",
+        "share file",
+        "object id",
+        "sia",
+    ),
+    "github": (
+        "github",
+        "repo",
+        "repository",
+        "issue",
+        "pull request",
+        "pr",
+        "commit",
+        "branch",
+        "notification",
+    ),
+    "microsoft": (
+        "email",
+        "outlook",
+        "calendar",
+        "todo",
+        "task",
+        "meeting",
+        "microsoft",
+        "office",
+        "inbox",
+        "send mail",
+    ),
+    "wallet": (
+        "balance",
+        "yadacoin",
+        "yda",
+        "transaction",
+        "wallet",
+    ),
+    "key_rotation": (
+        "rotate",
+        "key rotation",
+        "kel",
+        "spent",
+    ),
+}
+
+# Always include these utility skills alongside any primary skill
+_UTILITY_SKILLS = {"generate_text", "web_fetch"}
+
+# Skills that provide web search — only include when no primary skill matched
+_SEARCH_SKILLS = {"brave_search", "brave_answers", "web_crawl", "email_web_scraper"}
+
+
+def route_skills(goal: str, available_skills: dict) -> dict:
+    """Return a focused subset of available_skills based on the goal text.
+
+    Industry standard: present the LLM with the smallest set of tools that
+    can plausibly satisfy the goal.  Fewer tools → fewer wrong choices.
+
+    Rules (in priority order):
+    1. If the goal strongly matches a primary skill's keywords → include only
+       that skill + utility skills.
+    2. If multiple primaries match → include all matched primaries + utilities.
+    3. If no primary matches → return all available skills (fall through to
+       the LLM's own judgment, same as before this function existed).
+    """
+    goal_lower = goal.lower()
+
+    matched_primaries = [
+        skill
+        for skill, keywords in _SKILL_KEYWORDS.items()
+        if skill in available_skills and any(kw in goal_lower for kw in keywords)
+    ]
+
+    if not matched_primaries:
+        # No keyword signal — give the LLM everything
+        return available_skills
+
+    focused: dict = {}
+    for skill in matched_primaries:
+        focused[skill] = available_skills[skill]
+    for skill in _UTILITY_SKILLS:
+        if skill in available_skills:
+            focused[skill] = available_skills[skill]
+
+    # Only add search skills if no primary skill was found that can do the job
+    # directly (e.g. brave_search is still useful alongside github for research).
+    # If the only match is a direct-action skill like sia_storage, omit search.
+    _direct_action_skills = set(matched_primaries) - _SEARCH_SKILLS
+    if not _direct_action_skills:
+        for skill in _SEARCH_SKILLS:
+            if skill in available_skills:
+                focused[skill] = available_skills[skill]
+
+    return focused
 
 
 def build_tool_schemas(available_skills: dict) -> list:
@@ -1984,5 +2163,60 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                 }
             except Exception as exc:
                 return {"ok": False, "error": str(exc)[:300]}
+
+    # ── sia_storage ───────────────────────────────────────────────────────── #
+    if skill == "sia_storage":
+        from ..sia.api import (
+            sia_delete,
+            sia_download,
+            sia_list_objects,
+            sia_share,
+            sia_upload,
+        )
+
+        app_key_hex = context.get("sia_app_key", "")
+        if not app_key_hex:
+            return {"ok": False, "error": "Sia App Key not configured (sia_app_key)"}
+
+        try:
+            if action == "upload":
+                content_str = str(params.get("content") or "")
+                if not content_str:
+                    return {"ok": False, "error": "content parameter is required"}
+                filename = params.get("filename") or None
+                mime_type = params.get("mime_type") or None
+                return await sia_upload(
+                    app_key_hex,
+                    content_str.encode("utf-8"),
+                    filename=filename,
+                    mime_type=mime_type,
+                )
+
+            if action == "download":
+                object_id = str(params.get("object_id") or "").strip()
+                if not object_id:
+                    return {"ok": False, "error": "object_id parameter is required"}
+                return await sia_download(app_key_hex, object_id)
+
+            if action == "list_objects":
+                return await sia_list_objects(app_key_hex)
+
+            if action == "delete":
+                object_id = str(params.get("object_id") or "").strip()
+                if not object_id:
+                    return {"ok": False, "error": "object_id parameter is required"}
+                return await sia_delete(app_key_hex, object_id)
+
+            if action == "share":
+                object_id = str(params.get("object_id") or "").strip()
+                if not object_id:
+                    return {"ok": False, "error": "object_id parameter is required"}
+                expires_hours = int(params.get("expires_hours") or 24)
+                return await sia_share(app_key_hex, object_id, expires_hours)
+
+        except ImportError as exc:
+            return {"ok": False, "error": str(exc)}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)[:400]}
 
     return {"ok": False, "error": f"Unknown skill/action: {skill}/{action}"}

@@ -24,6 +24,7 @@ export const LS_BOOKING_CREDENTIALS = "yadacoin_booking_credentials";
 export const LS_BRAVE_API_KEY = "yadacoin_brave_api_key";
 export const LS_BRAVE_ANSWERS_API_KEY = "yadacoin_brave_answers_api_key";
 export const LS_SKILLS = "yadacoin_skills";
+export const LS_SIA_APP_KEY = "yadacoin_sia_app_key";
 
 export function getBraveApiKey() {
   return localStorage.getItem(LS_BRAVE_API_KEY) || "";
@@ -39,6 +40,20 @@ export function getBraveAnswersApiKey() {
 
 export function saveBraveAnswersApiKey(key) {
   localStorage.setItem(LS_BRAVE_ANSWERS_API_KEY, key.trim());
+}
+
+// ── Sia App Key ───────────────────────────────────────────────────────────────
+
+export function getSiaAppKey() {
+  return localStorage.getItem(LS_SIA_APP_KEY) || "";
+}
+
+export function saveSiaAppKey(key) {
+  localStorage.setItem(LS_SIA_APP_KEY, key.trim());
+}
+
+export function clearSiaAppKey() {
+  localStorage.removeItem(LS_SIA_APP_KEY);
 }
 
 // ── Skills (OAuth client IDs provided by the user) ────────────────────────────

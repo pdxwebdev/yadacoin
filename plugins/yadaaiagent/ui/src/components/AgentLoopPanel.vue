@@ -113,13 +113,14 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import {
   getLlmSettings,
   getBraveApiKey,
   getBraveAnswersApiKey,
   getNodeUrl,
   getWalletMode,
+  getSiaAppKey,
   LS_PRIV,
   LS_HW_PUB,
 } from "../composables/useStorage.js";
@@ -152,6 +153,17 @@ const conversationHistory = ref(
 );
 
 // ── Available skills (derived from configured services) ───────────────────────
+// siaConnected is a reactive ref so the pill updates when the user connects
+// Sia in the Skills drawer without requiring a page reload.
+const siaConnected = ref(!!getSiaAppKey());
+
+function _refreshSiaConnected() {
+  siaConnected.value = !!getSiaAppKey();
+}
+
+onMounted(() => window.addEventListener("focus", _refreshSiaConnected));
+onUnmounted(() => window.removeEventListener("focus", _refreshSiaConnected));
+
 const SKILL_META = {
   web_fetch: {
     id: "web_fetch",
@@ -183,6 +195,12 @@ const SKILL_META = {
     label: "Wallet",
     desc: "YadaCoin wallet balance & transactions",
   },
+  sia_storage: {
+    id: "sia_storage",
+    icon: "&#128193;",
+    label: "Sia Storage",
+    desc: "Encrypted decentralized file storage",
+  },
 };
 
 const availableSkills = computed(() => {
@@ -192,6 +210,7 @@ const availableSkills = computed(() => {
   if ((web2Sessions.value?.microsoft || []).length)
     out.push(SKILL_META.microsoft);
   out.push(SKILL_META.wallet);
+  if (siaConnected.value) out.push(SKILL_META.sia_storage);
   return out;
 });
 
@@ -301,6 +320,7 @@ async function runLoop() {
       ? web2Sessions.value
       : undefined,
     public_key: getPublicKey() || undefined,
+    sia_app_key: getSiaAppKey() || undefined,
   };
 
   try {

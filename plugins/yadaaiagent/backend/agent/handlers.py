@@ -1972,6 +1972,147 @@ class AgentChatHandler(BaseHandler):
         else:
             raise ValueError(f"unknown provider '{provider}'")
 
+    @staticmethod
+    def _build_loop_system_prompt(
+        available_skills: dict,
+        key_rotation_triggers: set,
+    ) -> str:
+        """Build the system prompt for the ReAct agent loop.
+
+        Sections are assembled as a list and joined with double newlines so
+        each logical rule is independently readable and easy to edit.
+        """
+        sections = []
+
+        # ── Connected-tool preamble (dynamic per session) ──────────────── #
+        direct_tool_rules = []
+        if "sia_storage" in available_skills:
+            direct_tool_rules.append(
+                "SIA STORAGE — you have a LIVE connection to the user's Sia "
+                "decentralized storage account.\n"
+                "  • upload/store/save content  → sia_storage__upload (pass content as a string)\n"
+                "  • download/retrieve/read     → sia_storage__download (pass object_id)\n"
+                "  • list/show files            → sia_storage__list_objects\n"
+                "  • share a file               → sia_storage__share (pass object_id)\n"
+                "  • delete a file              → sia_storage__delete (pass object_id)\n"
+                "NEVER use web_fetch or brave_search for Sia storage operations. "
+                "NEVER claim you cannot perform storage actions — the tools are connected and ready."
+            )
+
+        if direct_tool_rules:
+            sections.append(
+                "CRITICAL — DIRECTLY CONNECTED TOOLS "
+                "(call these directly; no web lookup needed):\n"
+                + "\n".join(f"• {r}" for r in direct_tool_rules)
+            )
+
+        # ── Role ──────────────────────────────────────────────────────── #
+        sections.append(
+            "You are a helpful assistant with access to tools. "
+            "Use the tools to accomplish the user's goal."
+        )
+
+        # ── Mandatory tool-first rule ──────────────────────────────────── #
+        sections.append(
+            "MANDATORY: For ANY question about facts, contact details, current "
+            "information, web content, emails, phone numbers, addresses, or "
+            "anything you cannot answer with absolute certainty from the current "
+            "conversation alone — you MUST call a tool first. "
+            "NEVER answer factual questions from memory or training data."
+        )
+
+        # ── Contact information search path ───────────────────────────── #
+        sections.append(
+            "FOR CONTACT INFORMATION (email, phone, address, hours):\n"
+            "• If email_web_scraper is available → call email_web_scraper__find_email "
+            "FIRST. It runs search + crawl and returns one evidence-backed email.\n"
+            "• If unavailable or returns nothing → chain: "
+            "brave_answers → brave_search (fetch_content=true) → web_crawl.\n"
+            "• Prefer emails from 'emails_found'/'all_emails_found' fields "
+            "(extracted verbatim from page text) over AI-generated summaries."
+        )
+
+        # ── Tool-calling discipline ────────────────────────────────────── #
+        sections.append(
+            "Call tools one at a time. After each result, decide whether to call "
+            "another tool or give a final answer.\n"
+            "• Task is ONLY to report information → write a clear final answer "
+            "once you have enough tool results.\n"
+            "• Task also requires an ACTION (send email, create issue, etc.) → "
+            "call the action tool immediately after gathering info; do NOT write "
+            "a text answer first."
+        )
+
+        # ── Anti-loop / stop conditions ────────────────────────────────── #
+        sections.append(
+            "CRITICAL — DO NOT RE-SEARCH: Once email_web_scraper or brave_search "
+            "has returned an email (even if recommended_email is null), that IS "
+            "the answer. Do NOT call those tools again for the same entity. "
+            "The recommended_email / high-confidence email field is definitive. "
+            "Proceed immediately to the next step."
+        )
+        sections.append(
+            "CRITICAL — TOOL UNAVAILABLE: If a required action tool is not in "
+            "your tool list, do NOT loop. Report what you found and clearly state "
+            "that the required tool is unavailable."
+        )
+
+        # ── Anti-hallucination: contact info ──────────────────────────── #
+        sections.append(
+            "CRITICAL — NEVER HALLUCINATE CONTACT INFO: Email addresses, phone "
+            "numbers, and URLs MUST come ONLY from tool results or conversation "
+            "history. If a detail was NOT found in a tool result, say 'not found'. "
+            "Do NOT guess or construct a plausible-looking address."
+        )
+        sections.append(
+            "CRITICAL — EMAILS FROM TOOL RESULTS ONLY: The 'all_emails_found' and "
+            "per-result 'emails_found' fields are programmatically extracted verbatim "
+            "from page text. You MUST quote one of those exact strings. "
+            "NEVER invent, modify, or guess an email address not in those lists. "
+            "If the lists are non-empty, you MUST use one of them as the answer."
+        )
+        sections.append(
+            "CRITICAL — MULTIPLE EMAILS: Prefer the email whose surrounding page "
+            "context matches the specific department/function in the user's query. "
+            "Generic inboxes (info@, contact@, caomailbox@) should only be used "
+            "when no department-specific email was found. "
+            "A department-page email (e.g. kernpublicworks.com for code compliance) "
+            "outranks a generic county records mailbox (e.g. kerncounty.com/records)."
+        )
+
+        # ── End-to-end execution ──────────────────────────────────────── #
+        sections.append(
+            "CRITICAL — FOLLOW INSTRUCTIONS END-TO-END: When the request includes "
+            "BOTH finding information AND performing an action, do BOTH. "
+            "Do NOT stop halfway and ask for confirmation. "
+            "Side-effecting actions have an automatic confirmation dialog — "
+            "you do NOT need to ask permission. Simply proceed with the full task."
+        )
+        sections.append(
+            "CRITICAL — DO NOT EDITORIALIZE: Do NOT add unsolicited commentary "
+            "about whether the request is appropriate, likely to succeed, or "
+            "whether the recipient can fulfil it. "
+            "Draft and execute what the user asked for. "
+            "The user is responsible for the content of their own request. "
+            "Do NOT end your final reply with a question."
+        )
+
+        prompt = "\n\n".join(sections)
+
+        # ── Key rotation policy (conditional) ────────────────────────── #
+        if key_rotation_triggers:
+            prompt += (
+                "\n\nKEY ROTATION POLICY: Before calling any of these tools — "
+                + ", ".join(sorted(key_rotation_triggers))
+                + " — you MUST first call key_rotation__check_status. "
+                "If it returns {spent: true} the current key is already used; "
+                "call key_rotation__rotate before proceeding. "
+                "If key_rotation__rotate fails, do NOT proceed with the "
+                "triggering tool — report the error to the user instead."
+            )
+
+        return prompt
+
     async def _run_agent_loop(
         self,
         body: dict,
@@ -2006,7 +2147,12 @@ class AgentChatHandler(BaseHandler):
         ``confirmed_plan: {resume_messages: [...], pending_tool_calls: [...]}``
         to resume execution.
         """
-        from .skills import build_available_skills, build_tool_schemas, execute_skill
+        from .skills import (
+            build_available_skills,
+            build_tool_schemas,
+            execute_skill,
+            route_skills,
+        )
 
         # ── SSE helpers ───────────────────────────────────────────────────── #
         self.set_header("Content-Type", "text/event-stream")
@@ -2106,6 +2252,7 @@ class AgentChatHandler(BaseHandler):
         key_rotation_second_factor = (
             body.get("key_rotation_second_factor") or ""
         ).strip()
+        sia_app_key = (body.get("sia_app_key") or "").strip()
         skill_context = {
             "config": self.config,
             "github_access_token": github_access_token,
@@ -2114,11 +2261,15 @@ class AgentChatHandler(BaseHandler):
             "brave_answers_api_key": brave_answers_api_key,
             "public_key": public_key,
             "key_rotation_second_factor": key_rotation_second_factor,
+            "sia_app_key": sia_app_key,
             "llm_call": lambda msgs, max_tokens=800: self._llm_call(
                 provider, model, api_key, ollama_host, base_url, msgs
             ),
         }
         available_skills = build_available_skills(skill_context)
+        # Route to the most relevant skill subset — reduces wrong tool selection
+        # (e.g. prevents brave_search firing for a Sia upload request).
+        routed_skills = route_skills(goal, available_skills)
 
         # ── Warn about expired sessions ───────────────────────────────────── #
         _web2 = body.get("web2_sessions") or {}
@@ -2157,7 +2308,7 @@ class AgentChatHandler(BaseHandler):
             )
             return self.finish()
 
-        tools = build_tool_schemas(available_skills)
+        tools = build_tool_schemas(routed_skills)
 
         # ── Key-rotation trigger set ───────────────────────────────────────── #
         # Collect tools that should be gated behind a key-rotation check.
@@ -2166,7 +2317,7 @@ class AgentChatHandler(BaseHandler):
         #   2. body["key_rotation_triggers"] list of "skill__action" strings
         key_rotation_triggers: set = set()
         if "key_rotation" in available_skills:
-            for _s_name, _s_def in available_skills.items():
+            for _s_name, _s_def in routed_skills.items():
                 for _a_name, _a_def in _s_def["actions"].items():
                     if _a_def.get("triggers_key_rotation"):
                         key_rotation_triggers.add(f"{_s_name}__{_a_name}")
@@ -2174,82 +2325,9 @@ class AgentChatHandler(BaseHandler):
                 key_rotation_triggers.add(str(_t))
 
         # ── System prompt ─────────────────────────────────────────────────── #
-        system_prompt = (
-            "You are a helpful assistant with access to tools. "
-            "Use the tools to accomplish the user's goal. "
-            "MANDATORY: For ANY question about facts, contact details, current information, "
-            "web content, emails, phone numbers, addresses, or anything you cannot answer "
-            "with absolute certainty from the current conversation alone — you MUST call "
-            "a tool first. NEVER answer factual questions from memory or training data. "
-            "FOR CONTACT INFORMATION QUERIES (email, phone, address, hours): if the "
-            "email_web_scraper tool is available, call email_web_scraper/find_email FIRST. "
-            "This is a specialized email-scraping workflow that performs search + crawl "
-            "verification and returns one recommended email with evidence. "
-            "If email_web_scraper is unavailable or returns no email, then use the manual chain "
-            "(brave_answers -> brave_search with fetch_content=true -> web_crawl). "
-            "When comparing results, prefer emails from 'emails_found'/'all_emails_found' fields "
-            "(extracted directly from page text) over brave_answers AI-generated summaries. "
-            "Call tools one at a time; after seeing each result decide whether "
-            "to call another tool or provide a final answer. "
-            "When you have enough information FROM TOOL RESULTS and the task is "
-            "ONLY to report information, write a clear final answer — do NOT call another tool. "
-            "However, if the task also requires performing an ACTION (e.g. sending an email, "
-            "creating an issue), do NOT write a text answer — call the action tool immediately. "
-            "CRITICAL — DO NOT RE-SEARCH: Once email_web_scraper or brave_search has returned "
-            "an email address (even if 'recommended_email' is null in the evidence), that IS "
-            "the answer. Do NOT call email_web_scraper or brave_search again for the same entity. "
-            "The top-level 'email' field with confidence=high from email_web_scraper is definitive. "
-            "Proceed immediately to the next step in the task. "
-            "CRITICAL — TOOL UNAVAILABLE: If the action tool needed to complete the task is "
-            "not in your tool list (e.g. microsoft__send_email is not available), do NOT loop. "
-            "Report what information you found and clearly state that the required action "
-            "tool is not available. "
-            "CRITICAL — NEVER hallucinate or invent contact information: "
-            "Email addresses, phone numbers, and URLs MUST come ONLY from tool "
-            "results or conversation history. If a contact detail was NOT found "
-            "in a tool result, say 'not found' — do NOT guess or construct a "
-            "plausible-looking address. "
-            "CRITICAL — when reporting emails: the tool results include "
-            "'all_emails_found' and per-result 'emails_found' lists — these are "
-            "programmatically extracted verbatim from the pages. You MUST quote "
-            "one of those exact strings. NEVER invent, modify, or guess an email "
-            "address that does not appear in those lists. If those lists are "
-            "non-empty, you MUST use one of them as the answer. "
-            "CRITICAL — when a tool result contains a 'recommended_email' field: "
-            "that email was programmatically selected as the best match for the "
-            "query topic by scoring each source URL against the query keywords. "
-            "You MUST use that email as your answer unless a subsequent web_crawl "
-            "result explicitly shows a different email on the relevant department page. "
-            "CRITICAL — when multiple emails are found: prefer the email whose "
-            "surrounding page context specifically matches the department/function "
-            "in the user's query. A general public records inbox (e.g. caomailbox@, "
-            "info@, contact@) should ONLY be used when no department-specific email "
-            "was found. If a result from the official department page (e.g. "
-            "kernpublicworks.com for code compliance, not kerncounty.com/public-records) "
-            "contains an email in its 'emails_found', that department-page email is the "
-            "correct answer — not a generic county records mailbox. "
-            "CRITICAL — FOLLOW INSTRUCTIONS END-TO-END: When the user's request "
-            "includes BOTH finding information AND performing an action (e.g. look up "
-            "an email then send an email to that address), you MUST do both. Do NOT "
-            "stop halfway and ask if you should continue. Side-effecting actions "
-            "(like sending email) have an automatic confirmation dialog — you do NOT "
-            "need to ask for permission. Simply proceed with the full task. "
-            "CRITICAL — DO NOT EDITORIALIZE: Do NOT add unsolicited commentary about "
-            "whether the request is appropriate, likely to succeed, or whether the "
-            "recipient can fulfill it. Draft and send what the user asked for. The "
-            "user is responsible for the content of their own request. "
-            "Do NOT end your final reply with a question."
+        system_prompt = self._build_loop_system_prompt(
+            routed_skills, key_rotation_triggers
         )
-        if key_rotation_triggers:
-            system_prompt += (
-                "\n\nKEY ROTATION POLICY: Before calling any of these tools — "
-                + ", ".join(sorted(key_rotation_triggers))
-                + " — you MUST first call key_rotation__check_status. "
-                "If it returns {spent: true} the current key is already used; "
-                "call key_rotation__rotate before proceeding. "
-                "If key_rotation__rotate fails, do NOT proceed with the "
-                "triggering tool — report the error to the user instead."
-            )
 
         # ── Build initial messages (or resume from confirmation) ──────────── #
         confirmed_plan = body.get("confirmed_plan")
@@ -2293,11 +2371,38 @@ class AgentChatHandler(BaseHandler):
         # ── Auto-run brave_answers before the ReAct loop ──────────────────── #
         # Ensures brave_answers always appears as a distinct visible step in the
         # UI and its result is available to the LLM before it calls brave_search.
+        # Skip when the goal is clearly a local/tool action that doesn't benefit
+        # from a web search (Sia storage, wallet operations, key rotation, etc.).
+        _SKIP_BA_PREFLIGHT_SKILLS = {"sia_storage", "wallet", "key_rotation"}
+        _skip_ba_preflight = bool(
+            _SKIP_BA_PREFLIGHT_SKILLS & set(routed_skills.keys())
+            and any(
+                kw in goal.lower()
+                for kw in (
+                    "upload",
+                    "download",
+                    "store",
+                    "save",
+                    "list files",
+                    "list objects",
+                    "delete file",
+                    "delete object",
+                    "share file",
+                    "share object",
+                    "sia",
+                    "wallet",
+                    "balance",
+                    "rotate",
+                    "key rotation",
+                )
+            )
+        )
         if (
             resume_messages is None
             and not browser_llm
-            and "brave_answers" in available_skills
+            and "brave_answers" in routed_skills
             and brave_answers_api_key
+            and not _skip_ba_preflight
         ):
             _ba_pre_args = {"query": goal}
             _ba_pre_id = "auto_brave_answers_0"

@@ -252,6 +252,7 @@ import {
   isHardwareWallet,
   getHardwareActive,
   setHardwareActive,
+  getSiaAppKey,
 } from "../composables/useStorage.js";
 import { postCredentialReceipt } from "../composables/useCredentialReceipts.js";
 import { useWeb2Auth } from "../composables/useWeb2Auth.js";
@@ -954,7 +955,7 @@ function _buildLoopHtml(
     h += "</ol></div>";
   }
   if (loopFinalReply) {
-    h += `<div class="loop-final"><div class="loop-final-title">✓ Result</div><div class="loop-final-body">${escHtml(loopFinalReply)}</div></div>`;
+    h += `<div class="loop-final"><div class="loop-final-title">✓ Result</div><div class="loop-final-body">${marked.parse(loopFinalReply)}</div></div>`;
   }
   if (loopError) {
     h += `<div class="loop-error">⚠ ${escHtml(loopError)}</div>`;
@@ -1036,6 +1037,7 @@ async function runLoop() {
       : undefined,
     token_enc_key_ms: loopTokenEncKeyMs || undefined,
     public_key: _loopGetPublicKey() || undefined,
+    sia_app_key: getSiaAppKey() || undefined,
   };
 
   /**
