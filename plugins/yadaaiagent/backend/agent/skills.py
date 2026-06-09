@@ -381,14 +381,26 @@ SKILL_REGISTRY = {
             },
             "delete": {
                 "description": (
-                    "Delete a file from the user's Sia storage by its object_id. "
-                    "Use this when the user says: 'delete this file', 'remove', 'erase'."
+                    "Delete a single file from the user's Sia storage by its object_id. "
+                    "Use this when the user says: 'delete this file', 'remove', 'erase'. "
+                    "To delete ALL files at once use delete_all instead."
                 ),
                 "side_effects": True,
                 "params": {
                     "object_id": "string (required) — the 64-character hex object ID to delete",
                 },
                 "returns": "{ok, object_id}",
+            },
+            "delete_all": {
+                "description": (
+                    "Delete ALL files from the user's Sia storage in one operation. "
+                    "Use this when the user says: 'delete all my files', 'remove everything', "
+                    "'clear my storage', 'wipe all files'. "
+                    "Do NOT use the individual delete action to loop over files when the user wants all deleted."
+                ),
+                "side_effects": True,
+                "params": {},
+                "returns": "{ok, deleted_count, errors}",
             },
             "share": {
                 "description": (
@@ -440,8 +452,18 @@ _SKILL_KEYWORDS: dict[str, tuple[str, ...]] = {
         "my files",
         "my storage",
         "delete file",
+        "delete all",
+        "remove all",
+        "wipe all",
+        "clear my storage",
         "share file",
+        "share link",
+        "share url",
+        "share this",
+        "get a link",
+        "make it public",
         "object id",
+        "object_id",
         "sia",
     ),
     "github": (
@@ -502,7 +524,19 @@ def route_skills(goal: str, available_skills: dict) -> dict:
     3. If no primary matches → return all available skills (fall through to
        the LLM's own judgment, same as before this function existed).
     """
+    import re as _re
+
     goal_lower = goal.lower()
+
+    # A 64-character hex string is always a Sia object ID — route directly to
+    # sia_storage without needing explicit keywords in the goal.
+    _HEX64 = _re.compile(r"\b[0-9a-f]{64}\b")
+    if _HEX64.search(goal_lower) and "sia_storage" in available_skills:
+        focused: dict = {"sia_storage": available_skills["sia_storage"]}
+        for skill in _UTILITY_SKILLS:
+            if skill in available_skills:
+                focused[skill] = available_skills[skill]
+        return focused
 
     matched_primaries = [
         skill
@@ -2198,14 +2232,25 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
 
         try:
             if action == "upload":
+                import base64 as _b64
+
+                content_b64 = params.get("content_b64") or ""
                 content_str = str(params.get("content") or "")
-                if not content_str:
-                    return {"ok": False, "error": "content parameter is required"}
+                if content_b64:
+                    raw_bytes = _b64.b64decode(content_b64)
+                elif content_str:
+                    raw_bytes = content_str.encode("utf-8")
+                else:
+                    return {
+                        "ok": False,
+                        "error": "content or content_b64 parameter is required",
+                    }
+
                 filename = params.get("filename") or None
                 mime_type = params.get("mime_type") or None
                 return await sia_upload(
                     app_key_hex,
-                    content_str.encode("utf-8"),
+                    raw_bytes,
                     filename=filename,
                     mime_type=mime_type,
                 )
@@ -2234,20 +2279,49 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                     return {"ok": False, "error": "object_id parameter is required"}
                 return await sia_delete(app_key_hex, object_id)
 
+            if action == "delete_all":
+                listing = await sia_list_objects(app_key_hex)
+                objects = listing.get("objects") or []
+                deleted = []
+                errors = []
+                for obj in objects:
+                    oid = obj.get("object_id", "")
+                    if not oid:
+                        continue
+                    try:
+                        result = await sia_delete(app_key_hex, oid)
+                        if result.get("ok"):
+                            deleted.append(oid)
+                        else:
+                            errors.append(
+                                {"object_id": oid, "error": result.get("error")}
+                            )
+                    except Exception as exc:
+                        errors.append({"object_id": oid, "error": str(exc)})
+                return {
+                    "ok": True,
+                    "deleted_count": len(deleted),
+                    "errors": errors,
+                }
+
             if action == "share":
                 object_id = str(params.get("object_id") or "").strip()
                 if not object_id:
                     return {"ok": False, "error": "object_id parameter is required"}
                 expires_hours = int(params.get("expires_hours") or 24)
-                from yadacoin.core.config import Config as _Config
+                # Prefer the origin the browser used (passed via request_origin)
+                # so the share link works without VPN / port-forwarding issues.
+                _base_url = context.get("request_origin") or ""
+                if not _base_url:
+                    from yadacoin.core.config import Config as _Config
 
-                _cfg = _Config()
-                _host = getattr(_cfg, "peer_host", None) or "yadacoin.io"
-                _port = getattr(_cfg, "peer_port", None)
-                if _port and int(_port) not in (80, 443):
-                    _base_url = f"https://{_host}:{_port}"
-                else:
-                    _base_url = f"https://{_host}"
+                    _cfg = _Config()
+                    _host = getattr(_cfg, "peer_host", None) or "yadacoin.io"
+                    _port = getattr(_cfg, "peer_port", None)
+                    if _port and int(_port) not in (80, 443):
+                        _base_url = f"https://{_host}:{_port}"
+                    else:
+                        _base_url = f"https://{_host}"
                 return await sia_share(
                     app_key_hex, object_id, expires_hours, base_url=_base_url
                 )

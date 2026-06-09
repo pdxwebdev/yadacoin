@@ -8,7 +8,54 @@
       @replay="handleReplay"
     />
 
-    <div class="input-area">
+    <div
+      class="input-area"
+      :class="{ 'drop-active': dropActive }"
+      @dragover.prevent="dropActive = true"
+      @dragleave.prevent="dropActive = false"
+      @drop.prevent="handleDrop"
+    >
+      <!-- ── Pending file attachments ────────────────────────────────── -->
+      <div v-if="pendingFiles.length" class="file-queue">
+        <div
+          v-for="(f, i) in pendingFiles"
+          :key="i"
+          class="file-chip"
+          :class="{ uploading: f.uploading, error: f.error, done: f.objectId }"
+          :title="f.error || f.name"
+        >
+          <span class="file-chip-icon">{{ fileIcon(f.mime) }}</span>
+          <span class="file-chip-name">{{ f.name }}</span>
+          <template v-if="f.uploading">
+            <span v-if="f.progress < 100" class="file-chip-status"
+              >{{ f.progress }}%</span
+            >
+            <span v-else class="file-chip-status" :title="f.progressLabel"
+              >⏳</span
+            >
+          </template>
+          <span v-else-if="f.error" class="file-chip-status" :title="f.error"
+            >⚠</span
+          >
+          <span v-else-if="f.objectId" class="file-chip-status">✓</span>
+          <div
+            v-if="f.uploading && f.progress > 0 && f.progress < 100"
+            class="file-chip-progress"
+          >
+            <div
+              class="file-chip-progress-bar"
+              :style="{ width: f.progress + '%' }"
+            ></div>
+          </div>
+          <button
+            class="file-chip-remove"
+            @click="removeFile(i)"
+            :disabled="f.uploading"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
       <!-- ── Input row ───────────────────────────────────────────────── -->
       <div class="input-row">
         <button
@@ -41,6 +88,23 @@
           @click="runLoop()"
         >
           ⚡
+        </button>
+        <!-- hidden file input -->
+        <input
+          ref="fileInputEl"
+          type="file"
+          multiple
+          style="display: none"
+          @change="handleFileInputChange"
+        />
+        <button
+          v-if="getSiaAppKey()"
+          class="attach-btn"
+          title="Attach files (or drag & drop)"
+          :disabled="busy"
+          @click="fileInputEl.click()"
+        >
+          📎
         </button>
       </div>
     </div>
@@ -292,6 +356,111 @@ const userInput = ref("");
 const busy = ref(false);
 const inputEl = ref(null);
 const chatWindow = ref(null);
+
+// ── Drag-and-drop / file attach state ────────────────────────────────────────
+const dropActive = ref(false);
+const pendingFiles = ref([]); // [{name, mime, size, objectId, uploading, error}]
+const fileInputEl = ref(null);
+
+function fileIcon(mime) {
+  if (!mime) return "📄";
+  if (mime.startsWith("image/")) return "🖼";
+  if (mime.startsWith("video/")) return "🎬";
+  if (mime.startsWith("audio/")) return "🎵";
+  if (mime.includes("pdf")) return "📕";
+  return "📄";
+}
+
+function removeFile(i) {
+  pendingFiles.value.splice(i, 1);
+}
+
+function uploadFile(fileObj, rawFile) {
+  const appKey = getSiaAppKey();
+  if (!appKey) {
+    fileObj.error = "Sia App Key not configured";
+    return Promise.resolve();
+  }
+  fileObj.uploading = true;
+  fileObj.error = null;
+  fileObj.progress = 0; // 0-100 HTTP transfer phase
+  fileObj.progressLabel = ""; // status text
+
+  return new Promise((resolve) => {
+    const fd = new FormData();
+    fd.append("file", rawFile, rawFile.name);
+    fd.append("app_key_hex", appKey);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", getNodeUrl() + "/ai-agent-auth/sia/upload");
+
+    xhr.upload.onprogress = (evt) => {
+      if (evt.lengthComputable) {
+        fileObj.progress = Math.round((evt.loaded / evt.total) * 100);
+        if (fileObj.progress >= 100) {
+          fileObj.progressLabel = "Storing on Sia…";
+        }
+      }
+    };
+
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (data.ok) {
+          fileObj.objectId = data.object_id;
+          fileObj.size = data.size;
+        } else {
+          fileObj.error = data.error || "Upload failed";
+        }
+      } catch {
+        fileObj.error = "Invalid server response";
+      }
+      fileObj.uploading = false;
+      fileObj.progress = 0;
+      fileObj.progressLabel = "";
+      resolve();
+    };
+
+    xhr.onerror = () => {
+      fileObj.error = "Network error";
+      fileObj.uploading = false;
+      fileObj.progress = 0;
+      fileObj.progressLabel = "";
+      resolve();
+    };
+
+    xhr.send(fd);
+  });
+}
+
+function queueFiles(files) {
+  if (!getSiaAppKey()) return; // silently ignore if no key
+  for (const f of files) {
+    const entry = {
+      name: f.name,
+      mime: f.type || "application/octet-stream",
+      size: f.size,
+      rawFile: f, // kept for upload-on-send; not serialised
+      objectId: null,
+      uploading: false,
+      error: null,
+      progress: 0,
+      progressLabel: "",
+    };
+    pendingFiles.value.push(entry);
+    // Upload happens in runLoop() when the user hits Send
+  }
+}
+
+function handleDrop(evt) {
+  dropActive.value = false;
+  queueFiles(Array.from(evt.dataTransfer.files));
+}
+
+function handleFileInputChange(evt) {
+  queueFiles(Array.from(evt.target.files));
+  evt.target.value = "";
+}
 
 // ── Loop conversation history (persisted across page refreshes) ───────────────
 const _LOOP_HISTORY_KEY = "agent_loop_conv_history";
@@ -965,19 +1134,22 @@ function _buildLoopHtml(
 }
 
 async function runLoop() {
-  const goal = userInput.value.trim();
+  let goal = userInput.value.trim();
   if (!goal || busy.value || !sessionReady.value) return;
+
+  // Disable input immediately
+  busy.value = true;
+
+  // Capture display text before clearing input
+  const displayGoal = goal;
   userInput.value = "";
   if (inputEl.value) inputEl.value.style.height = "auto";
-  busy.value = true;
-  pushUser(goal);
 
+  // Push the user bubble right away
+  pushUser(displayGoal);
+
+  // Push the agent bubble immediately so the user sees activity
   const msgIdx = messages.value.length;
-  messages.value.push({
-    role: "agent",
-    html: _buildLoopHtml(null, {}, new Set(), "", "", "Starting…", []),
-  });
-
   let loopPlan = null;
   const loopStepResults = {};
   const loopActiveSteps = new Set();
@@ -1001,10 +1173,52 @@ async function runLoop() {
           loopWarnings,
           loopStreamingText,
         ),
-        // Preserve confirmPending across html rebuilds
         confirmPending: messages.value[msgIdx]?.confirmPending ?? null,
       };
     }
+  }
+
+  messages.value.push({
+    role: "agent",
+    html: _buildLoopHtml(null, {}, new Set(), "", "", loopStatus, []),
+  });
+
+  // Upload any queued files, showing progress in the agent bubble
+  const toUpload = pendingFiles.value.filter((f) => !f.objectId && !f.error);
+  if (toUpload.length) {
+    loopStatus = "Uploading files…";
+    updateLoopMsg();
+
+    // Watch file progress reactively and update the agent bubble
+    const progressInterval = setInterval(() => {
+      const uploading = pendingFiles.value.filter((f) => f.uploading);
+      if (uploading.length) {
+        const avg = Math.round(
+          uploading.reduce((s, f) => s + f.progress, 0) / uploading.length,
+        );
+        const storing = uploading.some((f) => f.progress >= 100);
+        loopStatus = storing
+          ? `Storing on Sia… (${uploading.length} file${uploading.length > 1 ? "s" : ""})`
+          : `Uploading ${uploading.length} file${uploading.length > 1 ? "s" : ""}… ${avg}%`;
+        updateLoopMsg();
+      }
+    }, 250);
+
+    await Promise.allSettled(toUpload.map((f) => uploadFile(f, f.rawFile)));
+    clearInterval(progressInterval);
+    loopStatus = "Starting…";
+    updateLoopMsg();
+  }
+
+  const uploaded = pendingFiles.value.filter((f) => f.objectId);
+  let siaUploadedFiles = null;
+  if (uploaded.length) {
+    siaUploadedFiles = uploaded.map((f) => ({
+      name: f.name,
+      mime: f.mime,
+      object_id: f.objectId,
+    }));
+    pendingFiles.value = [];
   }
 
   const llmCfg = getLlmSettings();
@@ -1022,6 +1236,7 @@ async function runLoop() {
   const baseBody = {
     mode: "loop",
     goal,
+    sia_uploaded_files: siaUploadedFiles || undefined,
     messages: loopHistory.value.length ? loopHistory.value : undefined,
     llm: {
       provider: llmCfg.provider,
@@ -3409,6 +3624,104 @@ defineExpose({
   border-top: 1px solid var(--border);
   background: var(--surface);
   flex-shrink: 0;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.input-area.drop-active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border-top-color: var(--accent);
+}
+/* ── File queue ── */
+.file-queue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 2px;
+}
+.file-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 8px 3px 6px;
+  font-size: 0.78rem;
+  max-width: 200px;
+}
+.file-chip.uploading {
+  opacity: 0.6;
+}
+.file-chip.error {
+  border-color: #e55;
+}
+.file-chip.done {
+  border-color: var(--accent);
+}
+.file-chip-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--border);
+  border-radius: 0 0 20px 20px;
+  overflow: hidden;
+}
+.file-chip-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+.file-chip-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.file-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.file-chip-status {
+  flex-shrink: 0;
+}
+.file-chip-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  padding: 0 0 0 2px;
+  font-size: 0.7rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.file-chip-remove:hover {
+  color: var(--text);
+}
+/* ── Attach button ── */
+.attach-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.attach-btn:hover:not(:disabled) {
+  background: var(--bg);
+}
+.attach-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 .input-row {
   display: flex;

@@ -561,6 +561,8 @@ defineExpose({ chatEl, escHtml });
   display: flex;
   flex-direction: column;
   gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
 }
 .cg-step {
   font-size: 0.82rem;

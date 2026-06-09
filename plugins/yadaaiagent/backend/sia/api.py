@@ -100,8 +100,27 @@ async def sia_upload(
 
     Returns
     -------
-    dict with keys: ok, object_id, size
+    dict with keys: ok, object_id, size, duplicate (True if already existed)
     """
+    import hashlib as _hashlib
+
+    content_sha256 = _hashlib.sha256(content).hexdigest()
+
+    # ── Duplicate check: scan existing objects for matching sha256 ────────────
+    try:
+        existing = await sia_list_objects(app_key_hex)
+        for item in existing.get("objects", []):
+            item_meta = item.get("metadata") or {}
+            if item_meta.get("sha256") == content_sha256:
+                return {
+                    "ok": True,
+                    "object_id": item["object_id"],
+                    "size": len(content),
+                    "duplicate": True,
+                }
+    except Exception:
+        pass  # if listing fails, proceed with upload
+
     sdk = await _get_sdk(app_key_hex)
     try:
         from sia_storage import PinnedObject, UploadOptions  # type: ignore[import]
@@ -110,20 +129,20 @@ async def sia_upload(
 
     obj = await sdk.upload(PinnedObject(), BytesIO(content), UploadOptions())
 
-    # Attach optional metadata (filename, mime_type) before pinning
-    if filename or mime_type:
-        meta: dict = {}
-        if filename:
-            meta["filename"] = filename
-        if mime_type:
-            meta["mime_type"] = mime_type
-        obj.update_metadata(json.dumps(meta).encode())
+    # Attach metadata including sha256 for future duplicate detection
+    meta: dict = {"sha256": content_sha256}
+    if filename:
+        meta["filename"] = filename
+    if mime_type:
+        meta["mime_type"] = mime_type
+    obj.update_metadata(json.dumps(meta).encode())
 
     await sdk.pin_object(obj)
     return {
         "ok": True,
         "object_id": str(obj.id()),
         "size": obj.size(),
+        "duplicate": False,
     }
 
 

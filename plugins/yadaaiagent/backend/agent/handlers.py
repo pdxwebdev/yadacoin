@@ -2165,6 +2165,9 @@ class AgentChatHandler(BaseHandler):
 
         # ── Resolve goal ──────────────────────────────────────────────────── #
         goal = (body.get("goal") or "").strip()
+        # Files pre-uploaded by the frontend (via drag-drop before Send).
+        # Passed separately so they don't pollute the visible chat bubble.
+        sia_uploaded_files = body.get("sia_uploaded_files") or []
         conversation_history = [
             m
             for m in (body.get("messages") or [])
@@ -2253,6 +2256,12 @@ class AgentChatHandler(BaseHandler):
             body.get("key_rotation_second_factor") or ""
         ).strip()
         sia_app_key = (body.get("sia_app_key") or "").strip()
+        # Capture the origin the browser used to reach this endpoint so that
+        # share URLs point back to the same host:port the user is on.
+        _origin = (self.request.headers.get("Origin") or "").rstrip("/")
+        if not _origin:
+            _proto = "https" if self.request.protocol == "https" else "http"
+            _origin = f"{_proto}://{self.request.host}"
         skill_context = {
             "config": self.config,
             "github_access_token": github_access_token,
@@ -2262,6 +2271,7 @@ class AgentChatHandler(BaseHandler):
             "public_key": public_key,
             "key_rotation_second_factor": key_rotation_second_factor,
             "sia_app_key": sia_app_key,
+            "request_origin": _origin,
             "llm_call": lambda msgs, max_tokens=800: self._llm_call(
                 provider, model, api_key, ollama_host, base_url, msgs
             ),
@@ -2351,13 +2361,33 @@ class AgentChatHandler(BaseHandler):
             messages = [{"role": "system", "content": system_prompt}]
             for m in conversation_history:
                 messages.append({"role": m["role"], "content": m["content"].strip()})
+            if sia_uploaded_files:
+                _file_lines = "\n".join(
+                    f"  - {f.get('name', '?')} | mime: {f.get('mime', '?')} | object_id: {f.get('object_id', '?')}"
+                    for f in sia_uploaded_files
+                )
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            "IMPORTANT: The following files have already been uploaded to "
+                            "Sia decentralized storage by the user interface. "
+                            "Do NOT call sia_storage/upload for these files — they are already stored. "
+                            "Use their object_ids directly with sia_storage/share, sia_storage/download, or other actions:\n"
+                            + _file_lines
+                        ),
+                    }
+                )
             messages.append({"role": "user", "content": goal})
             messages = _sanitize_messages(messages)
 
         await sse({"type": "status", "message": "Thinking..."})
 
         # ── ReAct loop ────────────────────────────────────────────────────── #
-        MAX_ROUNDS = 10
+        # When the user has already confirmed a bulk side-effecting action, raise
+        # the round limit so large batch operations (e.g. delete-all with 18 files)
+        # can complete even if the LLM calls one tool per round.
+        MAX_ROUNDS = 50 if body.get("confirmed") else 10
         step_counter = 0
         _plan_emitted = resume_messages is not None  # don't re-emit plan on resume
 
@@ -2488,7 +2518,39 @@ class AgentChatHandler(BaseHandler):
 
         for round_num in range(MAX_ROUNDS):
             if pending_tool_calls:
-                # Resuming after user confirmed a side-effecting action
+                # Resuming after user confirmed a side-effecting action.
+                # Strip the placeholder tool results that were injected at the
+                # confirmation gate so we don't send duplicate tool_call_ids.
+                messages = [
+                    m
+                    for m in messages
+                    if not (
+                        m.get("role") == "tool"
+                        and json.loads(m.get("content") or "{}").get(
+                            "pending_confirmation"
+                        )
+                    )
+                ]
+                # For Anthropic: strip pending_confirmation blocks from user messages
+                cleaned = []
+                for m in messages:
+                    if m.get("role") == "user" and isinstance(m.get("content"), list):
+                        blocks = [
+                            b
+                            for b in m["content"]
+                            if not (
+                                b.get("type") == "tool_result"
+                                and json.loads(b.get("content") or "{}").get(
+                                    "pending_confirmation"
+                                )
+                            )
+                        ]
+                        if blocks:
+                            cleaned.append({**m, "content": blocks})
+                        # if all blocks were placeholders, drop the message entirely
+                    else:
+                        cleaned.append(m)
+                messages = cleaned
                 tc_list = pending_tool_calls
                 pending_tool_calls = None
             else:
@@ -2610,8 +2672,94 @@ class AgentChatHandler(BaseHandler):
                     )
 
             # ── Execute each tool call ─────────────────────────────────── #
+            # Pre-scan: collect all side-effecting calls in this batch so we
+            # can present ONE confirmation for the entire batch rather than
+            # firing per-call inside the loop.
+            if not body.get("confirmed"):
+                _side_effecting_tcs = []
+                _needs_2fa = False
+                for _pre_tc in tc_list:
+                    _pre_raw = _pre_tc.get("name") or ""
+                    _pre_skill, _, _pre_action = _pre_raw.partition("__")
+                    _pre_def = (
+                        available_skills.get(_pre_skill, {})
+                        .get("actions", {})
+                        .get(_pre_action, {})
+                    )
+                    if _pre_def.get("side_effects"):
+                        _side_effecting_tcs.append(_pre_tc)
+                    if _pre_raw == "key_rotation__rotate" and not skill_context.get(
+                        "key_rotation_second_factor"
+                    ):
+                        _needs_2fa = True
+
+                if _side_effecting_tcs:
+                    # Build structurally-valid resume_messages: add placeholders
+                    # for every tc in tc_list so the LLM history stays valid.
+                    _resume_msgs = list(messages)
+                    if provider == "anthropic":
+                        _resume_msgs.append(
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "tool_result",
+                                        "tool_use_id": _t.get("id")
+                                        or f"call_{step_counter + i}",
+                                        "content": json.dumps(
+                                            {"pending_confirmation": True}
+                                        ),
+                                    }
+                                    for i, _t in enumerate(tc_list)
+                                ],
+                            }
+                        )
+                    else:
+                        for i, _t in enumerate(tc_list):
+                            _resume_msgs.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": _t.get("id")
+                                    or f"call_{step_counter + i}",
+                                    "content": json.dumps(
+                                        {"pending_confirmation": True}
+                                    ),
+                                }
+                            )
+                    await sse(
+                        {
+                            "type": "confirm",
+                            "message": (
+                                "The assistant wants to perform the following "
+                                "real-world action. Please review and confirm to proceed."
+                            ),
+                            "needs_second_factor": _needs_2fa,
+                            "destructive_steps": [
+                                {
+                                    "step": step_counter + 1 + i,
+                                    "skill": _t.get("name", "").split("__")[0]
+                                    if "__" in _t.get("name", "")
+                                    else _t.get("name", ""),
+                                    "action": _t.get("name", "").split("__", 1)[1]
+                                    if "__" in _t.get("name", "")
+                                    else "",
+                                    "description": json.dumps(
+                                        _t.get("arguments") or {}
+                                    )[:200],
+                                    "params": _t.get("arguments") or {},
+                                }
+                                for i, _t in enumerate(_side_effecting_tcs)
+                            ],
+                            "plan": {
+                                "resume_messages": _resume_msgs,
+                                "pending_tool_calls": tc_list,
+                            },
+                        }
+                    )
+                    return self.finish()
+
             tool_results_for_msg: list = []
-            for tc in tc_list:
+            for tc_idx, tc in enumerate(tc_list):
                 tc_id = tc.get("id") or f"call_{step_counter}"
                 raw_name = tc.get("name") or ""
                 args = tc.get("arguments") or {}
@@ -2627,38 +2775,6 @@ class AgentChatHandler(BaseHandler):
                     .get("actions", {})
                     .get(action_name, {})
                 )
-                is_side_effecting = bool(action_def.get("side_effects"))
-
-                # ── Confirmation gate ───────────────────────────────────── #
-                needs_second_factor = bool(
-                    raw_name == "key_rotation__rotate"
-                    and not skill_context.get("key_rotation_second_factor")
-                )
-                if is_side_effecting and not body.get("confirmed"):
-                    await sse(
-                        {
-                            "type": "confirm",
-                            "message": (
-                                "The assistant wants to perform the following "
-                                "real-world action. Please review and confirm to proceed."
-                            ),
-                            "needs_second_factor": needs_second_factor,
-                            "destructive_steps": [
-                                {
-                                    "step": step_counter + 1,
-                                    "skill": skill_name,
-                                    "action": action_name,
-                                    "description": json.dumps(args)[:200],
-                                    "params": args,
-                                }
-                            ],
-                            "plan": {
-                                "resume_messages": messages,
-                                "pending_tool_calls": [tc],
-                            },
-                        }
-                    )
-                    return self.finish()
 
                 step_counter += 1
                 await sse(
