@@ -4737,6 +4737,204 @@ class TestBlockCoverageGaps(AsyncTestCase):
             CHAIN.CHECK_MASTERNODE_FEE_FORK = orig_fork
             CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK = orig_spends
 
+    @mock.patch("yadacoin.core.config.CONFIG.mongo.async_db.blocks")
+    async def test_generate_initial_pass_removes_orphaned_txn_prev_public_key_hash(
+        self, mock_blocks
+    ):
+        """Lines 474-486: initial pass removes txn with prev_public_key_hash but no on-chain parent or sibling."""
+        from yadacoin.core.blockchainutils import BlockChainUtils
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.latestblock import LatestBlock
+        from yadacoin.core.transaction import Transaction
+
+        mock_blocks.find_one = AsyncMock(return_value={"transactions": []})
+        Config().BU = BlockChainUtils()
+
+        @property
+        async def contract_generated(a):
+            return False
+
+        @contract_generated.setter
+        def contract_generated(self, value):
+            pass
+
+        nodes = Nodes.get_all_nodes_for_block_height(CHAIN.CHECK_MASTERNODE_FEE_FORK)
+        saved_all, saved_succ = NodesTester.all_nodes, NodesTester.successful_nodes
+        try:
+            Config().LatestBlock = LatestBlock()
+            latest = await Block.init_async(
+                version=5,
+                block_index=CHAIN.CHECK_KEL_FORK,
+                target=1,
+                public_key=yadacoin.core.config.CONFIG.public_key,
+            )
+            Config().LatestBlock.block = latest
+            NodesTester.successful_nodes = nodes
+            NodesTester.all_nodes = nodes
+
+            txn = Transaction.from_dict(
+                copy.deepcopy(masternode_fee_block["transactions"][0])
+            )
+            # Claim to extend a KEL chain with no on-chain parent and no sibling
+            txn.prev_public_key_hash = "orphaned_parent_hash"
+
+            with mock.patch(
+                "yadacoin.core.transaction.Transaction.contract_generated",
+                new=contract_generated,
+            ), mock.patch(
+                "yadacoin.core.transaction.Transaction.generate_hash",
+                new=AsyncMock(
+                    return_value="96055eed53cc90423f3b816ae14a62b68200225587106b68812127d3083d331e"
+                ),
+            ), mock.patch(
+                "yadacoin.core.transaction.Transaction.verify_signature",
+                new=Mock(return_value=True),
+            ), mock.patch(
+                "yadacoin.core.blockchainutils.BlockChainUtils.get_transaction_by_id",
+                new=AsyncMock(return_value=masternode_fee_input),
+            ), mock.patch(
+                "yadacoin.core.nodestester.NodesTester.test_all_nodes",
+                new=AsyncMock(return_value=nodes),
+            ), mock.patch(
+                "yadacoin.core.blockchainutils.BlockChainUtils.is_input_spent",
+                new=AsyncMock(return_value=False),
+            ), mock.patch(
+                "yadacoin.core.transaction.Transaction.has_key_event_log",
+                new=AsyncMock(return_value=False),
+            ), mock.patch(
+                "yadacoin.core.transaction.Transaction.are_kel_fields_populated",
+                new=Mock(return_value=False),
+            ), mock.patch(
+                "yadacoin.core.transaction.Transaction.is_already_onchain",
+                new=AsyncMock(return_value=False),
+            ), mock.patch(
+                "yadacoin.core.transaction.Transaction.verify_kel_output_rules",
+                new=AsyncMock(return_value=None),
+            ), mock.patch(
+                "yadacoin.core.transaction.Transaction.verify",
+                new=AsyncMock(return_value=None),
+            ):
+                block = await Block.generate(
+                    public_key=yadacoin.core.config.CONFIG.public_key,
+                    private_key=yadacoin.core.config.CONFIG.private_key,
+                    index=CHAIN.CHECK_KEL_FORK,
+                    prev_hash="prev",
+                    transactions=[txn],
+                )
+        finally:
+            NodesTester.all_nodes = saved_all
+            NodesTester.successful_nodes = saved_succ
+
+        # The orphaned transaction must have been removed; only coinbase remains
+        non_coinbase = [t for t in block.transactions if not t.coinbase]
+        self.assertEqual(len(non_coinbase), 0)
+
+    @mock.patch("yadacoin.core.config.CONFIG.mongo.async_db.blocks")
+    async def test_generate_fixpoint_removes_orphaned_txn_prev_public_key_hash(
+        self, mock_blocks
+    ):
+        """Lines 531-546: fixpoint pass removes txn with prev_public_key_hash but no on-chain parent or sibling."""
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.latestblock import LatestBlock
+        from yadacoin.core.transaction import Transaction
+
+        nodes, miner_txns = self._fixpoint_common_setup(mock_blocks, CHAIN)
+
+        @property
+        async def contract_generated(a):
+            return False
+
+        @contract_generated.setter
+        def contract_generated(self, value):
+            pass
+
+        # are_kel_fields_populated returns True while init_async has not yet been
+        # called (initial pass → txn survives to init_async), then False afterward
+        # (fixpoint pass → orphan-removal path at lines 531-546 is triggered).
+        initial_init_done = [False]
+
+        def kel_fields_side_effect(*args):
+            return not initial_init_done[0]
+
+        async def kel_init_side_effect(*args, **kwargs):
+            initial_init_done[0] = True
+
+        saved_all, saved_succ = NodesTester.all_nodes, NodesTester.successful_nodes
+        try:
+            Config().LatestBlock = LatestBlock()
+            latest = await Block.init_async(
+                version=5,
+                block_index=CHAIN.CHECK_KEL_FORK,
+                target=1,
+                public_key=yadacoin.core.config.CONFIG.public_key,
+            )
+            Config().LatestBlock.block = latest
+            NodesTester.successful_nodes = nodes
+            NodesTester.all_nodes = nodes
+            Config().mongo.async_db.miner_transactions = miner_txns
+
+            txn = Transaction.from_dict(
+                copy.deepcopy(masternode_fee_block["transactions"][0])
+            )
+            txn.prev_public_key_hash = "orphaned_parent_hash"
+
+            with mock.patch(
+                "yadacoin.core.transaction.Transaction.contract_generated",
+                new=contract_generated,
+            ), mock.patch(
+                "yadacoin.core.transaction.Transaction.generate_hash",
+                new=AsyncMock(
+                    return_value="96055eed53cc90423f3b816ae14a62b68200225587106b68812127d3083d331e"
+                ),
+            ), mock.patch(
+                "yadacoin.core.transaction.Transaction.verify_signature",
+                new=Mock(return_value=True),
+            ), mock.patch(
+                "yadacoin.core.blockchainutils.BlockChainUtils.get_transaction_by_id",
+                new=AsyncMock(return_value=masternode_fee_input),
+            ), mock.patch(
+                "yadacoin.core.nodestester.NodesTester.test_all_nodes",
+                new=AsyncMock(return_value=nodes),
+            ), mock.patch(
+                "yadacoin.core.blockchainutils.BlockChainUtils.is_input_spent",
+                new=AsyncMock(return_value=False),
+            ), mock.patch(
+                "yadacoin.core.transaction.Transaction.has_key_event_log",
+                new=AsyncMock(return_value=False),
+            ), mock.patch(
+                "yadacoin.core.transaction.Transaction.are_kel_fields_populated",
+                side_effect=kel_fields_side_effect,
+            ), mock.patch(
+                "yadacoin.core.transaction.Transaction.is_already_onchain",
+                new=AsyncMock(return_value=False),
+            ), mock.patch(
+                "yadacoin.core.transaction.Transaction.verify_kel_output_rules",
+                new=AsyncMock(return_value=None),
+            ), mock.patch(
+                "yadacoin.core.block.KeyEvent.verify",
+                new=AsyncMock(return_value=None),
+            ), mock.patch(
+                "yadacoin.core.block.KeyEventLog.init_async",
+                side_effect=kel_init_side_effect,
+            ), mock.patch(
+                "yadacoin.core.transaction.Transaction.verify",
+                new=AsyncMock(return_value=None),
+            ):
+                block = await Block.generate(
+                    public_key=yadacoin.core.config.CONFIG.public_key,
+                    private_key=yadacoin.core.config.CONFIG.private_key,
+                    index=CHAIN.CHECK_KEL_FORK,
+                    prev_hash="prev",
+                    transactions=[txn],
+                )
+        finally:
+            NodesTester.all_nodes = saved_all
+            NodesTester.successful_nodes = saved_succ
+
+        # The orphaned transaction must have been removed by the fixpoint pass
+        non_coinbase = [t for t in block.transactions if not t.coinbase]
+        self.assertEqual(len(non_coinbase), 0)
+
 
 class TestBlockPureMethods(unittest.TestCase):
     """Tests for pure static methods in Block that don't require async/DB."""
@@ -4848,6 +5046,8 @@ class TestBlockPureMethods(unittest.TestCase):
 
         mock_config = mock.MagicMock()
         mock_config.network = "mainnet"
+        mock_config.hash_server_domain = None
+        mock_config.hash_server = None
 
         import asyncio
 
@@ -4880,6 +5080,8 @@ class TestBlockPureMethods(unittest.TestCase):
 
         mock_config = mock.MagicMock()
         mock_config.network = "mainnet"
+        mock_config.hash_server_domain = None
+        mock_config.hash_server = None
 
         import asyncio
 

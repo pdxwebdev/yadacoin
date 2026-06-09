@@ -464,6 +464,33 @@ class Block(object):
                     not await txn.has_key_event_log()
                     and not txn.are_kel_fields_populated()
                 ):
+                    # A transaction with prev_public_key_hash set claims to be
+                    # part of a KEL chain but has no on-chain parent.  If no
+                    # sibling in this block provides the KEL context,
+                    # Block.verify() will raise KELExceptionPreviousKeyHashReferenceMissing
+                    # and the winning block will be silently dropped.
+                    # Remove it here (keep in mempool — parent may arrive later).
+                    if txn.prev_public_key_hash:
+                        has_sibling_kel = any(
+                            s.transaction_signature != txn.transaction_signature
+                            and (
+                                (
+                                    s.prerotated_key_hash
+                                    and s.prerotated_key_hash == txn.public_key_hash
+                                )
+                                or (
+                                    s.twice_prerotated_key_hash
+                                    and s.twice_prerotated_key_hash
+                                    == txn.public_key_hash
+                                )
+                            )
+                            for s in block.transactions
+                        )
+                        if not has_sibling_kel:
+                            config.app_log.info(
+                                f"Txn removed from block [no onchain KEL, no sibling, has prev_public_key_hash]: {txn.transaction_signature}"
+                            )
+                            block.transactions.remove(txn)
                     continue
 
                 key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
@@ -504,6 +531,31 @@ class Block(object):
                     if not (
                         await txn.has_key_event_log() or txn.are_kel_fields_populated()
                     ):
+                        # Same guard as the initial pass: remove orphaned
+                        # transactions that claim a KEL chain but have no
+                        # on-chain parent and no block sibling.
+                        if txn.prev_public_key_hash:
+                            has_sibling_kel = any(
+                                s.transaction_signature != txn.transaction_signature
+                                and (
+                                    (
+                                        s.prerotated_key_hash
+                                        and s.prerotated_key_hash == txn.public_key_hash
+                                    )
+                                    or (
+                                        s.twice_prerotated_key_hash
+                                        and s.twice_prerotated_key_hash
+                                        == txn.public_key_hash
+                                    )
+                                )
+                                for s in block.transactions
+                            )
+                            if not has_sibling_kel:
+                                config.app_log.info(
+                                    f"KEL fixpoint pass {_kel_pass} removed orphaned txn [no onchain KEL, no sibling]: {txn.transaction_signature}"
+                                )
+                                if txn in block.transactions:
+                                    block.transactions.remove(txn)
                         continue
                     key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
                     try:
@@ -860,7 +912,7 @@ class Block(object):
 
     async def generate_hash_from_header(self, height, header, nonce):
         config = Config()
-        if config.network == "regnet":
+        if config.network == "mainnet":
             hash_server = getattr(config, "hash_server_domain", None) or getattr(
                 config, "hash_server", None
             )
