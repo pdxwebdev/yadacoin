@@ -2,6 +2,8 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 
 
 def _detect_compose_cmd():
@@ -98,6 +100,21 @@ class YadaNodeManager:
         else:
             print("Failed to install Docker Compose V2. Continuing with v1.")
 
+    def _image_ready(self, tag):
+        """Return True if the GHCR image for the given tag exists and is pullable."""
+        url = f"https://ghcr.io/v2/pdxwebdev/yadacoin/manifests/{tag}"
+        req = urllib.request.Request(url, method="HEAD")
+        req.add_header("Accept", "application/vnd.oci.image.index.v1+json")
+        try:
+            urllib.request.urlopen(req, timeout=10)
+            return True
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 404):
+                return False
+            return False
+        except Exception:
+            return False
+
     def git_pull_latest(self):
         os.chdir(self.repo_path)
         subprocess.run(["git", "fetch", "origin", "--tags"])
@@ -127,7 +144,14 @@ class YadaNodeManager:
             latest_tag = None
 
         if latest_tag and latest_tag != current_tag:
-            print(f"New tag available: {latest_tag} (was: {current_tag}). Updating...")
+            print(
+                f"New tag available: {latest_tag} (was: {current_tag}). Checking image is ready..."
+            )
+            if not self._image_ready(latest_tag):
+                print(
+                    f"Image for {latest_tag} not yet available on GHCR. Will retry next cycle."
+                )
+                return False
             subprocess.run(["git", "stash"])
             subprocess.run(["git", "checkout", latest_tag])
             subprocess.run(["git", "stash", "pop"])
