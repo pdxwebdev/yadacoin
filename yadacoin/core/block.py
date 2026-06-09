@@ -730,12 +730,20 @@ class Block(object):
             except (KELExceptionPreviousKeyHashReferenceMissing,) as e:
                 # Transient: KEL inception not yet on-chain/in mempool; skip this
                 # txn for this block cycle but leave it in the mempool for next time.
+                # Remove from txns so it cannot act as a phantom batch_txns sibling
+                # for any subsequent transaction in this same validation pass.
                 config.app_log.warning(
                     f"validate_transactions transient KEL skip: {e} | txn={transaction_obj.transaction_signature}"
                 )
+                if transaction_obj in txns:
+                    txns.remove(transaction_obj)
                 continue
             except Exception as e:
                 await Transaction.handle_exception(e, transaction_obj)
+                # Remove from txns so subsequent transactions cannot use this
+                # failed transaction as a phantom batch_txns sibling.
+                if transaction_obj in txns:
+                    txns.remove(transaction_obj)
                 if (
                     transaction_obj.spent_in_txn
                     and transaction_obj.spent_in_txn in txns

@@ -2742,6 +2742,9 @@ class TestBlock(AsyncTestCase):
         bad_txn.transaction_signature = "prev_pk_hash_sig"
         bad_txn.inputs = []
         bad_txn.outputs = []
+        bad_txn.public_key = (
+            yadacoin.core.config.CONFIG.public_key
+        )  # real hex key needed for P2PKH derivation
         bad_txn.public_key_hash = "uniquekeyhash_no_sibling_will_match"
         bad_txn.prev_public_key_hash = "some_prev_hash"  # triggers the raise
         bad_txn.are_kel_fields_populated = Mock(return_value=False)
@@ -4569,11 +4572,17 @@ class TestBlockCoverageGaps(AsyncTestCase):
     )
     @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
     async def test_verify_sibling_prerotated_sets_has_kel(self):
-        """Lines 1017-1018: verify() sibling.prerotated_key_hash == txn.public_key_hash → has_kel=True."""
+        """Lines 1059-1073: verify() sibling.prerotated_key_hash == P2PKH(txn.public_key) → has_kel=True."""
+        from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH
+
         from yadacoin.core.chain import CHAIN
 
         block = await Block.from_dict(copy.deepcopy(masternode_fee_block))
         block.index = CHAIN.CHECK_KEL_FORK
+
+        # Use a real public key so P2PKHBitcoinAddress.from_pubkey() succeeds
+        subject_pubkey = yadacoin.core.config.CONFIG.public_key
+        subject_address = str(_P2PKH.from_pubkey(bytes.fromhex(subject_pubkey)))
 
         # Create subject txn (non-coinbase) with prev_public_key_hash set
         subject_txn = Mock()
@@ -4584,7 +4593,10 @@ class TestBlockCoverageGaps(AsyncTestCase):
         subject_txn.outputs = []
         subject_txn.time = block.time
         subject_txn.hash = "subjecthash" * 5
-        subject_txn.public_key_hash = "subject_pkh"
+        subject_txn.public_key = (
+            subject_pubkey  # real hex key needed for P2PKH derivation
+        )
+        subject_txn.public_key_hash = subject_address
         subject_txn.prev_public_key_hash = "some_prev_pkh"  # non-empty → sibling lookup
         subject_txn.are_kel_fields_populated = Mock(return_value=False)
         subject_txn.verify_kel_output_rules = AsyncMock(return_value=None)
@@ -4592,7 +4604,7 @@ class TestBlockCoverageGaps(AsyncTestCase):
             return_value=False
         )  # triggers sibling loop
 
-        # Create sibling whose prerotated_key_hash matches subject's public_key_hash
+        # Create sibling whose prerotated_key_hash matches P2PKH(subject.public_key)
         sibling_txn = Mock()
         sibling_txn.coinbase = False
         sibling_txn.transaction_signature = "sibling_sig"
@@ -4603,7 +4615,7 @@ class TestBlockCoverageGaps(AsyncTestCase):
         sibling_txn.public_key_hash = "sibling_pkh"
         sibling_txn.prev_public_key_hash = ""
         sibling_txn.prerotated_key_hash = (
-            "subject_pkh"  # matches subject.public_key_hash
+            subject_address  # matches P2PKH(subject.public_key)
         )
         sibling_txn.twice_prerotated_key_hash = ""
         sibling_txn.are_kel_fields_populated = Mock(return_value=False)
