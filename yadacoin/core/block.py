@@ -40,6 +40,7 @@ from yadacoin.core.keyeventlog import (
     KeyEventChainStatus,
     KeyEventException,
     KeyEventLog,
+    PublicKeyMismatchException,
 )
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.nodes import Nodes
@@ -506,10 +507,29 @@ class Block(object):
                         continue
                     key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
                     try:
+                        # Run key_event.verify() first to mirror Block.verify()'s per-txn
+                        # check order.  This catches sends_to_past_kel_entry() for
+                        # CONFIRMING transactions, which KeyEventLog.init_async() skips
+                        # for that category.  Without this check a stale confirming
+                        # transaction can survive block generation and then cause
+                        # block_candidate.verify() to throw inside process_nonce, silently
+                        # swallowing a winning block (accept_block is never called).
+                        await key_event.verify(
+                            batch_txns=block.transactions, block_index=block.index
+                        )
                         await KeyEventLog.init_async(key_event, hash_collection)
                     except (KELException, KeyEventException) as e:
                         config.app_log.info(
                             f"KEL fixpoint pass {_kel_pass} dropped txn: {e}"
+                        )
+                        if txn in block.transactions:
+                            block.transactions.remove(txn)
+                    except PublicKeyMismatchException as e:
+                        config.app_log.info(
+                            f"KEL fixpoint pass {_kel_pass} dropped txn (public key mismatch): {e}"
+                        )
+                        await config.mongo.async_db.miner_transactions.delete_one(
+                            {"id": txn.transaction_signature}
                         )
                         if txn in block.transactions:
                             block.transactions.remove(txn)

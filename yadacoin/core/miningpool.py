@@ -222,8 +222,11 @@ class MiningPool(object):
                 }
             try:
                 await block_candidate.verify()
-            except Exception:
+            except Exception as e:
                 if accepted and self.config.network == "mainnet":
+                    self.app_log.warning(
+                        f"Winning block candidate verify() failed (block silently dropped): {e}"
+                    )
                     return {
                         "hash": hash1,
                         "nonce": nonce,
