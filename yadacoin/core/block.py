@@ -464,33 +464,6 @@ class Block(object):
                     not await txn.has_key_event_log()
                     and not txn.are_kel_fields_populated()
                 ):
-                    # A transaction with prev_public_key_hash set claims to be
-                    # part of a KEL chain but has no on-chain parent.  If no
-                    # sibling in this block provides the KEL context,
-                    # Block.verify() will raise KELExceptionPreviousKeyHashReferenceMissing
-                    # and the winning block will be silently dropped.
-                    # Remove it here (keep in mempool — parent may arrive later).
-                    if txn.prev_public_key_hash:
-                        has_sibling_kel = any(
-                            s.transaction_signature != txn.transaction_signature
-                            and (
-                                (
-                                    s.prerotated_key_hash
-                                    and s.prerotated_key_hash == txn.public_key_hash
-                                )
-                                or (
-                                    s.twice_prerotated_key_hash
-                                    and s.twice_prerotated_key_hash
-                                    == txn.public_key_hash
-                                )
-                            )
-                            for s in block.transactions
-                        )
-                        if not has_sibling_kel:
-                            config.app_log.info(
-                                f"Txn removed from block [no onchain KEL, no sibling, has prev_public_key_hash]: {txn.transaction_signature}"
-                            )
-                            block.transactions.remove(txn)
                     continue
 
                 key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
@@ -531,31 +504,6 @@ class Block(object):
                     if not (
                         await txn.has_key_event_log() or txn.are_kel_fields_populated()
                     ):
-                        # Same guard as the initial pass: remove orphaned
-                        # transactions that claim a KEL chain but have no
-                        # on-chain parent and no block sibling.
-                        if txn.prev_public_key_hash:
-                            has_sibling_kel = any(
-                                s.transaction_signature != txn.transaction_signature
-                                and (
-                                    (
-                                        s.prerotated_key_hash
-                                        and s.prerotated_key_hash == txn.public_key_hash
-                                    )
-                                    or (
-                                        s.twice_prerotated_key_hash
-                                        and s.twice_prerotated_key_hash
-                                        == txn.public_key_hash
-                                    )
-                                )
-                                for s in block.transactions
-                            )
-                            if not has_sibling_kel:
-                                config.app_log.info(
-                                    f"KEL fixpoint pass {_kel_pass} removed orphaned txn [no onchain KEL, no sibling]: {txn.transaction_signature}"
-                                )
-                                if txn in block.transactions:
-                                    block.transactions.remove(txn)
                         continue
                     key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
                     try:
@@ -722,6 +670,17 @@ class Block(object):
         # (since mempool state is not relevant for validation and
         # can be manipulated by attackers to cause valid transactions to be rejected)
         config = Config()
+        # Use a minimal block proxy so Transaction.verify() calls
+        # has_key_event_log(block=proxy, mempool=False), mirroring Block.verify()'s
+        # on-chain-only check.  Transactions whose KEL parent is only in the mempool
+        # (not on-chain and not in txns) will raise
+        # KELExceptionPreviousKeyHashReferenceMissing, which is caught below as a
+        # transient skip — keeping the txn in the mempool for the next block cycle.
+        # This prevents the block factory from embedding a transaction that
+        # Block.verify() will later reject, which would silently drop a winning block.
+        from types import SimpleNamespace
+
+        block_proxy = SimpleNamespace(index=index)
 
         if index >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK:
             items_indexed = {x.transaction_signature: x for x in txns}
@@ -758,7 +717,8 @@ class Block(object):
                     check_masternode_fee=check_masternode_fee,
                     check_kel=check_kel,
                     check_dynamic_nodes=check_dynamic_nodes,
-                    mempool=True,
+                    block=block_proxy,
+                    mempool=False,
                     batch_txns=txns,
                 )
                 for output in transaction_obj.outputs:
@@ -912,7 +872,7 @@ class Block(object):
 
     async def generate_hash_from_header(self, height, header, nonce):
         config = Config()
-        if config.network == "mainnet":
+        if config.network == "regnet":
             hash_server = getattr(config, "hash_server_domain", None) or getattr(
                 config, "hash_server", None
             )

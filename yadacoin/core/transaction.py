@@ -650,6 +650,25 @@ class Transaction(object):
                     )
             else:
                 has_kel = await self.has_key_event_log(block, mempool)
+                # If the on-chain (or mempool) check didn't find a parent,
+                # also check batch_txns — the parent may be a sibling in the
+                # block currently being assembled (e.g. inception + confirming
+                # in the same block).  This mirrors the sibling-lookup in
+                # Block.verify() and is needed when validate_transactions is
+                # called with mempool=False (block proxy) so that legitimate
+                # same-block KEL pairs are not incorrectly excluded.
+                if not has_kel and batch_txns:
+                    address = str(
+                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
+                    )
+                    has_kel = any(
+                        (
+                            t.twice_prerotated_key_hash == address
+                            or t.prerotated_key_hash == address
+                        )
+                        and t.transaction_signature != self.transaction_signature
+                        for t in batch_txns
+                    )
 
             if has_kel:
                 txn_key_event = KeyEvent(self)
