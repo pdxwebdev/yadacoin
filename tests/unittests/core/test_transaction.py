@@ -1543,7 +1543,40 @@ class TestTransactionPureMethods(AsyncTestCase):
 
         mock_ke.verify.assert_called_once()
 
-    async def test_verify_check_kel_prev_key_hash_raises(self):
+    async def test_verify_check_kel_batch_txns_fallback(self):
+        """Lines 661-664: check_kel=True, has_key_event_log=False but a sibling
+        in batch_txns has prerotated_key_hash matching this txn's address —
+        has_kel is set True via the batch_txns fallback."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        txn = await Transaction.generate(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            private_key=yadacoin.core.config.CONFIG.private_key,
+        )
+        mock_block = MagicMock()
+        mock_block.index = 10  # far below CHECK_KEL_SPENDS_ENTIRELY_FORK
+
+        # Sibling whose prerotated_key_hash equals this txn's P2PKH address
+        address = str(
+            __import__(
+                "bitcoin.wallet", fromlist=["P2PKHBitcoinAddress"]
+            ).P2PKHBitcoinAddress.from_pubkey(
+                bytes.fromhex(yadacoin.core.config.CONFIG.public_key)
+            )
+        )
+        sibling = MagicMock()
+        sibling.prerotated_key_hash = address
+        sibling.twice_prerotated_key_hash = ""
+        sibling.transaction_signature = "different_sig"
+
+        with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=False)):
+            with patch("yadacoin.core.keyeventlog.KeyEvent") as mock_ke_cls:
+                mock_ke = MagicMock()
+                mock_ke.verify = AsyncMock(return_value=None)
+                mock_ke_cls.return_value = mock_ke
+                await txn.verify(check_kel=True, block=mock_block, batch_txns=[sibling])
+
+        mock_ke.verify.assert_called_once()
         """Lines 591-594: check_kel=True, has_kel=False, prev_public_key_hash set → KEL raises."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
