@@ -491,6 +491,10 @@ class MiningPool(object):
             self.config.LatestBlock.block.index + 1 >= CHAIN.SMART_CONTRACT_REMOVAL_FORK
         )
 
+        from types import SimpleNamespace
+
+        block_proxy = SimpleNamespace(index=self.config.LatestBlock.block.index + 1)
+
         if not smart_contracts_disabled:
             async for txn in (
                 self.mongo.async_db.miner_transactions.find(
@@ -506,6 +510,7 @@ class MiningPool(object):
                     check_masternode_fee=check_masternode_fee,
                     check_kel=check_kel,
                     check_dynamic_nodes=check_dynamic_nodes,
+                    block=block_proxy,
                 )
                 if not isinstance(transaction_obj, Transaction):
                     continue
@@ -556,6 +561,7 @@ class MiningPool(object):
                 check_masternode_fee=check_masternode_fee,
                 check_kel=check_kel,
                 check_dynamic_nodes=check_dynamic_nodes,
+                block=block_proxy,
             )
             if not isinstance(transaction_obj, Transaction):
                 continue
@@ -636,6 +642,7 @@ class MiningPool(object):
         check_masternode_fee=False,
         check_kel=False,
         check_dynamic_nodes=False,
+        block=None,
     ):
         if transactions is None:
             transactions = []
@@ -672,7 +679,8 @@ class MiningPool(object):
                 check_masternode_fee=check_masternode_fee,
                 check_kel=check_kel,
                 check_dynamic_nodes=check_dynamic_nodes,
-                mempool=True,
+                block=block,
+                mempool=block is None,
                 batch_txns=transactions,
             )
 
