@@ -1197,6 +1197,24 @@ class TestVerifyCoverageGaps(TransactionTestCase):
 
         self.assertEqual(result, (None, None))
 
+    async def test_get_kel_cross_key_auth_mempool_branch(self):
+        """Line 1259: get_kel_cross_key_auth uses LatestBlock.block.index + 1 when mempool=True."""
+        from unittest.mock import MagicMock
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(public_key=self.public_key)
+        mock_lb = MagicMock()
+        # Set index below fork so we get (None, None) without needing a DB call
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK - 2
+
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            result = await txn.get_kel_cross_key_auth(
+                "some_address", block=None, mempool=True
+            )
+
+        self.assertEqual(result, (None, None))
+
     async def test_get_kel_cross_key_auth_returns_authorized_keys(self):
         """Lines 1238-1247: get_kel_cross_key_auth returns authorized sets when KEL found."""
         from unittest.mock import AsyncMock, MagicMock, patch
