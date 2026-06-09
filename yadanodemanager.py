@@ -135,35 +135,19 @@ class YadaNodeManager:
 
         return False
 
-    def cleanup_docker(self):
-        """Remove dangling images and build cache left over from previous builds."""
-        try:
-            subprocess.run(
-                ["docker", "image", "prune", "-f"],
-                cwd=self.repo_path,
-            )
-            subprocess.run(
-                ["docker", "builder", "prune", "-f"],
-                cwd=self.repo_path,
-            )
-            print("Docker cleanup complete.")
-        except Exception as e:
-            print(f"Warning: Docker cleanup encountered an error: {e}")
-
-    def rebuild_docker_image(self):
+    def pull_and_restart(self):
         subprocess.run(
-            self.compose_cmd + ["down"],
-            cwd=self.repo_path,
-        )
-        subprocess.run(
-            self.compose_cmd + ["build", "--no-cache", self.service_name],
+            self.compose_cmd + ["pull", self.service_name],
             cwd=self.repo_path,
         )
         subprocess.run(
             self.compose_cmd + ["up", "-d", self.service_name],
             cwd=self.repo_path,
         )
-        self.cleanup_docker()
+        subprocess.run(
+            ["docker", "image", "prune", "-f"],
+            cwd=self.repo_path,
+        )
 
     def start_docker_image(self):
         subprocess.run(
@@ -203,9 +187,9 @@ class YadaNodeManager:
             if time.time() - last_update_check >= self.update_interval_seconds:
                 if self.git_pull_latest():
                     print(
-                        "Codebase updated. Rebuilding Docker image and restarting container..."
+                        "New version detected. Pulling image and restarting container..."
                     )
-                    self.rebuild_docker_image()
+                    self.pull_and_restart()
                 else:
                     print(
                         "No updates found. Checking again in {} seconds.".format(

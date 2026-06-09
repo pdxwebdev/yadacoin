@@ -2,7 +2,7 @@ version: "3.4"
 
 services:
   yada-node:
-    build: .
+    image: ghcr.io/pdxwebdev/yadacoin:latest
     volumes:
       - .:/app
       - /var/run/docker.sock:/var/run/docker.sock
