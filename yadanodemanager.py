@@ -84,11 +84,17 @@ class YadaNodeManager:
         plugin_dir = "/usr/local/lib/docker/cli-plugins"
         plugin_path = os.path.join(plugin_dir, "docker-compose")
         os.makedirs(plugin_dir, exist_ok=True)
+        machine = os.uname().machine
+        arch = "aarch64" if machine in ("aarch64", "arm64") else "x86_64"
+        compose_url = (
+            f"https://github.com/docker/compose/releases/latest/download/"
+            f"docker-compose-linux-{arch}"
+        )
         result = subprocess.run(
             [
                 "curl",
                 "-fsSL",
-                "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64",
+                compose_url,
                 "-o",
                 plugin_path,
             ]
