@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import time
 
 
@@ -137,6 +138,35 @@ class YadaNodeManager:
 
     def pull_and_restart(self):
         subprocess.run(
+            self.compose_cmd + ["down", "--remove-orphans"],
+            cwd=self.repo_path,
+        )
+        # Remove any duplicate/ambiguous networks left by previous installs
+        try:
+            nets = (
+                subprocess.check_output(
+                    [
+                        "docker",
+                        "network",
+                        "ls",
+                        "--filter",
+                        "name=yadacoin_default",
+                        "-q",
+                    ],
+                    stderr=subprocess.DEVNULL,
+                )
+                .decode()
+                .strip()
+                .splitlines()
+            )
+            for net_id in nets:
+                subprocess.run(
+                    ["docker", "network", "rm", net_id],
+                    stderr=subprocess.DEVNULL,
+                )
+        except Exception as e:
+            print(f"Warning: network cleanup error: {e}")
+        subprocess.run(
             self.compose_cmd + ["pull", self.service_name],
             cwd=self.repo_path,
         )
@@ -190,6 +220,8 @@ class YadaNodeManager:
                         "New version detected. Pulling image and restarting container..."
                     )
                     self.pull_and_restart()
+                    print("Restarting node manager to pick up source changes...")
+                    os.execv(sys.executable, [sys.executable] + sys.argv)
                 else:
                     print(
                         "No updates found. Checking again in {} seconds.".format(
