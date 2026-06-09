@@ -136,13 +136,16 @@ class YadaNodeManager:
 
         return False
 
-    def pull_and_restart(self):
-        subprocess.run(
-            self.compose_cmd + ["down", "--remove-orphans"],
-            cwd=self.repo_path,
-        )
-        # Remove any duplicate/ambiguous networks left by previous installs
+    def deduplicate_networks(self):
+        """Remove duplicate Docker networks that cause 'ambiguous' errors.
+
+        Uses exact label matching to find only networks created by this
+        compose project, then removes all but the most recently created one.
+        If label filtering returns nothing (older Docker), falls back to name
+        filtering and removes all matches so compose can recreate cleanly.
+        """
         try:
+            # Prefer label-based lookup (exact project match, no substring hits)
             nets = (
                 subprocess.check_output(
                     [
@@ -150,7 +153,9 @@ class YadaNodeManager:
                         "network",
                         "ls",
                         "--filter",
-                        "name=yadacoin_default",
+                        "label=com.docker.compose.project=yadacoin",
+                        "--filter",
+                        "label=com.docker.compose.network=default",
                         "-q",
                     ],
                     stderr=subprocess.DEVNULL,
@@ -159,13 +164,42 @@ class YadaNodeManager:
                 .strip()
                 .splitlines()
             )
-            for net_id in nets:
-                subprocess.run(
-                    ["docker", "network", "rm", net_id],
-                    stderr=subprocess.DEVNULL,
+            if not nets:
+                # Fallback for older Docker without compose labels
+                nets = (
+                    subprocess.check_output(
+                        [
+                            "docker",
+                            "network",
+                            "ls",
+                            "--filter",
+                            "name=yadacoin_default",
+                            "-q",
+                        ],
+                        stderr=subprocess.DEVNULL,
+                    )
+                    .decode()
+                    .strip()
+                    .splitlines()
                 )
+            if len(nets) > 1:
+                print(
+                    f"Found {len(nets)} duplicate networks. Removing all so compose can recreate."
+                )
+                for net_id in nets:
+                    subprocess.run(
+                        ["docker", "network", "rm", net_id],
+                        stderr=subprocess.DEVNULL,
+                    )
         except Exception as e:
-            print(f"Warning: network cleanup error: {e}")
+            print(f"Warning: network deduplication error: {e}")
+
+    def pull_and_restart(self):
+        self.deduplicate_networks()
+        subprocess.run(
+            self.compose_cmd + ["down", "--remove-orphans"],
+            cwd=self.repo_path,
+        )
         subprocess.run(
             self.compose_cmd + ["pull", self.service_name],
             cwd=self.repo_path,
@@ -202,6 +236,7 @@ class YadaNodeManager:
         print(f"Restore from bootstrap data complete.")
 
     def run(self):
+        self.deduplicate_networks()  # Fix any duplicate networks before touching compose
         self.stop_previous_containers()  # Stop and remove previous containers
         if self.is_mongodump_directory_present():
             self.start_restore_service()  # Start the restore service if directory exists
