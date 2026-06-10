@@ -1,7 +1,10 @@
+import json
 import os
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 
 
 def _detect_compose_cmd():
@@ -104,9 +107,30 @@ class YadaNodeManager:
         else:
             print("Failed to install Docker Compose V2. Continuing with v1.")
 
+    def get_latest_release_tag(self):
+        """Return the tag_name of the latest GitHub Release, or None on failure.
+
+        A GitHub Release only exists after CI has built and pushed the Docker
+        image, so this naturally avoids the race condition of checking git tags
+        directly.
+        """
+        try:
+            url = "https://api.github.com/repos/pdxwebdev/yadacoin/releases/latest"
+            req = urllib.request.Request(url)
+            req.add_header("Accept", "application/vnd.github+json")
+            req.add_header("X-GitHub-Api-Version", "2022-11-28")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read())["tag_name"]
+        except Exception as e:
+            print(f"Warning: could not fetch latest release from GitHub: {e}")
+            return None
+
     def git_pull_latest(self):
         os.chdir(self.repo_path)
-        subprocess.run(["git", "fetch", "origin", "--tags"])
+
+        latest_tag = self.get_latest_release_tag()
+        if not latest_tag:
+            return False
 
         # Tag the node is currently running on (None if not on a tag)
         try:
@@ -121,19 +145,11 @@ class YadaNodeManager:
         except subprocess.CalledProcessError:
             current_tag = None
 
-        # Highest version tag available locally (after fetch)
-        try:
-            latest_tag = (
-                subprocess.check_output(["git", "tag", "--sort=-version:refname"])
-                .decode()
-                .strip()
-                .splitlines()[0]
+        if latest_tag != current_tag:
+            print(
+                f"New release available: {latest_tag} (was: {current_tag}). Updating..."
             )
-        except (subprocess.CalledProcessError, IndexError):
-            latest_tag = None
-
-        if latest_tag and latest_tag != current_tag:
-            print(f"New tag available: {latest_tag} (was: {current_tag}). Updating...")
+            subprocess.run(["git", "fetch", "origin", "--tags"])
             subprocess.run(["git", "stash"])
             subprocess.run(["git", "checkout", latest_tag])
             subprocess.run(["git", "stash", "pop"])
@@ -219,48 +235,6 @@ class YadaNodeManager:
             cwd=self.repo_path,
         )
 
-    def _get_image_digest(self):
-        """Return the current local image digest, or None if unavailable."""
-        try:
-            return (
-                subprocess.check_output(
-                    [
-                        "docker",
-                        "inspect",
-                        "--format={{index .RepoDigests 0}}",
-                        f"ghcr.io/pdxwebdev/yadacoin:latest",
-                    ],
-                    stderr=subprocess.DEVNULL,
-                )
-                .decode()
-                .strip()
-            )
-        except Exception:
-            return None
-
-    def pull_latest_image(self):
-        """Pull the latest image and restart the container if the image changed.
-
-        Called every update cycle regardless of whether a new git tag was found,
-        so that nodes which attempted a pull before CI finished will self-heal.
-        Returns True if the image was updated.
-        """
-        digest_before = self._get_image_digest()
-        subprocess.run(
-            self.compose_cmd + ["pull", self.service_name],
-            cwd=self.repo_path,
-        )
-        digest_after = self._get_image_digest()
-        if digest_before != digest_after:
-            print("New image pulled. Restarting container...")
-            subprocess.run(
-                self.compose_cmd + ["up", "-d", self.service_name],
-                cwd=self.repo_path,
-            )
-            subprocess.run(["docker", "image", "prune", "-f"], cwd=self.repo_path)
-            return True
-        return False
-
     def start_docker_image(self):
         subprocess.run(
             self.compose_cmd + ["up", "-d", self.service_name],
@@ -298,14 +272,11 @@ class YadaNodeManager:
                 self.start_docker_image()
             # Only check for git updates at the longer interval
             if time.time() - last_update_check >= self.update_interval_seconds:
-                git_updated = self.git_pull_latest()
-                image_updated = self.pull_latest_image()
-                if git_updated or image_updated:
-                    if git_updated:
-                        print(
-                            "New version detected. Pulling image and restarting container..."
-                        )
-                        self.pull_and_restart()
+                if self.git_pull_latest():
+                    print(
+                        "New release detected. Pulling image and restarting container..."
+                    )
+                    self.pull_and_restart()
                     print("Restarting node manager to pick up source changes...")
                     os.execv(sys.executable, [sys.executable] + sys.argv)
                 else:
