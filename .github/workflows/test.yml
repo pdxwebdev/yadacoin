@@ -8,6 +8,10 @@ on:
       - "v*"
   workflow_dispatch:
 
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-22.04
