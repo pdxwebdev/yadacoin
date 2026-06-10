@@ -219,21 +219,39 @@ class YadaNodeManager:
             cwd=self.repo_path,
         )
 
+    def _get_image_digest(self):
+        """Return the current local image digest, or None if unavailable."""
+        try:
+            return (
+                subprocess.check_output(
+                    [
+                        "docker",
+                        "inspect",
+                        "--format={{index .RepoDigests 0}}",
+                        f"ghcr.io/pdxwebdev/yadacoin:latest",
+                    ],
+                    stderr=subprocess.DEVNULL,
+                )
+                .decode()
+                .strip()
+            )
+        except Exception:
+            return None
+
     def pull_latest_image(self):
         """Pull the latest image and restart the container if the image changed.
 
         Called every update cycle regardless of whether a new git tag was found,
         so that nodes which attempted a pull before CI finished will self-heal.
-        Returns True if the image was updated and the container was restarted.
+        Returns True if the image was updated.
         """
-        result = subprocess.run(
+        digest_before = self._get_image_digest()
+        subprocess.run(
             self.compose_cmd + ["pull", self.service_name],
             cwd=self.repo_path,
-            capture_output=True,
-            text=True,
         )
-        # Compose prints "Pulled" when it downloads a new image layer
-        if "Pulled" in result.stdout or "Pulled" in result.stderr:
+        digest_after = self._get_image_digest()
+        if digest_before != digest_after:
             print("New image pulled. Restarting container...")
             subprocess.run(
                 self.compose_cmd + ["up", "-d", self.service_name],
