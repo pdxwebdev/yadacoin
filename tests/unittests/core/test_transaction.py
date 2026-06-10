@@ -2721,6 +2721,174 @@ class TestTransactionPureMethods(AsyncTestCase):
                     # 1 UTXO, 1 spent → 1 - 1 = 0 == len([]) → no exception
                     await txn.verify_kel_output_rules(block=None)
 
+    # ------------------------------------------------------------------
+    # ContentTakedownAnnouncement in verify()
+    # ------------------------------------------------------------------
+
+    async def test_transaction_init_parses_content_takedown_dict(self):
+        """transaction.py lines 173-178: relationship dict with 'content_takedown' key is parsed."""
+        from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
+        from yadacoin.core.transaction import Transaction as Txn
+
+        rel_dict = {
+            "content_takedown": {
+                "transaction_id": "abc123def456",
+                "reason_code": "csam",
+            }
+        }
+        # Use from_dict which calls __init__ with the relationship dict
+        raw = {
+            "time": 0,
+            "id": "sig001",
+            "rid": "",
+            "relationship": rel_dict,
+            "relationship_hash": "",
+            "public_key": yadacoin.core.config.CONFIG.public_key,
+            "dh_public_key": "",
+            "fee": 0.0,
+            "masternode_fee": 0.0,
+            "requester_rid": "",
+            "requested_rid": "",
+            "hash": "",
+            "inputs": [],
+            "outputs": [],
+            "coinbase": False,
+            "version": 7,
+        }
+        parsed = Txn.from_dict(raw)
+        self.assertIsInstance(parsed.relationship, ContentTakedownAnnouncement)
+        self.assertEqual(parsed.relationship.reason_code.value, "csam")
+
+    async def test_transaction_init_invalid_content_takedown_falls_through(self):
+        """transaction.py lines 177-178: invalid content_takedown dict → except passes, relationship kept as-is."""
+        from yadacoin.core.transaction import Transaction as Txn
+
+        # Missing required fields → from_relationship raises ValueError → except passes
+        bad_rel = {"content_takedown": {"bad_key": "no_value"}}
+        raw = {
+            "time": 0,
+            "id": "sig002",
+            "rid": "",
+            "relationship": bad_rel,
+            "relationship_hash": "",
+            "public_key": yadacoin.core.config.CONFIG.public_key,
+            "dh_public_key": "",
+            "fee": 0.0,
+            "masternode_fee": 0.0,
+            "requester_rid": "",
+            "requested_rid": "",
+            "hash": "",
+            "inputs": [],
+            "outputs": [],
+            "coinbase": False,
+            "version": 7,
+        }
+        parsed = Txn.from_dict(raw)
+        # relationship should be left as the original dict (not converted)
+        self.assertIsInstance(parsed.relationship, dict)
+        self.assertIn("content_takedown", parsed.relationship)
+
+    async def test_transaction_to_dict_wraps_content_takedown(self):
+        """transaction.py line 1498: ContentTakedownAnnouncement wrapped under 'content_takedown' key in to_dict()."""
+        import hashlib
+
+        from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
+
+        txn = await Transaction.generate(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            private_key=yadacoin.core.config.CONFIG.private_key,
+        )
+        ann = ContentTakedownAnnouncement(
+            transaction_id="abc123def456", reason_code="copyright"
+        )
+        txn.relationship = ann
+        txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
+        d = txn.to_dict()
+        self.assertIn("content_takedown", d["relationship"])
+        self.assertEqual(
+            d["relationship"]["content_takedown"]["reason_code"], "copyright"
+        )
+
+    async def test_verify_content_takedown_without_flag_raises(self):
+        """ContentTakedownAnnouncement with check_content_takedown=False raises."""
+        import hashlib
+
+        from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
+        from yadacoin.core.transactionutils import TU
+
+        txn = await Transaction.generate(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            private_key=yadacoin.core.config.CONFIG.private_key,
+        )
+        ann = ContentTakedownAnnouncement(
+            transaction_id="abc123def456", reason_code="csam"
+        )
+        txn.relationship = ann
+        txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
+        txn.fee = 0.01  # meets minimum
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = TU.generate_signature_with_private_key(
+            yadacoin.core.config.CONFIG.private_key, txn.hash
+        )
+        with self.assertRaises(InvalidTransactionException) as ctx:
+            await txn.verify(check_content_takedown=False)
+        self.assertIn("Content takedown transactions not allowed", str(ctx.exception))
+
+    async def test_verify_content_takedown_fee_too_low_raises(self):
+        """ContentTakedownAnnouncement with fee == 0 raises."""
+        import hashlib
+
+        from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
+        from yadacoin.core.transactionutils import TU
+
+        txn = await Transaction.generate(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            private_key=yadacoin.core.config.CONFIG.private_key,
+        )
+        ann = ContentTakedownAnnouncement(
+            transaction_id="abc123def456", reason_code="csam"
+        )
+        txn.relationship = ann
+        txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
+        txn.fee = 0.0  # zero fee → rejected
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = TU.generate_signature_with_private_key(
+            yadacoin.core.config.CONFIG.private_key, txn.hash
+        )
+        with self.assertRaises(InvalidTransactionException) as ctx:
+            await txn.verify(check_content_takedown=True)
+        self.assertIn("non-zero fee", str(ctx.exception).lower())
+
+    async def test_verify_content_takedown_with_flag_passes_hash_check(self):
+        """ContentTakedownAnnouncement with check_content_takedown=True doesn't raise on that branch."""
+        import hashlib
+
+        from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
+        from yadacoin.core.transactionutils import TU
+
+        txn = await Transaction.generate(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            private_key=yadacoin.core.config.CONFIG.private_key,
+        )
+        ann = ContentTakedownAnnouncement(
+            transaction_id="abc123def456", reason_code="csam"
+        )
+        txn.relationship = ann
+        txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
+        txn.fee = 0.01  # meets minimum
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = TU.generate_signature_with_private_key(
+            yadacoin.core.config.CONFIG.private_key, txn.hash
+        )
+        # Should not raise for the "not allowed before fork" or "minimum fee" reasons
+        try:
+            await txn.verify(check_content_takedown=True)
+        except InvalidTransactionException as e:
+            self.assertNotIn("Content takedown transactions not allowed", str(e))
+            self.assertNotIn("minimum fee", str(e).lower())
+        except Exception:
+            pass  # other validation failures (e.g. inputs/outputs) are acceptable
+
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

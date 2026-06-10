@@ -120,6 +120,12 @@ class CHAIN(object):
     # locked to any previous KEL address, allowing balances to carry forward
     # through key rotations without requiring the holder to pre-rotate first.
     KEL_CROSS_KEY_SPENDING_FORK = 599000
+    # Content takedown announcements: a transaction whose relationship is
+    # {"content_takedown": {transaction_id, reason_code}} requests that all
+    # nodes clear the relationship field of the referenced transaction.  Nodes
+    # comply automatically, optionally, or not at all depending on their local
+    # content_takedown_policy configuration.  See yadacoin/core/contenttakedown.py.
+    CONTENT_TAKEDOWN_FORK = 601000
 
     @classmethod
     def target_block_time(cls, network: str):

@@ -29,6 +29,7 @@ from yadacoin.core.agentannouncement import AgentAnnouncement
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.config import Config
+from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
 from yadacoin.core.credentialreceipt import CredentialReceipt
 from yadacoin.core.nodeannouncement import NodeAnnouncement
 from yadacoin.core.recoveryannouncement import (
@@ -164,6 +165,17 @@ class Transaction(object):
         elif isinstance(self.relationship, dict) and "agent" in self.relationship:
             # Convert agent registration dict to AgentAnnouncement instance
             self.relationship = AgentAnnouncement.from_dict(self.relationship["agent"])
+        elif (
+            isinstance(self.relationship, dict)
+            and "content_takedown" in self.relationship
+        ):
+            # Convert content takedown dict to ContentTakedownAnnouncement instance
+            try:
+                self.relationship = ContentTakedownAnnouncement.from_relationship(
+                    self.relationship
+                )
+            except (ValueError, TypeError):
+                pass
         elif (
             isinstance(self.relationship, dict)
             and "recovery" in self.relationship
@@ -618,6 +630,7 @@ class Transaction(object):
         check_kel=False,
         check_dynamic_nodes=False,
         check_agent_registration=False,
+        check_content_takedown=False,
         block=None,
         mempool=False,
         batch_txns=None,
@@ -752,6 +765,16 @@ class Transaction(object):
             if not self.relationship.endpoint_url:
                 raise InvalidTransactionException(
                     "Agent registration transaction missing endpoint_url"
+                )
+        elif isinstance(self.relationship, ContentTakedownAnnouncement):
+            relationship = self.relationship.to_string()
+            if not check_content_takedown:
+                raise InvalidTransactionException(
+                    f"Content takedown transactions not allowed before fork height {CHAIN.CONTENT_TAKEDOWN_FORK}"
+                )
+            if self.fee <= 0.0:
+                raise InvalidTransactionException(
+                    "Content takedown transaction must include a non-zero fee"
                 )
         elif isinstance(
             self.relationship, (RecoveryAnnouncement, RecoveryProof, RecoveryTransition)
@@ -898,6 +921,8 @@ class Transaction(object):
         elif isinstance(self.relationship, NodeAnnouncement):
             relationship = self.relationship.to_string()
         elif isinstance(self.relationship, AgentAnnouncement):
+            relationship = self.relationship.to_string()
+        elif isinstance(self.relationship, ContentTakedownAnnouncement):
             relationship = self.relationship.to_string()
         elif isinstance(
             self.relationship, (RecoveryAnnouncement, RecoveryProof, RecoveryTransition)
@@ -1472,6 +1497,9 @@ class Transaction(object):
             # Wrap AgentAnnouncement back in "agent" key for storage
             elif isinstance(self.relationship, AgentAnnouncement):
                 relationship = {"agent": relationship}
+            # Wrap ContentTakedownAnnouncement back in "content_takedown" key
+            elif isinstance(self.relationship, ContentTakedownAnnouncement):
+                relationship = {"content_takedown": relationship}
         ret = {
             "time": int(self.time),
             "rid": self.rid,

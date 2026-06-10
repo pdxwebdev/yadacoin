@@ -2222,6 +2222,140 @@ class TestBlock(AsyncTestCase):
 
         self.assertNotIn(txn, transaction_objs)
 
+    async def test_validate_transactions_content_takedown_dedup(self):
+        """Block.py lines 697-713: content takedown dedup at CONTENT_TAKEDOWN_FORK."""
+        from yadacoin.core.blockchainutils import BlockChainUtils
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
+
+        Config().BU = BlockChainUtils()
+
+        # Plain transaction (non-CTA) — exercises the isinstance continue branch (line 700)
+        plain_txn = Mock()
+        plain_txn.transaction_signature = "plain_sig"
+        plain_txn.relationship = "plain relationship string"
+        plain_txn.spent_in_txn = None
+        plain_txn.inputs = []
+        plain_txn.outputs = []
+        plain_txn.fee = 0.0
+        plain_txn.masternode_fee = 0.0
+        plain_txn.time = 0
+        plain_txn.verify = AsyncMock(return_value=None)
+
+        ann1 = ContentTakedownAnnouncement(
+            transaction_id="target_txn_dup", reason_code="csam"
+        )
+        ann2 = ContentTakedownAnnouncement(
+            transaction_id="target_txn_dup", reason_code="spam"
+        )
+
+        txn1 = Mock()
+        txn1.transaction_signature = "td_sig_1"
+        txn1.relationship = ann1
+        txn1.spent_in_txn = None
+        txn1.inputs = []
+        txn1.outputs = []
+        txn1.fee = 0.0
+        txn1.masternode_fee = 0.0
+        txn1.time = 0
+        txn1.verify = AsyncMock(return_value=None)
+
+        txn2 = Mock()
+        txn2.transaction_signature = "td_sig_2"
+        txn2.relationship = ann2  # same target_id → should be removed
+        txn2.spent_in_txn = None
+        txn2.inputs = []
+        txn2.outputs = []
+        txn2.fee = 0.0
+        txn2.masternode_fee = 0.0
+        txn2.time = 0
+        txn2.verify = AsyncMock(return_value=None)
+
+        txns = [plain_txn, txn1, txn2]
+        transaction_objs = []
+        used_sigs = []
+        used_inputs = {}
+
+        # first call returns None (not on-chain), so first takedown passes through
+        Config().mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+
+        with mock.patch(
+            "yadacoin.core.transaction.Transaction.handle_exception",
+            new=AsyncMock(return_value=None),
+        ), mock.patch(
+            "yadacoin.core.config.Config.address_is_valid", return_value=True
+        ), mock.patch(
+            "yadacoin.core.blockchainutils.BlockChainUtils.is_input_spent",
+            new=AsyncMock(return_value=False),
+        ):
+            await Block.validate_transactions(
+                txns,
+                transaction_objs,
+                used_sigs,
+                used_inputs,
+                CHAIN.CONTENT_TAKEDOWN_FORK,
+                int(time_module.time()),
+            )
+
+        # Plain txn should remain; first takedown should remain; second is duplicate
+        self.assertIn(plain_txn, txns)
+        self.assertIn(txn1, txns)
+        self.assertNotIn(txn2, txns)
+
+    async def test_validate_transactions_content_takedown_already_onchain(self):
+        """Block.py line 708: takedown already on-chain is removed from block candidate."""
+        from yadacoin.core.blockchainutils import BlockChainUtils
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
+
+        Config().BU = BlockChainUtils()
+
+        ann = ContentTakedownAnnouncement(
+            transaction_id="already_onchain_txn", reason_code="csam"
+        )
+
+        txn = Mock()
+        txn.transaction_signature = "td_sig_onchain"
+        txn.relationship = ann
+        txn.spent_in_txn = None
+        txn.inputs = []
+        txn.outputs = []
+        txn.fee = 0.0
+        txn.masternode_fee = 0.0
+        txn.time = 0
+        txn.verify = AsyncMock(return_value=None)
+
+        txns = [txn]
+        transaction_objs = []
+        used_sigs = []
+        used_inputs = {}
+
+        # Simulate already on-chain
+        Config().mongo.async_db.blocks.find_one = AsyncMock(
+            return_value={"_id": "some_block"}
+        )
+
+        with mock.patch(
+            "yadacoin.core.transaction.Transaction.handle_exception",
+            new=AsyncMock(return_value=None),
+        ), mock.patch(
+            "yadacoin.core.config.Config.address_is_valid", return_value=True
+        ), mock.patch(
+            "yadacoin.core.blockchainutils.BlockChainUtils.is_input_spent",
+            new=AsyncMock(return_value=False),
+        ):
+            await Block.validate_transactions(
+                txns,
+                transaction_objs,
+                used_sigs,
+                used_inputs,
+                CHAIN.CONTENT_TAKEDOWN_FORK,
+                int(time_module.time()),
+            )
+
+        # Takedown already on-chain should be removed
+        self.assertNotIn(txn, txns)
+
     async def test_from_dict_block_instance_returns_early(self):
         """Line 733: from_dict() returns the same Block instance when given a Block."""
         block = await Block.init_async(target=1)

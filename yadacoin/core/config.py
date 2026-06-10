@@ -180,6 +180,32 @@ class Config:
         self.masternode_fee_minimum = config.get("masternode_fee_minimum", 1)
         self.balance_min_utxo = config.get("balance_min_utxo", 1)
 
+        # ── Content Takedown Policy ────────────────────────────────────────────
+        # Controls how this node responds to ContentTakedownAnnouncement txns.
+        #
+        # auto_comply      : clear the relationship field immediately when any
+        #                    of these reason codes is encountered.  Defaults to
+        #                    the set of codes covering broadly illegal content.
+        # comply_and_save  : clear the relationship field AND archive the
+        #                    original value in content_takedown_archive for
+        #                    later human review.  Empty by default — operators
+        #                    must explicitly opt in via config.json.
+        #
+        # Any reason code not listed in either set results in no-comply
+        # (the request is ignored).
+        from yadacoin.core.contenttakedown import (
+            DEFAULT_AUTO_COMPLY,
+            DEFAULT_COMPLY_AND_SAVE,
+        )
+
+        _policy = config.get("content_takedown_policy", {})
+        self.content_takedown_auto_comply: frozenset = frozenset(
+            _policy.get("auto_comply", list(DEFAULT_AUTO_COMPLY))
+        )
+        self.content_takedown_comply_and_save: frozenset = frozenset(
+            _policy.get("comply_and_save", list(DEFAULT_COMPLY_AND_SAVE))
+        )
+
         # Transaction signature of the inception entry for the designated admin KEL.
         # Set this to the transaction_id returned by /key-rotation/init-derived-child-key.
         # When set, DerivedChildKeyHandler only accepts rotations belonging to this KEL,

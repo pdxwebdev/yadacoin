@@ -1183,3 +1183,169 @@ class TestInsertBlock(ConsensusBase):
             side_effect=Exception("db")
         )
         await self.consensus.insert_block(block, MagicMock())
+
+    async def test_insert_block_at_content_takedown_fork_calls_apply(self):
+        """consensus.py line 555: block.index >= CONTENT_TAKEDOWN_FORK triggers _apply_content_takedowns."""
+        from yadacoin.core.chain import CHAIN
+
+        block = _mk_block(index=CHAIN.CONTENT_TAKEDOWN_FORK)
+        self.consensus.config.mp = None
+        self.consensus.config.content_takedown_auto_comply = frozenset()
+        self.consensus.config.content_takedown_comply_and_save = frozenset()
+        r = await self.consensus.insert_block(block, MagicMock())
+        self.assertTrue(r)
+
+
+# ---------------------------------------------------------------------------
+# _apply_content_takedowns branch coverage
+# ---------------------------------------------------------------------------
+
+
+def _mk_takedown_txn(target_txn_id, reason_code_value="csam", sig="takedown_sig"):
+    """Return a mock transaction with a ContentTakedownAnnouncement relationship."""
+    from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
+
+    ann = ContentTakedownAnnouncement(
+        transaction_id=target_txn_id, reason_code=reason_code_value
+    )
+    txn = MagicMock()
+    txn.relationship = ann
+    txn.transaction_signature = sig
+    return txn
+
+
+def _mk_plain_txn():
+    """Return a mock transaction with a non-takedown relationship."""
+    txn = MagicMock()
+    txn.relationship = "plain relationship string"
+    txn.transaction_signature = "plain_sig"
+    return txn
+
+
+class TestApplyContentTakedowns(ConsensusBase):
+    """Branch coverage for Consensus._apply_content_takedowns."""
+
+    def _setup_db(self, find_one_return=None, update_many_modified=1):
+        """Configure the DB mocks needed for takedown tests."""
+        result = MagicMock()
+        result.modified_count = update_many_modified
+
+        self.consensus.mongo.async_db.blocks.find_one = AsyncMock(
+            return_value=find_one_return
+        )
+        self.consensus.mongo.async_db.blocks.update_many = AsyncMock(
+            return_value=result
+        )
+        self.consensus.mongo.async_db.content_takedown_archive = MagicMock()
+        self.consensus.mongo.async_db.content_takedown_archive.insert_one = AsyncMock()
+
+    async def test_non_takedown_transactions_skipped(self):
+        """Block with only plain transactions → no DB writes."""
+        self._setup_db()
+        block = _mk_block(transactions=[_mk_plain_txn()])
+        await self.consensus._apply_content_takedowns(block)
+        self.consensus.mongo.async_db.blocks.update_many.assert_not_called()
+
+    async def test_auto_comply_clears_relationship(self):
+        """reason_code in auto_comply → update_many called, no archive insert."""
+        self._setup_db()
+        self.consensus.config.content_takedown_auto_comply = frozenset(["csam"])
+        self.consensus.config.content_takedown_comply_and_save = frozenset()
+
+        block = _mk_block(transactions=[_mk_takedown_txn("target_txn_001", "csam")])
+        await self.consensus._apply_content_takedowns(block)
+
+        self.consensus.mongo.async_db.blocks.update_many.assert_awaited_once()
+        self.consensus.mongo.async_db.content_takedown_archive.insert_one.assert_not_called()
+
+    async def test_no_comply_skips_update(self):
+        """reason_code not in either policy set → no DB writes."""
+        self._setup_db()
+        self.consensus.config.content_takedown_auto_comply = frozenset()
+        self.consensus.config.content_takedown_comply_and_save = frozenset()
+
+        block = _mk_block(transactions=[_mk_takedown_txn("target_txn_002", "csam")])
+        await self.consensus._apply_content_takedowns(block)
+
+        self.consensus.mongo.async_db.blocks.update_many.assert_not_called()
+        self.consensus.mongo.async_db.content_takedown_archive.insert_one.assert_not_called()
+
+    async def test_comply_and_save_archives_and_clears(self):
+        """reason_code in comply_and_save → archive insert AND update_many called."""
+        target_block_doc = {
+            "index": 10,
+            "transactions": [
+                {
+                    "id": "target_txn_003",
+                    "relationship": {"some": "data"},
+                }
+            ],
+        }
+        self._setup_db(find_one_return=target_block_doc)
+        self.consensus.config.content_takedown_auto_comply = frozenset()
+        self.consensus.config.content_takedown_comply_and_save = frozenset(
+            ["copyright"]
+        )
+
+        block = _mk_block(
+            index=50,
+            transactions=[
+                _mk_takedown_txn("target_txn_003", "copyright", sig="td_sig")
+            ],
+        )
+        await self.consensus._apply_content_takedowns(block)
+
+        self.consensus.mongo.async_db.content_takedown_archive.insert_one.assert_awaited_once()
+        self.consensus.mongo.async_db.blocks.update_many.assert_awaited_once()
+
+    async def test_comply_and_save_target_not_found_still_clears(self):
+        """comply_and_save but target block not found → no archive, update_many still runs."""
+        self._setup_db(find_one_return=None)
+        self.consensus.config.content_takedown_auto_comply = frozenset()
+        self.consensus.config.content_takedown_comply_and_save = frozenset(["spam"])
+
+        block = _mk_block(transactions=[_mk_takedown_txn("target_txn_004", "spam")])
+        await self.consensus._apply_content_takedowns(block)
+
+        self.consensus.mongo.async_db.content_takedown_archive.insert_one.assert_not_called()
+        self.consensus.mongo.async_db.blocks.update_many.assert_awaited_once()
+
+    async def test_comply_and_save_txn_not_in_block_still_clears(self):
+        """comply_and_save: target block found but transaction id does not match → no archive."""
+        target_block_doc = {
+            "index": 10,
+            "transactions": [
+                {
+                    "id": "different_txn_id",
+                    "relationship": {"some": "data"},
+                }
+            ],
+        }
+        self._setup_db(find_one_return=target_block_doc)
+        self.consensus.config.content_takedown_auto_comply = frozenset()
+        self.consensus.config.content_takedown_comply_and_save = frozenset(["spam"])
+
+        block = _mk_block(transactions=[_mk_takedown_txn("target_txn_005", "spam")])
+        await self.consensus._apply_content_takedowns(block)
+
+        self.consensus.mongo.async_db.content_takedown_archive.insert_one.assert_not_called()
+        self.consensus.mongo.async_db.blocks.update_many.assert_awaited_once()
+
+    async def test_multiple_transactions_mixed(self):
+        """Plain + takedown transactions in same block: only takedown triggers update."""
+        self._setup_db()
+        self.consensus.config.content_takedown_auto_comply = frozenset(["csam"])
+        self.consensus.config.content_takedown_comply_and_save = frozenset()
+
+        block = _mk_block(
+            transactions=[
+                _mk_plain_txn(),
+                _mk_takedown_txn("target_txn_006", "csam"),
+                _mk_plain_txn(),
+            ]
+        )
+        await self.consensus._apply_content_takedowns(block)
+
+        self.assertEqual(
+            self.consensus.mongo.async_db.blocks.update_many.await_count, 1
+        )

@@ -690,6 +690,33 @@ class Block(object):
                         input_item.input_txn = items_indexed[input_item.id]
                         items_indexed[input_item.id].spent_in_txn = txn
 
+        # Track takedown targets seen so far in this block to enforce the
+        # one-takedown-per-transaction rule at block-generation time.
+        seen_takedown_targets: set = set()
+        if index >= CHAIN.CONTENT_TAKEDOWN_FORK:
+            from yadacoin.core.contenttakedown import (
+                ContentTakedownAnnouncement as _CTA,
+            )
+
+            for txn in txns[:]:
+                if not isinstance(txn.relationship, _CTA):
+                    continue
+                target_id = txn.relationship.transaction_id
+                # Also reject if a takedown for this target is already on-chain.
+                already_onchain = await config.mongo.async_db.blocks.find_one(
+                    {
+                        "transactions.relationship.content_takedown.transaction_id": target_id
+                    },
+                    {"_id": 1},
+                )
+                if target_id in seen_takedown_targets or already_onchain:
+                    config.app_log.info(
+                        f"Duplicate content takedown for {target_id!r} removed from block candidate."
+                    )
+                    txns.remove(txn)
+                    continue
+                seen_takedown_targets.add(target_id)
+
         for transaction_obj in txns[:]:
             try:
                 if transaction_obj.transaction_signature in used_sigs:
@@ -712,11 +739,14 @@ class Block(object):
                 if index >= CHAIN.DYNAMIC_NODES_FORK:
                     check_dynamic_nodes = True
 
+                check_content_takedown = index >= CHAIN.CONTENT_TAKEDOWN_FORK
+
                 await transaction_obj.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
                     check_kel=check_kel,
                     check_dynamic_nodes=check_dynamic_nodes,
+                    check_content_takedown=check_content_takedown,
                     block=block_proxy,
                     mempool=False,
                     batch_txns=txns,

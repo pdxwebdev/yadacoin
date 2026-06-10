@@ -297,6 +297,31 @@ class GraphTransactionHandler(BaseGraphHandler):
                     if await transaction.is_already_in_mempool():
                         raise KELException("Duplicate Key Event found in mempool.")
 
+                # Enforce one takedown per target transaction_id.
+                from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
+
+                if isinstance(transaction.relationship, ContentTakedownAnnouncement):
+                    target_id = transaction.relationship.transaction_id
+                    mempool_dup = (
+                        await self.config.mongo.async_db.miner_transactions.find_one(
+                            {"relationship.content_takedown.transaction_id": target_id}
+                        )
+                    )
+                    onchain_dup = await self.config.mongo.async_db.blocks.find_one(
+                        {
+                            "transactions.relationship.content_takedown.transaction_id": target_id
+                        },
+                        {"_id": 1},
+                    )
+                    if mempool_dup or onchain_dup:
+                        self.set_status(400)
+                        return self.render_as_json(
+                            {
+                                "status": False,
+                                "message": f"A takedown request for transaction {target_id!r} already exists.",
+                            }
+                        )
+
             except InvalidTransactionException:
                 exception_raised = True
                 await self.config.mongo.async_db.failed_transactions.insert_one(

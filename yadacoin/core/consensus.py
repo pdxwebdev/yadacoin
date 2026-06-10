@@ -551,6 +551,9 @@ class Consensus(object):
                 {"id": {"$in": [x.transaction_signature for x in block.transactions]}}
             )
 
+            if block.index >= CHAIN.CONTENT_TAKEDOWN_FORK:
+                await self._apply_content_takedowns(block)
+
             await self.config.LatestBlock.update_latest_block()
 
             self.app_log.info("New block inserted for height: {}".format(block.index))
@@ -571,3 +574,75 @@ class Consensus(object):
             return True
         except Exception:
             self.app_log.warning("{}".format(format_exc()))
+
+    async def _apply_content_takedowns(self, block):
+        """Process ContentTakedownAnnouncement transactions in an accepted block.
+
+        Called from insert_block after the block has been persisted.  For each
+        takedown request, checks the node's content_takedown_policy:
+
+        - auto_comply      : clear the relationship field on the target
+                             transaction in every stored block document that
+                             contains it.
+        - comply_and_save  : same as auto_comply, AND archive the original
+                             relationship value in the
+                             ``content_takedown_archive`` collection.
+        - no_comply        : skip (do nothing).
+        """
+        from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
+
+        config = self.config
+        auto_comply = config.content_takedown_auto_comply
+        comply_and_save = config.content_takedown_comply_and_save
+
+        for txn in block.transactions:
+            if not isinstance(txn.relationship, ContentTakedownAnnouncement):
+                continue
+
+            takedown = txn.relationship
+            reason = takedown.reason_code.value
+
+            should_comply = reason in auto_comply or reason in comply_and_save
+            should_save = reason in comply_and_save
+
+            if not should_comply:
+                continue
+
+            target_id = takedown.transaction_id
+
+            # If archiving, locate and save the original relationship value first.
+            if should_save:
+                target_block = await self.mongo.async_db.blocks.find_one(
+                    {"transactions.id": target_id},
+                    {"index": 1, "transactions": 1},
+                )
+                if target_block:
+                    for stored_txn in target_block.get("transactions", []):
+                        if stored_txn.get("id") == target_id:
+                            original_relationship = stored_txn.get("relationship", "")
+                            await self.mongo.async_db.content_takedown_archive.insert_one(
+                                {
+                                    "takedown_txn_id": txn.transaction_signature,
+                                    "target_txn_id": target_id,
+                                    "reason_code": reason,
+                                    "original_relationship": original_relationship,
+                                    "block_index": target_block["index"],
+                                    "takedown_block_index": block.index,
+                                }
+                            )
+                            break
+
+            # Clear only the relationship field. relationship_hash must NOT be
+            # touched — it is part of the transaction hash and clearing it would
+            # invalidate the chain.  Use update_many (without block index filter)
+            # to catch any edge case where the same transaction_id appears in
+            # more than one block document (e.g. due to a bug or reorg artifact).
+            result = await self.mongo.async_db.blocks.update_many(
+                {"transactions.id": target_id},
+                {"$set": {"transactions.$.relationship": ""}},
+            )
+            self.app_log.info(
+                f"ContentTakedown: cleared relationship on txn {target_id!r} "
+                f"(reason={reason!r}, takedown_block={block.index}, "
+                f"docs_modified={result.modified_count}, comply_and_save={should_save})"
+            )

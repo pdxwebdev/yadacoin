@@ -347,6 +347,109 @@ The simulator is essential for testing dynamic nodes, network partitions, and hi
   - type: string
   - default: ""
   - description: The Application (client) ID for the Microsoft Azure AD app registration used by the AI agent to access Outlook email, Calendar, and Microsoft To Do via the Device Code Flow. By default the shared YadaCoin Azure app is used. For better privacy, register your own app under Azure Portal → Azure Active Directory → App registrations. Required settings: Supported account types = "Accounts in any organizational directory and personal Microsoft accounts"; Authentication → Advanced settings → Allow public client flows = Yes; API Permissions (Delegated) = User.Read, Mail.Read, Mail.Send, Calendars.ReadWrite, Tasks.ReadWrite. Changing this value requires existing Microsoft tokens to be revoked and re-authorized.
+- content_takedown_policy
+  - type: object
+  - default: `{"auto_comply": <all reason codes>, "comply_and_save": []}`
+  - description: Controls how this node responds to on-chain content takedown requests. See [Content Takedown](#content-takedown) for full details.
+  - nested properties:
+    - auto_comply
+      - type: array of strings
+      - default: all known reason codes
+      - description: Reason codes for which the node will automatically clear the `relationship` field of the targeted transaction when the takedown block is accepted. Defaults to every defined reason code so nodes are maximally compliant out of the box.
+    - comply_and_save
+      - type: array of strings
+      - default: []
+      - description: Reason codes for which the node will clear the `relationship` field AND archive the original value (along with its `relationship_hash`) in the local `content_takedown_archive` MongoDB collection for later review. Disabled by default — must be explicitly configured. The archived record retains the original relationship value so the hash can still be verified against the immutable `relationship_hash` on-chain.
+
+## Content Takedown
+
+Activated at block height **601,000** (`CONTENT_TAKEDOWN_FORK`).
+
+### Overview
+
+A content takedown is a special transaction relationship type that requests all nodes clear the `relationship` field of a previously broadcast transaction. The `relationship_hash` field on the targeted transaction remains immutable on-chain, preserving a cryptographic fingerprint of the original content even after it is removed.
+
+Because YadaCoin is a protocol layer (analogous to TCP/IP), clearing the relationship field is the full extent of what the protocol is responsible for. Counter-notice processes and dispute resolution are the responsibility of applications built on top of the protocol.
+
+### On-Chain Format
+
+A content takedown transaction carries the following structure in its `relationship` field:
+
+```json
+{
+  "content_takedown": {
+    "transaction_id": "<hex transaction signature of the transaction to take down>",
+    "reason_code": "<reason code string>"
+  }
+}
+```
+
+Only one takedown request per `transaction_id` is permitted on-chain. Duplicate takedown requests targeting the same transaction are rejected at the mempool (`/transaction` endpoint) and silently dropped during block generation.
+
+### Required Fee
+
+Content takedown transactions **must include a non-zero fee**. A fee of exactly `0.0` is rejected during block verification and at the `/transaction` mempool endpoint. There is no hard minimum beyond zero — requiring any fee forces the requester to consume an input, which is sufficient friction to deter spam.
+
+### Reason Codes
+
+| Code                     | Category   | Description                                                    |
+| ------------------------ | ---------- | -------------------------------------------------------------- |
+| `csam`                   | Illegal    | Child Sexual Abuse Material                                    |
+| `terrorism`              | Illegal    | Terrorist content or violent extremist propaganda              |
+| `incitement_to_violence` | Illegal    | Direct incitement to violence against persons or groups        |
+| `human_trafficking`      | Illegal    | Content facilitating or promoting human trafficking            |
+| `drug_trafficking`       | Illegal    | Content facilitating or promoting illegal drug trafficking     |
+| `weapons_trafficking`    | Illegal    | Content facilitating or promoting illegal weapons trafficking  |
+| `copyright`              | IP/Legal   | DMCA / copyright infringement                                  |
+| `trademark`              | IP/Legal   | Trademark infringement                                         |
+| `defamation`             | IP/Legal   | Defamatory content                                             |
+| `privacy_violation`      | IP/Legal   | Privacy violation (GDPR right-to-erasure, unauthorised PII)    |
+| `doxxing`                | Abuse      | Publication of private identifying information without consent |
+| `harassment`             | Abuse      | Targeted harassment or cyberstalking                           |
+| `hate_speech`            | Abuse      | Content promoting hatred against protected groups              |
+| `ncii`                   | Abuse      | Non-consensual intimate images                                 |
+| `spam`                   | Abuse      | Unsolicited bulk content                                       |
+| `malware`                | Abuse      | Content distributing or linking to malware                     |
+| `phishing`               | Abuse      | Phishing or credential-harvesting content                      |
+| `sanctions`              | Regulatory | Content or parties subject to international sanctions          |
+| `national_security`      | Regulatory | Content posing a national-security risk                        |
+| `court_order`            | Regulatory | Removal mandated by a court order                              |
+
+### Node Compliance Behaviour
+
+Each node independently decides how to respond based on its `content_takedown_policy` configuration:
+
+| Behaviour           | Config key               | What happens                                                                                                                                                                                                                                                                                    |
+| ------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **auto_comply**     | `auto_comply`            | Node clears the `relationship` field on the targeted transaction in its local block store immediately when the takedown block is accepted.                                                                                                                                                      |
+| **comply_and_save** | `comply_and_save`        | Same as auto_comply, plus the original `relationship` value is archived in the `content_takedown_archive` MongoDB collection along with the `reason_code`, block indices, and the takedown transaction ID. The original content can still be verified against the on-chain `relationship_hash`. |
+| **no_comply**       | _(not listed in either)_ | The takedown transaction is accepted and stored normally, but the targeted transaction's relationship field is left untouched.                                                                                                                                                                  |
+
+By default all reason codes are in `auto_comply`, meaning nodes comply with every takedown request automatically. Operators who want selective compliance can narrow the default by setting `content_takedown_policy` in `config.json`:
+
+```json
+"content_takedown_policy": {
+  "auto_comply": ["csam", "terrorism", "court_order"],
+  "comply_and_save": ["copyright", "defamation", "privacy_violation"]
+}
+```
+
+Any reason code not listed in either array results in **no_comply** for that node.
+
+### Content Integrity After Takedown
+
+The `relationship_hash` stored on the original transaction is a SHA-256 hash of the relationship content and is permanently embedded in the block. It cannot be altered. This means:
+
+- A node that archived the original value via `comply_and_save` can prove the archived content is authentic by hashing it and comparing to the on-chain `relationship_hash`.
+- Third parties who saved the original content before takedown can independently verify it against the same hash.
+- The takedown only affects what is actively served by compliant nodes — it does not rewrite blockchain history.
+
+### MongoDB Collections
+
+| Collection                 | Purpose                                                                                                                                                                                                              |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `blocks`                   | Standard block storage. The `relationship` field on the targeted transaction is cleared to `""` and `relationship_hash` is cleared to `""` by compliant nodes.                                                       |
+| `content_takedown_archive` | Created by nodes using `comply_and_save`. Each document records `takedown_txn_id`, `target_txn_id`, `reason_code`, `original_relationship`, `block_index` (of the targeted transaction), and `takedown_block_index`. |
 
 ## Development Environment
 
