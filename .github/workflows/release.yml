@@ -1,20 +1,29 @@
 name: Create Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_run:
+    workflows: ["Tests"]
+    types: [completed]
+    branches:
+      - "refs/tags/v*"
 
 jobs:
   release:
     name: Build and publish release
+    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
       packages: write
     steps:
+      - name: Set tag name
+        id: tag
+        run: echo "name=${{ github.event.workflow_run.head_branch }}" >> $GITHUB_OUTPUT
+
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.name }}
 
       - name: Read VERSION file
         id: version
@@ -40,17 +49,17 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.name }}
             ghcr.io/${{ github.repository }}:latest
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: YadaCoin ${{ github.ref_name }}
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: YadaCoin ${{ steps.tag.outputs.name }}
           body: |
-            Release ${{ github.ref_name }}
+            Release ${{ steps.tag.outputs.name }}
 
-            See [CHANGELOG](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}) for changes.
+            See [CHANGELOG](https://github.com/${{ github.repository }}/commits/${{ steps.tag.outputs.name }}) for changes.
           draft: false
           prerelease: false
