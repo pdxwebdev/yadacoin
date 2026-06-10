@@ -6,7 +6,40 @@ on:
       - "v*"
 
 jobs:
+  verify-kel:
+    name: KEL signer verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Determine base ref for tag
+        id: base_ref
+        run: |
+          # Use the tag's parent commit as the base so we only check commits
+          # that are new in this release.
+          BASE=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD)
+          echo "base=${BASE}" >> $GITHUB_OUTPUT
+
+      - name: Verify commit signers against KEL
+        run: |
+          python scripts/verify_kel_signers.py \
+            "${{ steps.base_ref.outputs.base }}" \
+            "${{ github.ref_name }}"
+
   release:
+    name: Build and publish release
+    needs: verify-kel
     runs-on: ubuntu-latest
     permissions:
       contents: write
