@@ -355,7 +355,7 @@ HANDLERS = [
     (r"/pool-blocks", PoolBlocksHandler),
     (r"/pool-payouts", PoolPayoutsHandler),
     (r"/get-start", GetStartHandler),
-    (r"/", PoolStatsInterfaceHandler),
+    (r"/pool", PoolStatsInterfaceHandler),
     (
         r"/yadacoinpoolstatic/(.*)",
         StaticFileHandler,

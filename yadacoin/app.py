@@ -102,6 +102,7 @@ from yadacoin.core.smtp import Email
 from yadacoin.core.transaction import Transaction
 from yadacoin.enums.modes import MODES
 from yadacoin.enums.peertypes import PEER_TYPES
+from yadacoin.http.api_docs import API_DOCS_HANDLERS
 from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
 from yadacoin.http.keyeventlog import KEY_EVENT_LOG_HANDLERS
@@ -1189,6 +1190,7 @@ class NodeApplication(Application):
         self.default_handlers.extend(WEB_HANDLERS)
         self.default_handlers.extend(POOL_HANDLERS)
         self.default_handlers.extend(KEY_EVENT_LOG_HANDLERS)
+        self.default_handlers.extend(API_DOCS_HANDLERS)
         if self.config.peer_type == PEER_TYPES.SERVICE_PROVIDER.value or (
             hasattr(self.config, "activate_peerjs")
             and self.config.activate_peerjs == True
@@ -1222,10 +1224,6 @@ class NodeApplication(Application):
                 "Wallet: http://{}:{}/app".format(
                     self.config.serve_host, self.config.serve_port
                 )
-            )
-        if MODES.PROXY.value in self.config.modes:
-            self.config.app_log.info(
-                "Proxy: {}:{}".format(self.config.serve_host, self.config.proxy_port)
             )
         if os.path.exists(path.join(path.dirname(__file__), "..", "templates")):
             template_path = path.join(path.dirname(__file__), "..", "templates")
@@ -1345,25 +1343,6 @@ class NodeApplication(Application):
             for x in [User, Group]:
                 if x.__name__ not in self.config.websocketServer.inbound_streams:
                     self.config.websocketServer.inbound_streams[x.__name__] = {}
-
-        if MODES.PROXY.value in self.config.modes:
-            from yadacoin.http.proxy import ProxyConfig, ProxyHandler
-
-            proxy_app = Application(
-                [
-                    (r".*", ProxyHandler),
-                ],
-                compiled_template_cache=False,
-                debug=True,
-            )
-            self.config.proxy_server = HTTPServer(proxy_app)
-            self.config.proxy_server.listen(self.config.proxy_port)
-            self.config.proxy = ProxyConfig()
-            for x in self.config.mongo.site_db.proxy_whitelist.find({}, {"_id": 0}):
-                self.config.proxy.white_list[x["domain"]] = x
-            for x in self.config.mongo.site_db.proxy_blacklist.find({}, {"_id": 0}):
-                self.config.proxy.black_list[x["domain"]] = x
-            self.config.proxy_server.inbound_peers = {User.__name__: {}}
 
         if MODES.DNS.value in self.config.modes:
             from yadacoin.udp.base import UDPServer

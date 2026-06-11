@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import "./App.css";
 import {
   LineChart,
   Line,
@@ -95,186 +96,387 @@ function App() {
     })();
   }, [resetData, txnData, sampleSize, url]);
 
+  const chartProps = {
+    width: 420,
+    height: 280,
+  };
+
+  const axisStyle = {
+    stroke: "#8b949e",
+    tick: { fill: "#8b949e", fontSize: 11 },
+  };
+  const gridStyle = { stroke: "#30363d" };
+
   return (
     <div className="App">
-      <input
-        type="text"
-        value={url}
-        onChange={(e) => {
-          setUrl(e.currentTarget.value);
-        }}
-      />
-      <input
-        type="number"
-        value={sampleSize}
-        onChange={(e) => {
-          setSampleSize(e.currentTarget.value);
-        }}
-      />
-      <input
-        type="checkbox"
-        value={archived}
-        onChange={(e) => {
-          setArchived(e.currentTarget.checked);
-        }}
-      />
-      <button
-        onClick={() => {
-          resetData(sampleSize, url, archived);
-        }}
-      >
-        Go
-      </button>
-      <div
-        style={{
-          display: "flex",
-          flex: 1,
-          flexDirection: "row",
-          justifyContent: "left",
-          flexWrap: "wrap",
-        }}
-      >
+      <header className="app-header">
+        <svg
+          width="40"
+          height="40"
+          viewBox="0 0 40 40"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <rect width="40" height="40" rx="10" fill="#1a2332" />
+          <text
+            x="20"
+            y="27"
+            fontSize="18"
+            fontFamily="sans-serif"
+            fontWeight="bold"
+            fill="#58a6ff"
+            textAnchor="middle"
+          >
+            Y
+          </text>
+        </svg>
         <div>
-          <h2>TransactionProcessingQueue</h2>
-          <LineChart width={400} height={300} data={txnData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="time" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Line
-              type="monotone"
-              dataKey="average_processing_time"
-              stroke="#8884d8"
+          <h1>Node Info</h1>
+          <p>Live status metrics from /get-status</p>
+        </div>
+      </header>
+
+      <main className="app-main">
+        <div className="controls">
+          <label>
+            Node URL
+            <input
+              type="text"
+              value={url}
+              onChange={(e) => setUrl(e.currentTarget.value)}
             />
-            <Line
-              type="monotone"
-              dataKey="num_items_processed"
-              stroke="#82ca9d"
+          </label>
+          <label>
+            Sample size (ms)
+            <input
+              type="number"
+              value={sampleSize}
+              onChange={(e) => setSampleSize(e.currentTarget.value)}
             />
-            <Line type="monotone" dataKey="queue_item_count" stroke="#ff7300" />
-          </LineChart>
-        </div>
-        <div>
-          <h2>BlockProcessingQueue</h2>
-          <LineChart width={400} height={300} data={blockData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="time" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Line
-              type="monotone"
-              dataKey="average_processing_time"
-              stroke="#8884d8"
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={archived}
+              onChange={(e) => setArchived(e.currentTarget.checked)}
             />
-            <Line
-              type="monotone"
-              dataKey="num_items_processed"
-              stroke="#82ca9d"
-            />
-            <Line type="monotone" dataKey="queue_item_count" stroke="#ff7300" />
-          </LineChart>
+            Archived
+          </label>
+          <button onClick={() => resetData(sampleSize, url, archived)}>
+            Go
+          </button>
         </div>
-        <div>
-          <h2>NonceProcessingQueue</h2>
-          <LineChart width={400} height={300} data={nonceData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="time" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Line
-              type="monotone"
-              dataKey="average_processing_time"
-              stroke="#8884d8"
-            />
-            <Line
-              type="monotone"
-              dataKey="num_items_processed"
-              stroke="#82ca9d"
-            />
-            <Line type="monotone" dataKey="queue_item_count" stroke="#ff7300" />
-          </LineChart>
-        </div>
-        <div>
-          <h2>Peers</h2>
-          <LineChart width={400} height={300} data={peerData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="time" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Line type="monotone" dataKey="inbound_peers" stroke="#8884d8" />
-            <Line type="monotone" dataKey="inbound_pending" stroke="#82ca9d" />
-            <Line type="monotone" dataKey="outbound_peers" stroke="#ff7300" />
-            <Line type="monotone" dataKey="outbound_ignore" stroke="#ff3300" />
-            <Line type="monotone" dataKey="outbound_pending" stroke="#ff7400" />
-          </LineChart>
-        </div>
-        <div>
-          <h2>Height</h2>
-          <LineChart width={400} height={300} data={heightData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="time" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Line type="monotone" dataKey="height" stroke="#8884d8" />
-          </LineChart>
-        </div>
-        <div>
-          <h2>Message Sender</h2>
-          <LineChart width={400} height={300} data={messageSenderData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="time" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Line type="monotone" dataKey="nodeServer" stroke="#8884d8" />
-            <Line type="monotone" dataKey="nodeClient" stroke="#82ca9d" />
-          </LineChart>
-        </div>
-        <div>
-          <h2>Slow Queries</h2>
-          <LineChart width={400} height={300} data={slowQueryData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="time" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Line type="monotone" dataKey="count" stroke="#8884d8" />
-          </LineChart>
-        </div>
-        {dockerPythonData && (
-          <div>
-            <h2>Python Docker Container</h2>
-            <LineChart width={400} height={300} data={dockerPythonData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="cpu_percent" stroke="#8884d8" />
-              <Line type="monotone" dataKey="mem_percent" stroke="#82ca9d" />
+
+        <div className="section-label">Processing Queues</div>
+        <div className="charts-grid">
+          <div className="chart-card">
+            <h2>Transaction Processing Queue</h2>
+            <LineChart {...chartProps} data={txnData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridStyle.stroke} />
+              <XAxis dataKey="time" {...axisStyle} />
+              <YAxis {...axisStyle} />
+              <Tooltip
+                contentStyle={{
+                  background: "#161b22",
+                  border: "1px solid #30363d",
+                  color: "#c9d1d9",
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: 12, color: "#8b949e" }} />
+              <Line
+                type="monotone"
+                dataKey="average_processing_time"
+                stroke="#58a6ff"
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="num_items_processed"
+                stroke="#3fb950"
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="queue_item_count"
+                stroke="#ffa657"
+                dot={false}
+              />
             </LineChart>
           </div>
-        )}
-        {dockerMongodbData && (
-          <div>
-            <h2>MongoDB Docker Container</h2>
-            <LineChart width={400} height={300} data={dockerMongodbData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="cpu_percent" stroke="#8884d8" />
-              <Line type="monotone" dataKey="mem_percent" stroke="#82ca9d" />
+          <div className="chart-card">
+            <h2>Block Processing Queue</h2>
+            <LineChart {...chartProps} data={blockData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridStyle.stroke} />
+              <XAxis dataKey="time" {...axisStyle} />
+              <YAxis {...axisStyle} />
+              <Tooltip
+                contentStyle={{
+                  background: "#161b22",
+                  border: "1px solid #30363d",
+                  color: "#c9d1d9",
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: 12, color: "#8b949e" }} />
+              <Line
+                type="monotone"
+                dataKey="average_processing_time"
+                stroke="#58a6ff"
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="num_items_processed"
+                stroke="#3fb950"
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="queue_item_count"
+                stroke="#ffa657"
+                dot={false}
+              />
             </LineChart>
           </div>
+          <div className="chart-card">
+            <h2>Nonce Processing Queue</h2>
+            <LineChart {...chartProps} data={nonceData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridStyle.stroke} />
+              <XAxis dataKey="time" {...axisStyle} />
+              <YAxis {...axisStyle} />
+              <Tooltip
+                contentStyle={{
+                  background: "#161b22",
+                  border: "1px solid #30363d",
+                  color: "#c9d1d9",
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: 12, color: "#8b949e" }} />
+              <Line
+                type="monotone"
+                dataKey="average_processing_time"
+                stroke="#58a6ff"
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="num_items_processed"
+                stroke="#3fb950"
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="queue_item_count"
+                stroke="#ffa657"
+                dot={false}
+              />
+            </LineChart>
+          </div>
+        </div>
+
+        <div className="section-label">Network</div>
+        <div className="charts-grid">
+          <div className="chart-card">
+            <h2>Peers</h2>
+            <LineChart {...chartProps} data={peerData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridStyle.stroke} />
+              <XAxis dataKey="time" {...axisStyle} />
+              <YAxis {...axisStyle} />
+              <Tooltip
+                contentStyle={{
+                  background: "#161b22",
+                  border: "1px solid #30363d",
+                  color: "#c9d1d9",
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: 12, color: "#8b949e" }} />
+              <Line
+                type="monotone"
+                dataKey="inbound_peers"
+                stroke="#58a6ff"
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="inbound_pending"
+                stroke="#3fb950"
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="outbound_peers"
+                stroke="#ffa657"
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="outbound_ignore"
+                stroke="#f78166"
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="outbound_pending"
+                stroke="#d2a8ff"
+                dot={false}
+              />
+            </LineChart>
+          </div>
+          <div className="chart-card">
+            <h2>Message Sender</h2>
+            <LineChart {...chartProps} data={messageSenderData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridStyle.stroke} />
+              <XAxis dataKey="time" {...axisStyle} />
+              <YAxis {...axisStyle} />
+              <Tooltip
+                contentStyle={{
+                  background: "#161b22",
+                  border: "1px solid #30363d",
+                  color: "#c9d1d9",
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: 12, color: "#8b949e" }} />
+              <Line
+                type="monotone"
+                dataKey="nodeServer"
+                stroke="#58a6ff"
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="nodClient"
+                stroke="#3fb950"
+                dot={false}
+              />
+            </LineChart>
+          </div>
+        </div>
+
+        <div className="section-label">Chain</div>
+        <div className="charts-grid">
+          <div className="chart-card">
+            <h2>Height</h2>
+            <LineChart {...chartProps} data={heightData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridStyle.stroke} />
+              <XAxis dataKey="time" {...axisStyle} />
+              <YAxis {...axisStyle} />
+              <Tooltip
+                contentStyle={{
+                  background: "#161b22",
+                  border: "1px solid #30363d",
+                  color: "#c9d1d9",
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: 12, color: "#8b949e" }} />
+              <Line
+                type="monotone"
+                dataKey="height"
+                stroke="#58a6ff"
+                dot={false}
+              />
+            </LineChart>
+          </div>
+          <div className="chart-card">
+            <h2>Slow Queries</h2>
+            <LineChart {...chartProps} data={slowQueryData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridStyle.stroke} />
+              <XAxis dataKey="time" {...axisStyle} />
+              <YAxis {...axisStyle} />
+              <Tooltip
+                contentStyle={{
+                  background: "#161b22",
+                  border: "1px solid #30363d",
+                  color: "#c9d1d9",
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: 12, color: "#8b949e" }} />
+              <Line
+                type="monotone"
+                dataKey="count"
+                stroke="#f78166"
+                dot={false}
+              />
+            </LineChart>
+          </div>
+        </div>
+
+        {(dockerPythonData || dockerMongodbData) && (
+          <>
+            <div className="section-label">Docker</div>
+            <div className="charts-grid">
+              {dockerPythonData && (
+                <div className="chart-card">
+                  <h2>Python Container</h2>
+                  <LineChart {...chartProps} data={dockerPythonData}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke={gridStyle.stroke}
+                    />
+                    <XAxis dataKey="time" {...axisStyle} />
+                    <YAxis {...axisStyle} />
+                    <Tooltip
+                      contentStyle={{
+                        background: "#161b22",
+                        border: "1px solid #30363d",
+                        color: "#c9d1d9",
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 12, color: "#8b949e" }} />
+                    <Line
+                      type="monotone"
+                      dataKey="cpu_percent"
+                      stroke="#58a6ff"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="mem_percent"
+                      stroke="#3fb950"
+                      dot={false}
+                    />
+                  </LineChart>
+                </div>
+              )}
+              {dockerMongodbData && (
+                <div className="chart-card">
+                  <h2>MongoDB Container</h2>
+                  <LineChart {...chartProps} data={dockerMongodbData}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke={gridStyle.stroke}
+                    />
+                    <XAxis dataKey="time" {...axisStyle} />
+                    <YAxis {...axisStyle} />
+                    <Tooltip
+                      contentStyle={{
+                        background: "#161b22",
+                        border: "1px solid #30363d",
+                        color: "#c9d1d9",
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 12, color: "#8b949e" }} />
+                    <Line
+                      type="monotone"
+                      dataKey="cpu_percent"
+                      stroke="#58a6ff"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="mem_percent"
+                      stroke="#3fb950"
+                      dot={false}
+                    />
+                  </LineChart>
+                </div>
+              )}
+            </div>
+          </>
         )}
-      </div>
+      </main>
+
+      <footer className="app-footer">
+        YadaCoin Node &mdash; <a href="/">← Back to Dashboard</a>
+      </footer>
     </div>
   );
 }

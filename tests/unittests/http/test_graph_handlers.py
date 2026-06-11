@@ -1609,18 +1609,6 @@ class TestWebSignInHandler(GraphHandlerTestBase):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# IdentityHandler — line 1007
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-class TestIdentityHandler(GraphHandlerTestBase):
-    def test_get_renders_or_500(self):
-        """Line 1007: renders identity.html (or 500 if no template)."""
-        response, _ = self._fetch_with_graph("/identity?username_signature=testsig")
-        self.assertIn(response.code, [200, 500])
-
-
-# ──────────────────────────────────────────────────────────────────────────────
 # ChallengeHandler — lines 1012-1061
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -1753,53 +1741,6 @@ class TestChallengeHandler(GraphHandlerTestBase):
         self.assertEqual(response.code, 200)
         data = json.loads(response.body)
         self.assertFalse(data["status"])
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# AuthHandler — lines 1081-1091
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-class TestAuthHandler(GraphHandlerTestBase):
-    def test_post_auth_failure_returns_false(self):
-        """Lines 1081-1091: bare except → authed = False."""
-        body = json.dumps(
-            {"username_signature": "nosuchkey", "challenge_signature": "abc"}
-        )
-        response, _ = self._fetch_with_graph(
-            "/auth?username_signature=testsig",
-            method="POST",
-            body=body,
-        )
-        self.assertEqual(response.code, 200)
-        data = json.loads(response.body)
-        self.assertFalse(data["authed"])
-
-    def test_post_auth_success(self):
-        """Lines 1081-1091: verify_signature=True → authed = True."""
-        import base64
-
-        body = json.dumps(
-            {
-                "username_signature": "alice_sig",
-                "challenge_signature": base64.b64encode(b"fake_sig").decode(),
-            }
-        )
-        with patch("yadacoin.http.graph.verify_signature", return_value=True):
-            # Insert a challenge into the module-level 'challenges' dict
-            pass
-
-            # 'challenges' doesn't exist in graph.py — it's another undefined name!
-            # Auth handler will raise KeyError → bare except → authed = False
-            response, _ = self._fetch_with_graph(
-                "/auth?username_signature=testsig",
-                method="POST",
-                body=body,
-            )
-        self.assertEqual(response.code, 200)
-        data = json.loads(response.body)
-        # Due to 'challenges' dict not being defined, always False
-        self.assertIsInstance(data["authed"], bool)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -2473,39 +2414,3 @@ class TestChallengeHandlerMissingLines(GraphHandlerTestBase):
             }
         )
         self.assertEqual(response.code, 200)
-
-
-class TestAuthHandlerMissingLines(GraphHandlerTestBase):
-    """Line 1084 in AuthHandler.post()."""
-
-    def test_auth_handler_post_with_valid_challenge(self):
-        """Line 1084: challenges dict has entry → calls verify_signature."""
-        import yadacoin.http.graph as graph_mod
-
-        graph_mod.challenges = {
-            "testsig": {
-                "challenge": "test_challenge",
-                "identity": {
-                    "public_key": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
-                },
-            }
-        }
-        import base64 as _b64
-
-        challenge_sig = _b64.b64encode(b"fake_sig").decode()
-        body = json.dumps(
-            {
-                "username_signature": "testsig",
-                "challenge_signature": challenge_sig,
-            }
-        )
-        with patch("yadacoin.http.graph.verify_signature", return_value=True):
-            response = self._fetch_jwt(
-                "/auth?username_signature=testsig",
-                method="POST",
-                body=body,
-            )
-        graph_mod.challenges = {}
-        self.assertEqual(response.code, 200)
-        data = json.loads(response.body)
-        self.assertIn("authed", data)

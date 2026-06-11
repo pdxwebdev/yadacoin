@@ -1,0 +1,1653 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>YadaCoin – Network Topology</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont,
+          "Segoe UI", Roboto, "Helvetica Neue",
+          Arial, sans-serif;
+        background: #0d1117;
+        color: #c9d1d9;
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* ── Header ── */
+      .header {
+        background: #161b22;
+        border-bottom: 1px solid #30363d;
+        padding: 12px 20px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex-shrink: 0;
+        z-index: 10;
+      }
+      .header h1 {
+        font-size: 18px;
+        font-weight: 600;
+        color: #e6edf3;
+      }
+      .header .subtitle {
+        font-size: 13px;
+        color: #8b949e;
+      }
+      .btn-refresh {
+        margin-left: auto;
+        padding: 6px 14px;
+        background: #21262d;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        color: #c9d1d9;
+        font-size: 13px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .btn-refresh:hover {
+        background: #30363d;
+      }
+      .last-updated {
+        font-size: 12px;
+        color: #8b949e;
+      }
+
+      /* ── Main layout ── */
+      .main {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+      }
+
+      /* ── Graph canvas ── */
+      #graph-container {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+      }
+      #graph-container svg {
+        width: 100%;
+        height: 100%;
+      }
+
+      /* ── Right sidebar ── */
+      .sidebar {
+        width: 340px;
+        flex-shrink: 0;
+        background: #161b22;
+        border-left: 1px solid #30363d;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .tabs {
+        display: flex;
+        border-bottom: 1px solid #30363d;
+        flex-shrink: 0;
+      }
+      .tab {
+        flex: 1;
+        padding: 10px;
+        text-align: center;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        color: #8b949e;
+        border-bottom: 2px solid transparent;
+        transition: color 0.2s;
+      }
+      .tab.active {
+        color: #58a6ff;
+        border-bottom-color: #58a6ff;
+      }
+      .tab-content {
+        display: none;
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px;
+      }
+      .tab-content.active {
+        display: block;
+      }
+
+      /* ── Node detail panel ── */
+      .detail-panel {
+        background: #0d1117;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 14px;
+        margin-bottom: 10px;
+      }
+      .detail-panel h3 {
+        font-size: 14px;
+        font-weight: 600;
+        color: #e6edf3;
+        margin-bottom: 10px;
+      }
+      .detail-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 4px 0;
+        border-bottom: 1px solid #21262d;
+        font-size: 12px;
+        gap: 8px;
+      }
+      .detail-row:last-child {
+        border-bottom: none;
+      }
+      .detail-label {
+        color: #8b949e;
+        flex-shrink: 0;
+      }
+      .detail-value {
+        color: #c9d1d9;
+        text-align: right;
+        word-break: break-all;
+      }
+
+      /* ── Stats bar ── */
+      .stats-bar {
+        display: flex;
+        gap: 8px;
+        padding: 10px 12px;
+        background: #161b22;
+        border-bottom: 1px solid #30363d;
+        flex-shrink: 0;
+        flex-wrap: wrap;
+      }
+      .stat-pill {
+        background: #21262d;
+        border: 1px solid #30363d;
+        border-radius: 20px;
+        padding: 3px 10px;
+        font-size: 11px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .stat-pill .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+
+      /* ── Legend ── */
+      .legend {
+        padding: 12px;
+        border-bottom: 1px solid #30363d;
+        flex-shrink: 0;
+      }
+      .legend-title {
+        font-size: 11px;
+        font-weight: 600;
+        color: #8b949e;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+      }
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+        font-size: 12px;
+      }
+      .legend-dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      /* ── Ontology tree ── */
+      #ontology-tree svg {
+        width: 100%;
+      }
+      .tree-node circle {
+        stroke-width: 2;
+      }
+      .tree-node text {
+        font-size: 11px;
+        fill: #c9d1d9;
+      }
+      .tree-link {
+        fill: none;
+        stroke: #30363d;
+        stroke-width: 1.5;
+      }
+
+      /* ── Loading overlay ── */
+      #loading {
+        position: absolute;
+        inset: 0;
+        background: rgba(13, 17, 23, 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        color: #8b949e;
+        z-index: 20;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid #30363d;
+        border-top-color: #58a6ff;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* ── Status badges ── */
+      .badge {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .badge-online {
+        background: #1a4231;
+        color: #3fb950;
+      }
+      .badge-degraded {
+        background: #4a2908;
+        color: #d29922;
+      }
+      .badge-unreachable {
+        background: #3d0a0a;
+        color: #f85149;
+      }
+
+      /* ── Tooltip ── */
+      #tooltip {
+        position: fixed;
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 10px 12px;
+        font-size: 12px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s;
+        z-index: 100;
+        max-width: 260px;
+      }
+      #tooltip.visible {
+        opacity: 1;
+      }
+      #tooltip .tip-title {
+        font-weight: 600;
+        color: #e6edf3;
+        margin-bottom: 6px;
+      }
+      #tooltip .tip-row {
+        color: #8b949e;
+        margin-bottom: 2px;
+      }
+      #tooltip .tip-row span {
+        color: #c9d1d9;
+      }
+
+      /* ── SVG node styles ── */
+      .node circle {
+        cursor: pointer;
+        transition: r 0.15s;
+      }
+      .node circle:hover {
+        stroke-width: 3;
+      }
+      .node .node-label {
+        font-size: 11px;
+        fill: #c9d1d9;
+        pointer-events: none;
+      }
+      .link {
+        stroke: #30363d;
+        stroke-opacity: 0.6;
+        fill: none;
+      }
+
+      /* Scrollbar */
+      ::-webkit-scrollbar {
+        width: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #0d1117;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #30363d;
+        border-radius: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div>
+        <h1>Network Topology</h1>
+        <div class="subtitle">
+          Live view of online YadaCoin nodes
+        </div>
+      </div>
+      <span class="last-updated" id="last-updated"
+        >–</span
+      >
+      <button
+        class="btn-refresh"
+        id="btn-refresh"
+      >
+        ↻ Refresh
+      </button>
+    </div>
+
+    <div class="stats-bar" id="stats-bar"></div>
+
+    <div class="main">
+      <div id="graph-container">
+        <div id="loading">
+          <div class="spinner"></div>
+          <span>Fetching network data…</span>
+        </div>
+        <svg id="graph"></svg>
+      </div>
+
+      <div class="sidebar">
+        <div class="legend">
+          <div class="legend-title">
+            Node Types
+          </div>
+          <div class="legend-item">
+            <div
+              class="legend-dot"
+              style="background: #f78166"
+            ></div>
+            Seed
+          </div>
+          <div class="legend-item">
+            <div
+              class="legend-dot"
+              style="background: #d2a8ff"
+            ></div>
+            Seed Gateway
+          </div>
+          <div class="legend-item">
+            <div
+              class="legend-dot"
+              style="background: #79c0ff"
+            ></div>
+            Service Provider
+          </div>
+          <div class="legend-item">
+            <div
+              class="legend-dot"
+              style="background: #ffa657"
+            ></div>
+            Pool
+          </div>
+          <div class="legend-item">
+            <div
+              class="legend-dot"
+              style="background: #56d364"
+            ></div>
+            User
+          </div>
+          <div class="legend-item">
+            <div
+              class="legend-dot"
+              style="
+                background: #58a6ff;
+                border: 2px solid #fff;
+              "
+            ></div>
+            This Node
+          </div>
+        </div>
+
+        <div class="tabs">
+          <div
+            class="tab active"
+            data-tab="detail"
+          >
+            Node Detail
+          </div>
+          <div class="tab" data-tab="list">
+            Node List
+          </div>
+          <div class="tab" data-tab="ontology">
+            Ontology
+          </div>
+        </div>
+
+        <div
+          class="tab-content active"
+          id="tab-detail"
+        >
+          <div
+            style="
+              color: #8b949e;
+              font-size: 12px;
+              padding: 8px 0;
+            "
+          >
+            Click a node to see details.
+          </div>
+        </div>
+
+        <div class="tab-content" id="tab-list">
+          <div style="padding: 12px 0">
+            <button
+              class="btn-refresh"
+              style="width: 100%"
+              onclick="openNodeTable()"
+            >
+              ⊞ Open Node Table
+            </button>
+            <div
+              id="node-list-summary"
+              style="
+                margin-top: 10px;
+                color: #8b949e;
+                font-size: 12px;
+              "
+            >
+              Click to open the full sortable
+              table.
+            </div>
+          </div>
+        </div>
+
+        <div
+          class="tab-content"
+          id="tab-ontology"
+          style="overflow: auto"
+        >
+          <div id="ontology-tree"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tooltip"></div>
+
+    <!-- ── Node Table Modal ─────────────────────────────────────────────── -->
+    <div
+      id="node-table-modal"
+      style="
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(13, 17, 23, 0.95);
+        z-index: 200;
+        flex-direction: column;
+      "
+    >
+      <div
+        style="
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 14px 20px;
+          background: #161b22;
+          border-bottom: 1px solid #30363d;
+          flex-shrink: 0;
+        "
+      >
+        <h2
+          style="
+            font-size: 16px;
+            color: #e6edf3;
+            font-weight: 600;
+          "
+        >
+          Node List
+        </h2>
+        <span
+          id="table-count"
+          style="font-size: 12px; color: #8b949e"
+        ></span>
+        <input
+          id="table-filter"
+          type="text"
+          placeholder="Filter by host, username, type, status…"
+          style="
+            flex: 1;
+            max-width: 360px;
+            margin-left: 8px;
+            padding: 6px 10px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #c9d1d9;
+            font-size: 13px;
+            outline: none;
+          "
+          oninput="renderTable()"
+        />
+        <select
+          id="table-type-filter"
+          style="
+            padding: 6px 10px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #c9d1d9;
+            font-size: 13px;
+            outline: none;
+          "
+          onchange="renderTable()"
+        >
+          <option value="">All types</option>
+          <option value="seed">Seed</option>
+          <option value="seed_gateway">
+            Seed Gateway
+          </option>
+          <option value="service_provider">
+            Service Provider
+          </option>
+          <option value="pool">Pool</option>
+          <option value="user">User</option>
+        </select>
+        <select
+          id="table-status-filter"
+          style="
+            padding: 6px 10px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #c9d1d9;
+            font-size: 13px;
+            outline: none;
+          "
+          onchange="renderTable()"
+        >
+          <option value="">All statuses</option>
+          <option value="online">Online</option>
+          <option value="degraded">
+            Degraded
+          </option>
+          <option value="unreachable">
+            Unreachable
+          </option>
+        </select>
+        <button
+          class="btn-refresh"
+          onclick="closeNodeTable()"
+          style="margin-left: auto"
+        >
+          ✕ Close
+        </button>
+      </div>
+      <div
+        style="
+          flex: 1;
+          overflow: auto;
+          padding: 16px 20px;
+        "
+      >
+        <table
+          id="node-table"
+          style="
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+          "
+        >
+          <thead>
+            <tr id="table-head"></tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <script>
+      // ── Colour / size helpers ────────────────────────────────────────────────────
+      const TYPE_COLOR = {
+        seed: "#f78166",
+        seed_gateway: "#d2a8ff",
+        service_provider: "#79c0ff",
+        pool: "#ffa657",
+        user: "#56d364",
+        unknown: "#8b949e",
+      };
+      const TYPE_RADIUS = {
+        seed: 18,
+        seed_gateway: 15,
+        service_provider: 12,
+        pool: 9,
+        user: 7,
+        unknown: 7,
+      };
+      function nodeColor(d) {
+        if (d.is_self) return "#58a6ff";
+        return (
+          TYPE_COLOR[d.peer_type] ||
+          TYPE_COLOR.unknown
+        );
+      }
+      function nodeRadius(d) {
+        if (d.is_self) return 14;
+        return TYPE_RADIUS[d.peer_type] || 7;
+      }
+      function statusBadge(s) {
+        if (!s) return "";
+        const cls =
+          {
+            online: "badge-online",
+            degraded: "badge-degraded",
+            unreachable: "badge-unreachable",
+          }[s] || "";
+        return `<span class="badge ${cls}">${s}</span>`;
+      }
+      function fmtVersion(v) {
+        if (!v) return "–";
+        if (Array.isArray(v)) return v.join(".");
+        return String(v);
+      }
+
+      // ── Tabs ─────────────────────────────────────────────────────────────────────
+      document
+        .querySelectorAll(".tab")
+        .forEach((tab) => {
+          tab.addEventListener("click", () => {
+            document
+              .querySelectorAll(".tab")
+              .forEach((t) =>
+                t.classList.remove("active"),
+              );
+            document
+              .querySelectorAll(".tab-content")
+              .forEach((c) =>
+                c.classList.remove("active"),
+              );
+            tab.classList.add("active");
+            document
+              .getElementById(
+                "tab-" + tab.dataset.tab,
+              )
+              .classList.add("active");
+          });
+        });
+
+      // ── Graph setup ──────────────────────────────────────────────────────────────
+      const svg = d3.select("#graph");
+      const container = document.getElementById(
+        "graph-container",
+      );
+
+      let g = svg.append("g");
+
+      // Zoom
+      svg.call(
+        d3
+          .zoom()
+          .scaleExtent([0.1, 4])
+          .on("zoom", (e) =>
+            g.attr("transform", e.transform),
+          ),
+      );
+
+      let simulation, linkSel, nodeSel;
+
+      // ── Tooltip ──────────────────────────────────────────────────────────────────
+      const tooltip =
+        document.getElementById("tooltip");
+      function showTooltip(event, d) {
+        const MASTERNODE = [
+          "seed",
+          "seed_gateway",
+          "service_provider",
+        ];
+        const isMN = MASTERNODE.includes(
+          d.peer_type,
+        );
+        tooltip.innerHTML = `
+        <div class="tip-title">${d.username || d.host || d.id}</div>
+        <div class="tip-row">Type: <span>${d.peer_type || "–"}</span></div>
+        <div class="tip-row">Host: <span>${d.host || "–"}:${d.port || "–"}</span></div>
+        <div class="tip-row">Version: <span>${fmtVersion(d.node_version)}</span></div>
+        ${isMN ? `<div class="tip-row">Height: <span>${d.height ?? "–"}</span></div>` : ""}
+        ${isMN ? `<div class="tip-row">Status: <span>${d.status || "–"}</span></div>` : ""}
+    `;
+        tooltip.classList.add("visible");
+        moveTooltip(event);
+      }
+      function moveTooltip(event) {
+        let x = event.clientX + 14,
+          y = event.clientY + 14;
+        if (x + 270 > window.innerWidth)
+          x = event.clientX - 280;
+        if (y + 140 > window.innerHeight)
+          y = event.clientY - 150;
+        tooltip.style.left = x + "px";
+        tooltip.style.top = y + "px";
+      }
+      function hideTooltip() {
+        tooltip.classList.remove("visible");
+      }
+
+      // ── Node detail panel ─────────────────────────────────────────────────────────
+      function showDetail(d) {
+        const MASTERNODE = [
+          "seed",
+          "seed_gateway",
+          "service_provider",
+        ];
+        const isMN = MASTERNODE.includes(
+          d.peer_type,
+        );
+
+        function row(label, value) {
+          return `<div class="detail-row"><span class="detail-label">${label}</span><span class="detail-value">${value ?? "–"}</span></div>`;
+        }
+        let html = `<div class="detail-panel">
+        <h3>${d.username || d.host || "Unknown"} ${d.is_self ? '<span style="color:#58a6ff;font-size:11px;">(this node)</span>' : ""}</h3>
+        ${row("Type", d.peer_type)}
+        ${row("Host", (d.host || "–") + ":" + (d.port || "–"))}
+        ${row("Protocol", d.http_protocol || "–")}
+        ${row("Version", fmtVersion(d.node_version))}
+        ${row("Protocol Ver.", d.protocol_version ?? "–")}`;
+
+        if (isMN || d.is_self) {
+          html += row(
+            "Status",
+            statusBadge(d.status),
+          );
+          html += row("Height", d.height ?? "–");
+          html += row("Uptime", d.uptime || "–");
+          html += row(
+            "Network",
+            d.network || "–",
+          );
+          html += row(
+            "Inbound peers",
+            d.inbound_peers ?? "–",
+          );
+          html += row(
+            "Outbound peers",
+            d.outbound_peers ?? "–",
+          );
+        }
+
+        if (d.seed) html += row("Seed", d.seed);
+        if (d.seed_gateway)
+          html += row(
+            "Seed Gateway",
+            d.seed_gateway,
+          );
+
+        const statusUrl = `${d.http_protocol || "http"}://${d.host}:${d.port}/get-status`;
+        html += `<div style="margin-top:8px;"><a href="${statusUrl}" target="_blank" style="font-size:11px;color:#58a6ff;">View /get-status ↗</a></div>`;
+        html += "</div>";
+
+        document.getElementById(
+          "tab-detail",
+        ).innerHTML = html;
+        // Switch to detail tab
+        document
+          .querySelectorAll(".tab")
+          .forEach((t) =>
+            t.classList.remove("active"),
+          );
+        document
+          .querySelectorAll(".tab-content")
+          .forEach((c) =>
+            c.classList.remove("active"),
+          );
+        document
+          .querySelector('[data-tab="detail"]')
+          .classList.add("active");
+        document
+          .getElementById("tab-detail")
+          .classList.add("active");
+      }
+
+      // ── Build / update the force graph ───────────────────────────────────────────
+      function buildGraph(data) {
+        const { self_id } = data;
+        const nodes = data.nodes || [];
+        // Guard: only keep edges where both endpoints exist as nodes
+        const nodeIds = new Set(
+          nodes.map((n) => n.id),
+        );
+        const edges = (data.edges || []).filter(
+          (e) =>
+            nodeIds.has(e.source) &&
+            nodeIds.has(e.target),
+        );
+
+        // Remove existing elements
+        g.selectAll("*").remove();
+
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        // Arrow markers
+        svg.select("defs").remove();
+        svg
+          .append("defs")
+          .selectAll("marker")
+          .data(["arrow"])
+          .join("marker")
+          .attr("id", "arrow")
+          .attr("viewBox", "0 -5 10 10")
+          .attr("refX", 22)
+          .attr("refY", 0)
+          .attr("markerWidth", 6)
+          .attr("markerHeight", 6)
+          .attr("orient", "auto")
+          .append("path")
+          .attr("d", "M0,-5L10,0L0,5")
+          .attr("fill", "#30363d");
+
+        // Links
+        linkSel = g
+          .append("g")
+          .selectAll("line")
+          .data(edges)
+          .join("line")
+          .attr("class", "link")
+          .attr("marker-end", "url(#arrow)");
+
+        // Nodes
+        const nodeGroup = g
+          .append("g")
+          .selectAll("g")
+          .data(nodes, (d) => d.id)
+          .join("g")
+          .attr("class", "node")
+          .call(
+            d3
+              .drag()
+              .on("start", dragStarted)
+              .on("drag", dragged)
+              .on("end", dragEnded),
+          )
+          .on("mouseover", (e, d) =>
+            showTooltip(e, d),
+          )
+          .on("mousemove", (e) => moveTooltip(e))
+          .on("mouseout", () => hideTooltip())
+          .on("click", (e, d) => {
+            e.stopPropagation();
+            showDetail(d);
+          });
+
+        nodeGroup
+          .append("circle")
+          .attr("r", (d) => nodeRadius(d))
+          .attr("fill", (d) => nodeColor(d))
+          .attr("stroke", (d) =>
+            d.is_self
+              ? "#fff"
+              : d3
+                  .color(nodeColor(d))
+                  .brighter(0.5),
+          )
+          .attr("stroke-width", (d) =>
+            d.is_self ? 3 : 1.5,
+          );
+
+        nodeGroup
+          .append("text")
+          .attr("class", "node-label")
+          .attr("dx", (d) => nodeRadius(d) + 4)
+          .attr("dy", "0.35em")
+          .text((d) => {
+            if (
+              [
+                "seed",
+                "seed_gateway",
+                "service_provider",
+              ].includes(d.peer_type) ||
+              d.is_self
+            ) {
+              return d.username || d.host || "";
+            }
+            return "";
+          });
+
+        // Simulation
+        simulation = d3
+          .forceSimulation(nodes)
+          .force(
+            "link",
+            d3
+              .forceLink(edges)
+              .id((d) => d.id)
+              .distance((d) => {
+                const st =
+                  d.source.peer_type || "user";
+                const tt =
+                  d.target.peer_type || "user";
+                const dist = {
+                  seed: 200,
+                  seed_gateway: 150,
+                  service_provider: 100,
+                };
+                return (
+                  (dist[st] || 70) +
+                  (dist[tt] || 50)
+                );
+              })
+              .strength(0.5),
+          )
+          .force(
+            "charge",
+            d3.forceManyBody().strength(-300),
+          )
+          .force(
+            "center",
+            d3.forceCenter(width / 2, height / 2),
+          )
+          .force(
+            "collision",
+            d3
+              .forceCollide()
+              .radius((d) => nodeRadius(d) + 8),
+          )
+          .on("tick", ticked);
+
+        function ticked() {
+          linkSel
+            .attr("x1", (d) => d.source.x)
+            .attr("y1", (d) => d.source.y)
+            .attr("x2", (d) => d.target.x)
+            .attr("y2", (d) => d.target.y);
+          nodeGroup.attr(
+            "transform",
+            (d) => `translate(${d.x},${d.y})`,
+          );
+        }
+
+        function dragStarted(event, d) {
+          if (!event.active)
+            simulation.alphaTarget(0.3).restart();
+          d.fx = d.x;
+          d.fy = d.y;
+        }
+        function dragged(event, d) {
+          d.fx = event.x;
+          d.fy = event.y;
+        }
+        function dragEnded(event, d) {
+          if (!event.active)
+            simulation.alphaTarget(0);
+          d.fx = null;
+          d.fy = null;
+        }
+
+        nodeSel = nodeGroup;
+      }
+
+      // ── Stats bar ─────────────────────────────────────────────────────────────────
+      function buildStats(data) {
+        const counts = {};
+        data.nodes.forEach((n) => {
+          counts[n.peer_type] =
+            (counts[n.peer_type] || 0) + 1;
+        });
+        const colors = TYPE_COLOR;
+        let html = "";
+        const order = [
+          "seed",
+          "seed_gateway",
+          "service_provider",
+          "pool",
+          "user",
+          "unknown",
+        ];
+        order.forEach((pt) => {
+          if (!counts[pt]) return;
+          html += `<div class="stat-pill"><div class="dot" style="background:${colors[pt] || "#8b949e"}"></div>${counts[pt]} ${pt.replace(/_/g, " ")}</div>`;
+        });
+        html += `<div class="stat-pill"><div class="dot" style="background:#30363d"></div>${data.edges.length} edges</div>`;
+        document.getElementById(
+          "stats-bar",
+        ).innerHTML = html;
+      }
+
+      // ── Node table ────────────────────────────────────────────────────────────────
+      const TABLE_COLS = [
+        { key: "username", label: "Username" },
+        { key: "host", label: "Host" },
+        { key: "port", label: "Port" },
+        { key: "peer_type", label: "Type" },
+        { key: "status", label: "Status" },
+        { key: "node_version", label: "Version" },
+        {
+          key: "protocol_version",
+          label: "Proto Ver.",
+        },
+        { key: "height", label: "Height" },
+        { key: "uptime", label: "Uptime" },
+        { key: "network", label: "Network" },
+        {
+          key: "inbound_peers",
+          label: "In Peers",
+        },
+        {
+          key: "outbound_peers",
+          label: "Out Peers",
+        },
+        {
+          key: "http_protocol",
+          label: "HTTP Proto",
+        },
+      ];
+
+      let _tableData = [];
+      let _sortCol = "peer_type";
+      let _sortAsc = true;
+
+      const TIER = {
+        seed: 0,
+        seed_gateway: 1,
+        service_provider: 2,
+        pool: 3,
+        user: 4,
+      };
+
+      function buildNodeList(data) {
+        _tableData = data.nodes;
+        const total = _tableData.length;
+        document.getElementById(
+          "node-list-summary",
+        ).textContent =
+          `${total} node${total !== 1 ? "s" : ""} discovered. Click to explore.`;
+      }
+
+      function openNodeTable() {
+        const modal = document.getElementById(
+          "node-table-modal",
+        );
+        modal.style.display = "flex";
+        // Build header once
+        const head =
+          document.getElementById("table-head");
+        if (!head.children.length) {
+          TABLE_COLS.forEach((col) => {
+            const th =
+              document.createElement("th");
+            th.textContent = col.label;
+            th.dataset.key = col.key;
+            th.style.cssText =
+              "padding:8px 10px;text-align:left;font-size:11px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #30363d;cursor:pointer;white-space:nowrap;user-select:none;";
+            th.title = "Sort by " + col.label;
+            th.addEventListener("click", () => {
+              if (_sortCol === col.key)
+                _sortAsc = !_sortAsc;
+              else {
+                _sortCol = col.key;
+                _sortAsc = true;
+              }
+              renderTable();
+            });
+            head.appendChild(th);
+          });
+        }
+        renderTable();
+      }
+
+      function closeNodeTable() {
+        document.getElementById(
+          "node-table-modal",
+        ).style.display = "none";
+      }
+
+      function renderTable() {
+        const filterText = document
+          .getElementById("table-filter")
+          .value.toLowerCase();
+        const filterType =
+          document.getElementById(
+            "table-type-filter",
+          ).value;
+        const filterStatus =
+          document.getElementById(
+            "table-status-filter",
+          ).value;
+
+        let rows = _tableData.filter((n) => {
+          if (
+            filterType &&
+            n.peer_type !== filterType
+          )
+            return false;
+          if (
+            filterStatus &&
+            n.status !== filterStatus
+          )
+            return false;
+          if (filterText) {
+            const haystack = [
+              n.username,
+              n.host,
+              n.peer_type,
+              n.status,
+              n.network,
+              String(n.port || ""),
+            ]
+              .join(" ")
+              .toLowerCase();
+            if (!haystack.includes(filterText))
+              return false;
+          }
+          return true;
+        });
+
+        // Sort
+        rows.sort((a, b) => {
+          if (_sortCol === "peer_type") {
+            const diff =
+              (TIER[a.peer_type] ?? 9) -
+              (TIER[b.peer_type] ?? 9);
+            return _sortAsc ? diff : -diff;
+          }
+          const av = a[_sortCol] ?? "";
+          const bv = b[_sortCol] ?? "";
+          const cmp = String(av).localeCompare(
+            String(bv),
+            undefined,
+            { numeric: true },
+          );
+          return _sortAsc ? cmp : -cmp;
+        });
+
+        // Update sort indicators in header
+        document
+          .querySelectorAll("#table-head th")
+          .forEach((th) => {
+            const arrow =
+              th.dataset.key === _sortCol
+                ? _sortAsc
+                  ? " ↑"
+                  : " ↓"
+                : "";
+            th.textContent =
+              TABLE_COLS.find(
+                (c) => c.key === th.dataset.key,
+              ).label + arrow;
+            th.style.color =
+              th.dataset.key === _sortCol
+                ? "#58a6ff"
+                : "#8b949e";
+          });
+
+        document.getElementById(
+          "table-count",
+        ).textContent =
+          `${rows.length} / ${_tableData.length} nodes`;
+
+        const MASTERNODE = [
+          "seed",
+          "seed_gateway",
+          "service_provider",
+        ];
+        const tbody =
+          document.getElementById("table-body");
+        tbody.innerHTML = "";
+
+        rows.forEach((n, i) => {
+          const isMN =
+            MASTERNODE.includes(n.peer_type) ||
+            n.is_self;
+          const tr = document.createElement("tr");
+          tr.style.cssText = `background:${i % 2 === 0 ? "#0d1117" : "#111820"};cursor:pointer;`;
+          tr.addEventListener(
+            "mouseenter",
+            () =>
+              (tr.style.background = "#1c2128"),
+          );
+          tr.addEventListener(
+            "mouseleave",
+            () =>
+              (tr.style.background =
+                i % 2 === 0
+                  ? "#0d1117"
+                  : "#111820"),
+          );
+          tr.addEventListener("click", () => {
+            closeNodeTable();
+            selectNodeById(n.id);
+          });
+
+          const dot = `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${TYPE_COLOR[n.peer_type] || "#8b949e"};margin-right:5px;flex-shrink:0;"></span>`;
+
+          const cells = [
+            `${dot}${n.username || "–"}${n.is_self ? ' <span style="color:#58a6ff;font-size:10px;">(self)</span>' : ""}`,
+            `<a href="${n.id}" target="_blank" style="color:#58a6ff;text-decoration:none;" onclick="event.stopPropagation()">${n.host || "–"}</a>`,
+            n.port ?? "–",
+            (n.peer_type || "–").replace(
+              /_/g,
+              " ",
+            ),
+            isMN ? statusBadge(n.status) : "–",
+            fmtVersion(n.node_version),
+            n.protocol_version ?? "–",
+            isMN ? (n.height ?? "–") : "–",
+            isMN ? n.uptime || "–" : "–",
+            isMN ? n.network || "–" : "–",
+            isMN ? (n.inbound_peers ?? "–") : "–",
+            isMN
+              ? (n.outbound_peers ?? "–")
+              : "–",
+            n.http_protocol || "–",
+          ];
+
+          cells.forEach((val) => {
+            const td =
+              document.createElement("td");
+            td.innerHTML = String(val);
+            td.style.cssText =
+              "padding:7px 10px;border-bottom:1px solid #21262d;color:#c9d1d9;white-space:nowrap;";
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        });
+
+        if (!rows.length) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td colspan="${TABLE_COLS.length}" style="padding:20px;text-align:center;color:#8b949e;">No nodes match the current filters.</td>`;
+          tbody.appendChild(tr);
+        }
+      }
+
+      // close modal on Escape
+      document.addEventListener(
+        "keydown",
+        (e) => {
+          if (e.key === "Escape")
+            closeNodeTable();
+        },
+      );
+
+      // ── Ontology tree (D3 tree layout) ────────────────────────────────────────────
+      function buildOntologyTree(ontology) {
+        const el = document.getElementById(
+          "ontology-tree",
+        );
+        el.innerHTML = "";
+
+        if (
+          !ontology ||
+          !ontology.children ||
+          ontology.children.length === 0
+        ) {
+          el.innerHTML =
+            '<div style="color:#8b949e;font-size:12px;padding:8px 0;">No ontology data available.</div>';
+          return;
+        }
+
+        // ── Layout constants ──────────────────────────────────────────────
+        const ROW_H = 28; // vertical spacing between nodes
+        const INDENT = 52; // horizontal indent per depth level
+        const PAD_L = 10;
+        const PAD_T = 10;
+        const TIER_LABELS = {
+          root: "",
+          seed: "Seed",
+          seed_gateway: "Seed Gateway",
+          service_provider: "Service Provider",
+          pool: "Pool",
+          user: "User",
+        };
+
+        // ── Flatten hierarchy into rows with depth info ───────────────────
+        const rows = [];
+        const collapsed = new Set(); // track collapsed node ids
+
+        function flatten(node, depth) {
+          if (!node) return;
+          rows.push({ node, depth });
+          if (
+            !collapsed.has(node.id || node.name)
+          ) {
+            (node.children || []).forEach((c) =>
+              flatten(c, depth + 1),
+            );
+          }
+        }
+
+        function rebuild() {
+          rows.length = 0;
+          flatten(ontology, 0);
+          render();
+        }
+
+        // ── Compute SVG dimensions ────────────────────────────────────────
+        function maxDepth(node, d = 0) {
+          if (
+            !node.children ||
+            !node.children.length
+          )
+            return d;
+          return Math.max(
+            ...node.children.map((c) =>
+              maxDepth(c, d + 1),
+            ),
+          );
+        }
+        const depth = maxDepth(ontology);
+
+        function render() {
+          el.innerHTML = "";
+          // Count visible rows (excluding root)
+          const visible = rows.filter(
+            (r) => r.node !== ontology,
+          );
+          const svgH =
+            PAD_T * 2 +
+            visible.length * ROW_H +
+            20;
+          const svgW =
+            PAD_L + (depth + 1) * INDENT + 220;
+
+          const svgEl = d3
+            .create("svg")
+            .attr("width", svgW)
+            .attr("height", svgH)
+            .style("overflow", "visible");
+
+          const g = svgEl
+            .append("g")
+            .attr(
+              "transform",
+              `translate(${PAD_L},${PAD_T})`,
+            );
+
+          // Draw tier label column headers at depth 1–4
+          const tierLabelY = -8;
+          const tierOrder = [
+            "seed",
+            "seed_gateway",
+            "service_provider",
+            "pool",
+          ];
+          tierOrder.forEach((tier, i) => {
+            g.append("text")
+              .attr("x", (i + 1) * INDENT + 16)
+              .attr("y", tierLabelY)
+              .attr("font-size", 9)
+              .attr("fill", "#484f58")
+              .attr("font-weight", "600")
+              .attr("text-transform", "uppercase")
+              .attr("letter-spacing", "0.5px")
+              .text(TIER_LABELS[tier] || "");
+          });
+
+          // Draw connector lines and nodes for visible non-root rows
+          let rowIdx = 0;
+          const rowYMap = new Map(); // node identity -> y position
+
+          rows.forEach((r, ri) => {
+            if (r.node === ontology) return;
+            const x = r.depth * INDENT;
+            const y = rowIdx * ROW_H + ROW_H / 2;
+            rowYMap.set(r.node, y);
+            rowIdx++;
+
+            const pt = r.node.peer_type;
+            const color =
+              TYPE_COLOR[pt] || "#8b949e";
+            const hasChildren =
+              r.node.children &&
+              r.node.children.length > 0;
+            const isCollapsed = collapsed.has(
+              r.node.id || r.node.name,
+            );
+
+            // Vertical connector from parent
+            const parentRow = rows
+              .slice(0, ri)
+              .reverse()
+              .find(
+                (pr) => pr.depth === r.depth - 1,
+              );
+            if (
+              parentRow &&
+              parentRow.node !== ontology
+            ) {
+              const py = rowYMap.get(
+                parentRow.node,
+              );
+              if (py !== undefined) {
+                // Elbow line: vertical from parent, horizontal to node
+                g.append("path")
+                  .attr(
+                    "d",
+                    `M${(r.depth - 1) * INDENT + 16},${py} V${y} H${x + 6}`,
+                  )
+                  .attr("fill", "none")
+                  .attr("stroke", "#21262d")
+                  .attr("stroke-width", 1.5);
+              }
+            } else if (r.depth === 1) {
+              // Top-level seed: short horizontal stub
+              g.append("line")
+                .attr("x1", 0)
+                .attr("y1", y)
+                .attr("x2", x + 6)
+                .attr("y2", y)
+                .attr("stroke", "#21262d")
+                .attr("stroke-width", 1.5);
+            }
+
+            // Node row group
+            const nodeG = g
+              .append("g")
+              .attr(
+                "transform",
+                `translate(${x},${y})`,
+              )
+              .style(
+                "cursor",
+                hasChildren
+                  ? "pointer"
+                  : "default",
+              );
+
+            // Collapse toggle triangle
+            if (hasChildren) {
+              nodeG
+                .append("text")
+                .attr("x", -10)
+                .attr("y", 4)
+                .attr("font-size", 9)
+                .attr("fill", "#484f58")
+                .text(isCollapsed ? "▶" : "▼")
+                .style("cursor", "pointer")
+                .on("click", () => {
+                  const key =
+                    r.node.id || r.node.name;
+                  if (isCollapsed)
+                    collapsed.delete(key);
+                  else collapsed.add(key);
+                  rebuild();
+                });
+            }
+
+            // Node circle
+            nodeG
+              .append("circle")
+              .attr(
+                "r",
+                pt === "seed"
+                  ? 7
+                  : pt === "seed_gateway"
+                    ? 6
+                    : 5,
+              )
+              .attr("fill", color)
+              .attr(
+                "stroke",
+                d3.color(color)
+                  ? d3.color(color).brighter(0.4)
+                  : "#fff",
+              )
+              .attr("stroke-width", 1.5)
+              .on("click", () => {
+                if (r.node.id) {
+                  selectNodeById(r.node.id);
+                }
+              });
+
+            // Label
+            const label = r.node.name || "";
+            nodeG
+              .append("text")
+              .attr("x", 12)
+              .attr("y", 4)
+              .attr("font-size", 11)
+              .attr(
+                "fill",
+                r.node.id ? "#79c0ff" : "#c9d1d9",
+              )
+              .style(
+                "cursor",
+                r.node.id ? "pointer" : "default",
+              )
+              .text(
+                label.length > 26
+                  ? label.slice(0, 24) + "…"
+                  : label,
+              )
+              .on("click", () => {
+                if (r.node.id)
+                  selectNodeById(r.node.id);
+              })
+              .append("title")
+              .text(label);
+
+            // Tier badge for seeds
+            if (pt === "seed") {
+              nodeG
+                .append("rect")
+                .attr("x", -3)
+                .attr("y", -10)
+                .attr("width", 36)
+                .attr("height", 10)
+                .attr("rx", 3)
+                .attr("fill", "#1a1f2a")
+                .attr("stroke", "#30363d")
+                .attr("stroke-width", 0.5);
+              nodeG
+                .append("text")
+                .attr("x", 0)
+                .attr("y", -2)
+                .attr("font-size", 7)
+                .attr("fill", "#8b949e")
+                .text("SEED");
+            }
+          });
+
+          el.appendChild(svgEl.node());
+        }
+
+        rebuild();
+      }
+
+      // ── Select node by id ─────────────────────────────────────────────────────────
+      window.selectNodeById = function (id) {
+        if (!window._graphData) return;
+        const n = window._graphData.nodes.find(
+          (x) => x.id === id,
+        );
+        if (n) showDetail(n);
+      };
+
+      // ── Fetch & render ─────────────────────────────────────────────────────────────
+      async function fetchAndRender() {
+        const loadingEl =
+          document.getElementById("loading");
+        loadingEl.style.display = "flex";
+        loadingEl.innerHTML =
+          '<div class="spinner"></div><span>Fetching network data…</span>';
+        try {
+          const resp = await fetch(
+            "/network-topology?format=json",
+          );
+          if (!resp.ok)
+            throw new Error(
+              "HTTP " + resp.status,
+            );
+          const data = await resp.json();
+          window._graphData = data;
+
+          try {
+            buildGraph(data);
+          } catch (e) {
+            console.error("buildGraph:", e);
+          }
+          try {
+            buildStats(data);
+          } catch (e) {
+            console.error("buildStats:", e);
+          }
+          try {
+            buildNodeList(data);
+          } catch (e) {
+            console.error("buildNodeList:", e);
+          }
+          try {
+            buildOntologyTree(data.ontology);
+          } catch (e) {
+            console.error(
+              "buildOntologyTree:",
+              e,
+            );
+          }
+
+          const ts = new Date(
+            data.generated_at * 1000,
+          ).toLocaleTimeString();
+          document.getElementById(
+            "last-updated",
+          ).textContent = "Updated " + ts;
+        } catch (err) {
+          document.getElementById(
+            "loading",
+          ).innerHTML =
+            `<span style="color:#f85149">Error: ${err.message}</span>`;
+          return;
+        }
+        document.getElementById(
+          "loading",
+        ).style.display = "none";
+      }
+
+      document
+        .getElementById("btn-refresh")
+        .addEventListener(
+          "click",
+          fetchAndRender,
+        );
+
+      // Auto-refresh every 60 seconds
+      setInterval(fetchAndRender, 600000);
+
+      fetchAndRender();
+    </script>
+  </body>
+</html>

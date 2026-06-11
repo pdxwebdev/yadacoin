@@ -22,12 +22,9 @@ import time
 import uuid
 
 import jwt
-from eccsnacks.curve25519 import scalarmult_base
 
 from yadacoin.core.config import Config
 from yadacoin.core.graphutils import GraphUtils as GU
-from yadacoin.core.identity import Identity
-from yadacoin.core.transactionutils import TU
 from yadacoin.http.base import BaseHandler
 
 challenges = {}
@@ -36,14 +33,12 @@ challenges = {}
 class HomeHandler(BaseHandler):
     async def get(self):
         """
-        :return:
+        Serve the main node dashboard, or redirect to the pool dashboard
+        when peer_type is 'pool'.
         """
-        self.render(
-            "index.html",
-            yadacoin=self.yadacoin_vars,
-            username=self.get_secure_cookie("username"),
-            rid=self.get_secure_cookie("rid"),
-        )
+        if getattr(self.config, "peer_type", None) == "pool":
+            return self.redirect("/pool")
+        self.render("dashboard.html")
 
 
 class MultifactorAuthHandler(BaseHandler):
@@ -275,21 +270,6 @@ class AppHandler(BaseHandler):
         self.render("app.html")
 
 
-class App2FAHandler(BaseHandler):
-    async def prepare(self):
-        await super().prepare()
-        if self.request.protocol == "https":
-            self.redirect(
-                "http://" + self.request.host + self.request.uri, permanent=False
-            )
-
-    async def get(self):
-        """
-        :return:
-        """
-        self.render("app2fa.html")
-
-
 class GetRecoveryTransaction(BaseHandler):
     async def get(self):
         """
@@ -306,230 +286,13 @@ class GetRecoveryTransaction(BaseHandler):
         return self.render_as_json(txn)
 
 
-class ProxyChallengeHandler(BaseHandler):
-    async def post(self):
-        data = json.loads(self.request.body)
-        alias = Identity.from_dict(data["alias"])
-        mobile = Identity.from_dict(data["identity"])
-
-        a = hashlib.sha256(
-            self.config.wif.encode() + alias.username_signature.encode()
-        ).digest()
-        dh_public_key = scalarmult_base(a.decode("latin1")).encode("latin1").hex()
-        rid = mobile.generate_rid(self.config.username_signature)
-
-        challenge = str(uuid.uuid4())
-        self.config.challenges[rid] = {"message": challenge}
-
-        self.write(json.dumps({"challenge": challenge, "dh_public_key": dh_public_key}))
-
-        return self.finish()
-
-
-class ProxyWhiteList(BaseHandler):
-    async def get(self):
-        term = self.get_query_argument("term", None)
-        query = {}
-        if term:
-            query["$or"] = [{"domain": {"$regex": term}}]
-        result = self.config.mongo.async_site_db.proxy_whitelist.find(
-            query, {"_id": 0}
-        ).sort([("domain", 1)])
-        return self.render_as_json(
-            {"status": True, "whitelist": await result.to_list(100)}
-        )
-
-    async def post(self):
-        data = json.loads(self.request.body)
-        await self.config.mongo.async_site_db.proxy_whitelist.replace_one(
-            {"domain": data["domain"]}, data, upsert=True
-        )
-        await self.refresh_config()
-        return self.render_as_json({"status": True})
-
-    async def delete(self):
-        data = json.loads(self.request.body)
-        await self.config.mongo.async_site_db.proxy_whitelist.delete_one(
-            {"domain": data["domain"]}
-        )
-        await self.refresh_config()
-        return self.render_as_json({"status": True})
-
-    async def refresh_config(self):
-        self.config.proxy.white_list = {}
-        async for x in self.config.mongo.async_site_db.proxy_whitelist.find(
-            {}, {"_id": 0}
-        ):
-            self.config.proxy.white_list[x["domain"]] = x
-
-
-class ProxyBlackList(BaseHandler):
-    async def get(self):
-        term = self.get_query_argument("term", None)
-        query = {}
-        if term:
-            query["$or"] = [{"domain": {"$regex": term}}]
-        result = self.config.mongo.async_site_db.proxy_blacklist.find(
-            query, {"_id": 0}
-        ).sort([("domain", 1)])
-        return self.render_as_json(
-            {"status": True, "blacklist": await result.to_list(100)}
-        )
-
-    async def post(self):
-        data = json.loads(self.request.body)
-        await self.config.mongo.async_site_db.proxy_blacklist.replace_one(
-            {"domain": data["domain"]}, data, upsert=True
-        )
-        await self.refresh_config()
-        return self.render_as_json({"status": True})
-
-    async def delete(self):
-        data = json.loads(self.request.body)
-        await self.config.mongo.async_site_db.proxy_blacklist.delete_one(
-            {"domain": data["domain"]}
-        )
-        await self.refresh_config()
-        return self.render_as_json({"status": True})
-
-    async def refresh_config(self):
-        self.config.proxy.black_list = {}
-        async for x in self.config.mongo.async_site_db.proxy_blacklist.find(
-            {}, {"_id": 0}
-        ):
-            self.config.proxy.black_list[x["domain"]] = x
-
-
-class ProxyRejectedList(BaseHandler):
-    async def get(self):
-        term = self.get_query_argument("term", None)
-        proxy_mode = await self.config.mongo.async_site_db.proxy_config.find_one(
-            {
-                "mode": {"$exists": True},
-            }
-        )
-        query = {}
-        if term:
-            query["$or"] = [{"domain": {"$regex": term}}, {"host": {"$regex": term}}]
-
-        if proxy_mode:
-            query["mode"] = proxy_mode["mode"]
-
-        result = self.config.mongo.async_site_db.proxy_rejectedlist.find(
-            query, {"_id": 0}
-        ).sort([("domain", 1)])
-        return self.render_as_json(
-            {"status": True, "rejectedlist": await result.to_list(100)}
-        )
-
-
-class ProxyAllowedList(BaseHandler):
-    async def get(self):
-        term = self.get_query_argument("term", None)
-        proxy_mode = await self.config.mongo.async_site_db.proxy_config.find_one(
-            {
-                "mode": {"$exists": True},
-            }
-        )
-        query = {}
-        if term:
-            query["$or"] = [{"domain": {"$regex": term}}, {"host": {"$regex": term}}]
-
-        if proxy_mode:
-            query["mode"] = proxy_mode["mode"]
-
-        result = self.config.mongo.async_site_db.proxy_allowedlist.find(
-            query, {"_id": 0}
-        ).sort([("domain", 1)])
-        return self.render_as_json(
-            {"status": True, "allowedlist": await result.to_list(100)}
-        )
-
-
-class ProxyConfig(BaseHandler):
-    async def get(self):
-        async for x in self.config.mongo.async_site_db.proxy_config.find(
-            {}, {"_id": 0}
-        ):
-            setattr(self.config.proxy, list(x.keys())[0], x[list(x.keys())[0]])
-        return self.render_as_json(
-            {"status": True, "proxyconfig": self.config.proxy.to_dict()}
-        )
-
-    async def post(self):
-        data = json.loads(self.request.body)
-        for k, v in data.items():
-            await self.config.mongo.async_site_db.proxy_config.replace_one(
-                {k: {"$exists": True}}, {k: v}, upsert=True
-            )
-        async for x in self.config.mongo.async_site_db.proxy_config.find(
-            {}, {"_id": 0}
-        ):
-            setattr(self.config.proxy, list(x.keys())[0], x[list(x.keys())[0]])
-        return self.render_as_json({"status": True})
-
-
-class ProxyAppHandler(BaseHandler):
-    async def get(self):
-        return self.render("proxy.html")
-
-
-class AuthHandler(BaseHandler):
-    async def get(self):
-        return self.render(
-            "auth.html",
-            proxy_address=f"{self.config.peer_host}:{self.config.proxy_port}",
-            http_address=f"{self.config.peer_host}:{self.config.serve_port}",
-        )
-
-    async def post(self):
-        data = json.loads(self.request.body)
-        user_identity = Identity.from_dict(data)
-        challenge_message = str(uuid.uuid4())
-        challenge_signature = TU.generate_signature(
-            challenge_message, self.config.private_key
-        )
-        url = f"{self.config.peer_host}:{self.config.serve_port}/websocket"
-        url_signature = TU.generate_signature(url, self.config.private_key)
-        server_identity = Identity.from_dict(
-            {
-                "public_key": self.config.public_key,
-                "username": self.config.username,
-                "username_signature": self.config.username_signature,
-            }
-        )
-        rid = server_identity.generate_rid(user_identity.username_signature)
-        self.config.challenges[rid] = {
-            "message": challenge_message,
-            "origin": challenge_signature,
-        }
-        context = {
-            "identity": {
-                "public_key": self.config.public_key,
-                "username": self.config.username,
-                "username_signature": self.config.username_signature,
-            },
-            "challenge": {"message": challenge_message, "origin": challenge_signature},
-            "url": {"message": url, "signature": url_signature},
-        }
-        return self.write(json.dumps(context))
-
-
 WEB_HANDLERS = [
+    (r"/", HomeHandler),
     (r"/mfa", MultifactorAuthHandler),
     (r"/login", LoginHandler),
     (r"/rmfa", RemoteMultifactorAuthHandler),
     (r"/2fa", TwoFactorAuthHandler),
     (r"/logout", LogoutHandler),
     (r"/app", AppHandler),
-    (r"/app2fa", App2FAHandler),
     (r"/get-recovery-transaction", GetRecoveryTransaction),
-    (r"/proxy-challenge", ProxyChallengeHandler),
-    (r"/proxy-whitelist", ProxyWhiteList),
-    (r"/proxy-blacklist", ProxyBlackList),
-    (r"/proxy-rejectedlist", ProxyRejectedList),
-    (r"/proxy-allowedlist", ProxyAllowedList),
-    (r"/proxy-config", ProxyConfig),
-    (r"/proxy-app", ProxyAppHandler),
-    (r"/auth", AuthHandler),
 ]

@@ -1841,12 +1841,177 @@
         padding: 1px 4px;
         border: 1px solid #005a16;
       }
+      /* ================================================================
+         THEME: github-dark  (GitHub-style dark, matches dashboard)
+         ================================================================ */
+      html[data-theme="github-dark"] body {
+        background: #0d1117;
+        background-image: none;
+        font-family:
+          -apple-system, BlinkMacSystemFont,
+          "Segoe UI", Roboto, "Helvetica Neue",
+          Arial, sans-serif;
+      }
+      html[data-theme="github-dark"] .bill-inner,
+      html[data-theme="github-dark"] .bill-back {
+        background: #161b22;
+        background-image: none;
+        box-shadow:
+          0 0 0 1px #30363d,
+          0 20px 60px rgba(0, 0, 0, 0.5);
+      }
+      html[data-theme="github-dark"] .bill-inner::before,
+      html[data-theme="github-dark"] .bill-back::before {
+        border-color: #30363d;
+      }
+      html[data-theme="github-dark"] .bill-inner::after,
+      html[data-theme="github-dark"] .bill-back::after {
+        border-color: #21262d;
+      }
+      html[data-theme="github-dark"] h1 {
+        color: #e6edf3;
+        font-family:
+          -apple-system, BlinkMacSystemFont,
+          "Segoe UI", Roboto, sans-serif;
+        font-size: 28px;
+        text-shadow: none;
+      }
+      html[data-theme="github-dark"] .subtitle,
+      html[data-theme="github-dark"] .bill-series,
+      html[data-theme="github-dark"] .corner-ornament,
+      html[data-theme="github-dark"] .bill-divider {
+        color: #8b949e;
+      }
+      html[data-theme="github-dark"] .bill-header {
+        border-bottom-color: #30363d;
+      }
+      html[data-theme="github-dark"]
+        .bill-header::after {
+        background: #58a6ff;
+      }
+      html[data-theme="github-dark"] .section-title {
+        color: #8b949e;
+        border-bottom-color: #21262d;
+        font-family:
+          -apple-system, BlinkMacSystemFont,
+          "Segoe UI", Roboto, sans-serif;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      html[data-theme="github-dark"] .key-field {
+        background: #0d1117;
+        border-color: #30363d;
+        border-radius: 6px;
+      }
+      html[data-theme="github-dark"] .key-label {
+        color: #8b949e;
+        font-family: sans-serif;
+      }
+      html[data-theme="github-dark"] .key-value {
+        color: #c9d1d9;
+      }
+      html[data-theme="github-dark"]
+        .key-value.placeholder {
+        color: #484f58;
+        font-style: italic;
+      }
+      html[data-theme="github-dark"] label {
+        color: #c9d1d9;
+        font-family: sans-serif;
+      }
+      html[data-theme="github-dark"]
+        input[type="password"],
+      html[data-theme="github-dark"]
+        input[type="number"],
+      html[data-theme="github-dark"] input[type="text"] {
+        background: #0d1117;
+        border-color: #30363d;
+        color: #c9d1d9;
+        border-radius: 6px;
+        font-family: sans-serif;
+      }
+      html[data-theme="github-dark"] input:focus {
+        border-color: #58a6ff;
+        box-shadow: 0 0 0 3px
+          rgba(88, 166, 255, 0.2);
+      }
+      html[data-theme="github-dark"] .hint {
+        color: #8b949e;
+      }
+      html[data-theme="github-dark"] .info-box {
+        background: rgba(88, 166, 255, 0.06);
+        border-color: #30363d;
+        border-left-color: #58a6ff;
+        color: #c9d1d9;
+      }
+      html[data-theme="github-dark"] .btn-rotate,
+      html[data-theme="github-dark"] .btn-generate {
+        background: #238636;
+        color: #ffffff;
+        border-color: #2ea043;
+        text-shadow: none;
+        box-shadow: none;
+        border-radius: 6px;
+        font-family: sans-serif;
+      }
+      html[data-theme="github-dark"] .btn-rotate:hover,
+      html[data-theme="github-dark"]
+        .btn-generate:hover {
+        background: #2ea043;
+        box-shadow: 0 4px 14px
+          rgba(46, 160, 67, 0.3);
+      }
+      html[data-theme="github-dark"] .btn-refresh {
+        background: #21262d;
+        color: #c9d1d9;
+        border-color: #30363d;
+        border-radius: 6px;
+        font-family: sans-serif;
+      }
+      html[data-theme="github-dark"] .btn-refresh:hover {
+        background: #30363d;
+      }
+      html[data-theme="github-dark"] .balance-display {
+        color: #58a6ff;
+        font-family: sans-serif;
+      }
+      html[data-theme="github-dark"] .message.info {
+        background: rgba(88, 166, 255, 0.08);
+        color: #c9d1d9;
+        border-color: #30363d;
+      }
+      html[data-theme="github-dark"] .spinner-wrap {
+        color: #58a6ff;
+        font-family: sans-serif;
+      }
+      html[data-theme="github-dark"] .spinner {
+        border-color: #21262d;
+        border-top-color: #58a6ff;
+      }
+      html[data-theme="github-dark"] details > summary {
+        color: #8b949e !important;
+      }
+      html[data-theme="github-dark"] .btn-flip {
+        border-color: #30363d;
+        color: #8b949e;
+        border-radius: 6px;
+        font-family: sans-serif;
+      }
+      html[data-theme="github-dark"] .btn-flip:hover {
+        background: rgba(88, 166, 255, 0.08);
+        color: #58a6ff;
+      }
     </style>
   </head>
   <body>
     <div class="theme-switcher">
       <label for="themePicker">Theme</label>
       <select id="themePicker">
+        <option value="github-dark">
+          GitHub Dark
+        </option>
         <option value="traditional">
           Traditional Finance
         </option>
@@ -2696,7 +2861,7 @@
       const PARAM_CC = params.get("cc") || "";
       const PARAM_SF = params.get("sf") || "";
       const PARAM_THEME =
-        params.get("theme") || "traditional";
+        params.get("theme") || "github-dark";
       const GENESIS_MODE =
         !PARAM_PK && !PARAM_CC && !PARAM_SF;
 

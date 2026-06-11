@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>YadaCoin – Dashboard</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #0d1117;
+        --surface: #161b22;
+        --border: #30363d;
+        --accent: #58a6ff;
+        --accent2: #3fb950;
+        --accent3: #d2a8ff;
+        --accent4: #ffa657;
+        --accent5: #f78166;
+        --accent6: #79c0ff;
+        --text: #c9d1d9;
+        --muted: #8b949e;
+        --radius: 10px;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          -apple-system, BlinkMacSystemFont,
+          "Segoe UI", Roboto, "Helvetica Neue",
+          Arial, sans-serif;
+        min-height: 100vh;
+      }
+
+      /* ── Header ── */
+      header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 20px 32px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      header svg {
+        flex-shrink: 0;
+      }
+
+      header h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #e6edf3;
+      }
+
+      header p {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+
+      /* ── Grid ── */
+      main {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 36px 24px 60px;
+      }
+
+      .section-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        margin: 32px 0 14px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(
+          auto-fill,
+          minmax(260px, 1fr)
+        );
+        gap: 16px;
+      }
+
+      /* ── Card ── */
+      a.card {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 20px 22px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+        text-decoration: none;
+        color: inherit;
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s,
+          transform 0.1s;
+      }
+
+      a.card:hover {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px
+          rgba(88, 166, 255, 0.12);
+        transform: translateY(-2px);
+      }
+
+      .card-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .card-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+        flex-shrink: 0;
+      }
+
+      .card-title {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #e6edf3;
+      }
+
+      .card-path {
+        font-size: 0.72rem;
+        color: var(--accent);
+        font-family:
+          "SFMono-Regular", Consolas,
+          "Liberation Mono", Menlo, monospace;
+      }
+
+      .card-desc {
+        font-size: 0.82rem;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      /* icon background tints */
+      .tint-blue {
+        background: rgba(88, 166, 255, 0.15);
+      }
+      .tint-green {
+        background: rgba(63, 185, 80, 0.15);
+      }
+      .tint-purple {
+        background: rgba(210, 168, 255, 0.15);
+      }
+      .tint-orange {
+        background: rgba(255, 166, 87, 0.15);
+      }
+      .tint-red {
+        background: rgba(247, 129, 102, 0.15);
+      }
+      .tint-cyan {
+        background: rgba(121, 192, 255, 0.15);
+      }
+      .tint-yellow {
+        background: rgba(240, 202, 64, 0.15);
+      }
+      .tint-pink {
+        background: rgba(255, 121, 198, 0.15);
+      }
+
+      footer {
+        text-align: center;
+        font-size: 0.75rem;
+        color: var(--muted);
+        padding: 24px;
+        border-top: 1px solid var(--border);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <!-- YadaCoin logo mark (inline SVG) -->
+      <svg
+        width="40"
+        height="40"
+        viewBox="0 0 40 40"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <rect
+          width="40"
+          height="40"
+          rx="10"
+          fill="#1a2332"
+        />
+        <text
+          x="20"
+          y="27"
+          font-size="18"
+          font-family="sans-serif"
+          font-weight="bold"
+          fill="#58a6ff"
+          text-anchor="middle"
+        >
+          Y
+        </text>
+      </svg>
+      <div>
+        <h1>YadaCoin Node</h1>
+        <p>
+          All available interfaces on this node
+        </p>
+      </div>
+    </header>
+
+    <main>
+      <!-- ── AI & Agents ── -->
+      <div class="section-label">
+        AI &amp; Agents
+      </div>
+      <div class="grid">
+        <a class="card" href="/ai-agent-auth">
+          <div class="card-header">
+            <div class="card-icon tint-purple">
+              🤖
+            </div>
+            <div>
+              <div class="card-title">
+                AI Agent Auth
+              </div>
+              <div class="card-path">
+                /ai-agent-auth
+              </div>
+            </div>
+          </div>
+          <div class="card-desc">
+            Register, discover, and chat with AI
+            agents authenticated via YadaCoin
+            identities. Supports OAuth device
+            flow.
+          </div>
+        </a>
+      </div>
+
+      <!-- ── Chain ── -->
+      <div class="section-label">Chain</div>
+      <div class="grid">
+        <a class="card" href="/explorer">
+          <div class="card-header">
+            <div class="card-icon tint-blue">
+              🔍
+            </div>
+            <div>
+              <div class="card-title">
+                Blockchain Explorer
+              </div>
+              <div class="card-path">
+                /explorer
+              </div>
+            </div>
+          </div>
+          <div class="card-desc">
+            Browse blocks, search transactions by
+            ID or address, and inspect on-chain
+            data.
+          </div>
+        </a>
+
+        <a class="card" href="/holders">
+          <div class="card-header">
+            <div class="card-icon tint-cyan">
+              📊
+            </div>
+            <div>
+              <div class="card-title">
+                Holder List
+              </div>
+              <div class="card-path">
+                /holders
+              </div>
+            </div>
+          </div>
+          <div class="card-desc">
+            View the ranked list of all YadaCoin
+            holders and their balances.
+          </div>
+        </a>
+
+        <a class="card" href="/kel-utilization">
+          <div class="card-header">
+            <div class="card-icon tint-purple">
+              🔑
+            </div>
+            <div>
+              <div class="card-title">
+                KEL Utilization
+              </div>
+              <div class="card-path">
+                /kel-utilization
+              </div>
+            </div>
+          </div>
+          <div class="card-desc">
+            Time-series charts and summary stats for Key Event Log activity across the blockchain.
+          </div>
+        </a>
+      </div>
+
+      <!-- ── Developer ── -->
+      <div class="section-label">Developer</div>
+      <div class="grid">
+        <a class="card" href="/api-docs">
+          <div class="card-header">
+            <div class="card-icon tint-cyan">
+              📖
+            </div>
+            <div>
+              <div class="card-title">
+                API Docs
+              </div>
+              <div class="card-path">
+                /api-docs
+              </div>
+            </div>
+          </div>
+          <div class="card-desc">
+            Interactive Swagger UI documenting all
+            REST endpoints across the node core
+            and tracked plugins.
+          </div>
+        </a>
+      </div>
+
+      <!-- ── Finance ── -->
+      <div class="section-label">Finance</div>
+      <div class="grid">
+        <a class="card" href="/wallet">
+          <div class="card-header">
+            <div class="card-icon tint-green">
+              💰
+            </div>
+            <div>
+              <div class="card-title">
+                Hardware Wallet
+              </div>
+              <div class="card-path">/wallet</div>
+            </div>
+          </div>
+          <div class="card-desc">
+            Send, receive, and manage YadaCoin
+            balances using a hardware wallet. View
+            transaction history and generate
+            addresses.
+          </div>
+        </a>
+
+        <a class="card" href="/unwrap">
+          <div class="card-header">
+            <div class="card-icon tint-orange">
+              🔓
+            </div>
+            <div>
+              <div class="card-title">Unwrap</div>
+              <div class="card-path">/unwrap</div>
+            </div>
+          </div>
+          <div class="card-desc">
+            Unwrap wrapped YadaCoin tokens back to
+            native YDA on the blockchain.
+          </div>
+        </a>
+
+        <a class="card" href="/app">
+          <div class="card-header">
+            <div class="card-icon tint-purple">
+              🤝
+            </div>
+            <div>
+              <div class="card-title">
+                Web Wallet
+              </div>
+              <div class="card-path">/app</div>
+            </div>
+          </div>
+          <div class="card-desc">
+            Browser-based web wallet. Connect with
+            contacts and manage your YadaCoin
+            identity.
+          </div>
+        </a>
+      </div>
+
+      <!-- ── Key Management ── -->
+      <div class="section-label">
+        Key Management
+      </div>
+      <div class="grid">
+        <a class="card" href="/key-rotation">
+          <div class="card-header">
+            <div class="card-icon tint-orange">
+              🔄
+            </div>
+            <div>
+              <div class="card-title">
+                Key Rotation
+              </div>
+              <div class="card-path">
+                /key-rotation
+              </div>
+            </div>
+          </div>
+          <div class="card-desc">
+            Rotate your signing keys via a Key
+            Event Log (KEL). Compatible with
+            YadaCoin Cash operations.
+          </div>
+        </a>
+
+        <a
+          class="card"
+          href="/key-rotation/derived-keys"
+        >
+          <div class="card-header">
+            <div class="card-icon tint-orange">
+              🗝️
+            </div>
+            <div>
+              <div class="card-title">
+                Derived Keys
+              </div>
+              <div class="card-path">
+                /key-rotation/derived-keys
+              </div>
+            </div>
+          </div>
+          <div class="card-desc">
+            List, inspect, and manage HD-derived
+            child keys associated with your master
+            identity.
+          </div>
+        </a>
+      </div>
+
+      <!-- ── Network ── -->
+      <div class="section-label">Network</div>
+      <div class="grid">
+        <a class="card" href="/network-topology">
+          <div class="card-header">
+            <div class="card-icon tint-blue">
+              🌐
+            </div>
+            <div>
+              <div class="card-title">
+                Network Topology
+              </div>
+              <div class="card-path">
+                /network-topology
+              </div>
+            </div>
+          </div>
+          <div class="card-desc">
+            Interactive D3 graph visualizing the
+            live peer-to-peer network: seeds,
+            gateways, and service providers.
+          </div>
+        </a>
+
+        <a class="card" href="/node-announce">
+          <div class="card-header">
+            <div class="card-icon tint-green">
+              📡
+            </div>
+            <div>
+              <div class="card-title">
+                Node Announce
+              </div>
+              <div class="card-path">
+                /node-announce
+              </div>
+            </div>
+          </div>
+          <div class="card-desc">
+            Broadcast this node's presence to the
+            network and register as a masternode
+            tier peer.
+          </div>
+        </a>
+
+        <a class="card" href="/node-info">
+          <div class="card-header">
+            <div class="card-icon tint-cyan">
+              ℹ️
+            </div>
+            <div>
+              <div class="card-title">
+                Node Info
+              </div>
+              <div class="card-path">
+                /node-info
+              </div>
+            </div>
+          </div>
+          <div class="card-desc">
+            Live status panel showing sync height,
+            peer connections, memory usage, and
+            node health metrics.
+          </div>
+        </a>
+
+        <a
+          class="card"
+          href="/peerjsclient"
+          style="display: none"
+        >
+          <div class="card-header">
+            <div class="card-icon tint-cyan">
+              🔗
+            </div>
+            <div>
+              <div class="card-title">
+                PeerJS Client
+              </div>
+              <div class="card-path">
+                /peerjsclient
+              </div>
+            </div>
+          </div>
+          <div class="card-desc">
+            Browser-based WebRTC peer client for
+            direct encrypted connections between
+            YadaCoin identities.
+          </div>
+        </a>
+      </div>
+
+      <!-- ── Pool ── -->
+      <div class="section-label">Pool</div>
+      <div class="grid">
+        <a class="card" href="/pool">
+          <div class="card-header">
+            <div class="card-icon tint-blue">
+              ⛏️
+            </div>
+            <div>
+              <div class="card-title">
+                Pool Dashboard
+              </div>
+              <div class="card-path">/pool</div>
+            </div>
+          </div>
+          <div class="card-desc">
+            Mining pool overview: hashrate,
+            connected miners, found blocks, and
+            payout history.
+          </div>
+        </a>
+      </div>
+    </main>
+
+    <footer>
+      YadaCoin Node &mdash; Open Source &mdash;
+      <a
+        href="https://yadacoin.io"
+        style="
+          color: var(--accent);
+          text-decoration: none;
+        "
+        target="_blank"
+        rel="noopener"
+        >yadacoin.io</a
+      >
+    </footer>
+  </body>
+</html>

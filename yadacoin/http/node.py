@@ -496,6 +496,394 @@ class MineBlockHandler(BaseHandler):
         )
 
 
+class GetNetworkTopologyHandler(BaseHandler):
+    """Serves the network topology monitor page and its JSON data API."""
+
+    async def get(self):
+        fmt = self.get_query_argument("format", "html")
+        if fmt == "json":
+            await self._json_data()
+        else:
+            self.render("network_topology.html")
+
+    async def _json_data(self):
+        import asyncio
+
+        import aiohttp
+
+        # ── 1. Local tested-nodes (from NodesTester / MongoDB) ──────────────
+        tested_result = await self.config.mongo.async_db.tested_nodes.find_one(
+            {"_id": "latest_test"}, {"_id": 0}
+        )
+        successful_nodes = (
+            tested_result.get("successful_nodes", []) if tested_result else []
+        )
+
+        # ── 2. Build initial node map from tested nodes ───────────────────────
+        # Key: "<http_protocol>://<http_host>:<http_port>"
+        nodes_map = {}  # id -> node dict
+
+        def infer_proto(proto, port):
+            if proto:
+                return proto
+            return "https" if str(port) in ("443", "8443") else "http"
+
+        def node_id(n):
+            port = n.get("http_port") or n.get("port", 80)
+            proto = infer_proto(n.get("http_protocol"), port)
+            host = n.get("http_host") or n.get("host", "")
+            return f"{proto}://{host}:{port}"
+
+        for n in successful_nodes:
+            nid = node_id(n)
+            # peer_type may be None if the node was created from a hardcoded dict
+            # without a peer_type key — infer from seed/seed_gateway fields as fallback
+            pt = n.get("peer_type") or None
+            if not pt:
+                if n.get("seed") and n.get("seed_gateway"):
+                    pt = "service_provider"
+                elif n.get("seed") and not n.get("seed_gateway"):
+                    pt = "seed_gateway"
+                else:
+                    pt = "seed"  # tested_nodes only contains masternode-tier nodes
+            nodes_map[nid] = {
+                "id": nid,
+                "host": n.get("http_host") or n.get("host", ""),
+                "port": n.get("http_port") or n.get("port"),
+                "http_protocol": infer_proto(
+                    n.get("http_protocol"), n.get("http_port") or n.get("port", 80)
+                ),
+                "peer_type": pt,
+                "username": n.get("identity", {}).get("username", ""),
+                "username_signature": n.get("identity", {}).get(
+                    "username_signature", ""
+                ),
+                "node_version": n.get("node_version"),
+                "protocol_version": n.get("protocol_version"),
+                "seed": n.get("seed"),
+                "seed_gateway": n.get("seed_gateway"),
+                "status": None,  # enriched below
+                "height": None,
+                "uptime": None,
+                "inbound_peers": None,
+                "outbound_peers": None,
+            }
+
+        # ── 3. Add self node ──────────────────────────────────────────────────
+        self_status = await self.config.get_status()
+        my_proto = (
+            "https"
+            if (hasattr(self.config, "ssl") and self.config.ssl.is_valid())
+            else "http"
+        )
+        my_host = (
+            (self.config.ssl.common_name if hasattr(self.config, "ssl") else None)
+            or self.config.peer_host
+            or "localhost"
+        )
+        my_port = (
+            (self.config.ssl.port if hasattr(self.config, "ssl") else None)
+            or self.config.serve_port
+            or 8000
+        )
+        self_id = f"{my_proto}://{my_host}:{my_port}"
+        self_peer_type = getattr(self.config, "peer_type", "user")
+
+        nodes_map[self_id] = {
+            "id": self_id,
+            "host": my_host,
+            "port": my_port,
+            "http_protocol": my_proto,
+            "peer_type": self_peer_type,
+            "username": getattr(self.config, "username", ""),
+            "node_version": self_status.get("version"),
+            "protocol_version": self_status.get("protocol_version"),
+            "seed": None,
+            "seed_gateway": None,
+            "status": "online",
+            "height": self_status.get("height"),
+            "uptime": self_status.get("uptime"),
+            "network": self_status.get("network"),
+            "inbound_peers": self_status.get("inbound_peers"),
+            "outbound_peers": self_status.get("outbound_peers"),
+            "is_self": True,
+        }
+
+        # ── 4. Fetch /get-status from each remote masternode-tier node ────────
+        MASTERNODE_TYPES = {"seed", "seed_gateway", "service_provider"}
+        timeout = aiohttp.ClientTimeout(total=5)
+
+        async def fetch_status(nid, n):
+            proto = n["http_protocol"]
+            host = n["host"]
+            port = n["port"]
+            url = f"{proto}://{host}:{port}/get-status"
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, ssl=False) as resp:
+                        if resp.status == 200:
+                            data = await resp.json(content_type=None)
+                            n["status"] = "online"
+                            n["height"] = data.get("height")
+                            n["uptime"] = data.get("uptime")
+                            n["network"] = data.get("network")
+                            n["inbound_peers"] = data.get("inbound_peers")
+                            n["outbound_peers"] = data.get("outbound_peers")
+                            if data.get("version"):
+                                n["node_version"] = data.get("version")
+                            if data.get("username"):
+                                n["username"] = data.get("username")
+                            if data.get("peer_type"):
+                                n["peer_type"] = data.get("peer_type")
+                        else:
+                            n["status"] = "degraded"
+            except Exception:
+                n["status"] = "unreachable"
+
+        async def fetch_peers(nid, n):
+            proto = n["http_protocol"]
+            host = n["host"]
+            port = n["port"]
+            url = f"{proto}://{host}:{port}/get-peers"
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, ssl=False) as resp:
+                        if resp.status == 200:
+                            data = await resp.json(content_type=None)
+                            inbound = data.get("inbound_peers", [])
+                            outbound = data.get("outbound_peers", [])
+                            return nid, inbound + outbound
+            except Exception:
+                pass
+            return nid, []
+
+        # ── 4a. BFS crawl: keep fetching /get-peers from every newly discovered
+        #        masternode-tier node until the frontier is empty ─────────────
+        edges = []
+        crawled = set()  # nids whose /get-peers we've already fetched
+
+        def make_node_entry(p):
+            pt = p.get("peer_type", "user")
+            ph = p.get("http_host") or p.get("host", "")
+            pp = p.get("http_port") or p.get("port", 80)
+            pproto = infer_proto(p.get("http_protocol"), pp)
+            pid = f"{pproto}://{ph}:{pp}"
+            return (
+                pid,
+                ph,
+                {
+                    "id": pid,
+                    "host": ph,
+                    "port": pp,
+                    "http_protocol": pproto,
+                    "peer_type": pt,
+                    "username": p.get("identity", {}).get("username", ""),
+                    "username_signature": p.get("identity", {}).get(
+                        "username_signature", ""
+                    ),
+                    "node_version": p.get("node_version"),
+                    "protocol_version": p.get("protocol_version"),
+                    "seed": p.get("seed"),
+                    "seed_gateway": p.get("seed_gateway"),
+                    "status": "online",
+                    "height": None,
+                    "uptime": None,
+                },
+            )
+
+        # Start with ALL non-self nodes from tested_nodes — they are always
+        # masternode-tier; peer_type may still be None for some until fetch_status
+        # returns the live value, so don't filter by peer_type here.
+        frontier = {nid: n for nid, n in nodes_map.items() if not n.get("is_self")}
+
+        while frontier:
+            # Fetch /get-status and /get-peers for all nodes in the current frontier
+            await asyncio.gather(*[fetch_status(nid, n) for nid, n in frontier.items()])
+            peer_results = await asyncio.gather(
+                *[fetch_peers(nid, n) for nid, n in frontier.items()]
+            )
+            crawled.update(frontier.keys())
+
+            next_frontier = {}
+            for source_nid, peers in peer_results:
+                for p in peers:
+                    pid, ph, entry = make_node_entry(p)
+                    if not ph:
+                        continue
+                    # Add to nodes_map if not seen before
+                    if pid not in nodes_map:
+                        nodes_map[pid] = entry
+                    # If it's a masternode-tier node we haven't crawled yet, add to next frontier
+                    if (
+                        entry["peer_type"] in MASTERNODE_TYPES
+                        and pid not in crawled
+                        and pid not in next_frontier
+                    ):
+                        next_frontier[pid] = nodes_map[pid]
+                    edges.append({"source": source_nid, "target": pid})
+
+            frontier = next_frontier
+
+        # ── 5. Add self edges from local /get-peers ───────────────────────────
+        if hasattr(self.config, "peer"):
+            inbound = await self.config.peer.get_all_inbound_streams()
+            outbound = await self.config.peer.get_all_outbound_streams()
+            for stream in inbound:
+                p = stream.peer
+                ph = p.http_host or p.host or ""
+                pp = p.http_port or p.port or 80
+                pproto = infer_proto(p.http_protocol, pp)
+                pid = f"{pproto}://{ph}:{pp}"
+                if ph:
+                    edges.append({"source": self_id, "target": pid})
+            for stream in outbound:
+                p = stream.peer
+                ph = p.http_host or p.host or ""
+                pp = p.http_port or p.port or 80
+                pproto = infer_proto(p.http_protocol, pp)
+                pid = f"{pproto}://{ph}:{pp}"
+                if ph:
+                    edges.append({"source": self_id, "target": pid})
+
+        # Deduplicate edges (same source+target)
+        seen_edges = set()
+        unique_edges = []
+        for e in edges:
+            key = (e["source"], e["target"])
+            if key not in seen_edges:
+                seen_edges.add(key)
+                unique_edges.append(e)
+
+        # ── 5b. Deduplicate nodes that represent the same host ────────────────
+        # Build a canonical-id map keyed by (host, port) — prefer the entry with
+        # the most data (status online, highest port specificity).
+        # username_signature is the true unique identity; use it when available.
+        host_canonical = {}  # (host, port) -> canonical nid
+        sig_canonical = {}  # username_signature -> canonical nid
+
+        def _score(n):
+            """Higher = more complete/preferred entry."""
+            return (
+                1 if n.get("status") == "online" else 0,
+                1 if n.get("username_signature") else 0,
+                1 if n.get("username") else 0,
+                1 if n.get("height") is not None else 0,
+            )
+
+        for nid, n in list(nodes_map.items()):
+            sig = n.get("username_signature") or ""
+            host = n.get("host", "")
+            port = n.get("port")
+            hk = (host, port)
+
+            # Check if we already have a canonical entry for this sig or host:port
+            existing_nid = sig_canonical.get(sig) if sig else None
+            if not existing_nid:
+                existing_nid = host_canonical.get(hk)
+
+            if existing_nid and existing_nid != nid:
+                # Merge: keep the better-scored entry as canonical, remap the other
+                existing = nodes_map[existing_nid]
+                if _score(n) > _score(existing):
+                    # current entry is better — make it canonical, remap existing
+                    nodes_map[nid] = n
+                    del nodes_map[existing_nid]
+                    # update remapping for old id
+                    if sig:
+                        sig_canonical[sig] = nid
+                    host_canonical[hk] = nid
+                    # rewrite edges that pointed to old id
+                    for e in unique_edges:
+                        if e["source"] == existing_nid:
+                            e["source"] = nid
+                        if e["target"] == existing_nid:
+                            e["target"] = nid
+                else:
+                    # existing entry is better — remap current to existing
+                    del nodes_map[nid]
+                    for e in unique_edges:
+                        if e["source"] == nid:
+                            e["source"] = existing_nid
+                        if e["target"] == nid:
+                            e["target"] = existing_nid
+            else:
+                if sig:
+                    sig_canonical[sig] = nid
+                host_canonical[hk] = nid
+
+        # Remove self-loop edges and re-deduplicate after remapping
+        seen_edges = set()
+        final_edges = []
+        for e in unique_edges:
+            if e["source"] == e["target"]:
+                continue
+            key = (e["source"], e["target"])
+            if key not in seen_edges:
+                seen_edges.add(key)
+                final_edges.append(e)
+        unique_edges = final_edges
+
+        # ── 6. Build ontology tree ────────────────────────────────────────────        # Hierarchy: Seed -> SeedGateway -> ServiceProvider -> User/Pool
+        def peer_tier(pt):
+            return {
+                "seed": 0,
+                "seed_gateway": 1,
+                "service_provider": 2,
+                "pool": 3,
+                "user": 3,
+            }.get(pt, 3)
+
+        ontology = {"name": "YadaCoin Network", "peer_type": "root", "children": []}
+        tier_nodes = {0: [], 1: [], 2: [], 3: []}
+        for nid, n in nodes_map.items():
+            tier_nodes[peer_tier(n.get("peer_type", "user"))].append(n)
+
+        for seed in tier_nodes[0]:
+            seed_node = {
+                "name": seed["username"] or seed["host"],
+                "id": seed["id"],
+                "peer_type": "seed",
+                "children": [],
+            }
+            for gw in tier_nodes[1]:
+                if gw.get("seed") == seed.get("username_signature"):
+                    gw_node = {
+                        "name": gw["username"] or gw["host"],
+                        "id": gw["id"],
+                        "peer_type": "seed_gateway",
+                        "children": [],
+                    }
+                    for sp in tier_nodes[2]:
+                        if sp.get("seed_gateway") == gw.get("username_signature"):
+                            sp_node = {
+                                "name": sp["username"] or sp["host"],
+                                "id": sp["id"],
+                                "peer_type": "service_provider",
+                                "children": [],
+                            }
+                            gw_node["children"].append(sp_node)
+                    seed_node["children"].append(gw_node)
+            ontology["children"].append(seed_node)
+
+        # Drop any edges whose source or target was removed during deduplication
+        known_ids = set(nodes_map.keys())
+        unique_edges = [
+            e
+            for e in unique_edges
+            if e["source"] in known_ids and e["target"] in known_ids
+        ]
+
+        return self.render_as_json(
+            {
+                "nodes": list(nodes_map.values()),
+                "edges": unique_edges,
+                "ontology": ontology,
+                "self_id": self_id,
+                "generated_at": time.time(),
+            }
+        )
+
+
 NODE_HANDLERS = [
     (r"/get-latest-block", GetLatestBlockHandler),
     (r"/get-blocks", GetBlocksHandler),
@@ -516,5 +904,6 @@ NODE_HANDLERS = [
     (r"/get-mempool", GetMempoolHandler),
     (r"/get-monitoring", GetMonitoringHandler),
     (r"/get-tested-nodes", GetTestedNodesHandler),
+    (r"/network-topology", GetNetworkTopologyHandler),
     (r"/mine-block", MineBlockHandler),
 ]

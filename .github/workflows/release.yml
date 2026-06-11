@@ -13,6 +13,8 @@ jobs:
     permissions:
       contents: write
       packages: write
+    outputs:
+      tag: ${{ steps.tag.outputs.name }}
     steps:
       - name: Set tag name
         id: tag
@@ -61,3 +63,56 @@ jobs:
             See [CHANGELOG](https://github.com/${{ github.repository }}/commits/${{ steps.tag.outputs.name }}) for changes.
           draft: false
           prerelease: false
+
+  windows:
+    name: Build and release Windows
+    needs: release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.7"
+
+      - name: Install 7-Zip
+        run: choco install 7zip -y
+
+      - name: Install dependencies
+        run: |
+          grep -vE "pyrx|yadacoin-agent-auth|sendgrid|mixpanel|ua_parser|twilio|centeridentity|python-jose|openai|resend|discord\.py|PyGithub|validators|web3|eth_account|eth_abi|stripe" requirements.txt > filtered_requirements.txt
+          python -m pip install --upgrade pip
+          pip install -r filtered_requirements.txt
+          pip install pyinstaller pytest==7.4.4
+
+      - name: Build with PyInstaller
+        run: |
+          python -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())" > site_packages_path.txt
+          pyinstaller yadacoin/app.spec
+
+      - name: Zip the contents of dist directory
+        run: |
+          cd dist
+          7z a ../yadacoin-windows.zip ./*
+
+      - name: Add additional file to the zip
+        run: |
+          move winlibs/pyrx.cp37-win_amd64.pyd YadaCoin/
+          move VERSION YadaCoin/
+          move MIN_VERSION YadaCoin/
+          7z u yadacoin-windows.zip ./YadaCoin/
+          rm -r YadaCoin/
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          files: yadacoin-windows.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

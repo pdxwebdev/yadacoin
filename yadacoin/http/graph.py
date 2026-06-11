@@ -15,7 +15,6 @@ Full license terms: see LICENSE.txt in this repository.
 Handlers required by the graph operations
 """
 
-import base64
 import hashlib
 import json
 import os
@@ -1030,11 +1029,6 @@ class WebSignInHandler(BaseGraphHandler):
         return self.render_as_json({"success": False})
 
 
-class IdentityHandler(BaseGraphHandler):
-    async def get(self):
-        return self.render("identity.html")
-
-
 class ChallengeHandler(BaseGraphHandler):
     async def post(self):
         try:
@@ -1102,21 +1096,6 @@ class ChallengeHandler(BaseGraphHandler):
                 },
             }
         )
-
-
-class AuthHandler(BaseGraphHandler):
-    async def post(self):
-        try:
-            data = json.loads(self.request.body)
-            challenge = challenges[data["username_signature"]]
-            authed = verify_signature(
-                base64.b64decode(data["challenge_signature"]),
-                hashlib.sha256(challenge["challenge"].encode()).digest().hex().encode(),
-                bytes.fromhex(challenge["identity"]["public_key"]),
-            )
-        except:
-            authed = False
-        return self.render_as_json({"authed": authed})
 
 
 class MyRoutesHandler(BaseGraphHandler):
@@ -1203,9 +1182,7 @@ GRAPH_HANDLERS = [
     ),  # stream the file from the sia network, we need this because of cross origin
     (r"/ns", NSHandler),  # name server endpoints
     (r"/web-signin", WebSignInHandler),
-    (r"/identity", IdentityHandler),
     (r"/challenge", ChallengeHandler),
-    (r"/auth", AuthHandler),
     (r"/my-routes", MyRoutesHandler),
     (r"/prerotated-key-hash-for-username-signature", PrerotatedKeyForUserNameSignature),
 ]
