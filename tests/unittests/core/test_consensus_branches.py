@@ -1349,3 +1349,15 @@ class TestApplyContentTakedowns(ConsensusBase):
         self.assertEqual(
             self.consensus.mongo.async_db.blocks.update_many.await_count, 1
         )
+
+    async def test_no_comply_explicit_skips_update(self):
+        """reason_code in no_comply → continue branch (line 609): no DB writes."""
+        self._setup_db()
+        self.consensus.config.content_takedown_auto_comply = frozenset(["csam"])
+        self.consensus.config.content_takedown_comply_and_save = frozenset()
+        self.consensus.config.content_takedown_no_comply = frozenset(["csam"])
+
+        block = _mk_block(transactions=[_mk_takedown_txn("target_txn_007", "csam")])
+        await self.consensus._apply_content_takedowns(block)
+
+        self.consensus.mongo.async_db.blocks.update_many.assert_not_called()

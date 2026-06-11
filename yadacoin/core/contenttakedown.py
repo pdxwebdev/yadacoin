@@ -35,11 +35,12 @@ Full license terms: see LICENSE.txt in this repository.
 #                          listed under "content_takedown_policy.comply_and_save"
 #                          in config.json.
 #
-#   no_comply            – ignore the request.  The default for all reason
-#                          codes not listed under auto_comply or
-#                          comply_and_save.
+#   no_comply            – ignore the request.  Must be explicitly listed
+#                          under "content_takedown_policy.no_comply" in
+#                          config.json.  Never the default.
 
 from enum import Enum
+from typing import FrozenSet
 
 
 class TakedownReasonCode(Enum):
@@ -122,10 +123,14 @@ MINIMUM_TAKEDOWN_FEE: float = 0.0
 # All known reason codes are included so that nodes are maximally compliant
 # out of the box.  Operators who wish to limit compliance can override this
 # by setting "content_takedown_policy.auto_comply" in config.json.
-DEFAULT_AUTO_COMPLY: frozenset[str] = frozenset(r.value for r in TakedownReasonCode)
+DEFAULT_AUTO_COMPLY: FrozenSet[str] = frozenset(r.value for r in TakedownReasonCode)
 
 # comply_and_save is deliberately empty by default; operators must opt in.
-DEFAULT_COMPLY_AND_SAVE: frozenset[str] = frozenset()
+DEFAULT_COMPLY_AND_SAVE: FrozenSet[str] = frozenset()
+
+# no_comply is deliberately empty by default; operators must explicitly opt out
+# of compliance by listing reason codes here or in config.json.
+DEFAULT_NO_COMPLY: FrozenSet[str] = frozenset()
 
 
 class ContentTakedownAnnouncement:

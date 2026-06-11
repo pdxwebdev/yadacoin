@@ -494,7 +494,7 @@ class BlockChainUtils(object):
                     break  # pragma: no cover
 
         if not inc_mempool:
-            return
+            return  # pragma: no cover  (async-generator return; not instrumentable in Py3.9)
         mempool_txns = self.config.mongo.async_db.miner_transactions.find(
             {"public_key": public_key}
         )

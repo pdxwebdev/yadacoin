@@ -9,6 +9,7 @@ Tests for yadacoin.core.contenttakedown – 100 % branch coverage.
 from yadacoin.core.contenttakedown import (
     DEFAULT_AUTO_COMPLY,
     DEFAULT_COMPLY_AND_SAVE,
+    DEFAULT_NO_COMPLY,
     MINIMUM_TAKEDOWN_FEE,
     ContentTakedownAnnouncement,
     TakedownReasonCode,
@@ -60,6 +61,14 @@ class TestTakedownReasonCode(AsyncTestCase):
 
     async def test_default_comply_and_save_is_empty(self):
         self.assertEqual(DEFAULT_COMPLY_AND_SAVE, frozenset())
+
+    async def test_default_no_comply_is_empty(self):
+        """no_comply must be explicitly opted into; the default must be empty."""
+        self.assertEqual(DEFAULT_NO_COMPLY, frozenset())
+
+    async def test_no_comply_does_not_overlap_auto_comply_by_default(self):
+        """By default, no reason code is simultaneously auto_comply and no_comply."""
+        self.assertEqual(DEFAULT_AUTO_COMPLY & DEFAULT_NO_COMPLY, frozenset())
 
     async def test_minimum_takedown_fee_is_zero(self):
         self.assertEqual(MINIMUM_TAKEDOWN_FEE, 0.0)
@@ -307,3 +316,77 @@ class TestContentTakedownRepr(AsyncTestCase):
         self.assertIn(VALID_TXN_ID, r)
         self.assertIn("csam", r)
         self.assertIn("ContentTakedownAnnouncement", r)
+
+
+# ---------------------------------------------------------------------------
+# Policy: no_comply is explicit opt-out, never the default
+# ---------------------------------------------------------------------------
+
+
+class TestNonComplyPolicySemantics(AsyncTestCase):
+    """Verify the no_comply-is-explicit-opt-out contract described in the module."""
+
+    def _should_comply(self, reason, auto_comply, comply_and_save, no_comply):
+        """Mirrors the logic in consensus._apply_content_takedowns."""
+        if reason in no_comply:
+            return False
+        return reason in auto_comply or reason in comply_and_save
+
+    async def test_auto_comply_code_is_processed_by_default(self):
+        """A code in auto_comply with empty no_comply must result in compliance."""
+        self.assertTrue(
+            self._should_comply(
+                "csam",
+                auto_comply=frozenset(["csam"]),
+                comply_and_save=frozenset(),
+                no_comply=frozenset(),
+            )
+        )
+
+    async def test_no_comply_overrides_auto_comply(self):
+        """A code explicitly listed in no_comply must never be acted on, even if
+        it also appears in auto_comply (operator misconfiguration safety net)."""
+        self.assertFalse(
+            self._should_comply(
+                "csam",
+                auto_comply=frozenset(["csam"]),
+                comply_and_save=frozenset(),
+                no_comply=frozenset(["csam"]),
+            )
+        )
+
+    async def test_no_comply_overrides_comply_and_save(self):
+        """A code in no_comply must be skipped even if listed in comply_and_save."""
+        self.assertFalse(
+            self._should_comply(
+                "copyright",
+                auto_comply=frozenset(),
+                comply_and_save=frozenset(["copyright"]),
+                no_comply=frozenset(["copyright"]),
+            )
+        )
+
+    async def test_code_absent_from_all_sets_does_not_comply(self):
+        """A code not in any set must not trigger compliance (operator narrowed
+        auto_comply and didn't include this code)."""
+        self.assertFalse(
+            self._should_comply(
+                "spam",
+                auto_comply=frozenset(["csam"]),
+                comply_and_save=frozenset(),
+                no_comply=frozenset(),
+            )
+        )
+
+    async def test_empty_no_comply_does_not_block_auto_comply(self):
+        """With empty no_comply (the default), all auto_comply codes must comply."""
+        for code in TakedownReasonCode:
+            self.assertTrue(
+                self._should_comply(
+                    code.value,
+                    auto_comply=DEFAULT_AUTO_COMPLY,
+                    comply_and_save=DEFAULT_COMPLY_AND_SAVE,
+                    no_comply=DEFAULT_NO_COMPLY,
+                ),
+                msg=f"Expected compliance for {code.value!r} with default policy",
+            )

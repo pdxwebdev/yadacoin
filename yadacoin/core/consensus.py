@@ -587,13 +587,15 @@ class Consensus(object):
         - comply_and_save  : same as auto_comply, AND archive the original
                              relationship value in the
                              ``content_takedown_archive`` collection.
-        - no_comply        : skip (do nothing).
+        - no_comply        : skip (do nothing).  Must be explicitly configured;
+                             never the default.
         """
         from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
 
         config = self.config
         auto_comply = config.content_takedown_auto_comply
         comply_and_save = config.content_takedown_comply_and_save
+        no_comply = config.content_takedown_no_comply
 
         for txn in block.transactions:
             if not isinstance(txn.relationship, ContentTakedownAnnouncement):
@@ -601,6 +603,10 @@ class Consensus(object):
 
             takedown = txn.relationship
             reason = takedown.reason_code.value
+
+            # no_comply is an explicit opt-out and always takes precedence.
+            if reason in no_comply:
+                continue
 
             should_comply = reason in auto_comply or reason in comply_and_save
             should_save = reason in comply_and_save

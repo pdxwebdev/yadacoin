@@ -185,17 +185,20 @@ class Config:
         #
         # auto_comply      : clear the relationship field immediately when any
         #                    of these reason codes is encountered.  Defaults to
-        #                    the set of codes covering broadly illegal content.
+        #                    ALL known reason codes — nodes comply by default.
         # comply_and_save  : clear the relationship field AND archive the
         #                    original value in content_takedown_archive for
         #                    later human review.  Empty by default — operators
         #                    must explicitly opt in via config.json.
-        #
-        # Any reason code not listed in either set results in no-comply
-        # (the request is ignored).
+        # no_comply        : ignore the request for these reason codes.
+        #                    Empty by default — operators must explicitly opt
+        #                    out of compliance via config.json.  A code listed
+        #                    here takes precedence over auto_comply and
+        #                    comply_and_save.
         from yadacoin.core.contenttakedown import (
             DEFAULT_AUTO_COMPLY,
             DEFAULT_COMPLY_AND_SAVE,
+            DEFAULT_NO_COMPLY,
         )
 
         _policy = config.get("content_takedown_policy", {})
@@ -204,6 +207,9 @@ class Config:
         )
         self.content_takedown_comply_and_save: frozenset = frozenset(
             _policy.get("comply_and_save", list(DEFAULT_COMPLY_AND_SAVE))
+        )
+        self.content_takedown_no_comply: frozenset = frozenset(
+            _policy.get("no_comply", list(DEFAULT_NO_COMPLY))
         )
 
         # Transaction signature of the inception entry for the designated admin KEL.
