@@ -3,7 +3,7 @@ name: Test and Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
 
 concurrency:
@@ -41,7 +41,12 @@ jobs:
     name: Build and publish release
     needs: test
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: u    runs-on: u    rumi    runs-on: u    runs-on: u    r   p  kages: wri       out    runs    tag: ${{ steps.tag.outputs.name }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    outputs:
+      tag: ${{ steps.tag.outputs.name }}
     steps:
       - name: Set tag name
         id: tag
@@ -71,7 +76,13 @@ jobs:
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
-                                                                    at                                                                    at                                                                    at.io/${{ github.repository }}:latest
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.name }}
+            ghcr.io/${{ github.repository }}:latest
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -90,20 +101,41 @@ jobs:
     needs: release
     runs-on: windows-latest
     permissions:
-                  it                  it     : C                  it                 eckout@v4
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          ref: ${{ needs.rel          ref: ${{ needs.rel        et up Python
-        uses: actions/setup-python@        uses: actions/setup-python@        uses: actions/setup-python@        uses: actions/setup-python@        uses: actions/setup-python@        uses: actions/setup-python@        uses: actions/setup-python@        uses: actions/setup-pytho|centeridentity|python-jose|openai|resen        uses: actions/setup-pidators|web3|eth       t|eth_a        uses: actions/setup-python@      quirements.txt
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.7"
+
+      - name: Install 7-Zip
+        run: choco install 7zip -y
+
+      - name: Install dependencies
+        run: |
+          grep -vE "pyrx|yadacoin-agent-auth|sendgrid|mixpanel|ua_parser|twilio|centeridentity|python-jose|openai|resend|discord\.py|PyGithub|validators|web3|eth_account|eth_abi|stripe" requirements.txt > filtered_requirements.txt
           python -m pip install --upgrade pip
-            p install -r filtered_requirements.txt
+          pip install -r filtered_requirements.txt
           pip install pyinstaller pytest==7.4.4
 
       - name: Build with PyInstaller
         run: |
-          python -c "from distutils.sysconfig import get_python_lib          python -c "from" > site_packages_path.txt
+          python -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())" > site_packages_path.txt
           pyinstaller yadacoin/app.spec
 
-                        ntents             ctor                        ntents             ctor                        ntents             ctoAd             f                        ntents             ctor                        ntend YadaCoin/
+      - name: Zip the contents of dist directory
+        run: |
+          cd dist
+          7z a ../yadacoin-windows.zip ./*
+
+      - name: Add additional file to the zip
+        run: |
+          move winlibs/pyrx.cp37-win_amd64.pyd YadaCoin/
           move VERSION YadaCoin/
           move MIN_VERSION YadaCoin/
           7z u yadacoin-windows.zip ./YadaCoin/
