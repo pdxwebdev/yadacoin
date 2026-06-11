@@ -288,6 +288,7 @@ class GetRecoveryTransaction(BaseHandler):
 
 WEB_HANDLERS = [
     (r"/", HomeHandler),
+    (r"/node-dashboard", HomeHandler),
     (r"/mfa", MultifactorAuthHandler),
     (r"/login", LoginHandler),
     (r"/rmfa", RemoteMultifactorAuthHandler),

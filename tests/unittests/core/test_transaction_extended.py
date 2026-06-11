@@ -192,6 +192,18 @@ class TestTransactionInit(TransactionTestCase):
         txn = Transaction(version=7, txn_time=int(time.time()))
         self.assertEqual(txn.version, 7)
 
+    async def test_init_negative_fee_raises(self):
+        from yadacoin.core.transaction import InvalidTransactionException
+
+        with self.assertRaises(InvalidTransactionException):
+            Transaction(fee=-0.01)
+
+    async def test_init_negative_masternode_fee_raises(self):
+        from yadacoin.core.transaction import InvalidTransactionException
+
+        with self.assertRaises(InvalidTransactionException):
+            Transaction(masternode_fee=-0.01)
+
 
 # ---------------------------------------------------------------------------
 # Transaction.from_dict and ensure_instance
