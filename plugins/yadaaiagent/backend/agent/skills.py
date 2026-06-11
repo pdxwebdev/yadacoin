@@ -1,6 +1,7 @@
 """backend/agent/skills.py — Skill registry and executor for the agent planning loop."""
 import datetime as _dt
 import re as _re
+from typing import Dict, Tuple
 
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 
@@ -440,7 +441,7 @@ def build_available_skills(context: dict) -> dict:
 # be the PRIMARY tool for the goal.  Used by route_skills() to present a
 # focused tool subset to the LLM rather than the full list.
 
-_SKILL_KEYWORDS: dict[str, tuple[str, ...]] = {
+_SKILL_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "sia_storage": (
         "upload",
         "store",

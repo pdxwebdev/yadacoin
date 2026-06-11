@@ -8,7 +8,7 @@ import importlib
 import inspect
 import json
 import re
-from typing import Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 from tornado.web import RequestHandler, StaticFileHandler
 
@@ -114,9 +114,9 @@ _RE_RENDER_JSON = re.compile(r"self\.render_as_json\s*\(")
 _RE_RETURN_DOC = re.compile(r":returns?:\s*(.+)", re.IGNORECASE)
 
 
-def _extract_query_params(src: str) -> list[dict]:
+def _extract_query_params(src: str) -> List[Dict]:
     params = []
-    seen: set[str] = set()
+    seen: Set[str] = set()
     for m in _RE_GET_ARG.finditer(src):
         name = m.group(1)
         if name in seen:
@@ -153,7 +153,7 @@ def _extract_json_body_schema(src: str) -> Optional[dict]:
     }
 
 
-def _extract_response_schema(src: str, doc_lines: list[str]) -> dict:
+def _extract_response_schema(src: str, doc_lines: List[str]) -> dict:
     """Build a minimal responses dict from source patterns and docstrings."""
     resp_desc = "Success"
     # Pull :return: from docstring
@@ -187,7 +187,7 @@ def _build_openapi_spec() -> dict:
         "yadacoin.http.product",
     ]
 
-    all_handler_tuples: list[tuple] = []
+    all_handler_tuples: List[Tuple] = []
 
     for mod_name in core_modules:
         try:

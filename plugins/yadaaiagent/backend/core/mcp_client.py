@@ -1,5 +1,6 @@
 """mcp_client.py — MCP 2025-03-26 streamable-http transport client."""
 import json
+from typing import Dict, List
 
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 
@@ -127,7 +128,7 @@ class MCPClient:
         return result
 
     @staticmethod
-    def make_impl(endpoint: str, tool_names: list[str], confirm_tool: str) -> dict:
+    def make_impl(endpoint: str, tool_names: List[str], confirm_tool: str) -> Dict:
         """
         Build a tool_impl dict whose callables are async functions that call
         the MCP server at `endpoint`.  Drop-in replacement for a mock impl dict.
