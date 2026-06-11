@@ -62,6 +62,7 @@ def make_mock_txn(
     mock_txn.public_key = public_key
     mock_txn.requester_rid = requester_rid
     mock_txn.requested_rid = requested_rid
+    mock_txn.coinbase = False
     mock_txn.spent_in_txn = None
     mock_txn.are_kel_fields_populated = MagicMock(return_value=False)
     mock_txn.is_already_in_mempool = AsyncMock(return_value=False)
