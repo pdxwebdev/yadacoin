@@ -220,5 +220,71 @@ class TestRPCSocketClientSendKeepalive(unittest.TestCase):
         client.write_params.assert_not_called()
 
 
+class TestRPCSocketServerHandleStreamBadData(unittest.IsolatedAsyncioTestCase):
+    """Tests for invalid data handling in RPCSocketServer.handle_stream."""
+
+    def _make_server(self):
+        with patch("yadacoin.tcpsocket.base.Config") as mock_config_cls:
+            mock_cfg = MagicMock()
+            mock_cfg.health.tcp_server.last_activity = 0.0
+            mock_config_cls.return_value = mock_cfg
+            server = RPCSocketServer.__new__(RPCSocketServer)
+            server.config = mock_cfg
+            server.remove_peer = AsyncMock()
+        return server, mock_cfg
+
+    async def test_handle_stream_skips_invalid_json(self):
+        """A JSON decode error should log a warning and continue, not disconnect."""
+        server, mock_cfg = self._make_server()
+
+        call_count = 0
+
+        async def read_until(_):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return b"not valid json\n"
+            raise StreamClosedError()
+
+        mock_stream = MagicMock()
+        mock_stream.read_until = read_until
+        mock_stream.socket = MagicMock()
+        mock_stream.socket.setsockopt = MagicMock()
+        mock_cfg.health.tcp_server.last_activity = 0.0
+
+        await server.handle_stream(mock_stream, ("127.0.0.1", 8000))
+
+        mock_cfg.app_log.warning.assert_any_call(
+            unittest.mock.ANY  # warning about invalid data
+        )
+        # remove_peer should NOT have been called for the bad JSON message
+        # (only called on StreamClosedError exit)
+        server.remove_peer.assert_called_once()
+
+    async def test_handle_stream_skips_unicode_decode_error(self):
+        """A UnicodeDecodeError should log a warning and continue, not disconnect."""
+        server, mock_cfg = self._make_server()
+
+        call_count = 0
+
+        async def read_until(_):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return b"\xff\xfe invalid unicode \x80\n"
+            raise StreamClosedError()
+
+        mock_stream = MagicMock()
+        mock_stream.read_until = read_until
+        mock_stream.socket = MagicMock()
+        mock_stream.socket.setsockopt = MagicMock()
+        mock_cfg.health.tcp_server.last_activity = 0.0
+
+        await server.handle_stream(mock_stream, ("127.0.0.1", 8000))
+
+        mock_cfg.app_log.warning.assert_any_call(unittest.mock.ANY)
+        server.remove_peer.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

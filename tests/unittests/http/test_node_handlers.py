@@ -476,11 +476,18 @@ class TestGetStatusHandler(HttpTestCase):
         self.mock_db = setup_mock_db()
         self.config.mongo.async_db = self.mock_db
 
-    def test_no_status_returns_500(self):
-        # find_one returns None → status["unindexed_queries"] raises TypeError
+    def test_no_status_returns_empty_unindexed_queries(self):
+        # find_one returns None → handler sets status = {} and still populates unindexed_queries
         self.mock_db.node_status.find_one = AsyncMock(return_value=None)
+        self.mock_db.unindexed_queries.count_documents = AsyncMock(return_value=0)
+        self.mock_db.unindexed_queries.find = MagicMock(
+            return_value=make_async_iter_cursor([])
+        )
         response = self.fetch("/get-status")
-        self.assertEqual(response.code, 500)
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertIn("unindexed_queries", data)
+        self.assertEqual(data["unindexed_queries"]["count"], 0)
 
     def test_status_with_data(self):
         self.mock_db.node_status.find_one = AsyncMock(
@@ -495,6 +502,25 @@ class TestGetStatusHandler(HttpTestCase):
         data = json.loads(response.body)
         self.assertIn("unindexed_queries", data)
         self.assertEqual(data["unindexed_queries"]["count"], 0)
+
+    def test_status_unindexed_queries_detail_populated(self):
+        """unindexed_queries.detail should contain the documents returned by the cursor."""
+        sample_query = {"ns": "yadacoin.blocks", "query": {"hash": "abc"}}
+        self.mock_db.node_status.find_one = AsyncMock(
+            return_value={"timestamp": 1000, "message": "ok"}
+        )
+        self.mock_db.unindexed_queries.count_documents = AsyncMock(return_value=1)
+        self.mock_db.unindexed_queries.find = MagicMock(
+            return_value=make_async_iter_cursor([sample_query])
+        )
+        response = self.fetch("/get-status")
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertEqual(data["unindexed_queries"]["count"], 1)
+        self.assertEqual(len(data["unindexed_queries"]["detail"]), 1)
+        self.assertEqual(
+            data["unindexed_queries"]["detail"][0]["ns"], "yadacoin.blocks"
+        )
 
     def test_status_with_from_time(self):
         self.mock_db.node_status.find = MagicMock(

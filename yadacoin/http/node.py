@@ -134,6 +134,9 @@ class GetStatusHandler(BaseHandler):
             hint="__timestamp_archived",
         )
 
+        if status is None:
+            status = {}
+
         status["unindexed_queries"] = {
             "count": await self.config.mongo.async_db.unindexed_queries.count_documents(
                 {}

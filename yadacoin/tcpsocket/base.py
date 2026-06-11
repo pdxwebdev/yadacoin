@@ -189,7 +189,13 @@ class RPCSocketServer(TCPServer, BaseRPC):
                 data = await stream.read_until(b"\n")
                 stream.last_activity = int(time.time())
                 self.config.health.tcp_server.last_activity = time.time()
-                body = json.loads(data)
+                try:
+                    body = json.loads(data)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    self.config.app_log.warning(
+                        f"Invalid data from peer, skipping message: {data[:200]}"
+                    )
+                    continue
                 method = body.get("method")
                 if "result" in body:
                     if method in REQUEST_RESPONSE_MAP:
