@@ -266,6 +266,20 @@ class GraphTransactionHandler(BaseGraphHandler):
         ]
         mempool_txns = [Transaction.from_dict(txn) for txn in mempool_items]
         item_txns = [Transaction.from_dict(txn) for txn in items]
+        # Reject coinbase-flagged transactions submitted via the HTTP API.
+        # Coinbase transactions are generated exclusively by the block builder and
+        # must never enter the mempool (Transaction.verify() skips all balance
+        # checks for coinbase transactions, so accepting them here would allow an
+        # attacker to submit transactions with inputs that do not cover the outputs).
+        for txn in item_txns:
+            if txn.coinbase:
+                self.set_status(400)
+                return self.render_as_json(
+                    {
+                        "status": False,
+                        "message": "Coinbase transactions cannot be submitted externally.",
+                    }
+                )
         if (
             self.config.LatestBlock.block.index + 1
             >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK

@@ -134,7 +134,11 @@ class Transaction(object):
         self.public_key = public_key
         self.dh_public_key = dh_public_key if dh_public_key else ""
         self.fee = float(fee)
+        if self.fee < 0:
+            raise InvalidTransactionException("fee cannot be negative")
         self.masternode_fee = float(masternode_fee)
+        if self.masternode_fee < 0:
+            raise InvalidTransactionException("masternode_fee cannot be negative")
         self.requester_rid = requester_rid if requester_rid else ""
         self.requested_rid = requested_rid if requested_rid else ""
         self.hash = txn_hash
@@ -492,7 +496,7 @@ class Transaction(object):
             txn_hash=txn.get("hash", ""),
             inputs=txn.get("inputs", []),
             outputs=txn.get("outputs", []),
-            coinbase=txn.get("coinbase", False),
+            coinbase=False,  # Never trust external coinbase flag; Block.init_async recomputes it via Block.is_coinbase()
             version=txn.get("version"),
             miner_signature=txn.get("miner_signature", ""),
             contract_generated=txn.get("contract_generated"),
