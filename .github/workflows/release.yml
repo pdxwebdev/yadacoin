@@ -1,14 +1,46 @@
-name: Create Release
+name: Test and Release
 
 on:
-  workflow_run:
-    workflows: ["Tests"]
-    types: [completed]
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-22.04
+    services:
+      mongodb:
+        image: mongo:latest
+        ports:
+          - 27017:27017
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.9"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest==8.1.2 mongomock pytest-cov
+
+      - name: Run unit tests with pytest
+        run: pytest tests/unittests --cov=yadacoin.core --cov-config=.coveragerc --cov-report=term-missing --cov-fail-under=100
+
   release:
     name: Build and publish release
-    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') }}
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -18,7 +50,114 @@ jobs:
     steps:
       - name: Set tag name
         id: tag
-        run: echo "name=${{ github.event.workflow_run.head_branch }}" >> $GITHUB_OUTPUT
+        run: echo "name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.name }}
+
+      - name: Read VERSION file
+        id: version
+        run: echo "version=$(head -1 VERSION)" >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.name }}
+            ghcr.io/${{ github.repository }}:latest
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: YadaCoin ${{ steps.tag.outputs.name }}
+          body: |
+            Release ${{ steps.tag.outputs.name }}
+
+            See [CHANGELOG](https://github.com/${{ github.repository }}/commits/${{ steps.tag.outputs.name }}) for changes.
+          draft: false
+          prerelease: false
+
+  windows:
+    name: Build and release Windows
+    needs: release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.7"
+
+      - name: Install 7-Zip
+        run: choco install 7zip -y
+
+      - name: Install dependencies
+        run: |
+          grep -vE "pyrx|yadacoin-agent-auth|sendgrid|mixpanel|ua_parser|twilio|centeridentity|python-jose|openai|resend|discord\.py|PyGithub|validators|web3|eth_account|eth_abi|stripe" requirements.txt > filtered_requirements.txt
+          python -m pip install --upgrade pip
+          pip install -r filtered_requirements.txt
+          pip install pyinstaller pytest==7.4.4
+
+      - name: Build with PyInstaller
+        run: |
+          python -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())" > site_packages_path.txt
+          pyinstaller yadacoin/app.spec
+
+      - name: Zip the contents of dist directory
+        run: |
+          cd dist
+          7z a ../yadacoin-windows.zip ./*
+
+      - name: Add additional file to the zip
+        run: |
+          move winlibs/pyrx.cp37-win_amd64.pyd YadaCoin/
+          move VERSION YadaCoin/
+          move MIN_VERSION YadaCoin/
+          7z u yadacoin-windows.zip ./YadaCoin/
+          rm -r YadaCoin/
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          files: yadacoin-windows.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    permissions:
+      contents: write
+      packages: write
+    outputs:
+      tag: ${{ steps.tag.outputs.name }}
+    steps:
+      - name: Set tag name
+        id: tag
+        run: echo "name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
 
       - name: Checkout code
         uses: actions/checkout@v4
