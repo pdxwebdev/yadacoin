@@ -4,13 +4,40 @@
 # Runs as root without sudo. Uses OpenRC instead of systemd.
 # No hugepages manipulation (not available in QEMU/Termux VMs).
 
-# Install required packages
+# Install base required packages (non-Docker)
 apk update
-apk add --no-cache docker docker-cli-compose python3 py3-setuptools curl git openrc
+apk add --no-cache python3 py3-setuptools curl git openrc
 
-# Enable and start Docker daemon via OpenRC
-rc-update add docker default
-rc-service docker start
+# Check if Docker is installed; offer to install if not
+if ! command -v docker >/dev/null 2>&1; then
+  printf "Docker is not installed. Would you like to install it now? [y/N] "
+  read INSTALL_DOCKER
+  case "$INSTALL_DOCKER" in
+    [yY][eE][sS]|[yY])
+      echo "Enabling community repositories..."
+      # Add community repo if not already present
+      if ! grep -q "^[^#]*community" /etc/apk/repositories; then
+        ALPINE_VER=$(cat /etc/alpine-release | cut -d. -f1,2)
+        echo "https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VER}/community" >> /etc/apk/repositories
+        apk update
+      fi
+      echo "Installing Docker..."
+      apk add --no-cache docker docker-cli-compose
+      ;;
+    *)
+      echo "Skipping Docker installation. The node manager requires Docker to run containers."
+      echo "You can install it later with:"
+      echo "  echo 'https://dl-cdn.alpinelinux.org/alpine/v\$(cat /etc/alpine-release | cut -d. -f1,2)/community' >> /etc/apk/repositories"
+      echo "  apk update && apk add docker docker-cli-compose"
+      ;;
+  esac
+fi
+
+# Enable and start Docker daemon via OpenRC (if installed)
+if command -v docker >/dev/null 2>&1; then
+  rc-update add docker default
+  rc-service docker start
+fi
 
 # Create the directory for your application
 DEFAULT_APP_DIR="/etc/yadacoin"
@@ -19,7 +46,7 @@ mkdir -p "$APP_DIR"
 cd "$APP_DIR"
 
 # Clone the repository
-git clone https://github.com/pdxwebdev/yadacoin .
+git clone https://github.com/pdxwebdev/yadacoin
 
 # Download blockchain data
 curl https://yadacoin.io/yadacoinstatic/bootstrap.tar.gz | tar -xz
