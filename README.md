@@ -12,6 +12,8 @@
 
 `curl -fsSL https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/yadanodesetup-alpine.sh | sh`
 
+> For full Android setup instructions (Termux + QEMU + Alpine), see the **[Android Setup Guide](./docs/android_setup.md)**.
+
 ### Windows installer:
 
 https://yadacoin.io/download
