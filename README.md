@@ -8,6 +8,10 @@
 
 `curl -fsSL https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/yadanodesetup.sh | sudo bash`
 
+### Termux QEMU Alpine install command:
+
+`curl -fsSL https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/yadanodesetup-alpine.sh | sh`
+
 ### Windows installer:
 
 https://yadacoin.io/download
