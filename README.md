@@ -8,7 +8,7 @@
 
 `curl -fsSL https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/yadanodesetup.sh | sudo bash`
 
-### Termux QEMU Alpine install command:
+### Android install command:
 
 `curl -fsSL https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/yadanodesetup-alpine.sh | sh`
 
