@@ -2,10 +2,44 @@
 
 set -euo pipefail
 
+IS_TERMUX=0
+if [ -n "${TERMUX_VERSION:-}" ] || [ "${PREFIX:-}" = "/data/data/com.termux/files/usr" ]; then
+  IS_TERMUX=1
+fi
+
 # Ensure the script is run as root.
-if [ "$EUID" -ne 0 ]; then
+if [ "$IS_TERMUX" -eq 0 ] && [ "$EUID" -ne 0 ]; then
   echo "Please run this script as root."
   exit 1
+fi
+
+if [ "$IS_TERMUX" -eq 1 ]; then
+  TERMUX_APP_DIR="${1:-$HOME/yadacoin}"
+
+  if ! command -v pkg >/dev/null 2>&1; then
+    echo "Termux detected, but pkg was not found."
+    exit 1
+  fi
+
+  pkg update -y
+  pkg install -y python git curl tar proot proot-distro mongodb
+
+  mkdir -p "$TERMUX_APP_DIR"
+  cd "$TERMUX_APP_DIR"
+
+  if [ -d .git ]; then
+    git pull --ff-only
+  else
+    git clone https://github.com/pdxwebdev/yadacoin .
+  fi
+
+  python3 -m pip install --upgrade pip
+  python3 -m pip install -r requirements.txt
+
+  echo "Termux detected: Docker, compose, and service manager setup were intentionally skipped."
+  echo "MongoDB was installed through Termux packages; proot support was added to keep the Android path non-rooted."
+  echo "Native Termux support is limited to preparing the codebase without container startup."
+  exit 0
 fi
 
 if command -v systemctl >/dev/null 2>&1; then
