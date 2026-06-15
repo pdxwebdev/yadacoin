@@ -201,6 +201,22 @@ The simulator is essential for testing dynamic nodes, network partitions, and hi
   - type: integer
   - default: 3333
   - description: The port where your pool can be accessed by mining rigs.
+- stratum_pool_tls
+  - type: bool
+  - default: false
+  - description: Enable TLS on the Stratum pool listener.
+- stratum_pool_tls_certfile
+  - type: string
+  - default: ""
+  - description: Absolute path to the TLS certificate file used by the Stratum pool.
+- stratum_pool_tls_keyfile
+  - type: string
+  - default: ""
+  - description: Absolute path to the TLS private key file used by the Stratum pool.
+- stratum_pool_tls_cafile
+  - type: string
+  - default: ""
+  - description: Optional CA bundle path for Stratum pool TLS context.
 - payout_frequency
   - type: integer
   - default: 6
@@ -366,6 +382,90 @@ The simulator is essential for testing dynamic nodes, network partitions, and hi
       - type: array of strings
       - default: []
       - description: Reason codes for which the node will clear the `relationship` field AND archive the original value (along with its `relationship_hash`) in the local `content_takedown_archive` MongoDB collection for later review. Disabled by default — must be explicitly configured. The archived record retains the original relationship value so the hash can still be verified against the immutable `relationship_hash` on-chain.
+
+## Pool TLS Setup
+
+YadaCoin pool mode can run Stratum with TLS enabled. Configure these keys in your node config file:
+
+```json
+{
+  "stratum_pool_port": 3334,
+  "stratum_pool_tls": true,
+  "stratum_pool_tls_certfile": "/etc/letsencrypt/live/pool.example.com/fullchain.pem",
+  "stratum_pool_tls_keyfile": "/etc/letsencrypt/live/pool.example.com/privkey.pem",
+  "stratum_pool_tls_cafile": ""
+}
+```
+
+If cert or key are omitted, the pool will fall back to `ssl.certfile` and `ssl.keyfile` when available.
+
+### Option A: Let's Encrypt (recommended)
+
+Prerequisites:
+
+- Public DNS record for your pool host (for example `pool.example.com`) pointing to your server.
+- Port 80 reachable during certificate issuance/renewal.
+
+Example steps (host machine):
+
+```bash
+sudo apt update
+sudo apt install -y certbot
+sudo certbot certonly --standalone -d pool.example.com
+```
+
+Use the generated files:
+
+- Certificate: `/etc/letsencrypt/live/pool.example.com/fullchain.pem`
+- Private key: `/etc/letsencrypt/live/pool.example.com/privkey.pem`
+
+Docker Compose mount (read-only):
+
+```yaml
+services:
+  yada-node:
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+```
+
+Renewal:
+
+```bash
+sudo certbot renew
+```
+
+After renewal, restart the node container so the updated cert is loaded.
+
+### Option B: OpenSSL Self-Signed Certificate
+
+Use this for private/internal pool deployments where public trust is not required.
+
+```bash
+mkdir -p /etc/yadacoin/tls
+openssl req -x509 -newkey rsa:4096 -sha256 -nodes -days 365 \
+  -keyout /etc/yadacoin/tls/pool.key \
+  -out /etc/yadacoin/tls/pool.crt \
+  -subj "/CN=pool.example.com"
+```
+
+Config paths:
+
+- `stratum_pool_tls_certfile`: `/etc/yadacoin/tls/pool.crt`
+- `stratum_pool_tls_keyfile`: `/etc/yadacoin/tls/pool.key`
+
+Docker Compose mount (read-only):
+
+```yaml
+services:
+  yada-node:
+    volumes:
+      - /etc/yadacoin/tls:/etc/yadacoin/tls:ro
+```
+
+Notes:
+
+- Self-signed certificates encrypt traffic but are not publicly trusted.
+- Some miner clients may require explicit fingerprint pinning or relaxed certificate verification settings for self-signed endpoints.
 
 ## Content Takedown
 

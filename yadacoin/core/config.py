@@ -129,6 +129,10 @@ class Config:
         self.mp = None
         self.pp = None
         self.stratum_pool_port = config.get("stratum_pool_port", 3333)
+        self.stratum_pool_tls = config.get("stratum_pool_tls", False)
+        self.stratum_pool_tls_certfile = config.get("stratum_pool_tls_certfile", "")
+        self.stratum_pool_tls_keyfile = config.get("stratum_pool_tls_keyfile", "")
+        self.stratum_pool_tls_cafile = config.get("stratum_pool_tls_cafile", "")
         self.proxy_port = config.get("proxy_port", 8080)
         self.wallet_host_port = config.get(
             "wallet_host_port", "http://localhost:{}".format(config["serve_port"])
@@ -413,6 +417,10 @@ class Config:
                 "skynet_api_key": "",
                 "web_jwt_expiry": 23040,
                 "proxy_port": 8080,
+                "stratum_pool_tls": False,
+                "stratum_pool_tls_certfile": "",
+                "stratum_pool_tls_keyfile": "",
+                "stratum_pool_tls_cafile": "",
                 "dns_resolvers": [],
                 "dns_bypass_ips": [],
                 "masternode_fee_minimum": 1,
@@ -478,6 +486,11 @@ class Config:
         cls.max_miners = config.get("max_miners", 100)
         cls.max_peers = config.get("max_peers", 20)
         cls.pool_diff = config.get("pool_diff", 100000)
+        cls.stratum_pool_port = config.get("stratum_pool_port", 3333)
+        cls.stratum_pool_tls = config.get("stratum_pool_tls", False)
+        cls.stratum_pool_tls_certfile = config.get("stratum_pool_tls_certfile", "")
+        cls.stratum_pool_tls_keyfile = config.get("stratum_pool_tls_keyfile", "")
+        cls.stratum_pool_tls_cafile = config.get("stratum_pool_tls_cafile", "")
 
         cls.transactions_combining_wait = config.get(
             "transactions_combining_wait", 3600
@@ -646,6 +659,10 @@ class Config:
             "skynet_api_key": self.skynet_api_key,
             "web_jwt_expiry": self.web_jwt_expiry,
             "stratum_pool_port": self.stratum_pool_port,
+            "stratum_pool_tls": self.stratum_pool_tls,
+            "stratum_pool_tls_certfile": self.stratum_pool_tls_certfile,
+            "stratum_pool_tls_keyfile": self.stratum_pool_tls_keyfile,
+            "stratum_pool_tls_cafile": self.stratum_pool_tls_cafile,
             "proxy_port": self.proxy_port,
             "dns_resolvers": self.dns_resolvers,
             "dns_bypass_ips": self.dns_bypass_ips,

@@ -6,10 +6,12 @@ services:
     volumes:
       - .:/app
       - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     ports:
       - "8000:8000"
       - "8001:8001"
       - "3333:3333"
+      - "3334:3334"
     depends_on:
       - mongodb
     environment:

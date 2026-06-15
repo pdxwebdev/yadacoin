@@ -1270,8 +1270,31 @@ class NodeApplication(Application):
         self.config.app_log.info(
             "Pool: {}:{}".format(self.config.peer_host, self.config.stratum_pool_port)
         )
+        pool_ssl_ctx = None
+        if getattr(self.config, "stratum_pool_tls", False):
+            cert_file = (
+                self.config.stratum_pool_tls_certfile or self.config.ssl.cert_file
+            )
+            key_file = self.config.stratum_pool_tls_keyfile or self.config.ssl.key_file
+            ca_file = self.config.stratum_pool_tls_cafile or self.config.ssl.ca_file
+
+            if not cert_file or not key_file:
+                raise Exception(
+                    "stratum_pool_tls is enabled but cert/key file is missing. "
+                    "Set stratum_pool_tls_certfile and stratum_pool_tls_keyfile "
+                    "(or configure ssl.certfile / ssl.keyfile)."
+                )
+
+            pool_ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            if ca_file:
+                pool_ssl_ctx.load_verify_locations(cafile=ca_file)
+            pool_ssl_ctx.load_cert_chain(cert_file, keyfile=key_file)
+            self.config.app_log.info(
+                "Pool TLS enabled on port {}".format(self.config.stratum_pool_port)
+            )
+
         StratumServer.inbound_streams[Miner.__name__] = {}
-        self.config.pool_server = StratumServer()
+        self.config.pool_server = StratumServer(ssl_options=pool_ssl_ctx)
         StratumServer.config = self.config
         # Schedule pool initialization as a proper async task on the running
         # event loop.  Using run_sync here triggers concurrent.futures bridging

@@ -30,8 +30,8 @@ class StratumServer(RPCSocketServer):
     current_header = ""
     config = None
 
-    def __init__(self):
-        super(StratumServer, self).__init__()
+    def __init__(self, ssl_options=None):
+        super(StratumServer, self).__init__(ssl_options=ssl_options)
         self.config = Config()
 
     @classmethod
