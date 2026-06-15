@@ -7,6 +7,8 @@ if [ -n "${TERMUX_VERSION:-}" ] || [ "${PREFIX:-}" = "/data/data/com.termux/file
   IS_TERMUX=1
 fi
 
+BOOTSTRAP_URL="https://yadacoin.io/yadacoinstatic/bootstrap.tar.gz"
+
 # Ensure the script is run as root.
 if [ "$IS_TERMUX" -eq 0 ] && [ "$EUID" -ne 0 ]; then
   echo "Please run this script as root."
@@ -22,7 +24,7 @@ if [ "$IS_TERMUX" -eq 1 ]; then
   fi
 
   pkg update -y
-  pkg install -y python git curl tar proot proot-distro mongodb
+  pkg install -y python git curl tar proot proot-distro mongodb mongodb-tools
 
   mkdir -p "$TERMUX_APP_DIR"
   cd "$TERMUX_APP_DIR"
@@ -36,8 +38,30 @@ if [ "$IS_TERMUX" -eq 1 ]; then
   python3 -m pip install --upgrade pip
   python3 -m pip install -r requirements.txt
 
+  BOOTSTRAP_ARCHIVE="$TERMUX_APP_DIR/bootstrap.tar.gz"
+  BOOTSTRAP_DIR="$TERMUX_APP_DIR/bootstrap"
+
+  curl -fsSL "$BOOTSTRAP_URL" -o "$BOOTSTRAP_ARCHIVE"
+  rm -rf "$BOOTSTRAP_DIR"
+  mkdir -p "$BOOTSTRAP_DIR"
+  tar -xzf "$BOOTSTRAP_ARCHIVE" -C "$BOOTSTRAP_DIR"
+
+  if ! command -v mongorestore >/dev/null 2>&1; then
+    echo "Termux detected, but mongorestore was not found after installing mongodb-tools."
+    exit 1
+  fi
+
+  BOOTSTRAP_DUMP_DIR=$(find "$BOOTSTRAP_DIR" -type d -name dump | head -n 1)
+  if [ -z "$BOOTSTRAP_DUMP_DIR" ]; then
+    echo "Could not find a dump directory inside the bootstrap archive."
+    exit 1
+  fi
+
+  mongorestore --drop "$BOOTSTRAP_DUMP_DIR"
+
   echo "Termux detected: Docker, compose, and service manager setup were intentionally skipped."
   echo "MongoDB was installed through Termux packages; proot support was added to keep the Android path non-rooted."
+  echo "Bootstrap data was downloaded, extracted, and restored with mongorestore."
   echo "Native Termux support is limited to preparing the codebase without container startup."
   exit 0
 fi
@@ -155,7 +179,7 @@ else
 fi
 
 # Download blockchain data
-curl https://yadacoin.io/yadacoinstatic/bootstrap.tar.gz | tar -xz
+curl -fsSL "$BOOTSTRAP_URL" | tar -xz
 
 if [ "$INIT_SYSTEM" = "systemd" ]; then
   # Create a systemd service for the process manager
