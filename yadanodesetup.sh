@@ -86,6 +86,9 @@ case "$ARCH" in
   aarch64|arm64)
     COMPOSE_ARCH=aarch64
     ;;
+  armv7l)
+    COMPOSE_ARCH=armv7
+    ;;
   *)
     echo "Unsupported architecture: $ARCH"
     exit 1
