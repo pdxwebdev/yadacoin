@@ -52,6 +52,5 @@
   "stratum_pool_port": 3333,
   "proxy_port": 8080,
   "dns_resolvers": [],
-  "dns_bypass_ips": [],
-  "hash_server_domain": "http://remotelyrich.com"
+  "dns_bypass_ips": []
 }

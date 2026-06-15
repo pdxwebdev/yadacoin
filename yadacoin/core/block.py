@@ -909,19 +909,6 @@ class Block(object):
         )
 
     async def generate_hash_from_header(self, height, header, nonce):
-        config = Config()
-        if config.network == "regnet":
-            hash_server = getattr(config, "hash_server_domain", None) or getattr(
-                config, "hash_server", None
-            )
-            if hash_server:  # pragma: no cover
-                return await self._generate_hash_from_remote(
-                    hash_server=hash_server,
-                    height=height,
-                    header=header,
-                    nonce=nonce,
-                    timeout_ms=getattr(config, "http_request_timeout", 3000),
-                )
         if not hasattr(Block, "pyrx"):
             Block.pyrx = pyrx.PyRX()
         seed_hash = binascii.unhexlify(
@@ -947,32 +934,6 @@ class Block(object):
                 .digest()[::-1]
                 .hex()
             )
-
-    @staticmethod
-    async def _generate_hash_from_remote(  # pragma: no cover
-        hash_server, height, header, nonce, timeout_ms
-    ):
-        import aiohttp
-
-        url = "{}/generate-hash".format(str(hash_server).rstrip("/"))
-        params = {
-            "height": str(height),
-            "nonce": str(nonce),
-            "header": str(header),
-        }
-        try:
-            timeout = aiohttp.ClientTimeout(total=timeout_ms / 1000)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url, params=params) as response:
-                    response.raise_for_status()
-                    payload = await response.json()
-        except Exception as exc:
-            raise Exception("Remote hash request failed") from exc
-
-        remote_hash = payload.get("hash") if isinstance(payload, dict) else None
-        if not remote_hash:
-            raise Exception("Remote hash response missing 'hash'")
-        return remote_hash
 
     async def verify(self):
         getcontext().prec = 8

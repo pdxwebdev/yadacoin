@@ -298,9 +298,6 @@ class TestBlock(AsyncTestCase):
             public_key=yadacoin.core.config.CONFIG.public_key,
             private_key=yadacoin.core.config.CONFIG.private_key,
         )
-        # Clear hash_server_domain so the local pyrx/sha256 path is exercised
-        saved_domain = getattr(yadacoin.core.config.CONFIG, "hash_server_domain", None)
-        yadacoin.core.config.CONFIG.hash_server_domain = None
         # Also delete Block.pyrx so line 777 (pyrx init) is covered
         saved_pyrx = getattr(Block, "pyrx", None)
         if hasattr(Block, "pyrx"):
@@ -310,7 +307,6 @@ class TestBlock(AsyncTestCase):
             self.assertIsInstance(block_hash, str)
             self.assertTrue(len(block_hash), 64)
         finally:
-            yadacoin.core.config.CONFIG.hash_server_domain = saved_domain
             if saved_pyrx is not None:
                 Block.pyrx = saved_pyrx
 
@@ -322,12 +318,7 @@ class TestBlock(AsyncTestCase):
             private_key=yadacoin.core.config.CONFIG.private_key,
             nonce="0",
         )
-        saved_domain = getattr(yadacoin.core.config.CONFIG, "hash_server_domain", None)
-        yadacoin.core.config.CONFIG.hash_server_domain = None
-        try:
-            block.hash = await block.generate_hash_from_header(0, block.header, "0")
-        finally:
-            yadacoin.core.config.CONFIG.hash_server_domain = saved_domain
+        block.hash = await block.generate_hash_from_header(0, block.header, "0")
         try:
             await block.verify()
         except Exception:
@@ -3601,16 +3592,10 @@ class TestBlock(AsyncTestCase):
             private_key=yadacoin.core.config.CONFIG.private_key,
             nonce="0",
         )
-
-        saved_domain = getattr(yadacoin.core.config.CONFIG, "hash_server_domain", None)
-        yadacoin.core.config.CONFIG.hash_server_domain = None
         if hasattr(Block, "pyrx"):
             del Block.pyrx
-        try:
-            block.hash = await block.generate_hash_from_header(0, block.header, "0")
-            block.index = 0
-        finally:
-            yadacoin.core.config.CONFIG.hash_server_domain = saved_domain
+        block.hash = await block.generate_hash_from_header(0, block.header, "0")
+        block.index = 0
 
         await block.save()
         mock_blocks.replace_one.assert_called_once()
@@ -4994,8 +4979,6 @@ class TestBlockPureMethods(unittest.TestCase):
 
         mock_config = mock.MagicMock()
         mock_config.network = "mainnet"
-        mock_config.hash_server_domain = None
-        mock_config.hash_server = None
 
         import asyncio
 
@@ -5028,8 +5011,6 @@ class TestBlockPureMethods(unittest.TestCase):
 
         mock_config = mock.MagicMock()
         mock_config.network = "mainnet"
-        mock_config.hash_server_domain = None
-        mock_config.hash_server = None
 
         import asyncio
 

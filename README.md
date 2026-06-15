@@ -615,18 +615,6 @@ pytest tests/unittests/ -q
 pytest tests/unittests/ -q --tb=no
 ```
 
-#### Using Custom Configuration Flags
-
-For systems that require remote hash servers or other custom configurations, you can pass flags via pytest:
-
-```bash
-# Run tests with a remote hash server domain
-pytest tests/unittests/ -v --hash_server_domain="http://remotelyrich.com"
-
-# Example with other pytest options
-pytest tests/unittests/core/test_block.py -v --hash_server_domain="http://your-hash-server.com"
-```
-
 ### Test Organization
 
 Tests are organized in the `tests/unittests/` directory:
