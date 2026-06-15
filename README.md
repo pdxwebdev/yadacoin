@@ -8,11 +8,11 @@
 
 `curl -fsSL https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/yadanodesetup.sh | sudo bash`
 
-### Android install command:
+### Android (Termux) install command:
 
-`curl -fsSL https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/yadanodesetup-alpine.sh | sh`
+`curl -fsSL https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/yadanodesetup.sh | sh`
 
-> For full Android setup instructions (Termux + QEMU + Alpine), see the **[Android Setup Guide](./docs/android_setup.md)**.
+> For Android setup instructions, see the **[Android Setup Guide](./docs/android_setup.md)**.
 
 ### Windows installer:
 
