@@ -32,6 +32,11 @@ cd /etc
 sudo git clone https://github.com/pdxwebdev/yadacoin.git
 cd yadacoin
 
+# Create docker-compose.yml from example if it doesn't exist
+if [ ! -f docker-compose.yml ]; then
+  sudo cp docker-compose.example.yml docker-compose.yml
+fi
+
 # create sysemd file yadanode.service
 sudo bash -c "cat > /lib/systemd/system/yadanode.service" << EOL
 [Unit]
