@@ -4,7 +4,8 @@ FROM python:3.9-slim-bookworm
 
 # Install necessary system packages
 RUN apt-get update && \
-    apt-get install -y git libssl-dev libffi-dev cmake libjpeg-dev build-essential python3-setuptools && \
+    apt-get install -y git libssl-dev libffi-dev cmake libjpeg-dev build-essential python3-setuptools \
+        autoconf automake libtool pkg-config && \
     apt-get clean
 
 # Set the working directory in the container
