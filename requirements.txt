@@ -4,7 +4,9 @@ cmake
 tornado
 python-engineio==3.14.2
 base58
-coincurve
+# Keep coincurve/cffi pinned for reproducible multi-arch builds (arm/v7).
+coincurve==17.0.0
+cffi>=1.15.1,<2
 bip32utils
 python-bitcoinlib
 mnemonic
