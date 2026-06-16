@@ -50,7 +50,7 @@ services:
 
   restore:
     image: mongo:latest
-    command: sh -c 'mongorestore --drop --host mongodb /mongodump > /dev/null 2>&1'
+    command: sh -c 'mongorestore --drop --host mongodb /dump > /dev/null 2>&1'
     depends_on:
       - mongodb
     volumes:
