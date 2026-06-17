@@ -39,12 +39,26 @@ NOTIF_ID_BLOCK = 1000
 NOTIF_ID_TXN = 1001
 
 
+# Well-known absolute path in case Termux bin dir is not on $PATH
+_TERMUX_NOTIFICATION_BIN = "/data/data/com.termux/files/usr/bin/termux-notification"
+
+
+def _termux_notification_path() -> Optional[str]:
+    """Return the absolute path to termux-notification, or None if unavailable."""
+    # Prefer PATH lookup; fall back to the well-known Termux location
+    found = shutil.which("termux-notification")
+    if found:
+        return found
+    import os
+
+    if os.path.isfile(_TERMUX_NOTIFICATION_BIN):
+        return _TERMUX_NOTIFICATION_BIN
+    return None
+
+
 def _is_termux() -> bool:
     """Return True when running inside a Termux environment."""
-    return (
-        sys.platform.startswith("linux")
-        and shutil.which("termux-notification") is not None
-    )
+    return sys.platform.startswith("linux") and _termux_notification_path() is not None
 
 
 async def _send_termux_notification(
@@ -58,8 +72,12 @@ async def _send_termux_notification(
     Fire-and-forget wrapper around the `termux-notification` CLI.
     Runs the subprocess asynchronously so it never blocks the event loop.
     """
+    binary = _termux_notification_path()
+    if not binary:
+        log.warning("termux-notification binary not found; cannot send notification.")
+        return
     cmd = [
-        "termux-notification",
+        binary,
         "--title",
         title,
         "--content",
@@ -76,12 +94,20 @@ async def _send_termux_notification(
             stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await asyncio.wait_for(proc.communicate(), timeout=5)
-        if proc.returncode != 0 and stderr:
-            log.debug("termux-notification error: %s", stderr.decode().strip())
+        if proc.returncode != 0:
+            log.warning(
+                "termux-notification exited %s: %s",
+                proc.returncode,
+                stderr.decode().strip() if stderr else "",
+            )
+        else:
+            log.debug(
+                "termux-notification sent: id=%s title=%r", notification_id, title
+            )
     except asyncio.TimeoutError:
-        log.debug("termux-notification timed out")
+        log.warning("termux-notification timed out")
     except Exception as exc:
-        log.debug("termux-notification failed: %s", exc)
+        log.warning("termux-notification failed: %s", exc)
 
 
 class NotificationConfig:
@@ -122,12 +148,18 @@ class LocalNotifier:
 
     def _check_termux(self) -> bool:
         if self._termux_available is None:
-            self._termux_available = _is_termux()
+            path = _termux_notification_path()
+            self._termux_available = (
+                sys.platform.startswith("linux") and path is not None
+            )
             if not self._termux_available:
-                log.info(
-                    "termux-notification not found; local notifications disabled. "
-                    "Install termux-api package to enable."
+                log.warning(
+                    "termux-notification not found (PATH=%s); local notifications "
+                    "disabled. Install termux-api: pkg install termux-api",
+                    __import__("os").environ.get("PATH", "(unset)"),
                 )
+            else:
+                log.info("termux-notification found at %s", path)
         return self._termux_available
 
     async def notify_new_block(self, block) -> None:

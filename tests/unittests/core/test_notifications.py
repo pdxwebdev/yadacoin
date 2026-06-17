@@ -24,6 +24,7 @@ from yadacoin.core.notifications import (
     NotificationConfig,
     _is_termux,
     _send_termux_notification,
+    _termux_notification_path,
 )
 
 from ..test_setup import AsyncTestCase
@@ -115,6 +116,26 @@ class TestNotificationConfig(AsyncTestCase):
 # ---------------------------------------------------------------------------
 
 
+class TestTermuxNotificationPath(AsyncTestCase):
+    async def test_returns_which_result_when_found(self):
+        with patch("shutil.which", return_value="/usr/bin/termux-notification"):
+            self.assertEqual(
+                _termux_notification_path(), "/usr/bin/termux-notification"
+            )
+
+    async def test_falls_back_to_known_path_when_which_returns_none(self):
+        with patch("shutil.which", return_value=None):
+            with patch("os.path.isfile", return_value=True):
+                result = _termux_notification_path()
+        self.assertIsNotNone(result)
+        self.assertIn("termux-notification", result)
+
+    async def test_returns_none_when_not_found_anywhere(self):
+        with patch("shutil.which", return_value=None):
+            with patch("os.path.isfile", return_value=False):
+                self.assertIsNone(_termux_notification_path())
+
+
 class TestIsTermux(AsyncTestCase):
     async def test_non_linux_is_false(self):
         with patch.object(sys, "platform", "darwin"):
@@ -122,13 +143,16 @@ class TestIsTermux(AsyncTestCase):
 
     async def test_linux_without_binary_is_false(self):
         with patch.object(sys, "platform", "linux"):
-            with patch("shutil.which", return_value=None):
+            with patch(
+                "yadacoin.core.notifications._termux_notification_path",
+                return_value=None,
+            ):
                 self.assertFalse(_is_termux())
 
     async def test_linux_with_binary_is_true(self):
         with patch.object(sys, "platform", "linux"):
             with patch(
-                "shutil.which",
+                "yadacoin.core.notifications._termux_notification_path",
                 return_value="/data/data/com.termux/files/usr/bin/termux-notification",
             ):
                 self.assertTrue(_is_termux())
@@ -149,63 +173,119 @@ class TestSendTermuxNotification(AsyncTestCase):
     async def test_success_no_ongoing(self):
         proc = self._make_proc()
         with patch(
-            "asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)
-        ) as mock_exec:
-            with patch("asyncio.wait_for", new=AsyncMock(return_value=(None, b""))):
-                await _send_termux_notification("Title", "Body", 1)
+            "yadacoin.core.notifications._termux_notification_path",
+            return_value="/usr/bin/termux-notification",
+        ):
+            with patch(
+                "asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)
+            ) as mock_exec:
+                with patch("asyncio.wait_for", new=AsyncMock(return_value=(None, b""))):
+                    await _send_termux_notification("Title", "Body", 1)
         mock_exec.assert_called_once()
         args = mock_exec.call_args[0]
-        self.assertIn("termux-notification", args)
+        self.assertTrue(any("termux-notification" in str(a) for a in args))
         self.assertNotIn("--ongoing", args)
 
     async def test_success_with_ongoing(self):
         proc = self._make_proc()
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)):
+        with patch(
+            "yadacoin.core.notifications._termux_notification_path",
+            return_value="/usr/bin/termux-notification",
+        ):
             with patch(
-                "asyncio.wait_for", new=AsyncMock(return_value=(None, b""))
-            ) as mock_wait:
-                await _send_termux_notification("Title", "Body", 1, ongoing=True)
-        # ongoing flag should be in the command
-        call_args = mock_wait.call_args  # wait_for wraps communicate
-        exec_args = asyncio.create_subprocess_exec  # already checked above
+                "asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)
+            ) as mock_exec:
+                with patch("asyncio.wait_for", new=AsyncMock(return_value=(None, b""))):
+                    await _send_termux_notification("Title", "Body", 1, ongoing=True)
+        # --ongoing should appear in the command args
+        cmd_args = mock_exec.call_args[0]
+        self.assertIn("--ongoing", cmd_args)
 
-    async def test_nonzero_returncode_logs_debug(self):
+    async def test_no_binary_logs_warning_and_returns(self):
+        with patch(
+            "yadacoin.core.notifications._termux_notification_path", return_value=None
+        ):
+            with patch("yadacoin.core.notifications.log") as mock_log:
+                with patch(
+                    "asyncio.create_subprocess_exec", new=AsyncMock()
+                ) as mock_exec:
+                    await _send_termux_notification("T", "C", 1)
+        mock_log.warning.assert_called()
+        mock_exec.assert_not_called()
+
+    async def test_nonzero_returncode_logs_warning(self):
         proc = self._make_proc(returncode=1, stderr=b"some error")
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)):
+        with patch(
+            "yadacoin.core.notifications._termux_notification_path",
+            return_value="/usr/bin/termux-notification",
+        ):
             with patch(
-                "asyncio.wait_for", new=AsyncMock(return_value=(None, b"some error"))
+                "asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)
+            ):
+                with patch(
+                    "asyncio.wait_for",
+                    new=AsyncMock(return_value=(None, b"some error")),
+                ):
+                    with patch("yadacoin.core.notifications.log") as mock_log:
+                        await _send_termux_notification("T", "C", 1)
+        mock_log.warning.assert_called()
+
+    async def test_timeout_logs_warning(self):
+        with patch(
+            "yadacoin.core.notifications._termux_notification_path",
+            return_value="/usr/bin/termux-notification",
+        ):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                new=AsyncMock(side_effect=asyncio.TimeoutError),
             ):
                 with patch("yadacoin.core.notifications.log") as mock_log:
                     await _send_termux_notification("T", "C", 1)
-        mock_log.debug.assert_called()
+        mock_log.warning.assert_called_with("termux-notification timed out")
 
-    async def test_timeout_logs_debug(self):
+    async def test_generic_exception_logs_warning(self):
         with patch(
-            "asyncio.create_subprocess_exec",
-            new=AsyncMock(side_effect=asyncio.TimeoutError),
+            "yadacoin.core.notifications._termux_notification_path",
+            return_value="/usr/bin/termux-notification",
         ):
-            with patch("yadacoin.core.notifications.log") as mock_log:
-                await _send_termux_notification("T", "C", 1)
-        mock_log.debug.assert_called_with("termux-notification timed out")
+            with patch(
+                "asyncio.create_subprocess_exec",
+                new=AsyncMock(side_effect=OSError("no such file")),
+            ):
+                with patch("yadacoin.core.notifications.log") as mock_log:
+                    await _send_termux_notification("T", "C", 1)
+        mock_log.warning.assert_called()
 
-    async def test_generic_exception_logs_debug(self):
-        with patch(
-            "asyncio.create_subprocess_exec",
-            new=AsyncMock(side_effect=OSError("no such file")),
-        ):
-            with patch("yadacoin.core.notifications.log") as mock_log:
-                await _send_termux_notification("T", "C", 1)
-        mock_log.debug.assert_called()
-
-    async def test_wait_for_timeout_logs_debug(self):
+    async def test_wait_for_timeout_logs_warning(self):
         proc = self._make_proc()
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)):
+        with patch(
+            "yadacoin.core.notifications._termux_notification_path",
+            return_value="/usr/bin/termux-notification",
+        ):
             with patch(
-                "asyncio.wait_for", new=AsyncMock(side_effect=asyncio.TimeoutError)
+                "asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)
             ):
-                with patch("yadacoin.core.notifications.log") as mock_log:
-                    await _send_termux_notification("T", "C", 1)
-        mock_log.debug.assert_called_with("termux-notification timed out")
+                with patch(
+                    "asyncio.wait_for",
+                    new=AsyncMock(side_effect=asyncio.TimeoutError),
+                ):
+                    with patch("yadacoin.core.notifications.log") as mock_log:
+                        await _send_termux_notification("T", "C", 1)
+        mock_log.warning.assert_called_with("termux-notification timed out")
+
+    async def test_success_logs_debug(self):
+        proc = self._make_proc(returncode=0, stderr=b"")
+        with patch(
+            "yadacoin.core.notifications._termux_notification_path",
+            return_value="/usr/bin/termux-notification",
+        ):
+            with patch(
+                "asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)
+            ):
+                with patch("asyncio.wait_for", new=AsyncMock(return_value=(None, b""))):
+                    with patch("yadacoin.core.notifications.log") as mock_log:
+                        await _send_termux_notification("T", "C", 1)
+        mock_log.debug.assert_called()
 
 
 # ---------------------------------------------------------------------------
@@ -216,29 +296,50 @@ class TestSendTermuxNotification(AsyncTestCase):
 class TestLocalNotifierCheckTermux(AsyncTestCase):
     async def test_caches_true_result(self):
         notifier = LocalNotifier(_cfg(enabled=True), "addr1")
-        with patch("yadacoin.core.notifications._is_termux", return_value=True):
-            result1 = notifier._check_termux()
-            result2 = notifier._check_termux()
+        with patch.object(sys, "platform", "linux"):
+            with patch(
+                "yadacoin.core.notifications._termux_notification_path",
+                return_value="/usr/bin/termux-notification",
+            ):
+                result1 = notifier._check_termux()
+                result2 = notifier._check_termux()
         self.assertTrue(result1)
         self.assertTrue(result2)
         self.assertTrue(notifier._termux_available)
 
-    async def test_caches_false_result_and_logs(self):
+    async def test_caches_false_result_and_logs_warning(self):
         notifier = LocalNotifier(_cfg(enabled=True), "addr1")
-        with patch("yadacoin.core.notifications._is_termux", return_value=False):
-            with patch("yadacoin.core.notifications.log") as mock_log:
-                result = notifier._check_termux()
+        with patch.object(sys, "platform", "linux"):
+            with patch(
+                "yadacoin.core.notifications._termux_notification_path",
+                return_value=None,
+            ):
+                with patch("yadacoin.core.notifications.log") as mock_log:
+                    result = notifier._check_termux()
         self.assertFalse(result)
+        mock_log.warning.assert_called()
+
+    async def test_true_result_logs_info(self):
+        notifier = LocalNotifier(_cfg(enabled=True), "addr1")
+        with patch.object(sys, "platform", "linux"):
+            with patch(
+                "yadacoin.core.notifications._termux_notification_path",
+                return_value="/usr/bin/termux-notification",
+            ):
+                with patch("yadacoin.core.notifications.log") as mock_log:
+                    notifier._check_termux()
         mock_log.info.assert_called()
 
-    async def test_does_not_call_is_termux_twice(self):
+    async def test_does_not_call_path_lookup_twice(self):
         notifier = LocalNotifier(_cfg(enabled=True), "addr1")
-        with patch(
-            "yadacoin.core.notifications._is_termux", return_value=True
-        ) as mock_is:
-            notifier._check_termux()
-            notifier._check_termux()
-        mock_is.assert_called_once()
+        with patch.object(sys, "platform", "linux"):
+            with patch(
+                "yadacoin.core.notifications._termux_notification_path",
+                return_value="/usr/bin/termux-notification",
+            ) as mock_path:
+                notifier._check_termux()
+                notifier._check_termux()
+        mock_path.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

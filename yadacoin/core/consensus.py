@@ -558,6 +558,14 @@ class Consensus(object):
 
             self.app_log.info("New block inserted for height: {}".format(block.index))
 
+            if hasattr(self.config, "notifier"):
+                try:
+                    await self.config.notifier.notify_new_block(block)
+                except Exception:
+                    self.app_log.warning(
+                        "notify_new_block failed: {}".format(format_exc())
+                    )
+
             if self.config.mp:
                 if self.syncing or (hasattr(stream, "syncing") and stream.syncing):
                     return True
