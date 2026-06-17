@@ -23,4 +23,4 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     find plugins -name "requirements.txt" -exec pip install -r {} \;
 
 # Command to run the application
-CMD ["python", "yadacoin/app.py", "--config=config/config.json"]
+CMD ["python", "yadacoin/app.py", "--config=config/config.json", "--mongohost=mongodb"]

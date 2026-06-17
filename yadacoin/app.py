@@ -1013,7 +1013,11 @@ class NodeApplication(Application):
                 self.config.network = options.network
 
         self.config.reset = options.reset
-        if options.mongohost:
+        if options.mongohost and self.config.mongodb_host in (
+            "localhost",
+            "127.0.0.1",
+            "",
+        ):
             self.config.mongodb_host = options.mongohost
         if options.modes:
             self.config.modes = options.modes
