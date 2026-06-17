@@ -1,0 +1,68 @@
+version: "3.4"
+
+services:
+  yada-node:
+    image: ghcr.io/pdxwebdev/yadacoin:latest
+    volumes:
+      - .:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+      - "3333:3333"
+      - "3334:3334"
+    depends_on:
+      - mongodb
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/yadacoin
+      - PYTHONUNBUFFERED=0
+      - MOTOR_MAX_WORKERS=1
+      - PYTHONPATH=/etc/yadacoin
+    logging:
+      driver: json-file
+      options:
+        max-size: "200k"
+        max-file: "10"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.40"
+    memswap_limit: 0
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    command: --wiredTigerCacheSizeGB .25
+    logging:
+      driver: json-file
+      options:
+        max-size: "200k"
+        max-file: "10"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.40"
+    memswap_limit: 0
+
+  restore:
+    image: mongo:latest
+    command: sh -c 'mongorestore --drop --host mongodb /dump > /dev/null 2>&1'
+    depends_on:
+      - mongodb
+    volumes:
+      - /etc/yadacoin/dump:/mongodump
+
+  backup:
+    image: mongo:latest
+    depends_on:
+      - mongodb
+    volumes:
+      - /etc/yadacoin:/etc/yadacoin
+    command: sh -c 'mongodump --host mongodb --db=yadacoin --collection=blocks && tar -czvf /etc/yadacoin/bootstrap.tar.gz dump && mv /etc/yadacoin/bootstrap.tar.gz /etc/yadacoin/static/bootstrap.tar.gz'
+
+volumes:
+  mongodb_data:

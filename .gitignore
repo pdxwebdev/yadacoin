@@ -9,3 +9,4 @@ node_modules
 htmlcov/
 sdk/
 specs/
+docker-compose.yml
