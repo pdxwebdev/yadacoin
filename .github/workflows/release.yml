@@ -37,9 +37,42 @@ jobs:
       - name: Run unit tests with pytest
         run: pytest tests/unittests --cov=yadacoin.core --cov-config=.coveragerc --cov-report=term-missing --cov-fail-under=100
 
+  check-docker-changes:
+    name: Check if Docker rebuild needed
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      docker_changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes vs previous tag
+        id: diff
+        run: |
+          PREV_TAG=$(git tag --sort=-version:refname | grep '^v' | sed -n '2p')
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous tag found — treating Docker as changed"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "Comparing $PREV_TAG → ${{ github.ref_name }}"
+            CHANGED=$(git diff --name-only "$PREV_TAG" "${{ github.ref_name }}" -- Dockerfile requirements.txt 'plugins/*/requirements.txt')
+            if [ -n "$CHANGED" ]; then
+              echo "Docker-relevant files changed:"
+              echo "$CHANGED"
+              echo "changed=true" >> $GITHUB_OUTPUT
+            else
+              echo "No Docker-relevant changes detected — skipping image build"
+              echo "changed=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
   release:
     name: Build and publish release
-    needs: test
+    needs: [test, check-docker-changes]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -62,12 +95,15 @@ jobs:
         run: echo "version=$(head -1 VERSION)" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
+        if: needs.check-docker-changes.outputs.docker_changed == 'true'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
+        if: needs.check-docker-changes.outputs.docker_changed == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
+        if: needs.check-docker-changes.outputs.docker_changed == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -75,6 +111,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
+        if: needs.check-docker-changes.outputs.docker_changed == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -83,6 +120,10 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.name }}
             ghcr.io/${{ github.repository }}:latest
+
+      - name: Skip Docker build notice
+        if: needs.check-docker-changes.outputs.docker_changed != 'true'
+        run: echo "Docker image unchanged since previous tag — skipping build and push"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
