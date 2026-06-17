@@ -1,7 +1,6 @@
 *.pyc
 venv
 localtests
-docker-compose.yml
 .idea
 *.log
 *.log.*
