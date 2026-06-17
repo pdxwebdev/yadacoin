@@ -256,6 +256,8 @@ class NodeRPC(BaseRPC):
             TransactionProcessingQueueItem(txn, stream)
         )
 
+        await self.config.notifier.notify_new_transaction(txn)
+
         if MODES.WEB.value not in self.config.modes:
             return
 

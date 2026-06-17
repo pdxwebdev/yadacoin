@@ -163,6 +163,14 @@ class Config:
 
         self.email = EmailConfig.from_dict(config.get("email"))
 
+        from yadacoin.core.notifications import LocalNotifier, NotificationConfig
+
+        self._notification_cfg = NotificationConfig.from_dict(
+            config.get("notifications")
+        )
+        # LocalNotifier is wired up after address is finalised (already set above)
+        self.notifier = LocalNotifier(self._notification_cfg, self.address)
+
         self.dns_resolvers = config.get("dns_resolvers", [])
         self.dns_bypass_ips = config.get("dns_bypass_ips", [])
 
@@ -236,6 +244,7 @@ class Config:
         self.BU.set_latest_block(block_dict)  # Warning, this is a dict, not a Block!
         if self.mp:
             await self.mp.refresh()
+        await self.notifier.notify_new_block(block)
 
     async def get_status(self):
         pool_status = "N/A"
