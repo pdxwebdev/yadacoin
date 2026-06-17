@@ -58,7 +58,10 @@ def _termux_notification_path() -> Optional[str]:
 
 def _is_termux() -> bool:
     """Return True when running inside a Termux environment."""
-    return sys.platform.startswith("linux") and _termux_notification_path() is not None
+    return (
+        sys.platform.startswith(("linux", "android"))
+        and _termux_notification_path() is not None
+    )
 
 
 async def _send_termux_notification(
@@ -150,7 +153,7 @@ class LocalNotifier:
         if self._termux_available is None:
             path = _termux_notification_path()
             self._termux_available = (
-                sys.platform.startswith("linux") and path is not None
+                sys.platform.startswith(("linux", "android")) and path is not None
             )
             if not self._termux_available:
                 log.warning(
