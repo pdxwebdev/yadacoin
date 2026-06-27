@@ -787,8 +787,12 @@ class BlockChainUtils(object):
         query = [
             {
                 "$match": {
-                    "transactions.inputs.id": {"$in": input_ids},
-                    "transactions.public_key": pk_filter,
+                    "transactions": {
+                        "$elemMatch": {
+                            "inputs.id": {"$in": input_ids},
+                            "public_key": pk_filter,
+                        }
+                    }
                 }
             },
             {"$unwind": "$transactions"},
