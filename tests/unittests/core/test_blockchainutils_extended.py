@@ -427,9 +427,9 @@ class TestIsInputSpent(BUTestCase):
         self.assertFalse(result)
         call_pipeline = mock_db.blocks.aggregate.call_args[0][0]
         first_match = call_pipeline[0]["$match"]
-        self.assertEqual(
-            first_match["transactions.public_key"], {"$in": ["pk1", "pk2"]}
-        )
+        self.assertIn("transactions", first_match)
+        elem_match = first_match["transactions"]["$elemMatch"]
+        self.assertEqual(elem_match["public_key"], {"$in": ["pk1", "pk2"]})
 
 
 # ---------------------------------------------------------------------------
