@@ -121,8 +121,40 @@ class TestAlreadyUsed(AsyncTestCase):
         p.config.mongo.async_db.blocks.aggregate = MagicMock(
             return_value=_AsyncIter([])
         )
+        p.config.mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value=None
+        )
         r = await p.already_used(MagicMock(transaction_signature="s"))
         self.assertEqual(r, [])
+
+    async def test_already_used_confirmed_skips_mempool_check(self):
+        """If confirmed blocks already contain the spend, mempool is not queried."""
+        p = _mk_payer()
+        confirmed_doc = {"index": 5}
+        p.config.mongo.async_db.blocks.aggregate = MagicMock(
+            return_value=_AsyncIter([confirmed_doc])
+        )
+        mempool_find = AsyncMock()
+        p.config.mongo.async_db.miner_transactions.find_one = mempool_find
+        r = await p.already_used(MagicMock(transaction_signature="sig"))
+        self.assertEqual(r, [confirmed_doc])
+        mempool_find.assert_not_awaited()
+
+    async def test_already_used_pending_in_mempool(self):
+        """Falls through to mempool check when no confirmed spend exists."""
+        p = _mk_payer()
+        p.config.mongo.async_db.blocks.aggregate = MagicMock(
+            return_value=_AsyncIter([])
+        )
+        pending_doc = {"id": "pending_tx", "public_key": "pk"}
+        p.config.mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value=pending_doc
+        )
+        r = await p.already_used(MagicMock(transaction_signature="sig"))
+        self.assertEqual(r, [pending_doc])
+        p.config.mongo.async_db.miner_transactions.find_one.assert_awaited_once_with(
+            {"inputs.id": "sig", "public_key": "pk"}
+        )
 
 
 # ---------------------------------------------------------------------------
