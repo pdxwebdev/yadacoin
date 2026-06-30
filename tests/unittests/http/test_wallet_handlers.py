@@ -539,7 +539,7 @@ class TestUnlockedHandler(WalletHttpTestCase):
     def test_returns_unlocked_true_when_cookie_set(self):
         with patch(
             "yadacoin.http.wallet.UnlockedHandler.get_secure_cookie",
-            return_value="true",  # string not bytes: wallet.py compares == "true" (str)
+            return_value=b"9999999999",  # far-future unlock timestamp (> revocation cutoff)
         ):
             response = self.fetch("/unlocked")
         self.assertEqual(response.code, 200)
@@ -655,7 +655,7 @@ class TestCreateTransactionView(WalletHttpTestCase):
         body = json.dumps({"outputs": [{"to": "addr", "value": 1}]})
         with patch(
             "yadacoin.http.wallet.CreateTransactionView.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             response = self.fetch(
                 "/create-transaction",
@@ -671,7 +671,7 @@ class TestCreateTransactionView(WalletHttpTestCase):
         body = json.dumps({"address": "1SomeAddr"})
         with patch(
             "yadacoin.http.wallet.CreateTransactionView.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             response = self.fetch(
                 "/create-transaction",
@@ -709,7 +709,7 @@ class TestCreateTransactionView(WalletHttpTestCase):
         )
         with patch(
             "yadacoin.http.wallet.CreateTransactionView.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             with patch(
                 "yadacoin.http.wallet.Transaction.generate",
@@ -746,7 +746,7 @@ class TestCreateTransactionView(WalletHttpTestCase):
         self.config.BU.get_wallet_unspent_transactions_for_spending = mock_get_unspent
         with patch(
             "yadacoin.http.wallet.CreateTransactionView.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             with patch(
                 "yadacoin.http.wallet.Transaction.generate",
@@ -776,7 +776,7 @@ class TestCreateRawTransactionView(WalletHttpTestCase):
         body = json.dumps({"outputs": [{"to": "addr", "value": 1}]})
         with patch(
             "yadacoin.http.wallet.CreateRawTransactionView.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             response = self.fetch(
                 "/create-raw-transaction",
@@ -791,7 +791,7 @@ class TestCreateRawTransactionView(WalletHttpTestCase):
         body = json.dumps({"address": "1SomeAddr"})
         with patch(
             "yadacoin.http.wallet.CreateRawTransactionView.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             response = self.fetch(
                 "/create-raw-transaction",
@@ -813,7 +813,7 @@ class TestCreateRawTransactionView(WalletHttpTestCase):
         )
         with patch(
             "yadacoin.http.wallet.CreateRawTransactionView.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             with patch(
                 "yadacoin.http.wallet.Transaction.generate",
@@ -849,7 +849,7 @@ class TestCreateRawTransactionView(WalletHttpTestCase):
         self.config.BU.get_wallet_unspent_transactions_for_spending = mock_get_unspent
         with patch(
             "yadacoin.http.wallet.CreateRawTransactionView.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             with patch(
                 "yadacoin.http.wallet.Transaction.generate",
@@ -897,7 +897,7 @@ class TestSendTransactionView(WalletHttpTestCase):
         )
         with patch(
             "yadacoin.http.wallet.SendTransactionView.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             with patch(
                 "yadacoin.http.wallet.TU.send",
@@ -973,7 +973,7 @@ class TestGenerateChildWalletHandler(WalletHttpTestCase):
     def test_invalid_json_returns_400(self):
         with patch(
             "yadacoin.http.wallet.GenerateChildWalletHandler.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             response = self.fetch(
                 "/generate-child-wallet",
@@ -987,7 +987,7 @@ class TestGenerateChildWalletHandler(WalletHttpTestCase):
         body = json.dumps({"other_field": "value"})
         with patch(
             "yadacoin.http.wallet.GenerateChildWalletHandler.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             response = self.fetch(
                 "/generate-child-wallet",
@@ -1004,7 +1004,7 @@ class TestGenerateChildWalletHandler(WalletHttpTestCase):
         body = json.dumps({"index": "notanumber"})
         with patch(
             "yadacoin.http.wallet.GenerateChildWalletHandler.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             response = self.fetch(
                 "/generate-child-wallet",
@@ -1021,7 +1021,7 @@ class TestGenerateChildWalletHandler(WalletHttpTestCase):
         body = json.dumps({"index": 9999999999})
         with patch(
             "yadacoin.http.wallet.GenerateChildWalletHandler.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             response = self.fetch(
                 "/generate-child-wallet",
@@ -1039,7 +1039,7 @@ class TestGenerateChildWalletHandler(WalletHttpTestCase):
         self.mock_db.child_keys.find_one = AsyncMock(return_value={"index": 0})
         with patch(
             "yadacoin.http.wallet.GenerateChildWalletHandler.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             response = self.fetch(
                 "/generate-child-wallet",
@@ -1057,7 +1057,7 @@ class TestGenerateChildWalletHandler(WalletHttpTestCase):
         self.mock_db.child_keys.find_one = AsyncMock(return_value=None)
         with patch(
             "yadacoin.http.wallet.GenerateChildWalletHandler.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ), _patch_ripemd160_if_missing():
             response = self.fetch(
                 "/generate-child-wallet",

@@ -467,8 +467,7 @@ class MineBlockHandler(BaseHandler):
                 return self.render_as_json({"error": "not authorized"})
 
         else:
-            key_or_wif = self.get_secure_cookie("key_or_wif")
-            if not key_or_wif and self.jwt.get("key_or_wif") != "true":
+            if not await self.wallet_is_unlocked():
                 return self.render_as_json({"error": "not authorized"})
 
         if self.config.network != "regnet":

@@ -625,7 +625,7 @@ class TestMineBlockHandler(HttpTestCase):
         self.config.network = "mainnet"
         with patch(
             "yadacoin.http.node.MineBlockHandler.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             response = self.fetch("/mine-block")
         self.assertEqual(response.code, 200)
@@ -639,7 +639,7 @@ class TestMineBlockHandler(HttpTestCase):
         self.config.mp = None
         with patch(
             "yadacoin.http.node.MineBlockHandler.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             response = self.fetch("/mine-block")
         self.assertEqual(response.code, 200)
@@ -655,7 +655,7 @@ class TestMineBlockHandler(HttpTestCase):
         self.config.mp = mock_mp
         with patch(
             "yadacoin.http.node.MineBlockHandler.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             response = self.fetch("/mine-block")
         self.assertEqual(response.code, 200)
@@ -688,7 +688,7 @@ class TestMineBlockHandler(HttpTestCase):
         self.config.BU.generate_signature = MagicMock(return_value="sig1")
         with patch(
             "yadacoin.http.node.MineBlockHandler.get_secure_cookie",
-            return_value=b"true",
+            return_value=b"9999999999",
         ):
             response = self.fetch("/mine-block")
         self.assertEqual(response.code, 200)

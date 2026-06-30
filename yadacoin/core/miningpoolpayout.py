@@ -134,8 +134,21 @@ class PoolPayer(object):
                 if pending:
                     return
                 else:
-                    # rebroadcast
+                    # rebroadcast — but only if the inputs are not already confirmed-spent
                     transaction = Transaction.from_dict(existing["txn"])
+                    input_ids = [i.id for i in transaction.inputs]
+                    if input_ids and await self.config.BU.is_input_spent(
+                        input_ids, self.config.public_key
+                    ):
+                        self.app_log.warning(
+                            "share_payout for block {} references already-spent inputs, skipping rebroadcast".format(
+                                block.index
+                            )
+                        )
+                        await self.config.mongo.async_db.shares.delete_many(
+                            {"index": block.index}
+                        )
+                        continue
                     await self.config.mongo.async_db.miner_transactions.insert_one(
                         transaction.to_dict()
                     )
@@ -258,6 +271,18 @@ class PoolPayer(object):
                 self.app_log.debug(e)
             raise
         self.app_log.debug("transaction verified")
+        # Final guard: check that none of the coinbase inputs were spent in a
+        # confirmed block during the time between already_used checks and now.
+        # This closes the reorg race window where a payout transaction could be
+        # confirmed and rolled back simultaneously with do_payout running.
+        input_ids = [i.id for i in transaction.inputs]
+        if input_ids and await self.config.BU.is_input_spent(
+            input_ids, self.config.public_key
+        ):
+            self.app_log.warning(
+                "do_payout: inputs already spent in confirmed block at insert time, aborting payout"
+            )
+            return
         await self.config.mongo.async_db.miner_transactions.insert_one(
             transaction.to_dict()
         )

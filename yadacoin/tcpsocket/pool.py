@@ -158,24 +158,6 @@ class StratumServer(RPCSocketServer):
             result["tx_hash"] = result["hash"]
         return result
 
-    async def get_bulk_payments(self, body, stream):
-        result = []
-        for y in body.get("params").get("payment_ids"):
-            config = Config.generate(prv=y)
-            async for (
-                x
-            ) in StratumServer.config.BU.get_wallet_unspent_transactions_for_spending(
-                config.address, inc_mempool=True
-            ):
-                txn = {"amount": 0}
-                txn["block_height"] = x["height"]
-                for j in x["outputs"]:
-                    if j["to"] == config.address:
-                        txn["amount"] += j["value"]
-                if txn["amount"]:
-                    result.append(txn)
-        return result
-
     async def submit(self, body, stream):
         self.config.processing_queues.nonce_queue.add(
             NonceProcessingQueueItem(miner=stream.peer, stream=stream, body=body)

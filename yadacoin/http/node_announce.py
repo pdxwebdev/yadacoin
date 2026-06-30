@@ -119,8 +119,7 @@ class NodeAnnounceHandler(BaseHandler):
         """Process the node announcement and broadcast to the blockchain."""
         try:
             # Require authentication — either a valid JWT wallet token or the secure cookie
-            key_or_wif = self.get_secure_cookie("key_or_wif")
-            if not key_or_wif and self.jwt.get("key_or_wif") != "true":
+            if not await self.wallet_is_unlocked():
                 self.set_status(401)
                 return self.render_as_json(
                     {

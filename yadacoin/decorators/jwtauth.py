@@ -14,6 +14,11 @@ Full license terms: see LICENSE.txt in this repository.
 import jwt
 
 secret_key = "my_secret_key"
+# Hardcoded revocation cutoff (Unix epoch, 2026-06-30 00:00:00 UTC).
+# Any wallet JWT/cookie whose issue timestamp predates this is rejected, so
+# every token issued before deploy is revoked without needing an unlock to
+# write a cutoff into Mongo. Bump this constant to force a fresh revocation.
+AUTH_REVOCATION_CUTOFF = 1782777600
 options = {
     "verify_signature": True,
     "verify_exp": True,
@@ -46,12 +51,7 @@ def jwtauthwallet(handler_class):
                         algorithms=["ES256"],
                         options=handler.config.jwt_options,
                     )
-                    mongo_jwt = handler.config.mongo.db.config.find_one(
-                        {"key": "jwt", "value.key_or_wif": "true"}
-                    )
-                    if not mongo_jwt or handler.jwt["timestamp"] < mongo_jwt.get(
-                        "value", {}
-                    ).get("timestamp", 0):
+                    if handler.jwt.get("timestamp", 0) < AUTH_REVOCATION_CUTOFF:
                         return False
 
                 except:
@@ -63,9 +63,17 @@ def jwtauthwallet(handler_class):
 
         def _execute(self, transforms, *args, **kwargs):
             try:
-                require_auth(self, kwargs)
+                authorized = require_auth(self, kwargs)
             except Exception:
-                return False
+                authorized = False
+
+            # jwt.decode() populates self.jwt before the revocation/timestamp
+            # check runs, so a revoked or otherwise rejected token can still
+            # leave "key_or_wif": "true" in self.jwt. Clear it on any auth
+            # failure so the in-handler check cannot be satisfied by a token
+            # that require_auth rejected.
+            if not authorized:
+                self.jwt = {}
 
             return handler_execute(self, transforms, *args, **kwargs)
 
@@ -116,9 +124,17 @@ def jwtauthwebuser(handler_class):
 
         def _execute(self, transforms, *args, **kwargs):
             try:
-                require_auth(self, kwargs)
+                authorized = require_auth(self, kwargs)
             except Exception:
-                return False
+                authorized = False
+
+            # jwt.decode() populates self.jwt before the revocation/timestamp
+            # check runs, so a revoked or otherwise rejected token can still
+            # leave "key_or_wif": "true" in self.jwt. Clear it on any auth
+            # failure so the in-handler check cannot be satisfied by a token
+            # that require_auth rejected.
+            if not authorized:
+                self.jwt = {}
 
             return handler_execute(self, transforms, *args, **kwargs)
 

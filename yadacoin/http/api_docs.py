@@ -21,6 +21,7 @@ HTTP_METHODS = ["get", "post", "put", "delete", "patch"]
 
 TRACKED_PLUGINS = {
     "explorer",
+    "keyrisk",
     "keyrotation",
     "yadaaiagent",
     "yadacoinpool",
@@ -59,6 +60,8 @@ def _tag_for(path: str, module: str) -> str:
         or "kel-" in path
     ):
         return "Key Rotation"
+    if "plugins.keyrisk" in module or path.startswith("/key-risk"):
+        return "Key Risk"
     if "plugins.yadanodeinfo" in module or path.startswith("/node-info"):
         return "Node Info"
     if "plugins.yadacoinpool" in module or path in (

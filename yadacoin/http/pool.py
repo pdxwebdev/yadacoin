@@ -172,7 +172,19 @@ class MinerPayoutsHandler(BaseHandler):
 class PoolScanMissedPayoutsHandler(BaseHandler):
     async def get(self):
         start_index = self.get_query_argument("start_index")
-        await self.config.pp.do_payout({"index": int(start_index)})
+        if not hasattr(self.config, "background_pool_payer"):
+            from yadacoin.app import WorkerVars
+
+            self.config.background_pool_payer = WorkerVars(busy=False)
+        if self.config.background_pool_payer.busy:
+            return self.render_as_json(
+                {"status": False, "error": "payout already in progress"}
+            )
+        self.config.background_pool_payer.busy = True
+        try:
+            await self.config.pp.do_payout({"index": int(start_index)})
+        finally:
+            self.config.background_pool_payer.busy = False
         self.render_as_json({"status": True})
 
 

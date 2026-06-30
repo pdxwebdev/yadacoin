@@ -17,7 +17,8 @@ import unittest
 from hashlib import sha256
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from coincurve import PublicKey
+from bitcoin.wallet import P2PKHBitcoinAddress
+from coincurve import PrivateKey, PublicKey
 
 import yadacoin.core.config
 from yadacoin.core.config import Config
@@ -78,6 +79,20 @@ def _random_scalar() -> int:
         n = int.from_bytes(os.urandom(32), "big") % CURVE_N
         if n != 0:
             return n
+
+
+def _real_keypair(seed_hex: str):
+    """Derive a real secp256k1 ``(public_key_hex, p2pkh_address)`` pair so
+    fixtures satisfy ``verify_fields``' public_key ↔ public_key_hash binding."""
+    priv = PrivateKey(bytes.fromhex(seed_hex))
+    pub = priv.public_key.format(compressed=True).hex()
+    addr = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub)))
+    return pub, addr
+
+
+# A real key whose P2PKH address is used as the recovers inception's own
+# public_key_hash (distinct from the delegator address).
+_RECOVERS_PUBKEY, _RECOVERS_ADDRESS = _real_keypair("11" * 32)
 
 
 # ── Fixture builders ──────────────────────────────────────────────────────────
@@ -294,7 +309,7 @@ class TestVerifyRecoveryInception(AsyncTestCase):
         R,
         s,
         prev_pkh,
-        public_key_hash="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",
+        public_key_hash=_RECOVERS_ADDRESS,
         prerotated="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",
         twice_prerotated="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",
         flag=KeyEventFlag.INCEPTION,
@@ -302,6 +317,7 @@ class TestVerifyRecoveryInception(AsyncTestCase):
     ):
         txn = _make_txn(
             relationship={"recovers": {"commitment": commitment, "R": R, "s": s}},
+            public_key=_RECOVERS_PUBKEY,
             public_key_hash=public_key_hash,
             prev_public_key_hash=prev_pkh,
             prerotated=prerotated,
@@ -532,7 +548,8 @@ class TestVerifyRecoveryInception(AsyncTestCase):
         # Missing required fields.
         txn = _make_txn(
             relationship={"recovers": {"commitment": "ab"}},
-            public_key_hash="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",
+            public_key=_RECOVERS_PUBKEY,
+            public_key_hash=_RECOVERS_ADDRESS,
             prev_public_key_hash=prev_pkh,
             prerotated="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",
             twice_prerotated="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",

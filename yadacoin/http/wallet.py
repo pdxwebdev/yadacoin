@@ -55,8 +55,7 @@ class GenerateWalletHandler(BaseHandler):
 @jwtauthwallet
 class GenerateChildWalletHandler(BaseHandler):
     async def post(self):
-        key_or_wif = self.get_secure_cookie("key_or_wif")
-        if not key_or_wif and self.jwt.get("key_or_wif") != "true":
+        if not await self.wallet_is_unlocked():
             return self.render_as_json({"error": "not authorized"})
         try:
             args = json.loads(self.request.body)
@@ -150,8 +149,7 @@ class GetBalanceSum(BaseHandler):
 @jwtauthwallet
 class CreateTransactionView(BaseHandler):
     async def post(self):
-        key_or_wif = self.get_secure_cookie("key_or_wif")
-        if not key_or_wif and self.jwt.get("key_or_wif") != "true":
+        if not await self.wallet_is_unlocked():
             return self.render_as_json({"error": "not authorized"})
         config = self.config
 
@@ -190,8 +188,7 @@ class CreateTransactionView(BaseHandler):
 @jwtauthwallet
 class CreateRawTransactionView(BaseHandler):
     async def post(self):
-        key_or_wif = self.get_secure_cookie("key_or_wif")
-        if not key_or_wif and self.jwt.get("key_or_wif") != "true":
+        if not await self.wallet_is_unlocked():
             return self.render_as_json({"error": "not authorized"})
         config = self.config
 
@@ -226,8 +223,7 @@ class CreateRawTransactionView(BaseHandler):
 @jwtauthwallet
 class SendTransactionView(BaseHandler):
     async def post(self):
-        key_or_wif = self.get_secure_cookie("key_or_wif")
-        if not key_or_wif and self.jwt.get("key_or_wif") != "true":
+        if not await self.wallet_is_unlocked():
             return self.render_as_json({"error": "not authorized"})
         config = self.config
         args = json.loads(self.request.body.decode())
@@ -269,10 +265,7 @@ class UnlockedHandler(BaseHandler):
         await super(UnlockedHandler, self).prepare()
 
     async def get(self):
-        if self.get_secure_cookie("key_or_wif") == "true":
-            return self.render_as_json({"unlocked": True})
-
-        if self.jwt.get("key_or_wif") == "true":
+        if await self.wallet_is_unlocked():
             return self.render_as_json({"unlocked": True})
 
         return self.render_as_json({"unlocked": False})
@@ -293,7 +286,19 @@ class UnlockHandler(BaseHandler):
             json_body = json.loads(self.request.body.decode())
             key_or_wif = json_body.get("key_or_wif")
             expires = json_body.get("expires", 23040)
-        if key_or_wif in [self.config.wif, self.config.private_key, self.config.seed]:
+        # Reject empty/missing credentials. Several config secrets (e.g. seed,
+        # xprv) default to "" when not configured; without this guard an empty
+        # submission would match an unset secret and unlock the wallet.
+        valid_secrets = [
+            secret
+            for secret in (
+                self.config.wif,
+                self.config.private_key,
+                self.config.seed,
+            )
+            if secret
+        ]
+        if key_or_wif and key_or_wif in valid_secrets:
             if getattr(self.config, "admin_kel", None):
                 self.set_status(403)
                 return self.render_as_json(
@@ -302,13 +307,26 @@ class UnlockHandler(BaseHandler):
                         "message": "admin_kel is configured — use the KEL second factor to authenticate.",
                     }
                 )
-            self.set_secure_cookie("key_or_wif", "true")
+            # Stamp the session's issue time into both the cookie and the JWT so
+            # they share one revocation cutoff: re-unlocking advances the stored
+            # timestamp and invalidates every previously issued session.
+            issued_at = time.time()
+            self.set_secure_cookie("key_or_wif", str(issued_at))
+
+            # Clamp the caller-supplied session lifetime to a sane bound so a
+            # token cannot be minted with an effectively unlimited expiry.
+            max_expires = 86400  # 24 hours
+            try:
+                expires_seconds = int(expires)
+            except (TypeError, ValueError):
+                expires_seconds = 23040
+            expires_seconds = max(1, min(expires_seconds, max_expires))
 
             payload = {
-                "timestamp": time.time(),
+                "timestamp": issued_at,
                 "key_or_wif": "true",
                 "exp": datetime.datetime.utcnow()
-                + datetime.timedelta(seconds=int(expires)),
+                + datetime.timedelta(seconds=expires_seconds),
             }
 
             self.encoded = jwt.encode(

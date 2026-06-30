@@ -23,6 +23,7 @@ from tornado.ioloop import IOLoop
 from tornado.web import RequestHandler
 
 from yadacoin.core.config import Config
+from yadacoin.decorators.jwtauth import AUTH_REVOCATION_CUTOFF
 from yadacoin.enums.modes import MODES
 
 
@@ -52,6 +53,35 @@ class BaseHandler(RequestHandler):
         )
         self.set_header("Access-Control-Max-Age", 600)
         self.jwt = {}
+
+    async def get_auth_cutoff(self):
+        """Revocation cutoff: sessions issued before this timestamp are invalid.
+
+        Hardcoded to AUTH_REVOCATION_CUTOFF so every cookie/JWT issued before
+        the deploy is rejected without needing an unlock to write a cutoff into
+        Mongo. A legitimate unlock issues a fresh session (timestamp > cutoff)
+        that keeps working; bump the constant to force another revocation.
+        """
+        return AUTH_REVOCATION_CUTOFF
+
+    async def wallet_is_unlocked(self):
+        """Return True if the request carries a still-valid wallet session.
+
+        Accepts either the JWT (already signature- and revocation-checked by the
+        @jwtauthwallet decorator before populating self.jwt) or the secure
+        cookie, whose value stores the session's issue time and is rejected if
+        it predates the revocation cutoff.
+        """
+        if self.jwt.get("key_or_wif") == "true":
+            return True
+        cookie = self.get_secure_cookie("key_or_wif")
+        if not cookie:
+            return False
+        try:
+            cookie_ts = float(cookie.decode())
+        except (ValueError, AttributeError, UnicodeDecodeError):
+            return False
+        return cookie_ts >= await self.get_auth_cutoff()
 
     async def prepare(self, exceptions=None):
         if (

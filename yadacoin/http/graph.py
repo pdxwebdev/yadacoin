@@ -52,7 +52,6 @@ class GraphConfigHandler(BaseHandler):
             "graphUrl": "{}".format(peer),
             "walletUrl": "{}/get-graph-wallet".format(peer),
             "websocketUrl": "{}/websocket".format(self.config.websocket_host_port),
-            "loginUrl": "{}/login".format(peer),
             "registerUrl": "{}/create-relationship".format(peer),
             "authenticatedUrl": "{}/authenticated".format(peer),
             "webSignInUrl": "{}/web-signin".format(peer),
@@ -86,15 +85,7 @@ class BaseGraphHandler(BaseHandler):
                 if not isinstance(rids, list):
                     rids = [rids]
                 update_last_collection_time = body.get("update_last_collection_time")
-        try:
-            key_or_wif = self.get_secure_cookie("key_or_wif").decode()
-        except:
-            key_or_wif = None
-        if not key_or_wif:
-            try:
-                key_or_wif = self.jwt.get("key_or_wif")
-            except:
-                key_or_wif = None
+        key_or_wif = "true" if await self.wallet_is_unlocked() else None
         return await Graph().async_init(
             self.config,
             self.config.mongo,

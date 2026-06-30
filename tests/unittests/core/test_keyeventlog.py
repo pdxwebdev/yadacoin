@@ -48,12 +48,12 @@ blocks = [
                 "masternode_fee": 0.0,
                 "hash": "1c9f8b56b90f8268ade4e34d45eecd8c9c3ca3342a0640a1e4e54e6ed1545797",
                 "inputs": [],
-                "outputs": [{"to": "1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR", "value": 0}],
+                "outputs": [{"to": "1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP", "value": 0}],
                 "version": 7,
                 "private": False,
                 "never_expire": False,
-                "prerotated_key_hash": "1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",
-                "twice_prerotated_key_hash": "16K746UWNSzbdAAp24B9zcmdxvmpesfyPD",
+                "prerotated_key_hash": "1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP",
+                "twice_prerotated_key_hash": "1FxbUfSLtZqqb1wYDkLAzQmjW7Xfb72QQe",
                 "public_key_hash": "1HazogSuV2NUdd1Cnebw4RVLN9RS8s86yv",
                 "prev_public_key_hash": "",
             },
@@ -882,9 +882,9 @@ class TestKeyEventVerifyFields(unittest.TestCase):
 
     def _make_key_event(
         self,
-        twice_prerotated="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",
-        prerotated="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",
-        public_key_hash="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",
+        twice_prerotated="1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP",
+        prerotated="1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP",
+        public_key_hash="1HazogSuV2NUdd1Cnebw4RVLN9RS8s86yv",
         prev_public_key_hash="",
     ):
         from unittest.mock import MagicMock
@@ -901,6 +901,7 @@ class TestKeyEventVerifyFields(unittest.TestCase):
         txn.twice_prerotated_key_hash = twice_prerotated
         txn.prerotated_key_hash = prerotated
         txn.public_key_hash = public_key_hash
+        txn.public_key = _VALID_PUBKEY
         txn.prev_public_key_hash = prev_public_key_hash
 
         ke = KeyEvent.__new__(KeyEvent)
@@ -934,6 +935,17 @@ class TestKeyEventVerifyFields(unittest.TestCase):
             ke.verify_fields()
         self.assertIn("public_key_hash", str(ctx.exception))
 
+    def test_verify_fields_public_key_hash_mismatch(self):
+        """public_key_hash is a valid address but doesn't match the pubkey → line 269."""
+        from yadacoin.core.keyeventlog import KeyEventException
+
+        # _VALID_ADDR_B is a valid Bitcoin address but P2PKH of _VALID_PUBKEY_B,
+        # while the helper sets txn.public_key = _VALID_PUBKEY → mismatch.
+        ke = self._make_key_event(public_key_hash=_VALID_ADDR_B)
+        with self.assertRaises(KeyEventException) as ctx:
+            ke.verify_fields()
+        self.assertIn("does not match", str(ctx.exception))
+
     def test_verify_fields_invalid_prev_public_key_hash_when_required(self):
         from yadacoin.core.keyeventlog import KeyEventException
 
@@ -951,7 +963,7 @@ class TestKeyEventVerifyInception(unittest.TestCase):
         flag=None,
         status=None,
         outputs=None,
-        prerotated_key_hash="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",
+        prerotated_key_hash="1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP",
         relationship="",
     ):
         from unittest.mock import MagicMock
@@ -979,9 +991,10 @@ class TestKeyEventVerifyInception(unittest.TestCase):
             outputs = [out]
 
         txn = MagicMock(spec=Transaction)
-        txn.twice_prerotated_key_hash = "1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR"
+        txn.twice_prerotated_key_hash = "1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"
         txn.prerotated_key_hash = prerotated_key_hash
-        txn.public_key_hash = "1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR"
+        txn.public_key_hash = "1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"
+        txn.public_key = _VALID_PUBKEY_B
         txn.prev_public_key_hash = ""
         txn.outputs = outputs
         txn.relationship = relationship
@@ -1010,7 +1023,7 @@ class TestKeyEventVerifyInception(unittest.TestCase):
         out = MagicMock()
         out.to = "wrongaddr"
         ke = self._make_ke(
-            outputs=[out], prerotated_key_hash="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR"
+            outputs=[out], prerotated_key_hash="1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"
         )
         with self.assertRaises(KeyEventPrerotatedKeyHashException):
             ke.verify_inception()
@@ -1038,7 +1051,7 @@ class TestKeyEventVerifyUnconfirmed(unittest.TestCase):
         self,
         status=None,
         outputs=None,
-        prerotated_key_hash="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",
+        prerotated_key_hash="1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP",
         relationship="no_rel",
     ):
         from unittest.mock import MagicMock
@@ -1060,10 +1073,11 @@ class TestKeyEventVerifyUnconfirmed(unittest.TestCase):
             outputs = [out]
 
         txn = MagicMock(spec=Transaction)
-        txn.twice_prerotated_key_hash = "1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR"
+        txn.twice_prerotated_key_hash = "1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"
         txn.prerotated_key_hash = prerotated_key_hash
-        txn.public_key_hash = "1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR"
-        txn.prev_public_key_hash = "1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR"
+        txn.public_key_hash = "1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"
+        txn.public_key = _VALID_PUBKEY_B
+        txn.prev_public_key_hash = "1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"
         txn.outputs = outputs
         txn.relationship = relationship
 
@@ -1099,9 +1113,9 @@ class TestKeyEventVerifyConfirming(unittest.TestCase):
         self,
         status=None,
         outputs=None,
-        prerotated_key_hash="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",
+        prerotated_key_hash="1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP",
         relationship="",
-        prev_public_key_hash="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",
+        prev_public_key_hash="1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP",
     ):
         from unittest.mock import MagicMock
 
@@ -1122,9 +1136,10 @@ class TestKeyEventVerifyConfirming(unittest.TestCase):
             outputs = [out]
 
         txn = MagicMock(spec=Transaction)
-        txn.twice_prerotated_key_hash = "1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR"
+        txn.twice_prerotated_key_hash = "1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"
         txn.prerotated_key_hash = prerotated_key_hash
-        txn.public_key_hash = "1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR"
+        txn.public_key_hash = "1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"
+        txn.public_key = _VALID_PUBKEY_B
         txn.prev_public_key_hash = prev_public_key_hash
         txn.outputs = outputs
         txn.relationship = relationship
@@ -1136,7 +1151,7 @@ class TestKeyEventVerifyConfirming(unittest.TestCase):
         ke.config = Config()
         return ke
 
-    def _make_entire_log(self, last_prerotated="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR"):
+    def _make_entire_log(self, last_prerotated="1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"):
         from unittest.mock import MagicMock
 
         last = MagicMock()
@@ -1160,7 +1175,7 @@ class TestKeyEventVerifyConfirming(unittest.TestCase):
         out = MagicMock()
         out.to = "wrongaddr"
         ke = self._make_ke(
-            outputs=[out], prerotated_key_hash="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR"
+            outputs=[out], prerotated_key_hash="1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"
         )
         with self.assertRaises(KeyEventPrerotatedKeyHashException):
             ke.verify_confirming(
@@ -1417,9 +1432,16 @@ if __name__ == "__main__":
 
 # Real valid Bitcoin P2PKH addresses from block test data
 _VALID_ADDR_A = "1HazogSuV2NUdd1Cnebw4RVLN9RS8s86yv"  # public_key_hash
-_VALID_ADDR_B = "1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR"  # prerotated_key_hash
-_VALID_ADDR_C = "16K746UWNSzbdAAp24B9zcmdxvmpesfyPD"  # twice_prerotated_key_hash
+_VALID_ADDR_B = "1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"  # prerotated_key_hash (P2PKH of _VALID_PUBKEY_B)
+_VALID_ADDR_C = "1FxbUfSLtZqqb1wYDkLAzQmjW7Xfb72QQe"  # twice_prerotated_key_hash (P2PKH of _VALID_PUBKEY_C)
 _VALID_PUBKEY = "03cf228062cad517f99df2cb4403c84e1769c8714394dbf0ffca994de72fb0b1c1"
+# Pubkeys whose P2PKH matches the corresponding address constants above.
+# Scalar-derived (coincurve): scalar=101 → B, scalar=202 → C, scalar=303 → PKR2
+_VALID_PUBKEY_B = "02311091dd9860e8e20ee13473c1155f5f69635e394704eaa74009452246cfa9b3"
+_VALID_PUBKEY_C = "036c0d1f1784e47ff04108c1d9049df6b3658aa6490ef4ef1ac1e4dbfd90ac0427"
+_VALID_PUBKEY_PKR2 = (
+    "02f1e1c362e47b89e6f0ad969f8d9dadfc30863b9cbb24b7568c6ba19705839094"
+)
 
 # A minimal transaction dict for the inception of the chain above
 _INCEPTION_TXN_DICT = blocks[0]["transactions"][0]  # index 537383, txn[0]
@@ -1429,6 +1451,15 @@ _VALID_ADDR_PKH2 = "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8"
 _VALID_ADDR_PKR2 = "1Kxegt9KhD7i6EJEYvBS5pHZdGwX6BZCar"
 _VALID_ADDR_TPKR2 = "1NY91tSJvaFK7BYbGcXeGipoNKoqoXDSex"
 _VALID_PUBKEY2 = "02850674626716f3d511d51d43824057f45348154735318388d51a4d436709b83d"
+
+# Lookup: address → pubkey whose P2PKH equals that address
+_ADDR_TO_PUBKEY = {
+    _VALID_ADDR_A: _VALID_PUBKEY,
+    _VALID_ADDR_B: _VALID_PUBKEY_B,
+    _VALID_ADDR_C: _VALID_PUBKEY_C,
+    _VALID_ADDR_PKH2: _VALID_PUBKEY2,
+    _VALID_ADDR_PKR2: _VALID_PUBKEY_PKR2,
+}
 
 
 def _make_mock_ke(
@@ -1440,7 +1471,7 @@ def _make_mock_ke(
     twice_prerotated_key_hash=_VALID_ADDR_C,
     public_key_hash=_VALID_ADDR_A,
     outputs_to=_VALID_ADDR_B,
-    public_key=_VALID_PUBKEY,
+    public_key=None,
 ):
     from unittest.mock import MagicMock
 
@@ -1450,6 +1481,10 @@ def _make_mock_ke(
 
     if status is None:
         status = KeyEventChainStatus.MEMPOOL
+
+    # Derive a matching public_key from the address when not explicitly supplied
+    if public_key is None:
+        public_key = _ADDR_TO_PUBKEY.get(public_key_hash, _VALID_PUBKEY)
 
     txn = MagicMock(spec=Transaction)
     txn.public_key = public_key
@@ -2442,6 +2477,7 @@ class TestKeyEventLogInitAsyncBranches(AsyncTestCase):
         # pkh=C (== unconfirmed.pkr), pkr=PKH2 (== unconfirmed.tpkr), prev=B (== unconfirmed.pkh)
         confirming_txn = MagicMock(spec=Transaction)
         confirming_txn.public_key_hash = _VALID_ADDR_C
+        confirming_txn.public_key = _VALID_PUBKEY_C
         confirming_txn.prerotated_key_hash = _VALID_ADDR_PKH2
         confirming_txn.twice_prerotated_key_hash = _VALID_ADDR_PKR2
         confirming_txn.prev_public_key_hash = _VALID_ADDR_B
@@ -2568,6 +2604,7 @@ class TestKeyEventLogInitAsyncBranches(AsyncTestCase):
         # Confirming txn stored in hash_collection.prerotated_key_hashes[PKH2].
         confirming_txn = MagicMock(spec=Transaction)
         confirming_txn.public_key_hash = _VALID_ADDR_C
+        confirming_txn.public_key = _VALID_PUBKEY_C
         confirming_txn.prerotated_key_hash = _VALID_ADDR_PKH2
         confirming_txn.twice_prerotated_key_hash = _VALID_ADDR_PKR2
         confirming_txn.prev_public_key_hash = _VALID_ADDR_B
@@ -2875,6 +2912,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
 
         txn = MagicMock(spec=Transaction)
         txn.public_key_hash = _VALID_ADDR_A
+        txn.public_key = _VALID_PUBKEY
         txn.prerotated_key_hash = _VALID_ADDR_B
         txn.twice_prerotated_key_hash = _VALID_ADDR_C
         txn.prev_public_key_hash = _VALID_ADDR_PKH2
@@ -2908,6 +2946,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
 
         txn = MagicMock(spec=Transaction)
         txn.public_key_hash = _VALID_ADDR_A
+        txn.public_key = _VALID_PUBKEY
         txn.prerotated_key_hash = _VALID_ADDR_B
         txn.twice_prerotated_key_hash = _VALID_ADDR_C
         txn.prev_public_key_hash = _VALID_ADDR_PKH2
@@ -2945,7 +2984,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
         C, R, s = _make_proof(x, prev_key_hash=prev_pkh)
 
         txn = MagicMock(spec=Transaction)
-        txn.public_key = _VALID_PUBKEY
+        txn.public_key = _VALID_PUBKEY_B
         txn.public_key_hash = _VALID_ADDR_B
         txn.prerotated_key_hash = _VALID_ADDR_B
         txn.twice_prerotated_key_hash = _VALID_ADDR_B
@@ -3023,7 +3062,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
         C, R, s = _make_proof(x, prev_key_hash=prev_pkh)
 
         txn = MagicMock(spec=Transaction)
-        txn.public_key = _VALID_PUBKEY
+        txn.public_key = _VALID_PUBKEY_B
         txn.public_key_hash = _VALID_ADDR_B
         txn.prerotated_key_hash = _VALID_ADDR_B
         txn.twice_prerotated_key_hash = _VALID_ADDR_B
@@ -3111,7 +3150,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
         wh = _witness_hash_for(C)
 
         txn = MagicMock(spec=Transaction)
-        txn.public_key = _VALID_PUBKEY
+        txn.public_key = _VALID_PUBKEY_B
         txn.public_key_hash = _VALID_ADDR_B
         txn.prerotated_key_hash = _VALID_ADDR_B
         txn.twice_prerotated_key_hash = _VALID_ADDR_B
@@ -3689,7 +3728,7 @@ class TestKeyEventLogCoverageGaps(AsyncTestCase):
         wh = _witness_hash_for(C)
 
         txn = MagicMock(spec=Transaction)
-        txn.public_key = _VALID_PUBKEY
+        txn.public_key = _VALID_PUBKEY_B
         txn.public_key_hash = _VALID_ADDR_B
         txn.prerotated_key_hash = _VALID_ADDR_B
         txn.twice_prerotated_key_hash = _VALID_ADDR_B
@@ -3841,7 +3880,7 @@ class TestKeyEventLogCoverageGaps(AsyncTestCase):
         wh = _witness_hash_for(C)
 
         txn = MagicMock(spec=Transaction)
-        txn.public_key = _VALID_PUBKEY
+        txn.public_key = _VALID_PUBKEY_B
         txn.public_key_hash = _VALID_ADDR_B
         txn.prerotated_key_hash = _VALID_ADDR_B
         txn.twice_prerotated_key_hash = _VALID_ADDR_B
@@ -3860,7 +3899,7 @@ class TestKeyEventLogCoverageGaps(AsyncTestCase):
 
         # Delegator is in the same block (batch_txns), not yet on-chain.
         delegator_txn = MagicMock(spec=Transaction)
-        delegator_txn.public_key = _VALID_PUBKEY
+        delegator_txn.public_key = _VALID_PUBKEY2
         delegator_txn.public_key_hash = prev_pkh
         delegator_txn.relationship = RecoveryAnnouncement(wh)
         batch = [delegator_txn]

@@ -260,6 +260,16 @@ class KeyEvent:
         if not Config().address_is_valid(self.txn.public_key_hash):
             raise KeyEventException("public_key_hash is not a valid hash")
 
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        expected_public_key_hash = str(
+            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.txn.public_key))
+        )
+        if self.txn.public_key_hash != expected_public_key_hash:
+            raise KeyEventException(
+                "public_key_hash does not match the P2PKH address of public_key"
+            )
+
         if prev_public_key_hash_required:  # optional for inception
             if not Config().address_is_valid(self.txn.prev_public_key_hash):
                 raise KeyEventException("prev_public_key_hash is not a valid hash")
