@@ -65,7 +65,8 @@ def jwtauthwallet(handler_class):
             try:
                 authorized = require_auth(self, kwargs)
             except Exception:
-                authorized = False
+                self.jwt = {}
+                return False
 
             # jwt.decode() populates self.jwt before the revocation/timestamp
             # check runs, so a revoked or otherwise rejected token can still
@@ -126,7 +127,8 @@ def jwtauthwebuser(handler_class):
             try:
                 authorized = require_auth(self, kwargs)
             except Exception:
-                authorized = False
+                self.jwt = {}
+                return False
 
             # jwt.decode() populates self.jwt before the revocation/timestamp
             # check runs, so a revoked or otherwise rejected token can still
