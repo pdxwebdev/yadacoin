@@ -807,6 +807,18 @@ class Block(object):
                         input_ids, transaction_obj.public_key
                     )
                     if is_input_spent:
+                        if transaction_obj.public_key == config.public_key:
+                            # Silently discard this node's own duplicate transaction —
+                            # inputs are already confirmed on-chain (e.g. a reorg caused
+                            # a second payout to be created while the first was rolling
+                            # back). The original payout succeeded; recording a failure
+                            # here produces a false negative in the payout UI.
+                            await config.mongo.async_db.miner_transactions.delete_many(
+                                {"id": transaction_obj.transaction_signature}
+                            )
+                            if transaction_obj in txns:
+                                txns.remove(transaction_obj)
+                            continue
                         failed = True
                     if len(input_ids) != len(list(set(input_ids))):
                         failed = True
