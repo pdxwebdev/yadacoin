@@ -2167,6 +2167,77 @@ class TestBlock(AsyncTestCase):
 
         self.assertNotIn(txn, transaction_objs)
 
+    async def test_validate_transactions_is_input_spent_own_pubkey_silent_discard(self):
+        """Lines 816-821: is_input_spent=True for this node's own pubkey silently
+        discards the duplicate without calling handle_exception (no failed_transaction).
+        """
+        from yadacoin.core.blockchainutils import BlockChainUtils
+
+        NODE_PUBKEY = (
+            "03abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
+        )
+        Config().BU = BlockChainUtils()
+        is_input_spent = AsyncMock(return_value=True)
+        handle_exception = AsyncMock(return_value=None)
+        delete_many = AsyncMock(return_value=None)
+
+        inp = Mock()
+        inp.id = "spent_own_input_id"
+
+        txn = Mock()
+        txn.transaction_signature = "sig_own_spent"
+        txn.spent_in_txn = None
+        txn.inputs = [inp]
+        txn.outputs = []
+        txn.fee = 0.0
+        txn.masternode_fee = 0.0
+        txn.time = 0
+        txn.public_key = NODE_PUBKEY
+        txn.verify = AsyncMock(return_value=None)
+
+        transaction_objs = []
+        used_sigs = []
+        used_inputs = {}
+
+        with mock.patch(
+            "yadacoin.core.transaction.Transaction.handle_exception",
+            new=handle_exception,
+        ), mock.patch(
+            "yadacoin.core.config.Config.address_is_valid", return_value=True
+        ), mock.patch(
+            "yadacoin.core.blockchainutils.BlockChainUtils.is_input_spent",
+            new=is_input_spent,
+        ):
+            # Set public_key on the Config singleton so the branch condition matches,
+            # then restore the original value to avoid leaking into subsequent tests.
+            original_public_key = getattr(Config(), "public_key", None)
+            try:
+                Config().public_key = NODE_PUBKEY
+                # Ensure the miner_transactions.delete_many call is awaitable.
+                Config().mongo.async_db.miner_transactions = mock.MagicMock()
+                Config().mongo.async_db.miner_transactions.delete_many = AsyncMock(
+                    return_value=None
+                )
+                await Block.validate_transactions(
+                    [txn],
+                    transaction_objs,
+                    used_sigs,
+                    used_inputs,
+                    0,
+                    int(time_module.time()),
+                )
+            finally:
+                if original_public_key is None:
+                    if hasattr(Config(), "public_key"):
+                        del Config().public_key
+                else:
+                    Config().public_key = original_public_key
+
+        # Transaction silently discarded — not added to transaction_objs
+        self.assertNotIn(txn, transaction_objs)
+        # handle_exception must NOT have been called (no false failure recorded)
+        handle_exception.assert_not_called()
+
     async def test_validate_transactions_duplicate_input_ids(self):
         """Line 673: duplicate input IDs within same txn sets failed=True."""
         from yadacoin.core.blockchainutils import BlockChainUtils
