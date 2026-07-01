@@ -316,8 +316,27 @@ class PoolPayoutsHandler(BaseWebHandler):
                 status = "Pending"
                 block_index = "N/A"
             elif in_failed:
-                status = "Failed"
-                block_index = "N/A"
+                # Before reporting failure, check whether the payout inputs are
+                # already confirmed-spent by a *different* transaction — the
+                # duplicate-payout reorg scenario where P1 was confirmed, a reorg
+                # window triggered P2, and P2 later failed because P1 came back.
+                # If P1 is on-chain spending the same inputs the payout succeeded.
+                input_ids = [i["id"] for i in txn.get("inputs", []) if "id" in i]
+                confirmed_spend = None
+                if input_ids:
+                    confirmed_spend = await self.config.mongo.async_db.blocks.find_one(
+                        {
+                            "transactions.inputs.id": {"$in": input_ids},
+                            "transactions.public_key": txn.get("public_key"),
+                        },
+                        {"index": 1},
+                    )
+                if confirmed_spend:
+                    status = "Confirmed"
+                    block_index = confirmed_spend["index"]
+                else:
+                    status = "Failed"
+                    block_index = "N/A"
             else:
                 status = "Unknown"
                 block_index = "N/A"
