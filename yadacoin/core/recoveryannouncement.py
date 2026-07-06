@@ -58,6 +58,8 @@ class RecoveryAnnouncement:
                                           "hints_ct":    "<base64>"}}
     """
 
+    RELATIONSHIP_KEY = "recovery"
+
     def __init__(
         self,
         witness_hash,
@@ -105,9 +107,14 @@ class RecoveryAnnouncement:
     @staticmethod
     def from_relationship(relationship):
         """Build from the top-level relationship dict {"recovery": ...}."""
-        if not isinstance(relationship, dict) or "recovery" not in relationship:
+        if (
+            not isinstance(relationship, dict)
+            or RecoveryAnnouncement.RELATIONSHIP_KEY not in relationship
+        ):
             raise ValueError("relationship must contain a 'recovery' key")
-        return RecoveryAnnouncement.from_dict(relationship["recovery"])
+        return RecoveryAnnouncement.from_dict(
+            relationship[RecoveryAnnouncement.RELATIONSHIP_KEY]
+        )
 
     def has_hints(self):
         return bool(self.hints_ct and self.hints_iv)
@@ -153,6 +160,7 @@ class RecoveryProof:
         {"recovers": {"commitment": "<hex>", "R": "<hex>", "s": "<hex>"}}
     """
 
+    RELATIONSHIP_KEY = "recovers"
     _REQUIRED = ("commitment", "R", "s")
 
     def __init__(self, commitment, R, s, **kwargs):
@@ -177,9 +185,12 @@ class RecoveryProof:
     @staticmethod
     def from_relationship(relationship):
         """Build from the top-level relationship dict {"recovers": ...}."""
-        if not isinstance(relationship, dict) or "recovers" not in relationship:
+        if (
+            not isinstance(relationship, dict)
+            or RecoveryProof.RELATIONSHIP_KEY not in relationship
+        ):
             raise ValueError("relationship must contain a 'recovers' key")
-        return RecoveryProof.from_dict(relationship["recovers"])
+        return RecoveryProof.from_dict(relationship[RecoveryProof.RELATIONSHIP_KEY])
 
     def to_dict(self):
         out = {

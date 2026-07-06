@@ -243,10 +243,13 @@ class PoolPayer(object):
                 )
             )
         try:
+            from yadacoin.core.keyrotation import get_node_signing_key
+
+            _kel_priv, _kel_pub, _kel_addr = get_node_signing_key(self.config)
             transaction = await Transaction.generate(
                 fee=0.0001,
-                public_key=self.config.public_key,
-                private_key=self.config.private_key,
+                public_key=_kel_pub,
+                private_key=_kel_priv,
                 inputs=[
                     {"id": coinbase.transaction_signature} for coinbase in coinbases
                 ],

@@ -41,7 +41,7 @@ class Peer:
         http_host=None,
         http_port=None,
         http_protocol=None,
-        protocol_version=4,
+        protocol_version=5,
         node_version=(0, 0, 0),
         peer_type=None,
     ):
@@ -74,7 +74,7 @@ class Peer:
             "peer_type": config.peer_type,
             "http_host": config.ssl.common_name or config.peer_host,
             "http_port": config.ssl.port or config.serve_port,
-            "protocol_version": 4,
+            "protocol_version": 5,
             "node_version": config.node_version,
         }
         if config.peer_type == PEER_TYPES.SEED.value:

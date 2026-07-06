@@ -294,8 +294,11 @@ class NodeAnnounceHandler(BaseHandler):
             # Sign the transaction using the node's private key
             try:
                 txn.hash = await txn.generate_hash()
+                from yadacoin.core.keyrotation import get_node_signing_key
+
+                _kel_priv, _kel_pub, _kel_addr = get_node_signing_key(self.config)
                 txn.transaction_signature = TU.generate_signature_with_private_key(
-                    self.config.private_key, txn.hash
+                    _kel_priv, txn.hash
                 )
             except Exception as e:
                 self.app_log.error(f"Error signing transaction: {e}")

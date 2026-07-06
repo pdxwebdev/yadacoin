@@ -209,8 +209,11 @@ class MiningPool(object):
             test_hash = int(block_candidate.hash, 16)
 
         if test_hash < int(block_candidate.target) or self.config.network == "regnet":
+            from yadacoin.core.keyrotation import get_node_signing_key
+
+            _kel_priv, _kel_pub, _kel_addr = get_node_signing_key(self.config)
             block_candidate.signature = self.config.BU.generate_signature(
-                block_candidate.hash, self.config.private_key
+                block_candidate.hash, _kel_priv
             )
 
             if header != block_candidate.header:
@@ -259,8 +262,11 @@ class MiningPool(object):
                 )
             )
         ):
+            from yadacoin.core.keyrotation import get_node_signing_key
+
+            _kel_priv, _kel_pub, _kel_addr = get_node_signing_key(self.config)
             block_candidate.signature = self.config.BU.generate_signature(
-                block_candidate.hash, self.config.private_key
+                block_candidate.hash, _kel_priv
             )
 
             try:

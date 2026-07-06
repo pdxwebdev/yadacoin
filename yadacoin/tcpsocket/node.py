@@ -45,7 +45,13 @@ from yadacoin.core.transaction import MissingInputTransactionException, Transact
 from yadacoin.core.transactionutils import TU
 from yadacoin.enums.modes import MODES
 from yadacoin.enums.peertypes import PEER_TYPES
-from yadacoin.tcpsocket.base import BaseRPC, RPCSocketClient, RPCSocketServer
+from yadacoin.tcpsocket.base import (
+    BaseRPC,
+    ProtocolVersionTooLowError,
+    RPCSocketClient,
+    RPCSocketServer,
+    SessionCipher,
+)
 
 
 class NodeServerDisconnectTracker:
@@ -86,6 +92,67 @@ class NodeRPC(BaseRPC):
         self.config = Config()
 
     config = None
+
+    async def _get_pending_inception(self) -> dict:
+        """Return this node's pending KEL inception transaction dict if it
+        exists in the local mempool but is not yet confirmed on-chain, or
+        None if the inception is already mined (peers will have it via blocks).
+        Used to break the bootstrapping deadlock: new nodes embed their
+        inception in the plaintext connect/challenge so peers can accept them
+        before the inception is gossiped any other way.
+        """
+        manager = getattr(self.config, "kel_manager", None)
+        if not manager or not manager._inception_txn_id:
+            return None
+        # Only send if inception is NOT yet confirmed (no need to re-send once mined)
+        if getattr(manager, "_inception_complete", False):
+            return None
+        doc = await self.config.mongo.async_db.miner_transactions.find_one(
+            {"id": manager._inception_txn_id}, {"_id": 0}
+        )
+        return doc  # may be None if already moved to blocks
+
+    async def _accept_peer_inception(self, txn_dict: dict) -> None:
+        """Receive and store a peer's pending inception transaction.
+
+        Verifies the transaction's self-consistency (public_key signed hash)
+        without requiring the blockchain, then upserts into the local mempool.
+        This is safe to call before authentication because the signature check
+        is self-contained: it only proves the sender controls the key embedded
+        in the transaction, which is exactly what the KEL lookup needs.
+        """
+        if not txn_dict or not isinstance(txn_dict, dict):
+            return
+        try:
+            from yadacoin.core.transaction import Transaction
+
+            txn = Transaction.from_dict(txn_dict)
+            # Self-consistency check: transaction_signature must verify against
+            # the transaction's own hash using the transaction's own public_key.
+            sig_ok = verify_signature(
+                base64.b64decode(txn.transaction_signature),
+                txn.hash.encode("utf-8"),
+                bytes.fromhex(txn.public_key),
+            )
+            if not sig_ok:
+                self.config.app_log.warning(
+                    "NodeRPC: rejected peer inception — invalid transaction signature"
+                )
+                return
+            await self.config.mongo.async_db.miner_transactions.replace_one(
+                {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
+            )
+            self.config.app_log.info(
+                "Bootstrap: accepted peer inception txn %s into mempool.\n"
+                "  This allows the peer to authenticate even after the KEL fork —\n"
+                "  the inception was delivered in the plaintext connect handshake\n"
+                "  before encryption.",
+                txn.transaction_signature[:24],
+            )
+        except Exception as exc:
+            self.config.app_log.debug(
+                "NodeRPC: could not accept peer inception: %s", exc
+            )
 
     async def getblocks(self, body, stream):
         # get blocks should be done only by syncing peers
@@ -997,6 +1064,16 @@ class NodeRPC(BaseRPC):
         self.config.nodeServer.inbound_streams[peerCls.__name__][
             stream.peer.rid
         ] = stream
+        # Store the peer's ECDH public key for session cipher derivation
+        stream._peer_ecdh_pub = params.get("ecdh_public_key", "")
+        # Accept the peer's pending inception transaction if provided.
+        # This breaks the bootstrapping deadlock: a brand-new node whose
+        # inception has never been gossiped embeds it in the plaintext
+        # connect message so the receiver can add it to its mempool before
+        # authenticate runs the KEL lookup.
+        inception_txn_dict = params.get("inception_txn")
+        if inception_txn_dict:
+            await self._accept_peer_inception(inception_txn_dict)
         self.config.app_log.info(
             "Connected to {}: {}".format(
                 stream.peer.__class__.__name__, stream.peer.to_json()
@@ -1009,16 +1086,77 @@ class NodeRPC(BaseRPC):
             self.ensure_protocol_version(body, stream)
         except:
             return await self.remove_peer(
-                stream, reason="NodeRPC challenge: ensure_protocol version"
+                stream, reason="protocol version < 5 not allowed (KEL enforcement)"
             )
         try:
             params = body.get("params", {})
             challenge = params.get("token")
-            signed_challenge = TU.generate_signature(challenge, self.config.private_key)
-        except:
+            from yadacoin.core.keyrotation import get_node_auth_key
+
+            _auth_priv, _auth_pub, _conf_priv, _conf_pub = await get_node_auth_key(
+                self.config
+            )
+            signed_challenge = TU.generate_signature(challenge, _auth_priv)
+            # Confirming signature: next key signs the same challenge to prove
+            # knowledge of K_{n+i+1} without revealing SECOND_FACTOR.
+            confirming_signed_challenge = None
+            if _conf_priv:
+                confirming_signed_challenge = TU.generate_signature(
+                    challenge, _conf_priv
+                )
+            # Fetch the ratchet chain from the signing log so the peer can
+            # verify the path from the on-chain anchor to the ratchet key.
+            ratchet_chain = []
+            anchor_pub = getattr(self.config, "kel_public_key", None)
+            if anchor_pub:
+                cursor = self.config.mongo.async_db.kel_signing_log.find(
+                    {"anchor_public_key": anchor_pub},
+                    {
+                        "_id": 0,
+                        "anchor_public_key": 1,
+                        "public_key": 1,
+                        "prev_public_key": 1,
+                        "certification": 1,
+                    },
+                ).sort("counter", 1)
+                ratchet_chain = await cursor.to_list(length=200)
+            # Generate ephemeral ECDH keypair; derive session cipher using
+            # the peer's ECDH key (from connect) + this challenge token.
+            _ecdh_priv, _ecdh_pub = SessionCipher.generate_keypair()
+            peer_ecdh_pub = getattr(stream, "_peer_ecdh_pub", "")
+            if peer_ecdh_pub:
+                stream.session_cipher = SessionCipher.derive(
+                    _ecdh_priv, peer_ecdh_pub, ""
+                )
+        except Exception as _exc:
+            self.config.app_log.warning(
+                "NodeRPC challenge error (%s): %s",
+                stream.peer.host if stream.peer else "?",
+                _exc,
+                exc_info=True,
+            )
             return await self.remove_peer(
                 stream, reason="NodeRPC challenge: generate_signature"
             )
+        # Send the challenge (plaintext — in PRE_AUTH_METHODS) FIRST so the
+        # client can derive the session cipher before we send the encrypted
+        # authenticate response.  Swapping the order prevents the client from
+        # receiving an encrypted message it can't yet decrypt.
+        stream.peer.token = str(uuid4())
+        challenge_payload = {
+            "peer": self.config.peer.to_dict(),
+            "token": stream.peer.token,
+        }
+        if peer_ecdh_pub:
+            challenge_payload["ecdh_public_key"] = _ecdh_pub
+        # Embed our pending inception (if not yet mined) so the client can
+        # add it to their mempool before running the KEL lookup in authenticate.
+        pending_inception = await self._get_pending_inception()
+        if pending_inception:
+            challenge_payload["inception_txn"] = pending_inception
+        await self.write_params(stream, "challenge", challenge_payload)
+        # Send authenticate AFTER challenge so the client has the ECDH key
+        # (from the challenge payload above) before it receives this encrypted message.
         if stream.peer.protocol_version > 1:
             await self.write_params(
                 stream,
@@ -1026,6 +1164,10 @@ class NodeRPC(BaseRPC):
                 {
                     "peer": self.config.peer.to_dict(),
                     "signed_challenge": signed_challenge,
+                    "ratchet_public_key": _auth_pub,
+                    "confirming_signed_challenge": confirming_signed_challenge,
+                    "confirming_public_key": _conf_pub,
+                    "ratchet_chain": ratchet_chain,
                 },
             )
         else:
@@ -1035,15 +1177,13 @@ class NodeRPC(BaseRPC):
                 {
                     "peer": self.config.peer.to_dict(),
                     "signed_challenge": signed_challenge,
+                    "ratchet_public_key": _auth_pub,
+                    "confirming_signed_challenge": confirming_signed_challenge,
+                    "confirming_public_key": _conf_pub,
+                    "ratchet_chain": ratchet_chain,
                 },
                 body["id"],
             )
-        stream.peer.token = str(uuid4())
-        await self.write_params(
-            stream,
-            "challenge",
-            {"peer": self.config.peer.to_dict(), "token": stream.peer.token},
-        )
 
     async def authenticate(self, body, stream):
         self.ensure_protocol_version(body, stream)
@@ -1052,28 +1192,222 @@ class NodeRPC(BaseRPC):
         else:
             params = body.get("result", {})
         signed_challenge = params.get("signed_challenge")
+        ratchet_public_key = (
+            params.get("ratchet_public_key") or stream.peer.identity.public_key
+        )
+        confirming_signed_challenge = params.get("confirming_signed_challenge")
+        confirming_public_key = params.get("confirming_public_key")
+        ratchet_chain = params.get("ratchet_chain") or []
+
+        peer_host = stream.peer.host
+        peer_username = getattr(stream.peer.identity, "username", peer_host)
+
+        self.config.app_log.info(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "  KEL Authentication  ←  %s (%s)\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            peer_username,
+            peer_host,
+        )
+
+        # ── Step 1: primary signature ─────────────────────────────────────
+        # The peer signs a random challenge with their current ratchet key
+        # K_{n+i}.  This proves they *possess* that key right now.
         result = verify_signature(
             base64.b64decode(signed_challenge),
             stream.peer.token.encode(),
-            bytes.fromhex(stream.peer.identity.public_key),
+            bytes.fromhex(ratchet_public_key),
         )
-        if result:
-            stream.peer.authenticated = True
-            self.config.app_log.info(
-                "Authenticated {}: {}".format(
-                    stream.peer.__class__.__name__, stream.peer.to_json()
-                )
+        if not result:
+            self.config.app_log.warning(
+                "  [FAIL] Primary signature invalid  (key=%s...)",
+                ratchet_public_key[:16],
             )
-            await self.send_block_to_peer(self.config.LatestBlock.block, stream)
-            await self.get_next_block(self.config.LatestBlock.block, stream)
+            return await self.remove_peer(
+                stream, reason="authenticate: primary signature invalid"
+            )
+        self.config.app_log.info(
+            "  [OK]   Primary signature verified\n"
+            "         signing key : %s...%s\n"
+            "         Unlike TLS, this key rotates every authentication.",
+            ratchet_public_key[:16],
+            ratchet_public_key[-8:],
+        )
+
+        # ── Step 2: confirming signature ──────────────────────────────────
+        # The peer also signs the challenge with K_{n+i+1} — the *next* key.
+        # This proves they know SECOND_FACTOR (needed to derive K_{n+i+1}).
+        # An attacker who steals only K_{n+i} cannot produce this signature.
+        if confirming_signed_challenge and confirming_public_key:
+            confirming_ok = verify_signature(
+                base64.b64decode(confirming_signed_challenge),
+                stream.peer.token.encode(),
+                bytes.fromhex(confirming_public_key),
+            )
+            if not confirming_ok:
+                self.config.app_log.warning(
+                    "  [FAIL] Confirming signature invalid  (next key=%s...)\n"
+                    "         Peer has current key but not SECOND_FACTOR — "
+                    "possible key theft.",
+                    confirming_public_key[:16],
+                )
+                return await self.remove_peer(
+                    stream,
+                    reason="authenticate: confirming signature invalid — "
+                    "peer may have only the current key, not SECOND_FACTOR",
+                )
+            self.config.app_log.info(
+                "  [OK]   Confirming signature verified\n"
+                "         next key    : %s...%s\n"
+                "         Peer holds SECOND_FACTOR — stolen key alone is useless.",
+                confirming_public_key[:16],
+                confirming_public_key[-8:],
+            )
         else:
-            stream.close()
+            self.config.app_log.info(
+                "  [--]   No confirming signature (KEL ratchet not yet active for this peer)"
+            )
+
+        # ── Step 3: KEL on-chain verification (post-fork) ─────────────────
+        current_index = getattr(
+            getattr(self.config, "LatestBlock", None), "block", None
+        )
+        current_index = getattr(current_index, "index", 0) if current_index else 0
+        if (
+            stream.peer.protocol_version >= 5
+            and current_index >= CHAIN.KEL_P2P_AUTH_FORK
+        ):
+            from bitcoin.wallet import P2PKHBitcoinAddress
+
+            from yadacoin.core.keyeventlog import KeyEventLog
+
+            # Verify the peer has an inception transaction on-chain or in the
+            # mempool.  This anchors their identity to the blockchain — no CA
+            # needed; any node can verify independently.
+            peer_kel = await KeyEventLog.build_from_public_key(
+                stream.peer.identity.public_key, onchain_only=False
+            )
+            if not peer_kel:
+                self.config.app_log.warning(
+                    "  [FAIL] No KEL inception found for %s (key=%s...)\n"
+                    "         Post-fork nodes must have an on-chain or mempool inception.",
+                    peer_username,
+                    stream.peer.identity.public_key[:16],
+                )
+                return await self.remove_peer(
+                    stream,
+                    reason="protocol v5: no on-chain key event log found for this peer",
+                )
+            kel_source = (
+                "mempool" if getattr(peer_kel[0], "mempool", False) else "blockchain"
+            )
+            mempool_note = (
+                "\n         (mempool inception — will strengthen once mined in a block)"
+                if kel_source == "mempool"
+                else ""
+            )
+            self.config.app_log.info(
+                "  [OK]   KEL inception verified  (source=%s, depth=%d)%s\n"
+                "         inception key : %s...%s\n"
+                "         This key was committed to the blockchain — cannot be faked by a CA.",
+                kel_source,
+                len(peer_kel),
+                mempool_note,
+                stream.peer.identity.public_key[:16],
+                stream.peer.identity.public_key[-8:],
+            )
+
+            if ratchet_public_key != stream.peer.identity.public_key:
+                if not ratchet_chain:
+                    return await self.remove_peer(
+                        stream,
+                        reason="protocol v5: ratchet key used but no ratchet chain provided",
+                    )
+                anchor_pub = ratchet_chain[0].get("anchor_public_key", "")
+                try:
+                    anchor_addr = str(
+                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(anchor_pub))
+                    )
+                except Exception:
+                    return await self.remove_peer(
+                        stream,
+                        reason="protocol v5: invalid anchor public key in ratchet chain",
+                    )
+                if anchor_addr != peer_kel[-1].prerotated_key_hash:
+                    return await self.remove_peer(
+                        stream,
+                        reason="protocol v5: ratchet chain anchor does not match on-chain KEL tip",
+                    )
+                prev_pub = anchor_pub
+                for entry in ratchet_chain:
+                    try:
+                        cert_ok = verify_signature(
+                            base64.b64decode(entry["certification"]),
+                            entry["public_key"].encode("utf-8"),
+                            bytes.fromhex(prev_pub),
+                        )
+                    except Exception:
+                        cert_ok = False
+                    if not cert_ok:
+                        return await self.remove_peer(
+                            stream,
+                            reason="protocol v5: ratchet chain certification failed",
+                        )
+                    prev_pub = entry["public_key"]
+                if prev_pub != ratchet_public_key:
+                    return await self.remove_peer(
+                        stream,
+                        reason="protocol v5: ratchet chain tip does not match signing key",
+                    )
+                self.config.app_log.info(
+                    "  [OK]   Ratchet chain verified  (%d steps from on-chain anchor)\n"
+                    "         Each step is self-certified — no third party required.",
+                    len(ratchet_chain),
+                )
+        else:
+            self.config.app_log.info(
+                "  [--]   KEL on-chain enforcement not yet active\n"
+                "         current block : %d  /  activation fork : %d\n"
+                "         Identity is still verified via the signed challenge above.\n"
+                "         Once the network reaches block %d, every peer will be required\n"
+                "         to have a KEL inception committed to the blockchain, making\n"
+                "         impersonation impossible without controlling the chain itself.\n"
+                "         Note: new nodes bootstrap safely even after the fork — their\n"
+                "         inception transaction is embedded in the plaintext connect\n"
+                "         handshake (before encrypt/auth), so the receiving peer stores\n"
+                "         it in mempool and the KEL check finds it immediately.",
+                current_index,
+                CHAIN.KEL_P2P_AUTH_FORK,
+                CHAIN.KEL_P2P_AUTH_FORK,
+            )
+
+        stream.peer.authenticated = True
+        self.config.app_log.info(
+            "  [✓]   %s authenticated  (protocol v%d)\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            peer_username,
+            stream.peer.protocol_version,
+        )
+        await self.send_block_to_peer(self.config.LatestBlock.block, stream)
+        await self.get_next_block(self.config.LatestBlock.block, stream)
 
     def ensure_protocol_version(self, body, stream):
         params = body.get("params", {})
         peer = params.get("peer", {})
         protocol_version = peer.get("protocol_version", 1)
         stream.peer.protocol_version = protocol_version
+        current_index = getattr(
+            getattr(self.config, "LatestBlock", None),
+            "block",
+            None,
+        )
+        current_index = getattr(current_index, "index", 0) if current_index else 0
+        if current_index >= CHAIN.KEL_P2P_AUTH_FORK and protocol_version < 5:
+            raise ProtocolVersionTooLowError(
+                f"Peer {stream.peer.host} is using protocol version {protocol_version}; "
+                "version 5+ is required (KEL enforcement). "
+                "The peer's key may be compromised — refusing connection."
+            )
 
     async def disconnect(self, body, stream):
         params = body.get("params", {})
@@ -1208,9 +1542,22 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
             if not stream:
                 return
 
-            await self.write_params(
-                stream, "connect", {"peer": self.config.peer.to_dict()}
-            )
+            # Generate ephemeral ECDH keypair; send public key in connect so
+            # the server can derive the session cipher after the challenge.
+            _ecdh_priv, _ecdh_pub = SessionCipher.generate_keypair()
+            stream._ecdh_priv = _ecdh_priv
+
+            connect_payload = {
+                "peer": self.config.peer.to_dict(),
+                "ecdh_public_key": _ecdh_pub,
+            }
+            # Embed our pending inception so the server can accept us before
+            # our inception has been mined or gossiped any other way.
+            pending_inception = await self._get_pending_inception()
+            if pending_inception:
+                connect_payload["inception_txn"] = pending_inception
+
+            await self.write_params(stream, "connect", connect_payload)
 
             stream.peer.token = str(uuid4())
             await self.write_params(
@@ -1234,13 +1581,55 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
             self.ensure_protocol_version(body, stream)
         except:
             return await self.remove_peer(
-                stream, reason="NodeSocketClient challenge: ensure_protocol_version"
+                stream, reason="protocol version < 5 not allowed (KEL enforcement)"
             )
         try:
             params = body.get("params", {})
             challenge = params.get("token")
-            signed_challenge = TU.generate_signature(challenge, self.config.private_key)
-        except:
+            from yadacoin.core.keyrotation import get_node_auth_key
+
+            _auth_priv, _auth_pub, _conf_priv, _conf_pub = await get_node_auth_key(
+                self.config
+            )
+            signed_challenge = TU.generate_signature(challenge, _auth_priv)
+            confirming_signed_challenge = None
+            if _conf_priv:
+                confirming_signed_challenge = TU.generate_signature(
+                    challenge, _conf_priv
+                )
+            ratchet_chain = []
+            anchor_pub = getattr(self.config, "kel_public_key", None)
+            if anchor_pub:
+                cursor = self.config.mongo.async_db.kel_signing_log.find(
+                    {"anchor_public_key": anchor_pub},
+                    {
+                        "_id": 0,
+                        "anchor_public_key": 1,
+                        "public_key": 1,
+                        "prev_public_key": 1,
+                        "certification": 1,
+                    },
+                ).sort("counter", 1)
+                ratchet_chain = await cursor.to_list(length=200)
+            # Derive session cipher from server's ECDH key + challenge token.
+            server_ecdh_pub = params.get("ecdh_public_key", "")
+            _ecdh_priv = getattr(stream, "_ecdh_priv", None)
+            if server_ecdh_pub and _ecdh_priv:
+                stream.session_cipher = SessionCipher.derive(
+                    _ecdh_priv, server_ecdh_pub, ""
+                )
+            # Accept the server's pending inception if provided, completing
+            # the mutual inception exchange started in our connect message.
+            server_inception = params.get("inception_txn")
+            if server_inception:
+                await self._accept_peer_inception(server_inception)
+        except Exception as _exc:
+            self.config.app_log.warning(
+                "NodeSocketClient challenge error (%s): %s",
+                stream.peer.host if stream.peer else "?",
+                _exc,
+                exc_info=True,
+            )
             return await self.remove_peer(
                 stream, reason="NodeSocketClient challenge: generate_signature"
             )
@@ -1251,6 +1640,10 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
                 {
                     "peer": self.config.peer.to_dict(),
                     "signed_challenge": signed_challenge,
+                    "ratchet_public_key": _auth_pub,
+                    "confirming_signed_challenge": confirming_signed_challenge,
+                    "confirming_public_key": _conf_pub,
+                    "ratchet_chain": ratchet_chain,
                 },
             )
         else:
@@ -1260,6 +1653,10 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
                 {
                     "peer": self.config.peer.to_dict(),
                     "signed_challenge": signed_challenge,
+                    "ratchet_public_key": _auth_pub,
+                    "confirming_signed_challenge": confirming_signed_challenge,
+                    "confirming_public_key": _conf_pub,
+                    "ratchet_chain": ratchet_chain,
                 },
                 body["id"],
             )

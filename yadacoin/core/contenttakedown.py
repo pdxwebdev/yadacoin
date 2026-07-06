@@ -148,6 +148,8 @@ class ContentTakedownAnnouncement:
     reason_code    : TakedownReasonCode describing why the takedown is requested
     """
 
+    RELATIONSHIP_KEY = "content_takedown"
+
     def __init__(self, transaction_id: str, reason_code, **kwargs):
         if not transaction_id or not isinstance(transaction_id, str):
             raise ValueError("transaction_id is required and must be a string")
@@ -181,9 +183,14 @@ class ContentTakedownAnnouncement:
     @staticmethod
     def from_relationship(relationship: dict) -> "ContentTakedownAnnouncement":
         """Create from the top-level relationship dict {"content_takedown": ...}."""
-        if not isinstance(relationship, dict) or "content_takedown" not in relationship:
+        if (
+            not isinstance(relationship, dict)
+            or ContentTakedownAnnouncement.RELATIONSHIP_KEY not in relationship
+        ):
             raise ValueError("relationship must contain a 'content_takedown' key")
-        return ContentTakedownAnnouncement.from_dict(relationship["content_takedown"])
+        return ContentTakedownAnnouncement.from_dict(
+            relationship[ContentTakedownAnnouncement.RELATIONSHIP_KEY]
+        )
 
     def to_dict(self) -> dict:
         """Serialise for on-chain storage."""

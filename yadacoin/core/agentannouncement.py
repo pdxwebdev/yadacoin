@@ -35,6 +35,8 @@ class AgentAnnouncement:
     version        : semver string (optional, default "1.0")
     """
 
+    RELATIONSHIP_KEY = "agent"
+
     def __init__(
         self,
         identity,

@@ -25,8 +25,11 @@ from yadacoin.core.config import Config
 class Mongo(object):
     def __init__(self):
         self.config = Config()
-        if hasattr(self.config, "mongodb_username") and hasattr(
-            self.config, "mongodb_password"
+        if (
+            hasattr(self.config, "mongodb_username")
+            and hasattr(self.config, "mongodb_password")
+            and self.config.mongodb_username
+            and self.config.mongodb_password
         ):
             try:
                 self.client = MongoClient(self.config.mongodb_host)
@@ -453,8 +456,11 @@ class Mongo(object):
 
         # TODO: add indexes for peers
 
-        if hasattr(self.config, "mongodb_username") and hasattr(
-            self.config, "mongodb_password"
+        if (
+            hasattr(self.config, "mongodb_username")
+            and hasattr(self.config, "mongodb_password")
+            and self.config.mongodb_username
+            and self.config.mongodb_password
         ):
             self.async_client = MotorClient(
                 self.config.mongodb_host,

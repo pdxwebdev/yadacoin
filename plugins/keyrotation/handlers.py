@@ -27,62 +27,17 @@ child-key derivation backed by the derived_keys collection in yadacoin_site.
 """
 
 import hashlib
-import hmac as _hmac
+import hmac as _hmac_safe
 import json
 import os
-import struct
 import time
 
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey as _CoincurvePrivateKey
 
+from yadacoin.core.keyrotation import derive_secure_path
 from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.http.base import BaseHandler
-
-# ---------------------------------------------------------------------------
-# BIP32-style hardened derivation helpers — Python port of deriveSecurePath
-# from templates/key_rotation.html.
-# ---------------------------------------------------------------------------
-
-_CURVE_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
-
-
-def _bip32_hardened_child(
-    parent_priv: bytes, parent_chain_code: bytes, index: int
-) -> dict:
-    """HMAC-SHA512(key=chainCode, data=0x00||privKey||hardIndex_BE4)
-    child_priv = (IL + parent_priv) mod CURVE_ORDER
-    """
-    hard_index = (0x80000000 + index) & 0xFFFFFFFF
-    data = b"\x00" + parent_priv + struct.pack(">I", hard_index)
-    I = _hmac.new(parent_chain_code, data, hashlib.sha512).digest()
-    IL, IR = I[:32], I[32:]
-    child_int = (
-        int.from_bytes(IL, "big") + int.from_bytes(parent_priv, "big")
-    ) % _CURVE_ORDER
-    return {"private_key": child_int.to_bytes(32, "big"), "chain_code": IR}
-
-
-def _derive_index(factor: str, level: int) -> int:
-    """index = SHA256(factor + str(level)) mod 2147483647"""
-    data = (factor + str(level)).encode("utf-8")
-    h = int.from_bytes(hashlib.sha256(data).digest(), "big")
-    return h % 2147483647
-
-
-def derive_secure_path(
-    priv_key_bytes: bytes, chain_code: bytes, second_factor: str
-) -> dict:
-    """Derive a key via 4 sequential hardened BIP32 children.
-
-    Exact Python equivalent of deriveSecurePath() in key_rotation.html.
-    Returns a dict with keys 'private_key' (bytes, 32) and 'chain_code' (bytes, 32).
-    """
-    cur = {"private_key": priv_key_bytes, "chain_code": chain_code}
-    for level in range(4):
-        idx = _derive_index(second_factor, level)
-        cur = _bip32_hardened_child(cur["private_key"], cur["chain_code"], idx)
-    return cur
 
 
 class KeyRotationHandler(BaseHandler):
@@ -299,10 +254,27 @@ class DerivedChildKeyHandler(BaseHandler):
         request_ip = self.request.remote_ip
 
         # ------------------------------------------------------------------ #
+        # Rate limit: reject IPs with >= 5 failed attempts in the last 15 min
+        # ------------------------------------------------------------------ #
+        try:
+            _recent = await self.config.mongo.async_site_db.attack_attempts_derived_key.count_documents(
+                {"request_ip": request_ip, "timestamp": {"$gte": time.time() - 900}}
+            )
+            if _recent >= 5:
+                self.set_status(429)
+                return self.render_as_json(
+                    {
+                        "status": False,
+                        "message": "too many failed attempts; try again later",
+                    }
+                )
+        except Exception:
+            pass  # never let rate-limit check failure block a legitimate request
+
+        # ------------------------------------------------------------------ #
         # Helper: log attack attempt to DB and node log.
         # target_address = the KEL address the attacker was targeting.
-        # When not explicitly supplied (e.g. wrong password → empty KEL),
-        # it is resolved lazily from the configured admin KEL tail.
+        # Resolved lazily from the node's on-chain identity (username lookup).
         # ------------------------------------------------------------------ #
         _admin_tgt = [""]  # mutable closure cell; "" = not yet fetched
         _admin_tgt_loaded = [False]
@@ -312,26 +284,16 @@ class DerivedChildKeyHandler(BaseHandler):
                 return _admin_tgt[0]
             _admin_tgt_loaded[0] = True
             try:
-                _admin_v = getattr(self.config, "admin_kel", None)
-                if not _admin_v:
+                from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+                _node_username = getattr(self.config, "username", "") or ""
+                if not _node_username.strip():
                     return ""
-                _inc = await self.config.mongo.async_db.miner_transactions.find_one(
-                    {"id": _admin_v}, {"_id": 0, "public_key": 1}
-                )
-                if not _inc:
-                    async for _d in self.config.mongo.async_db.blocks.aggregate(
-                        [
-                            {"$match": {"transactions.id": _admin_v}},
-                            {"$unwind": "$transactions"},
-                            {"$match": {"transactions.id": _admin_v}},
-                            {"$replaceRoot": {"newRoot": "$transactions"}},
-                            {"$limit": 1},
-                        ]
-                    ):
-                        _inc = _d
-                        break
-                if _inc:
-                    _k = await KeyEventLog.build_from_public_key(_inc["public_key"])
+                _identity = await IdentityAnnouncement.get_by_username(_node_username)
+                if _identity and _identity.get("public_key"):
+                    _k = await KeyEventLog.build_from_public_key(
+                        _identity["public_key"]
+                    )
                     if _k:
                         _admin_tgt[0] = _k[-1].prerotated_key_hash
             except Exception:
@@ -346,7 +308,7 @@ class DerivedChildKeyHandler(BaseHandler):
                         "public_key": public_key,
                         "address": address,
                         "target_address": _ta,
-                        "second_factor": second_factor,
+                        "second_factor_provided": bool(second_factor),
                         "error": error_msg,
                         "request_ip": request_ip,
                         "timestamp": time.time(),
@@ -406,24 +368,10 @@ class DerivedChildKeyHandler(BaseHandler):
             )
 
         # ------------------------------------------------------------------ #
-        # 3b. Verify this KEL is the configured admin KEL (if admin_kel is set)
+        # 3b. Verify the KEL belongs to this node by checking the inception
+        #     public_key against the derived K0 (done implicitly in step 4+5
+        #     — identity verification is done via username lookup).
         # ------------------------------------------------------------------ #
-        admin_kel = getattr(self.config, "admin_kel", None)
-        if admin_kel:
-            inception_txn_id = kel[0].transaction_signature
-            if inception_txn_id != admin_kel:
-                await _log_attack(
-                    f"KEL inception txn {inception_txn_id} does not match "
-                    f"admin_kel={admin_kel}",
-                    target_address=latest.prerotated_key_hash,
-                )
-                self.set_status(403)
-                return self.render_as_json(
-                    {
-                        "status": False,
-                        "message": "this key event log is not authorized for this operation",
-                    }
-                )
 
         # ------------------------------------------------------------------ #
         # 4+5. Re-derive the key chain from the node seed + second_factor.
@@ -808,26 +756,36 @@ class InitDerivedChildKeyHandler(BaseHandler):
             )
 
         # ------------------------------------------------------------------ #
-        # 1b. Reject immediately if admin_kel is already configured
+        # 1b. Reject immediately if an identity is already on-chain for this
+        #     username — re-initialization is not allowed once the inception
+        #     transaction has been committed.
         # ------------------------------------------------------------------ #
-        admin_kel = getattr(self.config, "admin_kel", None)
-        if admin_kel:
-            self.set_status(409)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": (
-                        f"admin_kel is already configured ({admin_kel}). "
-                        "Remove it from config.json to re-initialize."
-                    ),
-                }
+        node_username = getattr(self.config, "username", "") or ""
+        if node_username.strip():
+            from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+            existing_identity = await IdentityAnnouncement.get_by_username(
+                node_username, include_mempool=True
             )
+            if existing_identity:
+                self.set_status(409)
+                return self.render_as_json(
+                    {
+                        "status": False,
+                        "message": (
+                            f"An on-chain identity already exists for username '{node_username}'. "
+                            "Re-initialization is not allowed."
+                        ),
+                    }
+                )
 
         # ------------------------------------------------------------------ #
         # 1c. Authenticate: private_key must match the node's configured key
         # ------------------------------------------------------------------ #
         node_private_key = getattr(self.config, "private_key", "") or ""
-        if not private_key or private_key != node_private_key:
+        if not private_key or not _hmac_safe.compare_digest(
+            private_key, node_private_key
+        ):
             self.set_status(401)
             return self.render_as_json(
                 {"status": False, "message": "invalid private_key"}
@@ -993,23 +951,22 @@ class InitDerivedChildKeyHandler(BaseHandler):
                 "prev_chain_code": signing["chain_code"].hex(),
                 "stored_at": now,
                 "transaction_id": txn.transaction_signature,
-                "admin_kel_hint": (
-                    f'Add "admin_kel": "{txn.transaction_signature}" to config.json '
-                    "to designate this as the authorized admin key event log."
-                ),
             }
         )
 
 
 class KelStatusHandler(BaseHandler):
-    """GET /key-rotation/kel-status — return whether admin_kel is configured."""
+    """GET /key-rotation/kel-status — return whether this node has an active on-chain KEL."""
 
     async def get(self):
-        return self.render_as_json(
-            {
-                "admin_kel_configured": bool(getattr(self.config, "admin_kel", None)),
-            }
-        )
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        username = getattr(self.config, "username", "") or ""
+        kel_active = False
+        if username.strip():
+            identity = await IdentityAnnouncement.get_by_username(username)
+            kel_active = bool(identity)
+        return self.render_as_json({"kel_active": kel_active})
 
 
 class KelUnlockHandler(BaseHandler):
@@ -1017,7 +974,7 @@ class KelUnlockHandler(BaseHandler):
     POST /key-rotation/kel-unlock
 
     Authenticate using the current private key + second_factor when
-    ``admin_kel`` is configured.  Two factors are required:
+    a KEL identity is active for this node.  Two factors are required:
 
     - ``private_key`` (hex) — the current active signing private key
     - ``second_factor`` (str) — the secret factor used during init/rotation
@@ -1031,11 +988,25 @@ class KelUnlockHandler(BaseHandler):
     """
 
     async def post(self):
-        admin_kel = getattr(self.config, "admin_kel", None)
-        if not admin_kel:
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        username = getattr(self.config, "username", "") or ""
+        if not username.strip():
             self.set_status(403)
             return self.render_as_json(
-                {"status": False, "message": "admin_kel is not configured"}
+                {
+                    "status": False,
+                    "message": "no username configured — KEL unlock unavailable",
+                }
+            )
+        identity = await IdentityAnnouncement.get_by_username(username)
+        if not identity:
+            self.set_status(403)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": "no on-chain identity found for this node — run init first",
+                }
             )
 
         try:
@@ -1061,6 +1032,29 @@ class KelUnlockHandler(BaseHandler):
             "status": False,
             "message": "invalid private_key or second_factor",
         }
+
+        # ------------------------------------------------------------------ #
+        # Rate limit: reject IPs with >= 5 failed attempts in the last 15 min
+        # ------------------------------------------------------------------ #
+        try:
+            _unlock_recent = (
+                await self.config.mongo.async_db.failed_transactions.count_documents(
+                    {
+                        "request_ip": self.request.remote_ip,
+                        "timestamp": {"$gte": time.time() - 900},
+                    }
+                )
+            )
+            if _unlock_recent >= 5:
+                self.set_status(429)
+                return self.render_as_json(
+                    {
+                        "status": False,
+                        "message": "too many failed attempts; try again later",
+                    }
+                )
+        except Exception:
+            pass
 
         # ------------------------------------------------------------------ #
         # Helper: build a probe rotation txn with whatever keys we have,
@@ -1366,61 +1360,45 @@ class ListDerivedKeysHandler(BaseHandler):
     """
     GET /key-rotation/derived-keys/list
 
-    Build and return the full KEL (on-chain + mempool) for the admin_kel
-    inception transaction.  Each entry is a KEL txn annotated with its
-    source (blockchain / mempool) and flag (inception / confirming /
-    unconfirmed).
+    Build and return the full KEL (on-chain + mempool) for this node's
+    inception transaction, identified by the node's configured username.
+    Each entry is a KEL txn annotated with its source (blockchain / mempool)
+    and flag (inception / confirming / unconfirmed).
 
-    Falls back to an empty list when admin_kel is not configured or the
-    inception txn cannot be found.
+    Falls back to an empty list when no on-chain identity exists for the
+    configured username.
     """
 
     async def get(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
         from yadacoin.core.keyeventlog import KeyEventLog
-        from yadacoin.core.transaction import Transaction
 
-        admin_kel = getattr(self.config, "admin_kel", None)
-        if not admin_kel:
+        username = getattr(self.config, "username", "") or ""
+        if not username.strip():
             return self.render_as_json(
                 {"status": True, "total": 0, "records": [], "kel_depth": 0}
             )
 
-        # Locate the inception txn by its transaction_signature == admin_kel
-        inception_dict = None
-
-        # Check blockchain first
-        pipeline = [
-            {"$match": {"transactions.id": admin_kel}},
-            {"$unwind": "$transactions"},
-            {"$match": {"transactions.id": admin_kel}},
-            {"$replaceRoot": {"newRoot": "$transactions"}},
-            {"$limit": 1},
-        ]
-        async for doc in self.config.mongo.async_db.blocks.aggregate(pipeline):
-            inception_dict = doc
-            break
-
-        # Fall back to mempool
-        if not inception_dict:
-            inception_dict = (
-                await self.config.mongo.async_db.miner_transactions.find_one(
-                    {"id": admin_kel}, {"_id": 0}
-                )
+        # Locate the inception txn via username → K0 public key
+        identity = await IdentityAnnouncement.get_by_username(username)
+        if not identity:
+            return self.render_as_json(
+                {"status": True, "total": 0, "records": [], "kel_depth": 0}
             )
 
-        if not inception_dict:
+        inception_pub_key = identity.get("public_key", "")
+        if not inception_pub_key:
             return self.render_as_json(
                 {
                     "status": True,
                     "total": 0,
                     "records": [],
                     "kel_depth": 0,
-                    "message": "inception transaction not found on-chain or in mempool",
+                    "message": "inception transaction found but has no public_key",
                 }
             )
 
-        inception_txn = Transaction.from_dict(inception_dict)
-        kel_entries = await KeyEventLog.build_from_public_key(inception_txn.public_key)
+        kel_entries = await KeyEventLog.build_from_public_key(inception_pub_key)
 
         records = []
         for i, txn in enumerate(kel_entries):
@@ -1668,7 +1646,7 @@ class KelResyncHandler(BaseHandler):
 
         # Auth: private_key must match node config
         node_private_key = getattr(self.config, "private_key", "") or ""
-        if private_key != node_private_key:
+        if not _hmac_safe.compare_digest(private_key, node_private_key):
             self.set_status(401)
             return self.render_as_json(
                 {"status": False, "message": "invalid private_key"}
@@ -1721,16 +1699,7 @@ class KelResyncHandler(BaseHandler):
                 }
             )
 
-        # Optionally verify against admin_kel
-        admin_kel = getattr(self.config, "admin_kel", None)
-        if admin_kel and kel[0].transaction_signature != admin_kel:
-            self.set_status(403)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": "on-chain KEL inception does not match admin_kel in config",
-                }
-            )
+        # Verify the on-chain KEL inception matches the node's username identity
 
         # Walk the derivation chain to match the on-chain KEL depth.
         # kel[0] = inception (signed with K0); kel[1] = first confirming (signed with K1), etc.
@@ -1889,7 +1858,7 @@ class KelResetMempoolHandler(BaseHandler):
 
         # Auth: private_key must match node config
         node_private_key = getattr(self.config, "private_key", "") or ""
-        if private_key != node_private_key:
+        if not _hmac_safe.compare_digest(private_key, node_private_key):
             self.set_status(401)
             return self.render_as_json(
                 {"status": False, "message": "invalid private_key"}

@@ -81,6 +81,7 @@ from yadacoin.core.consensus import Consensus
 from yadacoin.core.crypt import Crypt
 from yadacoin.core.graphutils import GraphUtils
 from yadacoin.core.health import Health
+from yadacoin.core.keyrotation import NodeKeyRotationManager
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.miningpool import MiningPool
 from yadacoin.core.miningpoolpayout import PoolPayer
@@ -105,6 +106,7 @@ from yadacoin.enums.peertypes import PEER_TYPES
 from yadacoin.http.api_docs import API_DOCS_HANDLERS
 from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
+from yadacoin.http.kel_offchain import KEL_OFFCHAIN_HANDLERS
 from yadacoin.http.keyeventlog import KEY_EVENT_LOG_HANDLERS
 from yadacoin.http.node import NODE_HANDLERS
 from yadacoin.http.node_announce import NODE_ANNOUNCE_HANDLERS
@@ -316,6 +318,15 @@ class NodeApplication(Application):
                     del self.config.nodeClient.retry_messages[y]
         except:
             pass
+
+    async def background_kel_checker(self):
+        """Poll for KEL inception being confirmed on-chain; update active signing key."""
+        if not hasattr(self.config, "kel_manager"):
+            return
+        try:
+            await self.config.kel_manager.background_kel_checker()
+        except Exception:
+            self.config.app_log.error(format_exc())
 
     async def background_peers(self):
         """Peers management coroutine. responsible for peers testing and outgoing connections"""
@@ -932,7 +943,7 @@ class NodeApplication(Application):
                     "peer_type": assigned_type,
                     "http_host": self.config.ssl.common_name or self.config.peer_host,
                     "http_port": self.config.ssl.port or self.config.serve_port,
-                    "protocol_version": 4,
+                    "protocol_version": 5,
                     "node_version": self.config.node_version,
                 }
                 if assigned_type == PEER_TYPES.SEED.value:
@@ -1053,6 +1064,11 @@ class NodeApplication(Application):
         if MODES.NODE.value in self.config.modes:
             PeriodicCallback(
                 self.background_status, self.config.status_wait * 1000
+            ).start()
+
+            PeriodicCallback(
+                self.background_kel_checker,
+                NodeKeyRotationManager.POLL_INTERVAL_SECONDS * 1000,
             ).start()
 
             PeriodicCallback(
@@ -1194,6 +1210,7 @@ class NodeApplication(Application):
         self.default_handlers.extend(WEB_HANDLERS)
         self.default_handlers.extend(POOL_HANDLERS)
         self.default_handlers.extend(KEY_EVENT_LOG_HANDLERS)
+        self.default_handlers.extend(KEL_OFFCHAIN_HANDLERS)
         self.default_handlers.extend(API_DOCS_HANDLERS)
         if self.config.peer_type == PEER_TYPES.SERVICE_PROVIDER.value or (
             hasattr(self.config, "activate_peerjs")
@@ -1337,6 +1354,13 @@ class NodeApplication(Application):
         tornado.ioloop.IOLoop.current().run_sync(self.config.LatestBlock.block_checker)
         self.init_consensus()
         self.config.cipher = Crypt(self.config.wif)
+        if MODES.NODE.value in self.config.modes:
+            # Enforce KEL-based key security: node will not start if seed or
+            # SECOND_FACTOR are absent.  Auto-creates inception txn if needed.
+            self.config.kel_manager = NodeKeyRotationManager(self.config)
+            tornado.ioloop.IOLoop.current().run_sync(
+                self.config.kel_manager.startup_check
+            )
         if MODES.NODE.value in self.config.modes:
             # self.config.pyrx = pyrx.PyRX()
             # self.config.pyrx.get_rx_hash(

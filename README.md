@@ -2,6 +2,10 @@
 
 [![Build and Release](https://github.com/pdxwebdev/yadacoin/actions/workflows/main.yml/badge.svg)](https://github.com/pdxwebdev/yadacoin/actions/workflows/main.yml)
 
+> 🔴 **Protocol Version 5 is a breaking upgrade.** All nodes must migrate.
+> See the **[Protocol V5 Upgrade Guide](./docs/protocol_v5_upgrade.md)** for
+> step-by-step instructions including fund migration, Docker, Linux, and Windows.
+
 ## Setup
 
 ### Ubuntu 22/24 install command:
@@ -39,6 +43,51 @@ For testing network behavior and dynamic nodes, use the built-in network simulat
 The simulator is essential for testing dynamic nodes, network partitions, and high-load scenarios before deploying to production.
 
 ## Configuration
+
+### Required environment variables
+
+Starting with protocol version 5, every node requires a second factor secret in
+addition to the `seed` in `config.json`. Set **one** of the following before
+starting the node:
+
+| Variable | Description |
+|---|---|
+| `SECOND_FACTOR_FILE` | **Recommended.** Path to a file containing the secret (e.g. `/run/secrets/yadacoin_sf`). Use a file with mode `400` owned by the node's service account. Works natively with Docker secrets, Kubernetes volume mounts, and systemd `LoadCredential=`. |
+| `SECOND_FACTOR` | Plain environment variable fallback. Convenient for development; avoid committing it to `docker-compose.yml` or shell scripts. Use a `.env` file (in `.gitignore`) instead. |
+
+`SECOND_FACTOR_FILE` takes priority when both are set.
+
+**Examples:**
+
+```bash
+# Linux / macOS — file-based (recommended)
+echo "your_strong_secret" > /etc/yadacoin/second_factor
+chmod 400 /etc/yadacoin/second_factor
+export SECOND_FACTOR_FILE=/etc/yadacoin/second_factor
+
+# Linux / macOS — env var
+export SECOND_FACTOR=your_strong_secret
+
+# Docker — file-based via Docker secrets (docker-compose.yml)
+# secrets:
+#   second_factor:
+#     file: ./secrets/second_factor.txt
+# services:
+#   yadacoin:
+#     environment:
+#       - SECOND_FACTOR_FILE=/run/secrets/second_factor
+#     secrets:
+#       - second_factor
+
+# Docker — env var via .env file (never commit this file)
+# .env:  SECOND_FACTOR=your_strong_secret
+# docker-compose.yml:  environment: [SECOND_FACTOR=${SECOND_FACTOR}]
+```
+
+> ⚠️ Store your `seed` (from `config.json`) and your `SECOND_FACTOR` / file in
+> separate secure locations. Both are required to recover your node.
+
+---
 
 - modes
   - type: array

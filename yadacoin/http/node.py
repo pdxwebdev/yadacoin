@@ -485,8 +485,11 @@ class MineBlockHandler(BaseHandler):
                 "",
             )
         )
+        from yadacoin.core.keyrotation import get_node_signing_key
+
+        _kel_priv, _kel_pub, _kel_addr = get_node_signing_key(self.config)
         self.config.mp.block_factory.signature = self.config.BU.generate_signature(
-            self.config.mp.block_factory.hash, self.config.private_key
+            self.config.mp.block_factory.hash, _kel_priv
         )
         await self.config.mp.block_factory.verify()
         await self.config.mongo.async_db.blocks.insert_one(
