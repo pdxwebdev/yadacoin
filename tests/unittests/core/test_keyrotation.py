@@ -11,7 +11,6 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
-import json
 import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
@@ -31,6 +30,7 @@ def _make_config(
     kel_private_key=None,
     kel_public_key=None,
     kel_address=None,
+    kel_chain_code=None,
     config_path=None,
     modes=None,
     username="testnode",
@@ -43,6 +43,7 @@ def _make_config(
     cfg.kel_private_key = kel_private_key
     cfg.kel_public_key = kel_public_key
     cfg.kel_address = kel_address
+    cfg.kel_chain_code = kel_chain_code
     cfg.config_path = config_path
     cfg.modes = modes or []
     cfg.username = username
@@ -206,43 +207,6 @@ class TestGetNodeAuthKey(AsyncTestCase):
         self.assertEqual(priv, "privhex")
         self.assertEqual(pub, "pubhex")
         manager.advance_auth_ratchet.assert_awaited_once()
-
-
-# ---------------------------------------------------------------------------
-# save_config
-# ---------------------------------------------------------------------------
-
-
-class TestSaveConfig(unittest.TestCase):
-    def test_no_config_path_logs_warning(self):
-        from yadacoin.core.keyrotation import save_config
-
-        cfg = _make_config()
-        save_config(cfg)
-        cfg.app_log.warning.assert_called_once()
-
-    def test_writes_nothing_extra_to_file(self):
-        from yadacoin.core.keyrotation import save_config
-
-        cfg = _make_config(config_path="/fake/config.json")
-        on_disk = {"network": "mainnet"}
-        m = mock_open(read_data=json.dumps(on_disk))
-        with patch("builtins.open", m):
-            with patch("json.load", return_value=dict(on_disk)):
-                with patch("json.dump") as mock_dump:
-                    save_config(cfg)
-        mock_dump.assert_called_once()
-        written = mock_dump.call_args[0][0]
-        # verify nothing KEL-specific is written
-        self.assertNotIn("admin_kel", written)
-
-    def test_io_error_logs_error(self):
-        from yadacoin.core.keyrotation import save_config
-
-        cfg = _make_config(config_path="/fake/config.json")
-        with patch("builtins.open", side_effect=IOError("disk full")):
-            save_config(cfg)
-        cfg.app_log.error.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -793,22 +757,6 @@ class TestTryFinalise(AsyncTestCase):
         mock_update.assert_called_once()
         self.assertTrue(mgr._inception_complete)
 
-    async def test_no_save_config_called(self):
-        """save_config must not call json.dump with any KEL-specific fields."""
-        from yadacoin.core.keyrotation import NodeKeyRotationManager
-
-        cfg = _make_config()
-        mgr = NodeKeyRotationManager(cfg)
-
-        mock_entry = MagicMock()
-        mock_entry.transaction_signature = "INCEPTION_ID"
-
-        with patch("yadacoin.core.keyrotation.save_config") as mock_save:
-            with patch.object(mgr, "_update_active_kel_key"):
-                await mgr._try_finalise([mock_entry], {}, "sf")
-
-        mock_save.assert_not_called()
-
 
 # ---------------------------------------------------------------------------
 # advance_auth_ratchet
@@ -826,7 +774,7 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
         self.assertEqual(priv, cfg.private_key)
         self.assertEqual(pub, cfg.public_key)
 
-    async def test_no_second_factor_returns_legacy(self):
+    async def test_no_second_factor_calls_fatal(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
         cfg = _make_config(
@@ -837,21 +785,31 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
 
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("SECOND_FACTOR", None)
-            priv, pub, *_ = await mgr.advance_auth_ratchet()
-
-        self.assertEqual(priv, cfg.private_key)
+            with self.assertRaises(SystemExit):
+                await mgr.advance_auth_ratchet()
 
     async def test_derives_next_key_and_logs(self):
-        from yadacoin.core.keyrotation import NodeKeyRotationManager
+        import hashlib
+        import hmac as _hmac
+
+        from yadacoin.core.keyrotation import NodeKeyRotationManager, derive_secure_path
 
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
         pub_hex = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
-        cfg = _make_config(kel_private_key=priv_hex, kel_public_key=pub_hex)
-        cfg.mongo.async_db.kel_signing_log.insert_one = AsyncMock()
+        # Use derive_secure_path to get a proper BIP32 chain code for the test key.
+        _cc = _hmac.new(bytes.fromhex(priv_hex), b"test-cc", hashlib.sha256).digest()
+        _kn = derive_secure_path(bytes.fromhex(priv_hex), _cc, "mysecret")
+        cc_hex = _kn["chain_code"].hex()
+        cfg = _make_config(
+            kel_private_key=priv_hex, kel_public_key=pub_hex, kel_chain_code=cc_hex
+        )
+        cfg.mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
+        cfg.mongo.async_db.key_event_log.replace_one = AsyncMock()
         mgr = NodeKeyRotationManager(cfg)
         mgr._second_factor = "mysecret"
 
-        priv_out, pub_out, conf_priv, conf_pub = await mgr.advance_auth_ratchet()
+        with patch("yadacoin.core.transaction.Config", return_value=cfg):
+            priv_out, pub_out, conf_priv, conf_pub = await mgr.advance_auth_ratchet()
 
         # Current key (priv_out) is the anchor kel key — it signs the challenge
         self.assertEqual(priv_out, priv_hex)
@@ -862,22 +820,32 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
         self.assertNotEqual(conf_pub, pub_hex)
         # Counter incremented
         self.assertEqual(mgr._auth_counter, 1)
-        cfg.mongo.async_db.kel_signing_log.insert_one.assert_awaited_once()
+        cfg.mongo.async_db.key_event_log.replace_one.assert_awaited_once()
 
     async def test_db_error_does_not_raise(self):
-        from yadacoin.core.keyrotation import NodeKeyRotationManager
+        import hashlib
+        import hmac as _hmac
+
+        from yadacoin.core.keyrotation import NodeKeyRotationManager, derive_secure_path
 
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
         pub_hex = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
-        cfg = _make_config(kel_private_key=priv_hex, kel_public_key=pub_hex)
-        cfg.mongo.async_db.kel_signing_log.insert_one = AsyncMock(
+        _cc = _hmac.new(bytes.fromhex(priv_hex), b"test-cc", hashlib.sha256).digest()
+        _kn = derive_secure_path(bytes.fromhex(priv_hex), _cc, "mysecret")
+        cc_hex = _kn["chain_code"].hex()
+        cfg = _make_config(
+            kel_private_key=priv_hex, kel_public_key=pub_hex, kel_chain_code=cc_hex
+        )
+        cfg.mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
+        cfg.mongo.async_db.key_event_log.replace_one = AsyncMock(
             side_effect=Exception("db error")
         )
         mgr = NodeKeyRotationManager(cfg)
         mgr._second_factor = "mysecret"
 
         # Should not raise
-        priv_out, pub_out, *_ = await mgr.advance_auth_ratchet()
+        with patch("yadacoin.core.transaction.Config", return_value=cfg):
+            priv_out, pub_out, *_ = await mgr.advance_auth_ratchet()
         self.assertIsNotNone(priv_out)
 
     async def test_interval_triggers_reanchor(self):
@@ -886,7 +854,7 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
         pub_hex = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
         cfg = _make_config(kel_private_key=priv_hex, kel_public_key=pub_hex)
-        cfg.mongo.async_db.kel_signing_log.insert_one = AsyncMock()
+        cfg.mongo.async_db.key_event_log.replace_one = AsyncMock()
         mgr = NodeKeyRotationManager(cfg)
         mgr._second_factor = "mysecret"
         # Seed counter so the NEXT call hits the interval
@@ -898,8 +866,9 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
         }
         mgr._auth_ratchet_pub = pub_hex
 
-        with patch.object(mgr, "_queue_reanchor", new=AsyncMock()) as mock_anchor:
-            await mgr.advance_auth_ratchet()
+        with patch("yadacoin.core.transaction.Config", return_value=cfg):
+            with patch.object(mgr, "_queue_reanchor", new=AsyncMock()) as mock_anchor:
+                await mgr.advance_auth_ratchet()
 
         mock_anchor.assert_awaited_once()
 
@@ -909,7 +878,7 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
         pub_hex = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
         cfg = _make_config(kel_private_key=priv_hex, kel_public_key=pub_hex)
-        cfg.mongo.async_db.kel_signing_log.insert_one = AsyncMock()
+        cfg.mongo.async_db.key_event_log.replace_one = AsyncMock()
         mgr = NodeKeyRotationManager(cfg)
         mgr._second_factor = "mysecret"
         mgr._auth_counter = mgr.OFFCHAIN_ANCHOR_INTERVAL - 1
@@ -919,11 +888,110 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
         }
         mgr._auth_ratchet_pub = pub_hex
 
-        with patch.object(
-            mgr, "_queue_reanchor", new=AsyncMock(side_effect=Exception("boom"))
+        with patch("yadacoin.core.transaction.Config", return_value=cfg):
+            with patch.object(
+                mgr, "_queue_reanchor", new=AsyncMock(side_effect=Exception("boom"))
+            ):
+                priv_out, pub_out, *_ = await mgr.advance_auth_ratchet()
+        self.assertIsNotNone(priv_out)
+
+    async def test_init_restores_from_tip(self):
+        """When key_event_log has a prior tip, ratchet is fast-forwarded to it."""
+        import hashlib
+        import hmac as _hmac
+
+        from yadacoin.core.keyrotation import NodeKeyRotationManager, derive_secure_path
+
+        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        pub_hex = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
+        _cc = _hmac.new(bytes.fromhex(priv_hex), b"test-cc", hashlib.sha256).digest()
+        _base = derive_secure_path(bytes.fromhex(priv_hex), _cc, "mysecret")
+        cc_hex = _base["chain_code"].hex()
+
+        # Simulate 2 prior steps stored in key_event_log
+        from bitcoin.wallet import P2PKHBitcoinAddress
+        from coincurve import PrivateKey as _CK
+
+        _step1 = derive_secure_path(
+            _base["private_key"], _base["chain_code"], "mysecret"
+        )
+        _step2 = derive_secure_path(
+            _step1["private_key"], _step1["chain_code"], "mysecret"
+        )
+        _step2_pub = _CK(_step2["private_key"]).public_key.format(compressed=True)
+        _step2_addr = str(P2PKHBitcoinAddress.from_pubkey(_step2_pub))
+
+        cfg = _make_config(
+            kel_private_key=priv_hex, kel_public_key=pub_hex, kel_chain_code=cc_hex
+        )
+        cfg.mongo.async_db.key_event_log.find_one = AsyncMock(
+            return_value={
+                "counter": 2,
+                "public_key_hash": _step2_addr,
+            }
+        )
+        cfg.mongo.async_db.key_event_log.replace_one = AsyncMock()
+        mgr = NodeKeyRotationManager(cfg)
+        mgr._second_factor = "mysecret"
+
+        with patch("yadacoin.core.transaction.Config", return_value=cfg):
+            await mgr.advance_auth_ratchet()
+
+        # Counter should start from restored tip (2) + 1 advance = 3
+        self.assertEqual(mgr._auth_counter, 3)
+        # Ratchet key must have been initialized (not None)
+        self.assertIsNotNone(mgr._auth_ratchet_key)
+
+    async def test_init_legacy_no_chain_code_uses_k0(self):
+        """Without kel_chain_code, ratchet is derived from _k0."""
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        pub_hex = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
+        # kel_chain_code NOT set → legacy derivation path
+        cfg = _make_config(kel_private_key=priv_hex, kel_public_key=pub_hex)
+        cfg.kel_chain_code = None
+        cfg.mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
+        cfg.mongo.async_db.key_event_log.replace_one = AsyncMock()
+
+        mgr = NodeKeyRotationManager(cfg)
+        mgr._second_factor = "mysecret"
+        mgr._k0 = {
+            "private_key": bytes.fromhex(priv_hex),
+            "chain_code": bytes.fromhex(priv_hex),
+        }
+
+        # Return an identity with a public_key so the _k0_pub branch is exercised.
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username",
+            new=AsyncMock(return_value={"public_key": pub_hex}),
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+            new=AsyncMock(return_value=[MagicMock()]),
+        ), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
         ):
             priv_out, pub_out, *_ = await mgr.advance_auth_ratchet()
+
         self.assertIsNotNone(priv_out)
+        self.assertIsNotNone(cfg.kel_chain_code)
+
+    async def test_init_no_chain_code_no_k0_calls_fatal(self):
+        """Without kel_chain_code and without _k0, _fatal is called."""
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        pub_hex = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
+        cfg = _make_config(kel_private_key=priv_hex, kel_public_key=pub_hex)
+        cfg.kel_chain_code = None
+        cfg.mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
+
+        mgr = NodeKeyRotationManager(cfg)
+        mgr._second_factor = "mysecret"
+        # _k0 is None → can't derive chain code → fatal
+
+        with self.assertRaises(SystemExit):
+            await mgr.advance_auth_ratchet()
 
 
 # ---------------------------------------------------------------------------
@@ -1453,67 +1521,3 @@ class TestSweepLegacyToKel(AsyncTestCase):
                 await mgr._sweep_legacy_to_kel(sweep_target="1KEL", total=1.0)
 
         cfg.app_log.warning.assert_called()
-
-
-# ---------------------------------------------------------------------------
-# _update_active_kel_key — ratchet log pruning
-# ---------------------------------------------------------------------------
-
-
-class TestUpdateActiveKelKey(unittest.TestCase):
-    def test_prunes_old_anchor_when_key_changes(self):
-        """When kel_public_key changes, old anchor entries are pruned."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        from yadacoin.core.keyrotation import NodeKeyRotationManager
-
-        priv_bytes = bytes.fromhex(
-            "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
-        )
-        cfg = _make_config()
-        cfg.kel_public_key = "OLD_PUB"  # pre-existing anchor
-        cfg.mongo.async_db.kel_signing_log.delete_many = AsyncMock()
-        mgr = NodeKeyRotationManager(cfg)
-
-        mock_entry = MagicMock()
-        mock_entry.transaction_signature = "TXNID"
-        mock_entry.mempool = False
-
-        with patch("asyncio.ensure_future") as mock_ef:
-            mgr._update_active_kel_key(
-                [mock_entry],
-                {"private_key": priv_bytes, "chain_code": priv_bytes},
-                "sf",
-            )
-
-        # ensure_future was called with the prune coroutine
-        mock_ef.assert_called_once()
-
-    def test_no_prune_when_key_unchanged(self):
-        """When old and new kel_public_key are the same, no prune is scheduled."""
-        from unittest.mock import patch
-
-        from coincurve import PrivateKey as CK
-
-        from yadacoin.core.keyrotation import NodeKeyRotationManager, derive_secure_path
-
-        priv_bytes = bytes.fromhex(
-            "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
-        )
-        k0 = {"private_key": priv_bytes, "chain_code": priv_bytes}
-        # Compute what K1 will be (depth=1 entry in kel)
-        k1 = derive_secure_path(priv_bytes, priv_bytes, "sf")
-        k1_pub = CK(k1["private_key"]).public_key.format(compressed=True).hex()
-
-        cfg = _make_config()
-        cfg.kel_public_key = k1_pub  # already at the new value
-        mgr = NodeKeyRotationManager(cfg)
-
-        mock_entry = MagicMock()
-        mock_entry.transaction_signature = "TXNID"
-        mock_entry.mempool = False
-
-        with patch("asyncio.ensure_future") as mock_ef:
-            mgr._update_active_kel_key([mock_entry], k0, "sf")
-
-        mock_ef.assert_not_called()

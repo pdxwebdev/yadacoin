@@ -48,7 +48,7 @@ Off-chain auth ratchet (Phase 1)
 P2P challenge signatures use an off-chain ratchet derived from the on-chain
 anchor key K_n.  Each auth event:
   1. Derives the next ratchet key K_{n+i} from K_{n+i-1}
-  2. Stores a self-certifying entry in ``kel_signing_log`` (main DB):
+  2. Stores a self-certifying entry in ``key_event_log`` (main DB):
        { counter, anchor_public_key, public_key, prev_public_key,
          certification, purpose, timestamp }
   3. Returns K_{n+i} for the caller to sign with
@@ -63,7 +63,6 @@ KEL forward by OFFCHAIN_ANCHOR_INTERVAL steps.
 
 import hashlib
 import hmac as _hmac
-import json
 import os
 import struct
 import sys
@@ -170,31 +169,6 @@ async def get_node_auth_key(config) -> tuple:
     return await manager.advance_auth_ratchet()
 
 
-def save_config(config) -> None:
-    """Write the current Config state back to config.json.
-
-    Only fields already present in the on-disk JSON are updated; sensitive
-    fields (private_key, wif, seed, xprv) are preserved as-is.
-    The on-chain identity announcement is the canonical anchor.
-    """
-    config_path = getattr(config, "config_path", None)
-    if not config_path:
-        config.app_log.warning(
-            "NodeKeyRotationManager: config_path not set; cannot save config.json"
-        )
-        return
-    try:
-        with open(config_path, "r") as f:
-            on_disk = json.load(f)
-        # Nothing to merge for now — identity is anchored on-chain
-        with open(config_path, "w") as f:
-            json.dump(on_disk, f, indent=4)
-    except Exception as exc:
-        config.app_log.error(
-            "NodeKeyRotationManager: failed to save config.json: %s", exc
-        )
-
-
 # ---------------------------------------------------------------------------
 # Node KEL lifecycle manager
 # ---------------------------------------------------------------------------
@@ -225,10 +199,12 @@ class NodeKeyRotationManager:
         self._k0: dict | None = None
         self._second_factor: str = ""
         # Off-chain auth ratchet state.
-        # _auth_ratchet_key: the last key written to kel_signing_log (init from K_n)
+        # _auth_ratchet_key: the last key written to key_event_log (init from K_n)
         self._auth_ratchet_key: dict | None = None  # {private_key, chain_code}
         self._auth_ratchet_pub: str = ""  # hex pub key of current ratchet tip
         self._auth_counter: int = 0  # off-chain events since last re-anchor
+        # prev_public_key_hash for the next ratchet transaction (set when KEL is activated)
+        self._auth_ratchet_prev_pkh: str = ""
 
     # ------------------------------------------------------------------
     # Public entry points
@@ -470,41 +446,95 @@ class NodeKeyRotationManager:
 
         Each step:
         1. Derives K_{n+i+1} from K_{n+i} using ``derive_secure_path``
-        2. Writes a self-certifying entry to ``kel_signing_log`` (main DB):
-             K_{n+i} signs K_{n+i+1}'s public key so verifiers can walk the
-             chain without knowing SECOND_FACTOR
-        3. Increments the off-chain counter; triggers ``_queue_reanchor``
+        2. Creates a zero-value KEL rotation transaction and submits it to the
+           mempool.  These transactions propagate via normal newtxn gossip and
+           are available for verifiers to look up by public_key.  Over time
+           miners pick them up and they become on-chain confirmations.
+        3. Increments the counter; triggers ``_queue_reanchor``
            every OFFCHAIN_ANCHOR_INTERVAL events
         """
         config = self.config
 
-        # Initialise ratchet from current on-chain anchor key if not yet set
-        if self._auth_ratchet_key is None:
-            kel_priv = getattr(config, "kel_private_key", None)
-            kel_pub = getattr(config, "kel_public_key", None)
-            if not kel_priv or not kel_pub:
-                # KEL not yet active — fall back to legacy key (no confirming sig)
-                return config.private_key, config.public_key, None, None
-            # Bootstrap: derive the initial chain code independently from the
-            # private key using HKDF so the chain code cannot be inferred from
-            # knowledge of the public key.
-            _cc = _hmac.new(
-                bytes.fromhex(kel_priv),
-                b"yadacoin-auth-ratchet-chain-code",
-                hashlib.sha256,
-            ).digest()
-            self._auth_ratchet_key = {
-                "private_key": bytes.fromhex(kel_priv),
-                "chain_code": _cc,
-            }
-            self._auth_ratchet_pub = kel_pub
+        # Check for KEL key first — if not active, fall back to legacy immediately.
+        # second_factor is only required when the KEL ratchet is actually in use.
+        kel_priv = getattr(config, "kel_private_key", None)
+        kel_pub = getattr(config, "kel_public_key", None)
+        if not kel_priv or not kel_pub:
+            return config.private_key, config.public_key, None, None
 
         second_factor = self._second_factor or _read_second_factor()
         if not second_factor:
-            return config.private_key, config.public_key, None, None
+            _fatal(
+                "\n"
+                "═══════════════════════════════════════════════════════════════\n"
+                "  FATAL: SECOND_FACTOR is required for P2P authentication but\n"
+                "  is no longer available (was it unset after startup?).\n"
+                "\n"
+                "  Set SECOND_FACTOR or SECOND_FACTOR_FILE and restart.\n"
+                "═══════════════════════════════════════════════════════════════\n"
+            )
+
+        # Initialise ratchet from current on-chain anchor key if not yet set
+        if self._auth_ratchet_key is None:
+            kel_cc = getattr(config, "kel_chain_code", None)
+            if kel_cc:
+                # Use the BIP32 chain code stored alongside the anchor private key.
+                _base_ratchet = {
+                    "private_key": bytes.fromhex(kel_priv),
+                    "chain_code": bytes.fromhex(kel_cc),
+                }
+            else:
+                # Legacy nodes that don't have kel_chain_code yet.
+                if self._k0 and self._second_factor:
+                    _base_ratchet = await self._derive_legacy_base_ratchet(config)
+                else:  # pragma: no cover
+                    _fatal(
+                        "FATAL: kel_chain_code missing and cannot be re-derived "
+                        "(K0 or SECOND_FACTOR not available). Restart with SECOND_FACTOR set."
+                    )
+            # Restore position from key_event_log tip so restarts pick up where
+            # they left off instead of starting over from K_n.
+            # Use K0 pubkey as the stable root identifier — it never changes.
+            _k0_pub_hex = (
+                (
+                    _CoincurvePrivateKey(self._k0["private_key"])
+                    .public_key.format(compressed=True)
+                    .hex()
+                )
+                if self._k0
+                else kel_pub
+            )
+            _tip = await config.mongo.async_db.key_event_log.find_one(
+                {"anchor_public_key": _k0_pub_hex},
+                sort=[("counter", -1)],
+            )
+            # Unconditional init: fast-forward from _base_ratchet by however
+            # many steps are in the tip (0 on first start = fresh anchor).
+            _tip_counter = _tip.get("counter", 0) if _tip else 0
+            _tip_pkh = _tip.get("public_key_hash", "") if _tip else ""
+            _cur = _base_ratchet
+            for _ in range(_tip_counter):
+                _cur = derive_secure_path(
+                    _cur["private_key"], _cur["chain_code"], second_factor
+                )
+            self._auth_ratchet_key = _cur
+            self._auth_ratchet_pub = (
+                kel_pub
+                if not _tip_counter
+                else (
+                    _CoincurvePrivateKey(_cur["private_key"])
+                    .public_key.format(compressed=True)
+                    .hex()
+                )
+            )
+            self._auth_counter = _tip_counter
+            self._auth_ratchet_prev_pkh = _tip_pkh
 
         prev_key = self._auth_ratchet_key
         prev_pub_hex = self._auth_ratchet_pub
+        prev_priv_obj = _CoincurvePrivateKey(prev_key["private_key"])
+        prev_pub_bytes = prev_priv_obj.public_key.format(compressed=True)
+        prev_address = str(P2PKHBitcoinAddress.from_pubkey(prev_pub_bytes))
 
         # Derive next ratchet key (the "confirming" key)
         next_key = derive_secure_path(
@@ -512,37 +542,89 @@ class NodeKeyRotationManager:
         )
         next_priv_obj = _CoincurvePrivateKey(next_key["private_key"])
         next_pub_hex = next_priv_obj.public_key.format(compressed=True).hex()
+        next_pub_bytes = next_priv_obj.public_key.format(compressed=True)
+        next_address = str(P2PKHBitcoinAddress.from_pubkey(next_pub_bytes))
 
-        # Self-certifying entry: prev key signs next key's public key
+        # Derive two-steps-ahead for twice_prerotated_key_hash
+        two_ahead = derive_secure_path(
+            next_key["private_key"], next_key["chain_code"], second_factor
+        )
+        two_ahead_pub = _CoincurvePrivateKey(
+            two_ahead["private_key"]
+        ).public_key.format(compressed=True)
+        two_ahead_address = str(P2PKHBitcoinAddress.from_pubkey(two_ahead_pub))
+
+        from yadacoin.core.transaction import Transaction
         from yadacoin.core.transactionutils import TU
 
-        certification = TU.generate_signature_with_private_key(
-            prev_key["private_key"].hex(), next_pub_hex
+        # anchor_public_key is always K0 — the stable inception key that
+        # identifies this node's entire KEL chain across all re-anchors.
+        anchor_pub = (
+            (
+                _CoincurvePrivateKey(self._k0["private_key"])
+                .public_key.format(compressed=True)
+                .hex()
+            )
+            if self._k0
+            else (getattr(config, "kel_public_key", None) or prev_pub_hex)
         )
 
-        anchor_pub = getattr(config, "kel_public_key", "")
+        ratchet_txn = Transaction(
+            txn_time=int(time.time()),
+            public_key=prev_pub_hex,
+            outputs=[{"to": next_address, "value": 0.0}],
+            inputs=[],
+            fee=0.0,
+            masternode_fee=0.0,
+            version=7,
+            prerotated_key_hash=next_address,
+            twice_prerotated_key_hash=two_ahead_address,
+            public_key_hash=prev_address,
+            prev_public_key_hash=self._auth_ratchet_prev_pkh or "",
+            relationship="",
+            relationship_hash="",
+            rid="",
+            dh_public_key="",
+        )
+        ratchet_txn.hash = await ratchet_txn.generate_hash()
+        ratchet_txn.transaction_signature = TU.generate_signature_with_private_key(
+            prev_key["private_key"].hex(), ratchet_txn.hash
+        )
+
         self._auth_counter += 1
 
         try:
-            await config.mongo.async_db.kel_signing_log.insert_one(
+            # Store in key_event_log (off-chain record) — NOT miner_transactions.
+            # Individual ratchet steps are verified but not mined; only the
+            # periodic anchor transactions (every OFFCHAIN_ANCHOR_INTERVAL steps,
+            # from _queue_reanchor) go into the mempool to be mined.
+            await config.mongo.async_db.key_event_log.replace_one(
+                # Filter by public_key_hash — uniquely identifies this key
+                # position in the chain.  Using the transaction id/signature
+                # would create a new document on every advance because the
+                # signature changes (it's time-stamped).
+                {"public_key_hash": prev_address},
                 {
                     "counter": self._auth_counter,
                     "anchor_public_key": anchor_pub,
-                    "public_key": next_pub_hex,
-                    "prev_public_key": prev_pub_hex,
-                    "certification": certification,
-                    "purpose": "auth",
+                    "id": ratchet_txn.transaction_signature,
+                    "public_key": prev_pub_hex,
+                    "public_key_hash": prev_address,
+                    "prerotated_key_hash": next_address,
+                    "txn": ratchet_txn.to_dict(),
                     "timestamp": time.time(),
-                }
+                },
+                upsert=True,
             )
         except Exception as exc:
             config.app_log.debug(
-                "NodeKeyRotationManager: kel_signing_log write error: %s", exc
+                "NodeKeyRotationManager: key_event_log write error: %s", exc
             )
 
         # Advance ratchet state
         self._auth_ratchet_key = next_key
         self._auth_ratchet_pub = next_pub_hex
+        self._auth_ratchet_prev_pkh = prev_address
 
         # Trigger re-anchor when interval is reached
         if self._auth_counter % self.OFFCHAIN_ANCHOR_INTERVAL == 0:
@@ -560,6 +642,33 @@ class NodeKeyRotationManager:
             next_key["private_key"].hex(),
             next_pub_hex,
         )
+
+    async def _derive_legacy_base_ratchet(self, config) -> dict:
+        """Derive the ratchet base key for legacy nodes that lack kel_chain_code.
+
+        Queries the on-chain KEL to determine the current depth (K_n), derives
+        that key from K0, caches the chain code on config, and returns the dict.
+        """
+        from yadacoin.core.identityannouncement import IdentityAnnouncement as _IA_rc
+        from yadacoin.core.keyeventlog import KeyEventLog as _KEL_rc
+
+        _own = await _IA_rc.get_by_username(
+            getattr(config, "username", "") or "", include_mempool=True
+        )
+        _k0_pub = (_own or {}).get("public_key") or ""
+        _kel = (
+            await _KEL_rc.build_from_public_key(_k0_pub, onchain_only=False)
+            if _k0_pub
+            else []
+        )
+        _depth = len(_kel or [])
+        _cur = self._k0
+        for _ in range(_depth):
+            _cur = derive_secure_path(
+                _cur["private_key"], _cur["chain_code"], self._second_factor
+            )
+        config.kel_chain_code = _cur["chain_code"].hex()
+        return _cur
 
     async def _queue_reanchor(self):
         """Queue an on-chain UNCONFIRMED+CONFIRMING re-anchor pair.
@@ -752,7 +861,7 @@ class NodeKeyRotationManager:
         # username_signature is computed once here with K0 and stored on-chain.
         config = self.config
         username = getattr(config, "username", "") or ""
-        identity_rel = {}
+        identity_rel = ""
         identity_rel_hash = ""
         if username.strip():
             username_sig = TU.generate_deterministic_signature(
@@ -777,10 +886,16 @@ class NodeKeyRotationManager:
                     http_port=http_port,
                     peer_type=peer_type,
                 )
-                identity_rel = announcement.to_string()
+                identity_rel_str = announcement.to_string()
                 identity_rel_hash = (
-                    hashlib.sha256(identity_rel.encode("utf-8")).digest().hex()
+                    hashlib.sha256(identity_rel_str.encode("utf-8")).digest().hex()
                 )
+                # Pass as dict so Transaction stores it as a nested object in
+                # MongoDB, enabling field queries like
+                # {"relationship.identity.username": "..."}.
+                # generate_hash() calls to_string() internally so the hash
+                # still matches.
+                identity_rel = announcement.to_relationship()
             except Exception as exc:
                 config.app_log.warning(
                     "NodeKeyRotationManager: could not build identity announcement: %s",
@@ -850,7 +965,6 @@ class NodeKeyRotationManager:
         """Derive K_n (one step past the last on-chain KEL entry) and store it
         on config so all signing operations can use it immediately."""
         config = self.config
-        old_anchor = getattr(config, "kel_public_key", None)
         cur = k0
         for _ in range(len(kel)):
             cur = derive_secure_path(
@@ -863,8 +977,14 @@ class NodeKeyRotationManager:
         kn_address = str(P2PKHBitcoinAddress.from_pubkey(kn_pub_bytes))
 
         config.kel_private_key = cur["private_key"].hex()
+        config.kel_chain_code = cur["chain_code"].hex()
         config.kel_public_key = kn_pub_hex
         config.kel_address = kn_address
+
+        # Track the previous KEL entry's public_key_hash so ratchet
+        # transactions can set prev_public_key_hash correctly.
+        if kel:
+            self._auth_ratchet_prev_pkh = kel[-1].public_key_hash
 
         config.app_log.info(
             "NodeKeyRotationManager: active KEL signing key updated "
@@ -872,31 +992,6 @@ class NodeKeyRotationManager:
             len(kel),
             kn_address,
         )
-
-        # Prune ratchet log entries whose anchor is now superseded.
-        # Once a new on-chain anchor K_n is confirmed, all off-chain
-        # ratchet entries chaining from the old anchor are redundant —
-        # verifiers can derive K_n directly from the on-chain KEL.
-        # We keep the most-recent OFFCHAIN_ANCHOR_INTERVAL entries as a
-        # grace window for peers that are slightly behind.
-        if old_anchor and old_anchor != kn_pub_hex:
-            try:
-                import asyncio as _asyncio
-
-                async def _prune():  # pragma: no cover
-                    await config.mongo.async_db.kel_signing_log.delete_many(
-                        {"anchor_public_key": old_anchor}
-                    )
-                    config.app_log.debug(
-                        "NodeKeyRotationManager: pruned ratchet log for old anchor %s",
-                        old_anchor,
-                    )
-
-                _asyncio.ensure_future(_prune())
-            except Exception as _exc:  # pragma: no cover
-                config.app_log.debug(
-                    "NodeKeyRotationManager: ratchet prune error: %s", _exc
-                )
 
     async def _check_and_sweep_legacy_funds(self, kel):
         """Sweep UTXOs at the legacy node address (P2PKH of config.public_key)

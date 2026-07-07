@@ -82,7 +82,7 @@ class KelOffchainLogHandler(BaseHandler):
             query["anchor_public_key"] = anchor_pub
 
         cursor = (
-            config.mongo.async_db.kel_signing_log.find(
+            config.mongo.async_db.key_event_log.find(
                 query, {"_id": 0, "anchor_public_key": 0}
             )
             .sort("counter", 1)
