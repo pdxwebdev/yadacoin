@@ -1161,7 +1161,15 @@ class NodeRPC(BaseRPC):
                             }
                         )
                     )
-                    skip_after_counter = (_tip_entry or {}).get("counter", 0)
+                    if _tip_entry:
+                        skip_after_counter = _tip_entry.get("counter") or (
+                            await self.config.mongo.async_db.key_event_log.count_documents(
+                                {
+                                    "anchor_public_key": _k0_pub,
+                                    "_id": {"$lte": _tip_entry["_id"]},
+                                }
+                            )
+                        )
                 cursor = self.config.mongo.async_db.key_event_log.find(
                     {
                         "anchor_public_key": _k0_pub,
@@ -1882,7 +1890,15 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
                             }
                         )
                     )
-                    skip_after_counter = (_srv_tip_entry or {}).get("counter", 0)
+                    if _srv_tip_entry:
+                        skip_after_counter = _srv_tip_entry.get("counter") or (
+                            await self.config.mongo.async_db.key_event_log.count_documents(
+                                {
+                                    "anchor_public_key": _k0_pub2,
+                                    "_id": {"$lte": _srv_tip_entry["_id"]},
+                                }
+                            )
+                        )
                 cursor2 = self.config.mongo.async_db.key_event_log.find(
                     {
                         "anchor_public_key": _k0_pub2,
