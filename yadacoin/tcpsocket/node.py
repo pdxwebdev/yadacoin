@@ -96,19 +96,14 @@ class NodeRPC(BaseRPC):
     async def _get_pending_kel_chain(self) -> list:
         """Return all pending (mempool-only) KEL transactions for this node.
 
-        Includes the inception AND any intermediate anchor/rotation entries
-        that haven't been mined yet.  The peer needs the full unconfirmed
-        portion of the chain to build from K0 up to the current ratchet
-        position — we cannot assume their mempool already contains it.
+        Queries miner_transactions directly for entries whose public_key
+        matches K0 — no need to walk the full blockchain chain.
         """
         manager = getattr(self.config, "kel_manager", None)
         if not manager:
             return []
 
-        # Resolve K0 from the IdentityAnnouncement so we have the correct
-        # inception key (config.kel_public_key is K_n, the current anchor).
         from yadacoin.core.identityannouncement import IdentityAnnouncement
-        from yadacoin.core.keyeventlog import KeyEventLog
 
         username = getattr(self.config, "username", "") or ""
         own_identity = await IdentityAnnouncement.get_by_username(
@@ -120,13 +115,13 @@ class NodeRPC(BaseRPC):
         if not k0_pub:
             return []
 
-        # Build the full chain (on-chain + mempool) and return only the
-        # mempool entries — those are the ones the peer might not have.
-        try:
-            kel = await KeyEventLog.build_from_public_key(k0_pub, onchain_only=False)
-        except Exception:
-            return []
-        return [txn.to_dict() for txn in (kel or []) if getattr(txn, "mempool", False)]
+        # Directly query the mempool for all KEL entries signed by K0.
+        # These are the only entries the peer might not have.
+        docs = await self.config.mongo.async_db.miner_transactions.find(
+            {"public_key": k0_pub, "public_key_hash": {"$exists": True, "$ne": ""}},
+            {"_id": 0},
+        ).to_list(length=None)
+        return docs
 
     async def _accept_peer_kel_chain(self, txn_list: list) -> None:
         """Receive, verify, and store a peer's unconfirmed KEL chain into the
@@ -1370,7 +1365,6 @@ class NodeRPC(BaseRPC):
         from bitcoin.wallet import P2PKHBitcoinAddress
 
         from yadacoin.core.identityannouncement import IdentityAnnouncement as _IApeer
-        from yadacoin.core.keyeventlog import KeyEventLog
         from yadacoin.core.transaction import Transaction as _Txn
 
         check_max_inputs = (
@@ -1449,38 +1443,74 @@ class NodeRPC(BaseRPC):
                     upsert=True,
                 )
 
-        # Now build the full chain as we know it (blockchain + mempool,
-        # including the transactions we just added above).
-        # Use K0 (from the peer's IdentityAnnouncement) not their WIF identity key.
-        # (_peer_k0 was already resolved above before the storage loop.)
-        peer_kel = await KeyEventLog.build_from_public_key(_peer_k0, onchain_only=False)
+        # Find the ratchet anchor: walk key_event_log entries from oldest to
+        # newest and check which is the first that has an on-chain or mempool
+        # parent.  That entry proves the ratchet chain is rooted in a valid KEL
+        # without loading the full blockchain history via build_from_public_key.
+        # Entries older than the anchor are pruned — they are redundant once their
+        # parent chain is confirmed.
+        from yadacoin.core.keyeventlog import KeyEvent as _KE
 
-        # Extend the chain with off-chain ratchet steps from key_event_log.
-        # build_from_public_key only sees blockchain + miner_transactions;
-        # the ratchet steps are stored off-chain and must be appended here
-        # so that the signing-key reachability check below works correctly.
-        # Filter by _peer_k0 (K0 = stable inception key) — anchor_public_key
-        # is always set to K0 so it works across re-anchor cycles.
-        if peer_kel:
-            _kel_cursor = self.config.mongo.async_db.key_event_log.find(
-                {"anchor_public_key": _peer_k0},
-                {"_id": 0, "txn": 1},
-            ).sort("counter", 1)
-            for _entry in await _kel_cursor.to_list(length=None):
-                if "txn" in _entry:
-                    try:
-                        _ratchet_txn = _Txn.from_dict(_entry["txn"])
-                        peer_kel.append(_ratchet_txn)
-                    except Exception:
-                        pass
+        _anchor_key_event = None
+        _anchor_counter = 0
+        if _peer_k0:
+            _kel_chain_docs = (
+                await self.config.mongo.async_db.key_event_log.find(
+                    {"anchor_public_key": _peer_k0},
+                    {"_id": 0},
+                )
+                .sort("counter", 1)
+                .to_list(length=None)
+            )
 
-        if not peer_kel:
-            # No KEL inception found — not on-chain, not in mempool, not in
-            # the ratchet chain just received.  The peer should have embedded
-            # their inception in the plaintext connect message (bootstrap) so
-            # this state should be impossible under normal operation.
+            for _doc in _kel_chain_docs:
+                if "txn" not in _doc:
+                    continue
+                try:
+                    _ratchet_txn = _Txn.from_dict(_doc["txn"])
+                    _ke = _KE(_ratchet_txn)
+                    _parent = (
+                        await _ke.get_onchain_parent() or await _ke.get_mempool_parent()
+                    )
+                    if _parent:
+                        _anchor_key_event = _parent["key_event"]
+                        _anchor_counter = _doc["counter"]
+                        break
+                except Exception:
+                    pass
+
+            # Prune ratchet entries that predate the confirmed anchor
+            if _anchor_counter > 0:
+                await self.config.mongo.async_db.key_event_log.delete_many(
+                    {
+                        "anchor_public_key": _peer_k0,
+                        "counter": {"$lt": _anchor_counter},
+                    }
+                )
+
+        # If no anchor was found via the ratchet chain, check for an inception
+        # directly on-chain or in the mempool (brand-new peer with no ratchet yet).
+        _has_kel = bool(_anchor_key_event)
+        if not _has_kel and _peer_k0:
+            _peer_k0_address = str(
+                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(_peer_k0))
+            )
+            _inception_check = (
+                await self.config.mongo.async_db.miner_transactions.find_one(
+                    {"public_key": _peer_k0, "prev_public_key_hash": ""}
+                )
+                or await self.config.mongo.async_db.blocks.find_one(
+                    {
+                        "transactions.public_key": _peer_k0,
+                        "transactions.prev_public_key_hash": "",
+                    }
+                )
+            )
+            _has_kel = bool(_inception_check)
+
+        if not _has_kel:
             self.config.app_log.warning(
-                "  [FAIL] No KEL inception for %s after processing ratchet chain.\n"
+                "  [FAIL] No KEL anchor or inception for %s.\n"
                 "         Peer must embed their inception in the connect message.",
                 peer_username,
             )
@@ -1488,66 +1518,73 @@ class NodeRPC(BaseRPC):
                 stream,
                 reason="authenticate: no KEL inception found — peer must send inception in connect",
             )
-        else:
-            kel_source = (
-                "mempool" if getattr(peer_kel[0], "mempool", False) else "blockchain"
-            )
-            self.config.app_log.info(
-                "  [OK]   KEL chain verified  (source=%s, depth=%d)\n"
-                "         inception key : %s...%s",
-                kel_source,
-                len(peer_kel),
-                _peer_k0[:16],
-                _peer_k0[-8:],
-            )
 
-            # Cross-check the on-chain username against what the peer claimed.
-            from yadacoin.core.identityannouncement import IdentityAnnouncement as _IA
+        # Username check: _peer_ia was fetched by the claimed username.
+        # Verify its public_key matches K0 so the identity can't be spoofed.
+        _claimed_username = getattr(stream.peer.identity, "username", "")
+        if _peer_ia:
+            _ia_pub_key = (_peer_ia or {}).get("public_key", "")
+            if _ia_pub_key and _peer_k0 and _ia_pub_key != _peer_k0:
+                self.config.app_log.warning(
+                    "  [FAIL] IdentityAnnouncement for '%s' has public_key %s...%s "
+                    "but peer's K0 is %s...%s",
+                    _claimed_username,
+                    _ia_pub_key[:16],
+                    _ia_pub_key[-8:],
+                    _peer_k0[:16],
+                    _peer_k0[-8:],
+                )
+                return await self.remove_peer(
+                    stream,
+                    reason="authenticate: peer username does not match on-chain KEL inception",
+                )
+            if _claimed_username:
+                self.config.app_log.info(
+                    "  [OK]   Username verified: '%s'", _claimed_username
+                )
 
-            inception_txn = peer_kel[0]
-            if isinstance(getattr(inception_txn, "relationship", None), _IA):
-                onchain_username = inception_txn.relationship.username
-                claimed_username = getattr(stream.peer.identity, "username", "")
-                if (
-                    onchain_username
-                    and claimed_username
-                    and onchain_username != claimed_username
-                ):
-                    self.config.app_log.warning(
-                        "  [FAIL] Username mismatch: peer claims '%s' but inception says '%s'",
-                        claimed_username,
-                        onchain_username,
-                    )
-                    return await self.remove_peer(
-                        stream,
-                        reason="authenticate: peer username does not match on-chain KEL inception",
-                    )
-                if onchain_username:
-                    self.config.app_log.info(
-                        "  [OK]   Username verified: '%s'", onchain_username
-                    )
+        _anchor_source = "ratchet" if _anchor_key_event else "inception"
+        self.config.app_log.info(
+            "  [OK]   KEL verified via %s anchor  (ratchet_tip=%d)",
+            _anchor_source,
+            _anchor_counter,
+        )
 
-            # If the peer signed with a ratchet key, verify the full chain
-            # (blockchain + mempool + key_event_log) authorizes the signing key.
-            # A key K_n is authorized iff some prior step pre-committed to it
-            # by setting prerotated_key_hash = K_n.address.=
-            signing_address = str(
-                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ratchet_public_key))
+        # Signing key authorization: check key_event_log first (off-chain ratchet),
+        # then fall back to blocks/mempool (on-chain anchor entries).
+        signing_address = str(
+            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ratchet_public_key))
+        )
+        # Check anchor entry itself
+        anchor_authorized = (
+            _anchor_key_event is not None
+            and getattr(_anchor_key_event.txn, "prerotated_key_hash", "")
+            == signing_address
+        )
+        if not anchor_authorized:
+            # Check off-chain ratchet steps (O(log n) indexed query)
+            kel_authorized = await self.config.mongo.async_db.key_event_log.find_one(
+                {
+                    "anchor_public_key": _peer_k0,
+                    "prerotated_key_hash": signing_address,
+                }
             )
-            if not any(
-                getattr(txn, "prerotated_key_hash", "") == signing_address
-                for txn in peer_kel
-            ):
+            if not kel_authorized:
+                # Check on-chain anchor entries and mempool
+                kel_authorized = await self.config.mongo.async_db.blocks.find_one(
+                    {"transactions.prerotated_key_hash": signing_address}
+                ) or await self.config.mongo.async_db.miner_transactions.find_one(
+                    {"prerotated_key_hash": signing_address}
+                )
+            if not kel_authorized:
                 return await self.remove_peer(
                     stream,
                     reason="authenticate: ratchet signing key is not authorized by the KEL chain",
                 )
-            self.config.app_log.info(
-                "  [OK]   Ratchet key authorized via KEL chain + key_event_log  (depth=%d)\n"
-                "         %d new ratchet step(s) stored.",
-                len(peer_kel),
-                len(ratchet_chain),
-            )
+        self.config.app_log.info(
+            "  [OK]   Ratchet key authorized  (new_steps=%d)",
+            len(ratchet_chain),
+        )
 
         stream.peer.authenticated = True
         self.config.app_log.info(

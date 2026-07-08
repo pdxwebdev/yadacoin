@@ -443,9 +443,19 @@ class Mongo(object):
             name="__kel_pkh",
             unique=True,
         )
+        # Covers: signing key authorization check (anchor + prerotated_key_hash)
+        __kel_anchor_prerotated = IndexModel(
+            [("anchor_public_key", ASCENDING), ("prerotated_key_hash", ASCENDING)],
+            name="__kel_anchor_prerotated",
+        )
         try:
             self.db.key_event_log.create_indexes(
-                [__kel_anchor_counter, __kel_anchor_pkh, __kel_pkh]
+                [
+                    __kel_anchor_counter,
+                    __kel_anchor_pkh,
+                    __kel_pkh,
+                    __kel_anchor_prerotated,
+                ]
             )
         except:
             pass
