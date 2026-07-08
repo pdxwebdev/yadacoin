@@ -1176,7 +1176,7 @@ class NodeRPC(BaseRPC):
                 ).sort("counter", 1)
                 ratchet_chain = [
                     entry["txn"]
-                    for entry in await cursor.to_list(length=200)
+                    for entry in await cursor.to_list(length=None)
                     if "txn" in entry
                 ]
         except Exception as _exc:
@@ -1445,7 +1445,7 @@ class NodeRPC(BaseRPC):
                 {"anchor_public_key": _peer_k0},
                 {"_id": 0, "txn": 1},
             ).sort("counter", 1)
-            for _entry in await _kel_cursor.to_list(length=200):
+            for _entry in await _kel_cursor.to_list(length=None):
                 if "txn" in _entry:
                     try:
                         _ratchet_txn = _Txn.from_dict(_entry["txn"])
@@ -1805,7 +1805,7 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
                 ).sort("counter", 1)
                 ratchet_chain = [
                     entry["txn"]
-                    for entry in await cursor2.to_list(length=200)
+                    for entry in await cursor2.to_list(length=None)
                     if "txn" in entry
                 ]
             # Derive session cipher from server's ECDH key + challenge token.
