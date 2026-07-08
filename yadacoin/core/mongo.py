@@ -219,6 +219,13 @@ class Mongo(object):
             name="__txn_rel_agent",
             sparse=True,
         )
+        _txn_rel_identity_username = IndexModel(
+            [
+                ("transactions.relationship.identity.username", ASCENDING),
+            ],
+            name="__txn_rel_identity_username",
+            sparse=True,
+        )
 
         try:
             self.db.blocks.create_indexes(
@@ -262,6 +269,7 @@ class Mongo(object):
                     __txn_public_key_hash,
                     __txn_prev_public_key_hash,
                     __txn_rel_agent,
+                    _txn_rel_identity_username,
                 ]
             )
         except:
