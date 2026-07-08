@@ -1427,6 +1427,18 @@ class NodeRPC(BaseRPC):
         # - Inception (no prev_public_key_hash) → miner_transactions (gets mined)
         # - Ratchet step → key_event_log (off-chain record, NOT mined individually)
         # Periodic anchor transactions reach miner_transactions via _queue_reanchor.
+        #
+        # Determine the next counter to assign for peer ratchet steps.
+        # Counter is required so the server can later tell the peer which entries
+        # it already has via latest_ratchet_pkh (tip lookup uses sort counter -1).
+        _existing_tip = None
+        if _peer_k0:
+            _existing_tip = await self.config.mongo.async_db.key_event_log.find_one(
+                {"anchor_public_key": _peer_k0},
+                sort=[("counter", -1)],
+            )
+        _next_counter = (_existing_tip or {}).get("counter", 0) + 1
+
         for txn in parsed_ratchet:
             is_inception = not txn.prev_public_key_hash
             if is_inception:
@@ -1437,6 +1449,7 @@ class NodeRPC(BaseRPC):
                 await self.config.mongo.async_db.key_event_log.replace_one(
                     {"public_key_hash": txn.public_key_hash},
                     {
+                        "counter": _next_counter,
                         "id": txn.transaction_signature,
                         "anchor_public_key": _peer_k0,  # always K0
                         "public_key": txn.public_key,
@@ -1447,6 +1460,7 @@ class NodeRPC(BaseRPC):
                     },
                     upsert=True,
                 )
+                _next_counter += 1
 
         # Find the ratchet anchor: walk key_event_log entries from oldest to
         # newest and check which is the first that has an on-chain or mempool
