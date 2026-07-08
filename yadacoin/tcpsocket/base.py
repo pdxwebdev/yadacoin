@@ -303,23 +303,20 @@ class RPCSocketServer(TCPServer, BaseRPC):
                             ]
                 if not hasattr(self, method):
                     continue
+                if (
+                    hasattr(self.config, "tcp_traffic_debug")
+                    and self.config.tcp_traffic_debug == True
+                ):
+                    _peer_addr = (
+                        getattr(getattr(stream, "peer", None), "host", None)
+                        or getattr(getattr(stream, "peer", None), "address", None)
+                        or getattr(stream, "socket", None)
+                        or "unknown"
+                    )
+                    self.config.app_log.debug(
+                        f"SERVER RECEIVED {_peer_addr} {method} {body}"
+                    )
                 if hasattr(stream, "peer"):
-                    if hasattr(stream.peer, "host"):
-                        if (
-                            hasattr(self.config, "tcp_traffic_debug")
-                            and self.config.tcp_traffic_debug == True
-                        ):
-                            self.config.app_log.debug(
-                                f"SERVER RECEIVED {stream.peer.host} {method} {body}"
-                            )
-                    if hasattr(stream.peer, "address"):
-                        if (
-                            hasattr(self.config, "tcp_traffic_debug")
-                            and self.config.tcp_traffic_debug == True
-                        ):
-                            self.config.app_log.debug(
-                                f"SERVER RECEIVED {stream.peer.address} {method} {body}"
-                            )
                     id_attr = getattr(stream.peer, stream.peer.id_attribute)
                     if (
                         id_attr
