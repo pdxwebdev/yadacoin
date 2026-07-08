@@ -709,7 +709,9 @@ class Transaction(object):
                         "inputs or value-bearing outputs."
                     )
             else:
-                has_kel = await self.has_key_event_log(block, mempool)
+                has_kel = await self.has_key_event_log(
+                    block, mempool, include_offchain=True
+                )
                 # If the on-chain (or mempool) check didn't find a parent,
                 # also check batch_txns — the parent may be a sibling in the
                 # block currently being assembled (e.g. inception + confirming
@@ -1397,7 +1399,9 @@ class Transaction(object):
             return authorized_addresses, authorized_pub_keys
         return None, None
 
-    async def has_key_event_log(self, block=None, mempool=False):
+    async def has_key_event_log(
+        self, block=None, mempool=False, include_offchain=False
+    ):
         from yadacoin.core.keyeventlog import (
             BlocksQueryFields,
             KeyEventLogQueryFields,
@@ -1448,11 +1452,14 @@ class Transaction(object):
                 return True
             # Also check key_event_log — off-chain ratchet steps store parent
             # commitments there rather than in miner_transactions.
-            kel_result = await self.config.mongo.async_db.key_event_log.find_one(
-                {KeyEventLogQueryFields.PREROTATED_KEY_HASH.value: address}
-            )
-            if kel_result:
-                return True
+            # Only when include_offchain=True (P2P auth path); skip for UTXO
+            # output rule enforcement which doesn't apply to off-chain steps.
+            if include_offchain:
+                kel_result = await self.config.mongo.async_db.key_event_log.find_one(
+                    {KeyEventLogQueryFields.PREROTATED_KEY_HASH.value: address}
+                )
+                if kel_result:
+                    return True
         return False
 
     async def verify_kel_output_rules(self, block=None, mempool=False):
@@ -1480,8 +1487,11 @@ class Transaction(object):
                     f"Key event tx sends to its own public_key_hash ({self.public_key_hash}) instead of prerotated_key_hash."
                 )
 
-        # Only enforce spend rules when this key's address is tracked in an existing log
-        if not await self.has_key_event_log(block=block, mempool=mempool):
+        # Only enforce spend rules when this key's address is tracked in an existing
+        # on-chain or mempool log — off-chain ratchet steps have no UTXOs to check.
+        if not await self.has_key_event_log(
+            block=block, mempool=mempool, include_offchain=False
+        ):
             return
 
         # Build the full log (including mempool entries) so that inception transactions
