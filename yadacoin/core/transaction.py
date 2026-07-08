@@ -1398,7 +1398,11 @@ class Transaction(object):
         return None, None
 
     async def has_key_event_log(self, block=None, mempool=False):
-        from yadacoin.core.keyeventlog import BlocksQueryFields, MempoolQueryFields
+        from yadacoin.core.keyeventlog import (
+            BlocksQueryFields,
+            KeyEventLogQueryFields,
+            MempoolQueryFields,
+        )
 
         # this function is the primary method for catching transactions which attempt
         # sign a transaction with a stolen key. We must check if the transaction's
@@ -1441,6 +1445,13 @@ class Transaction(object):
             }
             result = await self.config.mongo.async_db.miner_transactions.find_one(query)
             if result:
+                return True
+            # Also check key_event_log — off-chain ratchet steps store parent
+            # commitments there rather than in miner_transactions.
+            kel_result = await self.config.mongo.async_db.key_event_log.find_one(
+                {KeyEventLogQueryFields.PREROTATED_KEY_HASH.value: address}
+            )
+            if kel_result:
                 return True
         return False
 

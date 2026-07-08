@@ -84,6 +84,14 @@ class MempoolQueryFields(Enum):
     PREV_PUBLIC_KEY_HASH = "prev_public_key_hash"
 
 
+class KeyEventLogQueryFields(Enum):
+    ANCHOR_PUBLIC_KEY = "anchor_public_key"
+    TWICE_PREROTATED_KEY_HASH = "twice_prerotated_key_hash"
+    PREROTATED_KEY_HASH = "prerotated_key_hash"
+    PUBLIC_KEY_HASH = "public_key_hash"
+    PREV_PUBLIC_KEY_HASH = "prev_public_key_hash"
+
+
 class KeyEventException(Exception):
     pass
 
