@@ -981,6 +981,23 @@ class NodeKeyRotationManager:
         config.kel_public_key = kn_pub_hex
         config.kel_address = kn_address
 
+        # Compute the KEL username_signature signed with K_n's private key so
+        # that my_peer() can present the KEL key as the authoritative identity.
+        # This must be recomputed each time K_n advances (re-anchor).
+        username = getattr(config, "username", "") or ""
+        if username.strip():
+            try:
+                from yadacoin.core.transactionutils import TU as _TU
+
+                config.kel_username_signature = _TU.generate_deterministic_signature(
+                    config, username, cur["private_key"].hex()
+                )
+            except Exception as _exc:
+                config.app_log.debug(
+                    "NodeKeyRotationManager: could not compute kel_username_signature: %s",
+                    _exc,
+                )
+
         # Track the previous KEL entry's public_key_hash so ratchet
         # transactions can set prev_public_key_hash correctly.
         if kel:
@@ -992,6 +1009,18 @@ class NodeKeyRotationManager:
             len(kel),
             kn_address,
         )
+
+        # Refresh the running peer identity so subsequent connect/challenge
+        # messages present the new K_n key, not the stale WIF key.
+        if getattr(config, "peer", None) is not None:
+            try:
+                from yadacoin.core.peer import Peer as _Peer
+
+                config.peer = _Peer.my_peer()
+            except Exception as _exc:
+                config.app_log.debug(
+                    "NodeKeyRotationManager: could not refresh config.peer: %s", _exc
+                )
 
     async def _check_and_sweep_legacy_funds(self, kel):
         """Sweep UTXOs at the legacy node address (P2PKH of config.public_key)

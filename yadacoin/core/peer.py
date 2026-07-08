@@ -68,8 +68,15 @@ class Peer:
             "port": config.peer_port,
             "identity": {
                 "username": config.username,
-                "username_signature": config.username_signature,
-                "public_key": config.public_key,
+                # Use the KEL signing key (K_n) when available — the WIF key
+                # is considered compromised under Protocol V5.
+                "username_signature": (
+                    getattr(config, "kel_username_signature", None)
+                    or config.username_signature
+                ),
+                "public_key": (
+                    getattr(config, "kel_public_key", None) or config.public_key
+                ),
             },
             "peer_type": config.peer_type,
             "http_host": config.ssl.common_name or config.peer_host,
