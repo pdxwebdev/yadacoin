@@ -426,6 +426,30 @@ class Mongo(object):
         except:
             pass
 
+        # key_event_log indexes
+        # Covers: delta queries (anchor + counter range), latest-entry lookups (anchor + sort by counter)
+        __kel_anchor_counter = IndexModel(
+            [("anchor_public_key", ASCENDING), ("counter", ASCENDING)],
+            name="__kel_anchor_counter",
+        )
+        # Covers: exact tip lookup by (anchor, public_key_hash)
+        __kel_anchor_pkh = IndexModel(
+            [("anchor_public_key", ASCENDING), ("public_key_hash", ASCENDING)],
+            name="__kel_anchor_pkh",
+        )
+        # Covers: upserts / replace_one by public_key_hash
+        __kel_pkh = IndexModel(
+            [("public_key_hash", ASCENDING)],
+            name="__kel_pkh",
+            unique=True,
+        )
+        try:
+            self.db.key_event_log.create_indexes(
+                [__kel_anchor_counter, __kel_anchor_pkh, __kel_pkh]
+            )
+        except:
+            pass
+
         __time = IndexModel([("time", ASCENDING)], name="__time")
         __rid = IndexModel([("rid", ASCENDING)], name="__rid")
         __username_signature = IndexModel(

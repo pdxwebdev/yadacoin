@@ -596,6 +596,15 @@ class KeyEvent:
                             )
                             if batch_parent:
                                 return
+                        # Also accept a parent already stored in key_event_log
+                        # (sent in a previous delta gossip round).
+                        kel_parent = (
+                            await self.config.mongo.async_db.key_event_log.find_one(
+                                {"public_key_hash": self.txn.prev_public_key_hash}
+                            )
+                        )
+                        if kel_parent:
+                            return
                         raise KELExceptionPredecessorNotYetInMempool(
                             "Confirming key event rejected: predecessor key event not found "
                             "on-chain or in the mempool."
@@ -620,6 +629,15 @@ class KeyEvent:
                         }
                     )
                     if mempool_parent:
+                        return
+                    # Also accept a parent already stored in key_event_log
+                    # (sent in a previous delta gossip round).
+                    kel_parent = (
+                        await self.config.mongo.async_db.key_event_log.find_one(
+                            {"public_key_hash": self.txn.prev_public_key_hash}
+                        )
+                    )
+                    if kel_parent:
                         return
                     raise KELException(
                         "Unconfirmed key event rejected: predecessor key event is not yet "
