@@ -1601,13 +1601,7 @@ class NodeRPC(BaseRPC):
         peer = params.get("peer", {})
         protocol_version = peer.get("protocol_version", 1)
         stream.peer.protocol_version = protocol_version
-        current_index = getattr(
-            getattr(self.config, "LatestBlock", None),
-            "block",
-            None,
-        )
-        current_index = getattr(current_index, "index", 0) if current_index else 0
-        if current_index >= CHAIN.KEL_P2P_AUTH_FORK and protocol_version < 5:
+        if protocol_version < 5:
             raise ProtocolVersionTooLowError(
                 f"Peer {stream.peer.host} is using protocol version {protocol_version}; "
                 "version 5+ is required (KEL enforcement). "
