@@ -720,17 +720,19 @@ class Transaction(object):
                 # called with mempool=False (block proxy) so that legitimate
                 # same-block KEL pairs are not incorrectly excluded.
                 if not has_kel and batch_txns:
-                    address = str(
-                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
-                    )
-                    has_kel = any(
-                        (
-                            t.twice_prerotated_key_hash == address
-                            or t.prerotated_key_hash == address
-                        )
-                        and t.transaction_signature != self.transaction_signature
+                    # address is already computed above — reuse it.
+                    # Build a lookup set for O(1) per-entry checks.
+                    _batch_prerotated = {
+                        t.prerotated_key_hash
                         for t in batch_txns
-                    )
+                        if t.transaction_signature != self.transaction_signature
+                    }
+                    _batch_twice = {
+                        t.twice_prerotated_key_hash
+                        for t in batch_txns
+                        if t.transaction_signature != self.transaction_signature
+                    }
+                    has_kel = address in _batch_prerotated or address in _batch_twice
 
             if has_kel:
                 txn_key_event = KeyEvent(self)

@@ -1405,7 +1405,12 @@ class NodeRPC(BaseRPC):
                 await txn.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
-                    check_kel=check_kel,
+                    # Ratchet steps are off-chain KEL records from a trusted P2P
+                    # auth flow.  Skipping check_kel avoids the expensive
+                    # blocks.find_one scan in has_key_event_log for each step.
+                    # The chain integrity is verified by KeyEvent.verify() in the
+                    # anchor-finding section below.
+                    check_kel=False,
                     check_dynamic_nodes=check_dynamic_nodes,
                     mempool=True,
                     # Pass the full batch so each tx can reference its siblings
