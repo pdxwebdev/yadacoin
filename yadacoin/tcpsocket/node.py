@@ -1087,6 +1087,9 @@ class NodeRPC(BaseRPC):
         ] = stream
         # Store the peer's ECDH public key for session cipher derivation
         stream._peer_ecdh_pub = params.get("ecdh_public_key", "")
+        # Store the latest ratchet PKH the connecting peer reports having for
+        # our chain so challenge can send only the delta they're missing.
+        stream._client_latest_ratchet_pkh = params.get("latest_ratchet_pkh", "")
         # Accept the peer's unconfirmed KEL chain if provided.
         # This breaks the bootstrapping deadlock: a brand-new node whose
         # inception (and any intermediate anchor txns) have never been gossiped
@@ -1147,13 +1150,28 @@ class NodeRPC(BaseRPC):
             _k0_pub = (_own_identity or {}).get("public_key") or getattr(
                 self.config, "kel_public_key", None
             )
-            # Build the ratchet chain: query key_event_log for off-chain steps
-            # from the current on-chain anchor.  These are individual ratchet step
-            # transactions — NOT in miner_transactions (that's only inception + anchors).
+            # Build the ratchet chain: only send steps the peer doesn't have yet.
+            # The peer reports its latest known PKH for our chain via connect;
+            # we skip everything up to and including that entry.
             ratchet_chain = []
             if _k0_pub:
+                skip_after_counter = 0
+                _client_tip_pkh = getattr(stream, "_client_latest_ratchet_pkh", "")
+                if _client_tip_pkh:
+                    _tip_entry = (
+                        await self.config.mongo.async_db.key_event_log.find_one(
+                            {
+                                "anchor_public_key": _k0_pub,
+                                "public_key_hash": _client_tip_pkh,
+                            }
+                        )
+                    )
+                    skip_after_counter = (_tip_entry or {}).get("counter", 0)
                 cursor = self.config.mongo.async_db.key_event_log.find(
-                    {"anchor_public_key": _k0_pub},
+                    {
+                        "anchor_public_key": _k0_pub,
+                        "counter": {"$gt": skip_after_counter},
+                    },
                     {"_id": 0, "txn": 1},
                 ).sort("counter", 1)
                 ratchet_chain = [
@@ -1227,9 +1245,7 @@ class NodeRPC(BaseRPC):
         else:
             params = body.get("result", {})
         signed_challenge = params.get("signed_challenge")
-        ratchet_public_key = (
-            params.get("ratchet_public_key") or stream.peer.identity.public_key
-        )
+        ratchet_public_key = params.get("ratchet_public_key")
         confirming_signed_challenge = params.get("confirming_signed_challenge")
         confirming_public_key = params.get("confirming_public_key")
         ratchet_chain = params.get("ratchet_chain") or []
@@ -1493,25 +1509,24 @@ class NodeRPC(BaseRPC):
             # If the peer signed with a ratchet key, verify the full chain
             # (blockchain + mempool + key_event_log) authorizes the signing key.
             # A key K_n is authorized iff some prior step pre-committed to it
-            # by setting prerotated_key_hash = K_n.address.
-            if ratchet_public_key != stream.peer.identity.public_key:
-                signing_address = str(
-                    P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ratchet_public_key))
+            # by setting prerotated_key_hash = K_n.address.=
+            signing_address = str(
+                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ratchet_public_key))
+            )
+            if not any(
+                getattr(txn, "prerotated_key_hash", "") == signing_address
+                for txn in peer_kel
+            ):
+                return await self.remove_peer(
+                    stream,
+                    reason="authenticate: ratchet signing key is not authorized by the KEL chain",
                 )
-                if not any(
-                    getattr(txn, "prerotated_key_hash", "") == signing_address
-                    for txn in peer_kel
-                ):
-                    return await self.remove_peer(
-                        stream,
-                        reason="authenticate: ratchet signing key is not authorized by the KEL chain",
-                    )
-                self.config.app_log.info(
-                    "  [OK]   Ratchet key authorized via KEL chain + key_event_log  (depth=%d)\n"
-                    "         %d new ratchet step(s) stored.",
-                    len(peer_kel),
-                    len(ratchet_chain),
-                )
+            self.config.app_log.info(
+                "  [OK]   Ratchet key authorized via KEL chain + key_event_log  (depth=%d)\n"
+                "         %d new ratchet step(s) stored.",
+                len(peer_kel),
+                len(ratchet_chain),
+            )
 
         stream.peer.authenticated = True
         self.config.app_log.info(
@@ -1683,6 +1698,29 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
                 "peer": self.config.peer.to_dict(),
                 "ecdh_public_key": _ecdh_pub,
             }
+            # Tell the server what we already have of their ratchet chain so
+            # they only send us the delta steps we're missing.
+            _peer_username = (
+                getattr(getattr(peer, "identity", None), "username", "") or ""
+            )
+            if _peer_username:
+                from yadacoin.core.identityannouncement import (
+                    IdentityAnnouncement as _IA_conn,
+                )
+
+                _peer_ia_conn = await _IA_conn.get_by_username(
+                    _peer_username, include_mempool=True
+                )
+                _peer_k0_conn = (_peer_ia_conn or {}).get("public_key")
+                if _peer_k0_conn:
+                    _tip_conn = await self.config.mongo.async_db.key_event_log.find_one(
+                        {"anchor_public_key": _peer_k0_conn},
+                        sort=[("counter", -1)],
+                    )
+                    if _tip_conn and _tip_conn.get("public_key_hash"):
+                        connect_payload["latest_ratchet_pkh"] = _tip_conn[
+                            "public_key_hash"
+                        ]
             # Embed our full unconfirmed KEL chain so the server can build our
             # chain from K0 even if none of our KEL txns have been gossiped yet.
             pending_kel_chain = await self._get_pending_kel_chain()

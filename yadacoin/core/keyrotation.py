@@ -139,15 +139,10 @@ def _read_second_factor() -> str:
 
 
 def get_node_signing_key(config) -> tuple:
-    """Return ``(private_key_hex, public_key_hex, address)`` for node-level signing.
-
-    Uses the active KEL key (K_n, stored on config by NodeKeyRotationManager)
-    when available.  Falls back to the legacy WIF-derived key so that nodes
-    without a KEL configured continue to work unchanged.
+    """Return ``(private_key_hex, public_key_hex, address)`` for node-level signing
+    using the active KEL key (K_n).  Raises if KEL is not yet initialised.
     """
-    if getattr(config, "kel_private_key", None):
-        return config.kel_private_key, config.kel_public_key, config.kel_address
-    return config.private_key, config.public_key, config.address
+    return config.kel_private_key, config.kel_public_key, config.kel_address
 
 
 async def get_node_auth_key(config) -> tuple:
@@ -164,7 +159,14 @@ async def get_node_auth_key(config) -> tuple:
     """
     manager = getattr(config, "kel_manager", None)
     if manager is None:
-        return config.private_key, config.public_key, None, None
+        _fatal(
+            "\n"
+            "═══════════════════════════════════════════════════════════════\n"
+            "  FATAL: KEL manager is not initialised.\n"
+            "  The node cannot authenticate without a KEL key.\n"
+            "  Ensure startup_check has run before any P2P authentication.\n"
+            "═══════════════════════════════════════════════════════════════\n"
+        )
 
     return await manager.advance_auth_ratchet()
 
@@ -455,12 +457,20 @@ class NodeKeyRotationManager:
         """
         config = self.config
 
-        # Check for KEL key first — if not active, fall back to legacy immediately.
-        # second_factor is only required when the KEL ratchet is actually in use.
+        # KEL keys are required — the WIF key is considered compromised.
         kel_priv = getattr(config, "kel_private_key", None)
         kel_pub = getattr(config, "kel_public_key", None)
         if not kel_priv or not kel_pub:
-            return config.private_key, config.public_key, None, None
+            _fatal(
+                "\n"
+                "═══════════════════════════════════════════════════════════════\n"
+                "  FATAL: KEL signing key is not yet active.\n"
+                "  The node cannot authenticate P2P connections without a KEL\n"
+                "  inception confirmed on-chain or in the mempool.\n"
+                "  Wait for startup_check to complete before connections are\n"
+                "  accepted, or ensure SECOND_FACTOR is set correctly.\n"
+                "═══════════════════════════════════════════════════════════════\n"
+            )
 
         second_factor = self._second_factor or _read_second_factor()
         if not second_factor:
