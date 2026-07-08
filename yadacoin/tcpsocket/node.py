@@ -1336,13 +1336,6 @@ class NodeRPC(BaseRPC):
         from yadacoin.core.keyeventlog import KeyEventLog
         from yadacoin.core.transaction import Transaction as _Txn
 
-        # Resolve K0 early — needed for storing ratchet steps with the correct
-        # anchor_public_key before the KEL build later in this handler.
-        _peer_ia = await _IApeer.get_by_username(
-            getattr(stream.peer.identity, "username", "") or "", include_mempool=True
-        )
-        _peer_k0 = (_peer_ia or {}).get("public_key") or stream.peer.identity.public_key
-
         check_max_inputs = (
             self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK
         )
@@ -1366,6 +1359,15 @@ class NodeRPC(BaseRPC):
                     stream,
                     reason=f"authenticate: malformed ratchet transaction — {exc}",
                 )
+
+        # Resolve K0 — needed for storing ratchet steps with the correct
+        # anchor_public_key before the KEL build later in this handler.
+        _peer_ia = await _IApeer.get_by_username(
+            getattr(stream.peer.identity, "username", "") or "", include_mempool=True
+        )
+        _peer_k0 = (_peer_ia or {}).get("public_key") or (
+            parsed_ratchet[0].public_key if parsed_ratchet else None
+        )
 
         for i, txn in enumerate(parsed_ratchet):
             try:
