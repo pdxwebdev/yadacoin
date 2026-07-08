@@ -1205,6 +1205,27 @@ class NodeRPC(BaseRPC):
         pending_kel_chain = await self._get_pending_kel_chain()
         if pending_kel_chain:
             challenge_payload["kel_chain"] = pending_kel_chain
+        # Tell the client what we already have of THEIR ratchet chain so they
+        # only send us the delta steps we're missing in authenticate.
+        _client_k0_for_hint = None
+        if getattr(stream.peer.identity, "username", ""):
+            from yadacoin.core.identityannouncement import (
+                IdentityAnnouncement as _IAhint,
+            )
+
+            _peer_ia_hint = await _IAhint.get_by_username(
+                stream.peer.identity.username, include_mempool=True
+            )
+            _client_k0_for_hint = (_peer_ia_hint or {}).get("public_key")
+        if not _client_k0_for_hint:
+            _client_k0_for_hint = stream.peer.identity.public_key
+        if _client_k0_for_hint:
+            _srv_tip = await self.config.mongo.async_db.key_event_log.find_one(
+                {"anchor_public_key": _client_k0_for_hint},
+                sort=[("counter", -1)],
+            )
+            if _srv_tip and _srv_tip.get("public_key_hash"):
+                challenge_payload["latest_ratchet_pkh"] = _srv_tip["public_key_hash"]
         await self.write_params(stream, "challenge", challenge_payload)
         # Send authenticate AFTER challenge so the client has the ECDH key
         # (from the challenge payload above) before it receives this encrypted message.
@@ -1796,11 +1817,27 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
             _k0_pub2 = (_own_identity2 or {}).get("public_key") or getattr(
                 self.config, "kel_public_key", None
             )
-            # Build the ratchet chain from key_event_log (off-chain steps only).
+            # Build the ratchet chain from key_event_log (off-chain steps only),
+            # filtered to only send steps the server doesn't already have.
             ratchet_chain = []
             if _k0_pub2:
+                skip_after_counter = 0
+                _server_latest_pkh = params.get("latest_ratchet_pkh", "")
+                if _server_latest_pkh:
+                    _srv_tip_entry = (
+                        await self.config.mongo.async_db.key_event_log.find_one(
+                            {
+                                "anchor_public_key": _k0_pub2,
+                                "public_key_hash": _server_latest_pkh,
+                            }
+                        )
+                    )
+                    skip_after_counter = (_srv_tip_entry or {}).get("counter", 0)
                 cursor2 = self.config.mongo.async_db.key_event_log.find(
-                    {"anchor_public_key": _k0_pub2},
+                    {
+                        "anchor_public_key": _k0_pub2,
+                        "counter": {"$gt": skip_after_counter},
+                    },
                     {"_id": 0, "txn": 1},
                 ).sort("counter", 1)
                 ratchet_chain = [
