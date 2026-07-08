@@ -937,8 +937,8 @@ class NodeApplication(Application):
                     "port": self.config.peer_port,
                     "identity": {
                         "username": self.config.username,
-                        "username_signature": self.config.username_signature,
-                        "public_key": self.config.public_key,
+                        "username_signature": self.config.kel_username_signature,
+                        "public_key": self.config.kel_public_key,
                     },
                     "peer_type": assigned_type,
                     "http_host": self.config.ssl.common_name or self.config.peer_host,
