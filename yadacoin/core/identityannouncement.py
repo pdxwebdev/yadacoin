@@ -153,8 +153,9 @@ class RotationAnnouncement:
 
         from bitcoin.base58 import encode as _b58encode
 
-        sha256_digest = _hl.sha256(pub_bytes).digest()
-        ripemd_digest = _hl.new("ripemd160", sha256_digest).digest()
+        from yadacoin.core.crypt import RIPEMD160
+
+        ripemd_digest = RIPEMD160.ripemd160(pub_bytes)
         versioned = b"\x00" + ripemd_digest
         checksum = _hl.sha256(_hl.sha256(versioned).digest()).digest()[:4]
         expected_hash = _b58encode(versioned + checksum)
@@ -208,8 +209,9 @@ class RotationAnnouncement:
 
         from bitcoin.base58 import encode as _b58encode
 
-        sha256_digest = _hl.sha256(pub_bytes).digest()
-        ripemd_digest = _hl.new("ripemd160", sha256_digest).digest()
+        from yadacoin.core.crypt import RIPEMD160
+
+        ripemd_digest = RIPEMD160.ripemd160(pub_bytes)
         versioned = b"\x00" + ripemd_digest
         checksum = _hl.sha256(_hl.sha256(versioned).digest()).digest()[:4]
         key_hash = _b58encode(versioned + checksum)
