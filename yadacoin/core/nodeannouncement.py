@@ -21,6 +21,8 @@ class NodeAnnouncement:
     announcements that are stored on-chain.
     """
 
+    RELATIONSHIP_KEY = "node"
+
     def __init__(
         self,
         identity,

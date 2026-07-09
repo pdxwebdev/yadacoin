@@ -25,8 +25,11 @@ from yadacoin.core.config import Config
 class Mongo(object):
     def __init__(self):
         self.config = Config()
-        if hasattr(self.config, "mongodb_username") and hasattr(
-            self.config, "mongodb_password"
+        if (
+            hasattr(self.config, "mongodb_username")
+            and hasattr(self.config, "mongodb_password")
+            and self.config.mongodb_username
+            and self.config.mongodb_password
         ):
             try:
                 self.client = MongoClient(self.config.mongodb_host)
@@ -216,6 +219,13 @@ class Mongo(object):
             name="__txn_rel_agent",
             sparse=True,
         )
+        _txn_rel_identity_username = IndexModel(
+            [
+                ("transactions.relationship.identity.username", ASCENDING),
+            ],
+            name="__txn_rel_identity_username",
+            sparse=True,
+        )
 
         try:
             self.db.blocks.create_indexes(
@@ -259,6 +269,7 @@ class Mongo(object):
                     __txn_public_key_hash,
                     __txn_prev_public_key_hash,
                     __txn_rel_agent,
+                    _txn_rel_identity_username,
                 ]
             )
         except:
@@ -415,6 +426,40 @@ class Mongo(object):
         except:
             pass
 
+        # key_event_log indexes
+        # Covers: delta queries (anchor + counter range), latest-entry lookups (anchor + sort by counter)
+        __kel_anchor_counter = IndexModel(
+            [("anchor_public_key", ASCENDING), ("counter", ASCENDING)],
+            name="__kel_anchor_counter",
+        )
+        # Covers: exact tip lookup by (anchor, public_key_hash)
+        __kel_anchor_pkh = IndexModel(
+            [("anchor_public_key", ASCENDING), ("public_key_hash", ASCENDING)],
+            name="__kel_anchor_pkh",
+        )
+        # Covers: upserts / replace_one by public_key_hash
+        __kel_pkh = IndexModel(
+            [("public_key_hash", ASCENDING)],
+            name="__kel_pkh",
+            unique=True,
+        )
+        # Covers: signing key authorization check (anchor + prerotated_key_hash)
+        __kel_anchor_prerotated = IndexModel(
+            [("anchor_public_key", ASCENDING), ("prerotated_key_hash", ASCENDING)],
+            name="__kel_anchor_prerotated",
+        )
+        try:
+            self.db.key_event_log.create_indexes(
+                [
+                    __kel_anchor_counter,
+                    __kel_anchor_pkh,
+                    __kel_pkh,
+                    __kel_anchor_prerotated,
+                ]
+            )
+        except:
+            pass
+
         __time = IndexModel([("time", ASCENDING)], name="__time")
         __rid = IndexModel([("rid", ASCENDING)], name="__rid")
         __username_signature = IndexModel(
@@ -453,8 +498,11 @@ class Mongo(object):
 
         # TODO: add indexes for peers
 
-        if hasattr(self.config, "mongodb_username") and hasattr(
-            self.config, "mongodb_password"
+        if (
+            hasattr(self.config, "mongodb_username")
+            and hasattr(self.config, "mongodb_password")
+            and self.config.mongodb_username
+            and self.config.mongodb_password
         ):
             self.async_client = MotorClient(
                 self.config.mongodb_host,

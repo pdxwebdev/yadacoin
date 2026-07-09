@@ -30,6 +30,13 @@ class TUTestCase(AsyncTestCase):
         self.config = config
         self.public_key = config.public_key
         self.private_key = config.private_key
+        self.config.kel_private_key = (
+            "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        )
+        self.config.kel_public_key = (
+            "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
+        )
+        self.config.kel_address = "kel_address"
 
 
 # ---------------------------------------------------------------------------
@@ -591,11 +598,13 @@ class TestCombineOldestTransactions(TUTestCase):
         mock_mempool_cursor.to_list = AsyncMock(return_value=[])
         mock_db.miner_transactions.find.return_value = mock_mempool_cursor
 
+        known_address = "1KnownTestAddress"
+
         async def many_txns(*args, **kwargs):
             for i in range(100):
                 yield {
                     "id": f"txn{i}",
-                    "outputs": [{"to": self.config.address, "value": 1.0}],
+                    "outputs": [{"to": known_address, "value": 1.0}],
                 }
 
         mock_bu = MagicMock()
@@ -607,10 +616,18 @@ class TestCombineOldestTransactions(TUTestCase):
 
         with patch.object(self.config.mongo, "async_db", new=mock_db):
             with patch.object(self.config, "BU", mock_bu):
-                with patch.object(
-                    TU, "send", new=AsyncMock(return_value={"id": "combined_txn"})
-                ) as mock_send:
-                    await TU.combine_oldest_transactions(self.config)
+                with patch(
+                    "yadacoin.core.transactionutils.get_node_signing_key",
+                    return_value=(
+                        "privhex",
+                        "pubhex",
+                        known_address,
+                    ),
+                ):
+                    with patch.object(
+                        TU, "send", new=AsyncMock(return_value={"id": "combined_txn"})
+                    ) as mock_send:
+                        await TU.combine_oldest_transactions(self.config)
 
         mock_send.assert_called_once()
 

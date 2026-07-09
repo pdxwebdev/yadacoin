@@ -84,6 +84,14 @@ class MempoolQueryFields(Enum):
     PREV_PUBLIC_KEY_HASH = "prev_public_key_hash"
 
 
+class KeyEventLogQueryFields(Enum):
+    ANCHOR_PUBLIC_KEY = "anchor_public_key"
+    TWICE_PREROTATED_KEY_HASH = "twice_prerotated_key_hash"
+    PREROTATED_KEY_HASH = "prerotated_key_hash"
+    PUBLIC_KEY_HASH = "public_key_hash"
+    PREV_PUBLIC_KEY_HASH = "prev_public_key_hash"
+
+
 class KeyEventException(Exception):
     pass
 
@@ -523,7 +531,19 @@ class KeyEvent:
         ):
             raise KeyEventException("not a valid confirming key event. Invalid status.")
 
-    async def verify(self, batch_txns=None, block_index=None, use_mempool=False):
+    async def verify(
+        self,
+        batch_txns=None,
+        block_index=None,
+        use_mempool=False,
+        allow_offchain_parent=None,
+    ):
+        # When verifying historical block data the predecessor must exist
+        # on-chain; off-chain key_event_log entries are not a valid parent.
+        # Default: allow when use_mempool is True (P2P / mempool path),
+        # disallow when block_index is provided (block verification path).
+        if allow_offchain_parent is None:
+            allow_offchain_parent = use_mempool and block_index is None
         address = str(
             P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.txn.public_key))
         )
@@ -596,6 +616,16 @@ class KeyEvent:
                             )
                             if batch_parent:
                                 return
+                        # Also accept a parent already stored in key_event_log
+                        # (sent in a previous delta gossip round).
+                        if allow_offchain_parent:
+                            kel_parent = (
+                                await self.config.mongo.async_db.key_event_log.find_one(
+                                    {"public_key_hash": self.txn.prev_public_key_hash}
+                                )
+                            )
+                            if kel_parent:
+                                return
                         raise KELExceptionPredecessorNotYetInMempool(
                             "Confirming key event rejected: predecessor key event not found "
                             "on-chain or in the mempool."
@@ -621,6 +651,16 @@ class KeyEvent:
                     )
                     if mempool_parent:
                         return
+                    # Also accept a parent already stored in key_event_log
+                    # (sent in a previous delta gossip round).
+                    if allow_offchain_parent:
+                        kel_parent = (
+                            await self.config.mongo.async_db.key_event_log.find_one(
+                                {"public_key_hash": self.txn.prev_public_key_hash}
+                            )
+                        )
+                        if kel_parent:
+                            return
                     raise KELException(
                         "Unconfirmed key event rejected: predecessor key event is not yet "
                         "confirmed on-chain or present in the mempool."

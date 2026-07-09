@@ -175,9 +175,12 @@ class CreateTransactionView(BaseHandler):
                 ]
             )
 
+        from yadacoin.core.keyrotation import get_node_signing_key
+
+        _kel_priv, _kel_pub, _kel_addr = get_node_signing_key(config)
         txn = await Transaction.generate(
-            private_key=config.private_key,
-            public_key=config.public_key,
+            private_key=_kel_priv,
+            public_key=_kel_pub,
             fee=float(fee),
             inputs=inputs,
             outputs=outputs,
@@ -283,7 +286,13 @@ class UnlockHandler(BaseHandler):
             key_or_wif = self.get_body_argument("key_or_wif")
             expires = self.get_body_argument("expires", 23040)
         except:
-            json_body = json.loads(self.request.body.decode())
+            try:
+                json_body = json.loads(self.request.body.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                self.set_status(400)
+                return self.render_as_json(
+                    {"status": "error", "message": "invalid request body"}
+                )
             key_or_wif = json_body.get("key_or_wif")
             expires = json_body.get("expires", 23040)
         # Reject empty/missing credentials. Several config secrets (e.g. seed,
@@ -299,14 +308,21 @@ class UnlockHandler(BaseHandler):
             if secret
         ]
         if key_or_wif and key_or_wif in valid_secrets:
-            if getattr(self.config, "admin_kel", None):
-                self.set_status(403)
-                return self.render_as_json(
-                    {
-                        "status": "error",
-                        "message": "admin_kel is configured — use the KEL second factor to authenticate.",
-                    }
-                )
+            # If a KEL identity is active for this node's username, direct the
+            # user to the second-factor unlock flow instead of WIF auth.
+            from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+            node_username = getattr(self.config, "username", "") or ""
+            if node_username.strip():
+                identity = await IdentityAnnouncement.get_by_username(node_username)
+                if identity:
+                    self.set_status(403)
+                    return self.render_as_json(
+                        {
+                            "status": "error",
+                            "message": "a KEL identity is active — use the KEL second factor to authenticate.",
+                        }
+                    )
             # Stamp the session's issue time into both the cookie and the JWT so
             # they share one revocation cutoff: re-unlocking advances the stored
             # timestamp and invalidates every previously issued session.
@@ -337,6 +353,7 @@ class UnlockHandler(BaseHandler):
             )
             return self.render_as_json({"token": self.encoded})
         else:
+            self.set_status(400)
             self.write(
                 {
                     "status": "error",

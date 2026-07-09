@@ -161,9 +161,12 @@ class AuthHandler(tornado.web.RequestHandler):
         user_identity = Identity.from_dict(data)
         config = Config()
         challenge = str(uuid.uuid4())
-        challenge_signature = TU.generate_signature(challenge, config.private_key)
+        from yadacoin.core.keyrotation import get_node_auth_key
+
+        _auth_priv, _auth_pub = await get_node_auth_key(config)
+        challenge_signature = TU.generate_signature(challenge, _auth_priv)
         url = f"{config.peer_host}:{config.serve_port}/websocket"
-        url_signature = TU.generate_signature(url, config.private_key)
+        url_signature = TU.generate_signature(url, _auth_priv)
         server_identity = Identity.from_dict(
             {
                 "public_key": config.public_key,

@@ -103,7 +103,6 @@ class Config:
         self.callbackurl = config["callbackurl"]
         self.sia_api_key = config.get("sia_api_key")
         self.jwt_public_key = config.get("jwt_public_key")
-        self.fcm_key = config["fcm_key"]
         self.post_peer = config.get("post_peer", True)
         self.extended_status = config.get("extended_status", False)
         self.peers_seed = config.get(
@@ -115,7 +114,7 @@ class Config:
         # Do not try to test or connect to ourselves.
         self.outgoing_blacklist.append(self.serve_host)
         self.outgoing_blacklist.append("{}:{}".format(self.peer_host, self.peer_port))
-        self.protocol_version = 4
+        self.protocol_version = 5
         self.node_version = version
         self.min_supported_version = min_version
         # Config also serves as backbone storage for all singleton helpers used by the components.
@@ -223,12 +222,6 @@ class Config:
         self.content_takedown_no_comply: frozenset = frozenset(
             _policy.get("no_comply", list(DEFAULT_NO_COMPLY))
         )
-
-        # Transaction signature of the inception entry for the designated admin KEL.
-        # Set this to the transaction_id returned by /key-rotation/init-derived-child-key.
-        # When set, DerivedChildKeyHandler only accepts rotations belonging to this KEL,
-        # and InitDerivedChildKeyHandler will reject further inits.
-        self.admin_kel = config.get("admin_kel", None)
 
         for key, val in config.items():
             if not hasattr(self, key):
@@ -403,7 +396,6 @@ class Config:
                 "peer": "http://localhost:8000",
                 "callbackurl": "http://0.0.0.0:8001/create-relationship",
                 "jwt_public_key": None,
-                "fcm_key": "",
                 "database": db_name or "yadacoin",
                 "site_database": db_name + "site" if db_name else "yadacoinsite",
                 "mongodb_host": mongodb_host or "localhost",
@@ -482,7 +474,6 @@ class Config:
         cls.serve_host = config["serve_host"]
         cls.serve_port = config["serve_port"]
         cls.callbackurl = config["callbackurl"]
-        cls.fcm_key = config["fcm_key"]
         cls.jwt_public_key = config.get("jwt_public_key")
         cls.sia_api_key = config.get("sia_api_key")
         cls.wallet_host_port = config.get("wallet_host_port")
@@ -649,7 +640,6 @@ class Config:
             "serve_port": self.serve_port,
             "ssl": self.ssl.to_dict(),
             "origin": self.origin,
-            "fcm_key": self.fcm_key,
             "sia_api_key": self.sia_api_key,
             "jwt_public_key": self.jwt_public_key,
             "callbackurl": self.callbackurl,

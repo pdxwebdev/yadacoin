@@ -1879,6 +1879,23 @@ class TestTransactionPureMethods(AsyncTestCase):
         result = await txn.has_key_event_log(mempool=True)
         self.assertTrue(result)
 
+    async def test_has_key_event_log_include_offchain_kel_result_returns_true(self):
+        """Lines 1459-1464: include_offchain=True and key_event_log has a match → True."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        txn = Transaction(public_key=yadacoin.core.config.CONFIG.public_key)
+        mock_mongo = MagicMock()
+        mock_mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        mock_mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        mock_mongo.async_db.key_event_log.find_one = AsyncMock(
+            return_value={"prerotated_key_hash": "1ADDR"}
+        )
+        txn.config.mongo = mock_mongo
+
+        result = await txn.has_key_event_log(include_offchain=True, mempool=True)
+        self.assertTrue(result)
+        mock_mongo.async_db.key_event_log.find_one.assert_awaited_once()
+
     # -----------------------------------------------------------------------
     # verify_kel_output_rules (lines 1193-1270)
     # -----------------------------------------------------------------------
@@ -2888,6 +2905,305 @@ class TestTransactionPureMethods(AsyncTestCase):
             self.assertNotIn("minimum fee", str(e).lower())
         except Exception:
             pass  # other validation failures (e.g. inputs/outputs) are acceptable
+
+
+class TestTransactionIdentityAnnouncement(AsyncTestCase):
+    """Tests for IdentityAnnouncement and RotationAnnouncement paths in Transaction."""
+
+    _PRIV_HEX = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+    _PUB_HEX = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
+
+    async def asyncSetUp(self):
+        yadacoin.core.config.CONFIG = Config()
+        yadacoin.core.config.CONFIG.network = "regnet"
+
+    def _valid_sig(self, username: str) -> str:
+        from yadacoin.core.transactionutils import TU
+
+        return TU.generate_deterministic_signature.__func__(
+            TU, None, username, self._PRIV_HEX
+        )
+
+    async def test_init_parses_identity_announcement_from_dict(self):
+        """Transaction.__init__ converts relationship dict with 'identity' key to IdentityAnnouncement."""
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        sig = self._valid_sig("mynode")
+        raw = {
+            "id": "fakeid",
+            "public_key": self._PUB_HEX,
+            "relationship": {
+                "identity": {
+                    "username": "mynode",
+                    "username_signature": sig,
+                    "host": "1.2.3.4",
+                    "port": 8000,
+                }
+            },
+            "relationship_hash": "",
+        }
+        txn = Transaction.from_dict(raw)
+        self.assertIsInstance(txn.relationship, IdentityAnnouncement)
+
+    async def test_init_parses_rotation_announcement_from_dict(self):
+        """Transaction.__init__ converts relationship dict with 'rotation' key to RotationAnnouncement."""
+        from yadacoin.core.identityannouncement import RotationAnnouncement
+
+        raw = {
+            "id": "fakeid",
+            "public_key": self._PUB_HEX,
+            "relationship": {"rotation": {"curve": "secp256k1"}},
+            "relationship_hash": "",
+        }
+        txn = Transaction.from_dict(raw)
+        self.assertIsInstance(txn.relationship, RotationAnnouncement)
+
+    async def test_init_invalid_identity_falls_through(self):
+        """Transaction.__init__ leaves relationship as-is when IdentityAnnouncement parsing fails."""
+        raw = {
+            "id": "fakeid",
+            "public_key": self._PUB_HEX,
+            "relationship": {"identity": "bad_not_a_dict"},
+            "relationship_hash": "",
+        }
+        txn = Transaction.from_dict(raw)
+        # Should not raise; relationship stays as a dict or similar
+        self.assertIsNotNone(txn)
+
+    async def test_init_invalid_rotation_falls_through(self):
+        """Transaction.__init__ leaves relationship as-is when RotationAnnouncement parsing fails."""
+        raw = {
+            "id": "fakeid",
+            "public_key": self._PUB_HEX,
+            "relationship": {"rotation": "bad_not_a_dict"},
+            "relationship_hash": "",
+        }
+        txn = Transaction.from_dict(raw)
+        self.assertIsNotNone(txn)
+
+    async def test_verify_identity_announcement_invalid_signature_raises(self):
+        """verify() raises when username_signature does not match public_key."""
+        import base64
+        import hashlib
+
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+        from yadacoin.core.transactionutils import TU
+
+        txn = await Transaction.generate(
+            public_key=self._PUB_HEX,
+            private_key=self._PRIV_HEX,
+        )
+        # Use a bad (non-matching) signature
+        ann = IdentityAnnouncement(
+            username="mynode",
+            username_signature=base64.b64encode(b"\x00" * 64).decode(),
+            host="1.2.3.4",
+            port=8000,
+        )
+        txn.relationship = ann
+        txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = TU.generate_signature_with_private_key(
+            self._PRIV_HEX, txn.hash
+        )
+        with self.assertRaises(InvalidTransactionException) as ctx:
+            await txn.verify()
+        self.assertIn("username_signature", str(ctx.exception))
+
+    async def test_verify_identity_announcement_blank_username_raises(self):
+        """verify() raises when username is blank."""
+        import hashlib
+
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+        from yadacoin.core.transactionutils import TU
+
+        # Sign the empty string so the signature check passes and we reach the blank-username check
+        empty_sig = self._valid_sig("")
+        txn = await Transaction.generate(
+            public_key=self._PUB_HEX,
+            private_key=self._PRIV_HEX,
+        )
+        ann = IdentityAnnouncement(
+            username="placeholder",  # non-empty to pass __init__
+            username_signature=empty_sig,
+            host="1.2.3.4",
+            port=8000,
+        )
+        # Blank out the username after construction to bypass __init__ guard
+        ann.username = ""
+        txn.relationship = ann
+        txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = TU.generate_signature_with_private_key(
+            self._PRIV_HEX, txn.hash
+        )
+        with self.assertRaises(InvalidTransactionException) as ctx:
+            await txn.verify()
+        self.assertIn("username must not be blank", str(ctx.exception))
+
+    async def test_verify_identity_announcement_duplicate_username_raises(self):
+        """verify() raises when username already claimed."""
+        import hashlib
+
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+        from yadacoin.core.transactionutils import TU
+
+        sig = self._valid_sig("mynode")
+        txn = await Transaction.generate(
+            public_key=self._PUB_HEX,
+            private_key=self._PRIV_HEX,
+        )
+        ann = IdentityAnnouncement(
+            username="mynode",
+            username_signature=sig,
+            host="1.2.3.4",
+            port=8000,
+        )
+        txn.relationship = ann
+        txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = TU.generate_signature_with_private_key(
+            self._PRIV_HEX, txn.hash
+        )
+
+        from unittest.mock import AsyncMock, patch
+
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.exists_username",
+            new=AsyncMock(return_value=True),
+        ):
+            with self.assertRaises(InvalidTransactionException) as ctx:
+                await txn.verify()
+        self.assertIn("already claimed", str(ctx.exception))
+
+    async def test_verify_identity_announcement_with_invalid_rotation_raises(self):
+        """verify() raises when embedded rotation key is inconsistent."""
+        import hashlib
+        from unittest.mock import AsyncMock, patch
+
+        from yadacoin.core.identityannouncement import (
+            IdentityAnnouncement,
+            RotationAnnouncement,
+        )
+        from yadacoin.core.transactionutils import TU
+
+        sig = self._valid_sig("mynode")
+        txn = await Transaction.generate(
+            public_key=self._PUB_HEX,
+            private_key=self._PRIV_HEX,
+        )
+        ann = IdentityAnnouncement(
+            username="mynode",
+            username_signature=sig,
+            host="1.2.3.4",
+            port=8000,
+        )
+        # Attach a secp256r1 rotation with a bad key_hash to trigger validate_p256 failure
+        ann.rotation = RotationAnnouncement(
+            curve="secp256r1",
+            public_key=self._PUB_HEX,
+            key_hash="1WRONGHASH",
+        )
+        txn.relationship = ann
+        txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = TU.generate_signature_with_private_key(
+            self._PRIV_HEX, txn.hash
+        )
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.exists_username",
+            new=AsyncMock(return_value=False),
+        ):
+            with self.assertRaises(InvalidTransactionException) as ctx:
+                await txn.verify()
+        self.assertIn("rotation key", str(ctx.exception))
+
+    async def test_verify_rotation_only_inception_raises(self):
+        """verify() raises when a RotationAnnouncement is on an inception (no prev_public_key_hash)."""
+        import hashlib
+
+        from yadacoin.core.identityannouncement import RotationAnnouncement
+        from yadacoin.core.transactionutils import TU
+
+        txn = await Transaction.generate(
+            public_key=self._PUB_HEX,
+            private_key=self._PRIV_HEX,
+        )
+        ra = RotationAnnouncement(curve="secp256k1")
+        txn.relationship = ra
+        txn.relationship_hash = hashlib.sha256(ra.to_string().encode()).digest().hex()
+        txn.prev_public_key_hash = ""  # inception — must be rejected
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = TU.generate_signature_with_private_key(
+            self._PRIV_HEX, txn.hash
+        )
+        with self.assertRaises(InvalidTransactionException) as ctx:
+            await txn.verify()
+        self.assertIn("inception", str(ctx.exception))
+
+    async def test_verify_rotation_only_secp256r1_invalid_key_raises(self):
+        """verify() raises when a rotation-only secp256r1 announcement has a bad key_hash."""
+        import hashlib
+
+        from yadacoin.core.identityannouncement import RotationAnnouncement
+        from yadacoin.core.transactionutils import TU
+
+        txn = await Transaction.generate(
+            public_key=self._PUB_HEX,
+            private_key=self._PRIV_HEX,
+        )
+        ra = RotationAnnouncement(
+            curve="secp256r1", public_key=self._PUB_HEX, key_hash="1WRONGHASH"
+        )
+        txn.relationship = ra
+        txn.relationship_hash = hashlib.sha256(ra.to_string().encode()).digest().hex()
+        txn.prev_public_key_hash = "1SOMEPREVHASH"  # non-inception
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = TU.generate_signature_with_private_key(
+            self._PRIV_HEX, txn.hash
+        )
+        with self.assertRaises(InvalidTransactionException) as ctx:
+            await txn.verify()
+        self.assertIn("P-256", str(ctx.exception))
+
+    async def test_to_dict_wraps_identity_announcement(self):
+        """IdentityAnnouncement uses to_relationship() in to_dict() — 'identity' key present."""
+        import hashlib
+
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+        from yadacoin.core.transactionutils import TU
+
+        sig = TU.generate_deterministic_signature.__func__(
+            TU, None, "mynode", self._PRIV_HEX
+        )
+        txn = await Transaction.generate(
+            public_key=self._PUB_HEX,
+            private_key=self._PRIV_HEX,
+        )
+        ann = IdentityAnnouncement(
+            username="mynode", username_signature=sig, host="1.2.3.4", port=8000
+        )
+        txn.relationship = ann
+        txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
+        d = txn.to_dict()
+        self.assertIn("identity", d["relationship"])
+
+    async def test_to_dict_wraps_rotation_announcement(self):
+        """RotationAnnouncement wrapped under 'rotation' key in to_dict()."""
+        import hashlib
+
+        from yadacoin.core.identityannouncement import RotationAnnouncement
+
+        txn = await Transaction.generate(
+            public_key=self._PUB_HEX,
+            private_key=self._PRIV_HEX,
+        )
+        ra = RotationAnnouncement(curve="secp256k1")
+        txn.relationship = ra
+        txn.prev_public_key_hash = "1SOMEPREV"
+        txn.relationship_hash = hashlib.sha256(ra.to_string().encode()).digest().hex()
+        d = txn.to_dict()
+        self.assertIn("rotation", d["relationship"])
 
 
 if __name__ == "__main__":

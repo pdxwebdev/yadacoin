@@ -652,3 +652,22 @@ class TestMongoInitPaths(AsyncTestCase):
         mock_db.consensus.delete_many.assert_called_with(
             {"block.index": {"$gte": 591762}}
         )
+
+    def test_key_event_log_create_indexes_exception_suppressed(self):
+        """Lines 460-461: if create_indexes raises for key_event_log, the exception
+        is silently suppressed and Mongo() initialisation continues."""
+        mock_db = self._make_default_mock_db()
+        # Make key_event_log.create_indexes raise
+        mock_db.key_event_log = MagicMock()
+        mock_db.key_event_log.create_indexes.side_effect = Exception(
+            "index creation failed"
+        )
+        mock_client = MagicMock()
+        mock_client.__getitem__.return_value = mock_db
+        with mock.patch("yadacoin.core.mongo.MongoClient", return_value=mock_client):
+            with mock.patch(
+                "yadacoin.core.mongo.MotorClient", return_value=MagicMock()
+            ):
+                # Should not raise
+                m = Mongo()
+        self.assertIsNotNone(m)

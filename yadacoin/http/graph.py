@@ -580,13 +580,16 @@ class GraphTransactionHandler(BaseGraphHandler):
         dh_public_key = scalarmult_base(a).encode("latin1").hex()
         dh_private_key = a.encode("latin1").hex()
 
+        from yadacoin.core.keyrotation import get_node_signing_key
+
+        _kel_priv, _kel_pub, _kel_addr = get_node_signing_key(config)
         transaction = await Transaction.generate(
             username_signature=username_signature,
             username=username,
             fee=0.00,
-            public_key=config.public_key,
+            public_key=_kel_pub,
             dh_public_key=dh_public_key,
-            private_key=config.private_key,
+            private_key=_kel_priv,
             dh_private_key=dh_private_key,
             outputs=[{"to": to, "value": 0}],
         )

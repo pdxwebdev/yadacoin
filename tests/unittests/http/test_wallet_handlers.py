@@ -605,7 +605,7 @@ class TestUnlockHandlerPost(WalletHttpTestCase):
             body=body,
             headers={"Content-Type": "application/json"},
         )
-        self.assertEqual(response.code, 200)
+        self.assertEqual(response.code, 400)
         data = json.loads(response.body)
         self.assertIn("status", data)
         self.assertEqual(data["status"], "error")

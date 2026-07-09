@@ -31,6 +31,10 @@ from yadacoin.core.collections import Collections
 from yadacoin.core.config import Config
 from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
 from yadacoin.core.credentialreceipt import CredentialReceipt
+from yadacoin.core.identityannouncement import (
+    IdentityAnnouncement,
+    RotationAnnouncement,
+)
 from yadacoin.core.nodeannouncement import NodeAnnouncement
 from yadacoin.core.recoveryannouncement import (
     RecoveryAnnouncement,
@@ -163,15 +167,48 @@ class Transaction(object):
             self.relationship = Contract.from_dict(
                 self.relationship[Collections.SMART_CONTRACT.value]
             )
-        elif isinstance(self.relationship, dict) and "node" in self.relationship:
-            # Convert node announcement dict to NodeAnnouncement instance
-            self.relationship = NodeAnnouncement.from_dict(self.relationship["node"])
-        elif isinstance(self.relationship, dict) and "agent" in self.relationship:
-            # Convert agent registration dict to AgentAnnouncement instance
-            self.relationship = AgentAnnouncement.from_dict(self.relationship["agent"])
         elif (
             isinstance(self.relationship, dict)
-            and "content_takedown" in self.relationship
+            and NodeAnnouncement.RELATIONSHIP_KEY in self.relationship
+        ):
+            # Convert node announcement dict to NodeAnnouncement instance
+            self.relationship = NodeAnnouncement.from_dict(
+                self.relationship[NodeAnnouncement.RELATIONSHIP_KEY]
+            )
+        elif (
+            isinstance(self.relationship, dict)
+            and IdentityAnnouncement.RELATIONSHIP_KEY in self.relationship
+        ):
+            # Convert identity announcement dict to IdentityAnnouncement instance
+            # (also parses optional "rotation" sibling for secp256r1 nodes)
+            try:
+                self.relationship = IdentityAnnouncement.from_relationship(
+                    self.relationship
+                )
+            except (ValueError, TypeError):
+                pass
+        elif (
+            isinstance(self.relationship, dict)
+            and RotationAnnouncement.RELATIONSHIP_KEY in self.relationship
+        ):
+            # Rotation-only (subsequent rotations for secp256r1 nodes — no identity)
+            try:
+                self.relationship = RotationAnnouncement.from_relationship(
+                    self.relationship
+                )
+            except (ValueError, TypeError):
+                pass
+        elif (
+            isinstance(self.relationship, dict)
+            and AgentAnnouncement.RELATIONSHIP_KEY in self.relationship
+        ):
+            # Convert agent registration dict to AgentAnnouncement instance
+            self.relationship = AgentAnnouncement.from_dict(
+                self.relationship[AgentAnnouncement.RELATIONSHIP_KEY]
+            )
+        elif (
+            isinstance(self.relationship, dict)
+            and ContentTakedownAnnouncement.RELATIONSHIP_KEY in self.relationship
         ):
             # Convert content takedown dict to ContentTakedownAnnouncement instance
             try:
@@ -182,8 +219,8 @@ class Transaction(object):
                 pass
         elif (
             isinstance(self.relationship, dict)
-            and "recovery" in self.relationship
-            and "recovers" in self.relationship
+            and RecoveryAnnouncement.RELATIONSHIP_KEY in self.relationship
+            and RecoveryProof.RELATIONSHIP_KEY in self.relationship
         ):
             # Combined recovers-inception proof + new recovery announcement.
             # The dict carries both keys — detect this BEFORE the individual
@@ -195,7 +232,10 @@ class Transaction(object):
                 )
             except (ValueError, TypeError):
                 pass
-        elif isinstance(self.relationship, dict) and "recovery" in self.relationship:
+        elif (
+            isinstance(self.relationship, dict)
+            and RecoveryAnnouncement.RELATIONSHIP_KEY in self.relationship
+        ):
             # Location-recovery announcement: {"recovery": <witness_hash_hex>}
             # embedded in a regular KEL rotation by the user's current key.
             # If the payload is malformed we leave the raw dict in place so
@@ -208,7 +248,10 @@ class Transaction(object):
                 )
             except (ValueError, TypeError):
                 pass
-        elif isinstance(self.relationship, dict) and "recovers" in self.relationship:
+        elif (
+            isinstance(self.relationship, dict)
+            and RecoveryProof.RELATIONSHIP_KEY in self.relationship
+        ):
             # Recovers-inception proof: {"recovers": {commitment, R, s}}
             # carried by an inception-shaped txn whose prev_public_key_hash
             # points at the lost KEL's tip pkh.  Same tolerance as above.
@@ -666,7 +709,9 @@ class Transaction(object):
                         "inputs or value-bearing outputs."
                     )
             else:
-                has_kel = await self.has_key_event_log(block, mempool)
+                has_kel = await self.has_key_event_log(
+                    block, mempool, include_offchain=True
+                )
                 # If the on-chain (or mempool) check didn't find a parent,
                 # also check batch_txns — the parent may be a sibling in the
                 # block currently being assembled (e.g. inception + confirming
@@ -675,17 +720,19 @@ class Transaction(object):
                 # called with mempool=False (block proxy) so that legitimate
                 # same-block KEL pairs are not incorrectly excluded.
                 if not has_kel and batch_txns:
-                    address = str(
-                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
-                    )
-                    has_kel = any(
-                        (
-                            t.twice_prerotated_key_hash == address
-                            or t.prerotated_key_hash == address
-                        )
-                        and t.transaction_signature != self.transaction_signature
+                    # address is already computed above — reuse it.
+                    # Build a lookup set for O(1) per-entry checks.
+                    _batch_prerotated = {
+                        t.prerotated_key_hash
                         for t in batch_txns
-                    )
+                        if t.transaction_signature != self.transaction_signature
+                    }
+                    _batch_twice = {
+                        t.twice_prerotated_key_hash
+                        for t in batch_txns
+                        if t.transaction_signature != self.transaction_signature
+                    }
+                    has_kel = address in _batch_prerotated or address in _batch_twice
 
             if has_kel:
                 txn_key_event = KeyEvent(self)
@@ -770,6 +817,51 @@ class Transaction(object):
                 raise InvalidTransactionException(
                     "Agent registration transaction missing endpoint_url"
                 )
+        elif isinstance(self.relationship, IdentityAnnouncement):
+            relationship = self.relationship.to_string()
+            # Validate the username_signature against the transaction's public_key
+            if not self.relationship.verify_username_signature(self.public_key):
+                raise InvalidTransactionException(
+                    "Identity announcement: username_signature does not match public_key"
+                )
+            # Blank username is never allowed
+            if not self.relationship.username:
+                raise InvalidTransactionException(
+                    "Identity announcement: username must not be blank"
+                )
+            # Username must be unique across chain + mempool
+            already_claimed = await IdentityAnnouncement.exists_username(
+                self.relationship.username,
+                exclude_txn_sig=self.transaction_signature,
+            )
+            if already_claimed:
+                raise InvalidTransactionException(
+                    f"Identity announcement: username '{self.relationship.username}' is already claimed"
+                )
+            # Validate the embedded rotation key if present (secp256r1 only)
+            if self.relationship.rotation:
+                try:
+                    self.relationship.rotation.validate_p256()
+                except ValueError as exc:
+                    raise InvalidTransactionException(
+                        f"Identity announcement: invalid rotation key — {exc}"
+                    )
+        elif isinstance(self.relationship, RotationAnnouncement):
+            relationship = self.relationship.to_string()
+            # Rotation-only announcements must NOT be inception transactions
+            if not self.prev_public_key_hash:
+                raise InvalidTransactionException(
+                    "Rotation announcement without 'identity' is only valid for subsequent rotations, "
+                    "not inception (prev_public_key_hash is empty)"
+                )
+            # Validate P-256 key consistency for secp256r1 rotations
+            if self.relationship.curve == "secp256r1":
+                try:
+                    self.relationship.validate_p256()
+                except ValueError as exc:
+                    raise InvalidTransactionException(
+                        f"Rotation announcement: invalid P-256 key — {exc}"
+                    )
         elif isinstance(self.relationship, ContentTakedownAnnouncement):
             relationship = self.relationship.to_string()
             if not check_content_takedown:
@@ -923,6 +1015,10 @@ class Transaction(object):
         if isinstance(self.relationship, Contract):
             relationship = self.relationship.to_string()
         elif isinstance(self.relationship, NodeAnnouncement):
+            relationship = self.relationship.to_string()
+        elif isinstance(
+            self.relationship, (IdentityAnnouncement, RotationAnnouncement)
+        ):
             relationship = self.relationship.to_string()
         elif isinstance(self.relationship, AgentAnnouncement):
             relationship = self.relationship.to_string()
@@ -1305,8 +1401,14 @@ class Transaction(object):
             return authorized_addresses, authorized_pub_keys
         return None, None
 
-    async def has_key_event_log(self, block=None, mempool=False):
-        from yadacoin.core.keyeventlog import BlocksQueryFields, MempoolQueryFields
+    async def has_key_event_log(
+        self, block=None, mempool=False, include_offchain=False
+    ):
+        from yadacoin.core.keyeventlog import (
+            BlocksQueryFields,
+            KeyEventLogQueryFields,
+            MempoolQueryFields,
+        )
 
         # this function is the primary method for catching transactions which attempt
         # sign a transaction with a stolen key. We must check if the transaction's
@@ -1350,6 +1452,16 @@ class Transaction(object):
             result = await self.config.mongo.async_db.miner_transactions.find_one(query)
             if result:
                 return True
+            # Also check key_event_log — off-chain ratchet steps store parent
+            # commitments there rather than in miner_transactions.
+            # Only when include_offchain=True (P2P auth path); skip for UTXO
+            # output rule enforcement which doesn't apply to off-chain steps.
+            if include_offchain:
+                kel_result = await self.config.mongo.async_db.key_event_log.find_one(
+                    {KeyEventLogQueryFields.PREROTATED_KEY_HASH.value: address}
+                )
+                if kel_result:
+                    return True
         return False
 
     async def verify_kel_output_rules(self, block=None, mempool=False):
@@ -1377,8 +1489,11 @@ class Transaction(object):
                     f"Key event tx sends to its own public_key_hash ({self.public_key_hash}) instead of prerotated_key_hash."
                 )
 
-        # Only enforce spend rules when this key's address is tracked in an existing log
-        if not await self.has_key_event_log(block=block, mempool=mempool):
+        # Only enforce spend rules when this key's address is tracked in an existing
+        # on-chain or mempool log — off-chain ratchet steps have no UTXOs to check.
+        if not await self.has_key_event_log(
+            block=block, mempool=mempool, include_offchain=False
+        ):
             return
 
         # Build the full log (including mempool entries) so that inception transactions
@@ -1495,15 +1610,26 @@ class Transaction(object):
         relationship = self.relationship
         if hasattr(relationship, "to_dict"):
             relationship = relationship.to_dict()
-            # Wrap NodeAnnouncement back in "node" key for storage
+            # Wrap NodeAnnouncement back in its RELATIONSHIP_KEY for storage
             if isinstance(self.relationship, NodeAnnouncement):
-                relationship = {"node": relationship}
-            # Wrap AgentAnnouncement back in "agent" key for storage
+                relationship = {NodeAnnouncement.RELATIONSHIP_KEY: relationship}
+            # Wrap AgentAnnouncement back in its RELATIONSHIP_KEY for storage
             elif isinstance(self.relationship, AgentAnnouncement):
-                relationship = {"agent": relationship}
-            # Wrap ContentTakedownAnnouncement back in "content_takedown" key
+                relationship = {AgentAnnouncement.RELATIONSHIP_KEY: relationship}
+            # Wrap ContentTakedownAnnouncement back in its RELATIONSHIP_KEY
             elif isinstance(self.relationship, ContentTakedownAnnouncement):
-                relationship = {"content_takedown": relationship}
+                relationship = {
+                    ContentTakedownAnnouncement.RELATIONSHIP_KEY: relationship
+                }
+            # IdentityAnnouncement: use to_relationship() so the optional
+            # "rotation" sibling is preserved alongside the "identity" key
+            elif isinstance(self.relationship, IdentityAnnouncement):
+                relationship = self.relationship.to_relationship()
+            # RotationAnnouncement (rotation-only, no identity sibling)
+            elif isinstance(self.relationship, RotationAnnouncement):
+                relationship = {RotationAnnouncement.RELATIONSHIP_KEY: relationship}
+            # RecoveryAnnouncement and RecoveryProof are already self-wrapping
+            # (to_dict() returns {"recovery": ...} / {"recovers": ...})
         ret = {
             "time": int(self.time),
             "rid": self.rid,

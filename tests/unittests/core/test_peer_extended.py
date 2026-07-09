@@ -826,6 +826,8 @@ class TestPeerMyPeer(AsyncTestCase):
     async def asyncSetUp(self):
         self.config = Config()
         self.config.network = "regnet"
+        self.config.kel_username_signature = "kel_sig"
+        self.config.kel_public_key = "kel_sig"
         self.config.app_log = getLogger("tornado.application")
 
     async def test_my_peer_default_returns_user(self):

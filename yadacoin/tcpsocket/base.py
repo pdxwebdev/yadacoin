@@ -21,12 +21,94 @@ from traceback import format_exc
 from uuid import uuid4
 
 from coincurve import verify_signature
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric.x25519 import (
+    X25519PrivateKey,
+    X25519PublicKey,
+)
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from tornado.iostream import StreamClosedError
 from tornado.tcpclient import TCPClient
 from tornado.tcpserver import TCPServer
 from tornado.util import TimeoutError
 
 from yadacoin.core.config import Config
+
+
+class ProtocolVersionTooLowError(Exception):
+    """Raised when a peer announces a protocol version below the minimum."""
+
+
+# ---------------------------------------------------------------------------
+# Session encryption (X25519 ECDH + AES-256-GCM)
+# ---------------------------------------------------------------------------
+
+#: Methods sent before the session cipher is established — always plain.
+PRE_AUTH_METHODS = frozenset({"connect", "challenge"})
+
+
+class SessionCipher:
+    """Symmetric AES-256-GCM cipher for an established P2P session.
+
+    Key is derived once via X25519 ECDH + HKDF at the end of the
+    challenge/authenticate handshake.  Separate monotonic counters are kept
+    for each direction so the nonces never collide.
+    """
+
+    NONCE_SIZE = 12  # 96-bit nonce required by AES-GCM
+    _HKDF_INFO = b"yadacoin-p2p-session-v5"
+
+    def __init__(self, session_key: bytes):
+        self._aes = AESGCM(session_key)
+        self._send_counter = 0
+        self._recv_counter = 0
+
+    def encrypt(self, plaintext: bytes) -> bytes:
+        nonce = self._send_counter.to_bytes(self.NONCE_SIZE, "big")
+        self._send_counter += 1
+        return nonce + self._aes.encrypt(nonce, plaintext, None)
+
+    def decrypt(self, data: bytes) -> bytes:
+        nonce, ct = data[: self.NONCE_SIZE], data[self.NONCE_SIZE :]
+        return self._aes.decrypt(nonce, ct, None)
+
+    # ------------------------------------------------------------------
+    # ECDH helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def generate_keypair() -> tuple:
+        """Return ``(X25519PrivateKey, b64_public_key_str)``."""
+        priv = X25519PrivateKey.generate()
+        pub_b64 = base64.b64encode(
+            priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        ).decode()
+        return priv, pub_b64
+
+    @staticmethod
+    def derive(
+        my_priv: X25519PrivateKey,
+        peer_pub_b64: str,
+        token: str,
+    ) -> "SessionCipher":
+        """Perform ECDH and derive the AES session key.
+
+        ``token`` (the challenge token) is used as the HKDF salt so the
+        session key is bound to a specific authenticated exchange.
+        """
+        peer_pub_bytes = base64.b64decode(peer_pub_b64)
+        peer_pub = X25519PublicKey.from_public_bytes(peer_pub_bytes)
+        shared = my_priv.exchange(peer_pub)
+        session_key = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=token.encode("utf-8"),
+            info=SessionCipher._HKDF_INFO,
+        ).derive(shared)
+        return SessionCipher(session_key)
+
 
 REQUEST_RESPONSE_MAP = {
     "blockresponse": "getblock",
@@ -84,9 +166,16 @@ class BaseRPC:
             stream.message_queue[method][rpc_data["id"]] = rpc_data
 
         try:
-            await asyncio.wait_for(
-                stream.write("{}\n".format(json.dumps(rpc_data)).encode()), timeout=5
-            )
+            cipher = getattr(stream, "session_cipher", None)
+            if cipher and method not in PRE_AUTH_METHODS:
+                plain = json.dumps(rpc_data).encode("utf-8")
+                ct = cipher.encrypt(plain)
+                line = (
+                    json.dumps({"enc": base64.b64encode(ct).decode()}) + "\n"
+                ).encode()
+            else:
+                line = "{}\n".format(json.dumps(rpc_data)).encode()
+            await asyncio.wait_for(stream.write(line), timeout=5)
 
         except asyncio.TimeoutError:
             self.config.app_log.warning(
@@ -190,7 +279,14 @@ class RPCSocketServer(TCPServer, BaseRPC):
                 stream.last_activity = int(time.time())
                 self.config.health.tcp_server.last_activity = time.time()
                 try:
-                    body = json.loads(data)
+                    # Decrypt if the peer has an established session cipher
+                    raw = data.strip()
+                    cipher = getattr(stream, "session_cipher", None)
+                    if cipher and raw.startswith(b'{"enc":'):
+                        enc_obj = json.loads(raw)
+                        ct = base64.b64decode(enc_obj["enc"])
+                        raw = cipher.decrypt(ct)
+                    body = json.loads(raw)
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     self.config.app_log.warning(
                         f"Invalid data from peer, skipping message: {data[:200]}"
@@ -207,23 +303,20 @@ class RPCSocketServer(TCPServer, BaseRPC):
                             ]
                 if not hasattr(self, method):
                     continue
+                if (
+                    hasattr(self.config, "tcp_traffic_debug")
+                    and self.config.tcp_traffic_debug == True
+                ):
+                    _peer_addr = (
+                        getattr(getattr(stream, "peer", None), "host", None)
+                        or getattr(getattr(stream, "peer", None), "address", None)
+                        or getattr(stream, "socket", None)
+                        or "unknown"
+                    )
+                    self.config.app_log.debug(
+                        f"SERVER RECEIVED {_peer_addr} {method} {body}"
+                    )
                 if hasattr(stream, "peer"):
-                    if hasattr(stream.peer, "host"):
-                        if (
-                            hasattr(self.config, "tcp_traffic_debug")
-                            and self.config.tcp_traffic_debug == True
-                        ):
-                            self.config.app_log.debug(
-                                f"SERVER RECEIVED {stream.peer.host} {method} {body}"
-                            )
-                    if hasattr(stream.peer, "address"):
-                        if (
-                            hasattr(self.config, "tcp_traffic_debug")
-                            and self.config.tcp_traffic_debug == True
-                        ):
-                            self.config.app_log.debug(
-                                f"SERVER RECEIVED {stream.peer.address} {method} {body}"
-                            )
                     id_attr = getattr(stream.peer, stream.peer.id_attribute)
                     if (
                         id_attr
@@ -453,7 +546,20 @@ class RPCSocketClient(TCPClient):
     async def wait_for_data(self, stream):
         while True:
             try:
-                body = json.loads(await stream.read_until(b"\n"))
+                raw = (await stream.read_until(b"\n")).strip()
+                # Decrypt if the peer has an established session cipher
+                cipher = getattr(stream, "session_cipher", None)
+                if cipher and raw.startswith(b'{"enc":'):
+                    try:
+                        enc_obj = json.loads(raw)
+                        ct = base64.b64decode(enc_obj["enc"])
+                        raw = cipher.decrypt(ct)
+                    except Exception:
+                        self.config.app_log.warning(
+                            "wait_for_data: decryption failed, skipping message"
+                        )
+                        continue
+                body = json.loads(raw)
 
                 if body.get("method") == "keepalive":
                     self.config.health.tcp_client.last_activity = time.time()
@@ -486,6 +592,9 @@ class RPCSocketClient(TCPClient):
                 await getattr(self, body.get("method"))(body, stream)
             except StreamClosedError:
                 await self.remove_peer(stream)
+                break
+            except ProtocolVersionTooLowError as e:
+                await self.remove_peer(stream, reason=str(e))
                 break
             except:
                 if hasattr(stream, "peer"):
