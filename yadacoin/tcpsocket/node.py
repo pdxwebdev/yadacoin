@@ -1244,6 +1244,9 @@ class NodeRPC(BaseRPC):
                     "confirming_public_key": _conf_pub,
                     "ratchet_chain": ratchet_chain,
                     "ecdh_public_key": _ecdh_pub,
+                    # Tell the recipient where our delta starts so it can assign
+                    # correct sequential counters to new entries.
+                    "latest_ratchet_pkh": _client_tip_pkh,
                 },
             )
         else:
@@ -1439,13 +1442,32 @@ class NodeRPC(BaseRPC):
         # Determine the next counter to assign for peer ratchet steps.
         # Counter is required so the server can later tell the peer which entries
         # it already has via latest_ratchet_pkh (tip lookup uses sort counter -1).
+        # Use latest_ratchet_pkh from params (sender confirms delta start) so we
+        # assign counters continuing from the correct known position, not blind max+1.
+        _chain_start_pkh = params.get("latest_ratchet_pkh", "")
         _existing_tip = None
         if _peer_k0:
-            _existing_tip = await self.config.mongo.async_db.key_event_log.find_one(
-                {"anchor_public_key": _peer_k0},
-                sort=[("counter", -1)],
+            if _chain_start_pkh:
+                _existing_tip = await self.config.mongo.async_db.key_event_log.find_one(
+                    {"anchor_public_key": _peer_k0, "public_key_hash": _chain_start_pkh}
+                )
+            if not _existing_tip:
+                _existing_tip = await self.config.mongo.async_db.key_event_log.find_one(
+                    {"anchor_public_key": _peer_k0},
+                    sort=[("counter", -1)],
+                )
+        if _existing_tip:
+            _next_counter = _existing_tip.get("counter") or (
+                await self.config.mongo.async_db.key_event_log.count_documents(
+                    {
+                        "anchor_public_key": _peer_k0,
+                        "_id": {"$lte": _existing_tip["_id"]},
+                    }
+                )
             )
-        _next_counter = (_existing_tip or {}).get("counter", 0) + 1
+            _next_counter += 1
+        else:
+            _next_counter = 1
 
         for txn in parsed_ratchet:
             is_inception = not txn.prev_public_key_hash
@@ -1947,6 +1969,8 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
                     "confirming_public_key": _conf_pub,
                     "ratchet_chain": ratchet_chain,
                     "ecdh_public_key": client_ecdh_pub,
+                    # Tell the server where our delta starts.
+                    "latest_ratchet_pkh": _server_latest_pkh,
                 },
             )
         else:
