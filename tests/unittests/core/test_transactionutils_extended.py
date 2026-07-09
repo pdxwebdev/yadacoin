@@ -598,11 +598,13 @@ class TestCombineOldestTransactions(TUTestCase):
         mock_mempool_cursor.to_list = AsyncMock(return_value=[])
         mock_db.miner_transactions.find.return_value = mock_mempool_cursor
 
+        known_address = "1KnownTestAddress"
+
         async def many_txns(*args, **kwargs):
             for i in range(100):
                 yield {
                     "id": f"txn{i}",
-                    "outputs": [{"to": self.config.address, "value": 1.0}],
+                    "outputs": [{"to": known_address, "value": 1.0}],
                 }
 
         mock_bu = MagicMock()
@@ -614,10 +616,18 @@ class TestCombineOldestTransactions(TUTestCase):
 
         with patch.object(self.config.mongo, "async_db", new=mock_db):
             with patch.object(self.config, "BU", mock_bu):
-                with patch.object(
-                    TU, "send", new=AsyncMock(return_value={"id": "combined_txn"})
-                ) as mock_send:
-                    await TU.combine_oldest_transactions(self.config)
+                with patch(
+                    "yadacoin.core.transactionutils.get_node_signing_key",
+                    return_value=(
+                        "privhex",
+                        "pubhex",
+                        known_address,
+                    ),
+                ):
+                    with patch.object(
+                        TU, "send", new=AsyncMock(return_value={"id": "combined_txn"})
+                    ) as mock_send:
+                        await TU.combine_oldest_transactions(self.config)
 
         mock_send.assert_called_once()
 

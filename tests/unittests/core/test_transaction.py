@@ -1879,6 +1879,23 @@ class TestTransactionPureMethods(AsyncTestCase):
         result = await txn.has_key_event_log(mempool=True)
         self.assertTrue(result)
 
+    async def test_has_key_event_log_include_offchain_kel_result_returns_true(self):
+        """Lines 1459-1464: include_offchain=True and key_event_log has a match → True."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        txn = Transaction(public_key=yadacoin.core.config.CONFIG.public_key)
+        mock_mongo = MagicMock()
+        mock_mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        mock_mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        mock_mongo.async_db.key_event_log.find_one = AsyncMock(
+            return_value={"prerotated_key_hash": "1ADDR"}
+        )
+        txn.config.mongo = mock_mongo
+
+        result = await txn.has_key_event_log(include_offchain=True, mempool=True)
+        self.assertTrue(result)
+        mock_mongo.async_db.key_event_log.find_one.assert_awaited_once()
+
     # -----------------------------------------------------------------------
     # verify_kel_output_rules (lines 1193-1270)
     # -----------------------------------------------------------------------

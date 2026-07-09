@@ -736,6 +736,31 @@ class TestUpdateActiveKelKey(unittest.TestCase):
         expected_pub = CK(_VALID_PRIV).public_key.format(compressed=True).hex()
         self.assertEqual(cfg.kel_public_key, expected_pub)
 
+    def test_generate_deterministic_signature_exception_logged_not_raised(self):
+        """Lines 1005-1006: when generate_deterministic_signature raises, the
+        exception is caught and logged via app_log.debug — should not propagate."""
+        from unittest.mock import patch
+
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        cfg = _make_config(username="testnode")
+        mgr = NodeKeyRotationManager(cfg)
+
+        priv_bytes = bytes.fromhex(
+            "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        )
+        k0 = {"private_key": priv_bytes, "chain_code": priv_bytes}
+        kel = []
+
+        with patch(
+            "yadacoin.core.transactionutils.TU.generate_deterministic_signature",
+            side_effect=Exception("sig error"),
+        ):
+            # Must not raise
+            mgr._update_active_kel_key(kel, k0, "factor")
+
+        cfg.app_log.debug.assert_called()
+
 
 # ---------------------------------------------------------------------------
 # _try_finalise
