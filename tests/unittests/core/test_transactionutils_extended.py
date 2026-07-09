@@ -30,6 +30,13 @@ class TUTestCase(AsyncTestCase):
         self.config = config
         self.public_key = config.public_key
         self.private_key = config.private_key
+        self.config.kel_private_key = (
+            "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        )
+        self.config.kel_public_key = (
+            "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
+        )
+        self.config.kel_address = "kel_address"
 
 
 # ---------------------------------------------------------------------------

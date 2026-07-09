@@ -1606,6 +1606,32 @@ class TestKeyEventVerifyAsyncBranches(AsyncTestCase):
             # Should NOT raise
             await ke.verify(batch_txns=[batch_txn])
 
+    async def test_verify_confirming_batch_txns_match_returns_with_offchain_parent(
+        self,
+    ):
+        """Lines 269-280: confirming, batch_txns match → return early without raising, with allow_offchain_parent=True."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyeventlog import KeyEventFlag
+
+        ke = _make_mock_ke(
+            flag=KeyEventFlag.CONFIRMING, prev_public_key_hash="PREV_ADDR"
+        )
+
+        batch_txn = MagicMock()
+        batch_txn.public_key_hash = "PREV_ADDR"
+
+        with patch("yadacoin.core.keyeventlog.P2PKHBitcoinAddress") as mock_btc:
+            mock_btc.from_pubkey.return_value = _VALID_ADDR_A
+            ke.sends_to_past_kel_entry = AsyncMock(return_value=False)
+            ke.get_onchain_parent = AsyncMock(return_value=None)
+            ke.config.mongo.async_db.miner_transactions.find_one = AsyncMock(
+                return_value=None
+            )
+
+            # Should NOT raise
+            await ke.verify(batch_txns=[batch_txn], allow_offchain_parent=True)
+
     async def test_verify_unconfirmed_no_onchain_parent_raises(self):
         """Lines 285-297: unconfirmed, no onchain parent, no batch → raises KELException."""
         from unittest.mock import AsyncMock, patch

@@ -14,7 +14,6 @@ Full license terms: see LICENSE.txt in this repository.
 import asyncio
 import base64
 import time
-from uuid import uuid4
 
 from coincurve import verify_signature
 from tornado.iostream import StreamClosedError
@@ -1086,10 +1085,6 @@ class NodeRPC(BaseRPC):
         # our chain so challenge can send only the delta they're missing.
         stream._client_latest_ratchet_pkh = params.get("latest_ratchet_pkh", "")
         # Accept the peer's unconfirmed KEL chain if provided.
-        # This breaks the bootstrapping deadlock: a brand-new node whose
-        # inception (and any intermediate anchor txns) have never been gossiped
-        # embeds them in the plaintext connect message so the receiver can add
-        # them to its mempool before authenticate runs the KEL lookup.
         kel_chain_list = params.get("kel_chain") or []
         if kel_chain_list:
             await self._accept_peer_kel_chain(kel_chain_list)
@@ -1098,552 +1093,8 @@ class NodeRPC(BaseRPC):
                 stream.peer.__class__.__name__, stream.peer.to_json()
             )
         )
+        await self._handle_kel_connect(stream, params)
         return {}
-
-    async def challenge(self, body, stream):
-        try:
-            self.ensure_protocol_version(body, stream)
-        except:
-            return await self.remove_peer(
-                stream, reason="protocol version < 5 not allowed (KEL enforcement)"
-            )
-        try:
-            params = body.get("params", {})
-            challenge = params.get("token")
-            from yadacoin.core.keyrotation import get_node_auth_key
-
-            _auth_priv, _auth_pub, _conf_priv, _conf_pub = await get_node_auth_key(
-                self.config
-            )
-            # Bind our ECDH public key into the signed payload so the verifier
-            # can confirm the transport key was not substituted by a MITM.
-            # Signed payload: "<challenge_token>|<our_ecdh_pub_b64>"
-            _ecdh_priv, _ecdh_pub = SessionCipher.generate_keypair()
-            peer_ecdh_pub = getattr(stream, "_peer_ecdh_pub", "")
-            ecdh_binding = challenge + "|" + _ecdh_pub
-            signed_challenge = TU.generate_signature(ecdh_binding, _auth_priv)
-            # Confirming signature: next key signs the same binding
-            confirming_signed_challenge = None
-            if _conf_priv:
-                confirming_signed_challenge = TU.generate_signature(
-                    ecdh_binding, _conf_priv
-                )
-            if peer_ecdh_pub:
-                stream.session_cipher = SessionCipher.derive(
-                    _ecdh_priv, peer_ecdh_pub, ""
-                )
-            # Build the sender's full KEL chain using K0 (the inception key,
-            # not the WIF identity key — they are different).
-            # K0 is the public_key in the IdentityAnnouncement stored in the inception.
-            from yadacoin.core.identityannouncement import (
-                IdentityAnnouncement as _IAself,
-            )
-
-            _own_identity = await _IAself.get_by_username(
-                getattr(self.config, "username", "") or "", include_mempool=True
-            )
-            _k0_pub = (_own_identity or {}).get("public_key") or getattr(
-                self.config, "kel_public_key", None
-            )
-            # Build the ratchet chain: only send steps the peer doesn't have yet.
-            # The peer reports its latest known PKH for our chain via connect;
-            # we skip everything up to and including that entry.
-            ratchet_chain = []
-            if _k0_pub:
-                skip_after_counter = 0
-                _client_tip_pkh = getattr(stream, "_client_latest_ratchet_pkh", "")
-                if _client_tip_pkh:
-                    _tip_entry = (
-                        await self.config.mongo.async_db.key_event_log.find_one(
-                            {
-                                "anchor_public_key": _k0_pub,
-                                "public_key_hash": _client_tip_pkh,
-                            }
-                        )
-                    )
-                    if _tip_entry:
-                        skip_after_counter = _tip_entry.get("counter") or (
-                            await self.config.mongo.async_db.key_event_log.count_documents(
-                                {
-                                    "anchor_public_key": _k0_pub,
-                                    "_id": {"$lte": _tip_entry["_id"]},
-                                }
-                            )
-                        )
-                cursor = self.config.mongo.async_db.key_event_log.find(
-                    {
-                        "anchor_public_key": _k0_pub,
-                        "counter": {"$gt": skip_after_counter},
-                    },
-                    {"_id": 0, "txn": 1},
-                ).sort("counter", 1)
-                ratchet_chain = [
-                    entry["txn"]
-                    for entry in await cursor.to_list(length=None)
-                    if "txn" in entry
-                ]
-        except Exception as _exc:
-            self.config.app_log.warning(
-                "NodeRPC challenge error (%s): %s",
-                stream.peer.host if stream.peer else "?",
-                _exc,
-                exc_info=True,
-            )
-            return await self.remove_peer(
-                stream, reason="NodeRPC challenge: generate_signature"
-            )
-        # Send the challenge (plaintext — in PRE_AUTH_METHODS) FIRST so the
-        # client can derive the session cipher before we send the encrypted
-        # authenticate response.  Swapping the order prevents the client from
-        # receiving an encrypted message it can't yet decrypt.
-        stream.peer.token = str(uuid4())
-        challenge_payload = {
-            "peer": self.config.peer.to_dict(),
-            "token": stream.peer.token,
-        }
-        if peer_ecdh_pub:
-            challenge_payload["ecdh_public_key"] = _ecdh_pub
-        # Embed our full unconfirmed KEL chain so the peer can build our
-        # chain from K0 even if none of our KEL txns have been gossiped yet.
-        pending_kel_chain = await self._get_pending_kel_chain()
-        if pending_kel_chain:
-            challenge_payload["kel_chain"] = pending_kel_chain
-        # Tell the client what we already have of THEIR ratchet chain so they
-        # only send us the delta steps we're missing in authenticate.
-        _client_k0_for_hint = None
-        if getattr(stream.peer.identity, "username", ""):
-            from yadacoin.core.identityannouncement import (
-                IdentityAnnouncement as _IAhint,
-            )
-
-            _peer_ia_hint = await _IAhint.get_by_username(
-                stream.peer.identity.username, include_mempool=True
-            )
-            _client_k0_for_hint = (_peer_ia_hint or {}).get("public_key")
-        if not _client_k0_for_hint:
-            _client_k0_for_hint = stream.peer.identity.public_key
-        if _client_k0_for_hint:
-            _srv_tip = await self.config.mongo.async_db.key_event_log.find_one(
-                {"anchor_public_key": _client_k0_for_hint},
-                sort=[("counter", -1)],
-            )
-            if _srv_tip and _srv_tip.get("public_key_hash"):
-                challenge_payload["latest_ratchet_pkh"] = _srv_tip["public_key_hash"]
-        await self.write_params(stream, "challenge", challenge_payload)
-        # Send authenticate AFTER challenge so the client has the ECDH key
-        # (from the challenge payload above) before it receives this encrypted message.
-        if stream.peer.protocol_version > 1:
-            await self.write_params(
-                stream,
-                "authenticate",
-                {
-                    "peer": self.config.peer.to_dict(),
-                    "signed_challenge": signed_challenge,
-                    "ratchet_public_key": _auth_pub,
-                    "confirming_signed_challenge": confirming_signed_challenge,
-                    "confirming_public_key": _conf_pub,
-                    "ratchet_chain": ratchet_chain,
-                    "ecdh_public_key": _ecdh_pub,
-                    # Tell the recipient where our delta starts so it can assign
-                    # correct sequential counters to new entries.
-                    "latest_ratchet_pkh": _client_tip_pkh,
-                },
-            )
-        else:
-            await self.write_result(
-                stream,
-                "authenticate",
-                {
-                    "peer": self.config.peer.to_dict(),
-                    "signed_challenge": signed_challenge,
-                    "ratchet_public_key": _auth_pub,
-                    "confirming_signed_challenge": confirming_signed_challenge,
-                    "confirming_public_key": _conf_pub,
-                    "ratchet_chain": ratchet_chain,
-                    "ecdh_public_key": _ecdh_pub,
-                },
-                body["id"],
-            )
-
-    async def authenticate(self, body, stream):
-        self.ensure_protocol_version(body, stream)
-        if stream.peer.protocol_version > 1:
-            params = body.get("params", {})
-        else:
-            params = body.get("result", {})
-        signed_challenge = params.get("signed_challenge")
-        ratchet_public_key = params.get("ratchet_public_key")
-        confirming_signed_challenge = params.get("confirming_signed_challenge")
-        confirming_public_key = params.get("confirming_public_key")
-        ratchet_chain = params.get("ratchet_chain") or []
-        # The sender committed their ECDH key into the signed payload to prevent
-        # MITM substitution of transport keys.  Reconstruct the binding here.
-        peer_ecdh_in_auth = params.get("ecdh_public_key", "")
-        if not peer_ecdh_in_auth:
-            return await self.remove_peer(
-                stream,
-                reason="authenticate: missing ecdh_public_key — ECDH binding is mandatory",
-            )
-        local_peer_ecdh = getattr(stream, "_peer_ecdh_pub", "")
-        if local_peer_ecdh and peer_ecdh_in_auth != local_peer_ecdh:
-            self.config.app_log.warning(
-                "  [FAIL] ECDH key in authenticate (%s...) does not match "
-                "the key used to derive the session cipher (%s...) — possible MITM",
-                peer_ecdh_in_auth[:16],
-                local_peer_ecdh[:16],
-            )
-            return await self.remove_peer(
-                stream,
-                reason="authenticate: ECDH public key mismatch — possible MITM substitution",
-            )
-        ecdh_binding = stream.peer.token + "|" + peer_ecdh_in_auth
-
-        peer_host = stream.peer.host
-        peer_username = getattr(stream.peer.identity, "username", peer_host)
-
-        self.config.app_log.info(
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  KEL Authentication  ←  %s (%s)\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-            peer_username,
-            peer_host,
-        )
-
-        # ── Step 1: primary signature ─────────────────────────────────────
-        # The peer signs challenge|ecdh_pub with their current ratchet key.
-        # This proves possession of the key AND binds the ECDH transport key,
-        # preventing a MITM from substituting the ECDH keys undetected.
-        result = verify_signature(
-            base64.b64decode(signed_challenge),
-            ecdh_binding.encode(),
-            bytes.fromhex(ratchet_public_key),
-        )
-        if not result:
-            self.config.app_log.warning(
-                "  [FAIL] Primary signature invalid  (key=%s...)",
-                ratchet_public_key[:16],
-            )
-            return await self.remove_peer(
-                stream, reason="authenticate: primary signature invalid"
-            )
-        self.config.app_log.info(
-            "  [OK]   Primary signature verified\n"
-            "         signing key : %s...%s\n"
-            "         Unlike TLS, this key rotates every authentication.",
-            ratchet_public_key[:16],
-            ratchet_public_key[-8:],
-        )
-
-        # ── Step 2: confirming signature ──────────────────────────────────
-        # The peer also signs the challenge with K_{n+i+1} — the *next* key.
-        # This proves they know SECOND_FACTOR (needed to derive K_{n+i+1}).
-        # An attacker who steals only K_{n+i} cannot produce this signature.
-        if confirming_signed_challenge and confirming_public_key:
-            confirming_ok = verify_signature(
-                base64.b64decode(confirming_signed_challenge),
-                ecdh_binding.encode(),
-                bytes.fromhex(confirming_public_key),
-            )
-            if not confirming_ok:
-                self.config.app_log.warning(
-                    "  [FAIL] Confirming signature invalid  (next key=%s...)\n"
-                    "         Peer has current key but not SECOND_FACTOR — "
-                    "possible key theft.",
-                    confirming_public_key[:16],
-                )
-                return await self.remove_peer(
-                    stream,
-                    reason="authenticate: confirming signature invalid — "
-                    "peer may have only the current key, not SECOND_FACTOR",
-                )
-            self.config.app_log.info(
-                "  [OK]   Confirming signature verified\n"
-                "         next key    : %s...%s\n"
-                "         Peer holds SECOND_FACTOR — stolen key alone is useless.",
-                confirming_public_key[:16],
-                confirming_public_key[-8:],
-            )
-        else:
-            self.config.app_log.info(
-                "  [--]   No confirming signature (KEL ratchet not yet active for this peer)"
-            )
-
-        # ── Step 3: accept ratchet transactions + verify against known chain ──
-        # First, verify and add ALL received ratchet transactions to our mempool.
-        # This is done unconditionally — even before we know if a KEL exists —
-        # so that on the next authentication, we already have these transactions
-        # and the peer only needs to send new delta steps, not the full chain.
-        from bitcoin.wallet import P2PKHBitcoinAddress
-
-        from yadacoin.core.identityannouncement import IdentityAnnouncement as _IApeer
-        from yadacoin.core.transaction import Transaction as _Txn
-
-        check_max_inputs = (
-            self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK
-        )
-        check_masternode_fee = (
-            self.config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK
-        )
-        check_kel = self.config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK
-        check_dynamic_nodes = (
-            self.config.LatestBlock.block.index >= CHAIN.DYNAMIC_NODES_FORK
-        )
-
-        # Parse all ratchet transactions first so we can pass the batch as
-        # batch_txns — this lets each tx see its siblings that haven't been
-        # upserted to the mempool yet, exactly as block verification does.
-        parsed_ratchet = []
-        for txn_dict in ratchet_chain:
-            try:
-                parsed_ratchet.append(_Txn.from_dict(txn_dict))
-            except Exception as exc:
-                return await self.remove_peer(
-                    stream,
-                    reason=f"authenticate: malformed ratchet transaction — {exc}",
-                )
-
-        # Resolve K0 — needed for storing ratchet steps with the correct
-        # anchor_public_key before the KEL build later in this handler.
-        _peer_ia = await _IApeer.get_by_username(
-            getattr(stream.peer.identity, "username", "") or "", include_mempool=True
-        )
-        _peer_k0 = (_peer_ia or {}).get("public_key") or (
-            parsed_ratchet[0].public_key if parsed_ratchet else None
-        )
-
-        for i, txn in enumerate(parsed_ratchet):
-            try:
-                await txn.verify(
-                    check_max_inputs=check_max_inputs,
-                    check_masternode_fee=check_masternode_fee,
-                    # Ratchet steps are off-chain KEL records from a trusted P2P
-                    # auth flow.  Skipping check_kel avoids the expensive
-                    # blocks.find_one scan in has_key_event_log for each step.
-                    # The chain integrity is verified by KeyEvent.verify() in the
-                    # anchor-finding section below.
-                    check_kel=False,
-                    check_dynamic_nodes=check_dynamic_nodes,
-                    mempool=True,
-                    # Pass the full batch so each tx can reference its siblings
-                    # (parent in chain) even before they are upserted to mempool.
-                    batch_txns=parsed_ratchet,
-                )
-            except Exception as exc:
-                return await self.remove_peer(
-                    stream,
-                    reason=f"authenticate: invalid ratchet transaction [{i}] — {exc}",
-                )
-
-        # All transactions verified — now store each transaction appropriately:
-        # - Inception (no prev_public_key_hash) → miner_transactions (gets mined)
-        # - Ratchet step → key_event_log (off-chain record, NOT mined individually)
-        # Periodic anchor transactions reach miner_transactions via _queue_reanchor.
-        #
-        # Determine the next counter to assign for peer ratchet steps.
-        # Counter is required so the server can later tell the peer which entries
-        # it already has via latest_ratchet_pkh (tip lookup uses sort counter -1).
-        # Use latest_ratchet_pkh from params (sender confirms delta start) so we
-        # assign counters continuing from the correct known position, not blind max+1.
-        _chain_start_pkh = params.get("latest_ratchet_pkh", "")
-        _existing_tip = None
-        if _peer_k0:
-            if _chain_start_pkh:
-                _existing_tip = await self.config.mongo.async_db.key_event_log.find_one(
-                    {"anchor_public_key": _peer_k0, "public_key_hash": _chain_start_pkh}
-                )
-            if not _existing_tip:
-                _existing_tip = await self.config.mongo.async_db.key_event_log.find_one(
-                    {"anchor_public_key": _peer_k0},
-                    sort=[("counter", -1)],
-                )
-        if _existing_tip:
-            _next_counter = _existing_tip.get("counter") or (
-                await self.config.mongo.async_db.key_event_log.count_documents(
-                    {
-                        "anchor_public_key": _peer_k0,
-                        "_id": {"$lte": _existing_tip["_id"]},
-                    }
-                )
-            )
-            _next_counter += 1
-        else:
-            _next_counter = 1
-
-        for txn in parsed_ratchet:
-            is_inception = not txn.prev_public_key_hash
-            if is_inception:
-                await self.config.mongo.async_db.miner_transactions.replace_one(
-                    {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
-                )
-            else:
-                await self.config.mongo.async_db.key_event_log.replace_one(
-                    {"public_key_hash": txn.public_key_hash},
-                    {
-                        "counter": _next_counter,
-                        "id": txn.transaction_signature,
-                        "anchor_public_key": _peer_k0,  # always K0
-                        "public_key": txn.public_key,
-                        "public_key_hash": txn.public_key_hash,
-                        "prerotated_key_hash": txn.prerotated_key_hash,
-                        "txn": txn.to_dict(),
-                        "timestamp": time.time(),
-                    },
-                    upsert=True,
-                )
-                _next_counter += 1
-
-        # Find the ratchet anchor: walk key_event_log entries from oldest to
-        # newest and check which is the first that has an on-chain or mempool
-        # parent.  That entry proves the ratchet chain is rooted in a valid KEL
-        # without loading the full blockchain history via build_from_public_key.
-        # Entries older than the anchor are pruned — they are redundant once their
-        # parent chain is confirmed.
-        from yadacoin.core.keyeventlog import KeyEvent as _KE
-
-        _anchor_key_event = None
-        _anchor_counter = 0
-        if _peer_k0:
-            _kel_chain_docs = (
-                await self.config.mongo.async_db.key_event_log.find(
-                    {"anchor_public_key": _peer_k0},
-                    {"_id": 0},
-                )
-                .sort("counter", 1)
-                .to_list(length=None)
-            )
-
-            for _doc in _kel_chain_docs:
-                if "txn" not in _doc:
-                    continue
-                try:
-                    _ratchet_txn = _Txn.from_dict(_doc["txn"])
-                    _ke = _KE(_ratchet_txn)
-                    _parent = (
-                        await _ke.get_onchain_parent() or await _ke.get_mempool_parent()
-                    )
-                    if _parent:
-                        _anchor_key_event = _parent["key_event"]
-                        _anchor_counter = _doc["counter"]
-                        break
-                except Exception:
-                    pass
-
-            # Prune ratchet entries that predate the confirmed anchor
-            if _anchor_counter > 0:
-                await self.config.mongo.async_db.key_event_log.delete_many(
-                    {
-                        "anchor_public_key": _peer_k0,
-                        "counter": {"$lt": _anchor_counter},
-                    }
-                )
-
-        # If no anchor was found via the ratchet chain, check for an inception
-        # directly on-chain or in the mempool (brand-new peer with no ratchet yet).
-        _has_kel = bool(_anchor_key_event)
-        if not _has_kel and _peer_k0:
-            _peer_k0_address = str(
-                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(_peer_k0))
-            )
-            _inception_check = (
-                await self.config.mongo.async_db.miner_transactions.find_one(
-                    {"public_key": _peer_k0, "prev_public_key_hash": ""}
-                )
-                or await self.config.mongo.async_db.blocks.find_one(
-                    {
-                        "transactions.public_key": _peer_k0,
-                        "transactions.prev_public_key_hash": "",
-                    }
-                )
-            )
-            _has_kel = bool(_inception_check)
-
-        if not _has_kel:
-            self.config.app_log.warning(
-                "  [FAIL] No KEL anchor or inception for %s.\n"
-                "         Peer must embed their inception in the connect message.",
-                peer_username,
-            )
-            return await self.remove_peer(
-                stream,
-                reason="authenticate: no KEL inception found — peer must send inception in connect",
-            )
-
-        # Username check: _peer_ia was fetched by the claimed username.
-        # Verify its public_key matches K0 so the identity can't be spoofed.
-        _claimed_username = getattr(stream.peer.identity, "username", "")
-        if _peer_ia:
-            _ia_pub_key = (_peer_ia or {}).get("public_key", "")
-            if _ia_pub_key and _peer_k0 and _ia_pub_key != _peer_k0:
-                self.config.app_log.warning(
-                    "  [FAIL] IdentityAnnouncement for '%s' has public_key %s...%s "
-                    "but peer's K0 is %s...%s",
-                    _claimed_username,
-                    _ia_pub_key[:16],
-                    _ia_pub_key[-8:],
-                    _peer_k0[:16],
-                    _peer_k0[-8:],
-                )
-                return await self.remove_peer(
-                    stream,
-                    reason="authenticate: peer username does not match on-chain KEL inception",
-                )
-            if _claimed_username:
-                self.config.app_log.info(
-                    "  [OK]   Username verified: '%s'", _claimed_username
-                )
-
-        _anchor_source = "ratchet" if _anchor_key_event else "inception"
-        self.config.app_log.info(
-            "  [OK]   KEL verified via %s anchor  (ratchet_tip=%d)",
-            _anchor_source,
-            _anchor_counter,
-        )
-
-        # Signing key authorization: check key_event_log first (off-chain ratchet),
-        # then fall back to blocks/mempool (on-chain anchor entries).
-        signing_address = str(
-            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ratchet_public_key))
-        )
-        # Check anchor entry itself
-        anchor_authorized = (
-            _anchor_key_event is not None
-            and getattr(_anchor_key_event.txn, "prerotated_key_hash", "")
-            == signing_address
-        )
-        if not anchor_authorized:
-            # Check off-chain ratchet steps (O(log n) indexed query)
-            kel_authorized = await self.config.mongo.async_db.key_event_log.find_one(
-                {
-                    "anchor_public_key": _peer_k0,
-                    "prerotated_key_hash": signing_address,
-                }
-            )
-            if not kel_authorized:
-                # Check on-chain anchor entries and mempool
-                kel_authorized = await self.config.mongo.async_db.blocks.find_one(
-                    {"transactions.prerotated_key_hash": signing_address}
-                ) or await self.config.mongo.async_db.miner_transactions.find_one(
-                    {"prerotated_key_hash": signing_address}
-                )
-            if not kel_authorized:
-                return await self.remove_peer(
-                    stream,
-                    reason="authenticate: ratchet signing key is not authorized by the KEL chain",
-                )
-        self.config.app_log.info(
-            "  [OK]   Ratchet key authorized  (new_steps=%d)",
-            len(ratchet_chain),
-        )
-
-        stream.peer.authenticated = True
-        self.config.app_log.info(
-            "  [✓]   %s authenticated  (protocol v%d)\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-            peer_username,
-            stream.peer.protocol_version,
-        )
-        await self.send_block_to_peer(self.config.LatestBlock.block, stream)
-        await self.get_next_block(self.config.LatestBlock.block, stream)
 
     def ensure_protocol_version(self, body, stream):
         params = body.get("params", {})
@@ -1748,6 +1199,615 @@ class NodeRPC(BaseRPC):
                 if ws_stream:
                     await ws_stream.route(body, source="tcpsocket")
 
+    # ── KEL single-connect helpers ────────────────────────────────────────────
+
+    async def _process_ratchet_auth(
+        self, stream, ratchet_chain, ratchet_public_key, latest_ratchet_pkh=""
+    ):
+        """Verify, store, and anchor-check a peer's ratchet_chain.
+
+        Returns (peer_k0, has_kel, anchor_source, anchor_counter) on success.
+        Calls remove_peer and returns None on failure.
+        """
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        from yadacoin.core.identityannouncement import IdentityAnnouncement as _IApeer
+        from yadacoin.core.keyeventlog import KeyEvent as _KE
+        from yadacoin.core.transaction import Transaction as _Txn
+
+        peer_username = getattr(stream.peer.identity, "username", stream.peer.host)
+
+        check_max_inputs = (
+            self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK
+        )
+        check_masternode_fee = (
+            self.config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK
+        )
+        check_kel = self.config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK
+        check_dynamic_nodes = (
+            self.config.LatestBlock.block.index >= CHAIN.DYNAMIC_NODES_FORK
+        )
+
+        parsed_ratchet = []
+        for txn_dict in ratchet_chain:
+            try:
+                parsed_ratchet.append(_Txn.from_dict(txn_dict))
+            except Exception as exc:
+                await self.remove_peer(stream, reason=f"ratchet: malformed txn — {exc}")
+                return None
+
+        _peer_ia = await _IApeer.get_by_username(
+            getattr(stream.peer.identity, "username", "") or "", include_mempool=True
+        )
+        _peer_k0 = (_peer_ia or {}).get("public_key") or (
+            parsed_ratchet[0].public_key if parsed_ratchet else None
+        )
+
+        for i, txn in enumerate(parsed_ratchet):
+            try:
+                await txn.verify(
+                    check_max_inputs=check_max_inputs,
+                    check_masternode_fee=check_masternode_fee,
+                    check_kel=False,
+                    check_dynamic_nodes=check_dynamic_nodes,
+                    mempool=True,
+                    batch_txns=parsed_ratchet,
+                )
+            except Exception as exc:
+                await self.remove_peer(
+                    stream, reason=f"ratchet: invalid txn [{i}] — {exc}"
+                )
+                return None
+
+        # Assign counters and store entries
+        _existing_tip = None
+        if _peer_k0:
+            if latest_ratchet_pkh:
+                _existing_tip = await self.config.mongo.async_db.key_event_log.find_one(
+                    {
+                        "anchor_public_key": _peer_k0,
+                        "public_key_hash": latest_ratchet_pkh,
+                    }
+                )
+            if not _existing_tip:
+                _existing_tip = await self.config.mongo.async_db.key_event_log.find_one(
+                    {"anchor_public_key": _peer_k0}, sort=[("counter", -1)]
+                )
+        if _existing_tip:
+            _next_counter = _existing_tip.get("counter") or (
+                await self.config.mongo.async_db.key_event_log.count_documents(
+                    {
+                        "anchor_public_key": _peer_k0,
+                        "_id": {"$lte": _existing_tip["_id"]},
+                    }
+                )
+            )
+            _next_counter += 1
+        else:
+            _next_counter = 1
+
+        for txn in parsed_ratchet:
+            if not txn.prev_public_key_hash:
+                await self.config.mongo.async_db.miner_transactions.replace_one(
+                    {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
+                )
+            else:
+                await self.config.mongo.async_db.key_event_log.replace_one(
+                    {"public_key_hash": txn.public_key_hash},
+                    {
+                        "counter": _next_counter,
+                        "id": txn.transaction_signature,
+                        "anchor_public_key": _peer_k0,
+                        "public_key": txn.public_key,
+                        "public_key_hash": txn.public_key_hash,
+                        "prerotated_key_hash": txn.prerotated_key_hash,
+                        "txn": txn.to_dict(),
+                        "timestamp": time.time(),
+                    },
+                    upsert=True,
+                )
+                _next_counter += 1
+
+        # Find ratchet anchor
+        _anchor_key_event = None
+        _anchor_counter = 0
+        if _peer_k0:
+            _docs = (
+                await self.config.mongo.async_db.key_event_log.find(
+                    {"anchor_public_key": _peer_k0}, {"_id": 0}
+                )
+                .sort("counter", 1)
+                .to_list(length=None)
+            )
+            for _doc in _docs:
+                if "txn" not in _doc:
+                    continue
+                try:
+                    _ke = _KE(_Txn.from_dict(_doc["txn"]))
+                    _p = (
+                        await _ke.get_onchain_parent() or await _ke.get_mempool_parent()
+                    )
+                    if _p:
+                        _anchor_key_event = _p["key_event"]
+                        _anchor_counter = _doc["counter"]
+                        break
+                except Exception:
+                    pass
+            if _anchor_counter > 0:
+                await self.config.mongo.async_db.key_event_log.delete_many(
+                    {"anchor_public_key": _peer_k0, "counter": {"$lt": _anchor_counter}}
+                )
+
+        _has_kel = bool(_anchor_key_event)
+        if not _has_kel and _peer_k0:
+            _has_kel = bool(
+                await self.config.mongo.async_db.miner_transactions.find_one(
+                    {"public_key": _peer_k0, "prev_public_key_hash": ""}
+                )
+                or await self.config.mongo.async_db.blocks.find_one(
+                    {
+                        "transactions.public_key": _peer_k0,
+                        "transactions.prev_public_key_hash": "",
+                    }
+                )
+            )
+
+        if not _has_kel:
+            await self.remove_peer(
+                stream,
+                reason="ratchet: no KEL inception found — peer must send inception in connect",
+            )
+            return None
+
+        # Username check
+        getattr(stream.peer.identity, "username", "")
+        if _peer_ia:
+            _ia_pub = (_peer_ia or {}).get("public_key", "")
+            if _ia_pub and _peer_k0 and _ia_pub != _peer_k0:
+                await self.remove_peer(stream, reason="ratchet: username/K0 mismatch")
+                return None
+
+        # Signing key authorization
+        signing_address = str(
+            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ratchet_public_key))
+        )
+        authorized = (
+            _anchor_key_event is not None
+            and getattr(_anchor_key_event.txn, "prerotated_key_hash", "")
+            == signing_address
+        ) or bool(
+            await self.config.mongo.async_db.key_event_log.find_one(
+                {"anchor_public_key": _peer_k0, "prerotated_key_hash": signing_address}
+            )
+            or await self.config.mongo.async_db.blocks.find_one(
+                {"transactions.prerotated_key_hash": signing_address}
+            )
+            or await self.config.mongo.async_db.miner_transactions.find_one(
+                {"prerotated_key_hash": signing_address}
+            )
+        )
+        if not authorized:
+            await self.remove_peer(
+                stream, reason="ratchet: signing key not authorized by KEL"
+            )
+            return None
+
+        _anchor_source = "ratchet" if _anchor_key_event else "inception"
+        self.config.app_log.info(
+            "  [OK]   KEL verified via %s anchor  (tip=%d, peer=%s)",
+            _anchor_source,
+            _anchor_counter,
+            peer_username,
+        )
+        return (_peer_k0, _has_kel, _anchor_source, _anchor_counter)
+
+    async def _handle_kel_connect(self, stream, params):
+        """Server-side: process KEL connect (phase 1 of 2).
+
+        Receives client ECDH pub + ratchet data, stores ratchet chain, sends
+        'connected' plaintext (server ECDH pub only), activates session cipher,
+        then sends encrypted 'request_sig' asking client to cross-sign.
+        """
+        from yadacoin.core.identityannouncement import IdentityAnnouncement as _IAself
+        from yadacoin.core.keyrotation import get_node_auth_key
+
+        peer_host = stream.peer.host
+        peer_username = getattr(stream.peer.identity, "username", peer_host)
+
+        self.config.app_log.info(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "  KEL Auth (ECDH exchange)  ←  %s (%s)\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            peer_username,
+            peer_host,
+        )
+
+        peer_ecdh_pub = params.get("ecdh_public_key", "")
+        ratchet_chain = params.get("ratchet_chain") or []
+        latest_ratchet_pkh = params.get("latest_ratchet_pkh", "")
+
+        if not peer_ecdh_pub:
+            return await self.remove_peer(
+                stream, reason="connect: missing ecdh_public_key"
+            )
+
+        # Store ratchet chain into key_event_log (no signature verification yet —
+        # we haven't exchanged nonces, so there's nothing meaningful to sign yet).
+        # We'll fully authenticate in sig_response.
+        parsed_ratchet = []
+        from yadacoin.core.identityannouncement import IdentityAnnouncement as _IApeer
+        from yadacoin.core.transaction import Transaction as _Txn
+
+        for txn_dict in ratchet_chain:
+            try:
+                parsed_ratchet.append(_Txn.from_dict(txn_dict))
+            except Exception as exc:
+                return await self.remove_peer(
+                    stream, reason=f"connect: malformed ratchet txn — {exc}"
+                )
+
+        _peer_ia = await _IApeer.get_by_username(
+            getattr(stream.peer.identity, "username", "") or "", include_mempool=True
+        )
+        _peer_k0 = (_peer_ia or {}).get("public_key") or (
+            parsed_ratchet[0].public_key if parsed_ratchet else None
+        )
+
+        # Determine client's current KEL tip (what we'll put in the nonce)
+        _client_kel_tip_pkh = ""
+        if _peer_k0:
+            _tip = await self.config.mongo.async_db.key_event_log.find_one(
+                {"anchor_public_key": _peer_k0}, sort=[("counter", -1)]
+            )
+            if _tip:
+                _client_kel_tip_pkh = _tip.get("public_key_hash", "")
+        # Fall back to the latest entry in the incoming ratchet_chain itself
+        if not _client_kel_tip_pkh and parsed_ratchet:
+            _client_kel_tip_pkh = parsed_ratchet[-1].public_key_hash or ""
+
+        # Generate server ECDH keypair
+        _ecdh_priv, _ecdh_pub = SessionCipher.generate_keypair()
+
+        # Derive session cipher — hold it, activate AFTER sending 'connected'
+        _session_cipher = (
+            SessionCipher.derive(_ecdh_priv, peer_ecdh_pub, "")
+            if peer_ecdh_pub
+            else None
+        )
+
+        # Send 'connected' PLAINTEXT (client needs server_ecdh_pub to derive cipher)
+        await self.write_params(
+            stream,
+            "connected",
+            {
+                "peer": self.config.peer.to_dict(),
+                "ecdh_public_key": _ecdh_pub,
+            },
+        )
+
+        # Activate session cipher — all subsequent messages are encrypted
+        if _session_cipher:
+            stream.session_cipher = _session_cipher
+
+        # Build server's auth material for the encrypted request_sig
+        _auth_priv, _auth_pub, _conf_priv, _conf_pub = await get_node_auth_key(
+            self.config
+        )
+
+        # Nonce the server signs: client_ecdh_pub + server_kel_tip_pkh
+        # Tells the client: "I received your ECDH key and my KEL position is X"
+        _own_identity = await _IAself.get_by_username(
+            getattr(self.config, "username", "") or "", include_mempool=True
+        )
+        _k0_pub = (_own_identity or {}).get("public_key") or getattr(
+            self.config, "kel_public_key", None
+        )
+        _server_kel_tip_pkh = ""
+        if _k0_pub:
+            _srv_tip = await self.config.mongo.async_db.key_event_log.find_one(
+                {"anchor_public_key": _k0_pub}, sort=[("counter", -1)]
+            )
+            if _srv_tip:
+                _server_kel_tip_pkh = _srv_tip.get("public_key_hash", "")
+
+        # Server signs (client_ecdh_pub + server_kel_tip_pkh) with its ratchet key
+        _server_nonce_str = peer_ecdh_pub + _server_kel_tip_pkh
+        _server_signed = TU.generate_signature(_server_nonce_str, _auth_priv)
+        _server_conf_signed = (
+            TU.generate_signature(_server_nonce_str, _conf_priv) if _conf_priv else None
+        )
+
+        # Build server's ratchet_chain delta (client told us what they have via latest_ratchet_pkh)
+        _srv_ratchet_chain = []
+        if _k0_pub:
+            skip_after_counter = 0
+            if latest_ratchet_pkh:
+                _tip = await self.config.mongo.async_db.key_event_log.find_one(
+                    {
+                        "anchor_public_key": _k0_pub,
+                        "public_key_hash": latest_ratchet_pkh,
+                    }
+                )
+                if _tip:
+                    skip_after_counter = _tip.get("counter") or (
+                        await self.config.mongo.async_db.key_event_log.count_documents(
+                            {"anchor_public_key": _k0_pub, "_id": {"$lte": _tip["_id"]}}
+                        )
+                    )
+            _cursor = self.config.mongo.async_db.key_event_log.find(
+                {"anchor_public_key": _k0_pub, "counter": {"$gt": skip_after_counter}},
+                {"_id": 0, "txn": 1},
+            ).sort("counter", 1)
+            _srv_ratchet_chain = [
+                e["txn"] for e in await _cursor.to_list(length=None) if "txn" in e
+            ]
+
+        # Store state needed by sig_response handler
+        stream._peer_ecdh_pub = peer_ecdh_pub
+        stream._peer_k0 = _peer_k0
+        stream._server_ecdh_pub = _ecdh_pub
+        stream._client_kel_tip_pkh_expected = _client_kel_tip_pkh
+        stream._connect_ratchet_chain = ratchet_chain
+        stream._connect_latest_ratchet_pkh = latest_ratchet_pkh
+
+        # Send encrypted 'request_sig'
+        request_payload = {
+            # Server proves its identity (client verifies this before signing back)
+            "server_signed": _server_signed,
+            "server_confirming_signed": _server_conf_signed,
+            "ratchet_public_key": _auth_pub,
+            "confirming_public_key": _conf_pub,
+            "ratchet_chain": _srv_ratchet_chain,
+            "server_kel_tip_pkh": _server_kel_tip_pkh,
+            # What we want the client to sign: server_ecdh_pub + client_kel_tip_pkh
+            "server_ecdh_pub": _ecdh_pub,
+            "client_kel_tip_pkh": _client_kel_tip_pkh,
+            # What we now have of client's chain (tip hint for next connect)
+            "latest_ratchet_pkh": _client_kel_tip_pkh,
+        }
+        pending_kel_chain = await self._get_pending_kel_chain()
+        if pending_kel_chain:
+            request_payload["kel_chain"] = pending_kel_chain
+
+        await self.write_params(stream, "request_sig", request_payload)
+        self.config.app_log.info(
+            "  [→]   request_sig sent (encrypted)  (peer=%s)", peer_username
+        )
+
+    async def connected(self, body, stream):
+        """Client-side handler: processes server's 'connected' (ECDH-only, phase 1 of 2).
+
+        Derives session cipher from server's ECDH pub.  All subsequent messages
+        are encrypted.  Waits for 'request_sig' to complete mutual auth.
+        """
+        self.ensure_protocol_version(body, stream)
+        params = body.get("params", {})
+
+        server_ecdh_pub = params.get("ecdh_public_key", "")
+        if not server_ecdh_pub:
+            return await self.remove_peer(
+                stream, reason="connected: missing ecdh_public_key"
+            )
+
+        # Derive session cipher — all subsequent traffic (including request_sig) will be encrypted
+        _ecdh_priv = getattr(stream, "_ecdh_priv", None)
+        if _ecdh_priv:
+            stream.session_cipher = SessionCipher.derive(
+                _ecdh_priv, server_ecdh_pub, ""
+            )
+
+        # Store server's ECDH pub so request_sig handler can build the client nonce
+        stream._server_ecdh_pub = server_ecdh_pub
+
+        peer_username = getattr(stream.peer.identity, "username", stream.peer.host)
+        self.config.app_log.info(
+            "  [→]   session cipher derived, awaiting encrypted request_sig  (%s)",
+            peer_username,
+        )
+
+    async def request_sig(self, body, stream):
+        """Client-side handler: receives encrypted auth challenge from server.
+
+        Verifies server's identity (server signed client_ecdh_pub + server_kel_tip_pkh),
+        then signs back (server_ecdh_pub + client_kel_tip_pkh) with client's ratchet key.
+        """
+        from yadacoin.core.keyrotation import get_node_auth_key
+
+        params = body.get("params", {})
+        peer_host = stream.peer.host
+        peer_username = getattr(stream.peer.identity, "username", peer_host)
+
+        server_signed = params.get("server_signed", "")
+        server_conf_signed = params.get("server_confirming_signed", "")
+        ratchet_public_key = params.get("ratchet_public_key", "")
+        confirming_public_key = params.get("confirming_public_key", "")
+        ratchet_chain = params.get("ratchet_chain") or []
+        server_kel_tip_pkh = params.get("server_kel_tip_pkh", "")
+        latest_ratchet_pkh = params.get("latest_ratchet_pkh", "")
+        # The nonce the server wants us to sign
+        server_ecdh_pub = params.get("server_ecdh_pub", "") or getattr(
+            stream, "_server_ecdh_pub", ""
+        )
+        client_kel_tip_pkh = params.get("client_kel_tip_pkh", "")
+
+        if not server_signed or not ratchet_public_key:
+            return await self.remove_peer(
+                stream, reason="request_sig: missing server auth fields"
+            )
+
+        # Verify server signed (client_ecdh_pub + server_kel_tip_pkh)
+        _client_ecdh_pub = getattr(stream, "_ecdh_pub_sent", "") or ""
+        _server_nonce = _client_ecdh_pub + server_kel_tip_pkh
+        if not verify_signature(
+            base64.b64decode(server_signed),
+            _server_nonce.encode(),
+            bytes.fromhex(ratchet_public_key),
+        ):
+            return await self.remove_peer(
+                stream, reason="request_sig: server signature invalid"
+            )
+        self.config.app_log.info(
+            "  [OK]   Server cross-signature verified  (%s)", peer_username
+        )
+
+        if server_conf_signed and confirming_public_key:
+            if not verify_signature(
+                base64.b64decode(server_conf_signed),
+                _server_nonce.encode(),
+                bytes.fromhex(confirming_public_key),
+            ):
+                return await self.remove_peer(
+                    stream, reason="request_sig: server confirming signature invalid"
+                )
+            self.config.app_log.info("  [OK]   Server confirming signature verified")
+
+        # Accept server's pending KEL chain
+        server_kel_chain = params.get("kel_chain") or []
+        if server_kel_chain:
+            await self._accept_peer_kel_chain(server_kel_chain)
+
+        # Verify server's KEL authorization
+        result = await self._process_ratchet_auth(
+            stream, ratchet_chain, ratchet_public_key, latest_ratchet_pkh
+        )
+        if result is None:
+            return  # remove_peer already called
+
+        # Client signs (server_ecdh_pub + client_kel_tip_pkh) with its ratchet key
+        _auth_priv, _auth_pub, _conf_priv, _conf_pub = await get_node_auth_key(
+            self.config
+        )
+        _client_nonce_str = server_ecdh_pub + client_kel_tip_pkh
+        _client_signed = TU.generate_signature(_client_nonce_str, _auth_priv)
+        _client_conf_signed = (
+            TU.generate_signature(_client_nonce_str, _conf_priv) if _conf_priv else None
+        )
+
+        # Build our ratchet chain for the server (server told us what it already has via latest_ratchet_pkh)
+        from yadacoin.core.identityannouncement import IdentityAnnouncement as _IAself_c
+
+        _own_ident = await _IAself_c.get_by_username(
+            getattr(self.config, "username", "") or "", include_mempool=True
+        )
+        _k0_self = (_own_ident or {}).get("public_key") or getattr(
+            self.config, "kel_public_key", None
+        )
+        _client_ratchet_chain = []
+        if _k0_self:
+            skip_after_counter = 0
+            if latest_ratchet_pkh:
+                _tip = await self.config.mongo.async_db.key_event_log.find_one(
+                    {
+                        "anchor_public_key": _k0_self,
+                        "public_key_hash": latest_ratchet_pkh,
+                    }
+                )
+                if _tip:
+                    skip_after_counter = _tip.get("counter") or (
+                        await self.config.mongo.async_db.key_event_log.count_documents(
+                            {
+                                "anchor_public_key": _k0_self,
+                                "_id": {"$lte": _tip["_id"]},
+                            }
+                        )
+                    )
+            _rc = self.config.mongo.async_db.key_event_log.find(
+                {"anchor_public_key": _k0_self, "counter": {"$gt": skip_after_counter}},
+                {"_id": 0, "txn": 1},
+            ).sort("counter", 1)
+            _client_ratchet_chain = [
+                e["txn"] for e in await _rc.to_list(length=None) if "txn" in e
+            ]
+
+        await self.write_params(
+            stream,
+            "sig_response",
+            {
+                "client_signed": _client_signed,
+                "client_confirming_signed": _client_conf_signed,
+                "ratchet_public_key": _auth_pub,
+                "confirming_public_key": _conf_pub,
+                "ratchet_chain": _client_ratchet_chain,
+            },
+        )
+        self.config.app_log.info(
+            "  [→]   sig_response sent (encrypted)  (%s)", peer_username
+        )
+
+    async def sig_response(self, body, stream):
+        """Server-side handler: verifies client's cross-signature and completes mutual auth.
+
+        Client signed (server_ecdh_pub + client_kel_tip_pkh) with their ratchet key.
+        Verify this then mark both sides authenticated.
+        """
+        params = body.get("params", {})
+        peer_host = stream.peer.host
+        peer_username = getattr(stream.peer.identity, "username", peer_host)
+
+        client_signed = params.get("client_signed", "")
+        client_conf_signed = params.get("client_confirming_signed", "")
+        ratchet_public_key = params.get("ratchet_public_key", "")
+        confirming_public_key = params.get("confirming_public_key", "")
+        ratchet_chain = params.get("ratchet_chain") or []
+
+        if not client_signed or not ratchet_public_key:
+            return await self.remove_peer(
+                stream, reason="sig_response: missing auth fields"
+            )
+
+        # Reconstruct the nonce: server_ecdh_pub + client_kel_tip_pkh
+        _server_ecdh_pub = getattr(stream, "_server_ecdh_pub", "")
+        _client_kel_tip_pkh = getattr(stream, "_client_kel_tip_pkh_expected", "")
+        _client_nonce_str = _server_ecdh_pub + _client_kel_tip_pkh
+
+        if not verify_signature(
+            base64.b64decode(client_signed),
+            _client_nonce_str.encode(),
+            bytes.fromhex(ratchet_public_key),
+        ):
+            return await self.remove_peer(
+                stream, reason="sig_response: client signature invalid"
+            )
+        self.config.app_log.info(
+            "  [OK]   Client cross-signature verified  (%s)", peer_username
+        )
+
+        if client_conf_signed and confirming_public_key:
+            if not verify_signature(
+                base64.b64decode(client_conf_signed),
+                _client_nonce_str.encode(),
+                bytes.fromhex(confirming_public_key),
+            ):
+                return await self.remove_peer(
+                    stream, reason="sig_response: client confirming signature invalid"
+                )
+            self.config.app_log.info("  [OK]   Client confirming signature verified")
+
+        # Full KEL auth verification on the ratchet chain
+        _connect_ratchet_chain = (
+            getattr(stream, "_connect_ratchet_chain", []) or ratchet_chain
+        )
+        _connect_latest_ratchet_pkh = getattr(stream, "_connect_latest_ratchet_pkh", "")
+        result = await self._process_ratchet_auth(
+            stream,
+            _connect_ratchet_chain,
+            ratchet_public_key,
+            _connect_latest_ratchet_pkh,
+        )
+        if result is None:
+            return  # remove_peer already called
+
+        stream.peer.authenticated = True
+        self.config.app_log.info(
+            "  [✓]   %s mutually authenticated via cross-signing\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            peer_username,
+        )
+        await self.send_block_to_peer(self.config.LatestBlock.block, stream)
+        await self.get_next_block(self.config.LatestBlock.block, stream)
+
+    # ── end KEL cross-signing helpers ─────────────────────────────────────────
+
     async def get_ws_stream(self, route):
         if MODES.WEB.value not in self.config.modes:
             return False
@@ -1786,21 +1846,25 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
     async def connect(self, peer: Peer):
         try:
             stream = await super(NodeSocketClient, self).connect(peer)
-
             if not stream:
                 return
 
-            # Generate ephemeral ECDH keypair; send public key in connect so
-            # the server can derive the session cipher after the challenge.
+            # Generate ephemeral ECDH keypair
             _ecdh_priv, _ecdh_pub = SessionCipher.generate_keypair()
             stream._ecdh_priv = _ecdh_priv
+
+            # Auth keys are used in request_sig/sig_response (encrypted), not here
+
+            # Store our ECDH pub so request_sig handler can reconstruct the server nonce
+            stream._ecdh_pub_sent = _ecdh_pub
 
             connect_payload = {
                 "peer": self.config.peer.to_dict(),
                 "ecdh_public_key": _ecdh_pub,
+                # No signatures in phase 1 — auth happens in encrypted request_sig/sig_response
             }
-            # Tell the server what we already have of their ratchet chain so
-            # they only send us the delta steps we're missing.
+
+            # Tell the server what we already have of their ratchet chain
             _peer_username = (
                 getattr(getattr(peer, "identity", None), "username", "") or ""
             )
@@ -1815,178 +1879,45 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
                 _peer_k0_conn = (_peer_ia_conn or {}).get("public_key")
                 if _peer_k0_conn:
                     _tip_conn = await self.config.mongo.async_db.key_event_log.find_one(
-                        {"anchor_public_key": _peer_k0_conn},
-                        sort=[("counter", -1)],
+                        {"anchor_public_key": _peer_k0_conn}, sort=[("counter", -1)]
                     )
                     if _tip_conn and _tip_conn.get("public_key_hash"):
                         connect_payload["latest_ratchet_pkh"] = _tip_conn[
                             "public_key_hash"
                         ]
-            # Embed our full unconfirmed KEL chain so the server can build our
-            # chain from K0 even if none of our KEL txns have been gossiped yet.
+
+            # Our full ratchet chain (server will use to determine client KEL tip for nonce)
+            from yadacoin.core.identityannouncement import (
+                IdentityAnnouncement as _IAself_c,
+            )
+
+            _own_ident = await _IAself_c.get_by_username(
+                getattr(self.config, "username", "") or "", include_mempool=True
+            )
+            _k0_self = (_own_ident or {}).get("public_key") or getattr(
+                self.config, "kel_public_key", None
+            )
+            if _k0_self:
+                _rc = self.config.mongo.async_db.key_event_log.find(
+                    {"anchor_public_key": _k0_self}, {"_id": 0, "txn": 1}
+                ).sort("counter", 1)
+                connect_payload["ratchet_chain"] = [
+                    e["txn"] for e in await _rc.to_list(length=None) if "txn" in e
+                ]
+
+            # Our pending KEL chain
             pending_kel_chain = await self._get_pending_kel_chain()
             if pending_kel_chain:
                 connect_payload["kel_chain"] = pending_kel_chain
 
             await self.write_params(stream, "connect", connect_payload)
-
-            stream.peer.token = str(uuid4())
-            await self.write_params(
-                stream,
-                "challenge",
-                {"peer": self.config.peer.to_dict(), "token": stream.peer.token},
-            )
-
             asyncio.create_task(self.send_keepalive(stream))
-
             await self.wait_for_data(stream)
         except StreamClosedError:
             Config().app_log.error(
                 "Cannot connect to {}: {}".format(
                     peer.__class__.__name__, peer.to_json()
                 )
-            )
-
-    async def challenge(self, body, stream):
-        try:
-            self.ensure_protocol_version(body, stream)
-        except:
-            return await self.remove_peer(
-                stream, reason="protocol version < 5 not allowed (KEL enforcement)"
-            )
-        try:
-            params = body.get("params", {})
-            challenge = params.get("token")
-            from yadacoin.core.keyrotation import get_node_auth_key
-
-            _auth_priv, _auth_pub, _conf_priv, _conf_pub = await get_node_auth_key(
-                self.config
-            )
-            # Bind our ECDH public key into the signed payload.
-            # Client's ECDH pub was sent in connect; retrieve it for the binding.
-            _client_ecdh_priv = getattr(stream, "_ecdh_priv", None)
-            if not _client_ecdh_priv:
-                raise ValueError(
-                    "NodeSocketClient: _ecdh_priv not set on stream — cannot bind ECDH key"
-                )
-            from cryptography.hazmat.primitives.serialization import (
-                Encoding,
-                PublicFormat,
-            )
-
-            client_ecdh_pub = base64.b64encode(
-                _client_ecdh_priv.public_key().public_bytes(
-                    Encoding.Raw, PublicFormat.Raw
-                )
-            ).decode()
-            ecdh_binding = challenge + "|" + client_ecdh_pub
-            signed_challenge = TU.generate_signature(ecdh_binding, _auth_priv)
-            confirming_signed_challenge = None
-            if _conf_priv:
-                confirming_signed_challenge = TU.generate_signature(
-                    ecdh_binding, _conf_priv
-                )
-            # Build the sender's full KEL chain using K0 (not the WIF key).
-            from yadacoin.core.identityannouncement import (
-                IdentityAnnouncement as _IAself2,
-            )
-
-            _own_identity2 = await _IAself2.get_by_username(
-                getattr(self.config, "username", "") or "", include_mempool=True
-            )
-            _k0_pub2 = (_own_identity2 or {}).get("public_key") or getattr(
-                self.config, "kel_public_key", None
-            )
-            # Build the ratchet chain from key_event_log (off-chain steps only),
-            # filtered to only send steps the server doesn't already have.
-            ratchet_chain = []
-            if _k0_pub2:
-                skip_after_counter = 0
-                _server_latest_pkh = params.get("latest_ratchet_pkh", "")
-                if _server_latest_pkh:
-                    _srv_tip_entry = (
-                        await self.config.mongo.async_db.key_event_log.find_one(
-                            {
-                                "anchor_public_key": _k0_pub2,
-                                "public_key_hash": _server_latest_pkh,
-                            }
-                        )
-                    )
-                    if _srv_tip_entry:
-                        skip_after_counter = _srv_tip_entry.get("counter") or (
-                            await self.config.mongo.async_db.key_event_log.count_documents(
-                                {
-                                    "anchor_public_key": _k0_pub2,
-                                    "_id": {"$lte": _srv_tip_entry["_id"]},
-                                }
-                            )
-                        )
-                cursor2 = self.config.mongo.async_db.key_event_log.find(
-                    {
-                        "anchor_public_key": _k0_pub2,
-                        "counter": {"$gt": skip_after_counter},
-                    },
-                    {"_id": 0, "txn": 1},
-                ).sort("counter", 1)
-                ratchet_chain = [
-                    entry["txn"]
-                    for entry in await cursor2.to_list(length=None)
-                    if "txn" in entry
-                ]
-            # Derive session cipher from server's ECDH key + challenge token.
-            server_ecdh_pub = params.get("ecdh_public_key", "")
-            _ecdh_priv = getattr(stream, "_ecdh_priv", None)
-            if server_ecdh_pub and _ecdh_priv:
-                stream.session_cipher = SessionCipher.derive(
-                    _ecdh_priv, server_ecdh_pub, ""
-                )
-            # Store server's ECDH pub so authenticate can verify the binding
-            if server_ecdh_pub:
-                stream._peer_ecdh_pub = server_ecdh_pub
-            # Accept the server's unconfirmed KEL chain if provided.
-            server_kel_chain = params.get("kel_chain") or []
-            if server_kel_chain:
-                await self._accept_peer_kel_chain(server_kel_chain)
-        except Exception as _exc:
-            self.config.app_log.warning(
-                "NodeSocketClient challenge error (%s): %s",
-                stream.peer.host if stream.peer else "?",
-                _exc,
-                exc_info=True,
-            )
-            return await self.remove_peer(
-                stream, reason="NodeSocketClient challenge: generate_signature"
-            )
-        if stream.peer.protocol_version > 1:
-            await self.write_params(
-                stream,
-                "authenticate",
-                {
-                    "peer": self.config.peer.to_dict(),
-                    "signed_challenge": signed_challenge,
-                    "ratchet_public_key": _auth_pub,
-                    "confirming_signed_challenge": confirming_signed_challenge,
-                    "confirming_public_key": _conf_pub,
-                    "ratchet_chain": ratchet_chain,
-                    "ecdh_public_key": client_ecdh_pub,
-                    # Tell the server where our delta starts.
-                    "latest_ratchet_pkh": _server_latest_pkh,
-                },
-            )
-        else:
-            await self.write_result(
-                stream,
-                "authenticate",
-                {
-                    "peer": self.config.peer.to_dict(),
-                    "signed_challenge": signed_challenge,
-                    "ratchet_public_key": _auth_pub,
-                    "confirming_signed_challenge": confirming_signed_challenge,
-                    "confirming_public_key": _conf_pub,
-                    "ratchet_chain": ratchet_chain,
-                    "ecdh_public_key": client_ecdh_pub,
-                },
-                body["id"],
             )
 
     async def capacity(self, body, stream):

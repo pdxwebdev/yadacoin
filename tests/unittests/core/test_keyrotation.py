@@ -157,14 +157,14 @@ class TestDerivePureFunctions(unittest.TestCase):
 
 
 class TestGetNodeSigningKey(unittest.TestCase):
-    def test_returns_legacy_when_no_kel(self):
+    def test_returns_none_when_no_kel(self):
         from yadacoin.core.keyrotation import get_node_signing_key
 
         cfg = _make_config()
         priv, pub, addr = get_node_signing_key(cfg)
-        self.assertEqual(priv, cfg.private_key)
-        self.assertEqual(pub, cfg.public_key)
-        self.assertEqual(addr, cfg.address)
+        self.assertEqual(None, priv)
+        self.assertEqual(None, pub)
+        self.assertEqual(None, addr)
 
     def test_returns_kel_key_when_present(self):
         from yadacoin.core.keyrotation import get_node_signing_key
@@ -186,13 +186,14 @@ class TestGetNodeSigningKey(unittest.TestCase):
 
 
 class TestGetNodeAuthKey(AsyncTestCase):
-    async def test_no_manager_returns_legacy(self):
+    async def test_no_manager_calls_fatal(self):
         from yadacoin.core.keyrotation import get_node_auth_key
 
         cfg = _make_config()
-        priv, pub, *_ = await get_node_auth_key(cfg)
-        self.assertEqual(priv, cfg.private_key)
-        self.assertEqual(pub, cfg.public_key)
+
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(SystemExit):
+                await get_node_auth_key(cfg)
 
     async def test_with_manager_delegates(self):
         from yadacoin.core.keyrotation import get_node_auth_key
@@ -764,15 +765,15 @@ class TestTryFinalise(AsyncTestCase):
 
 
 class TestAdvanceAuthRatchet(AsyncTestCase):
-    async def test_no_kel_key_returns_legacy(self):
+    async def test_no_kel_key_calls_fatal(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
         cfg = _make_config()
         mgr = NodeKeyRotationManager(cfg)
 
-        priv, pub, *_ = await mgr.advance_auth_ratchet()
-        self.assertEqual(priv, cfg.private_key)
-        self.assertEqual(pub, cfg.public_key)
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(SystemExit):
+                await mgr.advance_auth_ratchet()
 
     async def test_no_second_factor_calls_fatal(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
