@@ -1023,14 +1023,9 @@ class NodeKeyRotationManager:
         # Refresh the running peer identity so subsequent connect/challenge
         # messages present the new K_n key, not the stale WIF key.
         if getattr(config, "peer", None) is not None:
-            try:
-                from yadacoin.core.peer import Peer as _Peer
+            from yadacoin.core.peer import Peer as _Peer
 
-                config.peer = _Peer.my_peer()
-            except Exception as _exc:
-                config.app_log.debug(
-                    "NodeKeyRotationManager: could not refresh config.peer: %s", _exc
-                )
+            config.peer = _Peer.my_peer()
 
     async def _check_and_sweep_legacy_funds(self, kel):
         """Sweep UTXOs at the legacy node address (P2PKH of config.public_key)
