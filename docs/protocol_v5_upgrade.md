@@ -58,6 +58,7 @@ Delete the existing `config.json` so the node generates a new one with a fresh
 seed and keypair, then **stop the node immediately** once it starts.
 
 **Linux / macOS:**
+
 ```bash
 rm config/config.json
 python yadacoin/app.py --config=config/config.json
@@ -109,11 +110,14 @@ var as fallback) with full examples for Linux, Docker, and Windows.
 ### Linux (systemd)
 
 Add to your service file:
+
 ```ini
 [Service]
 Environment=SECOND_FACTOR=your_secret_here
 ```
+
 Then:
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl restart yadacoin
@@ -131,6 +135,7 @@ python yadacoin/app.py --config=config/config.json
 **Option A — bind mount from `/etc/yadacoin/second_factor` (recommended for VPS/bare-metal Docker):**
 
 On the host:
+
 ```bash
 sudo mkdir -p /etc/yadacoin
 echo "your_strong_secret" | sudo tee /etc/yadacoin/second_factor > /dev/null
@@ -139,6 +144,7 @@ sudo chown root:root /etc/yadacoin/second_factor
 ```
 
 In `docker-compose.yml`:
+
 ```yaml
 services:
   yadacoin:
@@ -152,12 +158,14 @@ services:
 ```
 
 **Option B — plain environment variable (development only):**
+
 ```yaml
 environment:
   - SECOND_FACTOR=your_secret_here
 ```
 
 Then restart:
+
 ```bash
 docker-compose down && docker-compose up -d
 ```
@@ -177,9 +185,11 @@ address is the `prerotated_key_hash` of the **last entry** in your key event
 log.
 
 **Via the API:**
+
 ```
 GET http://your-node:port/key-event-log?public_key=YOUR_NEW_PUBLIC_KEY
 ```
+
 Look at the last object in the returned array — the `prerotated_key_hash` field
 is your active KEL address.
 
@@ -204,10 +214,10 @@ spending feature, but all new activity should use the KEL address.
 
 ## Troubleshooting
 
-| Error | Cause | Fix |
-|---|---|---|
-| `FATAL: config.json is missing the 'seed'` | No `seed` in config | Follow Steps 2–3 |
-| `FATAL: environment variable SECOND_FACTOR is not set` | Env var missing | Set `SECOND_FACTOR` before starting |
-| `FATAL: admin_kel inception public_key mismatch` | Wrong seed or SECOND_FACTOR for existing `admin_kel` | Verify both secrets match what was used during init |
-| `username is required and must not be blank` | No `username` in config.json | Add a unique `"username"` field — see Step 4a |
-| Node rejected by peers | Protocol version mismatch | Ensure you are running the latest release |
+| Error                                                  | Cause                                                | Fix                                                 |
+| ------------------------------------------------------ | ---------------------------------------------------- | --------------------------------------------------- |
+| `FATAL: config.json is missing the 'seed'`             | No `seed` in config                                  | Follow Steps 2–3                                    |
+| `FATAL: environment variable SECOND_FACTOR is not set` | Env var missing                                      | Set `SECOND_FACTOR` before starting                 |
+| `FATAL: admin_kel inception public_key mismatch`       | Wrong seed or SECOND_FACTOR for existing `admin_kel` | Verify both secrets match what was used during init |
+| `username is required and must not be blank`           | No `username` in config.json                         | Add a unique `"username"` field — see Step 4a       |
+| Node rejected by peers                                 | Protocol version mismatch                            | Ensure you are running the latest release           |

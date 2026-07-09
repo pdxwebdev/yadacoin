@@ -225,6 +225,20 @@ def is_recovers_inception(txn: Transaction) -> bool:
     return bool(txn.prev_public_key_hash) and get_recovers_proof(txn) is not None
 
 
+def is_identity_announcement_inception(txn: Transaction) -> bool:
+    """An identity-announcement inception carries an IdentityAnnouncement (or
+    RotationAnnouncement) in its relationship field.  This is the only non-recovers
+    case where a KEL inception is permitted to have a non-empty relationship.
+    """
+    from yadacoin.core.identityannouncement import (
+        IdentityAnnouncement,
+        RotationAnnouncement,
+    )
+
+    rel = getattr(txn, "relationship", None)
+    return isinstance(rel, (IdentityAnnouncement, RotationAnnouncement))
+
+
 def find_active_recovery_witness_hash(log):
     """Return the most recent witnessHash announced in *log*.
 
@@ -293,7 +307,11 @@ class KeyEvent:
             raise KeyEventPrerotatedKeyHashException(
                 f"{self.flag.value.upper()} key event output should equal the prerotated_key_hash"
             )
-        if self.txn.relationship != "" and not is_recovers_inception(self.txn):
+        if (
+            self.txn.relationship != ""
+            and not is_recovers_inception(self.txn)
+            and not is_identity_announcement_inception(self.txn)
+        ):
             raise KeyEventTransactionRelationshipException(
                 f"{self.flag.value.upper()} key event attempts to populate relationship field. This is not allowed."
             )
