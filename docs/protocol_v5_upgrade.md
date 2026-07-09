@@ -76,7 +76,26 @@ keys, etc.
 
 ---
 
-## Step 4 — Set your second factor and restart
+## Step 4 — Set your `username` and second factor, then restart
+
+### 4a — Set your username in `config.json`
+
+Protocol V5 uses your `username` as part of your node's on-chain identity.
+Open `config/config.json` and make sure the `"username"` field is set to a
+unique, non-blank string — this becomes your permanent node identity on the
+network:
+
+```json
+{
+  "username": "your_unique_node_name",
+  ...
+}
+```
+
+> ⚠️ Pick carefully — username is registered on-chain at inception and cannot
+> be changed without re-registering. It must be unique across the entire network.
+
+### 4b — Set your second factor
 
 Choose a strong secret string and store it securely alongside your seed —
 **you need both to recover your node.**
@@ -109,11 +128,36 @@ python yadacoin/app.py --config=config/config.json
 
 ### Docker (`docker-compose.yml`)
 
+**Option A — bind mount from `/etc/yadacoin/second_factor` (recommended for VPS/bare-metal Docker):**
+
+On the host:
+```bash
+sudo mkdir -p /etc/yadacoin
+echo "your_strong_secret" | sudo tee /etc/yadacoin/second_factor > /dev/null
+sudo chmod 400 /etc/yadacoin/second_factor
+sudo chown root:root /etc/yadacoin/second_factor
+```
+
+In `docker-compose.yml`:
+```yaml
+services:
+  yadacoin:
+    environment:
+      - SECOND_FACTOR_FILE=/run/secrets/second_factor
+    volumes:
+      - type: bind
+        source: /etc/yadacoin/second_factor
+        target: /run/secrets/second_factor
+        read_only: true
+```
+
+**Option B — plain environment variable (development only):**
 ```yaml
 environment:
   - SECOND_FACTOR=your_secret_here
 ```
-Then:
+
+Then restart:
 ```bash
 docker-compose down && docker-compose up -d
 ```
@@ -165,4 +209,5 @@ spending feature, but all new activity should use the KEL address.
 | `FATAL: config.json is missing the 'seed'` | No `seed` in config | Follow Steps 2–3 |
 | `FATAL: environment variable SECOND_FACTOR is not set` | Env var missing | Set `SECOND_FACTOR` before starting |
 | `FATAL: admin_kel inception public_key mismatch` | Wrong seed or SECOND_FACTOR for existing `admin_kel` | Verify both secrets match what was used during init |
+| `username is required and must not be blank` | No `username` in config.json | Add a unique `"username"` field — see Step 4a |
 | Node rejected by peers | Protocol version mismatch | Ensure you are running the latest release |

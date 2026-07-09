@@ -323,8 +323,9 @@ class MiningPool(object):
                 self.last_block_time = int(self.block_factory.time)
             self.block_factory = await self.create_block(
                 await self.get_pending_transactions(),
-                self.config.public_key,
-                self.config.private_key,
+                getattr(self.config, "kel_public_key", None) or self.config.public_key,
+                getattr(self.config, "kel_private_key", None)
+                or self.config.private_key,
                 index=self.config.LatestBlock.block.index + 1,
             )
             self.block_factory.header = self.block_factory.generate_header()
