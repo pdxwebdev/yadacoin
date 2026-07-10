@@ -30,13 +30,13 @@ class TUTestCase(AsyncTestCase):
         self.config = config
         self.public_key = config.public_key
         self.private_key = config.private_key
-        self.config.kel_private_key = (
+        self.config.kel_anchor_private_key = (
             "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
         )
-        self.config.kel_public_key = (
+        self.config.kel_anchor_public_key = (
             "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
         )
-        self.config.kel_address = "kel_address"
+        self.config.kel_anchor_address = "kel_anchor_address"
 
 
 # ---------------------------------------------------------------------------
@@ -83,27 +83,45 @@ class TestTUGenerateDeterministicSignature(TUTestCase):
         self.assertEqual(sig1, sig2)
 
 
-class TestTUGenerateSignature(TUTestCase):
-    async def test_generate_signature_returns_string(self):
-        sig = TU.generate_signature(message="test msg", private_key=self.private_key)
+class TestNodeKeyRotationManagerSign(TUTestCase):
+    async def test_sign_returns_string(self):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        sig = NodeKeyRotationManager._sign(private_key=self.private_key, message="test")
         self.assertIsInstance(sig, str)
 
-    async def test_generate_signature_with_private_key_returns_string(self):
-        sig = TU.generate_signature_with_private_key(
-            private_key=self.private_key, message="test"
-        )
-        self.assertIsInstance(sig, str)
-
-    async def test_generate_signature_non_deterministic(self):
+    async def test_sign_non_deterministic(self):
         """Random nonce means signatures differ across calls."""
-        sig1 = TU.generate_signature("msg", self.private_key)
-        sig2 = TU.generate_signature("msg", self.private_key)
-        # They MIGHT equal (astronomically unlikely), but generally won't
-        # Just verify both are valid base64 strings
         import base64
 
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        sig1 = NodeKeyRotationManager._sign(self.private_key, "msg")
+        sig2 = NodeKeyRotationManager._sign(self.private_key, "msg")
         base64.b64decode(sig1)
         base64.b64decode(sig2)
+
+    async def test_generate_signature_uses_kel_tip(self):
+        """generate_signature resolves the KEL tip and falls back to kel_anchor_private_key."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        manager = MagicMock(spec=NodeKeyRotationManager)
+        manager._k0 = None  # trigger fallback path
+        manager._second_factor = ""
+        manager.config = self.config
+        manager.config.kel_anchor_private_key = self.private_key
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+            new=AsyncMock(side_effect=Exception("db unavailable")),
+        ):
+            sig = await NodeKeyRotationManager.generate_signature(manager, "test msg")
+        self.assertIsInstance(sig, str)
+        import base64
+
+        base64.b64decode(sig)
 
 
 class TestTUGenerateRid(TUTestCase):
@@ -613,21 +631,14 @@ class TestCombineOldestTransactions(TUTestCase):
         )
 
         self.config.combined_address = "combined_addr"
+        self.config.kel_anchor_address = known_address
 
         with patch.object(self.config.mongo, "async_db", new=mock_db):
             with patch.object(self.config, "BU", mock_bu):
-                with patch(
-                    "yadacoin.core.transactionutils.get_node_signing_key",
-                    return_value=(
-                        "privhex",
-                        "pubhex",
-                        known_address,
-                    ),
-                ):
-                    with patch.object(
-                        TU, "send", new=AsyncMock(return_value={"id": "combined_txn"})
-                    ) as mock_send:
-                        await TU.combine_oldest_transactions(self.config)
+                with patch.object(
+                    TU, "send", new=AsyncMock(return_value={"id": "combined_txn"})
+                ) as mock_send:
+                    await TU.combine_oldest_transactions(self.config)
 
         mock_send.assert_called_once()
 

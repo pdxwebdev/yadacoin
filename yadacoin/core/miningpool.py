@@ -209,11 +209,8 @@ class MiningPool(object):
             test_hash = int(block_candidate.hash, 16)
 
         if test_hash < int(block_candidate.target) or self.config.network == "regnet":
-            from yadacoin.core.keyrotation import get_node_signing_key
-
-            _kel_priv, _kel_pub, _kel_addr = get_node_signing_key(self.config)
-            block_candidate.signature = self.config.BU.generate_signature(
-                block_candidate.hash, _kel_priv
+            block_candidate.signature = (
+                await self.config.kel_manager.generate_signature(block_candidate.hash)
             )
 
             if header != block_candidate.header:
@@ -262,11 +259,8 @@ class MiningPool(object):
                 )
             )
         ):
-            from yadacoin.core.keyrotation import get_node_signing_key
-
-            _kel_priv, _kel_pub, _kel_addr = get_node_signing_key(self.config)
-            block_candidate.signature = self.config.BU.generate_signature(
-                block_candidate.hash, _kel_priv
+            block_candidate.signature = (
+                await self.config.kel_manager.generate_signature(block_candidate.hash)
             )
 
             try:
@@ -323,9 +317,6 @@ class MiningPool(object):
                 self.last_block_time = int(self.block_factory.time)
             self.block_factory = await self.create_block(
                 await self.get_pending_transactions(),
-                getattr(self.config, "kel_public_key", None) or self.config.public_key,
-                getattr(self.config, "kel_private_key", None)
-                or self.config.private_key,
                 index=self.config.LatestBlock.block.index + 1,
             )
             self.block_factory.header = self.block_factory.generate_header()
@@ -337,8 +328,8 @@ class MiningPool(object):
             self.app_log.error("Exception {} mp.refresh".format(format_exc()))
             raise
 
-    async def create_block(self, transactions, public_key, private_key, index):
-        return await Block.generate(transactions, public_key, private_key, index=index)
+    async def create_block(self, transactions, index):
+        return await Block.generate(transactions, index=index)
 
     async def block_to_mine_info(self):
         """Returns info for current block to mine"""

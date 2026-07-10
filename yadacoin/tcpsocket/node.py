@@ -27,6 +27,7 @@ from yadacoin.core.keyeventlog import (
     KELExceptionPreviousKeyHashReferenceMissing,
     KELLogUnbuildableException,
 )
+from yadacoin.core.keyrotation import NodeKeyRotationManager
 from yadacoin.core.peer import (
     Group,
     Peer,
@@ -41,7 +42,6 @@ from yadacoin.core.processingqueue import (
     TransactionProcessingQueueItem,
 )
 from yadacoin.core.transaction import MissingInputTransactionException, Transaction
-from yadacoin.core.transactionutils import TU
 from yadacoin.enums.modes import MODES
 from yadacoin.enums.peertypes import PEER_TYPES
 from yadacoin.tcpsocket.base import (
@@ -109,7 +109,7 @@ class NodeRPC(BaseRPC):
             username, include_mempool=True
         )
         k0_pub = (own_identity or {}).get("public_key") or getattr(
-            self.config, "kel_public_key", None
+            self.config, "kel_anchor_public_key", None
         )
         if not k0_pub:
             return []
@@ -1449,7 +1449,6 @@ class NodeRPC(BaseRPC):
         then sends encrypted 'request_sig' asking client to cross-sign.
         """
         from yadacoin.core.identityannouncement import IdentityAnnouncement as _IAself
-        from yadacoin.core.keyrotation import get_node_auth_key
 
         peer_host = stream.peer.host
         peer_username = getattr(stream.peer.identity, "username", peer_host)
@@ -1541,9 +1540,12 @@ class NodeRPC(BaseRPC):
             stream.session_cipher = _session_cipher
 
         # Build server's auth material for the encrypted request_sig
-        _auth_priv, _auth_pub, _conf_priv, _conf_pub = await get_node_auth_key(
-            self.config
-        )
+        (
+            _auth_priv,
+            _auth_pub,
+            _conf_priv,
+            _conf_pub,
+        ) = await self.config.kel_manager.advance_auth_ratchet()
 
         # Nonce the server signs: client_ecdh_pub + server_kel_tip_pkh
         # Tells the client: "I received your ECDH key and my KEL position is X"
@@ -1551,7 +1553,7 @@ class NodeRPC(BaseRPC):
             getattr(self.config, "username", "") or "", include_mempool=True
         )
         _k0_pub = (_own_identity or {}).get("public_key") or getattr(
-            self.config, "kel_public_key", None
+            self.config, "kel_anchor_public_key", None
         )
         _server_kel_tip_pkh = ""
         if _k0_pub:
@@ -1563,9 +1565,11 @@ class NodeRPC(BaseRPC):
 
         # Server signs (client_ecdh_pub + server_kel_tip_pkh) with its ratchet key
         _server_nonce_str = peer_ecdh_pub + _server_kel_tip_pkh
-        _server_signed = TU.generate_signature(_server_nonce_str, _auth_priv)
+        _server_signed = NodeKeyRotationManager._sign(_auth_priv, _server_nonce_str)
         _server_conf_signed = (
-            TU.generate_signature(_server_nonce_str, _conf_priv) if _conf_priv else None
+            NodeKeyRotationManager._sign(_conf_priv, _server_nonce_str)
+            if _conf_priv
+            else None
         )
 
         # Build server's ratchet_chain delta (client told us what they have via latest_ratchet_pkh)
@@ -1662,8 +1666,6 @@ class NodeRPC(BaseRPC):
         Verifies server's identity (server signed client_ecdh_pub + server_kel_tip_pkh),
         then signs back (server_ecdh_pub + client_kel_tip_pkh) with client's ratchet key.
         """
-        from yadacoin.core.keyrotation import get_node_auth_key
-
         params = body.get("params", {})
         peer_host = stream.peer.host
         peer_username = getattr(stream.peer.identity, "username", peer_host)
@@ -1725,13 +1727,18 @@ class NodeRPC(BaseRPC):
             return  # remove_peer already called
 
         # Client signs (server_ecdh_pub + client_kel_tip_pkh) with its ratchet key
-        _auth_priv, _auth_pub, _conf_priv, _conf_pub = await get_node_auth_key(
-            self.config
-        )
+        (
+            _auth_priv,
+            _auth_pub,
+            _conf_priv,
+            _conf_pub,
+        ) = await self.config.kel_manager.advance_auth_ratchet()
         _client_nonce_str = server_ecdh_pub + client_kel_tip_pkh
-        _client_signed = TU.generate_signature(_client_nonce_str, _auth_priv)
+        _client_signed = NodeKeyRotationManager._sign(_auth_priv, _client_nonce_str)
         _client_conf_signed = (
-            TU.generate_signature(_client_nonce_str, _conf_priv) if _conf_priv else None
+            NodeKeyRotationManager._sign(_conf_priv, _client_nonce_str)
+            if _conf_priv
+            else None
         )
 
         # Build our ratchet chain for the server (server told us what it already has via latest_ratchet_pkh)
@@ -1741,7 +1748,7 @@ class NodeRPC(BaseRPC):
             getattr(self.config, "username", "") or "", include_mempool=True
         )
         _k0_self = (_own_ident or {}).get("public_key") or getattr(
-            self.config, "kel_public_key", None
+            self.config, "kel_anchor_public_key", None
         )
         _client_ratchet_chain = []
         if _k0_self:
@@ -1946,7 +1953,7 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
                 getattr(self.config, "username", "") or "", include_mempool=True
             )
             _k0_self = (_own_ident or {}).get("public_key") or getattr(
-                self.config, "kel_public_key", None
+                self.config, "kel_anchor_public_key", None
             )
             if _k0_self:
                 _rc = self.config.mongo.async_db.key_event_log.find(

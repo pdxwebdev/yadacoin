@@ -11,7 +11,6 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
-import base64
 import json
 import math
 from logging import getLogger
@@ -20,7 +19,6 @@ from time import time
 
 # from yadacoin.transactionutils import TU
 from bitcoin.wallet import P2PKHBitcoinAddress
-from coincurve import PrivateKey
 
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.config import Config
@@ -722,11 +720,6 @@ class BlockChainUtils(object):
 
         async for transaction in transactions:
             yield transaction["txn"]
-
-    def generate_signature(self, message, private_key):
-        key = PrivateKey.from_hex(private_key)
-        signature = key.sign(message.encode("utf-8"))
-        return base64.b64encode(signature).decode("utf-8")
 
     async def get_transaction_by_id(
         self,

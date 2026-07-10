@@ -28,7 +28,6 @@ from yadacoin.core.transaction import (
     Output,
     Transaction,
 )
-from yadacoin.core.transactionutils import TU
 from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.enums.peertypes import PEER_TYPES
 from yadacoin.http.base import BaseHandler
@@ -307,11 +306,8 @@ class NodeAnnounceHandler(BaseHandler):
             # Sign the transaction using the node's private key
             try:
                 txn.hash = await txn.generate_hash()
-                from yadacoin.core.keyrotation import get_node_signing_key
-
-                _kel_priv, _kel_pub, _kel_addr = get_node_signing_key(self.config)
-                txn.transaction_signature = TU.generate_signature_with_private_key(
-                    _kel_priv, txn.hash
+                txn.transaction_signature = (
+                    await self.config.kel_manager.generate_signature(txn.hash)
                 )
             except Exception as e:
                 self.app_log.error(f"Error signing transaction: {e}")

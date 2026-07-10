@@ -11,18 +11,14 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
-import binascii
-import hashlib
 import time
 from enum import Enum
 
-import base58
 from bitcoin.wallet import P2PKHBitcoinAddress
 
 from yadacoin.contracts.base import Contract, ContractTypes, PayoutOperators, PayoutType
 from yadacoin.core.block import quantize_eight
 from yadacoin.core.collections import Collections
-from yadacoin.core.identity import PrivateIdentity
 from yadacoin.core.transaction import Output
 
 
@@ -129,23 +125,10 @@ class AffiliateContract(Contract):
         referrer=None,
         referee=None,
     ):
-        identity = PrivateIdentity.generate(username)
-        return cls(
-            version=1,
-            expiry=expiry,
-            contract_type=contract_type,
-            proof_type=proof_type,
-            target=target,
-            market=market,
-            identity=identity,
-            creator=creator,
-            referrer=referrer,
-            referee=referee,
-        )
+        return
 
     async def process(self, contract_txn, trigger_txn, mempool_txns):
-        from yadacoin.core.transaction import Transaction
-        from yadacoin.core.transactionutils import TU
+        pass
 
         await self.verify(contract_txn, trigger_txn, mempool_txns)
         await self.verify_payout_generated_already(
@@ -196,23 +179,8 @@ class AffiliateContract(Contract):
             pass
 
         if outputs:
-            payout_txn = await Transaction.generate(
-                fee=0,
-                outputs=outputs,
-                public_key=self.identity.public_key,
-                requester_rid=trigger_txn.requester_rid,
-                requested_rid=contract_txn.requested_rid,
-                rid=trigger_txn.rid,
-                private_key=binascii.hexlify(base58.b58decode(self.identity.wif))[
-                    2:-10
-                ].decode(),
-                contract_generated=True,
-            )
-            payout_txn.miner_signature = TU.generate_signature_with_private_key(
-                self.config.private_key,
-                hashlib.sha256(payout_txn.transaction_signature.encode()).hexdigest(),
-            )
-            return payout_txn
+            # disabling payout generation: no longer used
+            return
 
     async def verify_honor(self, contract_txn, trigger_txn):
         is_expired_payout = False
@@ -371,8 +339,7 @@ class AffiliateContract(Contract):
         return await self.expire(contract_txn)
 
     async def expire(self, contract_txn):
-        from yadacoin.core.transaction import Output, Transaction
-        from yadacoin.core.transactionutils import TU
+        pass
 
         address = str(
             P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(contract_txn.public_key))
@@ -384,22 +351,8 @@ class AffiliateContract(Contract):
         )
         if not float(balance):
             return
-        payout_txn = await Transaction.generate(
-            fee=0,
-            outputs=[Output(to=address, value=balance)],
-            public_key=self.identity.public_key,
-            requester_rid=contract_txn.requester_rid,
-            requested_rid=contract_txn.requested_rid,
-            rid=contract_txn.rid,
-            private_key=binascii.hexlify(base58.b58decode(self.identity.wif))[
-                2:-10
-            ].decode(),
-        )
-        payout_txn.miner_signature = TU.generate_signature_with_private_key(
-            self.config.private_key,
-            hashlib.sha256(payout_txn.transaction_signature.encode()).hexdigest(),
-        )
-        return payout_txn
+        # Disabling payout generation: no longer used
+        return
 
     def to_dict(self):
         return {

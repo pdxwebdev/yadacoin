@@ -32,6 +32,7 @@ from yadacoin.core.config import Config
 from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
 from yadacoin.core.credentialreceipt import CredentialReceipt
 from yadacoin.core.identityannouncement import IdentityAnnouncement
+from yadacoin.core.keyrotation import NodeKeyRotationManager
 from yadacoin.core.nodeannouncement import NodeAnnouncement
 from yadacoin.core.recoveryannouncement import (
     RecoveryAnnouncement,
@@ -39,7 +40,6 @@ from yadacoin.core.recoveryannouncement import (
     RecoveryTransition,
 )
 from yadacoin.core.rotationannouncement import RotationAnnouncement
-from yadacoin.core.transactionutils import TU
 
 
 def equal(a, b, epsilon=5e-9):
@@ -362,12 +362,9 @@ class Transaction(object):
         await cls_inst.do_money()
 
         cls_inst.hash = await cls_inst.generate_hash()
-        if cls_inst.private_key:
-            cls_inst.transaction_signature = TU.generate_signature_with_private_key(
-                private_key, cls_inst.hash
-            )
-        else:
-            cls_inst.transaction_signature = ""
+        cls_inst.transaction_signature = (
+            await NodeKeyRotationManager.generate_signature(cls_inst.hash)
+        )
 
         cls_inst.never_expire = never_expire
         cls_inst.private = private
@@ -492,9 +489,6 @@ class Transaction(object):
                 ):
                     return input_sum
         return input_sum
-
-    def generate_transaction_signature(self):
-        return TU.generate_signature(self.hash, self.private_key)
 
     @classmethod
     def from_dict(cls, txn):

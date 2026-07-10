@@ -27,10 +27,10 @@ def _make_config(
     private_key="511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694",
     public_key="02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29",
     address="1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC",
-    kel_private_key=None,
-    kel_public_key=None,
-    kel_address=None,
-    kel_chain_code=None,
+    kel_anchor_private_key=None,
+    kel_anchor_public_key=None,
+    kel_anchor_address=None,
+    kel_anchor_chain_code=None,
     config_path=None,
     modes=None,
     username="testnode",
@@ -40,10 +40,10 @@ def _make_config(
     cfg.private_key = private_key
     cfg.public_key = public_key
     cfg.address = address
-    cfg.kel_private_key = kel_private_key
-    cfg.kel_public_key = kel_public_key
-    cfg.kel_address = kel_address
-    cfg.kel_chain_code = kel_chain_code
+    cfg.kel_anchor_private_key = kel_anchor_private_key
+    cfg.kel_anchor_public_key = kel_anchor_public_key
+    cfg.kel_anchor_address = kel_anchor_address
+    cfg.kel_anchor_chain_code = kel_anchor_chain_code
     cfg.config_path = config_path
     cfg.modes = modes or []
     cfg.username = username
@@ -149,65 +149,6 @@ class TestDerivePureFunctions(unittest.TestCase):
         r1 = derive_secure_path(priv, cc, "factorA")
         r2 = derive_secure_path(priv, cc, "factorB")
         self.assertNotEqual(r1["private_key"], r2["private_key"])
-
-
-# ---------------------------------------------------------------------------
-# get_node_signing_key
-# ---------------------------------------------------------------------------
-
-
-class TestGetNodeSigningKey(unittest.TestCase):
-    def test_returns_none_when_no_kel(self):
-        from yadacoin.core.keyrotation import get_node_signing_key
-
-        cfg = _make_config()
-        priv, pub, addr = get_node_signing_key(cfg)
-        self.assertEqual(None, priv)
-        self.assertEqual(None, pub)
-        self.assertEqual(None, addr)
-
-    def test_returns_kel_key_when_present(self):
-        from yadacoin.core.keyrotation import get_node_signing_key
-
-        cfg = _make_config(
-            kel_private_key="aabbcc",
-            kel_public_key="0abc",
-            kel_address="1KelAddr",
-        )
-        priv, pub, addr = get_node_signing_key(cfg)
-        self.assertEqual(priv, "aabbcc")
-        self.assertEqual(pub, "0abc")
-        self.assertEqual(addr, "1KelAddr")
-
-
-# ---------------------------------------------------------------------------
-# get_node_auth_key
-# ---------------------------------------------------------------------------
-
-
-class TestGetNodeAuthKey(AsyncTestCase):
-    async def test_no_manager_calls_fatal(self):
-        from yadacoin.core.keyrotation import get_node_auth_key
-
-        cfg = _make_config()
-
-        with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaises(SystemExit):
-                await get_node_auth_key(cfg)
-
-    async def test_with_manager_delegates(self):
-        from yadacoin.core.keyrotation import get_node_auth_key
-
-        cfg = _make_config()
-        manager = MagicMock()
-        manager.advance_auth_ratchet = AsyncMock(
-            return_value=("privhex", "pubhex", None, None)
-        )
-        cfg.kel_manager = manager
-        priv, pub, *_ = await get_node_auth_key(cfg)
-        self.assertEqual(priv, "privhex")
-        self.assertEqual(pub, "pubhex")
-        manager.advance_auth_ratchet.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -712,12 +653,12 @@ class TestUpdateActiveKelKey(unittest.TestCase):
 
         mgr._update_active_kel_key(kel, k0, "factor")
 
-        # After 1 derive step, kel_private_key/public_key/address must be set
-        self.assertIsNotNone(cfg.kel_private_key)
-        self.assertIsNotNone(cfg.kel_public_key)
-        self.assertIsNotNone(cfg.kel_address)
-        self.assertIsInstance(cfg.kel_private_key, str)
-        self.assertEqual(len(cfg.kel_private_key), 64)  # 32-byte hex
+        # After 1 derive step, kel_anchor_private_key/public_key/address must be set
+        self.assertIsNotNone(cfg.kel_anchor_private_key)
+        self.assertIsNotNone(cfg.kel_anchor_public_key)
+        self.assertIsNotNone(cfg.kel_anchor_address)
+        self.assertIsInstance(cfg.kel_anchor_private_key, str)
+        self.assertEqual(len(cfg.kel_anchor_private_key), 64)  # 32-byte hex
 
     def test_depth_zero_sets_k0_derived(self):
         from coincurve import PrivateKey as CK
@@ -734,7 +675,7 @@ class TestUpdateActiveKelKey(unittest.TestCase):
 
         # With depth=0, no derivation — kel key IS k0
         expected_pub = CK(_VALID_PRIV).public_key.format(compressed=True).hex()
-        self.assertEqual(cfg.kel_public_key, expected_pub)
+        self.assertEqual(cfg.kel_anchor_public_key, expected_pub)
 
     def test_generate_deterministic_signature_exception_logged_not_raised(self):
         """Lines 1005-1006: when generate_deterministic_signature raises, the
@@ -804,8 +745,8 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
         cfg = _make_config(
-            kel_private_key="511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694",
-            kel_public_key="02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29",
+            kel_anchor_private_key="511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694",
+            kel_anchor_public_key="02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29",
         )
         mgr = NodeKeyRotationManager(cfg)
 
@@ -827,7 +768,9 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
         _kn = derive_secure_path(bytes.fromhex(priv_hex), _cc, "mysecret")
         cc_hex = _kn["chain_code"].hex()
         cfg = _make_config(
-            kel_private_key=priv_hex, kel_public_key=pub_hex, kel_chain_code=cc_hex
+            kel_anchor_private_key=priv_hex,
+            kel_anchor_public_key=pub_hex,
+            kel_anchor_chain_code=cc_hex,
         )
         cfg.mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
         cfg.mongo.async_db.key_event_log.replace_one = AsyncMock()
@@ -860,7 +803,9 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
         _kn = derive_secure_path(bytes.fromhex(priv_hex), _cc, "mysecret")
         cc_hex = _kn["chain_code"].hex()
         cfg = _make_config(
-            kel_private_key=priv_hex, kel_public_key=pub_hex, kel_chain_code=cc_hex
+            kel_anchor_private_key=priv_hex,
+            kel_anchor_public_key=pub_hex,
+            kel_anchor_chain_code=cc_hex,
         )
         cfg.mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
         cfg.mongo.async_db.key_event_log.replace_one = AsyncMock(
@@ -879,7 +824,9 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
 
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
         pub_hex = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
-        cfg = _make_config(kel_private_key=priv_hex, kel_public_key=pub_hex)
+        cfg = _make_config(
+            kel_anchor_private_key=priv_hex, kel_anchor_public_key=pub_hex
+        )
         cfg.mongo.async_db.key_event_log.replace_one = AsyncMock()
         mgr = NodeKeyRotationManager(cfg)
         mgr._second_factor = "mysecret"
@@ -903,7 +850,9 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
 
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
         pub_hex = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
-        cfg = _make_config(kel_private_key=priv_hex, kel_public_key=pub_hex)
+        cfg = _make_config(
+            kel_anchor_private_key=priv_hex, kel_anchor_public_key=pub_hex
+        )
         cfg.mongo.async_db.key_event_log.replace_one = AsyncMock()
         mgr = NodeKeyRotationManager(cfg)
         mgr._second_factor = "mysecret"
@@ -948,7 +897,9 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
         _step2_addr = str(P2PKHBitcoinAddress.from_pubkey(_step2_pub))
 
         cfg = _make_config(
-            kel_private_key=priv_hex, kel_public_key=pub_hex, kel_chain_code=cc_hex
+            kel_anchor_private_key=priv_hex,
+            kel_anchor_public_key=pub_hex,
+            kel_anchor_chain_code=cc_hex,
         )
         cfg.mongo.async_db.key_event_log.find_one = AsyncMock(
             return_value={
@@ -969,14 +920,16 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
         self.assertIsNotNone(mgr._auth_ratchet_key)
 
     async def test_init_legacy_no_chain_code_uses_k0(self):
-        """Without kel_chain_code, ratchet is derived from _k0."""
+        """Without kel_anchor_chain_code, ratchet is derived from _k0."""
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
         pub_hex = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
-        # kel_chain_code NOT set → legacy derivation path
-        cfg = _make_config(kel_private_key=priv_hex, kel_public_key=pub_hex)
-        cfg.kel_chain_code = None
+        # kel_anchor_chain_code NOT set → legacy derivation path
+        cfg = _make_config(
+            kel_anchor_private_key=priv_hex, kel_anchor_public_key=pub_hex
+        )
+        cfg.kel_anchor_chain_code = None
         cfg.mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
         cfg.mongo.async_db.key_event_log.replace_one = AsyncMock()
 
@@ -1000,16 +953,18 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
             priv_out, pub_out, *_ = await mgr.advance_auth_ratchet()
 
         self.assertIsNotNone(priv_out)
-        self.assertIsNotNone(cfg.kel_chain_code)
+        self.assertIsNotNone(cfg.kel_anchor_chain_code)
 
     async def test_init_no_chain_code_no_k0_calls_fatal(self):
-        """Without kel_chain_code and without _k0, _fatal is called."""
+        """Without kel_anchor_chain_code and without _k0, _fatal is called."""
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
         pub_hex = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
-        cfg = _make_config(kel_private_key=priv_hex, kel_public_key=pub_hex)
-        cfg.kel_chain_code = None
+        cfg = _make_config(
+            kel_anchor_private_key=priv_hex, kel_anchor_public_key=pub_hex
+        )
+        cfg.kel_anchor_chain_code = None
         cfg.mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
 
         mgr = NodeKeyRotationManager(cfg)
@@ -1037,7 +992,7 @@ class TestQueueReanchor(AsyncTestCase):
     async def test_no_kel_pub_returns_early(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
-        cfg = _make_config()  # kel_public_key is None
+        cfg = _make_config()  # kel_anchor_public_key is None
         mgr = NodeKeyRotationManager(cfg)
         mgr._k0 = {"private_key": bytes(32), "chain_code": bytes(32)}
         mgr._second_factor = "sf"
@@ -1046,7 +1001,7 @@ class TestQueueReanchor(AsyncTestCase):
     async def test_no_onchain_kel_returns_early(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
-        cfg = _make_config(kel_public_key="02pub")
+        cfg = _make_config(kel_anchor_public_key="02pub")
         mgr = NodeKeyRotationManager(cfg)
         mgr._k0 = {"private_key": _VALID_PRIV, "chain_code": _VALID_PRIV}
         mgr._second_factor = "sf"
@@ -1060,7 +1015,7 @@ class TestQueueReanchor(AsyncTestCase):
     async def test_kel_build_exception_returns_early(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
-        cfg = _make_config(kel_public_key="02pub")
+        cfg = _make_config(kel_anchor_public_key="02pub")
         mgr = NodeKeyRotationManager(cfg)
         mgr._k0 = {"private_key": _VALID_PRIV, "chain_code": _VALID_PRIV}
         mgr._second_factor = "sf"
@@ -1075,7 +1030,7 @@ class TestQueueReanchor(AsyncTestCase):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
-        cfg = _make_config(kel_public_key="02pub")
+        cfg = _make_config(kel_anchor_public_key="02pub")
         cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock()
         mgr = NodeKeyRotationManager(cfg)
         mgr._k0 = {
@@ -1102,7 +1057,7 @@ class TestQueueReanchor(AsyncTestCase):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
-        cfg = _make_config(kel_public_key="02pub", modes=["node"])
+        cfg = _make_config(kel_anchor_public_key="02pub", modes=["node"])
         cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock()
 
         peer_stream = MagicMock()
@@ -1141,7 +1096,7 @@ class TestQueueReanchor(AsyncTestCase):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
-        cfg = _make_config(kel_public_key="02pub", modes=["node"])
+        cfg = _make_config(kel_anchor_public_key="02pub", modes=["node"])
         cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock()
         cfg.peer = MagicMock()
         cfg.peer.get_sync_peers = MagicMock(side_effect=Exception("peer err"))

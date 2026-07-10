@@ -533,13 +533,8 @@ class NodeApplication(Application):
         for peer_cls in list(self.config.nodeClient.outbound_streams.keys()).copy():
             for rid in self.config.nodeClient.outbound_streams[peer_cls]:
                 for x in range(50):
-                    txn = await Transaction.generate(
-                        private_key=self.config.private_key,
-                        public_key=self.config.public_key,
-                    )
+                    txn = await Transaction.generate()
                     block = await Block.generate(
-                        private_key=self.config.private_key,
-                        public_key=self.config.public_key,
                         transactions=[txn],
                         index=600000,
                     )
@@ -938,7 +933,7 @@ class NodeApplication(Application):
                     "identity": {
                         "username": self.config.username,
                         "username_signature": self.config.kel_username_signature,
-                        "public_key": self.config.kel_public_key,
+                        "public_key": self.config.kel_anchor_public_key,
                     },
                     "peer_type": assigned_type,
                     "http_host": self.config.ssl.common_name or self.config.peer_host,

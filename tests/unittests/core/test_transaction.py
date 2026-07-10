@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 import yadacoin.core.config
 from yadacoin.core.blockchainutils import BlockChainUtils
 from yadacoin.core.config import Config
+from yadacoin.core.keyrotation import NodeKeyRotationManager
 from yadacoin.core.transaction import (
     Input,
     InvalidTransactionException,
@@ -611,9 +612,8 @@ class TestTransactionPureMethods(AsyncTestCase):
             txn_hash="abc",
         )
         # generate valid signature via TU
-        from yadacoin.core.transactionutils import TU
 
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash or "abc"
         )
         # coincurve verify will fail for this sig, ecdsa should succeed
@@ -1185,7 +1185,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         """Line 615: Contract relationship calls to_string() in verify()."""
 
         from yadacoin.contracts.base import Contract
-        from yadacoin.core.transactionutils import TU
 
         txn = await Transaction.generate(
             public_key=yadacoin.core.config.CONFIG.public_key,
@@ -1201,7 +1200,7 @@ class TestTransactionPureMethods(AsyncTestCase):
 
         txn.relationship = FakeContract()
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         await txn.verify()  # Should complete without raising
@@ -1210,7 +1209,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         """Lines 617-621: NodeAnnouncement with check_dynamic_nodes=False raises."""
 
         from yadacoin.core.nodeannouncement import NodeAnnouncement
-        from yadacoin.core.transactionutils import TU
 
         class FakeNodeAnnouncement(NodeAnnouncement):
             def __init__(self):
@@ -1228,7 +1226,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         )
         txn.relationship = FakeNodeAnnouncement()
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         with self.assertRaises(InvalidTransactionException):
@@ -1237,7 +1235,6 @@ class TestTransactionPureMethods(AsyncTestCase):
     async def test_verify_agent_announcement_no_check_agent_registration_raises(self):
         """Lines 638-641: AgentAnnouncement with check_agent_registration=False raises."""
         from yadacoin.core.agentannouncement import AgentAnnouncement
-        from yadacoin.core.transactionutils import TU
 
         class FakeAgentAnnouncement(AgentAnnouncement):
             def __init__(self):
@@ -1255,7 +1252,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         )
         txn.relationship = FakeAgentAnnouncement()
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         with self.assertRaises(InvalidTransactionException):
@@ -1264,7 +1261,6 @@ class TestTransactionPureMethods(AsyncTestCase):
     async def test_verify_agent_announcement_missing_endpoint_url_raises(self):
         """Lines 642-644: AgentAnnouncement with check_agent_registration=True but no endpoint_url raises."""
         from yadacoin.core.agentannouncement import AgentAnnouncement
-        from yadacoin.core.transactionutils import TU
 
         class FakeAgentAnnouncement(AgentAnnouncement):
             def __init__(self):
@@ -1282,7 +1278,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         )
         txn.relationship = FakeAgentAnnouncement()
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         with self.assertRaises(InvalidTransactionException):
@@ -1292,7 +1288,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         """Lines 624-627: NodeAnnouncement with check_dynamic_nodes=True but no collateral_address raises."""
 
         from yadacoin.core.nodeannouncement import NodeAnnouncement
-        from yadacoin.core.transactionutils import TU
 
         class FakeNodeAnnouncement(NodeAnnouncement):
             def __init__(self):
@@ -1310,7 +1305,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         )
         txn.relationship = FakeNodeAnnouncement()
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         with self.assertRaises(InvalidTransactionException):
@@ -1320,7 +1315,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         """Lines 628-635: NodeAnnouncement with collateral_address but no matching output raises."""
 
         from yadacoin.core.nodeannouncement import NodeAnnouncement
-        from yadacoin.core.transactionutils import TU
 
         class FakeNodeAnnouncement(NodeAnnouncement):
             def __init__(self):
@@ -1339,7 +1333,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         txn.relationship = FakeNodeAnnouncement()
         # No outputs with collateral_address → raises
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         with self.assertRaises(InvalidTransactionException):
@@ -1368,8 +1362,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         """Lines 647-720, 732+: verify() with Input.input_txn set, output found, total balances."""
         from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH
 
-        from yadacoin.core.transactionutils import TU
-
         address = str(
             _P2PKH.from_pubkey(bytes.fromhex(yadacoin.core.config.CONFIG.public_key))
         )
@@ -1383,14 +1375,13 @@ class TestTransactionPureMethods(AsyncTestCase):
         )
         txn.inputs = [Input(signature="signed_id", input_txn=input_txn_obj)]
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         await txn.verify()  # Should pass without raising
 
     async def test_verify_with_input_txn_not_found_recipient_raises(self):
         """Lines 722-728: not found → raises InvalidTransactionException."""
-        from yadacoin.core.transactionutils import TU
 
         input_txn_obj = Transaction(
             public_key=yadacoin.core.config.CONFIG.public_key,
@@ -1401,7 +1392,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         )
         txn.inputs = [Input(signature="signed_id2", input_txn=input_txn_obj)]
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         with self.assertRaises(InvalidTransactionException):
@@ -1412,12 +1403,11 @@ class TestTransactionPureMethods(AsyncTestCase):
         from unittest.mock import AsyncMock, patch
 
         from yadacoin.core.transaction import MissingInputTransactionException
-        from yadacoin.core.transactionutils import TU
 
         txn = Transaction(public_key=yadacoin.core.config.CONFIG.public_key)
         txn.inputs = [Input(signature="missing_id")]
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
 
@@ -1457,14 +1447,13 @@ class TestTransactionPureMethods(AsyncTestCase):
 
     async def test_verify_output_negative_raises(self):
         """Lines 739-740: output with negative value raises InvalidTransactionException."""
-        from yadacoin.core.transactionutils import TU
 
         txn = Transaction(
             public_key=yadacoin.core.config.CONFIG.public_key,
             outputs=[Output(to="1SomeAddr", value=-1.0)],
         )
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         with self.assertRaises(InvalidTransactionException):
@@ -1473,14 +1462,13 @@ class TestTransactionPureMethods(AsyncTestCase):
     async def test_verify_total_mismatch_raises(self):
         """Lines 741, 756-758: total_input != total_output+fee raises TotalValueMismatchException."""
         from yadacoin.core.transaction import TotalValueMismatchException
-        from yadacoin.core.transactionutils import TU
 
         txn = Transaction(
             public_key=yadacoin.core.config.CONFIG.public_key,
             outputs=[Output(to="1SomeAddr", value=1.0)],
         )
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         # total_input=0, total_output=1.0 → mismatch
@@ -1490,7 +1478,6 @@ class TestTransactionPureMethods(AsyncTestCase):
     async def test_verify_check_masternode_fee_mismatch_raises(self):
         """Lines 743-745: check_masternode_fee=True, total mismatch raises TotalValueMismatchException."""
         from yadacoin.core.transaction import TotalValueMismatchException
-        from yadacoin.core.transactionutils import TU
 
         txn = Transaction(
             public_key=yadacoin.core.config.CONFIG.public_key,
@@ -1498,7 +1485,7 @@ class TestTransactionPureMethods(AsyncTestCase):
             masternode_fee=0.5,
         )
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         # total_input=0, total_output(1)+fee(0)+masternode_fee(0.5)=1.5 → mismatch
@@ -1584,14 +1571,13 @@ class TestTransactionPureMethods(AsyncTestCase):
         from yadacoin.core.keyeventlog import (
             KELExceptionPreviousKeyHashReferenceMissing,
         )
-        from yadacoin.core.transactionutils import TU
 
         txn = Transaction(
             public_key=yadacoin.core.config.CONFIG.public_key,
             prev_public_key_hash="some_prev_hash",
         )
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         mock_block = MagicMock()
@@ -1606,14 +1592,13 @@ class TestTransactionPureMethods(AsyncTestCase):
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from yadacoin.core.chain import CHAIN
-        from yadacoin.core.transactionutils import TU
 
         txn = Transaction(
             public_key=yadacoin.core.config.CONFIG.public_key,
             prev_public_key_hash="some_prev_hash",
         )
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         mock_block = MagicMock()
@@ -2130,8 +2115,6 @@ class TestTransactionPureMethods(AsyncTestCase):
 
         from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH
 
-        from yadacoin.core.transactionutils import TU
-
         address = str(
             _P2PKH.from_pubkey(bytes.fromhex(yadacoin.core.config.CONFIG.public_key))
         )
@@ -2154,7 +2137,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         )
         txn.inputs = [Input(signature="input_sig_dict")]  # no input_txn → goes to BU
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
 
@@ -2170,13 +2153,12 @@ class TestTransactionPureMethods(AsyncTestCase):
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from yadacoin.core.transaction import MissingInputTransactionException
-        from yadacoin.core.transactionutils import TU
 
         txn = Transaction(public_key=yadacoin.core.config.CONFIG.public_key)
         txn.inputs = [Input(signature="missing_id")]
         txn.extra_blocks = [MagicMock()]  # non-empty → line 658 True
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
 
@@ -2195,8 +2177,6 @@ class TestTransactionPureMethods(AsyncTestCase):
 
         from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH
 
-        from yadacoin.core.transactionutils import TU
-
         address = str(
             _P2PKH.from_pubkey(bytes.fromhex(yadacoin.core.config.CONFIG.public_key))
         )
@@ -2210,7 +2190,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         )
         txn.inputs = [Input(signature="spent_input", input_txn=input_txn_obj)]
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
 
@@ -2831,7 +2811,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         import hashlib
 
         from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
-        from yadacoin.core.transactionutils import TU
 
         txn = await Transaction.generate(
             public_key=yadacoin.core.config.CONFIG.public_key,
@@ -2844,7 +2823,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
         txn.fee = 0.01  # meets minimum
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         with self.assertRaises(InvalidTransactionException) as ctx:
@@ -2856,7 +2835,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         import hashlib
 
         from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
-        from yadacoin.core.transactionutils import TU
 
         txn = await Transaction.generate(
             public_key=yadacoin.core.config.CONFIG.public_key,
@@ -2869,7 +2847,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
         txn.fee = 0.0  # zero fee → rejected
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         with self.assertRaises(InvalidTransactionException) as ctx:
@@ -2881,7 +2859,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         import hashlib
 
         from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
-        from yadacoin.core.transactionutils import TU
 
         txn = await Transaction.generate(
             public_key=yadacoin.core.config.CONFIG.public_key,
@@ -2894,7 +2871,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
         txn.fee = 0.01  # meets minimum
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
         # Should not raise for the "not allowed before fork" or "minimum fee" reasons
@@ -2987,7 +2964,6 @@ class TestTransactionIdentityAnnouncement(AsyncTestCase):
         import hashlib
 
         from yadacoin.core.identityannouncement import IdentityAnnouncement
-        from yadacoin.core.transactionutils import TU
 
         txn = await Transaction.generate(
             public_key=self._PUB_HEX,
@@ -3003,7 +2979,7 @@ class TestTransactionIdentityAnnouncement(AsyncTestCase):
         txn.relationship = ann
         txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             self._PRIV_HEX, txn.hash
         )
         with self.assertRaises(InvalidTransactionException) as ctx:
@@ -3015,7 +2991,6 @@ class TestTransactionIdentityAnnouncement(AsyncTestCase):
         import hashlib
 
         from yadacoin.core.identityannouncement import IdentityAnnouncement
-        from yadacoin.core.transactionutils import TU
 
         # Sign the empty string so the signature check passes and we reach the blank-username check
         empty_sig = self._valid_sig("")
@@ -3034,7 +3009,7 @@ class TestTransactionIdentityAnnouncement(AsyncTestCase):
         txn.relationship = ann
         txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             self._PRIV_HEX, txn.hash
         )
         with self.assertRaises(InvalidTransactionException) as ctx:
@@ -3046,7 +3021,6 @@ class TestTransactionIdentityAnnouncement(AsyncTestCase):
         import hashlib
 
         from yadacoin.core.identityannouncement import IdentityAnnouncement
-        from yadacoin.core.transactionutils import TU
 
         sig = self._valid_sig("mynode")
         txn = await Transaction.generate(
@@ -3062,7 +3036,7 @@ class TestTransactionIdentityAnnouncement(AsyncTestCase):
         txn.relationship = ann
         txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             self._PRIV_HEX, txn.hash
         )
 
@@ -3085,7 +3059,6 @@ class TestTransactionIdentityAnnouncement(AsyncTestCase):
             IdentityAnnouncement,
             RotationAnnouncement,
         )
-        from yadacoin.core.transactionutils import TU
 
         sig = self._valid_sig("mynode")
         txn = await Transaction.generate(
@@ -3107,7 +3080,7 @@ class TestTransactionIdentityAnnouncement(AsyncTestCase):
         txn.relationship = ann
         txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             self._PRIV_HEX, txn.hash
         )
         with patch(
@@ -3123,7 +3096,6 @@ class TestTransactionIdentityAnnouncement(AsyncTestCase):
         import hashlib
 
         from yadacoin.core.identityannouncement import RotationAnnouncement
-        from yadacoin.core.transactionutils import TU
 
         txn = await Transaction.generate(
             public_key=self._PUB_HEX,
@@ -3134,7 +3106,7 @@ class TestTransactionIdentityAnnouncement(AsyncTestCase):
         txn.relationship_hash = hashlib.sha256(ra.to_string().encode()).digest().hex()
         txn.prev_public_key_hash = ""  # inception — must be rejected
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             self._PRIV_HEX, txn.hash
         )
         with self.assertRaises(InvalidTransactionException) as ctx:
@@ -3146,7 +3118,6 @@ class TestTransactionIdentityAnnouncement(AsyncTestCase):
         import hashlib
 
         from yadacoin.core.identityannouncement import RotationAnnouncement
-        from yadacoin.core.transactionutils import TU
 
         txn = await Transaction.generate(
             public_key=self._PUB_HEX,
@@ -3159,7 +3130,7 @@ class TestTransactionIdentityAnnouncement(AsyncTestCase):
         txn.relationship_hash = hashlib.sha256(ra.to_string().encode()).digest().hex()
         txn.prev_public_key_hash = "1SOMEPREVHASH"  # non-inception
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             self._PRIV_HEX, txn.hash
         )
         with self.assertRaises(InvalidTransactionException) as ctx:

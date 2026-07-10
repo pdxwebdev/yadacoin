@@ -15,12 +15,9 @@ import binascii
 import hashlib
 
 import base58
-from bip32utils import BIP32Key
 from coincurve import PublicKey
-from mnemonic import Mnemonic
 
 from yadacoin.core.collections import Collections
-from yadacoin.core.transactionutils import TU
 
 
 class Identity:
@@ -40,29 +37,29 @@ class Identity:
         self.parent = parent
         self.wif = wif
 
-    @classmethod
-    def generate(cls, username="", collection=None, parent=None):
-        if not collection:
-            collection = Collections.CONTACT.value
-        mnemonic = Mnemonic("english")
-        seed = mnemonic.generate(256)
-        entropy = mnemonic.to_entropy(seed)
-        key = BIP32Key.fromEntropy(entropy)
-        private_key = key.PrivateKey().hex()
-        public_key = (
-            PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y())
-            .format()
-            .hex()
-        )
-        wif = cls.generate_wif(private_key)
-        username_signature = cls.get_username_signature(private_key, username)
-        return cls(
-            public_key=public_key,
-            username=username,
-            username_signature=username_signature,
-            parent=parent,
-            wif=wif,
-        )
+    # @classmethod
+    # def generate(cls, username="", collection=None, parent=None):
+    #     if not collection:
+    #         collection = Collections.CONTACT.value
+    #     mnemonic = Mnemonic("english")
+    #     seed = mnemonic.generate(256)
+    #     entropy = mnemonic.to_entropy(seed)
+    #     key = BIP32Key.fromEntropy(entropy)
+    #     private_key = key.PrivateKey().hex()
+    #     public_key = (
+    #         PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y())
+    #         .format()
+    #         .hex()
+    #     )
+    #     wif = cls.generate_wif(private_key)
+    #     username_signature = cls.get_username_signature(private_key, username)
+    #     return cls(
+    #         public_key=public_key,
+    #         username=username,
+    #         username_signature=username_signature,
+    #         parent=parent,
+    #         wif=wif,
+    #     )
 
     @classmethod
     def from_dict(cls, data):
@@ -90,10 +87,10 @@ class Identity:
         )
 
     @classmethod
-    def get_username_signature(cls, private_key, username):
-        return TU.generate_deterministic_signature(
-            config=None, message=username, private_key=private_key
-        )
+    def get_username_signature(cls, username):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        return NodeKeyRotationManager.generate_deterministic_signature(username)
 
     @classmethod
     def generate_wif(cls, private_key):

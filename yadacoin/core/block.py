@@ -42,6 +42,7 @@ from yadacoin.core.keyeventlog import (
     KeyEventLog,
     PublicKeyMismatchException,
 )
+from yadacoin.core.keyrotation import NodeKeyRotationManager
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.nodes import Nodes
 from yadacoin.core.nodestester import NodesTester
@@ -53,7 +54,6 @@ from yadacoin.core.transaction import (
     Transaction,
     TransactionAddressInvalidException,
 )
-from yadacoin.core.transactionutils import TU
 
 
 class XeggexAccountFrozenException(Exception):
@@ -194,8 +194,6 @@ class Block(object):
     async def generate(
         cls,
         transactions=None,
-        public_key=None,
-        private_key=None,
         force_version=None,
         index=0,
         force_time=None,
@@ -218,6 +216,8 @@ class Block(object):
         elif prev_hash is None and index != 0:
             prev_hash = LatestBlock.block.hash
         transactions = transactions or []
+
+        public_key = config.kel_anchor_public_key
 
         transaction_objs = []
         fee_sum = 0.0
@@ -348,8 +348,6 @@ class Block(object):
             ]
 
         coinbase_txn = await Transaction.generate(
-            public_key=public_key,
-            private_key=private_key,
             outputs=outputs,
             coinbase=True,
         )
@@ -616,8 +614,6 @@ class Block(object):
                 ]
 
             new_coinbase = await Transaction.generate(
-                public_key=public_key,
-                private_key=private_key,
                 outputs=updated_outputs,
                 coinbase=True,
             )
@@ -631,7 +627,9 @@ class Block(object):
             block.hash = await block.generate_hash_from_header(
                 block.index, block.header, str(block.nonce)
             )
-            block.signature = TU.generate_signature(block.hash, private_key)
+            block.signature = await NodeKeyRotationManager.generate_signature(
+                block.hash
+            )
         return block
 
     async def remove_transaction(

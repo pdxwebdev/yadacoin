@@ -12,53 +12,16 @@ Full license terms: see LICENSE.txt in this repository.
 """
 
 import asyncio
-import base64
 import hashlib
-import os
 import time
 
-from coincurve._libsecp256k1 import ffi
-from coincurve.keys import PrivateKey
-
 from yadacoin.core.chain import CHAIN
-from yadacoin.core.keyrotation import get_node_signing_key
 
 
 class TU(object):  # Transaction Utilities
     @classmethod
     def hash(cls, message):
         return hashlib.sha256(message.encode("utf-8")).digest().hex()
-
-    @classmethod
-    def generate_deterministic_signature(cls, config, message: str, private_key=None):
-        if not private_key:
-            private_key = get_node_signing_key(config)[0]
-        key = PrivateKey.from_hex(private_key)
-        signature = key.sign(message.encode("utf-8"))
-        return base64.b64encode(signature).decode("utf-8")
-
-    @classmethod
-    def generate_signature_with_private_key(cls, private_key, message):
-        # Hedged RFC 6979: deterministic base nonce + 32 bytes of OS randomness
-        # as ndata.  This protects against RFC 6979 implementation flaws and
-        # fault injection while keeping the full 256-bit nonce space.
-        # ffi.from_buffer pins the bytes object so the pointer stays valid for
-        # the duration of the sign() call.
-        nonce_data = ffi.from_buffer(os.urandom(32))
-        key = PrivateKey.from_hex(private_key)
-        signature = key.sign(
-            message.encode("utf-8"), custom_nonce=(ffi.NULL, nonce_data)
-        )
-        return base64.b64encode(signature).decode("utf-8")
-
-    @classmethod
-    def generate_signature(cls, message, private_key):
-        nonce_data = ffi.from_buffer(os.urandom(32))
-        key = PrivateKey.from_hex(private_key)
-        signature = key.sign(
-            message.encode("utf-8"), custom_nonce=(ffi.NULL, nonce_data)
-        )
-        return base64.b64encode(signature).decode("utf-8")
 
     @classmethod
     def generate_rid(cls, config, username_signature):
@@ -93,23 +56,6 @@ class TU(object):  # Transaction Utilities
             Transaction,
         )
 
-        if from_address == config.address or from_address == getattr(
-            config, "kel_address", None
-        ):
-            public_key, private_key = (
-                get_node_signing_key(config)[1],
-                get_node_signing_key(config)[0],
-            )
-        else:
-            child_key = await config.mongo.async_db.child_keys.find_one(
-                {"address": from_address}
-            )
-            if child_key:
-                public_key = child_key["public_key"]
-                private_key = child_key["private_key"]
-            else:
-                return {"status": "error", "message": "no wallet matching from address"}
-
         if outputs:
             for output in outputs:
                 output["value"] = float(output["value"])
@@ -122,8 +68,6 @@ class TU(object):  # Transaction Utilities
         try:
             transaction = await Transaction.generate(
                 fee=0.00,
-                public_key=public_key,
-                private_key=private_key,
                 inputs=inputs,
                 outputs=outputs,
                 exact_match=exact_match,
@@ -415,9 +359,8 @@ class TU(object):  # Transaction Utilities
 
     @classmethod
     async def combine_oldest_transactions(cls, config):
-        kel_priv, kel_pub, kel_addr = get_node_signing_key(config)
-        address = kel_addr
-        combined_address = kel_addr
+        address = config.kel_anchor_address
+        combined_address = config.combined_address
         config.app_log.info("Combining oldest transactions process started.")
         total_value = 0
         oldest_transactions = []

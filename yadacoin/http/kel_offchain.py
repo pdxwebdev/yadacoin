@@ -22,7 +22,7 @@ Query parameters
 ----------------
 anchor_public_key : str  (optional)
     Hex public key of the on-chain anchor to start from.  Defaults to the
-    node's current ``config.kel_public_key``.  Only entries whose
+    node's current ``config.kel_anchor_public_key``.  Only entries whose
     ``anchor_public_key`` matches are returned.
 
 limit : int  (optional, default 100, max 200)
@@ -69,7 +69,7 @@ class KelOffchainLogHandler(BaseHandler):
 
         anchor_pub = self.get_argument(
             "anchor_public_key",
-            getattr(config, "kel_public_key", "") or "",
+            getattr(config, "kel_anchor_public_key", "") or "",
         )
 
         try:

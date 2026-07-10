@@ -11,12 +11,9 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
-import binascii
-import hashlib
 import time
 from enum import Enum
 
-import base58
 from bitcoin.wallet import P2PKHBitcoinAddress
 
 from yadacoin.contracts.asset import Asset
@@ -129,8 +126,7 @@ class ChangeOwnershipContract(Contract):
         return await self.generate_transaction(contract_txn, bid)
 
     async def generate_transaction(self, contract_txn, trigger_txn):
-        from yadacoin.core.transaction import Input, Output, Transaction
-        from yadacoin.core.transactionutils import TU
+        pass
 
         address = str(
             P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key))
@@ -142,28 +138,8 @@ class ChangeOwnershipContract(Contract):
             [x.value for x in trigger_txn.outputs if x.to == address]
         )
 
-        payout_txn = await Transaction.generate(
-            value=value_sent_to_address,
-            inputs=[Input(trigger_txn.transaction_signature)],
-            fee=0,
-            outputs=[Output(to=return_address, value=value_sent_to_address)],
-            public_key=self.identity.public_key,
-            requester_rid=trigger_txn.requester_rid,
-            requested_rid=contract_txn.requested_rid,
-            rid=trigger_txn.rid,
-            contract_generated=True,
-        )
-
-        payout_txn.hash = await payout_txn.generate_hash()
-        payout_txn.transaction_signature = TU.generate_signature_with_private_key(
-            binascii.hexlify(base58.b58decode(self.identity.wif))[2:-10].decode(),
-            payout_txn.hash,
-        )
-        payout_txn.miner_signature = TU.generate_signature_with_private_key(
-            self.config.private_key,
-            hashlib.sha256(payout_txn.transaction_signature.encode()).hexdigest(),
-        )
-        return payout_txn
+        # disabling signing: no longer used
+        return None
 
     async def verify_payout_generated_already(
         self, contract_txn, trigger_txn, mempool_txns

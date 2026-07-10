@@ -537,13 +537,15 @@ class TestFloorToTwoDecimalPlaces(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# generate_signature
+# NodeKeyRotationManager._sign
 # ---------------------------------------------------------------------------
 
 
 class TestGenerateSignature(BUTestCase):
     async def test_returns_base64_string(self):
-        sig = self.bu.generate_signature("test message", self.config.private_key)
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        sig = NodeKeyRotationManager._sign(self.config.private_key, "test message")
         import base64
 
         decoded = base64.b64decode(sig)

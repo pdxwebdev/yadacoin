@@ -28,13 +28,13 @@ from yadacoin.core.config import Config
 from yadacoin.core.consensus import Consensus
 from yadacoin.core.graphutils import GraphUtils
 from yadacoin.core.health import Health
+from yadacoin.core.keyrotation import NodeKeyRotationManager
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo
 from yadacoin.core.nodeannouncement import NodeAnnouncement
 from yadacoin.core.nodes import Nodes
 from yadacoin.core.processingqueue import BlockProcessingQueueItem, ProcessingQueues
 from yadacoin.core.transaction import Output, Transaction
-from yadacoin.core.transactionutils import TU
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 TESTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -239,7 +239,7 @@ async def main():
         )
         txn.relationship = node_announcement
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             config.private_key, txn.hash
         )
 

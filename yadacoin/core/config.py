@@ -11,7 +11,6 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
-import base64
 import binascii
 import hashlib
 import json
@@ -23,8 +22,6 @@ from bip32utils import BIP32Key
 from bitcoin import core
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey, PublicKey
-from ecdsa import SECP256k1, VerifyingKey
-from ecdsa.util import sigdecode_der
 from mnemonic import Mnemonic
 
 from yadacoin import min_version, version
@@ -71,14 +68,6 @@ class Config:
 
         self.private_key = config["private_key"]
         self.wif = self.to_wif(self.private_key)
-        self.username_signature = self.get_username_signature()
-        vk2 = VerifyingKey.from_string(bytes.fromhex(self.public_key), curve=SECP256k1)
-        vk2.verify(
-            base64.b64decode(self.username_signature),
-            self.username.encode(),
-            hashlib.sha256,
-            sigdecode=sigdecode_der,
-        )
 
         self.mongodb_host = config["mongodb_host"]
         self.database = config["database"]
@@ -431,7 +420,7 @@ class Config:
 
     @classmethod
     def from_dict(cls, config):
-        from yadacoin.core.transactionutils import TU
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
 
         cls.modes = config.get("modes", ["node", "web", "pool"])
         cls.root_app = config.get("root_app", "")
@@ -448,8 +437,8 @@ class Config:
 
         cls.private_key = config["private_key"]
         cls.wif = cls.generate_wif(cls.private_key)
-        cls.username_signature = TU.generate_deterministic_signature(
-            config, config["username"], config["private_key"]
+        cls.username_signature = (
+            NodeKeyRotationManager.generate_deterministic_signature(cls.username)
         )
 
         cls.api_whitelist = config.get("api_whitelist", [])
@@ -547,11 +536,9 @@ class Config:
             return False
 
     def get_username_signature(self):
-        from yadacoin.core.transactionutils import TU
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
 
-        return TU.generate_deterministic_signature(
-            self, self.username, self.private_key
-        )
+        return NodeKeyRotationManager.generate_deterministic_signature(self.username)
 
     def to_wif(self, private_key):
         private_key_static = private_key

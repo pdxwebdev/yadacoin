@@ -5,6 +5,8 @@ from typing import Dict, Tuple
 
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 
+from yadacoin.core.keyrotation import NodeKeyRotationManager
+
 from ..github.api import _github_api_get, _github_api_post
 from ..microsoft.api import _msgraph_api_get, _msgraph_api_post
 from .types import _brave_answers, _brave_web_search
@@ -2052,7 +2054,6 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                 from plugins.keyrotation.handlers import derive_secure_path
                 from yadacoin.core.keyeventlog import KeyEventLog
                 from yadacoin.core.transaction import Transaction
-                from yadacoin.core.transactionutils import TU
 
                 seed = getattr(config, "seed", "") or ""
                 if not seed:
@@ -2153,7 +2154,7 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                     dh_public_key="",
                 )
                 txn.hash = await txn.generate_hash()
-                txn.transaction_signature = TU.generate_signature_with_private_key(
+                txn.transaction_signature = NodeKeyRotationManager._sign(
                     _cur["private_key"].hex(), txn.hash
                 )
                 await config.mongo.async_db.miner_transactions.replace_one(
@@ -2191,10 +2192,8 @@ async def execute_skill(skill: str, action: str, params: dict, context: dict) ->
                         dh_public_key="",
                     )
                     confirming_txn.hash = await confirming_txn.generate_hash()
-                    confirming_txn.transaction_signature = (
-                        TU.generate_signature_with_private_key(
-                            _child["private_key"].hex(), confirming_txn.hash
-                        )
+                    confirming_txn.transaction_signature = NodeKeyRotationManager._sign(
+                        _child["private_key"].hex(), confirming_txn.hash
                     )
                     await config.mongo.async_db.miner_transactions.replace_one(
                         {"id": confirming_txn.transaction_signature},

@@ -19,12 +19,9 @@ import hashlib
 import json
 import os
 import time
-import uuid
 
 import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
-from coincurve.utils import verify_signature
-from eccsnacks.curve25519 import scalarmult_base
 from tornado.httpclient import HTTPRequest
 
 from yadacoin.core.chain import CHAIN
@@ -37,7 +34,6 @@ from yadacoin.core.transaction import (
     MissingInputTransactionException,
     Transaction,
 )
-from yadacoin.core.transactionutils import TU
 from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.http.base import BaseHandler
 
@@ -541,60 +537,6 @@ class GraphTransactionHandler(BaseGraphHandler):
 
         return self.render_as_json([item.to_dict() for item in item_txns])
 
-    async def create_relationship(self, username_signature, username, to):
-        config = self.config
-        mongo = self.config.mongo
-
-        if not username_signature:
-            return 'error: "username_signature" missing', 400
-
-        if not username:
-            return 'error: "username" missing', 400
-
-        if not to:
-            return 'error: "to" missing', 400
-        rid = TU.generate_rid(config, username_signature)
-        dup = mongo.db.blocks.find({"transactions.rid": rid})
-        if dup.count_documents():
-            found_a = False
-            found_b = False
-            for txn in dup:
-                if txn["public_key"] == config.public_key:
-                    found_a = True
-                if txn["public_key"] != config.public_key:
-                    found_b = True
-            if found_a and found_b:
-                return json.dumps({"success": False, "status": "Already added"})
-
-        miner_transactions = mongo.db.miner_transactions.find()
-        mtxn_ids = []
-        for mtxn in miner_transactions:
-            for mtxninput in mtxn["inputs"]:
-                mtxn_ids.append(mtxninput["id"])
-
-        checked_out_txn_ids = mongo.db.checked_out_txn_ids.find()
-        for mtxn in checked_out_txn_ids:
-            mtxn_ids.append(mtxn["id"])
-
-        a = os.urandom(32).decode("latin1")
-        dh_public_key = scalarmult_base(a).encode("latin1").hex()
-        dh_private_key = a.encode("latin1").hex()
-
-        from yadacoin.core.keyrotation import get_node_signing_key
-
-        _kel_priv, _kel_pub, _kel_addr = get_node_signing_key(config)
-        transaction = await Transaction.generate(
-            username_signature=username_signature,
-            username=username,
-            fee=0.00,
-            public_key=_kel_pub,
-            dh_public_key=dh_public_key,
-            private_key=_kel_priv,
-            dh_private_key=dh_private_key,
-            outputs=[{"to": to, "value": 0}],
-        )
-        return transaction
-
 
 class GraphSentFriendRequestsHandler(BaseGraphHandler):
     async def post(self):
@@ -1037,75 +979,6 @@ class WebSignInHandler(BaseGraphHandler):
         return self.render_as_json({"success": False})
 
 
-class ChallengeHandler(BaseGraphHandler):
-    async def post(self):
-        try:
-            data = json.loads(self.request.body)
-            challenge = await self.config.mongo.async_db.challenges.find_one(
-                {"identity.username_signature": data["identity"]["username_signature"]},
-                sort=[("time", -1)],
-            )
-            if (
-                challenge
-                and int(data["challenge"]["time"]) == challenge["challenge"]["time"]
-            ):
-                await self.generate_challenge(data)
-                result = verify_signature(
-                    data["challenge"]["origin_signature"],
-                    challenge["challenge"]["message"],
-                    self.config.public_key,
-                )
-                if not result:
-                    return self.render_as_json({"status": False})
-                result = verify_signature(
-                    data["challenge"]["signature"],
-                    challenge["challenge"]["message"],
-                    challenge["identity"]["public_key"],
-                )
-                if not result:
-                    return self.render_as_json({"status": False})
-                await self.config.mongo.async_db.challenges.update_one(
-                    {
-                        {
-                            "challenge.time": challenge["challenge"]["time"],
-                            "challenge.message": challenge["challenge"]["message"],
-                            "identity.username_signature": data["identity"][
-                                "username_signature"
-                            ],
-                        },
-                        {"$set": {"challenge.verified": True}},
-                    }
-                )
-                return self.render_as_json({"status": True})
-                # DISABLED: unreachable code after return (dead code, attack surface reduction)
-                # raise Exception(
-                #     "Requests happing too fast. Same time stamp as previously generated timestamp."
-                # )
-            await self.generate_challenge(data)
-            return self.render_as_json({"status": True, "challenge": challenge})
-        except:
-            return self.render_as_json({"status": False})
-
-    async def generate_challenge(self, data):
-        challenge = str(uuid.uuid4())
-        await self.config.mongo.async_db.challenges.insert_one(
-            {
-                "identity": {
-                    "username": data["username"],
-                    "username_signature": data["username_signature"],
-                    "public_key": data["public_key"],
-                },
-                "challenge": {
-                    "message": challenge,
-                    "origin_signature": TU.generate_signature(
-                        challenge, self.config.private_key
-                    ),
-                    "time": int(time.time()),
-                },
-            }
-        )
-
-
 class MyRoutesHandler(BaseGraphHandler):
     async def get(self):
         routes = await Peers.get_routes()
@@ -1190,7 +1063,6 @@ GRAPH_HANDLERS = [
     ),  # stream the file from the sia network, we need this because of cross origin
     (r"/ns", NSHandler),  # name server endpoints
     (r"/web-signin", WebSignInHandler),
-    (r"/challenge", ChallengeHandler),
     (r"/my-routes", MyRoutesHandler),
     (r"/prerotated-key-hash-for-username-signature", PrerotatedKeyForUserNameSignature),
 ]

@@ -15,20 +15,15 @@ Full license terms: see LICENSE.txt in this repository.
 Handlers required by the wallet operations
 """
 
-import binascii
 import datetime
-import hashlib
 import json
 import time
 
-import base58
 import jwt
-from bip32utils import BIP32Key
 from bitcoin.wallet import P2PKHBitcoinAddress
 
 from yadacoin.core.config import Config
 from yadacoin.core.identity import Identity
-from yadacoin.core.transaction import Transaction
 from yadacoin.core.transactionutils import TU
 from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.http.base import BaseHandler
@@ -45,82 +40,6 @@ class WalletHandler(BaseHandler):
 class UnwrapHandler(BaseHandler):
     async def get(self, path):
         self.render("unwrap.html")
-
-
-class GenerateWalletHandler(BaseHandler):
-    async def get(self):
-        return self.render_as_json("TODO: Implement")
-
-
-@jwtauthwallet
-class GenerateChildWalletHandler(BaseHandler):
-    async def post(self):
-        if not await self.wallet_is_unlocked():
-            return self.render_as_json({"error": "not authorized"})
-        try:
-            args = json.loads(self.request.body)
-        except:
-            self.set_status(400)
-            return self.render_as_json(
-                {"status": False, "message": "invalid json body"}
-            )
-        if "index" not in args:
-            return self.render_as_json(
-                {"status": False, "message": "index not provided"}
-            )
-        try:
-            uindex = int(args.get("index"))
-        except:
-            return self.render_as_json(
-                {"status": False, "message": "index is not integer"}
-            )
-        if uindex > 4294967295:
-            return self.render_as_json(
-                {"status": False, "message": "index cannot be greater than 4294967295"}
-            )
-        if await self.config.mongo.async_db.child_keys.find_one(
-            {
-                "index": uindex,
-            }
-        ):
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": "Child wallet already exists for this index",
-                }
-            )
-        exkey = BIP32Key.fromExtendedKey(self.config.xprv)
-        child_key = exkey.ChildKey(uindex)
-        public_key = child_key.PublicKey().hex()
-        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
-        private_key = child_key.PrivateKey().hex()
-        wif = self.to_wif(private_key)
-        await self.config.mongo.async_db.child_keys.update_one(
-            {
-                "index": uindex,
-            },
-            {
-                "$set": {
-                    "index": uindex,
-                    "extended": child_key.ExtendedKey(),
-                    "public_key": public_key,
-                    "address": address,
-                    "private_key": private_key,
-                    "wif": wif,
-                }
-            },
-            upsert=True,
-        )
-        return self.render_as_json({"address": address, "status": True})
-
-    def to_wif(self, private_key):
-        # to wif
-        private_key_static = private_key
-        extended_key = "80" + private_key_static + "01"
-        first_sha256 = hashlib.sha256(binascii.unhexlify(extended_key)).hexdigest()
-        second_sha256 = hashlib.sha256(binascii.unhexlify(first_sha256)).hexdigest()
-        final_key = extended_key + second_sha256[:8]
-        return base58.b58encode(binascii.unhexlify(final_key)).decode("utf-8")
 
 
 class GetAddressesHandler(BaseHandler):
@@ -144,83 +63,6 @@ class GetBalanceSum(BaseHandler):
         for address in addresses:
             balance += await self.config.BU.get_wallet_balance(address)
         return self.render_as_json("{0:.8f}".format(balance))
-
-
-@jwtauthwallet
-class CreateTransactionView(BaseHandler):
-    async def post(self):
-        if not await self.wallet_is_unlocked():
-            return self.render_as_json({"error": "not authorized"})
-        config = self.config
-
-        args = json.loads(self.request.body)
-        address = args.get("address")
-        if not address:
-            return self.render_as_json({})
-
-        fee = args.get("fee", 0.0)
-        outputs = args.get("outputs")
-        if not outputs:
-            return self.render_as_json({})
-        from_addresses = args.get("from", [])
-
-        inputs = []
-        for from_address in from_addresses:
-            inputs.extend(
-                [
-                    x
-                    async for x in self.config.BU.get_wallet_unspent_transactions_for_spending(
-                        from_address, inc_mempool=True
-                    )
-                ]
-            )
-
-        from yadacoin.core.keyrotation import get_node_signing_key
-
-        _kel_priv, _kel_pub, _kel_addr = get_node_signing_key(config)
-        txn = await Transaction.generate(
-            private_key=_kel_priv,
-            public_key=_kel_pub,
-            fee=float(fee),
-            inputs=inputs,
-            outputs=outputs,
-        )
-        return self.render_as_json(txn.to_dict())
-
-
-@jwtauthwallet
-class CreateRawTransactionView(BaseHandler):
-    async def post(self):
-        if not await self.wallet_is_unlocked():
-            return self.render_as_json({"error": "not authorized"})
-        config = self.config
-
-        args = json.loads(self.request.body)
-        address = args.get("address")
-        if not address:
-            return self.render_as_json({})
-
-        fee = args.get("fee", 0.0)
-        outputs = args.get("outputs")
-        if not outputs:
-            return self.render_as_json({})
-        from_addresses = args.get("from", [])
-
-        inputs = []
-        for from_address in from_addresses:
-            inputs.extend(
-                [
-                    x
-                    async for x in self.config.BU.get_wallet_unspent_transactions_for_spending(
-                        from_address, inc_mempool=True
-                    )
-                ]
-            )
-
-        txn = await Transaction.generate(
-            public_key=config.public_key, fee=float(fee), inputs=inputs, outputs=outputs
-        )
-        return self.render_as_json(txn.to_dict())
 
 
 @jwtauthwallet
@@ -723,11 +565,7 @@ class FeeEstimateHandler(BaseHandler):
 WALLET_HANDLERS = [
     (r"/wallet?([\/a-z]+)", WalletHandler),
     (r"/unwrap?([\/a-z]+)", UnwrapHandler),
-    (r"/generate-wallet", GenerateWalletHandler),
-    (r"/generate-child-wallet", GenerateChildWalletHandler),
     (r"/get-addresses", GetAddressesHandler),
-    (r"/create-transaction", CreateTransactionView),
-    (r"/create-raw-transaction", CreateRawTransactionView),
     (r"/get-balance-sum", GetBalanceSum),
     (r"/send-transaction", SendTransactionView),
     (r"/unlocked", UnlockedHandler),

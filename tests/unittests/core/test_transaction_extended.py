@@ -18,6 +18,7 @@ from logging import getLogger
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from yadacoin.core.config import Config
+from yadacoin.core.keyrotation import NodeKeyRotationManager
 from yadacoin.core.transaction import (
     Input,
     InvalidTransactionSignatureException,
@@ -1285,8 +1286,6 @@ class TestVerifyCoverageGaps(TransactionTestCase):
 
         from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH
 
-        from yadacoin.core.transactionutils import TU
-
         address = str(_P2PKH.from_pubkey(bytes.fromhex(self.public_key)))
 
         # Input transaction whose output goes to `address`
@@ -1300,7 +1299,7 @@ class TestVerifyCoverageGaps(TransactionTestCase):
         )
         txn.inputs = [Input(signature="sig1", input_txn=input_txn_obj)]
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             self.private_key, txn.hash
         )
 

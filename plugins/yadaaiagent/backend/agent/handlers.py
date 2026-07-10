@@ -18,6 +18,7 @@ async def _async_none():
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM as _AESGCM
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 
+from yadacoin.core.keyrotation import NodeKeyRotationManager
 from yadacoin.http.base import BaseHandler
 
 from ..booking.tools import _UI_HINT_SUFFIX, _did_web_id
@@ -3503,7 +3504,6 @@ class AgentRegisterHandler(BaseHandler):
             MissingInputTransactionException,
             Transaction,
         )
-        from yadacoin.core.transactionutils import TU
 
         try:
             body = json.loads(self.request.body)
@@ -3597,7 +3597,7 @@ class AgentRegisterHandler(BaseHandler):
 
         try:
             txn.hash = await txn.generate_hash()
-            txn.transaction_signature = TU.generate_signature_with_private_key(
+            txn.transaction_signature = NodeKeyRotationManager._sign(
                 self.config.private_key, txn.hash
             )
         except Exception as exc:

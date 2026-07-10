@@ -35,7 +35,7 @@ import time
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey as _CoincurvePrivateKey
 
-from yadacoin.core.keyrotation import derive_secure_path
+from yadacoin.core.keyrotation import NodeKeyRotationManager, derive_secure_path
 from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.http.base import BaseHandler
 
@@ -211,7 +211,6 @@ class DerivedChildKeyHandler(BaseHandler):
     async def post(self):
         from yadacoin.core.keyeventlog import KeyEventLog
         from yadacoin.core.transaction import Transaction
-        from yadacoin.core.transactionutils import TU
 
         # ------------------------------------------------------------------ #
         # 1. Parse request
@@ -517,7 +516,7 @@ class DerivedChildKeyHandler(BaseHandler):
             await txn.do_money()
 
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             derived["private_key"].hex(), txn.hash
         )
 
@@ -593,10 +592,8 @@ class DerivedChildKeyHandler(BaseHandler):
             )
 
             confirming_txn.hash = await confirming_txn.generate_hash()
-            confirming_txn.transaction_signature = (
-                TU.generate_signature_with_private_key(
-                    child["private_key"].hex(), confirming_txn.hash
-                )
+            confirming_txn.transaction_signature = NodeKeyRotationManager._sign(
+                child["private_key"].hex(), confirming_txn.hash
             )
 
             await self.config.mongo.async_db.miner_transactions.replace_one(
@@ -734,7 +731,6 @@ class InitDerivedChildKeyHandler(BaseHandler):
 
         from yadacoin.core.keyeventlog import KeyEventLog
         from yadacoin.core.transaction import Transaction
-        from yadacoin.core.transactionutils import TU
 
         # ------------------------------------------------------------------ #
         # 1. Parse request
@@ -863,7 +859,25 @@ class InitDerivedChildKeyHandler(BaseHandler):
         #    The Transaction constructor must be used directly (not generate())
         #    so that KEL fields are included in generate_hash().
         #    do_money() short-circuits when outputs_and_fee_total == 0.
+        #
+        #    The node's identity (username + username_signature signed with K0)
+        #    is embedded in the relationship field as an IdentityAnnouncement so
+        #    other nodes can resolve ``username -> K0 public_key`` from the chain.
         # ------------------------------------------------------------------ #
+        identity_rel_hash = ""
+        announcement = None
+        if node_username.strip():
+            username_sig = NodeKeyRotationManager.generate_deterministic_signature(
+                node_username
+            )
+            announcement = IdentityAnnouncement(
+                username=node_username, username_signature=username_sig
+            )
+            identity_rel_str = announcement.to_string()
+            identity_rel_hash = (
+                hashlib.sha256(identity_rel_str.encode("utf-8")).digest().hex()
+            )
+
         txn = Transaction(
             txn_time=int(time.time()),
             public_key=signing_pub_hex,
@@ -876,8 +890,8 @@ class InitDerivedChildKeyHandler(BaseHandler):
             twice_prerotated_key_hash=twice_address,
             public_key_hash=signing_address,
             prev_public_key_hash="",
-            relationship="",
-            relationship_hash="",
+            relationship=announcement or "",
+            relationship_hash=identity_rel_hash,
             rid="",
             dh_public_key="",
         )
@@ -886,7 +900,7 @@ class InitDerivedChildKeyHandler(BaseHandler):
             await txn.do_money()
 
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             signing["private_key"].hex(), txn.hash
         )
 
@@ -1066,7 +1080,6 @@ class KelUnlockHandler(BaseHandler):
         ):
             from yadacoin.core.keyeventlog import KeyEventLog
             from yadacoin.core.transaction import Transaction
-            from yadacoin.core.transactionutils import TU
 
             try:
                 probe_pub_bytes = bytes.fromhex(probe_pub_hex)
@@ -1126,10 +1139,8 @@ class KelUnlockHandler(BaseHandler):
                     dh_public_key="",
                 )
                 probe_txn.hash = await probe_txn.generate_hash()
-                probe_txn.transaction_signature = (
-                    TU.generate_signature_with_private_key(
-                        probe_priv_hex, probe_txn.hash
-                    )
+                probe_txn.transaction_signature = NodeKeyRotationManager._sign(
+                    probe_priv_hex, probe_txn.hash
                 )
 
                 kel_exception_name = None
@@ -1224,7 +1235,6 @@ class KelUnlockHandler(BaseHandler):
         # ------------------------------------------------------------------ #
         from yadacoin.core.keyeventlog import KeyEventLog
         from yadacoin.core.transaction import Transaction
-        from yadacoin.core.transactionutils import TU
 
         prerot_pub_bytes = _CoincurvePrivateKey(
             rederived["private_key"]
@@ -1282,7 +1292,7 @@ class KelUnlockHandler(BaseHandler):
             dh_public_key="",
         )
         rotation_txn.hash = await rotation_txn.generate_hash()
-        rotation_txn.transaction_signature = TU.generate_signature_with_private_key(
+        rotation_txn.transaction_signature = NodeKeyRotationManager._sign(
             rederived["private_key"].hex(), rotation_txn.hash
         )
 

@@ -337,6 +337,8 @@ class NodeAnnounceHttpTestCase(testing.AsyncHTTPTestCase):
         c.jwt_options = {}
         c.mongo.db = MagicMock()
         c.mongo.db.config.find_one = MagicMock(return_value={"value": {"timestamp": 0}})
+        c.kel_manager = MagicMock()
+        c.kel_manager.generate_signature = AsyncMock(return_value="fakesig")
         self.config = c
         return Application(
             NODE_ANNOUNCE_HANDLERS,
@@ -885,8 +887,11 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
                 side_effect=MissingInputTransactionException("not in chain")
             )
             MockTxn.return_value = mock_txn
-            with patch("yadacoin.http.node_announce.TU") as MockTU:
-                MockTU.generate_signature_with_private_key.return_value = "fakesig"
+            with patch.object(
+                self.config.kel_manager,
+                "generate_signature",
+                new=AsyncMock(return_value="fakesig"),
+            ):
                 with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
                         "test_announcement"
@@ -923,8 +928,11 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
                 side_effect=MissingInputTransactionException("not in chain")
             )
             MockTxn.return_value = mock_txn
-            with patch("yadacoin.http.node_announce.TU") as MockTU:
-                MockTU.generate_signature_with_private_key.return_value = "fakesig"
+            with patch.object(
+                self.config.kel_manager,
+                "generate_signature",
+                new=AsyncMock(return_value="fakesig"),
+            ):
                 with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
                         "test_announcement"
@@ -972,8 +980,11 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
                 side_effect=MissingInputTransactionException("not in chain")
             )
             MockTxn.return_value = mock_txn
-            with patch("yadacoin.http.node_announce.TU") as MockTU:
-                MockTU.generate_signature_with_private_key.return_value = "fakesig"
+            with patch.object(
+                self.config.kel_manager,
+                "generate_signature",
+                new=AsyncMock(return_value="fakesig"),
+            ):
                 with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
                         "test_announcement"
@@ -1001,8 +1012,11 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
             mock_txn.transaction_signature = "fakesig"
             mock_txn.verify = AsyncMock(side_effect=RuntimeError("unexpected error"))
             MockTxn.return_value = mock_txn
-            with patch("yadacoin.http.node_announce.TU") as MockTU:
-                MockTU.generate_signature_with_private_key.return_value = "fakesig"
+            with patch.object(
+                self.config.kel_manager,
+                "generate_signature",
+                new=AsyncMock(return_value="fakesig"),
+            ):
                 with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
                         "test_announcement"
@@ -1053,8 +1067,11 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
                 side_effect=MissingInputTransactionException("not in chain")
             )
             MockTxn.return_value = mock_txn
-            with patch("yadacoin.http.node_announce.TU") as MockTU:
-                MockTU.generate_signature_with_private_key.return_value = "fakesig"
+            with patch.object(
+                self.config.kel_manager,
+                "generate_signature",
+                new=AsyncMock(return_value="fakesig"),
+            ):
                 with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
                         "test_announcement"
@@ -1104,8 +1121,11 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
                 side_effect=MissingInputTransactionException("not in chain")
             )
             MockTxn.return_value = mock_txn
-            with patch("yadacoin.http.node_announce.TU") as MockTU:
-                MockTU.generate_signature_with_private_key.return_value = "fakesig"
+            with patch.object(
+                self.config.kel_manager,
+                "generate_signature",
+                new=AsyncMock(return_value="fakesig"),
+            ):
                 with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
                         "test_announcement"

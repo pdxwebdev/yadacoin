@@ -576,7 +576,7 @@ class Nodes:
         }
 
         # The node's anchor KEL entry is its KEL inception public key (K0).
-        my_anchor = getattr(config, "kel_public_key", None) or getattr(
+        my_anchor = getattr(config, "kel_anchor_public_key", None) or getattr(
             config, "public_key", None
         )
         if not my_anchor:

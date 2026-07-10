@@ -17,12 +17,6 @@ Server-side BIP32-style hardened key derivation and node KEL lifecycle manager.
 Provides:
   - derive_secure_path()       — pure function used by this module and
                                  plugins/keyrotation/handlers.py
-  - get_node_signing_key()     — returns the active KEL on-chain anchor key
-                                 (or legacy key) for financial / on-chain ops
-  - get_node_auth_key()        — returns the current off-chain ratchet key for
-                                 P2P challenge signing; advances the ratchet and
-                                 logs the certification so verifiers can walk
-                                 the chain via GET /kel-offchain-log
   - NodeKeyRotationManager     — enforces KEL lifecycle at startup and runs the
                                  periodic background checker
 
@@ -61,6 +55,7 @@ new on-chain UNCONFIRMED+CONFIRMING re-anchor pair that jumps the on-chain
 KEL forward by OFFCHAIN_ANCHOR_INTERVAL steps.
 """
 
+import base64
 import hashlib
 import hmac as _hmac
 import os
@@ -70,6 +65,10 @@ import time
 
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey as _CoincurvePrivateKey
+from coincurve._libsecp256k1 import ffi as _ffi
+from coincurve.keys import PrivateKey
+
+from yadacoin.core.config import Config
 
 # ---------------------------------------------------------------------------
 # BIP32-style hardened derivation helpers — server-side Python equivalent of
@@ -136,39 +135,6 @@ def _read_second_factor() -> str:
         except Exception:
             return ""
     return os.environ.get("SECOND_FACTOR", "")
-
-
-def get_node_signing_key(config) -> tuple:
-    """Return ``(private_key_hex, public_key_hex, address)`` for node-level signing
-    using the active KEL key (K_n).  Raises if KEL is not yet initialised.
-    """
-    return config.kel_private_key, config.kel_public_key, config.kel_address
-
-
-async def get_node_auth_key(config) -> tuple:
-    """Return ``(priv_hex, pub_hex, confirming_priv_hex, confirming_pub_hex)``
-    for off-chain P2P auth signing.
-
-    Both the current key (for the primary signature) and the next key (for
-    the confirming signature) are returned.  The caller must sign the challenge
-    with both keys — possession of the current key proves identity; possession
-    of the next key proves the SECOND_FACTOR has not been stolen.
-
-    When no KEL manager is configured, returns ``(priv, pub, None, None)``
-    and the caller should skip the confirming signature.
-    """
-    manager = getattr(config, "kel_manager", None)
-    if manager is None:
-        _fatal(
-            "\n"
-            "═══════════════════════════════════════════════════════════════\n"
-            "  FATAL: KEL manager is not initialised.\n"
-            "  The node cannot authenticate without a KEL key.\n"
-            "  Ensure startup_check has run before any P2P authentication.\n"
-            "═══════════════════════════════════════════════════════════════\n"
-        )
-
-    return await manager.advance_auth_ratchet()
 
 
 # ---------------------------------------------------------------------------
@@ -458,8 +424,8 @@ class NodeKeyRotationManager:
         config = self.config
 
         # KEL keys are required — the WIF key is considered compromised.
-        kel_priv = getattr(config, "kel_private_key", None)
-        kel_pub = getattr(config, "kel_public_key", None)
+        kel_priv = getattr(config, "kel_anchor_private_key", None)
+        kel_pub = getattr(config, "kel_anchor_public_key", None)
         if not kel_priv or not kel_pub:
             _fatal(
                 "\n"
@@ -486,7 +452,7 @@ class NodeKeyRotationManager:
 
         # Initialise ratchet from current on-chain anchor key if not yet set
         if self._auth_ratchet_key is None:
-            kel_cc = getattr(config, "kel_chain_code", None)
+            kel_cc = getattr(config, "kel_anchor_chain_code", None)
             if kel_cc:
                 # Use the BIP32 chain code stored alongside the anchor private key.
                 _base_ratchet = {
@@ -494,14 +460,12 @@ class NodeKeyRotationManager:
                     "chain_code": bytes.fromhex(kel_cc),
                 }
             else:
-                # Legacy nodes that don't have kel_chain_code yet.
-                if self._k0 and self._second_factor:
-                    _base_ratchet = await self._derive_legacy_base_ratchet(config)
-                else:  # pragma: no cover
-                    _fatal(
-                        "FATAL: kel_chain_code missing and cannot be re-derived "
-                        "(K0 or SECOND_FACTOR not available). Restart with SECOND_FACTOR set."
-                    )
+                _fatal(
+                    "\n"
+                    "═══════════════════════════════════════════════════════════════\n"
+                    "  FATAL: kel_anchor_chain_code missing. Cannot initialise ratchet.\n"
+                    "═══════════════════════════════════════════════════════════════\n"
+                )
             # Restore position from key_event_log tip so restarts pick up where
             # they left off instead of starting over from K_n.
             # Use K0 pubkey as the stable root identifier — it never changes.
@@ -565,7 +529,6 @@ class NodeKeyRotationManager:
         two_ahead_address = str(P2PKHBitcoinAddress.from_pubkey(two_ahead_pub))
 
         from yadacoin.core.transaction import Transaction
-        from yadacoin.core.transactionutils import TU
 
         # anchor_public_key is always K0 — the stable inception key that
         # identifies this node's entire KEL chain across all re-anchors.
@@ -576,7 +539,7 @@ class NodeKeyRotationManager:
                 .hex()
             )
             if self._k0
-            else (getattr(config, "kel_public_key", None) or prev_pub_hex)
+            else (getattr(config, "kel_anchor_public_key", None) or prev_pub_hex)
         )
 
         ratchet_txn = Transaction(
@@ -597,7 +560,7 @@ class NodeKeyRotationManager:
             dh_public_key="",
         )
         ratchet_txn.hash = await ratchet_txn.generate_hash()
-        ratchet_txn.transaction_signature = TU.generate_signature_with_private_key(
+        ratchet_txn.transaction_signature = NodeKeyRotationManager._sign(
             prev_key["private_key"].hex(), ratchet_txn.hash
         )
 
@@ -653,33 +616,6 @@ class NodeKeyRotationManager:
             next_pub_hex,
         )
 
-    async def _derive_legacy_base_ratchet(self, config) -> dict:
-        """Derive the ratchet base key for legacy nodes that lack kel_chain_code.
-
-        Queries the on-chain KEL to determine the current depth (K_n), derives
-        that key from K0, caches the chain code on config, and returns the dict.
-        """
-        from yadacoin.core.identityannouncement import IdentityAnnouncement as _IA_rc
-        from yadacoin.core.keyeventlog import KeyEventLog as _KEL_rc
-
-        _own = await _IA_rc.get_by_username(
-            getattr(config, "username", "") or "", include_mempool=True
-        )
-        _k0_pub = (_own or {}).get("public_key") or ""
-        _kel = (
-            await _KEL_rc.build_from_public_key(_k0_pub, onchain_only=False)
-            if _k0_pub
-            else []
-        )
-        _depth = len(_kel or [])
-        _cur = self._k0
-        for _ in range(_depth):
-            _cur = derive_secure_path(
-                _cur["private_key"], _cur["chain_code"], self._second_factor
-            )
-        config.kel_chain_code = _cur["chain_code"].hex()
-        return _cur
-
     async def _queue_reanchor(self):
         """Queue an on-chain UNCONFIRMED+CONFIRMING re-anchor pair.
 
@@ -695,10 +631,9 @@ class NodeKeyRotationManager:
 
         from yadacoin.core.keyeventlog import KeyEventLog
         from yadacoin.core.transaction import Transaction
-        from yadacoin.core.transactionutils import TU
 
         # Resolve current on-chain KEL tail
-        kel_pub = getattr(config, "kel_public_key", None)
+        kel_pub = getattr(config, "kel_anchor_public_key", None)
         if not kel_pub:
             return
 
@@ -776,7 +711,7 @@ class NodeKeyRotationManager:
             dh_public_key="",
         )
         unconfirmed_txn.hash = await unconfirmed_txn.generate_hash()
-        unconfirmed_txn.transaction_signature = TU.generate_signature_with_private_key(
+        unconfirmed_txn.transaction_signature = NodeKeyRotationManager._sign(
             kn["private_key"].hex(), unconfirmed_txn.hash
         )
 
@@ -799,7 +734,7 @@ class NodeKeyRotationManager:
             dh_public_key="",
         )
         confirming_txn.hash = await confirming_txn.generate_hash()
-        confirming_txn.transaction_signature = TU.generate_signature_with_private_key(
+        confirming_txn.transaction_signature = NodeKeyRotationManager._sign(
             kn1["private_key"].hex(), confirming_txn.hash
         )
 
@@ -845,7 +780,6 @@ class NodeKeyRotationManager:
         """
         from yadacoin.core.identityannouncement import IdentityAnnouncement
         from yadacoin.core.transaction import Transaction
-        from yadacoin.core.transactionutils import TU
 
         config = self.config
 
@@ -855,10 +789,10 @@ class NodeKeyRotationManager:
 
         # Anchor the active KEL signing key to K0 at inception time so all
         # signing operations and my_peer() present K0 immediately.
-        config.kel_private_key = k0["private_key"].hex()
-        config.kel_chain_code = k0["chain_code"].hex()
-        config.kel_public_key = k0_pub_bytes.hex()
-        config.kel_address = k0_address
+        config.kel_anchor_private_key = k0["private_key"].hex()
+        config.kel_anchor_chain_code = k0["chain_code"].hex()
+        config.kel_anchor_public_key = k0_pub_bytes.hex()
+        config.kel_anchor_address = k0_address
 
         prerotated = derive_secure_path(
             k0["private_key"], k0["chain_code"], second_factor
@@ -880,8 +814,8 @@ class NodeKeyRotationManager:
         username = getattr(config, "username", "") or ""
         identity_rel_hash = ""
         if username.strip():
-            username_sig = TU.generate_deterministic_signature(
-                config, username, k0["private_key"].hex()
+            username_sig = NodeKeyRotationManager.generate_deterministic_signature(
+                username
             )
             peer_type = (
                 getattr(config, "peer_type", "service_provider") or "service_provider"
@@ -925,7 +859,7 @@ class NodeKeyRotationManager:
             dh_public_key="",
         )
         txn.hash = await txn.generate_hash()
-        txn.transaction_signature = TU.generate_signature_with_private_key(
+        txn.transaction_signature = NodeKeyRotationManager._sign(
             k0["private_key"].hex(), txn.hash
         )
 
@@ -981,10 +915,10 @@ class NodeKeyRotationManager:
         kn_pub_hex = kn_pub_bytes.hex()
         kn_address = str(P2PKHBitcoinAddress.from_pubkey(kn_pub_bytes))
 
-        config.kel_private_key = cur["private_key"].hex()
-        config.kel_chain_code = cur["chain_code"].hex()
-        config.kel_public_key = kn_pub_hex
-        config.kel_address = kn_address
+        config.kel_anchor_private_key = cur["private_key"].hex()
+        config.kel_anchor_chain_code = cur["chain_code"].hex()
+        config.kel_anchor_public_key = kn_pub_hex
+        config.kel_anchor_address = kn_address
 
         # Compute the KEL username_signature signed with K_n's private key so
         # that my_peer() can present the KEL key as the authoritative identity.
@@ -992,10 +926,8 @@ class NodeKeyRotationManager:
         username = getattr(config, "username", "") or ""
         if username.strip():
             try:
-                from yadacoin.core.transactionutils import TU as _TU
-
-                config.kel_username_signature = _TU.generate_deterministic_signature(
-                    config, username, cur["private_key"].hex()
+                config.kel_username_signature = (
+                    NodeKeyRotationManager.generate_deterministic_signature(username)
                 )
             except Exception as _exc:
                 config.app_log.debug(
@@ -1093,7 +1025,6 @@ class NodeKeyRotationManager:
         ``sweep_target``, signed by ``config.private_key``.
         """
         from yadacoin.core.transaction import Transaction
-        from yadacoin.core.transactionutils import TU
 
         config = self.config
         try:
@@ -1117,7 +1048,7 @@ class NodeKeyRotationManager:
             await txn.do_money()
 
             txn.hash = await txn.generate_hash()
-            txn.transaction_signature = TU.generate_signature_with_private_key(
+            txn.transaction_signature = NodeKeyRotationManager._sign(
                 config.private_key, txn.hash
             )
 
@@ -1154,6 +1085,46 @@ class NodeKeyRotationManager:
                     )
         except Exception as exc:
             config.app_log.error("NodeKeyRotationManager: legacy sweep failed: %s", exc)
+
+    # ------------------------------------------------------------------
+    # Signing
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def generate_deterministic_signature(cls, message: str):
+        config = Config()
+        if not hasattr(config, "kel_anchor_private_key"):
+            return ""
+        key = PrivateKey.from_hex(config.kel_anchor_private_key)
+        signature = key.sign(message.encode("utf-8"))
+        return base64.b64encode(signature).decode("utf-8")
+
+    @staticmethod
+    def _sign(private_key: str, message: str) -> str:
+        """Raw signing primitive — hedged RFC 6979 with 32 bytes of OS entropy.
+
+        Use only when the exact key position has already been derived by the
+        caller (e.g. rotation logic signing with a specific K_n).  For all
+        other node-level signing use ``await manager.generate_signature(message)``.
+        """
+        nonce_data = _ffi.from_buffer(os.urandom(32))
+        key = _CoincurvePrivateKey.from_hex(private_key)
+        signature = key.sign(
+            message.encode("utf-8"), custom_nonce=(_ffi.NULL, nonce_data)
+        )
+        return base64.b64encode(signature).decode("utf-8")
+
+    async def generate_signature(self, message: str) -> str:
+        """Sign *message* with the node's current KEL tip key.
+
+        Delegates to ``advance_auth_ratchet``, which already maintains
+        ``self._auth_ratchet_key`` as the authoritative next-unused key by
+        tracking all three collections (blocks, miner_transactions,
+        key_event_log) at init time and advancing in memory from there.
+        No redundant DB derivation needed here.
+        """
+        priv, _pub, _conf_priv, _conf_pub = await self.advance_auth_ratchet()
+        return self._sign(priv, message)
 
 
 # ---------------------------------------------------------------------------

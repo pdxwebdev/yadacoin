@@ -222,11 +222,7 @@ class TestAuthHandlerPost(ProxyHandlerTestBase):
             }
         )
         with patch(
-            "yadacoin.http.proxy.TU.generate_signature", return_value="mocksig"
-        ), patch(
-            "yadacoin.core.keyrotation.get_node_auth_key",
-            new_callable=AsyncMock,
-            return_value=("mockprivkey", "mockpubkey"),
+            "yadacoin.http.proxy.NodeKeyRotationManager._sign", return_value="mocksig"
         ):
             response = self.fetch(
                 "/auth",

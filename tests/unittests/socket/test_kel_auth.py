@@ -38,7 +38,11 @@ def _make_config():
     config.peer_host = "127.0.0.1"
     config.serve_port = 8000
     config.proxy_port = 8888
-    config.kel_public_key = None
+    config.kel_anchor_public_key = None
+    config.kel_manager = MagicMock()
+    config.kel_manager.advance_auth_ratchet = AsyncMock(
+        return_value=("default_priv", "default_pub", None, None)
+    )
     config.peer = MagicMock()
     config.peer.to_dict = MagicMock(return_value={"host": "127.0.0.1"})
 
@@ -239,6 +243,9 @@ class TestHandleKelConnect(AsyncTestCase):
             "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
         )
         _auth_priv, _auth_pub = _real_keys()
+        rpc.config.kel_manager.advance_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None)
+        )
 
         with patch(
             "yadacoin.tcpsocket.node.SessionCipher.generate_keypair",
@@ -251,11 +258,7 @@ class TestHandleKelConnect(AsyncTestCase):
             new_callable=AsyncMock,
             return_value=None,
         ), patch(
-            "yadacoin.core.keyrotation.get_node_auth_key",
-            new_callable=AsyncMock,
-            return_value=(_auth_priv, _auth_pub, None, None),
-        ), patch(
-            "yadacoin.core.transactionutils.TU.generate_signature",
+            "yadacoin.core.keyrotation.NodeKeyRotationManager._sign",
             return_value="mocksig",
         ):
             await rpc._handle_kel_connect(
@@ -284,6 +287,9 @@ class TestHandleKelConnect(AsyncTestCase):
             "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
         )
         _auth_priv, _auth_pub = _real_keys()
+        rpc.config.kel_manager.advance_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None)
+        )
 
         with patch(
             "yadacoin.tcpsocket.node.SessionCipher.generate_keypair",
@@ -296,11 +302,7 @@ class TestHandleKelConnect(AsyncTestCase):
             new_callable=AsyncMock,
             return_value=None,
         ), patch(
-            "yadacoin.core.keyrotation.get_node_auth_key",
-            new_callable=AsyncMock,
-            return_value=(_auth_priv, _auth_pub, None, None),
-        ), patch(
-            "yadacoin.core.transactionutils.TU.generate_signature",
+            "yadacoin.core.keyrotation.NodeKeyRotationManager._sign",
             return_value="mocksig",
         ):
             await rpc._handle_kel_connect(
@@ -335,6 +337,9 @@ class TestHandleKelConnect(AsyncTestCase):
             "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
         )
         _auth_priv, _auth_pub = _real_keys()
+        rpc.config.kel_manager.advance_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None)
+        )
 
         with patch(
             "yadacoin.tcpsocket.node.SessionCipher.generate_keypair",
@@ -347,11 +352,7 @@ class TestHandleKelConnect(AsyncTestCase):
             new_callable=AsyncMock,
             return_value=None,
         ), patch(
-            "yadacoin.core.keyrotation.get_node_auth_key",
-            new_callable=AsyncMock,
-            return_value=(_auth_priv, _auth_pub, None, None),
-        ), patch(
-            "yadacoin.core.transactionutils.TU.generate_signature",
+            "yadacoin.core.keyrotation.NodeKeyRotationManager._sign",
             return_value="mocksig",
         ):
             await rpc._handle_kel_connect(
@@ -506,12 +507,10 @@ class TestRequestSig(AsyncTestCase):
             server_kel_tip_pkh="",
         )
 
-        with patch(
-            "yadacoin.core.keyrotation.get_node_auth_key",
-            new_callable=AsyncMock,
-            return_value=(_auth_priv, _auth_pub, None, None),
-        ):
-            await rpc.request_sig(body=body, stream=stream)
+        rpc.config.kel_manager.advance_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None)
+        )
+        await rpc.request_sig(body=body, stream=stream)
 
         rpc.remove_peer.assert_awaited_once()
         reason = rpc.remove_peer.call_args[1].get("reason", "")
@@ -546,12 +545,11 @@ class TestRequestSig(AsyncTestCase):
             return_value=(_auth_pub, True, "ratchet", 1)
         )
 
+        rpc.config.kel_manager.advance_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None)
+        )
         with patch(
-            "yadacoin.core.keyrotation.get_node_auth_key",
-            new_callable=AsyncMock,
-            return_value=(_auth_priv, _auth_pub, None, None),
-        ), patch(
-            "yadacoin.core.transactionutils.TU.generate_signature",
+            "yadacoin.core.keyrotation.NodeKeyRotationManager._sign",
             return_value="clientmocksig",
         ), patch(
             "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username",
@@ -588,11 +586,10 @@ class TestRequestSig(AsyncTestCase):
 
         rpc._process_ratchet_auth = AsyncMock(return_value=None)
 
+        rpc.config.kel_manager.advance_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None)
+        )
         with patch(
-            "yadacoin.core.keyrotation.get_node_auth_key",
-            new_callable=AsyncMock,
-            return_value=(_auth_priv, _auth_pub, None, None),
-        ), patch(
             "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username",
             new_callable=AsyncMock,
             return_value=None,
@@ -759,7 +756,7 @@ class TestNodeSocketClientConnectEcdhStorage(AsyncTestCase):
         client.config = _make_config()
         client.config.peer = MagicMock()
         client.config.peer.to_dict = MagicMock(return_value={})
-        client.config.kel_public_key = None
+        client.config.kel_anchor_public_key = None
         client.inbound_streams = {}
         client.outbound_streams = {}
 
