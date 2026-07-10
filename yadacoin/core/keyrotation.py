@@ -871,7 +871,6 @@ class NodeKeyRotationManager:
         # username_signature is computed once here with K0 and stored on-chain.
         config = self.config
         username = getattr(config, "username", "") or ""
-        identity_rel = ""
         identity_rel_hash = ""
         if username.strip():
             username_sig = TU.generate_deterministic_signature(
@@ -900,12 +899,6 @@ class NodeKeyRotationManager:
                 identity_rel_hash = (
                     hashlib.sha256(identity_rel_str.encode("utf-8")).digest().hex()
                 )
-                # Pass as dict so Transaction stores it as a nested object in
-                # MongoDB, enabling field queries like
-                # {"relationship.identity.username": "..."}.
-                # generate_hash() calls to_string() internally so the hash
-                # still matches.
-                identity_rel = announcement.to_relationship()
             except Exception as exc:
                 config.app_log.warning(
                     "NodeKeyRotationManager: could not build identity announcement: %s",
@@ -924,7 +917,7 @@ class NodeKeyRotationManager:
             twice_prerotated_key_hash=twice_address,
             public_key_hash=k0_address,
             prev_public_key_hash="",
-            relationship=identity_rel or "",
+            relationship=announcement or "",
             relationship_hash=identity_rel_hash,
             rid="",
             dh_public_key="",

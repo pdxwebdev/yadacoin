@@ -31,16 +31,14 @@ from yadacoin.core.collections import Collections
 from yadacoin.core.config import Config
 from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
 from yadacoin.core.credentialreceipt import CredentialReceipt
-from yadacoin.core.identityannouncement import (
-    IdentityAnnouncement,
-    RotationAnnouncement,
-)
+from yadacoin.core.identityannouncement import IdentityAnnouncement
 from yadacoin.core.nodeannouncement import NodeAnnouncement
 from yadacoin.core.recoveryannouncement import (
     RecoveryAnnouncement,
     RecoveryProof,
     RecoveryTransition,
 )
+from yadacoin.core.rotationannouncement import RotationAnnouncement
 from yadacoin.core.transactionutils import TU
 
 
@@ -1008,9 +1006,9 @@ class Transaction(object):
             relationship = self.relationship.to_string()
         elif isinstance(self.relationship, NodeAnnouncement):
             relationship = self.relationship.to_string()
-        elif isinstance(
-            self.relationship, (IdentityAnnouncement, RotationAnnouncement)
-        ):
+        elif isinstance(self.relationship, IdentityAnnouncement):
+            relationship = self.relationship.to_string()
+        elif isinstance(self.relationship, RotationAnnouncement):
             relationship = self.relationship.to_string()
         elif isinstance(self.relationship, AgentAnnouncement):
             relationship = self.relationship.to_string()
