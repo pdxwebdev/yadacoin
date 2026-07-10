@@ -244,10 +244,8 @@ def is_identity_announcement_inception(txn: Transaction) -> bool:
     RotationAnnouncement) in its relationship field.  This is the only non-recovers
     case where a KEL inception is permitted to have a non-empty relationship.
     """
-    from yadacoin.core.identityannouncement import (
-        IdentityAnnouncement,
-        RotationAnnouncement,
-    )
+    from yadacoin.core.identityannouncement import IdentityAnnouncement
+    from yadacoin.core.rotationannouncement import RotationAnnouncement
 
     rel = getattr(txn, "relationship", None)
     return isinstance(rel, (IdentityAnnouncement, RotationAnnouncement))
