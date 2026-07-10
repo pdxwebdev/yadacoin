@@ -178,24 +178,17 @@ class Transaction(object):
             and IdentityAnnouncement.RELATIONSHIP_KEY in self.relationship
         ):
             # Convert identity announcement dict to IdentityAnnouncement instance
-            # (also parses optional "rotation" sibling for secp256r1 nodes)
-            try:
-                self.relationship = IdentityAnnouncement.from_relationship(
-                    self.relationship[IdentityAnnouncement.RELATIONSHIP_KEY]
-                )
-            except (ValueError, TypeError):
-                pass
+            self.relationship = IdentityAnnouncement.from_dict(
+                self.relationship[IdentityAnnouncement.RELATIONSHIP_KEY]
+            )
         elif (
             isinstance(self.relationship, dict)
             and RotationAnnouncement.RELATIONSHIP_KEY in self.relationship
         ):
             # Rotation-only (subsequent rotations for secp256r1 nodes — no identity)
-            try:
-                self.relationship = RotationAnnouncement.from_relationship(
-                    self.relationship[RotationAnnouncement.RELATIONSHIP_KEY]
-                )
-            except (ValueError, TypeError):
-                pass
+            self.relationship = RotationAnnouncement.from_dict(
+                self.relationship[RotationAnnouncement.RELATIONSHIP_KEY]
+            )
         elif (
             isinstance(self.relationship, dict)
             and AgentAnnouncement.RELATIONSHIP_KEY in self.relationship
@@ -209,12 +202,9 @@ class Transaction(object):
             and ContentTakedownAnnouncement.RELATIONSHIP_KEY in self.relationship
         ):
             # Convert content takedown dict to ContentTakedownAnnouncement instance
-            try:
-                self.relationship = ContentTakedownAnnouncement.from_relationship(
-                    self.relationship
-                )
-            except (ValueError, TypeError):
-                pass
+            self.relationship = ContentTakedownAnnouncement.from_relationship(
+                self.relationship
+            )
         elif (
             isinstance(self.relationship, dict)
             and RecoveryAnnouncement.RELATIONSHIP_KEY in self.relationship
@@ -224,12 +214,7 @@ class Transaction(object):
             # The dict carries both keys — detect this BEFORE the individual
             # 'recovery' and 'recovers' branches so neither eats the combined
             # form prematurely.
-            try:
-                self.relationship = RecoveryTransition.from_relationship(
-                    self.relationship
-                )
-            except (ValueError, TypeError):
-                pass
+            self.relationship = RecoveryTransition.from_relationship(self.relationship)
         elif (
             isinstance(self.relationship, dict)
             and RecoveryAnnouncement.RELATIONSHIP_KEY in self.relationship
@@ -240,12 +225,9 @@ class Transaction(object):
             # downstream KEL helpers (which isinstance-check for
             # RecoveryAnnouncement) treat it as a non-recovery txn rather
             # than crashing on garbage input.
-            try:
-                self.relationship = RecoveryAnnouncement.from_relationship(
-                    self.relationship
-                )
-            except (ValueError, TypeError):
-                pass
+            self.relationship = RecoveryAnnouncement.from_relationship(
+                self.relationship
+            )
         elif (
             isinstance(self.relationship, dict)
             and RecoveryProof.RELATIONSHIP_KEY in self.relationship
@@ -253,10 +235,7 @@ class Transaction(object):
             # Recovers-inception proof: {"recovers": {commitment, R, s}}
             # carried by an inception-shaped txn whose prev_public_key_hash
             # points at the lost KEL's tip pkh.  Same tolerance as above.
-            try:
-                self.relationship = RecoveryProof.from_relationship(self.relationship)
-            except (ValueError, TypeError):
-                pass
+            self.relationship = RecoveryProof.from_relationship(self.relationship)
         elif (
             isinstance(self.relationship, dict)
             and "credential_receipt" in self.relationship
@@ -265,12 +244,7 @@ class Transaction(object):
             # Not a key event — no KEL rotation, no UTXO spend.  Silently
             # leave the raw dict in place on parse failure so the txn is
             # treated as a plain relationship by downstream code.
-            try:
-                self.relationship = CredentialReceipt.from_relationship(
-                    self.relationship
-                )
-            except (ValueError, TypeError):
-                pass
+            self.relationship = CredentialReceipt.from_relationship(self.relationship)
         elif (
             isinstance(self.relationship, str)
             and len(self.relationship) > TransactionConsts.RELATIONSHIP_MAX_SIZE.value
