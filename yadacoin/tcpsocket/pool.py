@@ -39,10 +39,10 @@ class StratumServer(RPCSocketServer):
         if not cls.config:
             cls.config = Config()
 
-        if time.time() - cls.config.mp.block_factory.time > 600:
+        if cls.config.mp and time.time() - cls.config.mp.block_factory.time > 600:
             await cls.config.mp.refresh()
 
-        if cls.current_header != cls.config.mp.block_factory.header:
+        if cls.config.mp and cls.current_header != cls.config.mp.block_factory.header:
             try:
                 await cls.send_jobs()
             except:
