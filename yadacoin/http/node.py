@@ -485,10 +485,11 @@ class MineBlockHandler(BaseHandler):
                 "",
             )
         )
-        self.config.mp.block_factory.signature = (
-            await self.config.kel_manager.generate_signature(
-                self.config.mp.block_factory.hash
-            )
+        (
+            _pub,
+            self.config.mp.block_factory.signature,
+        ) = await self.config.kel_manager.generate_signature(
+            self.config.mp.block_factory.hash
         )
         await self.config.mp.block_factory.verify()
         await self.config.mongo.async_db.blocks.insert_one(

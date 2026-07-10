@@ -209,9 +209,11 @@ class MiningPool(object):
             test_hash = int(block_candidate.hash, 16)
 
         if test_hash < int(block_candidate.target) or self.config.network == "regnet":
-            block_candidate.signature = (
-                await self.config.kel_manager.generate_signature(block_candidate.hash)
-            )
+            (
+                _pub,
+                block_candidate.signature,
+            ) = await self.config.kel_manager.generate_signature(block_candidate.hash)
+            block_candidate.public_key = _pub
 
             if header != block_candidate.header:
                 return {
@@ -259,9 +261,11 @@ class MiningPool(object):
                 )
             )
         ):
-            block_candidate.signature = (
-                await self.config.kel_manager.generate_signature(block_candidate.hash)
-            )
+            (
+                _pub,
+                block_candidate.signature,
+            ) = await self.config.kel_manager.generate_signature(block_candidate.hash)
+            block_candidate.public_key = _pub
 
             try:
                 await block_candidate.verify()

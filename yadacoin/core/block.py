@@ -630,7 +630,10 @@ class Block(object):
             block.hash = await block.generate_hash_from_header(
                 block.index, block.header, str(block.nonce)
             )
-            block.signature = await config.kel_manager.generate_signature(block.hash)
+            _pub, block.signature = await config.kel_manager.generate_signature(
+                block.hash
+            )
+            block.public_key = _pub
         return block
 
     async def remove_transaction(

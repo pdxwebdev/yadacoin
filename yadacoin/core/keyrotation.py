@@ -1135,7 +1135,7 @@ class NodeKeyRotationManager:
         No redundant DB derivation needed here.
         """
         priv, _pub, _conf_priv, _conf_pub = await self.advance_auth_ratchet()
-        return self._sign(priv, message)
+        return _pub, self._sign(priv, message)
 
 
 # ---------------------------------------------------------------------------

@@ -306,9 +306,11 @@ class NodeAnnounceHandler(BaseHandler):
             # Sign the transaction using the node's private key
             try:
                 txn.hash = await txn.generate_hash()
-                txn.transaction_signature = (
-                    await self.config.kel_manager.generate_signature(txn.hash)
-                )
+                (
+                    _pub,
+                    txn.transaction_signature,
+                ) = await self.config.kel_manager.generate_signature(txn.hash)
+                txn.public_key = _pub
             except Exception as e:
                 self.app_log.error(f"Error signing transaction: {e}")
                 self.set_status(500)

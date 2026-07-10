@@ -361,9 +361,11 @@ class Transaction(object):
         await cls_inst.do_money()
 
         cls_inst.hash = await cls_inst.generate_hash()
-        cls_inst.transaction_signature = (
-            await cls_inst.config.kel_manager.generate_signature(cls_inst.hash)
-        )
+        (
+            _pub,
+            cls_inst.transaction_signature,
+        ) = await cls_inst.config.kel_manager.generate_signature(cls_inst.hash)
+        cls_inst.public_key = _pub
 
         cls_inst.never_expire = never_expire
         cls_inst.private = private
@@ -1371,7 +1373,16 @@ class Transaction(object):
         # this function is the primary method for catching transactions which attempt
         # sign a transaction with a stolen key. We must check if the transaction's
         # public key is logged in the
-        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
+        if not self.public_key:
+            return False
+        try:
+            address = str(
+                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
+            )
+        except Exception:
+            # Unparseable public key (e.g. a coinbase transaction which has no
+            # signing public key) cannot be part of a key event log.
+            return False
         query = {
             "$or": [
                 {BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: address},
