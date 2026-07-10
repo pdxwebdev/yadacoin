@@ -32,7 +32,6 @@ from yadacoin.core.config import Config
 from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
 from yadacoin.core.credentialreceipt import CredentialReceipt
 from yadacoin.core.identityannouncement import IdentityAnnouncement
-from yadacoin.core.keyrotation import NodeKeyRotationManager
 from yadacoin.core.nodeannouncement import NodeAnnouncement
 from yadacoin.core.recoveryannouncement import (
     RecoveryAnnouncement,
@@ -363,7 +362,7 @@ class Transaction(object):
 
         cls_inst.hash = await cls_inst.generate_hash()
         cls_inst.transaction_signature = (
-            await NodeKeyRotationManager.generate_signature(cls_inst.hash)
+            await cls_inst.config.kel_manager.generate_signature(cls_inst.hash)
         )
 
         cls_inst.never_expire = never_expire

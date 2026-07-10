@@ -42,7 +42,6 @@ from yadacoin.core.keyeventlog import (
     KeyEventLog,
     PublicKeyMismatchException,
 )
-from yadacoin.core.keyrotation import NodeKeyRotationManager
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.nodes import Nodes
 from yadacoin.core.nodestester import NodesTester
@@ -631,9 +630,7 @@ class Block(object):
             block.hash = await block.generate_hash_from_header(
                 block.index, block.header, str(block.nonce)
             )
-            block.signature = await NodeKeyRotationManager.generate_signature(
-                block.hash
-            )
+            block.signature = await config.kel_manager.generate_signature(block.hash)
         return block
 
     async def remove_transaction(
