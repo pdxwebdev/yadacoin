@@ -168,8 +168,16 @@ class Peer:
     @property
     def rid(self):
         config = Config()
-        if hasattr(config, "peer"):
+        # Peers keyed only by identity_announcement (KEL inception) have no
+        # inline identity until resolved; their rid is unavailable until then.
+        if self.identity is None:
+            return None
+        if (
+            hasattr(config, "peer")
+            and getattr(config.peer, "identity", None) is not None
+        ):
             return self.identity.generate_rid(config.peer.identity.username_signature)
+        return None
 
     @classmethod
     def type_limit(cls, peer):
@@ -266,6 +274,11 @@ class Peer:
         return seed_gateway
 
     async def ensure_peers_connected(self):
+        if (
+            getattr(self.config, "peer", None) is None
+            or getattr(self.config.peer, "identity", None) is None
+        ):
+            return
         outbound_peers = (await self.get_outbound_peers()).values()
         # Resolve any on-chain identity_announcement peers so they have a
         # concrete Identity (and therefore a stable rid) before we key on it.
