@@ -1127,9 +1127,10 @@ class Block(object):
                                 masternode_sums[output.to] = 0
                             masternode_sums[output.to] += output.value
                         else:
-                            raise UnknownOutputAddressException(
-                                f"Coinbase output to unknown address: {output.to}"
-                            )
+                            if self.index >= CHAIN.CHECK_MASTERNODE_KEL_ADDRESS:
+                                raise UnknownOutputAddressException(
+                                    f"Coinbase output to unknown address: {output.to}"
+                                )
                 else:
                     for output in txn.outputs:
                         if float(output.value) < 0:
