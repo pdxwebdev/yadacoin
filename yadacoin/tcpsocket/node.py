@@ -297,6 +297,24 @@ class NodeRPC(BaseRPC):
             )
             return
 
+        if txn.are_kel_fields_populated():
+            existing_txn = await self.config.mongo.async_db.miner_transactions.find_one(
+                {
+                    "$or": [
+                        {"twice_prerotated_key_hash": txn.twice_prerotated_key_hash},
+                        {"prerotated_key_hash": txn.prerotated_key_hash},
+                        {"public_key_hash": txn.public_key_hash},
+                        {"prev_public_key_hash": txn.prev_public_key_hash},
+                        {"public_key": txn.public_key},
+                    ]
+                }
+            )
+            if existing_txn:
+                self.config.app_log.warning(
+                    f"KEL Transaction {txn_id} already in mempool! Ignoring."
+                )
+                return
+
         input_ids = [input_item.id for input_item in txn.inputs]
         existing_input_txn = (
             await self.config.mongo.async_db.miner_transactions.find_one(
