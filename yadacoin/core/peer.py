@@ -38,6 +38,34 @@ def _peer_key(peer):
     return getattr(peer, "identity_announcement", None) or peer.host
 
 
+def _resolve_peer_by_ref(peers_map, ref):
+    """Resolve a peer from a ``seed`` / ``seed_gateway`` cross-reference.
+
+    A node's ``seed`` / ``seed_gateway`` field may reference the upstream peer
+    by its ``username_signature`` (when the peer carries an inline identity) or
+    by its ``identity_announcement`` id (when the peer is KEL-anchored and has
+    no inline identity).  The peer maps (``config.seeds`` /
+    ``config.seed_gateways`` / ``config.service_providers``) are keyed by
+    whichever identifier the referenced node actually carries, so a reference
+    value does not always equal the map key.
+
+    Try a direct key lookup first, then fall back to scanning for a node whose
+    ``identity_announcement`` or ``username_signature`` matches ``ref``.
+    Returns ``None`` if no peer matches.
+    """
+    if not ref:
+        return None
+    if ref in peers_map:
+        return peers_map[ref]
+    for peer in peers_map.values():
+        if getattr(peer, "identity_announcement", None) == ref:
+            return peer
+        ident = getattr(peer, "identity", None)
+        if ident is not None and getattr(ident, "username_signature", None) == ref:
+            return peer
+    return None
+
+
 class Peer:
     id_attribute = "rid"
     """An individual Peer object"""
@@ -255,10 +283,17 @@ class Peer:
         username_signatures = list(self.config.seed_gateways)
         first_number = seed_select
         num_reset = False
+
+        def _gw_ignore_key(gw):
+            # outbound_ignore is keyed by the gateway's inline username_signature
+            # (or its identity_announcement id for KEL-anchored gateways that
+            # carry no inline identity yet).
+            if getattr(gw, "identity", None) is not None:
+                return gw.identity.username_signature
+            return getattr(gw, "identity_announcement", None)
+
         while (
-            self.config.seed_gateways[
-                username_signatures[seed_select]
-            ].identity.username_signature
+            _gw_ignore_key(self.config.seed_gateways[username_signatures[seed_select]])
             in self.config.nodeClient.outbound_ignore[SeedGateway.__name__]
         ):
             seed_select += 1
@@ -413,10 +448,11 @@ class Seed(Peer):
             del self.config.seeds[self.config.username_signature]
         peers = {}
         peers.update(self.config.seeds)
-        if self.seed_gateway and self.seed_gateway in self.config.seed_gateways:
-            seed_gateway = self.config.seed_gateways[self.seed_gateway]
-            if seed_gateway.identity is not None:
-                peers[seed_gateway.identity.username_signature] = seed_gateway
+        seed_gateway = _resolve_peer_by_ref(
+            self.config.seed_gateways, self.seed_gateway
+        )
+        if seed_gateway is not None and seed_gateway.identity is not None:
+            peers[seed_gateway.identity.username_signature] = seed_gateway
         return peers
 
     @classmethod
@@ -437,7 +473,14 @@ class Seed(Peer):
             # this if statement allow bi-directional communication cross-seed
             if self.source_property in payload:
                 # this is a response
-                bridge_seed = self.config.seeds[payload[self.source_property]]
+                bridge_seed = _resolve_peer_by_ref(
+                    self.config.seeds, payload[self.source_property]
+                )
+                if bridge_seed is None:
+                    self.config.app_log.error(
+                        "No bridge seed found. Cannot route transaction."
+                    )
+                    return
             else:
                 # this must be the identity of the destination service provider
                 # the message originator must provide the necissary service provider identity information
@@ -448,7 +491,21 @@ class Seed(Peer):
                 bridge_seed_gateway = (
                     await peer.calculate_seed_gateway()
                 )  # get the seed gateway
-                bridge_seed = bridge_seed_gateway.seed
+                if bridge_seed_gateway is None or not bridge_seed_gateway.seed:
+                    self.config.app_log.error(
+                        "No bridge seed gateway found. Cannot route transaction."
+                    )
+                    return
+                # Resolve the bridge seed by its reference (username_signature or
+                # identity_announcement id) so KEL-anchored seeds are supported.
+                bridge_seed = _resolve_peer_by_ref(
+                    self.config.seeds, bridge_seed_gateway.seed
+                )
+                if bridge_seed is None:
+                    self.config.app_log.error(
+                        "No bridge seed found. Cannot route transaction."
+                    )
+                    return
                 payload[
                     self.source_property
                 ] = self.config.peer.identity.username_signature
@@ -485,9 +542,18 @@ class Seed(Peer):
             if self.source_property in payload:
                 # this is a response
                 bridge_seed_from_payload = Peer.from_dict(payload[self.source_property])
-                bridge_seed = self.config.seeds[
-                    bridge_seed_from_payload.identity.username_signature
-                ]
+                ref = (
+                    getattr(
+                        bridge_seed_from_payload.identity, "username_signature", None
+                    )
+                    or bridge_seed_from_payload.identity_announcement
+                )
+                bridge_seed = _resolve_peer_by_ref(self.config.seeds, ref)
+                if bridge_seed is None:
+                    self.config.app_log.error(
+                        "No bridge seed found. Cannot route transaction."
+                    )
+                    return
             else:
                 # this must be the identity of the destination service provider
                 # the message originator must provide the necissary service provider identity information
@@ -497,11 +563,27 @@ class Seed(Peer):
                 bridge_seed_gateway = Peer.from_dict(
                     payload.get(PEER_TYPES.SEED_GATEWAY.value)
                 )
-                bridge_seed = self.config.seeds[
-                    self.config.seed_gateways[
-                        bridge_seed_gateway.identity.username_signature
-                    ].seed
-                ]
+                if bridge_seed_gateway is None:
+                    self.config.app_log.error(
+                        "No bridge seed gateway found. Cannot route transaction."
+                    )
+                    return
+                sg_ref = (
+                    getattr(bridge_seed_gateway.identity, "username_signature", None)
+                    or bridge_seed_gateway.identity_announcement
+                )
+                resolved_sg = _resolve_peer_by_ref(self.config.seed_gateways, sg_ref)
+                if resolved_sg is None or not resolved_sg.seed:
+                    self.config.app_log.error(
+                        "No bridge seed gateway found. Cannot route transaction."
+                    )
+                    return
+                bridge_seed = _resolve_peer_by_ref(self.config.seeds, resolved_sg.seed)
+                if bridge_seed is None:
+                    self.config.app_log.error(
+                        "No bridge seed found. Cannot route transaction."
+                    )
+                    return
                 payload[
                     self.source_property
                 ] = self.config.peer.identity.username_signature
@@ -552,9 +634,10 @@ class Seed(Peer):
             return self.config.nodeClient.outbound_streams[Seed.__name__].get(id_attr)
 
     def is_linked_peer(self, peer):
-        if self.seed_gateway == peer.identity.username_signature:
-            return True
-        return False
+        # Compare against the peer's stable ref (username_signature when it
+        # carries an inline identity, else its identity_announcement id) so
+        # KEL-anchored peers are matched correctly.
+        return self.seed_gateway == _peer_key(peer)
 
     async def get_inbound_streams(self):
         for peer_stream in list(
@@ -595,7 +678,8 @@ class SeedGateway(Peer):
         return ServiceProvider
 
     async def get_outbound_peers(self):
-        if not self.seed or self.seed not in self.config.seeds:
+        seed = _resolve_peer_by_ref(self.config.seeds, self.seed)
+        if seed is None:
             self.config.app_log.warning(
                 "SeedGateway.get_outbound_peers: no valid upstream seed configured "
                 "(self.seed=%r); this gateway cannot dial a seed. Set the 'seed' field "
@@ -604,7 +688,6 @@ class SeedGateway(Peer):
                 self.seed,
             )
             return {}
-        seed = self.config.seeds[self.seed]
         if seed.identity is None:
             return {}
         return {seed.identity.username_signature: seed}
@@ -693,9 +776,7 @@ class SeedGateway(Peer):
             return self.config.nodeClient.outbound_streams[Seed.__name__].get(id_attr)
 
     def is_linked_peer(self, peer):
-        if self.seed == peer.identity.username_signature:
-            return True
-        return False
+        return self.seed == _peer_key(peer)
 
 
 class ServiceProvider(Peer):
@@ -712,11 +793,12 @@ class ServiceProvider(Peer):
     async def get_outbound_peers(self, nonce=None):
         if not self.seed_gateway:
             return self.config.seed_gateways
-        return {
-            self.config.seed_gateways[
-                self.seed_gateway
-            ].identity.username_signature: self.config.seed_gateways[self.seed_gateway]
-        }
+        seed_gateway = _resolve_peer_by_ref(
+            self.config.seed_gateways, self.seed_gateway
+        )
+        if seed_gateway is None or seed_gateway.identity is None:
+            return {}
+        return {seed_gateway.identity.username_signature: seed_gateway}
 
     async def get_inbound_streams(self):
         for peer_stream in list(
@@ -774,53 +856,13 @@ class ServiceProvider(Peer):
                 self.config.websocketServer.inbound_streams.values()
             ):
                 if (
-                    peer.identity.username_signature
+                    peer.identity is not None
+                    and peer_stream.peer.identity is not None
+                    and peer.identity.username_signature
                     == peer_stream.peer.identity.username_signature
                 ):
                     continue
                 yield peer_stream
-
-        elif isinstance(peer, SeedGateway):
-            txn = self.get_payload_txn(payload)
-            if txn:
-                txn_sum = sum([x.value for x in txn.outputs])
-
-                from_peer = None
-                if payload.get("from_peer"):
-                    from_peer = Identity.from_dict(payload.get("from_peer"))
-
-                rid = None
-                if (
-                    txn.requester_rid
-                    in self.config.nodeServer.inbound_streams[User.__name__]
-                ):
-                    rid = txn.requester_rid
-                elif (
-                    txn.requested_rid
-                    in self.config.nodeServer.inbound_streams[User.__name__]
-                ):
-                    rid = txn.requested_rid
-                elif (
-                    from_peer
-                    and from_peer
-                    in self.config.nodeServer.inbound_streams[User.__name__]
-                ):
-                    rid = from_peer.rid
-                else:
-                    self.config.app_log.error(
-                        "No user found. Cannot route transaction."
-                    )
-
-                if txn_sum:
-                    self.config.mongo.async_db.miner_transactions.replace_one(
-                        {"id": txn.transaction_signature}, txn.to_dict()
-                    )
-                    for peer_stream in list(
-                        self.config.nodeServer.inbound_streams[User.__name__].values()
-                    ):
-                        yield peer_stream
-                elif rid:
-                    yield self.config.nodeServer.inbound_streams[User.__name__][rid]
 
     async def get_service_provider_request_peers(self, peer, payload):
         if isinstance(peer, User):
@@ -833,7 +875,9 @@ class ServiceProvider(Peer):
                 self.config.websocketServer.inbound_streams.values()
             ):
                 if (
-                    peer.identity.username_signature
+                    peer.identity is not None
+                    and peer_stream.peer.identity is not None
+                    and peer.identity.username_signature
                     == peer_stream.peer.identity.username_signature
                 ):
                     continue
@@ -875,9 +919,10 @@ class ServiceProvider(Peer):
             )
 
     def is_linked_peer(self, peer):
-        if self.seed_gateway == peer.identity.username_signature:
-            return True
-        return False
+        # Compare against the peer's stable ref (username_signature when it
+        # carries an inline identity, else its identity_announcement id) so
+        # KEL-anchored peers are matched correctly.
+        return self.seed_gateway == _peer_key(peer)
 
 
 class Group(Peer):
@@ -1183,20 +1228,33 @@ class Peers:
             elif config.peer_type == PEER_TYPES.SEED_GATEWAY.value:
                 routes.append(f"{outbound_peer.rid}")
             elif config.peer_type == PEER_TYPES.SERVICE_PROVIDER.value:
-                seed_rid = config.seeds[outbound_peer.seed].identity.generate_rid(
-                    config.seed_gateways[
-                        outbound_peer.identity.username_signature
-                    ].identity.username_signature
+                seed = _resolve_peer_by_ref(config.seeds, outbound_peer.seed)
+                seed_gateway = _resolve_peer_by_ref(
+                    config.seed_gateways, outbound_peer.identity.username_signature
+                )
+                if seed is None or seed.identity is None or seed_gateway is None:
+                    continue
+                seed_rid = seed.identity.generate_rid(
+                    seed_gateway.identity.username_signature
                 )
                 routes.append(f"{seed_rid}:{outbound_peer.rid}")
             elif config.peer_type in [PEER_TYPES.USER.value, PEER_TYPES.POOL.value]:
-                seed_rid = config.seeds[outbound_peer.seed].identity.generate_rid(
-                    config.seed_gateways[
-                        outbound_peer.seed_gateway
-                    ].identity.username_signature
+                seed = _resolve_peer_by_ref(config.seeds, outbound_peer.seed)
+                seed_gateway = _resolve_peer_by_ref(
+                    config.seed_gateways, outbound_peer.seed_gateway
                 )
-                seed_gateway_rid = config.seed_gateways[
-                    outbound_peer.seed_gateway
-                ].identity.generate_rid(outbound_peer.identity.username_signature)
+                if (
+                    seed is None
+                    or seed.identity is None
+                    or seed_gateway is None
+                    or seed_gateway.identity is None
+                ):
+                    continue
+                seed_rid = seed.identity.generate_rid(
+                    seed_gateway.identity.username_signature
+                )
+                seed_gateway_rid = seed_gateway.identity.generate_rid(
+                    outbound_peer.identity.username_signature
+                )
                 routes.append(f"{seed_rid}:{seed_gateway_rid}:{outbound_peer.rid}")
         return routes
