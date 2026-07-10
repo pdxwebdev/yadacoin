@@ -759,7 +759,8 @@ class Transaction(object):
                 block is None or block.index >= CHAIN.CHECK_KEL_PREV_HASH_FORK
             ):
                 raise KELExceptionPreviousKeyHashReferenceMissing(
-                    "Key event claims to have a key event log by specifying prev_public_key_hash, but no key event log found."
+                    "Key event claims to have a key event log by specifying prev_public_key_hash, but no key event log found.",
+                    txn=self,
                 )
 
             if has_kel:

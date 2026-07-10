@@ -32,7 +32,21 @@ if TYPE_CHECKING:
 
 
 class KELException(Exception):
-    pass
+    """Base KEL exception.
+
+    Appends the offending transaction's id (its ``transaction_signature``) to
+    the error message so failures can be traced back to the exact key-event
+    transaction during debugging.  *txn* may be a
+    :class:`~yadacoin.core.transaction.Transaction` object, a raw
+    transaction_signature string, or ``None``.
+    """
+
+    def __init__(self, message, txn=None):
+        if txn is not None and not isinstance(txn, str):
+            txn = getattr(txn, "transaction_signature", None)
+        if txn:
+            message = f"{message} (txn={txn})"
+        super().__init__(message)
 
 
 class KELExceptionMissingInceptionKeyEvent(KELException):
@@ -427,7 +441,8 @@ class KeyEvent:
 
         if delegator_tip_txn is None:
             raise KELRecoveryUnknownPreviousKELException(
-                "recovery references prev_public_key_hash with no on-chain or mempool KEL entry"
+                "recovery references prev_public_key_hash with no on-chain or mempool KEL entry",
+                txn=self.txn,
             )
 
         # Reconstruct the delegator's full on-chain KEL and confirm the
@@ -443,11 +458,13 @@ class KeyEvent:
         )
         if not delegator_log:
             raise KELRecoveryUnknownPreviousKELException(
-                "could not reconstruct delegator KEL"
+                "could not reconstruct delegator KEL",
+                txn=self.txn,
             )
         if delegator_log[-1].public_key_hash != self.txn.prev_public_key_hash:
             raise KELRecoveryUnknownPreviousKELException(
-                "recovery does not point to the delegator KEL's latest entry"
+                "recovery does not point to the delegator KEL's latest entry",
+                txn=self.txn,
             )
 
         # Single-use: reject if a recovery successor already exists on-chain or in mempool.
@@ -465,7 +482,8 @@ class KeyEvent:
                 "commitment"
             ):
                 raise KELRecoveryAlreadyConsumedException(
-                    "delegator KEL has already been recovered; it is sealed"
+                    "delegator KEL has already been recovered; it is sealed",
+                    txn=self.txn,
                 )
 
         # Resolve the active witness hash from the latest announcement in the
@@ -473,7 +491,8 @@ class KeyEvent:
         announced_witness_hash = find_active_recovery_witness_hash(delegator_log)
         if not announced_witness_hash:
             raise KELRecoveryAnnouncementMissingException(
-                "delegator KEL has no {recovery: witnessHash} announcement"
+                "delegator KEL has no {recovery: witnessHash} announcement",
+                txn=self.txn,
             )
 
         # Bind the proof's commitment to the announced witness hash:
@@ -482,11 +501,13 @@ class KeyEvent:
             commitment_bytes = bytes.fromhex(proof["commitment"])
         except ValueError as exc:
             raise KELRecoveryMalformedProofException(
-                f"recovers proof commitment is not valid hex: {exc}"
+                f"recovers proof commitment is not valid hex: {exc}",
+                txn=self.txn,
             )
         if sha256(commitment_bytes).hexdigest() != announced_witness_hash.lower():
             raise KELRecoveryInvalidProofException(
-                "recovers proof commitment does not match announced witnessHash"
+                "recovers proof commitment does not match announced witnessHash",
+                txn=self.txn,
             )
 
         # Verify the Schnorr proof, binding the delegator's tip pkh into the
@@ -499,7 +520,8 @@ class KeyEvent:
             prev_key_hash=self.txn.prev_public_key_hash,
         ):
             raise KELRecoveryInvalidProofException(
-                "Schnorr verification failed for recovers proof"
+                "Schnorr verification failed for recovers proof",
+                txn=self.txn,
             )
 
         if (onchain and self.status == KeyEventChainStatus.MEMPOOL) or (
@@ -593,7 +615,8 @@ class KeyEvent:
                     {"id": self.txn.transaction_signature}
                 )
                 raise KELException(
-                    "Unconfirmed key event sends to an expired key event. Removing."
+                    "Unconfirmed key event sends to an expired key event. Removing.",
+                    txn=self.txn,
                 )
 
         # Non-inception key events: enforce predecessor-existence rules.
@@ -646,7 +669,8 @@ class KeyEvent:
                                 return
                         raise KELExceptionPredecessorNotYetInMempool(
                             "Confirming key event rejected: predecessor key event not found "
-                            "on-chain or in the mempool."
+                            "on-chain or in the mempool.",
+                            txn=self.txn,
                         )
                 else:
                     if batch_txns:
@@ -681,7 +705,8 @@ class KeyEvent:
                             return
                     raise KELException(
                         "Unconfirmed key event rejected: predecessor key event is not yet "
-                        "confirmed on-chain or present in the mempool."
+                        "confirmed on-chain or present in the mempool.",
+                        txn=self.txn,
                     )
 
         if await self.txn.is_already_onchain(block_index=block_index):
@@ -690,7 +715,7 @@ class KeyEvent:
                 len(self.txn.outputs) != 1
                 or key_log[-1].prerotated_key_hash != self.txn.outputs[0].to
             ):
-                raise KELException("Key event is already onchain")
+                raise KELException("Key event is already onchain", txn=self.txn)
 
     async def sends_to_past_kel_entry(self, block_index=None):
         for output in self.txn.outputs:
@@ -1142,7 +1167,10 @@ class KeyEventLog:
                 or len(key_event.txn.outputs) != 1
                 or key_event.txn.outputs[0].to != key_event.txn.prerotated_key_hash
             ):
-                raise KELException("No onchain key event for unconfirmed key event.")
+                raise KELException(
+                    "No onchain key event for unconfirmed key event.",
+                    txn=key_event.txn,
+                )
 
             # assign confirming key event and flag
             key_event.flag = KeyEventFlag.CONFIRMING
@@ -1180,7 +1208,8 @@ class KeyEventLog:
                     self.base_key_event = mempool_base["key_event"]
                 else:
                     raise KELException(
-                        "No on-chain or mempool key event found for unconfirmed key event."
+                        "No on-chain or mempool key event found for unconfirmed key event.",
+                        txn=key_event.txn,
                     )
 
         # check that KEL is one of five scenarios.
@@ -1338,7 +1367,14 @@ class KeyEventLog:
             self.verify_links()
 
         else:
-            raise KELException("Invalid KEL scenario")
+            raise KELException(
+                "Invalid KEL scenario",
+                txn=(
+                    self.confirming_key_event.txn
+                    if self.confirming_key_event
+                    else (self.base_key_event.txn if self.base_key_event else None)
+                ),
+            )
         return self
 
     def verify_links(self):
@@ -1361,21 +1397,24 @@ class KeyEventLog:
             != self.unconfirmed_key_event.txn.prerotated_key_hash
         ):
             raise KELException(
-                "Mismatch: base_key_event.txn.twice_prerotated_key_hash does not match unconfirmed_key_event.txn.prerotated_key_hash"
+                "Mismatch: base_key_event.txn.twice_prerotated_key_hash does not match unconfirmed_key_event.txn.prerotated_key_hash",
+                txn=self.base_key_event.txn,
             )
         if (
             self.base_key_event.txn.prerotated_key_hash
             != self.unconfirmed_key_event.txn.public_key_hash
         ):
             raise KELException(
-                "Mismatch: base_key_event.txn.prerotated_key_hash does not match unconfirmed_key_event.txn.public_key_hash"
+                "Mismatch: base_key_event.txn.prerotated_key_hash does not match unconfirmed_key_event.txn.public_key_hash",
+                txn=self.base_key_event.txn,
             )
         if (
             self.base_key_event.txn.public_key_hash
             != self.unconfirmed_key_event.txn.prev_public_key_hash
         ):
             raise KELException(
-                "Mismatch: base_key_event.txn.public_key_hash does not match unconfirmed_key_event.txn.prev_public_key_hash"
+                "Mismatch: base_key_event.txn.public_key_hash does not match unconfirmed_key_event.txn.prev_public_key_hash",
+                txn=self.base_key_event.txn,
             )
 
     def verify_unconfirmed_and_confirming(self):
@@ -1384,21 +1423,24 @@ class KeyEventLog:
             != self.confirming_key_event.txn.prerotated_key_hash
         ):
             raise KELException(
-                "Mismatch: unconfirmed_key_event.txn.twice_prerotated_key_hash does not match confirming_key_event.txn.prerotated_key_hash"
+                "Mismatch: unconfirmed_key_event.txn.twice_prerotated_key_hash does not match confirming_key_event.txn.prerotated_key_hash",
+                txn=self.unconfirmed_key_event.txn,
             )
         if (
             self.unconfirmed_key_event.txn.prerotated_key_hash
             != self.confirming_key_event.txn.public_key_hash
         ):
             raise KELException(
-                "Mismatch: unconfirmed_key_event.txn.prerotated_key_hash does not match confirming_key_event.txn.public_key_hash"
+                "Mismatch: unconfirmed_key_event.txn.prerotated_key_hash does not match confirming_key_event.txn.public_key_hash",
+                txn=self.unconfirmed_key_event.txn,
             )
         if (
             self.unconfirmed_key_event.txn.public_key_hash
             != self.confirming_key_event.txn.prev_public_key_hash
         ):
             raise KELException(
-                "Mismatch: unconfirmed_key_event.txn.public_key_hash does not match confirming_key_event.txn.prev_public_key_hash"
+                "Mismatch: unconfirmed_key_event.txn.public_key_hash does not match confirming_key_event.txn.prev_public_key_hash",
+                txn=self.unconfirmed_key_event.txn,
             )
 
     def verify_base_and_confirming(self):
@@ -1407,21 +1449,24 @@ class KeyEventLog:
             != self.confirming_key_event.txn.prerotated_key_hash
         ):
             raise KELException(
-                "Mismatch: base_key_event.txn.twice_prerotated_key_hash does not match confirming_key_event.txn.prerotated_key_hash"
+                "Mismatch: base_key_event.txn.twice_prerotated_key_hash does not match confirming_key_event.txn.prerotated_key_hash",
+                txn=self.base_key_event.txn,
             )
         if (
             self.base_key_event.txn.prerotated_key_hash
             != self.confirming_key_event.txn.public_key_hash
         ):
             raise KELException(
-                "Mismatch: base_key_event.txn.prerotated_key_hash does not match confirming_key_event.txn.public_key_hash"
+                "Mismatch: base_key_event.txn.prerotated_key_hash does not match confirming_key_event.txn.public_key_hash",
+                txn=self.base_key_event.txn,
             )
         if (
             self.base_key_event.txn.public_key_hash
             != self.confirming_key_event.txn.prev_public_key_hash
         ):
             raise KELException(
-                "Mismatch: base_key_event.txn.public_key_hash does not match confirming_key_event.txn.prev_public_key_hash"
+                "Mismatch: base_key_event.txn.public_key_hash does not match confirming_key_event.txn.prev_public_key_hash",
+                txn=self.base_key_event.txn,
             )
 
     @staticmethod
