@@ -1602,24 +1602,18 @@ class Transaction(object):
         relationship = self.relationship
         if hasattr(relationship, "to_dict"):
             relationship = relationship.to_dict()
-            # Wrap NodeAnnouncement back in its RELATIONSHIP_KEY for storage
             if isinstance(self.relationship, NodeAnnouncement):
                 relationship = {NodeAnnouncement.RELATIONSHIP_KEY: relationship}
-            # Wrap AgentAnnouncement back in its RELATIONSHIP_KEY for storage
             elif isinstance(self.relationship, AgentAnnouncement):
                 relationship = {AgentAnnouncement.RELATIONSHIP_KEY: relationship}
-            # Wrap ContentTakedownAnnouncement back in its RELATIONSHIP_KEY
             elif isinstance(self.relationship, ContentTakedownAnnouncement):
                 relationship = {
                     ContentTakedownAnnouncement.RELATIONSHIP_KEY: relationship
                 }
             elif isinstance(self.relationship, IdentityAnnouncement):
                 relationship = {IdentityAnnouncement.RELATIONSHIP_KEY: relationship}
-            # RotationAnnouncement (rotation-only, no identity sibling)
             elif isinstance(self.relationship, RotationAnnouncement):
                 relationship = {RotationAnnouncement.RELATIONSHIP_KEY: relationship}
-            # RecoveryAnnouncement and RecoveryProof are already self-wrapping
-            # (to_dict() returns {"recovery": ...} / {"recovers": ...})
         ret = {
             "time": int(self.time),
             "rid": self.rid,
