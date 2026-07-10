@@ -853,6 +853,13 @@ class NodeKeyRotationManager:
         k0_pub_bytes = k0_priv_obj.public_key.format(compressed=True)
         k0_address = str(P2PKHBitcoinAddress.from_pubkey(k0_pub_bytes))
 
+        # Anchor the active KEL signing key to K0 at inception time so all
+        # signing operations and my_peer() present K0 immediately.
+        config.kel_private_key = k0["private_key"].hex()
+        config.kel_chain_code = k0["chain_code"].hex()
+        config.kel_public_key = k0_pub_bytes.hex()
+        config.kel_address = k0_address
+
         prerotated = derive_secure_path(
             k0["private_key"], k0["chain_code"], second_factor
         )
