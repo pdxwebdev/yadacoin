@@ -413,15 +413,10 @@ class Seed(Peer):
             del self.config.seeds[self.config.username_signature]
         peers = {}
         peers.update(self.config.seeds)
-        peers.update(
-            {
-                self.config.seed_gateways[
-                    self.seed_gateway
-                ].identity.username_signature: self.config.seed_gateways[
-                    self.seed_gateway
-                ]
-            }
-        )
+        if self.seed_gateway and self.seed_gateway in self.config.seed_gateways:
+            seed_gateway = self.config.seed_gateways[self.seed_gateway]
+            if seed_gateway.identity is not None:
+                peers[seed_gateway.identity.username_signature] = seed_gateway
         return peers
 
     @classmethod
@@ -600,11 +595,19 @@ class SeedGateway(Peer):
         return ServiceProvider
 
     async def get_outbound_peers(self):
-        return {
-            self.config.seeds[self.seed].identity.username_signature: self.config.seeds[
-                self.seed
-            ]
-        }
+        if not self.seed or self.seed not in self.config.seeds:
+            self.config.app_log.warning(
+                "SeedGateway.get_outbound_peers: no valid upstream seed configured "
+                "(self.seed=%r); this gateway cannot dial a seed. Set the 'seed' field "
+                "on this node's seed_gateway entry (the seed's username_signature / "
+                "identity_announcement id).",
+                self.seed,
+            )
+            return {}
+        seed = self.config.seeds[self.seed]
+        if seed.identity is None:
+            return {}
+        return {seed.identity.username_signature: seed}
 
     async def get_inbound_peers(self):
         return {}

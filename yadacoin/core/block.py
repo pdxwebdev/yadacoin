@@ -350,6 +350,7 @@ class Block(object):
 
         coinbase_txn = await Transaction.generate(
             outputs=outputs,
+            public_key=public_key,
             coinbase=True,
         )
         transaction_objs.append(coinbase_txn)
