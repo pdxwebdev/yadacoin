@@ -969,11 +969,7 @@ class SeedGateways(Nodes):
                         "port": 8000,
                         "http_protocol": "http",
                         "http_port": 80,
-                        "identity": {
-                            "username": "",
-                            "username_signature": "MEQCIHONdT7i8K+ZTzv3PHyPAhYkaksoh6FxEJUmPLmXZqFPAiBHOnt1CjgMtNzCGdBk/0S/oikPzJVys32bgThxXtAbgQ==",
-                            "public_key": "03362203ee71bc15918a7992f3c76728fc4e45f4916d2c0311c37aad0f736b26b9",
-                        },
+                        "identity_announcement": "MEQCIGrQ3u9S5zbm7yA81atjfGcvMKBafpzPlryayrZar3QSAiAwl8a0mgVfso40fYVLriTUdsVj46qduJxMgYXnnQke1A==",
                         "seed": "MEUCIQCP+rF5R4sZ7pHJCBAWHxARLg9GN4dRw+/pobJ0MPmX3gIgX0RD4OxhSS9KPJTUonYI1Tr+ZI2N9uuoToZo1RGOs2M=",
                     }
                 ),
