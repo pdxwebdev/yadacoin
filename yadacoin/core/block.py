@@ -307,6 +307,8 @@ class Block(object):
                 ) / len(reward_nodes)
 
                 for successful_node in reward_nodes:
+                    if successful_node.identity is None:
+                        continue
                     outputs.append(
                         Output.from_dict(
                             {
@@ -583,6 +585,8 @@ class Block(object):
                     block_reward * 0.1 + updated_masternode_fee_sum
                 ) / len(reward_nodes)
                 for successful_node in reward_nodes:
+                    if successful_node.identity is None:
+                        continue
                     updated_outputs.append(
                         Output.from_dict(
                             {
