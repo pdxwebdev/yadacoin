@@ -183,6 +183,9 @@ class StratumServer(RPCSocketServer):
             return
         peer_id = str(uuid.uuid4())
         await StratumServer.block_checker()
+        if not StratumServer.config.mp:
+            await StratumServer.remove_peer(stream)
+            return
         job = await StratumServer.config.mp.block_template(
             body["params"].get("agent"), peer_id
         )
