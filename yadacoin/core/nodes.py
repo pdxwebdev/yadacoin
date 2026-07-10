@@ -661,11 +661,7 @@ class Seeds(Nodes):
                         "port": 8000,
                         "http_protocol": "https",
                         "http_port": 443,
-                        "identity": {
-                            "username": "",
-                            "username_signature": "MEUCIQCP+rF5R4sZ7pHJCBAWHxARLg9GN4dRw+/pobJ0MPmX3gIgX0RD4OxhSS9KPJTUonYI1Tr+ZI2N9uuoToZo1RGOs2M=",
-                            "public_key": "02fa9550f57055c96c7ce4c6c9cd1411856beba5c7d5a07417e980a39aa03da3dc",
-                        },
+                        "identity_announcement": "MEQCIGbzrCcVz489gD/+XnMIFI7kXSVTdPiyt7/2oG+FKIKEAiB0XovcFepVAR4U8EHh1ODL1bEuhfYtLED1vuhasmEqhw==",
                         "seed_gateway": "MEQCIHONdT7i8K+ZTzv3PHyPAhYkaksoh6FxEJUmPLmXZqFPAiBHOnt1CjgMtNzCGdBk/0S/oikPzJVys32bgThxXtAbgQ==",
                     }
                 ),
