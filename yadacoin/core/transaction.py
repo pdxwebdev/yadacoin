@@ -183,7 +183,7 @@ class Transaction(object):
             # (also parses optional "rotation" sibling for secp256r1 nodes)
             try:
                 self.relationship = IdentityAnnouncement.from_relationship(
-                    self.relationship
+                    self.relationship[IdentityAnnouncement.RELATIONSHIP_KEY]
                 )
             except (ValueError, TypeError):
                 pass
@@ -194,7 +194,7 @@ class Transaction(object):
             # Rotation-only (subsequent rotations for secp256r1 nodes — no identity)
             try:
                 self.relationship = RotationAnnouncement.from_relationship(
-                    self.relationship
+                    self.relationship[RotationAnnouncement.RELATIONSHIP_KEY]
                 )
             except (ValueError, TypeError):
                 pass
@@ -838,14 +838,6 @@ class Transaction(object):
                 raise InvalidTransactionException(
                     f"Identity announcement: username '{self.relationship.username}' is already claimed"
                 )
-            # Validate the embedded rotation key if present (secp256r1 only)
-            if self.relationship.rotation:
-                try:
-                    self.relationship.rotation.validate_p256()
-                except ValueError as exc:
-                    raise InvalidTransactionException(
-                        f"Identity announcement: invalid rotation key — {exc}"
-                    )
         elif isinstance(self.relationship, RotationAnnouncement):
             relationship = self.relationship.to_string()
             # Rotation-only announcements must NOT be inception transactions
@@ -1621,10 +1613,8 @@ class Transaction(object):
                 relationship = {
                     ContentTakedownAnnouncement.RELATIONSHIP_KEY: relationship
                 }
-            # IdentityAnnouncement: use to_relationship() so the optional
-            # "rotation" sibling is preserved alongside the "identity" key
             elif isinstance(self.relationship, IdentityAnnouncement):
-                relationship = self.relationship.to_relationship()
+                relationship = {IdentityAnnouncement.RELATIONSHIP_KEY: relationship}
             # RotationAnnouncement (rotation-only, no identity sibling)
             elif isinstance(self.relationship, RotationAnnouncement):
                 relationship = {RotationAnnouncement.RELATIONSHIP_KEY: relationship}

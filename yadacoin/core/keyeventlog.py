@@ -517,7 +517,7 @@ class KeyEvent:
             and self.txn.outputs[0].to == self.txn.prerotated_key_hash
         ):
             raise KeyEventException(
-                "not a valid unconfirmed key event. invalid relationship, outpus, or prerotated_key_hash."
+                f"not a valid unconfirmed key event. invalid relationship, outputs, or prerotated_key_hash. txn={self.txn.transaction_signature}"
             )
 
         if self.status != KeyEventChainStatus.MEMPOOL:
