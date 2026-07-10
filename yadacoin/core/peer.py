@@ -25,6 +25,19 @@ from yadacoin.core.transaction import Transaction
 from yadacoin.enums.peertypes import PEER_TYPES
 
 
+def _peer_key(peer):
+    """Stable dict key for a peer in the seed/gateway/provider maps.
+
+    Peers may carry an inline ``identity`` or only an ``identity_announcement``
+    (KEL inception txn id).  Key on the identity signature when present,
+    otherwise fall back to the announcement id (then host) so the map can still
+    be built for KEL-anchored nodes.
+    """
+    if getattr(peer, "identity", None) is not None:
+        return peer.identity.username_signature
+    return getattr(peer, "identity_announcement", None) or peer.host
+
+
 class Peer:
     id_attribute = "rid"
     """An individual Peer object"""
@@ -107,16 +120,22 @@ class Peer:
             ].seed
             return SeedGateway.from_dict(my_peer, is_me=True)
         elif config.peer_type == PEER_TYPES.SERVICE_PROVIDER.value:
-            if config.username_signature not in config.service_providers:
+            # Service providers may be keyed by username_signature (inline
+            # identity) or by their identity_announcement (KEL inception txn id)
+            # when they carry only an on-chain identity announcement.  Match the
+            # running node on either so a KEL-anchored provider can self-identify.
+            _my_ia = getattr(
+                getattr(config, "kel_manager", None), "_inception_txn_id", None
+            )
+            _me = config.service_providers.get(config.username_signature)
+            if _me is None and _my_ia:
+                _me = config.service_providers.get(_my_ia)
+            if _me is None:
                 config.peer_type = PEER_TYPES.USER.value
                 my_peer.update({"peer_type": PEER_TYPES.USER.value})
                 return User.from_dict(my_peer, is_me=True)
-            my_peer[PEER_TYPES.SEED_GATEWAY.value] = config.service_providers[
-                config.username_signature
-            ].seed_gateway
-            my_peer[PEER_TYPES.SEED.value] = config.service_providers[
-                config.username_signature
-            ].seed
+            my_peer[PEER_TYPES.SEED_GATEWAY.value] = _me.seed_gateway
+            my_peer[PEER_TYPES.SEED.value] = _me.seed
             return ServiceProvider.from_dict(my_peer, is_me=True)
         elif config.peer_type == PEER_TYPES.POOL.value or config.pool_payout == True:
             config.peer_type = (
@@ -1043,7 +1062,7 @@ class Peers:
         seeds = []
         if hasattr(config, "network_seeds"):
             seeds = [Seed.from_dict(x) for x in config.network_seeds]
-        return OrderedDict({x.identity.username_signature: x for x in seeds})
+        return OrderedDict({_peer_key(x): x for x in seeds})
 
     @classmethod
     def get_seeds(cls):
@@ -1051,7 +1070,7 @@ class Peers:
 
         config = Config()
         seeds = Seeds.get_nodes_for_block_height(config.LatestBlock.block.index)
-        return OrderedDict({x.identity.username_signature: x for x in seeds})
+        return OrderedDict({_peer_key(x): x for x in seeds})
 
     @staticmethod
     def get_config_seed_gateways():
@@ -1061,7 +1080,7 @@ class Peers:
             seed_gateways = [
                 SeedGateway.from_dict(x) for x in config.network_seed_gateways
             ]
-        return OrderedDict({x.identity.username_signature: x for x in seed_gateways})
+        return OrderedDict({_peer_key(x): x for x in seed_gateways})
 
     @classmethod
     def get_seed_gateways(cls):
@@ -1071,7 +1090,7 @@ class Peers:
         seed_gateways = SeedGateways.get_nodes_for_block_height(
             config.LatestBlock.block.index
         )
-        return OrderedDict({x.identity.username_signature: x for x in seed_gateways})
+        return OrderedDict({_peer_key(x): x for x in seed_gateways})
 
     @staticmethod
     def get_config_service_providers():
@@ -1082,7 +1101,14 @@ class Peers:
                 ServiceProvider.from_dict(x) for x in config.network_service_providers
             ]
         return OrderedDict(
-            {x.identity.username_signature: x for x in service_providers}
+            {
+                (
+                    x.identity.username_signature
+                    if x.identity is not None
+                    else (x.identity_announcement or x.host)
+                ): x
+                for x in service_providers
+            }
         )
 
     @classmethod
@@ -1094,7 +1120,14 @@ class Peers:
             config.LatestBlock.block.index
         )
         return OrderedDict(
-            {x.identity.username_signature: x for x in service_providers}
+            {
+                (
+                    x.identity.username_signature
+                    if x.identity is not None
+                    else (x.identity_announcement or x.host)
+                ): x
+                for x in service_providers
+            }
         )
 
     @staticmethod
@@ -1103,7 +1136,7 @@ class Peers:
         groups = []
         if hasattr(config, "network_groups"):
             groups = [Group.from_dict(x) for x in config.network_groups]
-        return OrderedDict({x.identity.username_signature: x for x in groups})
+        return OrderedDict({_peer_key(x): x for x in groups})
 
     @classmethod
     def get_groups(cls):
@@ -1121,7 +1154,7 @@ class Peers:
                 }
             )
         ]
-        return OrderedDict({x.identity.username_signature: x for x in groups})
+        return OrderedDict({_peer_key(x): x for x in groups})
 
     @staticmethod
     async def get_routes():
