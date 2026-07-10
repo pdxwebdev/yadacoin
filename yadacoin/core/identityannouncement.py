@@ -100,7 +100,11 @@ class IdentityAnnouncement:
         missing = required - set(data.keys())
         if missing:
             raise ValueError(f"Missing required fields: {missing}")
-        return IdentityAnnouncement(**data)
+        return IdentityAnnouncement(
+            username=data["username"],
+            username_signature=data["username_signature"],
+            identity_type=data.get("identity_type", IdentityType.STANDARD.value),
+        )
 
     @staticmethod
     def from_relationship(rel: dict) -> "IdentityAnnouncement":

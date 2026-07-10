@@ -363,14 +363,15 @@ class NodeRPC(BaseRPC):
             await peer_stream.newtxn(body, source="tcpsocket")
 
     async def process_transaction_queue(self):
-        mempool_transactions = [
-            Transaction.from_dict(txn)
-            async for txn in self.config.mongo.async_db.miner_transactions.find(
-                {"relationship.smart_contract": {"$exists": False}}
-            )
-            .sort([("fee", -1), ("time", 1)])
-            .limit(1000)
-        ]
+        mempool_transactions = []
+
+        async for txn in self.config.mongo.async_db.miner_transactions.find(
+            {"relationship.smart_contract": {"$exists": False}}
+        ).sort([("fee", -1), ("time", 1)]).limit(1000):
+            try:
+                mempool_transactions.append(Transaction.from_dict(txn))
+            except Exception as e:
+                self.config.app_log.error(f"Failed to process mempool txn: {e}")
 
         transactions = [
             x.transaction
