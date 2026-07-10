@@ -879,7 +879,7 @@ class NodeKeyRotationManager:
             peer_type = (
                 getattr(config, "peer_type", "service_provider") or "service_provider"
             )
-            http_port = getattr(config, "serve_port", 443)
+            getattr(config, "serve_port", 443)
             http_protocol = (
                 "https"
                 if getattr(config, "ssl", None) and getattr(config.ssl, "port", None)
@@ -889,11 +889,6 @@ class NodeKeyRotationManager:
                 announcement = IdentityAnnouncement(
                     username=username,
                     username_signature=username_sig,
-                    host=getattr(config, "peer_host", ""),
-                    port=getattr(config, "peer_port", 8000),
-                    http_protocol=http_protocol,
-                    http_port=http_port,
-                    peer_type=peer_type,
                 )
                 identity_rel_str = announcement.to_string()
                 identity_rel_hash = (
