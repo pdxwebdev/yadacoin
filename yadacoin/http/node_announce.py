@@ -171,13 +171,26 @@ class NodeAnnounceHandler(BaseHandler):
                         }
                     )
 
-            # Build node announcement object
+            # Build node announcement object.  Reference the on-chain identity
+            # announcement (KEL inception) transaction id rather than embedding
+            # the identity inline — the same format used for bootstrap nodes in
+            # nodes.py.  Consumers resolve it to the authoritative anchor.
+            kel_manager = getattr(self.config, "kel_manager", None)
+            inception_txn_id = (
+                getattr(kel_manager, "_inception_txn_id", None) if kel_manager else None
+            )
+            if not inception_txn_id:
+                self.set_status(400)
+                return self.render_as_json(
+                    {
+                        "status": "error",
+                        "message": "Node has no on-chain identity announcement yet. "
+                        "Wait for the KEL inception to be confirmed and try again.",
+                    }
+                )
+
             node_announcement = {
-                "identity": {
-                    "username": peer.identity.username,
-                    "public_key": peer.identity.public_key,
-                    "username_signature": peer.identity.username_signature,
-                },
+                "identity_announcement": inception_txn_id,
                 "host": str(data.get("host", "")).strip(),
                 "port": int(data.get("port", 8003)),
                 "http_host": str(data.get("http_host", "")).strip(),

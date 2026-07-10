@@ -135,6 +135,61 @@ class IdentityAnnouncement:
     # ------------------------------------------------------------------
 
     @staticmethod
+    async def get_by_transaction_id(
+        txn_id: str, include_mempool: bool = True, config=None
+    ) -> Optional[dict]:
+        """Return the inception transaction dict for the given transaction id
+        (``transaction_signature``), or None.
+
+        Searches confirmed blocks first, then the mempool if
+        ``include_mempool`` is True.  The result mirrors ``get_by_username``::
+
+            {
+                "public_key": <K0 public key of the inception txn>,
+                "identity": {username, username_signature, identity_type, ...},
+                "source": "blockchain" | "mempool",
+                "txn": <full txn dict>,
+            }
+        """
+        from yadacoin.core.config import Config
+
+        if config is None:
+            config = Config()
+
+        doc = await config.mongo.async_db.miner_transactions.find_one(
+            {"id": txn_id}, {"_id": 0}
+        )
+        if doc:
+            identity_data = (doc.get("relationship") or {}).get("identity") or {}
+            return {
+                "public_key": doc.get("public_key", ""),
+                "identity": identity_data,
+                "source": "mempool",
+                "txn": doc,
+            }
+
+        if not include_mempool:
+            return None
+
+        pipeline = [
+            {"$match": {"transactions.id": txn_id}},
+            {"$unwind": "$transactions"},
+            {"$match": {"transactions.id": txn_id}},
+            {"$replaceRoot": {"newRoot": "$transactions"}},
+            {"$limit": 1},
+        ]
+        async for doc in config.mongo.async_db.blocks.aggregate(pipeline):
+            identity_data = (doc.get("relationship") or {}).get("identity") or {}
+            return {
+                "public_key": doc.get("public_key", ""),
+                "identity": identity_data,
+                "source": "blockchain",
+                "txn": doc,
+            }
+
+        return None
+
+    @staticmethod
     async def get_by_username(
         username: str, include_mempool: bool = True
     ) -> Optional[dict]:

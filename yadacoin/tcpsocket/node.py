@@ -1244,6 +1244,45 @@ class NodeRPC(BaseRPC):
             parsed_ratchet[0].public_key if parsed_ratchet else None
         )
 
+        # Anchor to the on-chain identity announcement if this peer is
+        # configured with one.  This overrides any username-based lookup so the
+        # KEL is verified against the authoritative inception transaction.
+        _ia_id = getattr(stream.peer, "identity_announcement", None)
+        _onchain_tip = None
+        if _ia_id:
+            _anchor_doc = await _IApeer.get_by_transaction_id(_ia_id)
+            if not _anchor_doc:
+                await self.remove_peer(
+                    stream, reason="ratchet: identity_announcement txn not found"
+                )
+                return None
+            _anchor_pub = _anchor_doc.get("public_key")
+            if not _anchor_pub:
+                await self.remove_peer(
+                    stream, reason="ratchet: identity_announcement missing public_key"
+                )
+                return None
+            _peer_k0 = _anchor_pub
+            from yadacoin.core.keyeventlog import KeyEventLog
+
+            _kel = await KeyEventLog.build_from_public_key(_anchor_pub)
+            _onchain_tip = _kel[-1] if _kel else None
+            # The most current KEL entry is the authoritative tip to
+            # authenticate against.  Surface a mismatch as a warning rather than
+            # a hard reject so an unconfirmed (mempool) rotation on either side
+            # does not break an otherwise valid connection.
+            if (
+                _onchain_tip
+                and latest_ratchet_pkh
+                and (latest_ratchet_pkh != _onchain_tip.public_key_hash)
+            ):
+                self.config.app_log.warning(
+                    "ratchet: peer %s claimed tip %s != on-chain KEL tip %s",
+                    getattr(stream.peer, "host", "?"),
+                    latest_ratchet_pkh,
+                    _onchain_tip.public_key_hash,
+                )
+
         for i, txn in enumerate(parsed_ratchet):
             try:
                 await txn.verify(
@@ -1453,6 +1492,17 @@ class NodeRPC(BaseRPC):
         _peer_k0 = (_peer_ia or {}).get("public_key") or (
             parsed_ratchet[0].public_key if parsed_ratchet else None
         )
+
+        # Anchor to the on-chain identity announcement if this peer is
+        # configured with one; walk the KEL from the anchor to its most current
+        # entry and use that as the KEL anchor for tip discovery below.
+        _ia_id = getattr(stream.peer, "identity_announcement", None)
+        if _ia_id:
+            _anchor_doc = await _IApeer.get_by_transaction_id(_ia_id)
+            if _anchor_doc:
+                _anchor_pub = _anchor_doc.get("public_key")
+                if _anchor_pub:
+                    _peer_k0 = _anchor_pub
 
         # Determine client's current KEL tip (what we'll put in the nonce)
         _client_kel_tip_pkh = ""

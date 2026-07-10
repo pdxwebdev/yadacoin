@@ -38,11 +38,17 @@ class Nodes:
         cls().NODES = defaultdict(list)
         for fork_point in cls().fork_points:
             for NODE in cls()._NODES:
+                # Only nodes that reference an on-chain identity_announcement
+                # qualify.  Legacy nodes carrying only an inline identity are
+                # skipped (same rule as dynamic node announcements).
+                node = NODE.get("node")
+                if not getattr(node, "identity_announcement", None):
+                    continue
                 for rng in NODE["ranges"]:
                     if rng[1] and rng[1] <= fork_point:
                         continue
                     if rng[0] <= fork_point:
-                        cls().NODES[fork_point].append(NODE["node"])
+                        cls().NODES[fork_point].append(node)
 
     @classmethod
     def get_fork_for_block_height(cls, height):
@@ -216,7 +222,74 @@ class Nodes:
                 pass
 
     @classmethod
-    def _assign_node_type(cls):
+    async def _known_anchor_registry(cls):
+        """Build (and cache) a map of anchor public key -> node type from the
+        bootstrap node identity announcements defined in nodes.py.
+
+        Each bootstrap node references an on-chain identity_announcement; we
+        resolve it to its K0 (anchor) public key and record which node class it
+        belongs to.  A dynamic node announcement is then typed by matching its
+        own anchor KEL entry against this registry.
+        """
+        if getattr(cls, "_anchor_registry", None) is not None:
+            return cls._anchor_registry
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        registry = {}
+        for owner_class, ntype in (
+            (Seeds, "seed"),
+            (SeedGateways, "seed_gateway"),
+            (ServiceProviders, "service_provider"),
+        ):
+            for entry in owner_class()._NODES:
+                node = entry.get("node")
+                ia_id = getattr(node, "identity_announcement", None)
+                if not ia_id:
+                    continue
+                try:
+                    doc = await IdentityAnnouncement.get_by_transaction_id(ia_id)
+                except Exception:
+                    doc = None
+                if not doc:
+                    continue
+                pub = doc.get("public_key")
+                if pub:
+                    registry[pub] = ntype
+        cls._anchor_registry = registry
+        return registry
+
+    @classmethod
+    async def _assign_node_type(cls, identity_announcement=None, anchor_pubkey=None):
+        """Determine the node type for a dynamic node announcement.
+
+        The node's anchor KEL entry (its K0 public key, resolved from
+        ``identity_announcement``) is matched against the known anchor registry
+        built from the bootstrap node identity announcements in nodes.py.  If it
+        matches a registered anchor the corresponding type is returned;
+        otherwise the legacy load-balancing strategy is used as a fallback.
+        """
+        if identity_announcement and anchor_pubkey is None:
+            from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+            try:
+                doc = await IdentityAnnouncement.get_by_transaction_id(
+                    identity_announcement
+                )
+            except Exception:
+                doc = None
+            if doc:
+                anchor_pubkey = doc.get("public_key")
+
+        if anchor_pubkey:
+            registry = await cls._known_anchor_registry()
+            if anchor_pubkey in registry:
+                return registry[anchor_pubkey]
+
+        # Fallback: legacy load-balancing strategy.
+        return cls._assign_node_type_legacy()
+
+    @classmethod
+    def _assign_node_type_legacy(cls):
         """Assign next node type based on load balancing strategy.
 
         Strategy:
@@ -224,11 +297,11 @@ class Nodes:
         - Max (Config().max_peers or 10000) service providers per seed gateway
         - All seeds connect to each other
         - Assignment order:
-          1. If no seeds: add Seed
-          2. If seeds exist but no gateways: add SeedGateway
-          3. If gateways < seeds: add SeedGateway
-          4. If all gateways saturated: add Seed
-          5. Otherwise: add ServiceProvider
+           1. If no seeds: add Seed
+           2. If seeds exist but no gateways: add SeedGateway
+           3. If gateways < seeds: add SeedGateway
+           4. If all gateways saturated: add Seed
+           5. Otherwise: add ServiceProvider
         """
         seeds_count, gateways_count, providers_count = cls._count_nodes_by_type()
         max_providers_per_gateway = Config().max_peers or 10000
@@ -307,15 +380,35 @@ class Nodes:
                     else node_blob
                 )
 
-                # Validate identity structure
-                identity = (
-                    node_def.get("identity") if isinstance(node_def, dict) else None
+                # Validate identity.  Only node announcements that reference an
+                # on-chain identity_announcement qualify; legacy announcements
+                # carrying only an inline ``identity`` are disqualified during
+                # node testing.  The ``identity`` field is still parsed by
+                # NodeAnnouncement (for legacy/backward-compat), but it no
+                # longer qualifies a node here.
+                identity_announcement = (
+                    node_def.get("identity_announcement")
+                    if isinstance(node_def, dict)
+                    else None
                 )
-                if not identity or not isinstance(identity, dict):
+                if not identity_announcement:
                     continue
-                pub = identity.get("public_key")
-                username_sig = identity.get("username_signature")
-                username = identity.get("username", "")
+
+                pub = None
+                username_sig = None
+                username = ""
+                from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+                ia_doc = await IdentityAnnouncement.get_by_transaction_id(
+                    identity_announcement
+                )
+                if not ia_doc:
+                    continue
+                pub = ia_doc.get("public_key")
+                _ia_identity = ia_doc.get("identity") or {}
+                username_sig = _ia_identity.get("username_signature")
+                username = _ia_identity.get("username", "")
+
                 if not pub or not username_sig:
                     continue
 
@@ -334,6 +427,10 @@ class Nodes:
                 txn_pub = txn.get("public_key")
                 if txn_pub and txn_pub != pub:
                     continue
+
+                # identity_announcement nodes rely on the connect-path resolution
+                # (same as bootstrap nodes in nodes.py); no inline identity is
+                # carried.  The anchoring/verification happens in tcpsocket/node.py.
 
                 # collateral_address is required and must be a valid address
                 collateral_address = node_def.get("collateral_address")
@@ -365,8 +462,12 @@ class Nodes:
                 if pub in Nodes.dynamic_node_public_keys:
                     continue
 
-                # Assign node type using load-balancing strategy.
-                assigned_type = cls._assign_node_type()
+                # Assign node type.  Prefer matching the node's anchor KEL entry
+                # against the identity announcements registered in nodes.py;
+                # fall back to load-balancing if there is no match.
+                assigned_type = await cls._assign_node_type(
+                    identity_announcement=identity_announcement, anchor_pubkey=pub
+                )
                 if assigned_type not in ("seed", "seed_gateway", "service_provider"):
                     continue
                 if assigned_type == "seed":
@@ -384,14 +485,25 @@ class Nodes:
                 except Exception:
                     continue
 
-                # pub is already validated above from identity.get("public_key").
-                # Avoid duplicates across ALL three node classes so a key that exists
-                # as a hardcoded node in a different class is not re-added here.
+                # pub is already validated above.  Avoid duplicates across ALL
+                # three node classes so a key that exists as a hardcoded node in
+                # a different class is not re-added here.  Peers may carry the
+                # identity inline or via identity_announcement (resolved above),
+                # so compare on whichever public key is available.
                 exists = False
                 for check_class in (Seeds, SeedGateways, ServiceProviders):
                     for e in check_class()._NODES:
                         try:
-                            if e["node"].identity.public_key == pub:
+                            en = e["node"]
+                            en_pub = (
+                                en.identity.public_key
+                                if getattr(en, "identity", None) is not None
+                                else None
+                            )
+                            en_ia = getattr(en, "identity_announcement", None)
+                            if (en_pub and en_pub == pub) or (
+                                en_ia and en_ia == identity_announcement
+                            ):
                                 exists = True
                                 break
                         except Exception:
@@ -440,33 +552,59 @@ class Nodes:
         ServiceProviders.set_nodes()
 
     @classmethod
-    def self_determine_peer_type(cls, config):
-        """Determine this running node's assigned peer type from the dynamic node lists.
+    async def self_determine_peer_type(cls, config):
+        """Determine this running node's assigned peer type.
 
-        Called after apply_dynamic_nodes() so the lists are current.  Checks whether
-        the node's own public key was registered as a dynamic node and, if so, returns
-        the PEER_TYPES value corresponding to the list it ended up in.
+        The node's anchor KEL entry (its KEL inception public key, K0) is matched
+        against the identity announcements registered in nodes.py — the same
+        basis used to type dynamic nodes in ``_assign_node_type``.  If it matches
+        a registered anchor the corresponding peer type is returned.
 
-        Returns the peer-type string (e.g. PEER_TYPES.SEED_GATEWAY.value) or None if
-        this node is not in any dynamic-node list.
+        Fallback: if the node announced itself as a dynamic node, match its own
+        ``identity_announcement`` (its KEL inception transaction id) against the
+        dynamic-node lists.
+
+        Returns the peer-type string (e.g. PEER_TYPES.SEED_GATEWAY.value) or None
+        if this node cannot be typed.
         """
         from yadacoin.enums.peertypes import PEER_TYPES
 
-        my_pub = getattr(config, "public_key", None)
-        if not my_pub or my_pub not in cls.dynamic_node_public_keys:
+        _PEER_TYPE_MAP = {
+            "seed": PEER_TYPES.SEED.value,
+            "seed_gateway": PEER_TYPES.SEED_GATEWAY.value,
+            "service_provider": PEER_TYPES.SERVICE_PROVIDER.value,
+        }
+
+        # The node's anchor KEL entry is its KEL inception public key (K0).
+        my_anchor = getattr(config, "kel_public_key", None) or getattr(
+            config, "public_key", None
+        )
+        if not my_anchor:
             return None
 
-        for owner_class, peer_type in (
-            (Seeds, PEER_TYPES.SEED.value),
-            (SeedGateways, PEER_TYPES.SEED_GATEWAY.value),
-            (ServiceProviders, PEER_TYPES.SERVICE_PROVIDER.value),
-        ):
-            for entry in owner_class()._NODES:
-                try:
-                    if entry["node"].identity.public_key == my_pub:
+        # Primary: match the node's anchor against the identity announcements
+        # registered in nodes.py.
+        registry = await cls._known_anchor_registry()
+        if my_anchor in registry:
+            return _PEER_TYPE_MAP.get(registry[my_anchor])
+
+        # Fallback: this node announced itself as a dynamic node — match its own
+        # identity_announcement (its KEL inception transaction id) against the
+        # dynamic-node lists.
+        kel_manager = getattr(config, "kel_manager", None)
+        my_ia = getattr(kel_manager, "_inception_txn_id", None) if kel_manager else None
+        if my_ia:
+            for owner_class, peer_type in (
+                (Seeds, PEER_TYPES.SEED.value),
+                (SeedGateways, PEER_TYPES.SEED_GATEWAY.value),
+                (ServiceProviders, PEER_TYPES.SERVICE_PROVIDER.value),
+            ):
+                for entry in owner_class()._NODES:
+                    if (
+                        getattr(entry.get("node"), "identity_announcement", None)
+                        == my_ia
+                    ):
                         return peer_type
-                except Exception:
-                    continue
 
         return None
 
@@ -1108,11 +1246,7 @@ class ServiceProviders(Nodes):
                         "port": 8000,
                         "http_protocol": "https",
                         "http_port": 443,
-                        "identity": {
-                            "username": "",
-                            "username_signature": "MEQCIC7ADPLI3VPDNpQPaXAeB8gUk2LrvZDJIdEg9C12dj5PAiB61Te/sen1D++EJAcgnGLH4iq7HTZHv/FNByuvu4PrrA==",
-                            "public_key": "02a9aed3a4d69013246d24e25ded69855fbd590cb75b4a90fbfdc337111681feba",
-                        },
+                        "identity_announcement": "MEUCIQCBcYxjJpWKM46AZLV4/mROicYgO+550fAzwq6AH88QaAIgEeXdN1FF8ytjaU6wUCiNleQU2xPQjCMJJBOzE9HKYbQ=",
                         "seed_gateway": "MEQCIHONdT7i8K+ZTzv3PHyPAhYkaksoh6FxEJUmPLmXZqFPAiBHOnt1CjgMtNzCGdBk/0S/oikPzJVys32bgThxXtAbgQ==",
                         "seed": "MEUCIQCP+rF5R4sZ7pHJCBAWHxARLg9GN4dRw+/pobJ0MPmX3gIgX0RD4OxhSS9KPJTUonYI1Tr+ZI2N9uuoToZo1RGOs2M=",
                     }

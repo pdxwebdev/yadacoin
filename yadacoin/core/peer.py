@@ -44,6 +44,7 @@ class Peer:
         protocol_version=5,
         node_version=(0, 0, 0),
         peer_type=None,
+        identity_announcement=None,
     ):
         self.host = host
         self.port = port
@@ -59,6 +60,12 @@ class Peer:
         self.authenticated = False
         self.node_version = tuple([int(x) for x in node_version])
         self.peer_type = peer_type
+        # When set, this peer is identified by an on-chain identity announcement
+        # transaction id instead of an inline ``identity`` dict.  Clients anchor
+        # KEL verification to the inception transaction referenced here.
+        self.identity_announcement = identity_announcement
+        # Resolved anchor public key (K0) once identity_announcement is resolved.
+        self.anchor_public_key = None
 
     @staticmethod
     def my_peer():
@@ -122,10 +129,11 @@ class Peer:
 
     @classmethod
     def from_dict(cls, peer, is_me=False):
+        identity = peer.get("identity")
         inst = cls(
             peer["host"],
             peer["port"],
-            Identity.from_dict(peer["identity"]),
+            Identity.from_dict(identity) if identity else None,
             seed=peer.get(PEER_TYPES.SEED.value),
             seed_gateway=peer.get(PEER_TYPES.SEED_GATEWAY.value),
             http_host=peer.get("http_host"),
@@ -134,6 +142,7 @@ class Peer:
             protocol_version=peer.get("protocol_version", 1),
             node_version=peer.get("node_version", (0, 0, 0)),
             peer_type=peer.get("peer_type"),
+            identity_announcement=peer.get("identity_announcement"),
         )
         return inst
 
@@ -238,9 +247,16 @@ class Peer:
         return seed_gateway
 
     async def ensure_peers_connected(self):
+        outbound_peers = (await self.get_outbound_peers()).values()
+        # Resolve any on-chain identity_announcement peers so they have a
+        # concrete Identity (and therefore a stable rid) before we key on it.
+        for x in outbound_peers:
+            if getattr(x, "identity_announcement", None) and x.identity is None:
+                await x.resolve_identity_announcement()
         peers = {
             self.config.peer.identity.generate_rid(x.identity.username_signature): x
-            for x in (await self.get_outbound_peers()).values()
+            for x in outbound_peers
+            if x.identity is not None
         }
         if not peers:
             return
@@ -287,10 +303,10 @@ class Peer:
         return True
 
     def to_dict(self):
-        return {
+        d = {
             "host": self.host,
             "port": self.port,
-            "identity": self.identity.to_dict,
+            "identity": self.identity.to_dict if self.identity else None,
             "rid": self.rid,
             PEER_TYPES.SEED.value: self.seed,
             PEER_TYPES.SEED_GATEWAY.value: self.seed_gateway,
@@ -301,6 +317,35 @@ class Peer:
             "node_version": self.node_version,
             "peer_type": self.peer_type,
         }
+        if self.identity_announcement:
+            d["identity_announcement"] = self.identity_announcement
+        return d
+
+    async def resolve_identity_announcement(self) -> bool:
+        """Populate ``self.identity`` (and ``self.anchor_public_key``) from the
+        on-chain identity announcement referenced by ``identity_announcement``.
+
+        Returns True if no resolution was needed or it succeeded; False if a
+        configured ``identity_announcement`` could not be found on-chain.
+        """
+        if self.identity is not None:
+            return True
+        ia_id = getattr(self, "identity_announcement", None)
+        if not ia_id:
+            return True
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        result = await IdentityAnnouncement.get_by_transaction_id(ia_id)
+        if not result:
+            return False
+        identity_data = result.get("identity") or {}
+        self.identity = Identity(
+            public_key=result.get("public_key", ""),
+            username=identity_data.get("username", "") or "",
+            username_signature=identity_data.get("username_signature", "") or "",
+        )
+        self.anchor_public_key = result.get("public_key") or None
+        return True
 
     def to_string(self):
         return "{}:{}".format(self.host, self.port)

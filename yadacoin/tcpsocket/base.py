@@ -418,6 +418,16 @@ class RPCSocketClient(TCPClient):
     async def connect(self, peer):
         try:
             stream = None
+            # Resolve an on-chain identity_announcement (if any) into a concrete
+            # Identity before any peer comparisons or signature verification.
+            resolved = await peer.resolve_identity_announcement()
+            if not resolved:
+                self.config.app_log.warning(
+                    "Cannot resolve identity_announcement for {}: {}".format(
+                        peer.__class__.__name__, peer.to_json()
+                    )
+                )
+                return
             id_attr = getattr(peer, peer.id_attribute)
             if id_attr in self.outbound_ignore[peer.__class__.__name__]:
                 return
@@ -435,7 +445,7 @@ class RPCSocketClient(TCPClient):
                 in self.config.nodeServer.inbound_streams[peer.__class__.__name__]
             ):
                 return
-            if (
+            if peer.identity is not None and (
                 self.config.peer.identity.username_signature
                 == peer.identity.username_signature
             ):
@@ -455,27 +465,39 @@ class RPCSocketClient(TCPClient):
             self.config.health.tcp_client.last_activity = time.time()
             stream.last_activity = int(time.time())
             try:
-                result = verify_signature(
-                    base64.b64decode(stream.peer.identity.username_signature),
-                    stream.peer.identity.username.encode(),
-                    bytes.fromhex(stream.peer.identity.public_key),
-                )
-                if not result:
+                if stream.peer.identity is not None:
+                    result = verify_signature(
+                        base64.b64decode(stream.peer.identity.username_signature),
+                        stream.peer.identity.username.encode(),
+                        bytes.fromhex(stream.peer.identity.public_key),
+                    )
+                    if not result:
+                        self.config.app_log.warning(
+                            "new {} peer signature is invalid".format(
+                                peer.__class__.__name__
+                            )
+                        )
+                        await self.remove_peer(
+                            stream,
+                            reason="RPCSocketClient: invalid peer identity signature",
+                        )
+                        return
+                    self.config.app_log.info(
+                        "new {} peer is valid".format(peer.__class__.__name__)
+                    )
+                else:
                     self.config.app_log.warning(
-                        "new {} peer signature is invalid".format(
+                        "new {} peer has no resolvable identity".format(
                             peer.__class__.__name__
                         )
                     )
                     await self.remove_peer(
                         stream,
-                        reason="RPCSocketClient: invalid peer identity signature",
+                        reason="RPCSocketClient: peer identity could not be resolved",
                     )
                     return
-                self.config.app_log.info(
-                    "new {} peer is valid".format(peer.__class__.__name__)
-                )
-            except:
-                self.config.app_log.warning("invalid peer identity signature")
+            except Exception as exc:
+                self.config.app_log.warning("invalid peer identity signature: %s", exc)
                 await self.remove_peer(
                     stream, reason="RPCSocketClient: invalid peer identity signature"
                 )
