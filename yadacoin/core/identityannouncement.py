@@ -28,9 +28,16 @@ startup and during validation.
 """
 
 import base64
+from enum import Enum
 from typing import Optional
 
 from coincurve import verify_signature
+
+
+class IdentityType(str, Enum):
+    """Type of identity announced at inception."""
+
+    DNS = "dns"
 
 
 class IdentityAnnouncement:
@@ -42,15 +49,20 @@ class IdentityAnnouncement:
         self,
         username: str,
         username_signature: str,
-        **kwargs,
+        identity_type: str = IdentityType.DNS.value,
     ):
         if not username or not username.strip():
             raise ValueError("username is required and must not be blank")
         if not username_signature:
             raise ValueError("username_signature is required")
+        if identity_type not in {t.value for t in IdentityType}:
+            raise ValueError(
+                f"identity_type must be one of {[t.value for t in IdentityType]}"
+            )
 
         self.username = username.strip()
         self.username_signature = username_signature
+        self.identity_type = identity_type
 
     # ------------------------------------------------------------------
     # Serialisation
@@ -60,12 +72,17 @@ class IdentityAnnouncement:
         d = {
             "username": self.username,
             "username_signature": self.username_signature,
+            "identity_type": self.identity_type,
         }
         return d
 
     def to_string(self) -> str:
         """String used for hashing / signing purposes (minimal fields only)."""
-        return self.get_string(self.username) + self.get_string(self.username_signature)
+        return (
+            self.get_string(self.username)
+            + self.get_string(self.username_signature)
+            + self.get_string(self.identity_type)
+        )
 
     @staticmethod
     def get_string(value) -> str:
