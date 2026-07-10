@@ -103,7 +103,7 @@ class IdentityAnnouncement:
         return IdentityAnnouncement(
             username=data["username"],
             username_signature=data["username_signature"],
-            identity_type=data.get("identity_type", IdentityType.STANDARD.value),
+            identity_type=data.get("identity_type", IdentityType.DNS.value),
         )
 
     @staticmethod
