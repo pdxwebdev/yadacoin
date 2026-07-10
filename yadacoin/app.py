@@ -1356,6 +1356,12 @@ class NodeApplication(Application):
             tornado.ioloop.IOLoop.current().run_sync(
                 self.config.kel_manager.startup_check
             )
+        # Resolve bootstrap node identities from their on-chain identity
+        # announcements (e.g. centeridentity.com) before block generation, which
+        # dereferences node.identity.public_key directly.
+        from yadacoin.core.nodes import Nodes
+
+        tornado.ioloop.IOLoop.current().run_sync(Nodes.resolve_bootstrap_identities)
         if MODES.NODE.value in self.config.modes:
             # self.config.pyrx = pyrx.PyRX()
             # self.config.pyrx.get_rx_hash(

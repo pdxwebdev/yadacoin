@@ -51,6 +51,37 @@ class Nodes:
                         cls().NODES[fork_point].append(node)
 
     @classmethod
+    async def resolve_bootstrap_identities(cls):
+        """Resolve the on-chain ``identity`` for every bootstrap node that
+        references an ``identity_announcement`` but was loaded without an inline
+        ``identity`` (the new node-announcement format, e.g. ``centeridentity.com``).
+
+        Block generation (``Block.generate``) dereferences ``node.identity.public_key``
+        directly, so these nodes must be resolved before the chain starts producing
+        blocks.  Must run after the chain is available so the referenced
+        identity-announcement transaction can be found on-chain.  Nodes whose
+        announcement cannot be resolved are logged and skipped rather than failing
+        the whole startup.
+        """
+        config = Config()
+        for node_cls in (Seeds, SeedGateways, ServiceProviders):
+            instance = node_cls()
+            for fork_nodes in instance.NODES.values():
+                for node in fork_nodes:
+                    if getattr(node, "identity", None) is not None:
+                        continue
+                    if not getattr(node, "identity_announcement", None):
+                        continue
+                    try:
+                        await node.resolve_identity_announcement()
+                    except Exception as exc:  # pragma: no cover - defensive
+                        config.app_log.warning(
+                            "Nodes: failed to resolve identity for %s: %s",
+                            getattr(node, "host", "?"),
+                            exc,
+                        )
+
+    @classmethod
     def get_fork_for_block_height(cls, height):
         prev = 0
         for x in cls().fork_points:
