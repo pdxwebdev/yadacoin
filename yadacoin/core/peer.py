@@ -186,7 +186,7 @@ class Peer:
             http_protocol=peer.get("http_protocol"),
             protocol_version=peer.get("protocol_version", 1),
             node_version=peer.get("node_version", (0, 0, 0)),
-            peer_type=peer.get("peer_type"),
+            peer_type=peer.get("peer_type") or getattr(cls, "peer_type", None),
             identity_announcement=peer.get("identity_announcement"),
         )
         return inst
