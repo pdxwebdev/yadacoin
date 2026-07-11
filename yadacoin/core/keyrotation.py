@@ -612,6 +612,7 @@ class NodeKeyRotationManager:
             self._auth_ratchet_key = next_key
             self._auth_ratchet_pub = next_pub_hex
             self._auth_ratchet_prev_pkh = prev_address
+            config.twice_prerotated_key_hash = two_ahead_address
 
             # Trigger re-anchor when interval is reached
             if self._auth_counter % self.OFFCHAIN_ANCHOR_INTERVAL == 0:
