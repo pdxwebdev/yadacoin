@@ -319,8 +319,6 @@ class MiningPool(object):
             await self.config.LatestBlock.block_checker()
             if self.block_factory:
                 self.last_block_time = int(self.block_factory.time)
-            if not hasattr(self.config, "twice_prerotated_key_hash"):
-                return None
             self.block_factory = await self.create_block(
                 await self.get_pending_transactions(),
                 index=self.config.LatestBlock.block.index + 1,
