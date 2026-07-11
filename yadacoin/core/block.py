@@ -362,6 +362,7 @@ class Block(object):
             public_key=public_key,
             target=target,
         )
+        block.private_key = priv
 
         if (index >= CHAIN.XEGGEX_HACK_FORK and index < CHAIN.CHECK_KEL_FORK) or (
             index >= CHAIN.XEGGEX_HACK_FORK_2
