@@ -1109,7 +1109,7 @@ class NodeRPC(BaseRPC):
             await self._accept_peer_kel_chain(kel_chain_list)
         self.config.app_log.info(
             "Connected to {}: {}".format(
-                stream.peer.__class__.__name__, stream.peer.to_json()
+                stream.peer.__class__.__name__, stream.peer.identity.username
             )
         )
         await self._handle_kel_connect(stream, params)

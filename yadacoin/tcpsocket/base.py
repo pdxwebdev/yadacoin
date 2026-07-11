@@ -335,8 +335,9 @@ class RPCSocketServer(TCPServer, BaseRPC):
             except StreamClosedError:
                 if hasattr(stream, "peer"):
                     self.config.app_log.warning(
-                        "Disconnected from {}: {}".format(
-                            stream.peer.__class__.__name__, stream.peer.to_json()
+                        "Disconnected from {0}.{1}".format(
+                            stream.peer.__class__.__name__,
+                            stream.peer.identity.username,
                         )
                     )
                 await self.remove_peer(stream)
@@ -506,7 +507,9 @@ class RPCSocketClient(TCPClient):
                 del self.outbound_pending[peer.__class__.__name__][id_attr]
             self.outbound_streams[peer.__class__.__name__][id_attr] = stream
             self.config.app_log.info(
-                "Connected to {}: {}".format(peer.__class__.__name__, peer.to_json())
+                "Connected to {}: {}".format(
+                    stream.peer.__class__.__name__, stream.peer.identity.username
+                )
             )
             return stream
         except StreamClosedError:
