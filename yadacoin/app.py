@@ -922,17 +922,10 @@ class NodeApplication(Application):
             from yadacoin.core.nodes import Nodes
 
             await Nodes.apply_dynamic_nodes()
-            assigned_type = await Nodes.self_determine_peer_type(self.config)
-            if assigned_type and self.config.peer_type != assigned_type:
-                self.config.peer_type = assigned_type
-                # Rebuild config.peer via my_peer() so the seed/seed_gateway
-                # cross-references are resolved from the topology.  Building a
-                # bare from_dict here would leave them None and the node could
-                # not dial its upstream peer (self.seed=None).
-                self.config.peer = await Peer.my_peer()
-                self.config.app_log.info(
-                    f"Dynamic node self-determined peer type: {assigned_type}"
-                )
+            self.config.peer = await Peer.my_peer()
+            self.config.peer_type = (
+                assigned_type
+            ) = await Nodes.self_determine_peer_type(self.config)
             successful_nodes = await NodesTester.test_all_nodes(block_index)
             self.config.app_log.info(
                 f"Background node testing completed. Successful nodes: {len(successful_nodes)}"
