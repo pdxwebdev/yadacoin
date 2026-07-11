@@ -662,7 +662,7 @@ class Seeds(Nodes):
                         "http_protocol": "https",
                         "http_port": 443,
                         "identity_announcement": "MEQCIGbzrCcVz489gD/+XnMIFI7kXSVTdPiyt7/2oG+FKIKEAiB0XovcFepVAR4U8EHh1ODL1bEuhfYtLED1vuhasmEqhw==",
-                        "seed_gateway": "MEQCIHONdT7i8K+ZTzv3PHyPAhYkaksoh6FxEJUmPLmXZqFPAiBHOnt1CjgMtNzCGdBk/0S/oikPzJVys32bgThxXtAbgQ==",
+                        "seed_gateway": "MEQCIGrQ3u9S5zbm7yA81atjfGcvMKBafpzPlryayrZar3QSAiAwl8a0mgVfso40fYVLriTUdsVj46qduJxMgYXnnQke1A==",
                     }
                 ),
             },
@@ -966,7 +966,7 @@ class SeedGateways(Nodes):
                         "http_protocol": "http",
                         "http_port": 80,
                         "identity_announcement": "MEQCIGrQ3u9S5zbm7yA81atjfGcvMKBafpzPlryayrZar3QSAiAwl8a0mgVfso40fYVLriTUdsVj46qduJxMgYXnnQke1A==",
-                        "seed": "MEUCIQCP+rF5R4sZ7pHJCBAWHxARLg9GN4dRw+/pobJ0MPmX3gIgX0RD4OxhSS9KPJTUonYI1Tr+ZI2N9uuoToZo1RGOs2M=",
+                        "seed": "MEQCIGbzrCcVz489gD/+XnMIFI7kXSVTdPiyt7/2oG+FKIKEAiB0XovcFepVAR4U8EHh1ODL1bEuhfYtLED1vuhasmEqhw==",
                     }
                 ),
             },
@@ -1270,8 +1270,8 @@ class ServiceProviders(Nodes):
                         "http_protocol": "https",
                         "http_port": 443,
                         "identity_announcement": "MEUCIQDMWqd3q8pDRI7vB8oH4+9bpODuOApipAk/BFbq6paOCgIgDMRxrvnlNgZDNI+O6qQPsdefCTAE2CoJFf0y+WxD/+I=",
-                        "seed_gateway": "MEQCIHONdT7i8K+ZTzv3PHyPAhYkaksoh6FxEJUmPLmXZqFPAiBHOnt1CjgMtNzCGdBk/0S/oikPzJVys32bgThxXtAbgQ==",
-                        "seed": "MEUCIQCP+rF5R4sZ7pHJCBAWHxARLg9GN4dRw+/pobJ0MPmX3gIgX0RD4OxhSS9KPJTUonYI1Tr+ZI2N9uuoToZo1RGOs2M=",
+                        "seed_gateway": "MEQCIGrQ3u9S5zbm7yA81atjfGcvMKBafpzPlryayrZar3QSAiAwl8a0mgVfso40fYVLriTUdsVj46qduJxMgYXnnQke1A==",
+                        "seed": "MEQCIGbzrCcVz489gD/+XnMIFI7kXSVTdPiyt7/2oG+FKIKEAiB0XovcFepVAR4U8EHh1ODL1bEuhfYtLED1vuhasmEqhw==",
                     }
                 ),
             },
