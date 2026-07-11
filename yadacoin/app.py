@@ -924,9 +924,7 @@ class NodeApplication(Application):
             from yadacoin.core.nodes import Nodes
 
             await Nodes.apply_dynamic_nodes()
-            assigned_type = (
-                "seed_gateway"  # await Nodes.self_determine_peer_type(self.config)
-            )
+            assigned_type = await Nodes.self_determine_peer_type(self.config)
             if assigned_type and self.config.peer_type != assigned_type:
                 self.config.peer_type = assigned_type
                 my_peer_dict = {
