@@ -139,6 +139,7 @@ class MiningPool(object):
         ):
             return False
         block_candidate = await self.block_factory.copy()
+        block_candidate.private_key = self.block_factory.private_key
         block_candidate.hash = hash1
         block_candidate.nonce = nonce
 
