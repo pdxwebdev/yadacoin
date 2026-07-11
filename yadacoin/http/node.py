@@ -559,8 +559,8 @@ class GetNetworkTopologyHandler(BaseHandler):
                     n.get("http_protocol"), n.get("http_port") or n.get("port", 80)
                 ),
                 "peer_type": pt,
-                "username": n.get("identity", {}).get("username", ""),
-                "username_signature": n.get("identity", {}).get(
+                "username": (n.get("identity") or {}).get("username", ""),
+                "username_signature": (n.get("identity") or {}).get(
                     "username_signature", ""
                 ),
                 "node_version": n.get("node_version"),
