@@ -1563,6 +1563,7 @@ class NodeRPC(BaseRPC):
             _auth_pub,
             _conf_priv,
             _conf_pub,
+            tpkh,
         ) = await self.config.kel_manager.advance_auth_ratchet()
 
         # Nonce the server signs: client_ecdh_pub + server_kel_tip_pkh
@@ -1750,6 +1751,7 @@ class NodeRPC(BaseRPC):
             _auth_pub,
             _conf_priv,
             _conf_pub,
+            tpkh,
         ) = await self.config.kel_manager.advance_auth_ratchet()
         _client_nonce_str = server_ecdh_pub + client_kel_tip_pkh
         _client_signed = NodeKeyRotationManager._sign(_auth_priv, _client_nonce_str)

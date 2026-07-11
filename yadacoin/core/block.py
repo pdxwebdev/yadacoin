@@ -216,6 +216,15 @@ class Block(object):
             prev_hash = LatestBlock.block.hash
         transactions = transactions or []
 
+        (
+            priv,
+            _pub,
+            _conf_priv,
+            _conf_pub,
+            twpkh,
+        ) = await config.kel_manager.advance_auth_ratchet()
+        public_key = _pub
+
         transaction_objs = []
         fee_sum = 0.0
         used_sigs = []
@@ -291,7 +300,7 @@ class Block(object):
                     Output.from_dict(
                         {
                             "value": (block_reward * 0.9) + float(fee_sum),
-                            "to": config.twice_prerotated_key_hash,
+                            "to": twpkh,
                         }
                     )
                 ]
@@ -322,7 +331,7 @@ class Block(object):
                     Output.from_dict(
                         {
                             "value": block_reward + float(fee_sum) + masternode_fee_sum,
-                            "to": config.twice_prerotated_key_hash,
+                            "to": twpkh,
                         }
                     )
                 ]
@@ -331,14 +340,15 @@ class Block(object):
                 Output.from_dict(
                     {
                         "value": block_reward + float(fee_sum),
-                        "to": config.twice_prerotated_key_hash,
+                        "to": twpkh,
                     }
                 )
             ]
 
         coinbase_txn = await Transaction.generate(
             outputs=outputs,
-            public_key=config.rotation_manager._auth_ratchet_pub,
+            public_key=public_key,
+            private_key=priv,
             coinbase=True,
         )
         transaction_objs.append(coinbase_txn)
@@ -349,7 +359,7 @@ class Block(object):
             block_index=index,
             prev_hash=prev_hash,
             transactions=transaction_objs,
-            public_key=config.rotation_manager._auth_ratchet_pub,
+            public_key=public_key,
             target=target,
         )
 
@@ -619,9 +629,7 @@ class Block(object):
             block.hash = await block.generate_hash_from_header(
                 block.index, block.header, str(block.nonce)
             )
-            _pub, block.signature = await config.kel_manager.generate_signature(
-                block.hash
-            )
+            block.signature = await config.kel_manager._sign(priv, block.hash)
             block.public_key = _pub
         return block
 

@@ -612,7 +612,6 @@ class NodeKeyRotationManager:
             self._auth_ratchet_key = next_key
             self._auth_ratchet_pub = next_pub_hex
             self._auth_ratchet_prev_pkh = prev_address
-            config.twice_prerotated_key_hash = two_ahead_address
 
             # Trigger re-anchor when interval is reached
             if self._auth_counter % self.OFFCHAIN_ANCHOR_INTERVAL == 0:
@@ -629,6 +628,7 @@ class NodeKeyRotationManager:
                 prev_pub_hex,
                 next_key["private_key"].hex(),
                 next_pub_hex,
+                two_ahead_address,
             )
 
     async def _queue_reanchor(self):
@@ -1138,7 +1138,7 @@ class NodeKeyRotationManager:
         key_event_log) at init time and advancing in memory from there.
         No redundant DB derivation needed here.
         """
-        priv, _pub, _conf_priv, _conf_pub = await self.advance_auth_ratchet()
+        priv, _pub, _conf_priv, _conf_pub, tpkh = await self.advance_auth_ratchet()
         return _pub, self._sign(priv, message)
 
 

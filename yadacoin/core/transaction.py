@@ -361,11 +361,10 @@ class Transaction(object):
         await cls_inst.do_money()
 
         cls_inst.hash = await cls_inst.generate_hash()
-        (
-            _pub,
-            cls_inst.transaction_signature,
-        ) = await cls_inst.config.kel_manager.generate_signature(cls_inst.hash)
-        cls_inst.public_key = _pub
+        cls_inst.transaction_signature = await cls_inst.config.kel_manager._sign(
+            private_key, cls_inst.hash
+        )
+        cls_inst.public_key = public_key
 
         cls_inst.never_expire = never_expire
         cls_inst.private = private
