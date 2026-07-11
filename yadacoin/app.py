@@ -172,6 +172,10 @@ class NodeApplication(Application):
         self.init_config_properties(test=test)
         if test:
             return
+        self.config.peer = await Peer.my_peer()
+        self.config.peer_type = assigned_type = await Nodes.self_determine_peer_type(
+            self.config
+        )
         if MODES.NODE.value in self.config.modes:
             self.init_seeds()
             self.init_seed_gateways()
@@ -922,10 +926,6 @@ class NodeApplication(Application):
             from yadacoin.core.nodes import Nodes
 
             await Nodes.apply_dynamic_nodes()
-            self.config.peer = await Peer.my_peer()
-            self.config.peer_type = (
-                assigned_type
-            ) = await Nodes.self_determine_peer_type(self.config)
             successful_nodes = await NodesTester.test_all_nodes(block_index)
             self.config.app_log.info(
                 f"Background node testing completed. Successful nodes: {len(successful_nodes)}"
@@ -1359,6 +1359,8 @@ class NodeApplication(Application):
                 if x.__name__ not in self.config.nodeServer.inbound_streams:
                     self.config.nodeServer.inbound_streams[x.__name__] = {}
 
+        tornado.ioloop.IOLoop.current().run_sync(self.init_peer)
+
         self.config.websocketServer = RCPWebSocketServer
         self.config.app_log = logging.getLogger("tornado.application")
         self.config.challenges = {}
@@ -1382,6 +1384,14 @@ class NodeApplication(Application):
                     s, local_addr=local_addr
                 )
             )
+
+    async def init_peer(self):
+        from yadacoin.core.nodes import Nodes
+
+        self.config.peer = await Peer.my_peer()
+        self.config.peer_type = assigned_type = await Nodes.self_determine_peer_type(
+            self.config
+        )
 
 
 if __name__ == "__main__":
