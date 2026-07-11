@@ -617,6 +617,8 @@ class Block(object):
 
             new_coinbase = await Transaction.generate(
                 outputs=updated_outputs,
+                public_key=public_key,
+                private_key=priv,
                 coinbase=True,
             )
             block.transactions = non_coinbase + [new_coinbase]
