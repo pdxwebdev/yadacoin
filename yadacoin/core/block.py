@@ -126,6 +126,7 @@ class Block(object):
         "target",
         "special_target",
         "header",
+        "private_key",
     )
 
     @classmethod
