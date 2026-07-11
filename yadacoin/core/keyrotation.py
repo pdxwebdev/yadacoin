@@ -335,6 +335,9 @@ class NodeKeyRotationManager:
             )
             self._inception_txn_id = kel[0].transaction_signature
 
+            self.config.username = kel[0].relationship.username
+            self.config.username_signature = kel[0].relationship.username_signature
+
             # If already on-chain, finalise immediately
             inception_onchain = not getattr(kel[0], "mempool", False)
             if inception_onchain:

@@ -966,7 +966,7 @@ class SeedGateways(Nodes):
                         "http_protocol": "http",
                         "http_port": 80,
                         "identity_announcement": "MEQCIGrQ3u9S5zbm7yA81atjfGcvMKBafpzPlryayrZar3QSAiAwl8a0mgVfso40fYVLriTUdsVj46qduJxMgYXnnQke1A==",
-                        "seed": "MEQCIGbzrCcVz489gD/+XnMIFI7kXSVTdPiyt7/2oG+FKIKEAiB0XovcFepVAR4U8EHh1ODL1bEuhfYtLED1vuhasmEqhw==",
+                        "seed": "MEUCIQDWgCRP62jtLM1XmzIUYc3QA80k0Evz/q8Cz2QLkyRMLQIgdXfQsTsEzTFHXj+aZ7sn1Vdo6lqhxp25TdX7eiQypaM=",
                     }
                 ),
             },
@@ -1271,7 +1271,7 @@ class ServiceProviders(Nodes):
                         "http_port": 443,
                         "identity_announcement": "MEUCIQDMWqd3q8pDRI7vB8oH4+9bpODuOApipAk/BFbq6paOCgIgDMRxrvnlNgZDNI+O6qQPsdefCTAE2CoJFf0y+WxD/+I=",
                         "seed_gateway": "MEQCIGrQ3u9S5zbm7yA81atjfGcvMKBafpzPlryayrZar3QSAiAwl8a0mgVfso40fYVLriTUdsVj46qduJxMgYXnnQke1A==",
-                        "seed": "MEQCIGbzrCcVz489gD/+XnMIFI7kXSVTdPiyt7/2oG+FKIKEAiB0XovcFepVAR4U8EHh1ODL1bEuhfYtLED1vuhasmEqhw==",
+                        "seed": "MEUCIQDWgCRP62jtLM1XmzIUYc3QA80k0Evz/q8Cz2QLkyRMLQIgdXfQsTsEzTFHXj+aZ7sn1Vdo6lqhxp25TdX7eiQypaM=",
                     }
                 ),
             },
