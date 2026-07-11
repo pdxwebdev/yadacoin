@@ -629,7 +629,7 @@ class Block(object):
             block.hash = await block.generate_hash_from_header(
                 block.index, block.header, str(block.nonce)
             )
-            block.signature = await config.kel_manager._sign(priv, block.hash)
+            block.signature = config.kel_manager._sign(priv, block.hash)
             block.public_key = _pub
         return block
 
