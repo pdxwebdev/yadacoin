@@ -187,8 +187,6 @@ class NodeApplication(Application):
             self.config.node_server_instance.bind(self.config.peer_port)
             self.config.node_server_instance.start(1)
 
-        self.init_peer()
-
         if MODES.WEB.value in self.config.modes:
             if os.path.exists(path.join(path.dirname(__file__), "..", "static")):
                 static_path = path.join(path.dirname(__file__), "..", "static")
@@ -931,7 +929,7 @@ class NodeApplication(Application):
                 # cross-references are resolved from the topology.  Building a
                 # bare from_dict here would leave them None and the node could
                 # not dial its upstream peer (self.seed=None).
-                self.config.peer = Peer.my_peer()
+                self.config.peer = await Peer.my_peer()
                 self.config.app_log.info(
                     f"Dynamic node self-determined peer type: {assigned_type}"
                 )
@@ -1313,9 +1311,6 @@ class NodeApplication(Application):
             self.config.app_log.error(
                 "Pool initialization failed: {}".format(format_exc())
             )
-
-    def init_peer(self):
-        self.config.peer = Peer.my_peer()
 
     def init_config_properties(self, test=False):
         self.config.health = Health()

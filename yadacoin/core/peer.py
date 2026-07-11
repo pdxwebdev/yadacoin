@@ -109,59 +109,90 @@ class Peer:
         self.anchor_public_key = None
 
     @staticmethod
-    def my_peer():
+    async def my_peer():
         config = Config()
+        # The node's authoritative identity is its KEL inception / identity
+        # announcement.  Resolve it (mempool first, then confirmed chain) and
+        # prefer those values over the config-derived ones so the peer identity
+        # always matches the inception identity in the relationship field.
+        my_username = config.username
+        my_username_signature = config.username_signature
+        my_public_key = config.public_key
+        my_identity_announcement = None
+
+        kel_manager = getattr(config, "kel_manager", None)
+        ia_id = getattr(kel_manager, "_inception_txn_id", None) if kel_manager else None
+        if ia_id:
+            from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+            ia_doc = await IdentityAnnouncement.get_by_transaction_id(ia_id)
+            if ia_doc:
+                my_identity_announcement = ia_id
+                identity_data = ia_doc.get("identity") or {}
+                if identity_data.get("username"):
+                    my_username = identity_data["username"]
+                if identity_data.get("username_signature"):
+                    my_username_signature = identity_data["username_signature"]
+                if ia_doc.get("public_key"):
+                    my_public_key = ia_doc["public_key"]
+
         my_peer = {
             "host": config.peer_host,
             "port": config.peer_port,
             "identity": {
-                "username": config.username,
-                # Use the KEL signing key (K_n) when available — the WIF key
-                # is considered compromised under Protocol V5.
-                "username_signature": config.username_signature,
-                "public_key": config.public_key,
+                "username": my_username,
+                "username_signature": my_username_signature,
+                "public_key": my_public_key,
             },
             "peer_type": config.peer_type,
             "http_host": config.ssl.common_name or config.peer_host,
             "http_port": config.ssl.port or config.serve_port,
             "protocol_version": 5,
             "node_version": config.node_version,
+            "identity_announcement": my_identity_announcement,
         }
+
+        # KEL-anchored nodes carry no inline identity, so the seed/gateway/
+        # provider maps key them by their identity_announcement id rather than a
+        # username_signature.  Look the running node up by either identifier.
+        def _lookup(map_, usig, ia):
+            entry = map_.get(usig)
+            if entry is None and ia:
+                entry = map_.get(ia)
+            return entry
+
         if config.peer_type == PEER_TYPES.SEED.value:
-            if config.username_signature not in config.seeds:
+            entry = _lookup(
+                config.seeds, my_username_signature, my_identity_announcement
+            )
+            if entry is None:
                 config.peer_type = PEER_TYPES.USER.value
                 my_peer.update({"peer_type": PEER_TYPES.USER.value})
                 return User.from_dict(my_peer, is_me=True)
-            my_peer[PEER_TYPES.SEED_GATEWAY.value] = config.seeds[
-                config.username_signature
-            ].seed_gateway
+            my_peer[PEER_TYPES.SEED_GATEWAY.value] = entry.seed_gateway
             return Seed.from_dict(my_peer, is_me=True)
         elif config.peer_type == PEER_TYPES.SEED_GATEWAY.value:
-            if config.username_signature not in config.seed_gateways:
+            entry = _lookup(
+                config.seed_gateways, my_username_signature, my_identity_announcement
+            )
+            if entry is None:
                 config.peer_type = PEER_TYPES.USER.value
                 my_peer.update({"peer_type": PEER_TYPES.USER.value})
                 return User.from_dict(my_peer, is_me=True)
-            my_peer[PEER_TYPES.SEED.value] = config.seed_gateways[
-                config.username_signature
-            ].seed
+            my_peer[PEER_TYPES.SEED.value] = entry.seed
             return SeedGateway.from_dict(my_peer, is_me=True)
         elif config.peer_type == PEER_TYPES.SERVICE_PROVIDER.value:
-            # Service providers may be keyed by username_signature (inline
-            # identity) or by their identity_announcement (KEL inception txn id)
-            # when they carry only an on-chain identity announcement.  Match the
-            # running node on either so a KEL-anchored provider can self-identify.
-            _my_ia = getattr(
-                getattr(config, "kel_manager", None), "_inception_txn_id", None
+            entry = _lookup(
+                config.service_providers,
+                my_username_signature,
+                my_identity_announcement,
             )
-            _me = config.service_providers.get(config.username_signature)
-            if _me is None and _my_ia:
-                _me = config.service_providers.get(_my_ia)
-            if _me is None:
+            if entry is None:
                 config.peer_type = PEER_TYPES.USER.value
                 my_peer.update({"peer_type": PEER_TYPES.USER.value})
                 return User.from_dict(my_peer, is_me=True)
-            my_peer[PEER_TYPES.SEED_GATEWAY.value] = _me.seed_gateway
-            my_peer[PEER_TYPES.SEED.value] = _me.seed
+            my_peer[PEER_TYPES.SEED_GATEWAY.value] = entry.seed_gateway
+            my_peer[PEER_TYPES.SEED.value] = entry.seed
             return ServiceProvider.from_dict(my_peer, is_me=True)
         elif config.peer_type == PEER_TYPES.POOL.value or config.pool_payout == True:
             config.peer_type = (
