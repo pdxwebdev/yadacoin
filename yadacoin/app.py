@@ -172,10 +172,6 @@ class NodeApplication(Application):
         self.init_config_properties(test=test)
         if test:
             return
-        self.config.peer = await Peer.my_peer()
-        self.config.peer_type = assigned_type = await Nodes.self_determine_peer_type(
-            self.config
-        )
         if MODES.NODE.value in self.config.modes:
             self.init_seeds()
             self.init_seed_gateways()
@@ -1359,7 +1355,7 @@ class NodeApplication(Application):
                 if x.__name__ not in self.config.nodeServer.inbound_streams:
                     self.config.nodeServer.inbound_streams[x.__name__] = {}
 
-        tornado.ioloop.IOLoop.current().run_sync(self.init_peer)
+        tornado.ioloop.IOLoop.current().add_callback(self.init_peer)
 
         self.config.websocketServer = RCPWebSocketServer
         self.config.app_log = logging.getLogger("tornado.application")
@@ -1389,9 +1385,7 @@ class NodeApplication(Application):
         from yadacoin.core.nodes import Nodes
 
         self.config.peer = await Peer.my_peer()
-        self.config.peer_type = assigned_type = await Nodes.self_determine_peer_type(
-            self.config
-        )
+        self.config.peer_type = await Nodes.self_determine_peer_type(self.config)
 
 
 if __name__ == "__main__":
