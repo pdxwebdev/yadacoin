@@ -301,7 +301,11 @@ class Block(object):
                     Output.from_dict(
                         {
                             "value": (block_reward * 0.9) + float(fee_sum),
-                            "to": twpkh,
+                            "to": str(
+                                P2PKHBitcoinAddress.from_pubkey(
+                                    bytes.fromhex(public_key)
+                                )
+                            ),
                         }
                     )
                 ]
@@ -332,7 +336,11 @@ class Block(object):
                     Output.from_dict(
                         {
                             "value": block_reward + float(fee_sum) + masternode_fee_sum,
-                            "to": twpkh,
+                            "to": str(
+                                P2PKHBitcoinAddress.from_pubkey(
+                                    bytes.fromhex(public_key)
+                                )
+                            ),
                         }
                     )
                 ]
@@ -341,7 +349,9 @@ class Block(object):
                 Output.from_dict(
                     {
                         "value": block_reward + float(fee_sum),
-                        "to": twpkh,
+                        "to": str(
+                            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
+                        ),
                     }
                 )
             ]
