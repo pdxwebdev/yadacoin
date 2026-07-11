@@ -3659,6 +3659,8 @@ class TestBlock(AsyncTestCase):
         mock_blocks.replace_one = AsyncMock(return_value=None)
 
         block = await Block.generate(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            private_key=yadacoin.core.config.CONFIG.private_key,
             nonce="0",
         )
         if hasattr(Block, "pyrx"):

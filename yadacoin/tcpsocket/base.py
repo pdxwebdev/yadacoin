@@ -337,7 +337,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
                     self.config.app_log.warning(
                         "Disconnected from {0}.{1}".format(
                             stream.peer.__class__.__name__,
-                            stream.peer.identity.username,
+                            stream.peer.identity.username or "(blank)",
                         )
                     )
                 await self.remove_peer(stream)
@@ -508,7 +508,8 @@ class RPCSocketClient(TCPClient):
             self.outbound_streams[peer.__class__.__name__][id_attr] = stream
             self.config.app_log.info(
                 "Connected to {}: {}".format(
-                    stream.peer.__class__.__name__, stream.peer.identity.username
+                    stream.peer.__class__.__name__,
+                    stream.peer.identity.username or "(blank)",
                 )
             )
             return stream

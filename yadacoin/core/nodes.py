@@ -19,6 +19,7 @@ from coincurve import verify_signature
 
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
+from yadacoin.core.identity import Identity
 from yadacoin.core.peer import Seed, SeedGateway, ServiceProvider
 
 
@@ -515,6 +516,22 @@ class Nodes:
                     node_obj = creator.from_dict(node_def)
                 except Exception:
                     continue
+
+                # node_def carries only identity_announcement (no inline identity,
+                # by design). Resolve identity now from the ia_doc we already fetched
+                # so the node's identity is never None when it enters _NODES — otherwise
+                # get_all_nodes_indexed_by_address_for_block_height() crashes on
+                # node.identity.public_key during block.verify() for blocks at/after
+                # PAY_MASTER_NODES_FORK.
+                if node_obj.identity is None and ia_doc:
+                    identity_data = ia_doc.get("identity") or {}
+                    node_obj.identity = Identity(
+                        public_key=ia_doc.get("public_key", ""),
+                        username=identity_data.get("username", "") or "",
+                        username_signature=identity_data.get("username_signature", "")
+                        or "",
+                    )
+                    node_obj.anchor_public_key = ia_doc.get("public_key") or None
 
                 # pub is already validated above.  Avoid duplicates across ALL
                 # three node classes so a key that exists as a hardcoded node in
