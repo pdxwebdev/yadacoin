@@ -927,28 +927,11 @@ class NodeApplication(Application):
             assigned_type = await Nodes.self_determine_peer_type(self.config)
             if assigned_type and self.config.peer_type != assigned_type:
                 self.config.peer_type = assigned_type
-                my_peer_dict = {
-                    "host": self.config.peer_host,
-                    "port": self.config.peer_port,
-                    "identity": {
-                        "username": self.config.username,
-                        "username_signature": self.config.kel_username_signature,
-                        "public_key": self.config.kel_anchor_public_key,
-                    },
-                    "peer_type": assigned_type,
-                    "http_host": self.config.ssl.common_name or self.config.peer_host,
-                    "http_port": self.config.ssl.port or self.config.serve_port,
-                    "protocol_version": 5,
-                    "node_version": self.config.node_version,
-                }
-                if assigned_type == PEER_TYPES.SEED.value:
-                    self.config.peer = Seed.from_dict(my_peer_dict, is_me=True)
-                elif assigned_type == PEER_TYPES.SEED_GATEWAY.value:
-                    self.config.peer = SeedGateway.from_dict(my_peer_dict, is_me=True)
-                elif assigned_type == PEER_TYPES.SERVICE_PROVIDER.value:
-                    self.config.peer = ServiceProvider.from_dict(
-                        my_peer_dict, is_me=True
-                    )
+                # Rebuild config.peer via my_peer() so the seed/seed_gateway
+                # cross-references are resolved from the topology.  Building a
+                # bare from_dict here would leave them None and the node could
+                # not dial its upstream peer (self.seed=None).
+                self.config.peer = Peer.my_peer()
                 self.config.app_log.info(
                     f"Dynamic node self-determined peer type: {assigned_type}"
                 )

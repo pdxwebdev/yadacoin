@@ -678,8 +678,7 @@ class SeedGateway(Peer):
         return ServiceProvider
 
     async def get_outbound_peers(self):
-        seed = _resolve_peer_by_ref(self.config.seeds, self.seed)
-        if seed is None:
+        if not self.seed or self.seed not in self.config.seeds:
             self.config.app_log.warning(
                 "SeedGateway.get_outbound_peers: no valid upstream seed configured "
                 "(self.seed=%r); this gateway cannot dial a seed. Set the 'seed' field "
@@ -688,6 +687,7 @@ class SeedGateway(Peer):
                 self.seed,
             )
             return {}
+        seed = self.config.seeds[self.seed]
         if seed.identity is None:
             return {}
         return {seed.identity.username_signature: seed}
