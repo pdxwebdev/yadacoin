@@ -335,7 +335,7 @@ class Block(object):
             )
         outputs.append(self_output)
 
-        coinbase_txn = await Transaction(
+        coinbase_txn = Transaction(
             outputs=outputs,
             coinbase=True,
         )
