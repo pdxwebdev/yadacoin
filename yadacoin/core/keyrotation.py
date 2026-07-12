@@ -721,6 +721,7 @@ class NodeKeyRotationManager:
 
         search_address = kn_address
         txn = True
+        jump_cur = kn1
         while txn:
             txn = await self.config.mongo.async_db.key_event_log.find_one(
                 {"prev_public_key_hash": search_address}
@@ -728,11 +729,9 @@ class NodeKeyRotationManager:
             if txn:
                 # Derive the JUMP target: K_{n + INTERVAL + 1} for UNCONFIRMED.twice_prerotated
                 # and CONFIRMING.prerotated.  K_{n + INTERVAL + 2} for CONFIRMING.twice_prerotated.
-                jump_cur = kn1
-                for _ in range(prev_txn["counter"]):
-                    jump_cur = derive_secure_path(
-                        jump_cur["private_key"], jump_cur["chain_code"], second_factor
-                    )
+                jump_cur = derive_secure_path(
+                    jump_cur["private_key"], jump_cur["chain_code"], second_factor
+                )
 
         jump_priv_obj = _CoincurvePrivateKey(jump_cur["private_key"])
         jump_pub_bytes = jump_priv_obj.public_key.format(compressed=True)
