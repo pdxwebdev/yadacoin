@@ -599,63 +599,6 @@ class Nodes:
         ServiceProviders.set_fork_points()
         ServiceProviders.set_nodes()
 
-    @classmethod
-    async def self_determine_peer_type(cls, config):
-        """Determine this running node's assigned peer type.
-
-        The node's anchor KEL entry (its KEL inception public key, K0) is matched
-        against the identity announcements registered in nodes.py — the same
-        basis used to type dynamic nodes in ``_assign_node_type``.  If it matches
-        a registered anchor the corresponding peer type is returned.
-
-        Fallback: if the node announced itself as a dynamic node, match its own
-        ``identity_announcement`` (its KEL inception transaction id) against the
-        dynamic-node lists.
-
-        Returns the peer-type string (e.g. PEER_TYPES.SEED_GATEWAY.value) or None
-        if this node cannot be typed.
-        """
-        from yadacoin.enums.peertypes import PEER_TYPES
-
-        _PEER_TYPE_MAP = {
-            "seed": PEER_TYPES.SEED.value,
-            "seed_gateway": PEER_TYPES.SEED_GATEWAY.value,
-            "service_provider": PEER_TYPES.SERVICE_PROVIDER.value,
-        }
-
-        # The node's anchor KEL entry is its KEL inception public key (K0).
-        my_anchor = getattr(config, "kel_anchor_public_key", None) or getattr(
-            config, "public_key", None
-        )
-        if not my_anchor:
-            return None
-
-        # Primary: match the node's anchor against the identity announcements
-        # registered in nodes.py.
-        registry = await cls._known_anchor_registry()
-        if my_anchor in registry:
-            return _PEER_TYPE_MAP.get(registry[my_anchor])
-
-        # Fallback: this node announced itself as a dynamic node — match its own
-        # identity_announcement (its KEL inception transaction id) against the
-        # dynamic-node lists.
-        kel_manager = getattr(config, "kel_manager", None)
-        my_ia = getattr(kel_manager, "_inception_txn_id", None) if kel_manager else None
-        if my_ia:
-            for owner_class, peer_type in (
-                (Seeds, PEER_TYPES.SEED.value),
-                (SeedGateways, PEER_TYPES.SEED_GATEWAY.value),
-                (ServiceProviders, PEER_TYPES.SERVICE_PROVIDER.value),
-            ):
-                for entry in owner_class()._NODES:
-                    if (
-                        getattr(entry.get("node"), "identity_announcement", None)
-                        == my_ia
-                    ):
-                        return peer_type
-
-        return None
-
 
 class Seeds(Nodes):
     _instance = None

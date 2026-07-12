@@ -1382,10 +1382,9 @@ class NodeApplication(Application):
             )
 
     async def init_peer(self):
-        from yadacoin.core.nodes import Nodes
+        pass
 
         self.config.peer = await Peer.my_peer()
-        self.config.peer_type = await Nodes.self_determine_peer_type(self.config)
 
 
 if __name__ == "__main__":
