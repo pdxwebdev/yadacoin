@@ -346,10 +346,9 @@ class Block(object):
             block_time=xtime,
             block_index=index,
             prev_hash=prev_hash,
-            transactions=transaction_objs,
             target=target,
         )
-
+        block.transactions = transaction_objs
         await config.kel_manager.advance_auth_ratchet(
             txn=coinbase_txn, block=block, self_output=self_output
         )
