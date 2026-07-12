@@ -8,38 +8,26 @@ from yadacoin import version
 from yadacoin.core.chain import CHAIN
 from yadacoin.http.base import BaseHandler
 
-# Site DB collection used to cache the pool's KEL-aware block search so we do
-# not rebuild the KEL and scan the blocks collection on every request.
+# Site DB collection used to cache the pool's KEL-aware block summary so we do
+# not rebuild the KEL and scan the blocks collection on every request.  Only the
+# count of all blocks won and the last five won-block details are stored — the
+# full set of won blocks is never cached.
 POOL_KEL_BLOCKS_COLLECTION = "pool_kel_blocks"
 
 
-async def get_pool_kel_blocks(config, pool_public_key):
-    """Return every block the pool has mined across its entire Key Event Log.
+async def _build_pool_kel_cache(config, pool_public_key, latest_hash, latest_height):
+    """Build the KEL key set and the pool-info summary from the chain.
 
     A pool that uses key rotation mines blocks under a constantly changing
     signing key, so a simple ``{"public_key": pool_public_key}`` lookup misses
-    every block won under a previous KEL key.  We instead collect the full set
-    of on-chain KEL public keys (the inception key plus every rotated key) and
-    search the chain for blocks whose ``public_key`` matches any of them.
+    every block won under a previous KEL key.  We collect the full set of
+    on-chain KEL public keys (the inception key plus every rotated key) and use
+    them to count/lookup blocks whose ``public_key`` matches any of them.
 
-    Rebuilding the KEL and scanning the blocks collection is expensive, so the
-    result is cached in the ``yadacoin_site`` database
-    (``pool_kel_blocks`` collection).  The cache is invalidated whenever the
-    on-chain tip advances or reorgs: if the latest cached entry's stored
-    ``block_hash`` no longer equals ``config.LatestBlock.block.hash`` the cache
-    for this identity is cleared and rebuilt from the chain.
+    Returns the cache document: ``identity``, ``public_keys``, ``total`` (count
+    of all blocks won), ``last_five`` (the five most recent won-block docs), and
+    the on-chain tip ``block_hash``/``block_height``/``cached_at``.
     """
-    site_db = config.mongo.async_site_db
-    latest_hash = config.LatestBlock.block.hash
-    latest_height = config.LatestBlock.block.index
-
-    cached = await site_db[POOL_KEL_BLOCKS_COLLECTION].find_one(
-        {"identity": pool_public_key}, sort=[("cached_at", -1)]
-    )
-    if cached and cached.get("block_hash") == latest_hash:
-        return cached.get("blocks", [])
-
-    # Cache miss or stale tip -> rebuild the result set from the chain.
     from yadacoin.core.keyeventlog import KeyEventLog
 
     public_keys = [pool_public_key]
@@ -51,21 +39,51 @@ async def get_pool_kel_blocks(config, pool_public_key):
             if entry.public_key and entry.public_key not in public_keys:
                 public_keys.append(entry.public_key)
     except Exception as exc:
-        config.app_log.warning(
-            "get_pool_kel_blocks: failed to build KEL for %s: %s",
-            pool_public_key,
-            exc,
-        )
+        config.app_log.warning("pool KEL build failed for %s: %s", pool_public_key, exc)
 
-    blocks = []
+    total = 0
+    last_five = []
     if public_keys:
-        blocks = (
+        total = await config.mongo.async_db.blocks.count_documents(
+            {"public_key": {"$in": public_keys}}
+        )
+        last_five = (
             await config.mongo.async_db.blocks.find(
                 {"public_key": {"$in": public_keys}}, {"_id": 0}
             )
             .sort([("index", -1)])
-            .to_list(length=None)
+            .to_list(5)
         )
+
+    return {
+        "identity": pool_public_key,
+        "public_keys": public_keys,
+        "total": total,
+        "last_five": last_five,
+        "block_hash": latest_hash,
+        "block_height": latest_height,
+        "cached_at": time.time(),
+    }
+
+
+async def _load_pool_kel_cache(config, pool_public_key):
+    """Return the cached pool KEL doc, rebuilding it when the on-chain tip
+    changes (or there is no entry).  The cache is invalidated whenever the
+    latest cached entry's stored ``block_hash`` no longer equals
+    ``config.LatestBlock.block.hash`` (the chain advanced or reorged)."""
+    site_db = config.mongo.async_site_db
+    latest_hash = config.LatestBlock.block.hash
+    latest_height = config.LatestBlock.block.index
+
+    cached = await site_db[POOL_KEL_BLOCKS_COLLECTION].find_one(
+        {"identity": pool_public_key}, sort=[("cached_at", -1)]
+    )
+    if cached and cached.get("block_hash") == latest_hash and cached.get("public_keys"):
+        return cached
+
+    doc = await _build_pool_kel_cache(
+        config, pool_public_key, latest_hash, latest_height
+    )
 
     # Invalidate any stale entries for this identity, then store the fresh result.
     try:
@@ -75,23 +93,34 @@ async def get_pool_kel_blocks(config, pool_public_key):
     except Exception:
         pass
     try:
-        await site_db[POOL_KEL_BLOCKS_COLLECTION].insert_one(
-            {
-                "identity": pool_public_key,
-                "blocks": blocks,
-                "block_hash": latest_hash,
-                "block_height": latest_height,
-                "cached_at": time.time(),
-            }
-        )
+        await site_db[POOL_KEL_BLOCKS_COLLECTION].insert_one(doc)
     except Exception as exc:
         config.app_log.warning(
-            "get_pool_kel_blocks: cache write failed for %s: %s",
-            pool_public_key,
-            exc,
+            "pool KEL cache write failed for %s: %s", pool_public_key, exc
         )
 
-    return blocks
+    return doc
+
+
+async def get_pool_kel_blocks(config, pool_public_key):
+    """Return the pool-info block summary across the entire KEL.
+
+    Returns ``{"total": <blocks won>, "last_five": [<5 won block docs>]}``.  The
+    result is cached in the ``yadacoin_site`` database (``pool_kel_blocks``
+    collection) and invalidated when the on-chain tip hash changes.
+    """
+    doc = await _load_pool_kel_cache(config, pool_public_key)
+    return {"total": doc.get("total", 0), "last_five": doc.get("last_five", [])}
+
+
+async def get_pool_kel_public_keys(config, pool_public_key):
+    """Return the on-chain KEL public-key set for the pool (cached by tip hash).
+
+    Used by the detailed pool-blocks listing, which only needs the key set to
+    issue a targeted ``$in`` query rather than rebuilding the KEL per request.
+    """
+    doc = await _load_pool_kel_cache(config, pool_public_key)
+    return doc.get("public_keys", [pool_public_key])
 
 
 class BaseWebHandler(BaseHandler):
@@ -156,9 +185,9 @@ class PoolInfoHandler(BaseWebHandler):
             if hasattr(self.config, "pool_public_key")
             else self.config.public_key
         )
-        pool_blocks_found = await get_pool_kel_blocks(self.config, pool_public_key)
-        total_blocks_found = len(pool_blocks_found)
-        pool_blocks_found_list = pool_blocks_found[:5]
+        pool_kel = await get_pool_kel_blocks(self.config, pool_public_key)
+        total_blocks_found = pool_kel["total"]
+        pool_blocks_found_list = pool_kel["last_five"]
         expected_blocks = 144
         mining_time_interval = 600
         shares_count = await self.config.mongo.async_db.shares.count_documents(
@@ -298,8 +327,22 @@ class PoolBlocksHandler(BaseWebHandler):
             else self.config.public_key
         )
 
-        pool_blocks_found = await get_pool_kel_blocks(self.config, pool_public_key)
-        pool_blocks_found_list = pool_blocks_found[:300]
+        public_keys = await get_pool_kel_public_keys(self.config, pool_public_key)
+        pool_blocks_found_list = (
+            await self.config.mongo.async_db.blocks.find(
+                {"public_key": {"$in": public_keys}},
+                {
+                    "_id": 0,
+                    "index": 1,
+                    "hash": 1,
+                    "updated_at": 1,
+                    "transactions": 1,
+                    "target": 1,
+                },
+            )
+            .sort([("index", -1)])
+            .to_list(300)
+        )
 
         max_target = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 
