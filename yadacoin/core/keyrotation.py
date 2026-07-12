@@ -584,7 +584,9 @@ class NodeKeyRotationManager:
                     dh_public_key="",
                 )
             if self_output:
-                self_output.to = two_ahead_address
+                for output in ratchet_txn.outputs:
+                    if output.coinbase:
+                        output.to = two_ahead_address
             ratchet_txn.hash = await ratchet_txn.generate_hash()
             ratchet_txn.transaction_signature = NodeKeyRotationManager._sign(
                 prev_key["private_key"].hex(), ratchet_txn.hash
