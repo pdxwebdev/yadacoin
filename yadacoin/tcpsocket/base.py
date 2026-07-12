@@ -13,7 +13,9 @@ Full license terms: see LICENSE.txt in this repository.
 
 import asyncio
 import base64
+import contextvars
 import json
+import logging
 import socket
 import time
 from datetime import timedelta
@@ -30,6 +32,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from tornado.iostream import StreamClosedError
+from tornado.log import LogFormatter
 from tornado.tcpclient import TCPClient
 from tornado.tcpserver import TCPServer
 from tornado.util import TimeoutError
@@ -39,6 +42,57 @@ from yadacoin.core.config import Config
 
 class ProtocolVersionTooLowError(Exception):
     """Raised when a peer announces a protocol version below the minimum."""
+
+
+# ---------------------------------------------------------------------------
+# Peer-aware logging
+# ---------------------------------------------------------------------------
+#
+# The Tornado pretty logger prefix looks like ``[I 260712 03:19:57 node:1026]``.
+# To attribute log lines to the peer they belong to, the tcpsocket server and
+# client loops set a context-local label (the peer's username, falling back to
+# its host, then ``(blank)``).  Only these loops set it, so log lines emitted
+# from other modules keep the default empty label.
+
+peer_label_var = contextvars.ContextVar("peer_label", default="")
+
+
+def peer_label_for(stream_or_peer) -> str:
+    """Return a short label for a peer: username, else host, else ``(blank)``."""
+    peer = getattr(stream_or_peer, "peer", stream_or_peer)
+    if not peer:
+        return "(blank)"
+    identity = getattr(peer, "identity", None)
+    username = getattr(identity, "username", None) or ""
+    if username:
+        return username
+    host = getattr(peer, "host", None) or ""
+    if host:
+        return host
+    return "(blank)"
+
+
+class PeerContextFilter(logging.Filter):
+    """Inject the current peer label into every log record."""
+
+    def filter(self, record):
+        record.peer_label = peer_label_var.get()
+        return True
+
+
+class PeerLogFormatter(LogFormatter):
+    """Tornado-style prefix that appends the peer label to the bracket.
+
+    Only used by the console (pretty) handler; the rotating file handler keeps
+    its own one-line format.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._fmt = (
+            "%(color)s[%(levelname)1.1s %(asctime)s "
+            "%(module)s:%(lineno)d %(peer_label)s]%(end_color)s %(message)s"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +328,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
         stream.syncing = False
         stream.message_queue = {}
         while True:
+            token = peer_label_var.set(peer_label_for(stream))
             try:
                 data = await stream.read_until(b"\n")
                 stream.last_activity = int(time.time())
@@ -353,6 +408,8 @@ class RPCSocketServer(TCPServer, BaseRPC):
                 self.config.app_log.warning("{}".format(format_exc()))
                 self.config.app_log.warning(data)
                 break
+            finally:
+                peer_label_var.reset(token)
 
     async def keepalive(self, body, stream):
         """
@@ -417,6 +474,7 @@ class RPCSocketClient(TCPClient):
     config = None
 
     async def connect(self, peer):
+        token = peer_label_var.set(peer_label_for(peer))
         try:
             stream = None
             # Resolve an on-chain identity_announcement (if any) into a concrete
@@ -568,9 +626,12 @@ class RPCSocketClient(TCPClient):
                 stream, reason="RPCSocketClient: unhandled exception 2"
             )
             self.config.app_log.warning("{}".format(format_exc()))
+        finally:
+            peer_label_var.reset(token)
 
     async def wait_for_data(self, stream):
         while True:
+            token = peer_label_var.set(peer_label_for(stream))
             try:
                 raw = (await stream.read_until(b"\n")).strip()
                 # Decrypt if the peer has an established session cipher
@@ -635,6 +696,8 @@ class RPCSocketClient(TCPClient):
                 )
                 self.config.app_log.warning("{}".format(format_exc()))
                 break
+            finally:
+                peer_label_var.reset(token)
 
     async def send_keepalive(self, stream):
         """

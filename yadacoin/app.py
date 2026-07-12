@@ -115,6 +115,7 @@ from yadacoin.http.product import PRODUCT_HANDLERS
 from yadacoin.http.wallet import WALLET_HANDLERS
 from yadacoin.http.web import WEB_HANDLERS
 from yadacoin.managers.docker import Docker
+from yadacoin.tcpsocket.base import PeerContextFilter, PeerLogFormatter
 from yadacoin.tcpsocket.node import NodeRPC, NodeSocketClient, NodeSocketServer
 from yadacoin.tcpsocket.pool import StratumServer
 from yadacoin.websocket.base import WEBSOCKET_HANDLERS, RCPWebSocketServer
@@ -936,6 +937,18 @@ class NodeApplication(Application):
         # tornado.log.enable_pretty_logging()
         self.config.app_log = logging.getLogger("tornado.application")
         tornado.log.enable_pretty_logging(logger=self.config.app_log)
+        for handler in self.config.app_log.handlers:
+            # Only the console (pretty) handler uses the peer-aware prefix; the
+            # rotating file handler keeps its own one-line format.
+            if isinstance(handler, logging.StreamHandler) and not isinstance(
+                handler, RotatingFileHandler
+            ):
+                handler.setFormatter(
+                    PeerLogFormatter(
+                        datefmt=tornado.log.LogFormatter.DEFAULT_DATE_FORMAT
+                    )
+                )
+        self.config.app_log.addFilter(PeerContextFilter())
         logfile = path.abspath("yada_app.log")
         # Rotate log after reaching 512K, keep 5 old copies.
         rotateHandler = RotatingFileHandler(logfile, "a", 512 * 1024, 5)
