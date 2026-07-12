@@ -8,6 +8,91 @@ from yadacoin import version
 from yadacoin.core.chain import CHAIN
 from yadacoin.http.base import BaseHandler
 
+# Site DB collection used to cache the pool's KEL-aware block search so we do
+# not rebuild the KEL and scan the blocks collection on every request.
+POOL_KEL_BLOCKS_COLLECTION = "pool_kel_blocks"
+
+
+async def get_pool_kel_blocks(config, pool_public_key):
+    """Return every block the pool has mined across its entire Key Event Log.
+
+    A pool that uses key rotation mines blocks under a constantly changing
+    signing key, so a simple ``{"public_key": pool_public_key}`` lookup misses
+    every block won under a previous KEL key.  We instead collect the full set
+    of on-chain KEL public keys (the inception key plus every rotated key) and
+    search the chain for blocks whose ``public_key`` matches any of them.
+
+    Rebuilding the KEL and scanning the blocks collection is expensive, so the
+    result is cached in the ``yadacoin_site`` database
+    (``pool_kel_blocks`` collection).  The cache is invalidated whenever the
+    on-chain tip advances or reorgs: if the latest cached entry's stored
+    ``block_hash`` no longer equals ``config.LatestBlock.block.hash`` the cache
+    for this identity is cleared and rebuilt from the chain.
+    """
+    site_db = config.mongo.async_site_db
+    latest_hash = config.LatestBlock.block.hash
+    latest_height = config.LatestBlock.block.index
+
+    cached = await site_db[POOL_KEL_BLOCKS_COLLECTION].find_one(
+        {"identity": pool_public_key}, sort=[("cached_at", -1)]
+    )
+    if cached and cached.get("block_hash") == latest_hash:
+        return cached.get("blocks", [])
+
+    # Cache miss or stale tip -> rebuild the result set from the chain.
+    from yadacoin.core.keyeventlog import KeyEventLog
+
+    public_keys = [pool_public_key]
+    try:
+        kel = await KeyEventLog.build_from_public_key(
+            pool_public_key, onchain_only=True
+        )
+        for entry in kel:
+            if entry.public_key and entry.public_key not in public_keys:
+                public_keys.append(entry.public_key)
+    except Exception as exc:
+        config.app_log.warning(
+            "get_pool_kel_blocks: failed to build KEL for %s: %s",
+            pool_public_key,
+            exc,
+        )
+
+    blocks = []
+    if public_keys:
+        blocks = (
+            await config.mongo.async_db.blocks.find(
+                {"public_key": {"$in": public_keys}}, {"_id": 0}
+            )
+            .sort([("index", -1)])
+            .to_list(length=None)
+        )
+
+    # Invalidate any stale entries for this identity, then store the fresh result.
+    try:
+        await site_db[POOL_KEL_BLOCKS_COLLECTION].delete_many(
+            {"identity": pool_public_key}
+        )
+    except Exception:
+        pass
+    try:
+        await site_db[POOL_KEL_BLOCKS_COLLECTION].insert_one(
+            {
+                "identity": pool_public_key,
+                "blocks": blocks,
+                "block_hash": latest_hash,
+                "block_height": latest_height,
+                "cached_at": time.time(),
+            }
+        )
+    except Exception as exc:
+        config.app_log.warning(
+            "get_pool_kel_blocks: cache write failed for %s: %s",
+            pool_public_key,
+            exc,
+        )
+
+    return blocks
+
 
 class BaseWebHandler(BaseHandler):
     async def prepare(self):
@@ -71,19 +156,9 @@ class PoolInfoHandler(BaseWebHandler):
             if hasattr(self.config, "pool_public_key")
             else self.config.public_key
         )
-        total_blocks_found = await self.config.mongo.async_db.blocks.count_documents(
-            {"public_key": pool_public_key}
-        )
-        pool_blocks_found_list = (
-            await self.config.mongo.async_db.blocks.find(
-                {
-                    "public_key": pool_public_key,
-                },
-                {"_id": 0},
-            )
-            .sort([("index", -1)])
-            .to_list(5)
-        )
+        pool_blocks_found = await get_pool_kel_blocks(self.config, pool_public_key)
+        total_blocks_found = len(pool_blocks_found)
+        pool_blocks_found_list = pool_blocks_found[:5]
         expected_blocks = 144
         mining_time_interval = 600
         shares_count = await self.config.mongo.async_db.shares.count_documents(
@@ -223,21 +298,8 @@ class PoolBlocksHandler(BaseWebHandler):
             else self.config.public_key
         )
 
-        pool_blocks_found_list = (
-            await self.config.mongo.async_db.blocks.find(
-                {"public_key": pool_public_key},
-                {
-                    "_id": 0,
-                    "index": 1,
-                    "hash": 1,
-                    "updated_at": 1,
-                    "transactions": 1,
-                    "target": 1,
-                },
-            )
-            .sort([("index", -1)])
-            .to_list(300)
-        )
+        pool_blocks_found = await get_pool_kel_blocks(self.config, pool_public_key)
+        pool_blocks_found_list = pool_blocks_found[:300]
 
         max_target = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 
