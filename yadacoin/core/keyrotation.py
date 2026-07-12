@@ -642,7 +642,9 @@ class NodeKeyRotationManager:
             self._auth_ratchet_pub = next_pub_hex
             self._auth_ratchet_prev_pkh = prev_address
 
-            if block is None:
+            if block:
+                return block
+            else:
                 # Trigger re-anchor when interval is reached
                 if self._auth_counter % self.OFFCHAIN_ANCHOR_INTERVAL == 0:
                     try:
@@ -652,14 +654,14 @@ class NodeKeyRotationManager:
                             "NodeKeyRotationManager: re-anchor error: %s", exc
                         )
 
-            # Return both current (signing) and next (confirming) keys
-            return (
-                prev_key["private_key"].hex(),
-                prev_pub_hex,
-                next_key["private_key"].hex(),
-                next_pub_hex,
-                two_ahead_address,
-            )
+                # Return both current (signing) and next (confirming) keys
+                return (
+                    prev_key["private_key"].hex(),
+                    prev_pub_hex,
+                    next_key["private_key"].hex(),
+                    next_pub_hex,
+                    two_ahead_address,
+                )
 
     async def _queue_reanchor(self, block=None):
         """Queue an on-chain UNCONFIRMED+CONFIRMING re-anchor pair.

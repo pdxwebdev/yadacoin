@@ -607,7 +607,7 @@ class Block(object):
         if nonce:
             block.nonce = str(nonce)
 
-        await config.kel_manager.advance_auth_ratchet(
+        block = await config.kel_manager.advance_auth_ratchet(
             txn=coinbase_txn, block=block, self_output=self_output
         )
         return block
