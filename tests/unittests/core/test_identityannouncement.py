@@ -21,10 +21,13 @@ _PUB_HEX = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
 
 
 def _make_valid_sig(username: str, priv_hex: str) -> str:
-    """Produce a real username_signature for tests."""
-    from yadacoin.core.transactionutils import TU
+    """Produce a real username_signature for tests (signs username with priv)."""
+    import base64
 
-    return TU.generate_deterministic_signature.__func__(TU, None, username, priv_hex)
+    from coincurve import PrivateKey
+
+    key = PrivateKey.from_hex(priv_hex)
+    return base64.b64encode(key.sign(username.encode("utf-8"))).decode()
 
 
 class TestIdentityAnnouncementInit(unittest.TestCase):
@@ -32,54 +35,110 @@ class TestIdentityAnnouncementInit(unittest.TestCase):
         from yadacoin.core.identityannouncement import IdentityAnnouncement
 
         with self.assertRaises(ValueError):
-            IdentityAnnouncement(
-                username="", username_signature="sig", host="h", port=1
-            )
+            IdentityAnnouncement(username="", username_signature="sig")
 
     def test_whitespace_username_raises(self):
         from yadacoin.core.identityannouncement import IdentityAnnouncement
 
         with self.assertRaises(ValueError):
-            IdentityAnnouncement(
-                username="   ", username_signature="sig", host="h", port=1
-            )
+            IdentityAnnouncement(username="   ", username_signature="sig")
 
     def test_missing_username_signature_raises(self):
         from yadacoin.core.identityannouncement import IdentityAnnouncement
 
         with self.assertRaises(ValueError):
-            IdentityAnnouncement(username="u", username_signature="", host="h", port=1)
+            IdentityAnnouncement(username="u", username_signature="")
 
-    def test_missing_host_raises(self):
+    def test_invalid_identity_type_raises(self):
         from yadacoin.core.identityannouncement import IdentityAnnouncement
 
         with self.assertRaises(ValueError):
             IdentityAnnouncement(
-                username="u", username_signature="sig", host="", port=1
+                username="u", username_signature="sig", identity_type="bogus"
             )
 
-    def test_missing_port_raises(self):
+    def test_valid_construction_defaults_to_dns(self):
         from yadacoin.core.identityannouncement import IdentityAnnouncement
 
-        with self.assertRaises(ValueError):
-            IdentityAnnouncement(
-                username="u", username_signature="sig", host="h", port=None
-            )
+        # A valid lower-case DNS domain keeps the default "dns" identity type.
+        ia = IdentityAnnouncement(username="node.example.com", username_signature="SIG")
+        self.assertEqual(ia.username, "node.example.com")
+        self.assertEqual(ia.username_signature, "SIG")
+        self.assertEqual(ia.identity_type, "dns")
 
-    def test_valid_construction(self):
+    def test_explicit_social_identity_type(self):
         from yadacoin.core.identityannouncement import IdentityAnnouncement
 
         ia = IdentityAnnouncement(
-            username="mynode",
-            username_signature="SIG",
-            host="1.2.3.4",
-            port=8000,
+            username="MyHandle", username_signature="SIG", identity_type="social"
         )
-        self.assertEqual(ia.username, "mynode")
-        self.assertEqual(ia.host, "1.2.3.4")
-        self.assertEqual(ia.port, 8000)
-        self.assertEqual(ia.http_protocol, "https")
-        self.assertEqual(ia.peer_type, "service_provider")
+        self.assertEqual(ia.identity_type, "social")
+
+    def test_explicit_ipfs_identity_type(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        ia = IdentityAnnouncement(
+            username="Qm123", username_signature="SIG", identity_type="ipfs"
+        )
+        self.assertEqual(ia.identity_type, "ipfs")
+
+
+class TestIdentityAnnouncementDnsCoercion(unittest.TestCase):
+    """A ``dns`` identity whose username is not a valid lower-case domain must
+    be downgraded to ``social``."""
+
+    def _assert_coerced(self, username):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        ia = IdentityAnnouncement(username=username, username_signature="SIG")
+        self.assertEqual(ia.identity_type, "social")
+
+    def test_uppercase_domain_coerced_to_social(self):
+        self._assert_coerced("CenterIdentity.com")
+
+    def test_no_dot_domain_coerced_to_social(self):
+        self._assert_coerced("foobar")
+
+    def test_leading_hyphen_domain_coerced_to_social(self):
+        self._assert_coerced("-bad.example.com")
+
+    def test_single_char_tld_coerced_to_social(self):
+        self._assert_coerced("example.c")
+
+    def test_valid_dns_domain_stays_dns(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        for username in ("centeridentity.com", "a.b.c.example.io", "sub.example.co.uk"):
+            ia = IdentityAnnouncement(username=username, username_signature="SIG")
+            self.assertEqual(ia.identity_type, "dns", username)
+
+
+class TestIsValidDnsUsername(unittest.TestCase):
+    def test_valid_domains(self):
+        from yadacoin.core.identityannouncement import is_valid_dns_username
+
+        for username in (
+            "centeridentity.com",
+            "a.b.c.example.io",
+            "sub.example.co.uk",
+            "example.io",
+        ):
+            self.assertTrue(is_valid_dns_username(username), username)
+
+    def test_invalid_domains(self):
+        from yadacoin.core.identityannouncement import is_valid_dns_username
+
+        for username in (
+            "",
+            "   ",
+            "CenterIdentity.com",  # upper-case
+            "foobar",  # no dot
+            "-bad.example.com",  # leading hyphen
+            "my_name.example.com",  # underscore
+            "example.c",  # single-char TLD
+            "a" * 70 + ".com",  # label too long
+        ):
+            self.assertFalse(is_valid_dns_username(username), username)
 
 
 class TestIdentityAnnouncementSerialisation(unittest.TestCase):
@@ -87,35 +146,30 @@ class TestIdentityAnnouncementSerialisation(unittest.TestCase):
         from yadacoin.core.identityannouncement import IdentityAnnouncement
 
         return IdentityAnnouncement(
-            username="n1",
+            username="n1.example.com",
             username_signature="SIG",
-            host="h",
-            port=9,
-            http_protocol="http",
-            http_port=80,
-            peer_type="seed",
+            identity_type="dns",
         )
 
     def test_to_dict_round_trip(self):
-        from yadacoin.core.identityannouncement import IdentityAnnouncement
-
         ia = self._make()
         d = ia.to_dict()
-        ia2 = IdentityAnnouncement.from_dict(d)
+        ia2 = type(ia).from_dict(d)
         self.assertEqual(ia2.username, ia.username)
-        self.assertEqual(ia2.peer_type, ia.peer_type)
+        self.assertEqual(ia2.username_signature, ia.username_signature)
+        self.assertEqual(ia2.identity_type, ia.identity_type)
 
-    def test_to_string_contains_identity_key(self):
-        ia = self._make()
-        s = ia.to_string()
-        self.assertIn('"identity"', s)
+    def test_to_dict_contains_identity_fields(self):
+        d = self._make().to_dict()
+        self.assertEqual(d["username"], "n1.example.com")
+        self.assertEqual(d["username_signature"], "SIG")
+        self.assertEqual(d["identity_type"], "dns")
 
-    def test_to_relationship(self):
-        from yadacoin.core.identityannouncement import IdentityAnnouncement
-
-        ia = self._make()
-        rel = ia.to_relationship()
-        self.assertIn(IdentityAnnouncement.RELATIONSHIP_KEY, rel)
+    def test_to_string_contains_fields(self):
+        s = self._make().to_string()
+        self.assertIn("n1", s)
+        self.assertIn("SIG", s)
+        self.assertIn("dns", s)
 
     def test_from_dict_missing_field_raises(self):
         from yadacoin.core.identityannouncement import IdentityAnnouncement
@@ -129,6 +183,13 @@ class TestIdentityAnnouncementSerialisation(unittest.TestCase):
         with self.assertRaises(ValueError):
             IdentityAnnouncement.from_relationship({"other": {}})
 
+    def test_from_relationship_parses_identity(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        rel = {"identity": {"username": "n1", "username_signature": "SIG"}}
+        ia = IdentityAnnouncement.from_relationship(rel)
+        self.assertEqual(ia.username, "n1")
+
     def test_from_dict_non_dict_raises(self):
         from yadacoin.core.identityannouncement import IdentityAnnouncement
 
@@ -139,28 +200,15 @@ class TestIdentityAnnouncementSerialisation(unittest.TestCase):
 class TestIdentityAnnouncementVerifySignature(unittest.TestCase):
     def test_valid_signature(self):
         from yadacoin.core.identityannouncement import IdentityAnnouncement
-        from yadacoin.core.transactionutils import TU
 
-        sig = TU.generate_deterministic_signature.__func__(
-            TU, None, "mynode", _PRIV_HEX
-        )
-        ia = IdentityAnnouncement(
-            username="mynode",
-            username_signature=sig,
-            host="h",
-            port=1,
-        )
+        sig = _make_valid_sig("mynode", _PRIV_HEX)
+        ia = IdentityAnnouncement(username="mynode", username_signature=sig)
         self.assertTrue(ia.verify_username_signature(_PUB_HEX))
 
     def test_wrong_public_key_fails(self):
         from yadacoin.core.identityannouncement import IdentityAnnouncement
 
-        ia = IdentityAnnouncement(
-            username="mynode",
-            username_signature="invalidsig",
-            host="h",
-            port=1,
-        )
+        ia = IdentityAnnouncement(username="mynode", username_signature="invalidsig")
         self.assertFalse(ia.verify_username_signature(_PUB_HEX))
 
     def test_invalid_sig_bytes_returns_false(self):
@@ -171,40 +219,11 @@ class TestIdentityAnnouncementVerifySignature(unittest.TestCase):
         ia = IdentityAnnouncement(
             username="mynode",
             username_signature=base64.b64encode(b"\x00" * 5).decode(),
-            host="h",
-            port=1,
         )
         self.assertFalse(ia.verify_username_signature(_PUB_HEX))
 
 
 class TestIdentityAnnouncementChainLookup(AsyncTestCase):
-    async def _mock_config(self, chain_docs=None, mempool_doc=None):
-        import yadacoin.core.config
-
-        cfg = MagicMock()
-
-        async def _agg(pipeline):
-            for doc in chain_docs or []:
-                yield doc
-
-        cfg.mongo.async_db.blocks.aggregate = MagicMock(return_value=_agg(None))
-
-        async def _agg2(pipeline):
-            for doc in chain_docs or []:
-                yield doc
-
-        cfg.mongo.async_db.blocks.aggregate = MagicMock(return_value=MagicMock())
-        cfg.mongo.async_db.blocks.aggregate.return_value.__aiter__ = lambda s: iter(
-            chain_docs or []
-        )
-
-        # Use AsyncMock for find_one
-        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(
-            return_value=mempool_doc
-        )
-        yadacoin.core.config.CONFIG = cfg
-        return cfg
-
     async def test_get_by_username_not_found(self):
         import yadacoin.core.config
         from yadacoin.core.identityannouncement import IdentityAnnouncement
@@ -272,6 +291,65 @@ class TestIdentityAnnouncementChainLookup(AsyncTestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["source"], "blockchain")
 
+    async def test_get_by_transaction_id_mempool_hit(self):
+        import yadacoin.core.config
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        cfg = MagicMock()
+        mempool_doc = {
+            "id": "txn123",
+            "public_key": _PUB_HEX,
+            "relationship": {"identity": {"username": "mynode"}},
+        }
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value=mempool_doc
+        )
+        yadacoin.core.config.CONFIG = cfg
+
+        with patch("yadacoin.core.config.Config", return_value=cfg):
+            result = await IdentityAnnouncement.get_by_transaction_id("txn123")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["source"], "mempool")
+        self.assertEqual(result["public_key"], _PUB_HEX)
+
+    async def test_get_by_transaction_id_not_found(self):
+        import yadacoin.core.config
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        cfg = MagicMock()
+
+        async def _empty_agg(pipeline):
+            return
+            yield  # pragma: no cover
+
+        cfg.mongo.async_db.blocks.aggregate = MagicMock(return_value=_empty_agg(None))
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        yadacoin.core.config.CONFIG = cfg
+
+        with patch("yadacoin.core.config.Config", return_value=cfg):
+            result = await IdentityAnnouncement.get_by_transaction_id("nope")
+        self.assertIsNone(result)
+
+    async def test_get_by_transaction_id_not_found_excluded(self):
+        import yadacoin.core.config
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        cfg = MagicMock()
+
+        async def _empty_agg(pipeline):
+            return
+            yield  # pragma: no cover
+
+        cfg.mongo.async_db.blocks.aggregate = MagicMock(return_value=_empty_agg(None))
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        yadacoin.core.config.CONFIG = cfg
+
+        with patch("yadacoin.core.config.Config", return_value=cfg):
+            result = await IdentityAnnouncement.get_by_transaction_id(
+                "nope", include_mempool=False
+            )
+        self.assertIsNone(result)
+
     async def test_exists_username_false(self):
         import yadacoin.core.config
         from yadacoin.core.identityannouncement import IdentityAnnouncement
@@ -327,28 +405,6 @@ class TestIdentityAnnouncementChainLookup(AsyncTestCase):
         self.assertIsNone(result)
         cfg.mongo.async_db.miner_transactions.find_one.assert_not_awaited()
 
-    async def test_get_by_username_blockchain_hit(self):
-        from yadacoin.core.identityannouncement import IdentityAnnouncement
-
-        cfg = MagicMock()
-
-        chain_doc = {
-            "public_key": _PUB_HEX,
-            "relationship": {"identity": {"username": "mynode"}},
-            "id": "txn123",
-        }
-
-        async def _agg(pipeline):
-            yield chain_doc
-
-        cfg.mongo.async_db.blocks.aggregate = MagicMock(return_value=_agg(None))
-
-        with patch("yadacoin.core.config.Config", return_value=cfg):
-            result = await IdentityAnnouncement.get_by_username("mynode")
-        self.assertIsNotNone(result)
-        self.assertEqual(result["public_key"], _PUB_HEX)
-        self.assertEqual(result["source"], "blockchain")
-
     async def test_exists_username_with_exclude(self):
         from yadacoin.core.identityannouncement import IdentityAnnouncement
 
@@ -376,175 +432,34 @@ class TestIdentityAnnouncementChainLookup(AsyncTestCase):
             result = await IdentityAnnouncement.exists_username("nobody")
         self.assertFalse(result)
 
-
-# ---------------------------------------------------------------------------
-# RotationAnnouncement
-# ---------------------------------------------------------------------------
-
-
-class TestRotationAnnouncementInit(unittest.TestCase):
-    def test_valid_secp256k1_construction(self):
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        ra = RotationAnnouncement(curve="secp256k1")
-        self.assertEqual(ra.curve, "secp256k1")
-
-    def test_unsupported_curve_raises(self):
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        with self.assertRaises(ValueError):
-            RotationAnnouncement(curve="ed25519")
-
-    def test_to_dict_includes_optional_fields(self):
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        ra = RotationAnnouncement(
-            curve="secp256r1",
-            public_key="0400",
-            key_hash="1abc",
-            dtls_fingerprint="sha-256:AA:BB",
-        )
-        d = ra.to_dict()
-        self.assertEqual(d["curve"], "secp256r1")
-        self.assertEqual(d["public_key"], "0400")
-        self.assertEqual(d["key_hash"], "1abc")
-        self.assertEqual(d["dtls_fingerprint"], "sha-256:AA:BB")
-
-    def test_to_string_contains_rotation_key(self):
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        ra = RotationAnnouncement(curve="secp256k1")
-        s = ra.to_string()
-        self.assertIn('"rotation"', s)
-
-    def test_to_relationship(self):
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        ra = RotationAnnouncement(curve="secp256k1")
-        rel = ra.to_relationship()
-        self.assertIn("rotation", rel)
-
-    def test_from_dict_non_dict_raises(self):
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        with self.assertRaises(ValueError):
-            RotationAnnouncement.from_dict("bad")
-
-    def test_from_dict_valid(self):
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        ra = RotationAnnouncement.from_dict({"curve": "secp256k1"})
-        self.assertEqual(ra.curve, "secp256k1")
-
-    def test_from_relationship_missing_key_raises(self):
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        with self.assertRaises(ValueError):
-            RotationAnnouncement.from_relationship({"other": {}})
-
-    def test_from_relationship_valid(self):
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        ra = RotationAnnouncement.from_relationship(
-            {"rotation": {"curve": "secp256k1"}}
-        )
-        self.assertEqual(ra.curve, "secp256k1")
-
-    def test_validate_p256_secp256k1_returns_true(self):
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        ra = RotationAnnouncement(curve="secp256k1")
-        self.assertTrue(ra.validate_p256())
-
-    def test_validate_p256_missing_public_key_raises(self):
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        ra = RotationAnnouncement(curve="secp256r1", public_key="")
-        with self.assertRaises(ValueError):
-            ra.validate_p256()
-
-    def test_validate_p256_invalid_hex_raises(self):
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        ra = RotationAnnouncement(curve="secp256r1", public_key="ZZZZ")
-        with self.assertRaises(ValueError):
-            ra.validate_p256()
-
-    def test_validate_p256_wrong_key_hash_raises(self):
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        # Use a real compressed secp256k1 pubkey as a stand-in for bytes
-        pub_hex = _PUB_HEX  # 33-byte compressed key
-        ra = RotationAnnouncement(
-            curve="secp256r1", public_key=pub_hex, key_hash="1WRONGHASH"
-        )
-        with self.assertRaises(ValueError):
-            ra.validate_p256()
-
-    def test_validate_p256_correct_key_hash_passes(self):
-        from bitcoin.wallet import P2PKHBitcoinAddress
-
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        pub_bytes = bytes.fromhex(_PUB_HEX)
-        expected = str(P2PKHBitcoinAddress.from_pubkey(pub_bytes))
-        ra = RotationAnnouncement(
-            curve="secp256r1", public_key=_PUB_HEX, key_hash=expected
-        )
-        self.assertTrue(ra.validate_p256())
-
-
-class TestDerivep256FromK0(unittest.TestCase):
-    def test_returns_rotation_announcement(self):
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        priv = bytes.fromhex(_PRIV_HEX)
-        ra = RotationAnnouncement.derive_p256_from_k0(priv)
-        self.assertIsInstance(ra, RotationAnnouncement)
-        self.assertEqual(ra.curve, "secp256r1")
-        self.assertTrue(ra.public_key.startswith("04"))
-        self.assertTrue(ra.dtls_fingerprint.startswith("sha-256:"))
-
-    def test_deterministic(self):
-        from yadacoin.core.identityannouncement import RotationAnnouncement
-
-        priv = bytes.fromhex(_PRIV_HEX)
-        ra1 = RotationAnnouncement.derive_p256_from_k0(priv)
-        ra2 = RotationAnnouncement.derive_p256_from_k0(priv)
-        self.assertEqual(ra1.public_key, ra2.public_key)
-        self.assertEqual(ra1.key_hash, ra2.key_hash)
-
-
-class TestIdentityAnnouncementFromRelationshipWithRotation(unittest.TestCase):
-    def test_from_relationship_parses_rotation_sibling(self):
+    async def test_get_by_transaction_id_blockchain_hit(self):
+        import yadacoin.core.config
         from yadacoin.core.identityannouncement import IdentityAnnouncement
 
-        sig = _make_valid_sig("mynode", _PRIV_HEX)
-        rel = {
-            "identity": {
-                "username": "mynode",
-                "username_signature": sig,
-                "host": "1.2.3.4",
-                "port": 8000,
-            },
-            "rotation": {"curve": "secp256k1"},
+        cfg = MagicMock()
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        chain_doc = {
+            "public_key": _PUB_HEX,
+            "relationship": {"identity": {"username": "mynode"}},
         }
-        ia = IdentityAnnouncement.from_relationship(rel)
-        self.assertIsNotNone(ia.rotation)
-        self.assertEqual(ia.rotation.curve, "secp256k1")
 
-    def test_from_relationship_invalid_rotation_ignored(self):
+        async def _agg(pipeline):
+            yield chain_doc
+
+        cfg.mongo.async_db.blocks.aggregate = MagicMock(return_value=_agg(None))
+        yadacoin.core.config.CONFIG = cfg
+
+        with patch("yadacoin.core.config.Config", return_value=cfg):
+            result = await IdentityAnnouncement.get_by_transaction_id("txn123")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["source"], "blockchain")
+
+    def test_get_string_coerces_int_and_none(self):
         from yadacoin.core.identityannouncement import IdentityAnnouncement
 
-        sig = _make_valid_sig("mynode", _PRIV_HEX)
-        rel = {
-            "identity": {
-                "username": "mynode",
-                "username_signature": sig,
-                "host": "1.2.3.4",
-                "port": 8000,
-            },
-            "rotation": "bad_value",  # not a dict — should be ignored
-        }
-        ia = IdentityAnnouncement.from_relationship(rel)
-        self.assertIsNone(ia.rotation)
+        self.assertEqual(IdentityAnnouncement.get_string(5), "5")
+        self.assertEqual(IdentityAnnouncement.get_string(None), "")
+
+
+if __name__ == "__main__":
+    unittest.main(argv=["first-arg-is-ignored"], exit=False)

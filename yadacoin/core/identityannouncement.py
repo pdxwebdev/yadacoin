@@ -34,10 +34,29 @@ from typing import Optional
 from coincurve import verify_signature
 
 
+def is_valid_dns_username(username: str) -> bool:
+    """Return True if ``username`` is a valid lower-case DNS domain name.
+
+    Delegates the domain-format check to the ``validators`` library (already a
+    project dependency).  ``validators.domain`` does not restrict the TLD, but
+    it is case-insensitive, so an explicit lower-case check is added here.
+    """
+    if not username or username != username.lower():
+        return False
+    import validators
+
+    return bool(validators.domain(username))
+
+
 class IdentityType(str, Enum):
     """Type of identity announced at inception."""
 
     DNS = "dns"
+    IPFS = "ipfs"
+    TOR = "tor"
+    EMAIL = "email"
+    DID = "did"
+    SOCIAL = "social"
 
 
 class IdentityAnnouncement:
@@ -59,6 +78,14 @@ class IdentityAnnouncement:
             raise ValueError(
                 f"identity_type must be one of {[t.value for t in IdentityType]}"
             )
+
+        # A DNS identity must be a valid lower-case domain name.  If the
+        # username does not satisfy that, downgrade the announcement to a
+        # social identity instead of rejecting outright.
+        if identity_type == IdentityType.DNS.value and not is_valid_dns_username(
+            username
+        ):
+            identity_type = IdentityType.SOCIAL.value
 
         self.username = username.strip()
         self.username_signature = username_signature
@@ -129,6 +156,40 @@ class IdentityAnnouncement:
             )
         except Exception:
             return False
+
+    async def verify(self, public_key: str, exclude_txn_sig: str = "") -> None:
+        """Validate this identity announcement during transaction verification.
+
+        Performs, in order: username-signature check against ``public_key``,
+        blank-username rejection, DNS-domain enforcement for ``dns`` identities,
+        and chain/mempool username-uniqueness.  Raises
+        ``InvalidTransactionException`` on the first failure.
+        """
+        from yadacoin.core.transaction import InvalidTransactionException
+
+        if not self.verify_username_signature(public_key):
+            raise InvalidTransactionException(
+                "Identity announcement: username_signature does not match public_key"
+            )
+        if not self.username:
+            raise InvalidTransactionException(
+                "Identity announcement: username must not be blank"
+            )
+        if self.identity_type == IdentityType.DNS.value and not is_valid_dns_username(
+            self.username
+        ):
+            raise InvalidTransactionException(
+                f"Identity announcement: username '{self.username}' is not a "
+                f"valid DNS domain for a 'dns' identity type"
+            )
+        already_claimed = await IdentityAnnouncement.exists_username(
+            self.username,
+            exclude_txn_sig=exclude_txn_sig,
+        )
+        if already_claimed:
+            raise InvalidTransactionException(
+                f"Identity announcement: username '{self.username}' is already claimed"
+            )
 
     # ------------------------------------------------------------------
     # Chain / mempool lookup

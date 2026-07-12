@@ -786,25 +786,9 @@ class Transaction(object):
                 )
         elif isinstance(self.relationship, IdentityAnnouncement):
             relationship = self.relationship.to_string()
-            # Validate the username_signature against the transaction's public_key
-            if not self.relationship.verify_username_signature(self.public_key):
-                raise InvalidTransactionException(
-                    "Identity announcement: username_signature does not match public_key"
-                )
-            # Blank username is never allowed
-            if not self.relationship.username:
-                raise InvalidTransactionException(
-                    "Identity announcement: username must not be blank"
-                )
-            # Username must be unique across chain + mempool
-            already_claimed = await IdentityAnnouncement.exists_username(
-                self.relationship.username,
-                exclude_txn_sig=self.transaction_signature,
+            await self.relationship.verify(
+                self.public_key, exclude_txn_sig=self.transaction_signature
             )
-            if already_claimed:
-                raise InvalidTransactionException(
-                    f"Identity announcement: username '{self.relationship.username}' is already claimed"
-                )
         elif isinstance(self.relationship, RotationAnnouncement):
             relationship = self.relationship.to_string()
             # Rotation-only announcements must NOT be inception transactions
