@@ -410,7 +410,9 @@ class NodeKeyRotationManager:
     # Off-chain auth ratchet
     # ------------------------------------------------------------------
 
-    async def advance_auth_ratchet(self) -> tuple:
+    async def advance_auth_ratchet(
+        self, block=None, txn=None, self_output=None
+    ) -> tuple:
         """Advance the off-chain signing ratchet by one step and return
         ``(current_priv_hex, current_pub_hex, next_priv_hex, next_pub_hex)``.
 
@@ -556,27 +558,47 @@ class NodeKeyRotationManager:
                 else (getattr(config, "kel_anchor_public_key", None) or prev_pub_hex)
             )
 
-            ratchet_txn = Transaction(
-                txn_time=int(time.time()),
-                public_key=prev_pub_hex,
-                outputs=[{"to": next_address, "value": 0.0}],
-                inputs=[],
-                fee=0.0,
-                masternode_fee=0.0,
-                version=7,
-                prerotated_key_hash=next_address,
-                twice_prerotated_key_hash=two_ahead_address,
-                public_key_hash=prev_address,
-                prev_public_key_hash=self._auth_ratchet_prev_pkh or "",
-                relationship="",
-                relationship_hash="",
-                rid="",
-                dh_public_key="",
-            )
+            if txn:
+                ratchet_txn = txn
+                ratchet_txn.prerotated_key_hash = next_address
+                ratchet_txn.twice_prerotated_key_hash = two_ahead_address
+                ratchet_txn.public_key_hash = prev_address
+                ratchet_txn.prev_public_key_hash = self._auth_ratchet_prev_pkh or ""
+            else:
+                ratchet_txn = Transaction(
+                    txn_time=int(time.time()),
+                    public_key=prev_pub_hex,
+                    outputs=[{"to": next_address, "value": 0.0}],
+                    inputs=[],
+                    fee=0.0,
+                    masternode_fee=0.0,
+                    version=7,
+                    prerotated_key_hash=next_address,
+                    twice_prerotated_key_hash=two_ahead_address,
+                    public_key_hash=prev_address,
+                    prev_public_key_hash=self._auth_ratchet_prev_pkh or "",
+                    relationship="",
+                    relationship_hash="",
+                    rid="",
+                    dh_public_key="",
+                )
+            if self_output:
+                self_output["to"] = two_ahead_address
             ratchet_txn.hash = await ratchet_txn.generate_hash()
             ratchet_txn.transaction_signature = NodeKeyRotationManager._sign(
                 prev_key["private_key"].hex(), ratchet_txn.hash
             )
+            if block:
+                try:
+                    await self._queue_reanchor(block=block)
+                except Exception as exc:
+                    config.app_log.warning(
+                        "NodeKeyRotationManager: re-anchor error: %s", exc
+                    )
+                block.hash = await ratchet_txn.generate_hash()
+                block.signature = NodeKeyRotationManager._sign(
+                    prev_key["private_key"].hex(), ratchet_txn.hash
+                )
 
             self._auth_counter += 1
 
@@ -613,14 +635,15 @@ class NodeKeyRotationManager:
             self._auth_ratchet_pub = next_pub_hex
             self._auth_ratchet_prev_pkh = prev_address
 
-            # Trigger re-anchor when interval is reached
-            if self._auth_counter % self.OFFCHAIN_ANCHOR_INTERVAL == 0:
-                try:
-                    await self._queue_reanchor()
-                except Exception as exc:
-                    config.app_log.warning(
-                        "NodeKeyRotationManager: re-anchor error: %s", exc
-                    )
+            if block is None:
+                # Trigger re-anchor when interval is reached
+                if self._auth_counter % self.OFFCHAIN_ANCHOR_INTERVAL == 0:
+                    try:
+                        await self._queue_reanchor(block=block)
+                    except Exception as exc:
+                        config.app_log.warning(
+                            "NodeKeyRotationManager: re-anchor error: %s", exc
+                        )
 
             # Return both current (signing) and next (confirming) keys
             return (
@@ -631,7 +654,7 @@ class NodeKeyRotationManager:
                 two_ahead_address,
             )
 
-    async def _queue_reanchor(self):
+    async def _queue_reanchor(self, block=None):
         """Queue an on-chain UNCONFIRMED+CONFIRMING re-anchor pair.
 
         Uses the current ``kel[-1].prerotated_key_hash`` key as the UNCONFIRMED
@@ -687,13 +710,21 @@ class NodeKeyRotationManager:
         kn_pub_hex = kn_pub_bytes.hex()
         kn_address = str(P2PKHBitcoinAddress.from_pubkey(kn_pub_bytes))
 
-        # Derive the JUMP target: K_{n + INTERVAL + 1} for UNCONFIRMED.twice_prerotated
-        # and CONFIRMING.prerotated.  K_{n + INTERVAL + 2} for CONFIRMING.twice_prerotated.
-        jump_cur = kn1
-        for _ in range(self.OFFCHAIN_ANCHOR_INTERVAL):
-            jump_cur = derive_secure_path(
-                jump_cur["private_key"], jump_cur["chain_code"], second_factor
+        search_address = kn_address
+        txn = True
+        while txn:
+            txn = await self.config.mongo.async_db.key_event_log.find_one(
+                {"prev_public_key_hash": search_address}
             )
+            if txn:
+                # Derive the JUMP target: K_{n + INTERVAL + 1} for UNCONFIRMED.twice_prerotated
+                # and CONFIRMING.prerotated.  K_{n + INTERVAL + 2} for CONFIRMING.twice_prerotated.
+                jump_cur = kn1
+                for _ in range(prev_txn["counter"]):
+                    jump_cur = derive_secure_path(
+                        jump_cur["private_key"], jump_cur["chain_code"], second_factor
+                    )
+
         jump_priv_obj = _CoincurvePrivateKey(jump_cur["private_key"])
         jump_pub_bytes = jump_priv_obj.public_key.format(compressed=True)
         jump_address = str(P2PKHBitcoinAddress.from_pubkey(jump_pub_bytes))
@@ -752,39 +783,41 @@ class NodeKeyRotationManager:
         confirming_txn.transaction_signature = NodeKeyRotationManager._sign(
             kn1["private_key"].hex(), confirming_txn.hash
         )
+        if block:
+            block.transactions.extend([unconfirmed_txn, confirming_txn])
+        else:
+            for txn in (unconfirmed_txn, confirming_txn):
+                await config.mongo.async_db.miner_transactions.replace_one(
+                    {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
+                )
 
-        for txn in (unconfirmed_txn, confirming_txn):
-            await config.mongo.async_db.miner_transactions.replace_one(
-                {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
+            config.app_log.info(
+                "NodeKeyRotationManager: re-anchor queued (unconfirmed=%s, confirming=%s, "
+                "jump_target=%s)",
+                unconfirmed_txn.transaction_signature,
+                confirming_txn.transaction_signature,
+                jump_address,
             )
 
-        config.app_log.info(
-            "NodeKeyRotationManager: re-anchor queued (unconfirmed=%s, confirming=%s, "
-            "jump_target=%s)",
-            unconfirmed_txn.transaction_signature,
-            confirming_txn.transaction_signature,
-            jump_address,
-        )
-
-        if "node" in config.modes:
-            try:
-                async for peer_stream in config.peer.get_sync_peers():
-                    for txn in (unconfirmed_txn, confirming_txn):
-                        await config.nodeShared.write_params(
-                            peer_stream, "newtxn", {"transaction": txn.to_dict()}
-                        )
-                        if peer_stream.peer.protocol_version > 1:
-                            config.nodeClient.retry_messages[
-                                (
-                                    peer_stream.peer.rid,
-                                    "newtxn",
-                                    txn.transaction_signature,
-                                )
-                            ] = {"transaction": txn.to_dict()}
-            except Exception as exc:
-                config.app_log.warning(
-                    "NodeKeyRotationManager: re-anchor broadcast error: %s", exc
-                )
+            if "node" in config.modes:
+                try:
+                    async for peer_stream in config.peer.get_sync_peers():
+                        for txn in (unconfirmed_txn, confirming_txn):
+                            await config.nodeShared.write_params(
+                                peer_stream, "newtxn", {"transaction": txn.to_dict()}
+                            )
+                            if peer_stream.peer.protocol_version > 1:
+                                config.nodeClient.retry_messages[
+                                    (
+                                        peer_stream.peer.rid,
+                                        "newtxn",
+                                        txn.transaction_signature,
+                                    )
+                                ] = {"transaction": txn.to_dict()}
+                except Exception as exc:
+                    config.app_log.warning(
+                        "NodeKeyRotationManager: re-anchor broadcast error: %s", exc
+                    )
 
     async def _create_inception(self, k0: dict, second_factor: str, k0_pub_hex: str):
         """Build and broadcast a zero-fee KEL inception transaction for K0.

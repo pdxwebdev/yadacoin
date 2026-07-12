@@ -217,15 +217,6 @@ class Block(object):
             prev_hash = LatestBlock.block.hash
         transactions = transactions or []
 
-        (
-            priv,
-            _pub,
-            _conf_priv,
-            _conf_pub,
-            twpkh,
-        ) = await config.kel_manager.advance_auth_ratchet()
-        public_key = _pub
-
         transaction_objs = []
         fee_sum = 0.0
         used_sigs = []
@@ -295,20 +286,16 @@ class Block(object):
             # dynamic nodes are appended to _NODES during load_dynamic_nodes_from_chain
             # and flow naturally into NodesTester.successful_nodes.
             reward_nodes = NodesTester.successful_nodes
-
+            self_output = None
+            outputs = []
             if reward_nodes:
-                outputs = [
-                    Output.from_dict(
-                        {
-                            "value": (block_reward * 0.9) + float(fee_sum),
-                            "to": str(
-                                P2PKHBitcoinAddress.from_pubkey(
-                                    bytes.fromhex(public_key)
-                                )
-                            ),
-                        }
-                    )
-                ]
+                self_output = Output.from_dict(
+                    {
+                        "value": (block_reward * 0.9) + float(fee_sum),
+                        "to": None,
+                    }
+                )
+
                 masternode_reward_divided = (
                     masternode_reward_total + masternode_fee_sum
                 ) / len(reward_nodes)
@@ -332,34 +319,24 @@ class Block(object):
                     )
             else:
                 # No masternodes: miner receives the full block reward + all fees
-                outputs = [
-                    Output.from_dict(
-                        {
-                            "value": block_reward + float(fee_sum) + masternode_fee_sum,
-                            "to": str(
-                                P2PKHBitcoinAddress.from_pubkey(
-                                    bytes.fromhex(public_key)
-                                )
-                            ),
-                        }
-                    )
-                ]
-        else:
-            outputs = [
-                Output.from_dict(
+                self_output = Output.from_dict(
                     {
-                        "value": block_reward + float(fee_sum),
-                        "to": str(
-                            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
-                        ),
+                        "value": block_reward + float(fee_sum) + masternode_fee_sum,
+                        "to": None,
                     }
                 )
-            ]
 
-        coinbase_txn = await Transaction.generate(
+        else:
+            self_output = Output.from_dict(
+                {
+                    "value": block_reward + float(fee_sum),
+                    "to": None,
+                }
+            )
+        outputs.append(self_output)
+
+        coinbase_txn = await Transaction(
             outputs=outputs,
-            public_key=public_key,
-            private_key=priv,
             coinbase=True,
         )
         transaction_objs.append(coinbase_txn)
@@ -370,10 +347,12 @@ class Block(object):
             block_index=index,
             prev_hash=prev_hash,
             transactions=transaction_objs,
-            public_key=public_key,
             target=target,
         )
-        block.private_key = priv
+
+        await config.kel_manager.advance_auth_ratchet(
+            txn=coinbase_txn, block=block, self_output=self_output
+        )
 
         if (index >= CHAIN.XEGGEX_HACK_FORK and index < CHAIN.CHECK_KEL_FORK) or (
             index >= CHAIN.XEGGEX_HACK_FORK_2

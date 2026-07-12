@@ -319,9 +319,7 @@ class Transaction(object):
         cls_inst.rid = rid
         cls_inst.requester_rid = requester_rid
         cls_inst.requested_rid = requested_rid
-        cls_inst.public_key = public_key
         cls_inst.dh_public_key = dh_public_key
-        cls_inst.private_key = private_key
         cls_inst.value = value
         cls_inst.fee = float(fee)
         cls_inst.masternode_fee = float(masternode_fee)
@@ -360,10 +358,6 @@ class Transaction(object):
 
         await cls_inst.do_money()
 
-        cls_inst.hash = await cls_inst.generate_hash()
-        cls_inst.transaction_signature = cls_inst.config.kel_manager._sign(
-            private_key, cls_inst.hash
-        )
         cls_inst.public_key = public_key
 
         cls_inst.never_expire = never_expire
