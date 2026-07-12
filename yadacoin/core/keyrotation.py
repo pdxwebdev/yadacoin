@@ -560,13 +560,13 @@ class NodeKeyRotationManager:
 
             if txn:
                 ratchet_txn = txn
+                ratchet_txn.public_key = prev_pub_hex
                 ratchet_txn.prerotated_key_hash = next_address
                 ratchet_txn.twice_prerotated_key_hash = two_ahead_address
                 ratchet_txn.public_key_hash = prev_address
                 ratchet_txn.prev_public_key_hash = self._auth_ratchet_prev_pkh or ""
             else:
                 ratchet_txn = Transaction(
-                    public_key=prev_pub_hex,
                     txn_time=int(time.time()),
                     public_key=prev_pub_hex,
                     outputs=[{"to": next_address, "value": 0.0}],
