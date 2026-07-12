@@ -594,7 +594,7 @@ class Block(object):
                 )
 
             updated_outputs.append(self_output)
-            new_coinbase = await Transaction.generate(
+            new_coinbase = Transaction(
                 outputs=updated_outputs,
                 coinbase=True,
             )
