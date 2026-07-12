@@ -596,9 +596,14 @@ class NodeKeyRotationManager:
                     config.app_log.warning(
                         "NodeKeyRotationManager: re-anchor error: %s", exc
                     )
-                block.hash = await ratchet_txn.generate_hash()
+
+                txn_hashes = block.get_transaction_hashes()
+                block.set_merkle_root(txn_hashes)
+                block.hash = await block.generate_hash_from_header(
+                    block.index, block.header, str(block.nonce)
+                )
                 block.signature = NodeKeyRotationManager._sign(
-                    prev_key["private_key"].hex(), ratchet_txn.hash
+                    prev_key["private_key"].hex(), block.hash
                 )
 
             self._auth_counter += 1

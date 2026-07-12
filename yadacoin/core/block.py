@@ -349,9 +349,6 @@ class Block(object):
             target=target,
         )
         block.transactions = transaction_objs
-        await config.kel_manager.advance_auth_ratchet(
-            txn=coinbase_txn, block=block, self_output=self_output
-        )
 
         if (index >= CHAIN.XEGGEX_HACK_FORK and index < CHAIN.CHECK_KEL_FORK) or (
             index >= CHAIN.XEGGEX_HACK_FORK_2
@@ -556,19 +553,16 @@ class Block(object):
                 )
 
             reward_nodes = NodesTester.successful_nodes
+            self_output = None
+            updated_outputs = []
             if reward_nodes:
-                updated_outputs = [
-                    Output.from_dict(
-                        {
-                            "value": (block_reward * 0.9) + updated_fee_sum,
-                            "to": str(
-                                P2PKHBitcoinAddress.from_pubkey(
-                                    bytes.fromhex(public_key)
-                                )
-                            ),
-                        }
-                    )
-                ]
+                self_output = Output.from_dict(
+                    {
+                        "value": (block_reward * 0.9) + updated_fee_sum,
+                        "to": None,
+                    }
+                )
+
                 masternode_reward_divided = (
                     block_reward * 0.1 + updated_masternode_fee_sum
                 ) / len(reward_nodes)
@@ -590,25 +584,18 @@ class Block(object):
                         )
                     )
             else:
-                updated_outputs = [
-                    Output.from_dict(
-                        {
-                            "value": block_reward
-                            + updated_fee_sum
-                            + updated_masternode_fee_sum,
-                            "to": str(
-                                P2PKHBitcoinAddress.from_pubkey(
-                                    bytes.fromhex(public_key)
-                                )
-                            ),
-                        }
-                    )
-                ]
+                self_output = Output.from_dict(
+                    {
+                        "value": block_reward
+                        + updated_fee_sum
+                        + updated_masternode_fee_sum,
+                        "to": None,
+                    }
+                )
 
+            updated_outputs.append(self_output)
             new_coinbase = await Transaction.generate(
                 outputs=updated_outputs,
-                public_key=public_key,
-                private_key=priv,
                 coinbase=True,
             )
             block.transactions = non_coinbase + [new_coinbase]
@@ -616,13 +603,13 @@ class Block(object):
         txn_hashes = block.get_transaction_hashes()
         block.set_merkle_root(txn_hashes)
         block.header = block.generate_header()
+
         if nonce:
             block.nonce = str(nonce)
-            block.hash = await block.generate_hash_from_header(
-                block.index, block.header, str(block.nonce)
-            )
-            block.signature = config.kel_manager._sign(priv, block.hash)
-            block.public_key = _pub
+
+        await config.kel_manager.advance_auth_ratchet(
+            txn=coinbase_txn, block=block, self_output=self_output
+        )
         return block
 
     async def remove_transaction(
