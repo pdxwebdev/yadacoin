@@ -1094,7 +1094,7 @@ class Block(object):
                     )
                 elif txn.prev_public_key_hash:
                     raise KELExceptionPreviousKeyHashReferenceMissing(
-                        "Key event claims to have a key event log by specifying prev_public_key_hash, but no key event log found."
+                        f"Key event claims to have a key event log by specifying prev_public_key_hash, but no key event log found. ({txn.prev_public_key_hash})"
                     )
 
             if txn.coinbase:
