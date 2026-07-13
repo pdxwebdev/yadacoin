@@ -744,9 +744,10 @@ class NodeKeyRotationManager:
                 config.app_log.info(f"Found transaction: {txn}")
                 # Derive the JUMP target: K_{n + INTERVAL + 1} for UNCONFIRMED.twice_prerotated
                 # and CONFIRMING.prerotated.  K_{n + INTERVAL + 2} for CONFIRMING.twice_prerotated.
-                jump_cur = derive_secure_path(
-                    jump_cur["private_key"], jump_cur["chain_code"], second_factor
-                )
+                break
+            jump_cur = derive_secure_path(
+                jump_cur["private_key"], jump_cur["chain_code"], second_factor
+            )
 
         jump_priv_obj = _CoincurvePrivateKey(jump_cur["private_key"])
         jump_pub_bytes = jump_priv_obj.public_key.format(compressed=True)
