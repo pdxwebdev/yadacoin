@@ -730,10 +730,14 @@ class NodeKeyRotationManager:
         txn = True
         jump_cur = kn1
         while txn:
+            config.app_log.info(
+                f"Searching for transaction with prerotated_key_hash: {search_address}"
+            )
             txn = await self.config.mongo.async_db.key_event_log.find_one(
-                {"prev_public_key_hash": search_address}
+                {"prerotated_key_hash": search_address}
             )
             if txn:
+                config.app_log.info(f"Found transaction: {txn}")
                 # Derive the JUMP target: K_{n + INTERVAL + 1} for UNCONFIRMED.twice_prerotated
                 # and CONFIRMING.prerotated.  K_{n + INTERVAL + 2} for CONFIRMING.twice_prerotated.
                 jump_cur = derive_secure_path(
