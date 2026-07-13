@@ -729,6 +729,9 @@ class NodeKeyRotationManager:
 
         search_address = kn_address
         jump_cur = kn1
+        curr_priv_obj = _CoincurvePrivateKey(jump_cur["private_key"])
+        curr_pub_bytes = curr_priv_obj.public_key.format(compressed=True)
+        curr_address = str(P2PKHBitcoinAddress.from_pubkey(curr_pub_bytes))
 
         txn = await self.config.mongo.async_db.key_event_log.find_one(
             {"txn.prev_public_key_hash": search_address}
@@ -736,13 +739,16 @@ class NodeKeyRotationManager:
         txn = await self.config.mongo.async_db.key_event_log.find_one(
             {"anchor_public_key": txn["anchor_public_key"]}, sort=[("counter", -1)]
         )
-        while jump_cur != txn["prerotated_key_hash"]:
+        while curr_address != txn["prerotated_key_hash"]:
             config.app_log.info(
                 f"Searching for transaction with prev_public_key_hash: {txn['public_key_hash']}"
             )
             jump_cur = derive_secure_path(
                 jump_cur["private_key"], jump_cur["chain_code"], second_factor
             )
+            curr_priv_obj = _CoincurvePrivateKey(jump_cur["private_key"])
+            curr_pub_bytes = curr_priv_obj.public_key.format(compressed=True)
+            curr_address = str(P2PKHBitcoinAddress.from_pubkey(curr_pub_bytes))
 
         jump_priv_obj = _CoincurvePrivateKey(jump_cur["private_key"])
         jump_pub_bytes = jump_priv_obj.public_key.format(compressed=True)
