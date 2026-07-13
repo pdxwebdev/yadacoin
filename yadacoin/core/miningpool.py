@@ -348,6 +348,7 @@ class MiningPool(object):
                 "inputs": [x.to_dict() for x in txn.inputs],
                 "outputs": [x.to_dict() for x in txn.outputs],
                 "relationship": relationship,
+                "public_key": txn.public_key,
                 "prerotated_key_hash": txn.prerotated_key_hash,
                 "twice_prerotated_key_hash": txn.twice_prerotated_key_hash,
                 "public_key_hash": txn.public_key_hash,
