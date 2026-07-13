@@ -392,7 +392,9 @@ class RPCSocketServer(TCPServer, BaseRPC):
                     self.config.app_log.warning(
                         "Disconnected from {0}.{1}".format(
                             stream.peer.__class__.__name__,
-                            stream.peer.identity.username or "(blank)",
+                            stream.peer.identity.username
+                            if stream.peer.identity
+                            else "(blank)",
                         )
                     )
                 await self.remove_peer(stream)
