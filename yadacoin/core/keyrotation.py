@@ -577,7 +577,7 @@ class NodeKeyRotationManager:
             )
         if self_output and ratchet_txn.coinbase:
             for output in ratchet_txn.outputs:
-                output.to = two_ahead_address
+                output.to = next_address
         if block:
             try:
                 unconfirmed, confirming = await self._queue_reanchor(block=block)
