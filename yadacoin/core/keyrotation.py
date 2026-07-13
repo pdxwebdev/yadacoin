@@ -583,7 +583,6 @@ class NodeKeyRotationManager:
             prev_key["private_key"].hex(), ratchet_txn.hash
         )
         if block:
-            block.transactions.append(ratchet_txn)
             try:
                 await self._queue_reanchor(block=block)
             except Exception as exc:
