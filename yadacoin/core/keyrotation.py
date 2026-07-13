@@ -734,7 +734,7 @@ class NodeKeyRotationManager:
                 f"Searching for transaction with prev_public_key_hash: {search_address}"
             )
             txn = await self.config.mongo.async_db.key_event_log.find_one(
-                {"prev_public_key_hash": search_address}
+                {"txn.prev_public_key_hash": search_address}
             )
             if txn:
                 config.app_log.info(f"Found transaction: {txn}")
