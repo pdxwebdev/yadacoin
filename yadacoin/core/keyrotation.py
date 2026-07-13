@@ -578,13 +578,16 @@ class NodeKeyRotationManager:
         if self_output and ratchet_txn.coinbase:
             for output in ratchet_txn.outputs:
                 output.to = two_ahead_address
-        ratchet_txn.hash = await ratchet_txn.generate_hash()
-        ratchet_txn.transaction_signature = NodeKeyRotationManager._sign(
-            prev_key["private_key"].hex(), ratchet_txn.hash
-        )
         if block:
             try:
-                await self._queue_reanchor(block=block)
+                unconfirmed, confirming = await self._queue_reanchor(block=block)
+                ratchet_txn.prev_public_key_hash = confirming.public_key_hash
+
+                ratchet_txn.hash = await ratchet_txn.generate_hash()
+                ratchet_txn.transaction_signature = NodeKeyRotationManager._sign(
+                    prev_key["private_key"].hex(), ratchet_txn.hash
+                )
+                block.transactions.extend([unconfirmed, confirming])
             except Exception as exc:
                 config.app_log.warning(
                     "NodeKeyRotationManager: re-anchor error: %s", exc
@@ -809,7 +812,7 @@ class NodeKeyRotationManager:
             kn1["private_key"].hex(), confirming_txn.hash
         )
         if block:
-            block.transactions.extend([unconfirmed_txn, confirming_txn])
+            unconfirmed_txn, confirming_txn
         else:
             for txn in (unconfirmed_txn, confirming_txn):
                 await config.mongo.async_db.miner_transactions.replace_one(
