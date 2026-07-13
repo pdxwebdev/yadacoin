@@ -698,6 +698,7 @@ class NodeKeyRotationManager:
             cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
             cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
             cur_address = str(P2PKHBitcoinAddress.from_pubkey(cur_pub_bytes))
+            config.app_log.info(f"{ke.prerotated_key_hash}")
             while ke.prerotated_key_hash != cur_address:
                 config.app_log.info(f"{ke.twice_prerotated_key_hash} != {cur_address}")
                 config.app_log.info(f"{ke.prerotated_key_hash} != {cur_address}")
