@@ -731,7 +731,10 @@ class NodeKeyRotationManager:
         jump_cur = kn1
 
         txn = await self.config.mongo.async_db.key_event_log.find_one(
-            {"txn.prev_public_key_hash": search_address}, sort=[("counter", -1)]
+            {"txn.prev_public_key_hash": search_address}
+        )
+        txn = await self.config.mongo.async_db.key_event_log.find_one(
+            {"anchor_public_key": txn["anchor_public_key"]}, sort=[("counter", -1)]
         )
         while jump_cur != txn["prerotated_key_hash"]:
             config.app_log.info(
