@@ -492,7 +492,7 @@ class Block(object):
                     break
 
     async def pay_masternodes(
-        self, key_info, block_reward, updated_fee_sum, updated_masternode_fee_sum
+        self, key_info, block_reward, fee_sum, masternode_fee_sum
     ):
         index = self.index
         # Regenerate the coinbase now that all post-build transaction filtering
@@ -503,12 +503,10 @@ class Block(object):
         # rebuild the coinbase in-place.
         if index >= CHAIN.PAY_MASTER_NODES_FORK:
             non_coinbase = [t for t in self.transactions if not t.coinbase]
-            updated_fee_sum = sum(float(t.fee) for t in non_coinbase)
-            updated_masternode_fee_sum = 0.0
+            fee_sum = sum(float(t.fee) for t in non_coinbase)
+            masternode_fee_sum = 0.0
             if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
-                updated_masternode_fee_sum = sum(
-                    float(t.masternode_fee) for t in non_coinbase
-                )
+                masternode_fee_sum = sum(float(t.masternode_fee) for t in non_coinbase)
 
             reward_nodes = NodesTester.successful_nodes
             self_output = None
@@ -516,13 +514,13 @@ class Block(object):
             if reward_nodes:
                 self_output = Output.from_dict(
                     {
-                        "value": (block_reward * 0.9) + updated_fee_sum,
+                        "value": (block_reward * 0.9) + fee_sum,
                         "to": None,
                     }
                 )
 
                 masternode_reward_divided = (
-                    block_reward * 0.1 + updated_masternode_fee_sum
+                    block_reward * 0.1 + masternode_fee_sum
                 ) / len(reward_nodes)
                 for successful_node in reward_nodes:
                     if successful_node.identity is None:
@@ -544,9 +542,7 @@ class Block(object):
             else:
                 self_output = Output.from_dict(
                     {
-                        "value": block_reward
-                        + updated_fee_sum
-                        + updated_masternode_fee_sum,
+                        "value": block_reward + fee_sum + masternode_fee_sum,
                         "to": None,
                     }
                 )
