@@ -594,16 +594,15 @@ class Block(object):
             )
             block.transactions = non_coinbase + [new_coinbase]
 
-        txn_hashes = block.get_transaction_hashes()
-        block.set_merkle_root(txn_hashes)
-        block.header = block.generate_header()
-
         if nonce:
             block.nonce = str(nonce)
 
         block = await config.kel_manager.advance_auth_ratchet(
             txn=new_coinbase, block=block, self_output=self_output
         )
+        txn_hashes = block.get_transaction_hashes()
+        block.set_merkle_root(txn_hashes)
+        block.header = block.generate_header()
         return block
 
     async def remove_transaction(
