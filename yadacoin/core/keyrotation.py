@@ -805,14 +805,13 @@ class NodeKeyRotationManager:
         confirming_txn.transaction_signature = NodeKeyRotationManager._sign(
             kn1["private_key"].hex(), confirming_txn.hash
         )
+        for txn in (unconfirmed_txn, confirming_txn):
+            await config.mongo.async_db.miner_transactions.replace_one(
+                {"public_key_hash": txn.public_key_hash}, txn.to_dict(), upsert=True
+            )
         if block:
             return unconfirmed_txn, confirming_txn
         else:
-            for txn in (unconfirmed_txn, confirming_txn):
-                await config.mongo.async_db.miner_transactions.replace_one(
-                    {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
-                )
-
             config.app_log.info(
                 "NodeKeyRotationManager: re-anchor queued (unconfirmed=%s, confirming=%s, "
                 "jump_target=%s)",
