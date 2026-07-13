@@ -589,6 +589,7 @@ class Block(object):
 
             updated_outputs.append(self_output)
             new_coinbase = Transaction(
+                version=7,
                 outputs=updated_outputs,
                 coinbase=True,
             )
