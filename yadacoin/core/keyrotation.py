@@ -690,15 +690,26 @@ class NodeKeyRotationManager:
         if not kel:
             return
 
-        # KEL depth n; next expected on-chain signer is K_n
-        n = len(kel)
-
         # Derive K_n (UNCONFIRMED signer) and K_{n+1} (CONFIRMING signer)
         cur = k0
-        for _ in range(n):
+        for ke in kel:
             cur = derive_secure_path(
                 cur["private_key"], cur["chain_code"], second_factor
             )
+            cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
+            cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
+            if ke.prerotated_key_hash != cur_pub_bytes.hex():
+                for _ in range(200):
+                    cur = derive_secure_path(
+                        cur["private_key"], cur["chain_code"], second_factor
+                    )
+
+                    cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
+                    cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
+                    if ke.prerotated_key_hash == cur_pub_bytes.hex():
+                        break
+                else:
+                    return
         kn = cur  # UNCONFIRMED signer
 
         kn1 = derive_secure_path(kn["private_key"], kn["chain_code"], second_factor)
