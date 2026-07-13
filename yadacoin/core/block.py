@@ -886,8 +886,21 @@ class Block(object):
     def is_coinbase(block, txn):
         return (
             block.public_key == txn.public_key
-            and str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.public_key)))
-            in [x.to for x in txn.outputs]
+            and (
+                (
+                    str(
+                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.public_key))
+                    )
+                    in [x.to for x in txn.outputs]
+                )
+                or (
+                    str(
+                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.public_key))
+                    )
+                    == txn.public_key_hash
+                    and txn.prerotated_key_hash in [x.to for x in txn.outputs]
+                )
+            )
             and len(txn.inputs) == 0
         )
 
