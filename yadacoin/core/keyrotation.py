@@ -731,10 +731,10 @@ class NodeKeyRotationManager:
         jump_cur = kn1
         while txn:
             config.app_log.info(
-                f"Searching for transaction with prerotated_key_hash: {search_address}"
+                f"Searching for transaction with prev_public_key_hash: {search_address}"
             )
             txn = await self.config.mongo.async_db.key_event_log.find_one(
-                {"prerotated_key_hash": search_address}
+                {"prev_public_key_hash": search_address}
             )
             if txn:
                 config.app_log.info(f"Found transaction: {txn}")
@@ -743,6 +743,7 @@ class NodeKeyRotationManager:
                 jump_cur = derive_secure_path(
                     jump_cur["private_key"], jump_cur["chain_code"], second_factor
                 )
+                search_address = txn["public_key_hash"]
 
         jump_priv_obj = _CoincurvePrivateKey(jump_cur["private_key"])
         jump_pub_bytes = jump_priv_obj.public_key.format(compressed=True)
