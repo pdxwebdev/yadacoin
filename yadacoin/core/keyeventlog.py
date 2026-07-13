@@ -902,7 +902,7 @@ class KELHashCollection:
                 in self.twice_prerotated_key_hashes
             ):
                 raise KELHashCollectionException(
-                    "Duplication key event in mempool. Removing."
+                    "Duplication key event in mempool. Removing. (twice_prerotated_key_hash)"
                 )
             self.twice_prerotated_key_hashes[
                 transaction.twice_prerotated_key_hash
@@ -911,21 +911,21 @@ class KELHashCollection:
         if transaction.prerotated_key_hash:
             if transaction.prerotated_key_hash in self.prerotated_key_hashes:
                 raise KELHashCollectionException(
-                    "Duplication key event in mempool. Removing."
+                    "Duplication key event in mempool. Removing. (prerotated_key_hash)"
                 )
             self.prerotated_key_hashes[transaction.prerotated_key_hash] = transaction
 
         if transaction.public_key_hash:
             if transaction.public_key_hash in self.public_key_hashes:
                 raise KELHashCollectionException(
-                    "Duplication key event in mempool. Removing."
+                    "Duplication key event in mempool. Removing. (public_key_hash)"
                 )
             self.public_key_hashes[transaction.public_key_hash] = transaction
 
         if transaction.prev_public_key_hash:
             if transaction.prev_public_key_hash in self.prev_public_key_hashes:
                 raise KELHashCollectionException(
-                    "Duplication key event in mempool. Removing."
+                    "Duplication key event in mempool. Removing. (prev_public_key_hash)"
                 )
             self.prev_public_key_hashes[transaction.prev_public_key_hash] = transaction
 
