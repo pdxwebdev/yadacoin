@@ -703,11 +703,7 @@ class NodeKeyRotationManager:
             cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
             cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
             cur_address = str(P2PKHBitcoinAddress.from_pubkey(cur_pub_bytes))
-            config.app_log.info(f"{ke.prerotated_key_hash}")
             while ke.prerotated_key_hash != cur_address:
-                config.app_log.info(f"{ke.twice_prerotated_key_hash} != {cur_address}")
-                config.app_log.info(f"{ke.prerotated_key_hash} != {cur_address}")
-                config.app_log.info(f"{ke.public_key_hash} != {cur_address}")
                 cur = derive_secure_path(
                     cur["private_key"], cur["chain_code"], second_factor
                 )
@@ -744,9 +740,6 @@ class NodeKeyRotationManager:
             {"anchor_public_key": txn["anchor_public_key"]}, sort=[("counter", -1)]
         )
         while curr_address != txn["prerotated_key_hash"]:
-            config.app_log.info(
-                f"Searching for transaction with prev_public_key_hash: {txn['public_key_hash']}"
-            )
             jump_cur = derive_secure_path(
                 jump_cur["private_key"], jump_cur["chain_code"], second_factor
             )
