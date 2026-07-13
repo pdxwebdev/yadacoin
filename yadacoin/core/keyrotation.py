@@ -55,7 +55,6 @@ new on-chain UNCONFIRMED+CONFIRMING re-anchor pair that jumps the on-chain
 KEL forward by OFFCHAIN_ANCHOR_INTERVAL steps.
 """
 
-import asyncio
 import base64
 import hashlib
 import hmac as _hmac
@@ -178,7 +177,6 @@ class NodeKeyRotationManager:
         # Without this, two coroutines could both read self._auth_ratchet_key
         # before either writes the next key back, signing two different messages
         # with the same key.
-        self._ratchet_lock: asyncio.Lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # Public entry points
@@ -432,165 +430,217 @@ class NodeKeyRotationManager:
         3. Increments the counter; triggers ``_queue_reanchor``
            every OFFCHAIN_ANCHOR_INTERVAL events
 
-        A mutex (``self._ratchet_lock``) ensures this method is never entered
-        concurrently, preventing two coroutines from reading the same
-        ``self._auth_ratchet_key`` before either has written the next key back.
         """
-        async with self._ratchet_lock:
-            config = self.config
+        config = self.config
 
-            # KEL keys are required — the WIF key is considered compromised.
-            kel_priv = getattr(config, "kel_anchor_private_key", None)
-            kel_pub = getattr(config, "kel_anchor_public_key", None)
-            if not kel_priv or not kel_pub:
+        # KEL keys are required — the WIF key is considered compromised.
+        kel_priv = getattr(config, "kel_anchor_private_key", None)
+        kel_pub = getattr(config, "kel_anchor_public_key", None)
+        if not kel_priv or not kel_pub:
+            _fatal(
+                "\n"
+                "═══════════════════════════════════════════════════════════════\n"
+                "  FATAL: KEL signing key is not yet active.\n"
+                "  The node cannot authenticate P2P connections without a KEL\n"
+                "  inception confirmed on-chain or in the mempool.\n"
+                "  Wait for startup_check to complete before connections are\n"
+                "  accepted, or ensure SECOND_FACTOR is set correctly.\n"
+                "═══════════════════════════════════════════════════════════════\n"
+            )
+
+        second_factor = self._second_factor or _read_second_factor()
+        if not second_factor:
+            _fatal(
+                "\n"
+                "═══════════════════════════════════════════════════════════════\n"
+                "  FATAL: SECOND_FACTOR is required for P2P authentication but\n"
+                "  is no longer available (was it unset after startup?).\n"
+                "\n"
+                "  Set SECOND_FACTOR or SECOND_FACTOR_FILE and restart.\n"
+                "═══════════════════════════════════════════════════════════════\n"
+            )
+
+        # Initialise ratchet from current on-chain anchor key if not yet set
+        if self._auth_ratchet_key is None:
+            kel_cc = getattr(config, "kel_anchor_chain_code", None)
+            if kel_cc:
+                # Use the BIP32 chain code stored alongside the anchor private key.
+                _base_ratchet = {
+                    "private_key": bytes.fromhex(kel_priv),
+                    "chain_code": bytes.fromhex(kel_cc),
+                }
+            else:
                 _fatal(
                     "\n"
                     "═══════════════════════════════════════════════════════════════\n"
-                    "  FATAL: KEL signing key is not yet active.\n"
-                    "  The node cannot authenticate P2P connections without a KEL\n"
-                    "  inception confirmed on-chain or in the mempool.\n"
-                    "  Wait for startup_check to complete before connections are\n"
-                    "  accepted, or ensure SECOND_FACTOR is set correctly.\n"
+                    "  FATAL: kel_anchor_chain_code missing. Cannot initialise ratchet.\n"
                     "═══════════════════════════════════════════════════════════════\n"
                 )
-
-            second_factor = self._second_factor or _read_second_factor()
-            if not second_factor:
-                _fatal(
-                    "\n"
-                    "═══════════════════════════════════════════════════════════════\n"
-                    "  FATAL: SECOND_FACTOR is required for P2P authentication but\n"
-                    "  is no longer available (was it unset after startup?).\n"
-                    "\n"
-                    "  Set SECOND_FACTOR or SECOND_FACTOR_FILE and restart.\n"
-                    "═══════════════════════════════════════════════════════════════\n"
-                )
-
-            # Initialise ratchet from current on-chain anchor key if not yet set
-            if self._auth_ratchet_key is None:
-                kel_cc = getattr(config, "kel_anchor_chain_code", None)
-                if kel_cc:
-                    # Use the BIP32 chain code stored alongside the anchor private key.
-                    _base_ratchet = {
-                        "private_key": bytes.fromhex(kel_priv),
-                        "chain_code": bytes.fromhex(kel_cc),
-                    }
-                else:
-                    _fatal(
-                        "\n"
-                        "═══════════════════════════════════════════════════════════════\n"
-                        "  FATAL: kel_anchor_chain_code missing. Cannot initialise ratchet.\n"
-                        "═══════════════════════════════════════════════════════════════\n"
-                    )
-                # Restore position from key_event_log tip so restarts pick up where
-                # they left off instead of starting over from K_n.
-                # Use K0 pubkey as the stable root identifier — it never changes.
-                _k0_pub_hex = (
-                    (
-                        _CoincurvePrivateKey(self._k0["private_key"])
-                        .public_key.format(compressed=True)
-                        .hex()
-                    )
-                    if self._k0
-                    else kel_pub
-                )
-                _tip = await config.mongo.async_db.key_event_log.find_one(
-                    {"anchor_public_key": _k0_pub_hex},
-                    sort=[("counter", -1)],
-                )
-                # Unconditional init: fast-forward from _base_ratchet by however
-                # many steps are in the tip (0 on first start = fresh anchor).
-                _tip_counter = _tip.get("counter", 0) if _tip else 0
-                _tip_pkh = _tip.get("public_key_hash", "") if _tip else ""
-                _cur = _base_ratchet
-                for _ in range(_tip_counter):
-                    _cur = derive_secure_path(
-                        _cur["private_key"], _cur["chain_code"], second_factor
-                    )
-                self._auth_ratchet_key = _cur
-                self._auth_ratchet_pub = (
-                    kel_pub
-                    if not _tip_counter
-                    else (
-                        _CoincurvePrivateKey(_cur["private_key"])
-                        .public_key.format(compressed=True)
-                        .hex()
-                    )
-                )
-                self._auth_counter = _tip_counter
-                self._auth_ratchet_prev_pkh = _tip_pkh
-
-            prev_key = self._auth_ratchet_key
-            prev_pub_hex = self._auth_ratchet_pub
-            prev_priv_obj = _CoincurvePrivateKey(prev_key["private_key"])
-            prev_pub_bytes = prev_priv_obj.public_key.format(compressed=True)
-            prev_address = str(P2PKHBitcoinAddress.from_pubkey(prev_pub_bytes))
-
-            # Derive next ratchet key (the "confirming" key)
-            next_key = derive_secure_path(
-                prev_key["private_key"], prev_key["chain_code"], second_factor
-            )
-            next_priv_obj = _CoincurvePrivateKey(next_key["private_key"])
-            next_pub_hex = next_priv_obj.public_key.format(compressed=True).hex()
-            next_pub_bytes = next_priv_obj.public_key.format(compressed=True)
-            next_address = str(P2PKHBitcoinAddress.from_pubkey(next_pub_bytes))
-
-            # Derive two-steps-ahead for twice_prerotated_key_hash
-            two_ahead = derive_secure_path(
-                next_key["private_key"], next_key["chain_code"], second_factor
-            )
-            two_ahead_pub = _CoincurvePrivateKey(
-                two_ahead["private_key"]
-            ).public_key.format(compressed=True)
-            two_ahead_address = str(P2PKHBitcoinAddress.from_pubkey(two_ahead_pub))
-
-            from yadacoin.core.transaction import Transaction
-
-            # anchor_public_key is always K0 — the stable inception key that
-            # identifies this node's entire KEL chain across all re-anchors.
-            anchor_pub = (
+            # Restore position from key_event_log tip so restarts pick up where
+            # they left off instead of starting over from K_n.
+            # Use K0 pubkey as the stable root identifier — it never changes.
+            _k0_pub_hex = (
                 (
                     _CoincurvePrivateKey(self._k0["private_key"])
                     .public_key.format(compressed=True)
                     .hex()
                 )
                 if self._k0
-                else (getattr(config, "kel_anchor_public_key", None) or prev_pub_hex)
+                else kel_pub
+            )
+            _tip = await config.mongo.async_db.key_event_log.find_one(
+                {"anchor_public_key": _k0_pub_hex},
+                sort=[("counter", -1)],
+            )
+            # Unconditional init: fast-forward from _base_ratchet by however
+            # many steps are in the tip (0 on first start = fresh anchor).
+            _tip_counter = _tip.get("counter", 0) if _tip else 0
+            _tip_pkh = _tip.get("public_key_hash", "") if _tip else ""
+            _cur = _base_ratchet
+            for _ in range(_tip_counter):
+                _cur = derive_secure_path(
+                    _cur["private_key"], _cur["chain_code"], second_factor
+                )
+            self._auth_ratchet_key = _cur
+            self._auth_ratchet_pub = (
+                kel_pub
+                if not _tip_counter
+                else (
+                    _CoincurvePrivateKey(_cur["private_key"])
+                    .public_key.format(compressed=True)
+                    .hex()
+                )
+            )
+            self._auth_counter = _tip_counter
+            self._auth_ratchet_prev_pkh = _tip_pkh
+
+        prev_key = self._auth_ratchet_key
+        prev_pub_hex = self._auth_ratchet_pub
+        prev_priv_obj = _CoincurvePrivateKey(prev_key["private_key"])
+        prev_pub_bytes = prev_priv_obj.public_key.format(compressed=True)
+        prev_address = str(P2PKHBitcoinAddress.from_pubkey(prev_pub_bytes))
+
+        # Derive next ratchet key (the "confirming" key)
+        next_key = derive_secure_path(
+            prev_key["private_key"], prev_key["chain_code"], second_factor
+        )
+        next_priv_obj = _CoincurvePrivateKey(next_key["private_key"])
+        next_pub_hex = next_priv_obj.public_key.format(compressed=True).hex()
+        next_pub_bytes = next_priv_obj.public_key.format(compressed=True)
+        next_address = str(P2PKHBitcoinAddress.from_pubkey(next_pub_bytes))
+
+        # Derive two-steps-ahead for twice_prerotated_key_hash
+        two_ahead = derive_secure_path(
+            next_key["private_key"], next_key["chain_code"], second_factor
+        )
+        two_ahead_pub = _CoincurvePrivateKey(
+            two_ahead["private_key"]
+        ).public_key.format(compressed=True)
+        two_ahead_address = str(P2PKHBitcoinAddress.from_pubkey(two_ahead_pub))
+
+        from yadacoin.core.transaction import Transaction
+
+        # anchor_public_key is always K0 — the stable inception key that
+        # identifies this node's entire KEL chain across all re-anchors.
+        anchor_pub = (
+            (
+                _CoincurvePrivateKey(self._k0["private_key"])
+                .public_key.format(compressed=True)
+                .hex()
+            )
+            if self._k0
+            else (getattr(config, "kel_anchor_public_key", None) or prev_pub_hex)
+        )
+
+        if txn:
+            ratchet_txn = txn
+            ratchet_txn.public_key = prev_pub_hex
+            ratchet_txn.prerotated_key_hash = next_address
+            ratchet_txn.twice_prerotated_key_hash = two_ahead_address
+            ratchet_txn.public_key_hash = prev_address
+            ratchet_txn.prev_public_key_hash = self._auth_ratchet_prev_pkh or ""
+        else:
+            ratchet_txn = Transaction(
+                txn_time=int(time.time()),
+                public_key=prev_pub_hex,
+                outputs=[{"to": next_address, "value": 0.0}],
+                inputs=[],
+                fee=0.0,
+                masternode_fee=0.0,
+                version=7,
+                prerotated_key_hash=next_address,
+                twice_prerotated_key_hash=two_ahead_address,
+                public_key_hash=prev_address,
+                prev_public_key_hash=self._auth_ratchet_prev_pkh or "",
+                relationship="",
+                relationship_hash="",
+                rid="",
+                dh_public_key="",
+            )
+        if self_output and ratchet_txn.coinbase:
+            for output in ratchet_txn.outputs:
+                output.to = two_ahead_address
+        ratchet_txn.hash = await ratchet_txn.generate_hash()
+        ratchet_txn.transaction_signature = NodeKeyRotationManager._sign(
+            prev_key["private_key"].hex(), ratchet_txn.hash
+        )
+        if block:
+            try:
+                await self._queue_reanchor(block=block)
+            except Exception as exc:
+                config.app_log.warning(
+                    "NodeKeyRotationManager: re-anchor error: %s", exc
+                )
+
+            txn_hashes = block.get_transaction_hashes()
+            block.set_merkle_root(txn_hashes)
+            block.hash = await block.generate_hash_from_header(
+                block.index, block.header, str(block.nonce)
+            )
+            block.signature = NodeKeyRotationManager._sign(
+                prev_key["private_key"].hex(), block.hash
             )
 
-            if txn:
-                ratchet_txn = txn
-                ratchet_txn.public_key = prev_pub_hex
-                ratchet_txn.prerotated_key_hash = next_address
-                ratchet_txn.twice_prerotated_key_hash = two_ahead_address
-                ratchet_txn.public_key_hash = prev_address
-                ratchet_txn.prev_public_key_hash = self._auth_ratchet_prev_pkh or ""
-            else:
-                ratchet_txn = Transaction(
-                    txn_time=int(time.time()),
-                    public_key=prev_pub_hex,
-                    outputs=[{"to": next_address, "value": 0.0}],
-                    inputs=[],
-                    fee=0.0,
-                    masternode_fee=0.0,
-                    version=7,
-                    prerotated_key_hash=next_address,
-                    twice_prerotated_key_hash=two_ahead_address,
-                    public_key_hash=prev_address,
-                    prev_public_key_hash=self._auth_ratchet_prev_pkh or "",
-                    relationship="",
-                    relationship_hash="",
-                    rid="",
-                    dh_public_key="",
-                )
-            if self_output and ratchet_txn.coinbase:
-                for output in ratchet_txn.outputs:
-                    output.to = two_ahead_address
-            ratchet_txn.hash = await ratchet_txn.generate_hash()
-            ratchet_txn.transaction_signature = NodeKeyRotationManager._sign(
-                prev_key["private_key"].hex(), ratchet_txn.hash
+        self._auth_counter += 1
+
+        try:
+            # Store in key_event_log (off-chain record) — NOT miner_transactions.
+            # Individual ratchet steps are verified but not mined; only the
+            # periodic anchor transactions (every OFFCHAIN_ANCHOR_INTERVAL steps,
+            # from _queue_reanchor) go into the mempool to be mined.
+            await config.mongo.async_db.key_event_log.replace_one(
+                # Filter by public_key_hash — uniquely identifies this key
+                # position in the chain.  Using the transaction id/signature
+                # would create a new document on every advance because the
+                # signature changes (it's time-stamped).
+                {"public_key_hash": prev_address},
+                {
+                    "counter": self._auth_counter,
+                    "anchor_public_key": anchor_pub,
+                    "id": ratchet_txn.transaction_signature,
+                    "public_key": prev_pub_hex,
+                    "public_key_hash": prev_address,
+                    "prerotated_key_hash": next_address,
+                    "txn": ratchet_txn.to_dict(),
+                    "timestamp": time.time(),
+                },
+                upsert=True,
             )
-            if block:
+        except Exception as exc:
+            config.app_log.debug(
+                "NodeKeyRotationManager: key_event_log write error: %s", exc
+            )
+
+        # Advance ratchet state
+        self._auth_ratchet_key = next_key
+        self._auth_ratchet_pub = next_pub_hex
+        self._auth_ratchet_prev_pkh = prev_address
+
+        if block:
+            return block
+        else:
+            # Trigger re-anchor when interval is reached
+            if self._auth_counter % self.OFFCHAIN_ANCHOR_INTERVAL == 0:
                 try:
                     await self._queue_reanchor(block=block)
                 except Exception as exc:
@@ -598,70 +648,14 @@ class NodeKeyRotationManager:
                         "NodeKeyRotationManager: re-anchor error: %s", exc
                     )
 
-                txn_hashes = block.get_transaction_hashes()
-                block.set_merkle_root(txn_hashes)
-                block.hash = await block.generate_hash_from_header(
-                    block.index, block.header, str(block.nonce)
-                )
-                block.signature = NodeKeyRotationManager._sign(
-                    prev_key["private_key"].hex(), block.hash
-                )
-
-            self._auth_counter += 1
-
-            try:
-                # Store in key_event_log (off-chain record) — NOT miner_transactions.
-                # Individual ratchet steps are verified but not mined; only the
-                # periodic anchor transactions (every OFFCHAIN_ANCHOR_INTERVAL steps,
-                # from _queue_reanchor) go into the mempool to be mined.
-                await config.mongo.async_db.key_event_log.replace_one(
-                    # Filter by public_key_hash — uniquely identifies this key
-                    # position in the chain.  Using the transaction id/signature
-                    # would create a new document on every advance because the
-                    # signature changes (it's time-stamped).
-                    {"public_key_hash": prev_address},
-                    {
-                        "counter": self._auth_counter,
-                        "anchor_public_key": anchor_pub,
-                        "id": ratchet_txn.transaction_signature,
-                        "public_key": prev_pub_hex,
-                        "public_key_hash": prev_address,
-                        "prerotated_key_hash": next_address,
-                        "txn": ratchet_txn.to_dict(),
-                        "timestamp": time.time(),
-                    },
-                    upsert=True,
-                )
-            except Exception as exc:
-                config.app_log.debug(
-                    "NodeKeyRotationManager: key_event_log write error: %s", exc
-                )
-
-            # Advance ratchet state
-            self._auth_ratchet_key = next_key
-            self._auth_ratchet_pub = next_pub_hex
-            self._auth_ratchet_prev_pkh = prev_address
-
-            if block:
-                return block
-            else:
-                # Trigger re-anchor when interval is reached
-                if self._auth_counter % self.OFFCHAIN_ANCHOR_INTERVAL == 0:
-                    try:
-                        await self._queue_reanchor(block=block)
-                    except Exception as exc:
-                        config.app_log.warning(
-                            "NodeKeyRotationManager: re-anchor error: %s", exc
-                        )
-
-                # Return both current (signing) and next (confirming) keys
-                return (
-                    prev_key["private_key"].hex(),
-                    prev_pub_hex,
-                    next_key["private_key"].hex(),
-                    next_pub_hex,
-                    two_ahead_address,
-                )
+            # Return both current (signing) and next (confirming) keys
+            return (
+                prev_key["private_key"].hex(),
+                prev_pub_hex,
+                next_key["private_key"].hex(),
+                next_pub_hex,
+                two_ahead_address,
+            )
 
     async def _queue_reanchor(self, block=None):
         """Queue an on-chain UNCONFIRMED+CONFIRMING re-anchor pair.
