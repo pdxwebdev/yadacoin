@@ -712,8 +712,6 @@ class NodeKeyRotationManager:
                 cur_address = str(P2PKHBitcoinAddress.from_pubkey(cur_pub_bytes))
                 if ke.prerotated_key_hash == cur_address:
                     break
-            else:
-                return
         kn = cur  # UNCONFIRMED signer
 
         kn1 = derive_secure_path(kn["private_key"], kn["chain_code"], second_factor)
