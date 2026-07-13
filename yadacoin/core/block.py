@@ -284,7 +284,7 @@ class Block(object):
                     and txn.prev_public_key_hash == key_info["prev_public_key_hash"]
                 ):
                     transaction_objs.remove(txn)
-
+        transaction_objs.extend([key_info["unconfirmed"], key_info["confirming"]])
         block.transactions = transaction_objs
 
         await block.check_kel_transactions()
