@@ -698,6 +698,13 @@ class NodeKeyRotationManager:
             cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
             cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
             if ke.prerotated_key_hash != cur_pub_bytes.hex():
+                config.app_log.info(
+                    f"{ke.twice_prerotated_key_hash} != {cur_pub_bytes.hex()}"
+                )
+                config.app_log.info(
+                    f"{ke.prerotated_key_hash} != {cur_pub_bytes.hex()}"
+                )
+                config.app_log.info(f"{ke.public_key_hash} != {cur_pub_bytes.hex()}")
                 for _ in range(200):
                     cur = derive_secure_path(
                         cur["private_key"], cur["chain_code"], second_factor
