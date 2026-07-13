@@ -335,12 +335,6 @@ class Block(object):
             )
         outputs.append(self_output)
 
-        coinbase_txn = Transaction(
-            outputs=outputs,
-            coinbase=True,
-        )
-        transaction_objs.append(coinbase_txn)
-
         block = await cls.init_async(
             version=version,
             block_time=xtime,
