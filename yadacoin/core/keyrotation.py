@@ -520,7 +520,7 @@ class NodeKeyRotationManager:
 
         if block:
             block.public_key = prev_pub_hex
-            block.private_key = prev_key["private_key"].to_hex()
+            block.private_key = prev_priv_obj.to_hex()
         # Derive next ratchet key (the "confirming" key)
         next_key = derive_secure_path(
             prev_key["private_key"], prev_key["chain_code"], second_factor
