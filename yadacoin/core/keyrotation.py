@@ -408,7 +408,7 @@ class NodeKeyRotationManager:
     # Off-chain auth ratchet
     # ------------------------------------------------------------------
 
-    async def advance_auth_ratchet(self, block=None, txn=None, self_output=None):
+    async def advance_auth_ratchet(self, block=None):
         """Advance the off-chain signing ratchet by one step and return
         ``(current_priv_hex, current_pub_hex, next_priv_hex, next_pub_hex)``.
 
@@ -553,13 +553,18 @@ class NodeKeyRotationManager:
             else (getattr(config, "kel_anchor_public_key", None) or prev_pub_hex)
         )
 
-        if txn:
-            ratchet_txn = txn
-            ratchet_txn.public_key = prev_pub_hex
-            ratchet_txn.prerotated_key_hash = next_address
-            ratchet_txn.twice_prerotated_key_hash = two_ahead_address
-            ratchet_txn.public_key_hash = prev_address
-            ratchet_txn.prev_public_key_hash = self._auth_ratchet_prev_pkh or ""
+        if block:
+            unconfirmed, confirming = await self._queue_reanchor(block=block)
+            return {
+                "private_key": prev_key["private_key"].hex(),
+                "unconfirmed": unconfirmed,
+                "confirming": confirming,
+                "public_key": prev_pub_hex,
+                "prerotated_key_hash": next_address,
+                "twice_prerotated_key_hash": two_ahead_address,
+                "public_key_hash": prev_address,
+                "prev_public_key_hash": self._auth_ratchet_prev_pkh or "",
+            }
         else:
             ratchet_txn = Transaction(
                 txn_time=int(time.time()),
@@ -577,33 +582,6 @@ class NodeKeyRotationManager:
                 relationship_hash="",
                 rid="",
                 dh_public_key="",
-            )
-        if self_output and ratchet_txn.coinbase:
-            for output in ratchet_txn.outputs:
-                if output.to is None:
-                    output.to = next_address
-        if block:
-            try:
-                unconfirmed, confirming = await self._queue_reanchor(block=block)
-                ratchet_txn.prev_public_key_hash = confirming.public_key_hash
-
-                ratchet_txn.hash = await ratchet_txn.generate_hash()
-                ratchet_txn.transaction_signature = NodeKeyRotationManager._sign(
-                    prev_key["private_key"].hex(), ratchet_txn.hash
-                )
-                block.transactions.extend([unconfirmed, confirming])
-            except Exception as exc:
-                config.app_log.warning(
-                    "NodeKeyRotationManager: re-anchor error: %s", exc
-                )
-
-            txn_hashes = block.get_transaction_hashes()
-            block.set_merkle_root(txn_hashes)
-            block.hash = await block.generate_hash_from_header(
-                block.index, block.header, str(block.nonce)
-            )
-            block.signature = NodeKeyRotationManager._sign(
-                prev_key["private_key"].hex(), block.hash
             )
 
         self._auth_counter += 1

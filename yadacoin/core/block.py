@@ -42,6 +42,7 @@ from yadacoin.core.keyeventlog import (
     KeyEventLog,
     PublicKeyMismatchException,
 )
+from yadacoin.core.keyrotation import NodeKeyRotationManager
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.nodes import Nodes
 from yadacoin.core.nodestester import NodesTester
@@ -251,89 +252,6 @@ class Block(object):
             [float(transaction_obj.fee) for transaction_obj in transaction_objs]
         )
         block_reward = CHAIN.get_block_reward(index)
-        if index >= CHAIN.PAY_MASTER_NODES_FORK:
-            block_index = config.LatestBlock.block.index
-
-            # On startup, NodesTester.all_nodes is empty and apply_dynamic_nodes()
-            # hasn't been called yet, so dynamic nodes would be missing from
-            # Nodes._NODES. Ensure they are loaded before computing current_nodes.
-            if not NodesTester.all_nodes and block_index >= CHAIN.DYNAMIC_NODES_FORK:
-                await Nodes.apply_dynamic_nodes()
-
-            current_nodes = Nodes.get_all_nodes_for_block_height(block_index)
-
-            if not NodesTester.all_nodes or NodesTester.all_nodes != current_nodes:
-                config.app_log.info("Node list has changed. Retesting all nodes...")
-                await NodesTester.test_all_nodes(block_index)
-                NodesTester.all_nodes = current_nodes
-
-            masternode_fee_sum = 0.0
-            if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
-                masternode_fee_sum = sum(
-                    [
-                        float(transaction_obj.masternode_fee)
-                        for transaction_obj in transaction_objs
-                    ]
-                )
-
-            masternode_reward_total = block_reward * 0.1
-
-            if config.network == "regnet":
-                NodesTester.successful_nodes = NodesTester.all_nodes
-
-            # reward_nodes includes both hardcoded static nodes and on-chain
-            # announced dynamic nodes (those with 5000 YDA collateral), since
-            # dynamic nodes are appended to _NODES during load_dynamic_nodes_from_chain
-            # and flow naturally into NodesTester.successful_nodes.
-            reward_nodes = NodesTester.successful_nodes
-            self_output = None
-            outputs = []
-            if reward_nodes:
-                self_output = Output.from_dict(
-                    {
-                        "value": (block_reward * 0.9) + float(fee_sum),
-                        "to": None,
-                    }
-                )
-
-                masternode_reward_divided = (
-                    masternode_reward_total + masternode_fee_sum
-                ) / len(reward_nodes)
-
-                for successful_node in reward_nodes:
-                    if successful_node.identity is None:
-                        continue
-                    outputs.append(
-                        Output.from_dict(
-                            {
-                                "value": float(masternode_reward_divided),
-                                "to": str(
-                                    P2PKHBitcoinAddress.from_pubkey(
-                                        bytes.fromhex(
-                                            successful_node.identity.public_key
-                                        )
-                                    )
-                                ),
-                            }
-                        )
-                    )
-            else:
-                # No masternodes: miner receives the full block reward + all fees
-                self_output = Output.from_dict(
-                    {
-                        "value": block_reward + float(fee_sum) + masternode_fee_sum,
-                        "to": None,
-                    }
-                )
-
-        else:
-            self_output = Output.from_dict(
-                {
-                    "value": block_reward + float(fee_sum),
-                    "to": None,
-                }
-            )
-        outputs.append(self_output)
 
         block = await cls.init_async(
             version=version,
@@ -342,12 +260,52 @@ class Block(object):
             prev_hash=prev_hash,
             target=target,
         )
+
+        await block.check_xeggex_hack()
+        if nonce:
+            block.nonce = str(nonce)
+
+        key_info = await config.kel_manager.advance_auth_ratchet(block=block)
+
+        # check transactions for an reanchor txns that may interfere with our coinbase kel entry
+        for txn in transaction_objs[:]:
+            if txn not in block.transactions:
+                if (
+                    txn.twice_prorotated_key_hash
+                    == key_info["twice_prerotated_key_hash"]
+                ):
+                    transaction_objs.remove(txn)
+                if txn.prerotated_key_hash == key_info["prerotated_key_hash"]:
+                    transaction_objs.remove(txn)
+                if txn.public_key_hash == key_info["public_key_hash"]:
+                    transaction_objs.remove(txn)
+                if (
+                    txn.prev_public_key_hash
+                    and txn.prev_public_key_hash == key_info["prev_public_key_hash"]
+                ):
+                    transaction_objs.remove(txn)
+
         block.transactions = transaction_objs
 
+        await block.check_kel_transactions()
+
+        # dry run after kel removals
+        await block.pay_masternodes(
+            key_info=key_info, fee_sum=fee_sum, block_reward=block_reward
+        )
+
+        txn_hashes = block.get_transaction_hashes()
+        block.set_merkle_root(txn_hashes)
+        block.header = block.generate_header()
+        return block
+
+    async def check_xeggex_hack(self):
+        index = self.index
+        config = Config()
         if (index >= CHAIN.XEGGEX_HACK_FORK and index < CHAIN.CHECK_KEL_FORK) or (
             index >= CHAIN.XEGGEX_HACK_FORK_2
         ):
-            for txn in block.transactions[:]:
+            for txn in self.transactions[:]:
                 remove = False
                 if (
                     txn.public_key
@@ -363,19 +321,21 @@ class Block(object):
                     config.app_log.info(
                         f"Txn removed from block: Xeggex wallet has been frozen."
                     )
-                    block.transactions.remove(txn)
+                    self.transactions.remove(txn)
 
-        if block.index >= CHAIN.CHECK_KEL_FORK:
+    async def check_kel_transactions(self):
+        config = Config()
+        if self.index >= CHAIN.CHECK_KEL_FORK:
             # check if this transaction public key is listed in any KEL
             # if it is, try to create a key even log
-            hash_collection = await KELHashCollection.init_async(block)
-            for txn in block.transactions[:]:
-                if txn not in block.transactions:
+            hash_collection = await KELHashCollection.init_async(self)
+            for txn in self.transactions[:]:
+                if txn not in self.transactions:
                     continue  # it's already been deleted due to its failed counterpart
 
-                if block.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
+                if self.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
                     try:
-                        await txn.verify_kel_output_rules(block=block)
+                        await txn.verify_kel_output_rules(block=self)
                     except (
                         KELDoesNotSpendAllUTXOsException,
                         KELLogUnbuildableException,
@@ -385,13 +345,13 @@ class Block(object):
                         config.app_log.warning(
                             f"KEL remove reason [verify_kel_output_rules - transient, keeping in mempool]: {e} | txn={txn.transaction_signature}"
                         )
-                        block.transactions.remove(txn)
+                        self.transactions.remove(txn)
                         continue
                     except DoesNotSpendEntirelyToPrerotatedKeyHashException as e:
                         config.app_log.warning(
                             f"KEL remove reason [verify_kel_output_rules]: {e} | txn={txn.transaction_signature}"
                         )
-                        await block.remove_transaction(txn, hash_collection)
+                        await self.remove_transaction(txn, hash_collection)
                         continue
                 elif txn.are_kel_fields_populated():
                     if txn.public_key_hash in [output.to for output in txn.outputs]:
@@ -429,7 +389,7 @@ class Block(object):
                     await config.mongo.async_db.miner_transactions.delete_one(
                         {"id": txn.transaction_signature}
                     )
-                    block.transactions.remove(txn)
+                    self.transactions.remove(txn)
                     continue
 
                 # test if it has no kel but specifies prev key hash
@@ -437,7 +397,7 @@ class Block(object):
                     config.app_log.warning(
                         f"KEL remove reason [has_kel_but_no_fields]: | txn={txn.transaction_signature}"
                     )
-                    await block.remove_transaction(txn, hash_collection)
+                    await self.remove_transaction(txn, hash_collection)
                     continue
                 elif (
                     not await txn.has_key_event_log()
@@ -450,18 +410,18 @@ class Block(object):
                     await KeyEventLog.init_async(key_event, hash_collection)
                 except (KELException, KeyEventException) as e:
                     config.app_log.info(f"Txn removed from block: {e}")
-                    block.transactions.remove(txn)
+                    self.transactions.remove(txn)
                 except FatalKeyEventException as e:
                     config.app_log.info(f"Fatal - Txn removed from block: {e}")
                     await config.mongo.async_db.miner_transactions.delete_one(
                         {"id": txn.transaction_signature}
                     )
-                    block.transactions.remove(txn)
+                    self.transactions.remove(txn)
                     if e.other_txn_to_delete:
                         await config.mongo.async_db.miner_transactions.delete_one(
                             {"id": e.other_txn_to_delete.transaction_signature}
                         )
-                        block.transactions.remove(e.other_txn_to_delete)
+                        self.transactions.remove(e.other_txn_to_delete)
 
             # Cleanup pass: the loop above can leave orphan KEL siblings in
             # the block when a non-init_async check (e.g. a transient
@@ -475,10 +435,10 @@ class Block(object):
             # ordering issue.  Capped at a small number of iterations as a
             # safety net.
             for _kel_pass in range(8):
-                pre_pass_sigs = {t.transaction_signature for t in block.transactions}
-                hash_collection = await KELHashCollection.init_async(block)
-                for txn in block.transactions[:]:
-                    if txn not in block.transactions:
+                pre_pass_sigs = {t.transaction_signature for t in self.transactions}
+                hash_collection = await KELHashCollection.init_async(self)
+                for txn in self.transactions[:]:
+                    if txn not in self.transactions:
                         continue
                     if not (
                         await txn.has_key_event_log() or txn.are_kel_fields_populated()
@@ -494,15 +454,15 @@ class Block(object):
                         # block_candidate.verify() to throw inside process_nonce, silently
                         # swallowing a winning block (accept_block is never called).
                         await key_event.verify(
-                            batch_txns=block.transactions, block_index=block.index
+                            batch_txns=self.transactions, block_index=self.index
                         )
                         await KeyEventLog.init_async(key_event, hash_collection)
                     except (KELException, KeyEventException) as e:
                         config.app_log.info(
                             f"KEL fixpoint pass {_kel_pass} dropped txn: {e}"
                         )
-                        if txn in block.transactions:
-                            block.transactions.remove(txn)
+                        if txn in self.transactions:
+                            self.transactions.remove(txn)
                     except PublicKeyMismatchException as e:
                         config.app_log.info(
                             f"KEL fixpoint pass {_kel_pass} dropped txn (public key mismatch): {e}"
@@ -510,8 +470,8 @@ class Block(object):
                         await config.mongo.async_db.miner_transactions.delete_one(
                             {"id": txn.transaction_signature}
                         )
-                        if txn in block.transactions:
-                            block.transactions.remove(txn)
+                        if txn in self.transactions:
+                            self.transactions.remove(txn)
                     except FatalKeyEventException as e:
                         config.app_log.info(
                             f"KEL fixpoint pass {_kel_pass} dropped txn (fatal): {e}"
@@ -519,18 +479,22 @@ class Block(object):
                         await config.mongo.async_db.miner_transactions.delete_one(
                             {"id": txn.transaction_signature}
                         )
-                        if txn in block.transactions:
-                            block.transactions.remove(txn)
+                        if txn in self.transactions:
+                            self.transactions.remove(txn)
                         if e.other_txn_to_delete:
                             await config.mongo.async_db.miner_transactions.delete_one(
                                 {"id": e.other_txn_to_delete.transaction_signature}
                             )
-                            if e.other_txn_to_delete in block.transactions:
-                                block.transactions.remove(e.other_txn_to_delete)
-                post_pass_sigs = {t.transaction_signature for t in block.transactions}
+                            if e.other_txn_to_delete in self.transactions:
+                                self.transactions.remove(e.other_txn_to_delete)
+                post_pass_sigs = {t.transaction_signature for t in self.transactions}
                 if pre_pass_sigs == post_pass_sigs:
                     break
 
+    async def pay_masternodes(
+        self, key_info, block_reward, updated_fee_sum, updated_masternode_fee_sum
+    ):
+        index = self.index
         # Regenerate the coinbase now that all post-build transaction filtering
         # has completed. Transactions may have been removed after the coinbase
         # was first generated (Xeggex freeze, KEL failures, etc.), so the
@@ -538,7 +502,7 @@ class Block(object):
         # too large.  Recompute from the surviving non-coinbase transactions and
         # rebuild the coinbase in-place.
         if index >= CHAIN.PAY_MASTER_NODES_FORK:
-            non_coinbase = [t for t in block.transactions if not t.coinbase]
+            non_coinbase = [t for t in self.transactions if not t.coinbase]
             updated_fee_sum = sum(float(t.fee) for t in non_coinbase)
             updated_masternode_fee_sum = 0.0
             if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
@@ -593,18 +557,20 @@ class Block(object):
                 outputs=updated_outputs,
                 coinbase=True,
             )
-            block.transactions = non_coinbase + [new_coinbase]
+            self.transactions = non_coinbase + [new_coinbase]
 
-        if nonce:
-            block.nonce = str(nonce)
+        new_coinbase.public_key = key_info["public_key"]
+        new_coinbase.prerotated_key_hash = key_info["prerotated_key_hash"]
+        new_coinbase.twice_prerotated_key_hash = key_info["twice_prerotated_key_hash"]
+        new_coinbase.public_key_hash = key_info["public_key_hash"]
+        new_coinbase.prev_public_key_hash = key_info["prev_public_key_hash"]
+        self_output.to = key_info["prerotated_key_hash"]
 
-        block = await config.kel_manager.advance_auth_ratchet(
-            txn=new_coinbase, block=block, self_output=self_output
+        new_coinbase.hash = await new_coinbase.generate_hash()
+        new_coinbase.transaction_signature = NodeKeyRotationManager._sign(
+            key_info["private_key"], new_coinbase.hash
         )
-        txn_hashes = block.get_transaction_hashes()
-        block.set_merkle_root(txn_hashes)
-        block.header = block.generate_header()
-        return block
+        return new_coinbase
 
     async def remove_transaction(
         self, txn: Transaction, hash_collection: KELHashCollection
