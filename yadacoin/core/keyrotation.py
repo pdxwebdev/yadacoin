@@ -692,6 +692,7 @@ class NodeKeyRotationManager:
         # Derive K_n (UNCONFIRMED signer) and K_{n+1} (CONFIRMING signer)
         cur = k0
         for ke in kel:
+            # Walk through the KEL to find the matching prerotated key hash for the most recent on-chain or mempool anchor.
             cur = derive_secure_path(
                 cur["private_key"], cur["chain_code"], second_factor
             )
