@@ -343,6 +343,7 @@ class MiningPool(object):
             if hasattr(relationship, "to_dict"):
                 relationship = relationship.to_dict()
             return {
+                "version": txn.version,
                 "id": txn.transaction_signature,
                 "hash": txn.hash,
                 "inputs": [x.to_dict() for x in txn.inputs],
