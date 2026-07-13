@@ -653,28 +653,10 @@ class NodeKeyRotationManager:
         block.public_key = prev_pub_hex
         block.private_key = prev_priv_obj.to_hex()
 
-        next_key = derive_secure_path(
-            prev_key["private_key"], prev_key["chain_code"], second_factor
-        )
-        next_priv_obj = _CoincurvePrivateKey(next_key["private_key"])
-        next_pub_bytes = next_priv_obj.public_key.format(compressed=True)
-        next_address = str(P2PKHBitcoinAddress.from_pubkey(next_pub_bytes))
-
-        two_ahead = derive_secure_path(
-            next_key["private_key"], next_key["chain_code"], second_factor
-        )
-        two_ahead_pub = _CoincurvePrivateKey(
-            two_ahead["private_key"]
-        ).public_key.format(compressed=True)
-        two_ahead_address = str(P2PKHBitcoinAddress.from_pubkey(two_ahead_pub))
-
         triplet = await self._queue_reanchor(
             block=block,
             signer_private_key=prev_key["private_key"].hex(),
             signer_public_key=prev_pub_hex,
-            coinbase_prerotated=next_address,
-            coinbase_twice_prerotated=two_ahead_address,
-            coinbase_public_key_hash=prev_address,
         )
 
         self._auth_counter += 1
@@ -842,6 +824,13 @@ class NodeKeyRotationManager:
         jump2_pub_bytes = jump2_priv_obj.public_key.format(compressed=True)
         jump2_address = str(P2PKHBitcoinAddress.from_pubkey(jump2_pub_bytes))
 
+        jump3 = derive_secure_path(
+            jump2["private_key"], jump2["chain_code"], second_factor
+        )
+        jump3_priv_obj = _CoincurvePrivateKey(jump3["private_key"])
+        jump3_pub_bytes = jump3_priv_obj.public_key.format(compressed=True)
+        jump3_address = str(P2PKHBitcoinAddress.from_pubkey(jump3_pub_bytes))
+
         prev_pkh = kel[-1].public_key_hash
 
         # --- UNCONFIRMED ---
@@ -909,12 +898,10 @@ class NodeKeyRotationManager:
                 confirming=confirming_txn,
                 signer_private_key=(signer_private_key or kn["private_key"].hex()),
                 signer_public_key=(signer_public_key or kn_pub_hex),
-                coinbase_prerotated=(coinbase_prerotated or kn1_address),
-                coinbase_twice_prerotated=(coinbase_twice_prerotated or jump_address),
-                coinbase_public_key_hash=(coinbase_public_key_hash or kn_address),
-                coinbase_prev_public_key_hash=(
-                    coinbase_prev_public_key_hash or (confirming_txn.public_key_hash)
-                ),
+                coinbase_prerotated=jump2_address,
+                coinbase_twice_prerotated=jump3_address,
+                coinbase_public_key_hash=jump_address,
+                coinbase_prev_public_key_hash=confirming_txn.public_key_hash,
             )
 
         config.app_log.info(
