@@ -265,33 +265,31 @@ class Block(object):
         if nonce:
             block.nonce = str(nonce)
 
-        key_info = await config.kel_manager.advance_auth_ratchet(block=block)
+        triplet = await config.kel_manager.advance_block_ratchet(block=block)
 
-        # check transactions for an reanchor txns that may interfere with our coinbase kel entry
+        # check transactions for reanchor txns that may conflict with our coinbase KEL entry
         for txn in transaction_objs[:]:
             if txn not in block.transactions:
-                if (
-                    txn.twice_prerotated_key_hash
-                    == key_info["twice_prerotated_key_hash"]
-                ):
+                if txn.twice_prerotated_key_hash == triplet.coinbase_twice_prerotated:
                     transaction_objs.remove(txn)
-                if txn.prerotated_key_hash == key_info["prerotated_key_hash"]:
+                if txn.prerotated_key_hash == triplet.coinbase_prerotated:
                     transaction_objs.remove(txn)
-                if txn.public_key_hash == key_info["public_key_hash"]:
+                if txn.public_key_hash == triplet.coinbase_public_key_hash:
                     transaction_objs.remove(txn)
                 if (
                     txn.prev_public_key_hash
-                    and txn.prev_public_key_hash == key_info["prev_public_key_hash"]
+                    and txn.prev_public_key_hash
+                    == triplet.coinbase_prev_public_key_hash
                 ):
                     transaction_objs.remove(txn)
-        transaction_objs.extend([key_info["unconfirmed"], key_info["confirming"]])
+        transaction_objs.extend([triplet.unconfirmed, triplet.confirming])
         block.transactions = transaction_objs
 
         await block.check_kel_transactions()
 
         # dry run after kel removals
         await block.pay_masternodes(
-            key_info=key_info, fee_sum=fee_sum, block_reward=block_reward
+            triplet=triplet, fee_sum=fee_sum, block_reward=block_reward
         )
 
         txn_hashes = block.get_transaction_hashes()
@@ -491,7 +489,13 @@ class Block(object):
                 if pre_pass_sigs == post_pass_sigs:
                     break
 
-    async def pay_masternodes(self, key_info, block_reward, fee_sum):
+    async def pay_masternodes(self, triplet, block_reward, fee_sum):
+        """Build the coinbase transaction.
+
+        ``triplet`` is a :class:`ReanchorTriplet` from the key rotation manager
+        which provides the KEL fields and signing key for the coinbase,
+        continuing the key derivation lineage from the re-anchor pair.
+        """
         index = self.index
         # Regenerate the coinbase now that all post-build transaction filtering
         # has completed. Transactions may have been removed after the coinbase
@@ -553,16 +557,16 @@ class Block(object):
             )
             self.transactions = non_coinbase + [new_coinbase]
 
-        new_coinbase.public_key = key_info["public_key"]
-        new_coinbase.prerotated_key_hash = key_info["prerotated_key_hash"]
-        new_coinbase.twice_prerotated_key_hash = key_info["twice_prerotated_key_hash"]
-        new_coinbase.public_key_hash = key_info["public_key_hash"]
-        new_coinbase.prev_public_key_hash = key_info["confirming"].public_key_hash
-        self_output.to = key_info["prerotated_key_hash"]
+        new_coinbase.public_key = triplet.signer_public_key
+        new_coinbase.prerotated_key_hash = triplet.coinbase_prerotated
+        new_coinbase.twice_prerotated_key_hash = triplet.coinbase_twice_prerotated
+        new_coinbase.public_key_hash = triplet.coinbase_public_key_hash
+        new_coinbase.prev_public_key_hash = triplet.coinbase_prev_public_key_hash
+        self_output.to = triplet.coinbase_prerotated
 
         new_coinbase.hash = await new_coinbase.generate_hash()
         new_coinbase.transaction_signature = NodeKeyRotationManager._sign(
-            key_info["private_key"], new_coinbase.hash
+            triplet.signer_private_key, new_coinbase.hash
         )
         return new_coinbase
 

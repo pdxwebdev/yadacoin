@@ -778,7 +778,13 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
         mgr._second_factor = "mysecret"
 
         with patch("yadacoin.core.transaction.Config", return_value=cfg):
-            priv_out, pub_out, conf_priv, conf_pub = await mgr.advance_auth_ratchet()
+            (
+                priv_out,
+                pub_out,
+                conf_priv,
+                conf_pub,
+                tpkh,
+            ) = await mgr.advance_auth_ratchet()
 
         # Current key (priv_out) is the anchor kel key — it signs the challenge
         self.assertEqual(priv_out, priv_hex)
@@ -975,6 +981,88 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
             await mgr.advance_auth_ratchet()
 
 
+class TestAdvanceBlockRatchet(AsyncTestCase):
+    async def test_sets_block_keys_calls_reanchor_and_returns_triplet(self):
+        import hashlib
+        import hmac as _hmac
+
+        from yadacoin.core.keyrotation import (
+            NodeKeyRotationManager,
+            ReanchorTriplet,
+            derive_secure_path,
+        )
+
+        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        pub_hex = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
+        _cc = _hmac.new(bytes.fromhex(priv_hex), b"test-cc", hashlib.sha256).digest()
+        _kn = derive_secure_path(bytes.fromhex(priv_hex), _cc, "mysecret")
+        cc_hex = _kn["chain_code"].hex()
+        cfg = _make_config(
+            kel_anchor_private_key=priv_hex,
+            kel_anchor_public_key=pub_hex,
+            kel_anchor_chain_code=cc_hex,
+        )
+        cfg.mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
+        mgr = NodeKeyRotationManager(cfg)
+        mgr._second_factor = "mysecret"
+
+        block = MagicMock()
+        fake_unconfirmed = MagicMock()
+        fake_confirming = MagicMock()
+        fake_triplet = ReanchorTriplet(
+            unconfirmed=fake_unconfirmed,
+            confirming=fake_confirming,
+            signer_private_key=priv_hex,
+            signer_public_key=pub_hex,
+            coinbase_prerotated="1next",
+            coinbase_twice_prerotated="1twoahead",
+            coinbase_public_key_hash="1prev",
+            coinbase_prev_public_key_hash="",
+        )
+        with patch.object(
+            mgr, "_queue_reanchor", new=AsyncMock(return_value=fake_triplet)
+        ), patch("yadacoin.core.transaction.Config", return_value=cfg):
+            result = await mgr.advance_block_ratchet(block=block)
+
+        self.assertEqual(block.public_key, pub_hex)
+        self.assertEqual(block.private_key, priv_hex)
+        self.assertIsInstance(result, ReanchorTriplet)
+        self.assertEqual(result.unconfirmed, fake_unconfirmed)
+        self.assertEqual(result.confirming, fake_confirming)
+        self.assertEqual(result.signer_private_key, priv_hex)
+        self.assertEqual(result.signer_public_key, pub_hex)
+        self.assertEqual(result.coinbase_prerotated, "1next")
+        self.assertEqual(result.coinbase_twice_prerotated, "1twoahead")
+        self.assertEqual(result.coinbase_public_key_hash, "1prev")
+        self.assertEqual(result.coinbase_prev_public_key_hash, "")
+
+    async def test_no_kel_key_calls_fatal(self):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        cfg = _make_config()
+        mgr = NodeKeyRotationManager(cfg)
+        block = MagicMock()
+
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(SystemExit):
+                await mgr.advance_block_ratchet(block=block)
+
+    async def test_no_second_factor_calls_fatal(self):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        cfg = _make_config(
+            kel_anchor_private_key="511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694",
+            kel_anchor_public_key="02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29",
+        )
+        mgr = NodeKeyRotationManager(cfg)
+        block = MagicMock()
+
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("SECOND_FACTOR", None)
+            with self.assertRaises(SystemExit):
+                await mgr.advance_block_ratchet(block=block)
+
+
 # ---------------------------------------------------------------------------
 # _queue_reanchor
 # ---------------------------------------------------------------------------
@@ -1118,6 +1206,57 @@ class TestQueueReanchor(AsyncTestCase):
             await mgr._queue_reanchor()
 
         cfg.app_log.warning.assert_called()
+
+    async def test_block_path_returns_reanchor_triplet(self):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
+
+        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        cfg = _make_config(kel_anchor_public_key="02pub")
+        cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock()
+        mgr = NodeKeyRotationManager(cfg)
+        mgr._k0 = {
+            "private_key": bytes.fromhex(priv_hex),
+            "chain_code": bytes.fromhex(priv_hex),
+        }
+        mgr._second_factor = "mysecret"
+
+        block = MagicMock()
+        mock_entry = MagicMock()
+        mock_entry.public_key_hash = "1SomeAddress"
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+            new=AsyncMock(return_value=[mock_entry]),
+        ):
+            result = await mgr._queue_reanchor(
+                block=block,
+                signer_private_key=priv_hex,
+                signer_public_key="02signer",
+                coinbase_prerotated="1prerot",
+                coinbase_twice_prerotated="1twice",
+                coinbase_public_key_hash="1pkh",
+                coinbase_prev_public_key_hash="1prevpkh",
+            )
+
+        self.assertIsInstance(result, ReanchorTriplet)
+        self.assertIsNotNone(result.unconfirmed)
+        self.assertIsNotNone(result.confirming)
+        self.assertEqual(result.signer_private_key, priv_hex)
+
+    async def test_block_path_no_kel_returns_triplet_with_none(self):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
+
+        cfg = _make_config()
+        mgr = NodeKeyRotationManager(cfg)
+        block = MagicMock()
+
+        result = await mgr._queue_reanchor(
+            block=block,
+            signer_private_key="priv",
+            signer_public_key="pub",
+        )
+        self.assertIsInstance(result, ReanchorTriplet)
+        self.assertIsNone(result.unconfirmed)
 
 
 # ---------------------------------------------------------------------------
