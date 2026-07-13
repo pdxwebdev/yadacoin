@@ -271,7 +271,7 @@ class Block(object):
         for txn in transaction_objs[:]:
             if txn not in block.transactions:
                 if (
-                    txn.twice_prorotated_key_hash
+                    txn.twice_prerotated_key_hash
                     == key_info["twice_prerotated_key_hash"]
                 ):
                     transaction_objs.remove(txn)
