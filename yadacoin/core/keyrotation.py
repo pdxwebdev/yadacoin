@@ -740,11 +740,6 @@ class NodeKeyRotationManager:
             config.app_log.info(
                 f"Searching for transaction with prev_public_key_hash: {txn['public_key_hash']}"
             )
-            if txn:
-                config.app_log.info(f"Found transaction: {txn}")
-                # Derive the JUMP target: K_{n + INTERVAL + 1} for UNCONFIRMED.twice_prerotated
-                # and CONFIRMING.prerotated.  K_{n + INTERVAL + 2} for CONFIRMING.twice_prerotated.
-                break
             jump_cur = derive_secure_path(
                 jump_cur["private_key"], jump_cur["chain_code"], second_factor
             )
