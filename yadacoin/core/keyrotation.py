@@ -812,7 +812,7 @@ class NodeKeyRotationManager:
             kn1["private_key"].hex(), confirming_txn.hash
         )
         if block:
-            unconfirmed_txn, confirming_txn
+            return unconfirmed_txn, confirming_txn
         else:
             for txn in (unconfirmed_txn, confirming_txn):
                 await config.mongo.async_db.miner_transactions.replace_one(
