@@ -491,9 +491,7 @@ class Block(object):
                 if pre_pass_sigs == post_pass_sigs:
                     break
 
-    async def pay_masternodes(
-        self, key_info, block_reward, fee_sum, masternode_fee_sum
-    ):
+    async def pay_masternodes(self, key_info, block_reward, fee_sum):
         index = self.index
         # Regenerate the coinbase now that all post-build transaction filtering
         # has completed. Transactions may have been removed after the coinbase
