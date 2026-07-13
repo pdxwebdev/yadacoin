@@ -754,6 +754,13 @@ class NodeKeyRotationManager:
         jump_pub_bytes = jump_priv_obj.public_key.format(compressed=True)
         jump_address = str(P2PKHBitcoinAddress.from_pubkey(jump_pub_bytes))
 
+        exists = await config.mongo.async_db.miner_transactions.find_one(
+            {"twice_prerotated_key_hash": jump_address}
+        )
+
+        if exists:
+            return
+
         jump2 = derive_secure_path(
             jump_cur["private_key"], jump_cur["chain_code"], second_factor
         )
