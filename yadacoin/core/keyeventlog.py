@@ -1165,7 +1165,7 @@ class KeyEventLog:
                 key_event.txn.relationship
                 or len(key_event.txn.outputs) != 1
                 or key_event.txn.outputs[0].to != key_event.txn.prerotated_key_hash
-            ):
+            ) and not key_event.txn.coinbase:
                 raise KELException(
                     "No onchain key event for unconfirmed key event.",
                     txn=key_event.txn,
