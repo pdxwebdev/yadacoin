@@ -675,7 +675,6 @@ class NodeKeyRotationManager:
             coinbase_prerotated=next_address,
             coinbase_twice_prerotated=two_ahead_address,
             coinbase_public_key_hash=prev_address,
-            coinbase_prev_public_key_hash=self._auth_ratchet_prev_pkh or "",
         )
 
         self._auth_counter += 1
