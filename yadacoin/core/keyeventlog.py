@@ -716,6 +716,7 @@ class KeyEvent:
                 raise KELException("Key event is already onchain", txn=self.txn)
 
     async def sends_to_past_kel_entry(self, block_index=None):
+        return False  # we're no longer checking past KEL entries
         for output in self.txn.outputs:
             config = Config()
             match_clause = {
