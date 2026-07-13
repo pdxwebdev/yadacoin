@@ -753,21 +753,21 @@ class NodeKeyRotationManager:
         jump_priv_obj = _CoincurvePrivateKey(jump_cur["private_key"])
         jump_pub_bytes = jump_priv_obj.public_key.format(compressed=True)
         jump_address = str(P2PKHBitcoinAddress.from_pubkey(jump_pub_bytes))
+        if block is None:
+            if await config.mongo.async_db.miner_transactions.find_one(
+                {"twice_prerotated_key_hash": jump_address}
+            ):
+                return
 
-        if await config.mongo.async_db.miner_transactions.find_one(
-            {"twice_prerotated_key_hash": jump_address}
-        ):
-            return
+            if await config.mongo.async_db.miner_transactions.find_one(
+                {"prerotated_key_hash": jump_address}
+            ):
+                return
 
-        if await config.mongo.async_db.miner_transactions.find_one(
-            {"prerotated_key_hash": jump_address}
-        ):
-            return
-
-        if await config.mongo.async_db.miner_transactions.find_one(
-            {"twice_prerotated_key_hash": jump2_address}
-        ):
-            return
+            if await config.mongo.async_db.miner_transactions.find_one(
+                {"twice_prerotated_key_hash": jump2_address}
+            ):
+                return
 
         jump2 = derive_secure_path(
             jump_cur["private_key"], jump_cur["chain_code"], second_factor
@@ -825,7 +825,15 @@ class NodeKeyRotationManager:
         )
         for txn in (unconfirmed_txn, confirming_txn):
             await config.mongo.async_db.miner_transactions.replace_one(
-                {"public_key_hash": txn.public_key_hash}, txn.to_dict(), upsert=True
+                {
+                    "$or": [
+                        {"public_key_hash": txn.public_key_hash},
+                        {"prerotated_key_hash": txn.prerotated_key_hash},
+                        {"twice_prerotated_key_hash": txn.twice_prerotated_key_hash},
+                    ],
+                },
+                txn.to_dict(),
+                upsert=True,
             )
         if block:
             return unconfirmed_txn, confirming_txn
