@@ -557,7 +557,7 @@ class Block(object):
         new_coinbase.prerotated_key_hash = key_info["prerotated_key_hash"]
         new_coinbase.twice_prerotated_key_hash = key_info["twice_prerotated_key_hash"]
         new_coinbase.public_key_hash = key_info["public_key_hash"]
-        new_coinbase.prev_public_key_hash = key_info["prev_public_key_hash"]
+        new_coinbase.prev_public_key_hash = key_info["confirming"].public_key_hash
         self_output.to = key_info["prerotated_key_hash"]
 
         new_coinbase.hash = await new_coinbase.generate_hash()
