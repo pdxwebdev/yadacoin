@@ -408,9 +408,7 @@ class NodeKeyRotationManager:
     # Off-chain auth ratchet
     # ------------------------------------------------------------------
 
-    async def advance_auth_ratchet(
-        self, block=None, txn=None, self_output=None
-    ) -> tuple:
+    async def advance_auth_ratchet(self, block=None, txn=None, self_output=None):
         """Advance the off-chain signing ratchet by one step and return
         ``(current_priv_hex, current_pub_hex, next_priv_hex, next_pub_hex)``.
 
@@ -585,6 +583,7 @@ class NodeKeyRotationManager:
             prev_key["private_key"].hex(), ratchet_txn.hash
         )
         if block:
+            block.transactions.append(ratchet_txn)
             try:
                 await self._queue_reanchor(block=block)
             except Exception as exc:
