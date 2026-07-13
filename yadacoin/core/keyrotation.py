@@ -518,6 +518,8 @@ class NodeKeyRotationManager:
         prev_pub_bytes = prev_priv_obj.public_key.format(compressed=True)
         prev_address = str(P2PKHBitcoinAddress.from_pubkey(prev_pub_bytes))
 
+        if block:
+            block.public_key = prev_pub_hex
         # Derive next ratchet key (the "confirming" key)
         next_key = derive_secure_path(
             prev_key["private_key"], prev_key["chain_code"], second_factor
