@@ -215,28 +215,11 @@ class Block(object):
             prev_hash = ""
         elif prev_hash is None and index != 0:
             prev_hash = LatestBlock.block.hash
-        transactions = transactions or []
 
         transaction_objs = []
         used_sigs = []
         used_inputs = {}
         regular_txns = []
-        generated_txns = []
-        smart_contracts_disabled = index >= CHAIN.SMART_CONTRACT_REMOVAL_FORK
-        for x in transactions:
-            x = Transaction.ensure_instance(x)
-            if await x.contract_generated:
-                if smart_contracts_disabled:
-                    continue
-                generated_txns.append(x)
-            else:
-                if (
-                    smart_contracts_disabled
-                    and isinstance(x.relationship, dict)
-                    and "smart_contract" in x.relationship
-                ):
-                    continue
-                regular_txns.append(x)
 
         block_reward = CHAIN.get_block_reward(index)
 
@@ -256,15 +239,18 @@ class Block(object):
 
         regular_txns.extend([triplet.unconfirmed, triplet.confirming])
 
+        pending_txns = await Block.get_pending_transactions(block)
+        pending_txns.extend(regular_txns)
+
         coinbase_txn = await block.pay_masternodes(
-            transaction_objs=transaction_objs,
+            transaction_objs=pending_txns,
             triplet=triplet,
             block_reward=block_reward,
         )
-        regular_txns.append(coinbase_txn)
+        pending_txns.append(coinbase_txn)
 
         await Block.validate_transactions(
-            regular_txns, transaction_objs, used_sigs, used_inputs, index, xtime
+            pending_txns, transaction_objs, used_sigs, used_inputs, index, xtime
         )
 
         block.transactions = transaction_objs
@@ -275,6 +261,70 @@ class Block(object):
         block.set_merkle_root(txn_hashes)
         block.header = block.generate_header()
         return block
+
+    async def get_pending_transactions(self):
+        from yadacoin.core.transactionutils import TU
+
+        transaction_objs = {}
+        used_sigs = []
+
+        check_max_inputs = False
+        if self.config.LatestBlock.block.index + 1 > CHAIN.CHECK_MAX_INPUTS_FORK:
+            check_max_inputs = True
+
+        check_masternode_fee = False
+        if self.config.LatestBlock.block.index + 1 >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
+            check_masternode_fee = True
+
+        check_kel = False
+        if self.config.LatestBlock.block.index + 1 >= CHAIN.CHECK_KEL_FORK:
+            check_kel = True
+
+        check_dynamic_nodes = False
+        if self.config.LatestBlock.block.index + 1 >= CHAIN.DYNAMIC_NODES_FORK:
+            check_dynamic_nodes = True
+
+        transactions = [
+            txn
+            async for txn in self.mongo.async_db.miner_transactions.find(
+                {"relationship.smart_contract": {"$exists": False}}
+            )
+            .sort([("fee", -1), ("time", 1)])
+            .limit(1000)
+        ]
+        transactions = [Transaction.from_dict(txn) for txn in transactions]
+        if (
+            self.config.LatestBlock.block.index + 1
+            >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK
+        ):
+            items_indexed = {x.transaction_signature: x for x in transactions}
+            for txn in transactions:
+                for input_item in txn.inputs:
+                    if input_item.id in items_indexed:
+                        input_item.input_txn = items_indexed[input_item.id]
+                        items_indexed[input_item.id].spent_in_txn = txn
+        for txn in transactions[:]:
+            if txn not in transactions:
+                continue
+            transaction_obj = await self.verify_pending_transaction(
+                txn,
+                used_sigs,
+                transactions=transactions,
+                check_max_inputs=check_max_inputs,
+                check_masternode_fee=check_masternode_fee,
+                check_kel=check_kel,
+                check_dynamic_nodes=check_dynamic_nodes,
+                block=self,
+            )
+            if not isinstance(transaction_obj, Transaction):
+                continue
+            if transaction_obj.private == True:
+                transaction_obj.relationship = ""
+
+            transaction_objs.setdefault(transaction_obj.requested_rid, [])
+            transaction_objs[transaction_obj.requested_rid].append(transaction_obj)
+
+        return TU.get_transaction_objs_list(transaction_objs)[:1000]
 
     async def check_xeggex_hack(self):
         index = self.index
