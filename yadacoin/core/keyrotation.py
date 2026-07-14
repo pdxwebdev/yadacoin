@@ -851,7 +851,9 @@ class NodeKeyRotationManager:
             public_key_hash=kn_address,
             prev_public_key_hash=prev_pkh,
             relationship=relationship,
-            relationship_hash=hashlib.sha256(b"reanchor").digest().hex(),
+            relationship_hash=hashlib.sha256(relationship.encode("utf-8"))
+            .digest()
+            .hex(),
             rid="",
             dh_public_key="",
         )
@@ -874,7 +876,9 @@ class NodeKeyRotationManager:
             public_key_hash=kn1_address,
             prev_public_key_hash=kn_address,
             relationship=relationship,
-            relationship_hash="",
+            relationship_hash=hashlib.sha256(relationship.encode("utf-8"))
+            .digest()
+            .hex(),
             rid="",
             dh_public_key="",
         )
