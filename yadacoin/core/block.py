@@ -29,18 +29,11 @@ from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.keyeventlog import (
     DoesNotSpendEntirelyToPrerotatedKeyHashException,
-    FatalKeyEventException,
-    KELDoesNotSpendAllUTXOsException,
-    KELException,
     KELExceptionPreviousKeyHashReferenceMissing,
     KELHashCollection,
-    KELLogUnbuildableException,
-    KELMissingParentUTXOException,
     KeyEvent,
     KeyEventChainStatus,
-    KeyEventException,
     KeyEventLog,
-    PublicKeyMismatchException,
 )
 from yadacoin.core.keyrotation import NodeKeyRotationManager
 from yadacoin.core.latestblock import LatestBlock
@@ -237,8 +230,6 @@ class Block(object):
 
         triplet = await config.kel_manager.advance_block_ratchet(block=block)
 
-        pending_txns.extend([triplet.unconfirmed, triplet.confirming])
-
         transactions = [
             txn
             async for txn in config.mongo.async_db.miner_transactions.find(
@@ -265,12 +256,10 @@ class Block(object):
                         items_indexed[input_item.id].spent_in_txn = txn
 
         await Block.validate_transactions(
-            pending_txns, transaction_objs, used_sigs, used_inputs, index, xtime
+            block, pending_txns, transaction_objs, used_sigs, used_inputs, index, xtime
         )
 
         block.transactions = transaction_objs
-
-        await block.check_kel_transactions()
 
         txn_hashes = block.get_transaction_hashes()
         block.set_merkle_root(txn_hashes)
@@ -301,177 +290,6 @@ class Block(object):
                     )
                     self.transactions.remove(txn)
 
-    async def check_kel_transactions(self):
-        config = Config()
-        if self.index >= CHAIN.CHECK_KEL_FORK:
-            # check if this transaction public key is listed in any KEL
-            # if it is, try to create a key even log
-            hash_collection = await KELHashCollection.init_async(self)
-            for txn in self.transactions[:]:
-                if txn not in self.transactions:
-                    continue  # it's already been deleted due to its failed counterpart
-
-                if txn.coinbase:
-                    continue  # coinbase key event is exempt due to its spending ability
-
-                if self.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
-                    try:
-                        await txn.verify_kel_output_rules(block=self)
-                    except (
-                        KELDoesNotSpendAllUTXOsException,
-                        KELLogUnbuildableException,
-                        KELMissingParentUTXOException,
-                    ) as e:
-                        # Transient: UTXO state may change in the next block cycle
-                        config.app_log.warning(
-                            f"KEL remove reason [verify_kel_output_rules - transient, keeping in mempool]: {e} | txn={txn.transaction_signature}"
-                        )
-                        self.transactions.remove(txn)
-                        continue
-                    except DoesNotSpendEntirelyToPrerotatedKeyHashException as e:
-                        config.app_log.warning(
-                            f"KEL remove reason [verify_kel_output_rules]: {e} | txn={txn.transaction_signature}"
-                        )
-                        await self.remove_transaction(txn, hash_collection)
-                        continue
-                elif txn.are_kel_fields_populated():
-                    if txn.public_key_hash in [output.to for output in txn.outputs]:
-                        raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
-                            "Key event transactions must spent entire remaining balance to prerotated_key_hash."
-                        )
-
-                # test if already on chain
-                if await txn.is_already_onchain():
-                    # For a recovers-inception the output goes to prerotated_key_hash
-                    # (k1) but build_from_public_key follows prev_public_key_hash into
-                    # the old delegator KEL, so key_log[-1] resolves to the delegator's
-                    # tip — not this txn.  Skip the mismatch warning in that case since
-                    # the removal below is correct and the warning would be misleading.
-                    is_recovers = isinstance(
-                        txn.relationship, (RecoveryProof, RecoveryTransition)
-                    )
-                    if not is_recovers:
-                        key_log = await KeyEventLog.build_from_public_key(
-                            txn.public_key
-                        )
-                        if (
-                            len(txn.outputs) != 1
-                            or key_log[-1].prerotated_key_hash != txn.outputs[0].to
-                        ):
-                            config.app_log.warning(
-                                f"KEL remove reason [is_already_onchain]: outputs={[o.to for o in txn.outputs]} key_log_last_prerotated={key_log[-1].prerotated_key_hash if key_log else None} | txn={txn.transaction_signature}"
-                            )
-                    # This is a stale mempool copy of an already-confirmed txn.
-                    # Remove only this txn — do NOT cascade-delete linked transactions
-                    # via remove_transaction(), as those may be legitimate next-step
-                    # KEL entries (e.g. a confirming entry whose prerotated_key_hash
-                    # would match this txn's twice_prerotated_key_hash and be
-                    # incorrectly purged as a "linked" txn).
-                    await config.mongo.async_db.miner_transactions.delete_one(
-                        {"id": txn.transaction_signature}
-                    )
-                    self.transactions.remove(txn)
-                    continue
-
-                # test if it has no kel but specifies prev key hash
-                if await txn.has_key_event_log() and not txn.are_kel_fields_populated():
-                    config.app_log.warning(
-                        f"KEL remove reason [has_kel_but_no_fields]: | txn={txn.transaction_signature}"
-                    )
-                    await self.remove_transaction(txn, hash_collection)
-                    continue
-                elif (
-                    not await txn.has_key_event_log()
-                    and not txn.are_kel_fields_populated()
-                ):
-                    continue
-
-                key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
-                try:
-                    await KeyEventLog.init_async(key_event, hash_collection)
-                except (KELException, KeyEventException) as e:
-                    config.app_log.info(f"Txn removed from block: {e}")
-                    self.transactions.remove(txn)
-                except FatalKeyEventException as e:
-                    config.app_log.info(f"Fatal - Txn removed from block: {e}")
-                    await config.mongo.async_db.miner_transactions.delete_one(
-                        {"id": txn.transaction_signature}
-                    )
-                    self.transactions.remove(txn)
-                    if e.other_txn_to_delete:
-                        await config.mongo.async_db.miner_transactions.delete_one(
-                            {"id": e.other_txn_to_delete.transaction_signature}
-                        )
-                        self.transactions.remove(e.other_txn_to_delete)
-
-            # Cleanup pass: the loop above can leave orphan KEL siblings in
-            # the block when a non-init_async check (e.g. a transient
-            # verify_kel_output_rules failure) drops one half of an
-            # unconfirmed/confirming pair *after* the other half had already
-            # passed init_async against the now-stale hash_collection.  Rebuild
-            # hash_collection from the current block.transactions and re-run
-            # init_async until the set of transactions is stable, dropping any
-            # newly-orphaned entries so block.verify() does not later raise
-            # FatalKeyEventException on what is really a transient mempool
-            # ordering issue.  Capped at a small number of iterations as a
-            # safety net.
-            for _kel_pass in range(8):
-                pre_pass_sigs = {t.transaction_signature for t in self.transactions}
-                hash_collection = await KELHashCollection.init_async(self)
-                for txn in self.transactions[:]:
-                    if txn not in self.transactions:
-                        continue
-                    if not (
-                        await txn.has_key_event_log() or txn.are_kel_fields_populated()
-                    ):
-                        continue
-                    key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
-                    try:
-                        # Run key_event.verify() first to mirror Block.verify()'s per-txn
-                        # check order.  This catches sends_to_past_kel_entry() for
-                        # CONFIRMING transactions, which KeyEventLog.init_async() skips
-                        # for that category.  Without this check a stale confirming
-                        # transaction can survive block generation and then cause
-                        # block_candidate.verify() to throw inside process_nonce, silently
-                        # swallowing a winning block (accept_block is never called).
-                        await key_event.verify(
-                            batch_txns=self.transactions, block_index=self.index
-                        )
-                        await KeyEventLog.init_async(key_event, hash_collection)
-                    except (KELException, KeyEventException) as e:
-                        config.app_log.info(
-                            f"KEL fixpoint pass {_kel_pass} dropped txn: {e}"
-                        )
-                        if txn in self.transactions:
-                            self.transactions.remove(txn)
-                    except PublicKeyMismatchException as e:
-                        config.app_log.info(
-                            f"KEL fixpoint pass {_kel_pass} dropped txn (public key mismatch): {e}"
-                        )
-                        await config.mongo.async_db.miner_transactions.delete_one(
-                            {"id": txn.transaction_signature}
-                        )
-                        if txn in self.transactions:
-                            self.transactions.remove(txn)
-                    except FatalKeyEventException as e:
-                        config.app_log.info(
-                            f"KEL fixpoint pass {_kel_pass} dropped txn (fatal): {e}"
-                        )
-                        await config.mongo.async_db.miner_transactions.delete_one(
-                            {"id": txn.transaction_signature}
-                        )
-                        if txn in self.transactions:
-                            self.transactions.remove(txn)
-                        if e.other_txn_to_delete:
-                            await config.mongo.async_db.miner_transactions.delete_one(
-                                {"id": e.other_txn_to_delete.transaction_signature}
-                            )
-                            if e.other_txn_to_delete in self.transactions:
-                                self.transactions.remove(e.other_txn_to_delete)
-                post_pass_sigs = {t.transaction_signature for t in self.transactions}
-                if pre_pass_sigs == post_pass_sigs:
-                    break
-
     async def pay_masternodes(self, tranaction_objs, triplet, block_reward):
         """Build the coinbase transaction.
 
@@ -500,7 +318,7 @@ class Block(object):
                 self_output = Output.from_dict(
                     {
                         "value": (block_reward * 0.9) + fee_sum,
-                        "to": None,
+                        "to": triplet.coinbase_prerotated,
                     }
                 )
 
@@ -528,7 +346,7 @@ class Block(object):
                 self_output = Output.from_dict(
                     {
                         "value": block_reward + fee_sum + masternode_fee_sum,
-                        "to": None,
+                        "to": triplet.coinbase_prerotated,
                     }
                 )
 
@@ -583,7 +401,7 @@ class Block(object):
 
     @staticmethod
     async def validate_transactions(
-        txns, transaction_objs, used_sigs, used_inputs, index, xtime
+        block, txns, transaction_objs, used_sigs, used_inputs, index, xtime
     ):
         # SHOULD ONLY EVER BE USED FOR BLOCK GENERATION,
         # NEVER FOR BLOCK VALIDATION
@@ -598,10 +416,6 @@ class Block(object):
         # transient skip — keeping the txn in the mempool for the next block cycle.
         # This prevents the block factory from embedding a transaction that
         # Block.verify() will later reject, which would silently drop a winning block.
-        from types import SimpleNamespace
-
-        block_proxy = SimpleNamespace(index=index)
-
         if index >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK:
             items_indexed = {x.transaction_signature: x for x in txns}
             for txn in txns:
@@ -667,7 +481,7 @@ class Block(object):
                     check_kel=check_kel,
                     check_dynamic_nodes=check_dynamic_nodes,
                     check_content_takedown=check_content_takedown,
-                    block=block_proxy,
+                    block=block,
                     mempool=False,
                     batch_txns=txns,
                 )

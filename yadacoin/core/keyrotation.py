@@ -735,7 +735,9 @@ class NodeKeyRotationManager:
             .hex()
         )
         try:
-            kel = await KeyEventLog.build_from_public_key(k0_pub_hex, onchain_only=True)
+            kel = await KeyEventLog.build_from_public_key(
+                k0_pub_hex, onchain_only=False
+            )
         except Exception:
             if block:
                 return ReanchorTriplet(
@@ -804,10 +806,19 @@ class NodeKeyRotationManager:
         txn_doc = await self.config.mongo.async_db.key_event_log.find_one(
             {"txn.prev_public_key_hash": search_address}
         )
-        txn_doc = await self.config.mongo.async_db.key_event_log.find_one(
-            {"anchor_public_key": txn_doc["anchor_public_key"]}, sort=[("counter", -1)]
-        )
-        while curr_address != txn_doc["prerotated_key_hash"]:
+        if txn_doc:
+            txn_doc = await self.config.mongo.async_db.key_event_log.find_one(
+                {"anchor_public_key": txn_doc["anchor_public_key"]},
+                sort=[("counter", -1)],
+            )
+            while curr_address != txn_doc["prerotated_key_hash"]:
+                jump_cur = derive_secure_path(
+                    jump_cur["private_key"], jump_cur["chain_code"], second_factor
+                )
+                curr_priv_obj = _CoincurvePrivateKey(jump_cur["private_key"])
+                curr_pub_bytes = curr_priv_obj.public_key.format(compressed=True)
+                curr_address = str(P2PKHBitcoinAddress.from_pubkey(curr_pub_bytes))
+        else:
             jump_cur = derive_secure_path(
                 jump_cur["private_key"], jump_cur["chain_code"], second_factor
             )
@@ -834,7 +845,7 @@ class NodeKeyRotationManager:
         jump3_address = str(P2PKHBitcoinAddress.from_pubkey(jump3_pub_bytes))
 
         jump4 = derive_secure_path(
-            jump2["private_key"], jump2["chain_code"], second_factor
+            jump3["private_key"], jump3["chain_code"], second_factor
         )
         jump4_priv_obj = _CoincurvePrivateKey(jump4["private_key"])
         jump4_pub_bytes = jump4_priv_obj.public_key.format(compressed=True)
@@ -913,7 +924,7 @@ class NodeKeyRotationManager:
             coinbase_confirming_txn.hash = await coinbase_confirming_txn.generate_hash()
             coinbase_confirming_txn.transaction_signature = (
                 NodeKeyRotationManager._sign(
-                    kn1["private_key"].hex(), coinbase_confirming_txn.hash
+                    jump2["private_key"].hex(), coinbase_confirming_txn.hash
                 )
             )
             mempool_txns.append(coinbase_confirming_txn)

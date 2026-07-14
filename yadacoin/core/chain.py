@@ -131,7 +131,7 @@ class CHAIN(object):
     # without a confirmed KEL are rejected at/after this block height.
     KEL_P2P_AUTH_FORK = 605000
 
-    CHECK_MASTERNODE_KEL_ADDRESS = 605050
+    CHECK_MASTERNODE_KEL_ADDRESS = 605032
 
     @classmethod
     def target_block_time(cls, network: str):

@@ -274,6 +274,7 @@ class KeyEvent:
         txn: Transaction = None,
         flag: KeyEventFlag = None,
         status: KeyEventChainStatus = None,
+        path: str = None,
     ):
         if not txn or not isinstance(txn, Transaction):
             raise MissingKeyEventParameterException(
@@ -282,6 +283,7 @@ class KeyEvent:
         self.txn = txn
         self.flag = flag
         self.status = status
+        self.path = path
         self.config = Config()
 
     def verify_fields(self, prev_public_key_hash_required=False):
@@ -535,6 +537,7 @@ class KeyEvent:
             not self.txn.relationship
             and len(self.txn.outputs) == 1
             and self.txn.outputs[0].to == self.txn.prerotated_key_hash
+            and not self.txn.coinbase  # may send only to itelf in rare circumstances
         ):
             raise KeyEventException(
                 f"not a valid unconfirmed key event. invalid relationship, outputs, or prerotated_key_hash. txn={self.txn.transaction_signature}"
@@ -935,6 +938,7 @@ class KeyEventLog:
     base_key_event: KeyEvent = None
     unconfirmed_key_event: KeyEvent = None
     confirming_key_event: KeyEvent = None
+    path: str = None
 
     @staticmethod
     async def init_async(
@@ -960,7 +964,9 @@ class KeyEventLog:
                 block_index=block_index, batch_txns=batch_txns
             )
             key_event.flag = KeyEventFlag.INCEPTION
+            key_event.path = "recovery"
             self.base_key_event = key_event
+            self.path = "recovery"
             return self
 
         # step 1: if transaction is tracked on-chain in an existing key event log
@@ -1015,10 +1021,13 @@ class KeyEventLog:
                 and key_event.txn.prev_public_key_hash
             ):
                 key_event.flag = KeyEventFlag.CONFIRMING
+                key_event.path = "1"
                 self.confirming_key_event = key_event
 
                 # assign inception/onchain key event and flag
+                result["key_event"].path = "1"
                 self.base_key_event = result["key_event"]
+                self.path = "1"
 
             # assign unconfirmed key event and flag
             else:
@@ -1034,8 +1043,11 @@ class KeyEventLog:
                     )
 
                 key_event.flag = KeyEventFlag.UNCONFIRMED
+                key_event.path = "1.5"
                 self.unconfirmed_key_event = key_event
-                self.base_key_event = result["key_event"]
+                parent_event.path = "1.5"
+                self.base_key_event = parent_event
+                self.path = "1.5"
 
                 # assign confirming key event and flag
                 if (
@@ -1048,6 +1060,7 @@ class KeyEventLog:
                         ],
                         KeyEventFlag.CONFIRMING,
                         KeyEventChainStatus.MEMPOOL,
+                        "1",
                     )
                 else:
                     raise FatalKeyEventException(
@@ -1097,8 +1110,11 @@ class KeyEventLog:
                 and key_event.txn.prev_public_key_hash
             ):
                 key_event.flag = KeyEventFlag.CONFIRMING
+                key_event.path = "1.5"
                 self.confirming_key_event = key_event
+                parent_event.path = "1.5"
                 self.base_key_event = parent_event
+                self.path = "1.5"
             else:
                 past_key_event = await key_event.sends_to_past_kel_entry(
                     block_index=block_index
@@ -1125,6 +1141,7 @@ class KeyEventLog:
                         ],
                         KeyEventFlag.CONFIRMING,
                         KeyEventChainStatus.MEMPOOL,
+                        "1.5",
                     )
                 else:
                     raise FatalKeyEventException(
@@ -1147,7 +1164,9 @@ class KeyEventLog:
             # step 2.1 if parent is not found, this is an inception key event
             # assign inception key event and flag
             key_event.flag = KeyEventFlag.INCEPTION
+            key_event.path = "2.1"
             self.base_key_event = key_event
+            self.path = "2.1"
         else:
             # step 2.2 if parent is not found in blockchain, this should be a confirming key event
             # with an unconfirmed key event in the mempool as well.
@@ -1161,55 +1180,109 @@ class KeyEventLog:
             # twice_prerotated_key_hashes) still selects the correct
             # unconfirmed parent in that case.
 
-            if (
-                key_event.txn.relationship
-                or len(key_event.txn.outputs) != 1
-                or key_event.txn.outputs[0].to != key_event.txn.prerotated_key_hash
-            ) and not key_event.txn.coinbase:
-                raise KELException(
-                    "No onchain key event for unconfirmed key event.",
-                    txn=key_event.txn,
-                )
+            # Figure out if this event looks like a confirming event by its own
+            # txn properties: no relationship, single output that ends at its
+            # prerotated_key_hash.  Hash-collection cross-links can be
+            # ambiguous in long chains (a txn can appear on both sides
+            # simultaneously), so we use txn-properties to choose the role.
+            looks_confirming = (
+                not key_event.txn.relationship
+                and len(key_event.txn.outputs) == 1
+                and key_event.txn.outputs[0].to == key_event.txn.prerotated_key_hash
+                and not key_event.txn.coinbase
+            )
 
-            # assign confirming key event and flag
-            key_event.flag = KeyEventFlag.CONFIRMING
-            self.confirming_key_event = key_event
-
-            # assign unconfirmed key event and flag
-            if (
+            if looks_confirming and (
                 key_event.txn.prerotated_key_hash
                 in hash_collection.twice_prerotated_key_hashes
             ):
+                key_event.flag = KeyEventFlag.CONFIRMING
+                key_event.path = "2.2"
+                self.confirming_key_event = key_event
+
                 unconfirmed_key_event = KeyEvent(
                     hash_collection.twice_prerotated_key_hashes[
                         key_event.txn.prerotated_key_hash
                     ],
                     KeyEventFlag.UNCONFIRMED,
                     KeyEventChainStatus.MEMPOOL,
-                )
-            else:
-                raise FatalKeyEventException(
-                    "No unconfirmed key event present in hash_collection.",
-                    other_txn_to_delete=hash_collection.twice_prerotated_key_hashes.get(  # get the confirming key event if present
-                        key_event.txn.prerotated_key_hash
-                    ),
+                    "2.2",
                 )
 
-            # assign inception/onchain key event
-            self.unconfirmed_key_event = unconfirmed_key_event
-            result = await unconfirmed_key_event.get_onchain_parent()
-            if result and result["key_event"]:
-                self.base_key_event = result["key_event"]
-            else:
-                # Fall back to mempool parent (inception not yet on-chain)
-                mempool_base = await unconfirmed_key_event.get_mempool_parent()
-                if mempool_base and mempool_base["key_event"]:
-                    self.base_key_event = mempool_base["key_event"]
+                self.unconfirmed_key_event = unconfirmed_key_event
+                self.path = "2.2"
+                result = await unconfirmed_key_event.get_onchain_parent()
+                if result and result["key_event"]:
+                    result["key_event"].path = "2.2"
+                    self.base_key_event = result["key_event"]
+                else:
+                    mempool_base = await unconfirmed_key_event.get_mempool_parent()
+                    if mempool_base and mempool_base["key_event"]:
+                        mempool_base["key_event"].path = "2.2"
+                        self.base_key_event = mempool_base["key_event"]
+                    else:
+                        raise KELException(
+                            "No on-chain or mempool key event found for unconfirmed key event.",
+                            txn=key_event.txn,
+                        )
+
+            elif (
+                key_event.txn.twice_prerotated_key_hash
+                in hash_collection.prerotated_key_hashes
+            ):
+                # This is an unconfirmed rotation whose confirming child is
+                # present in the same hash_collection.
+                key_event.flag = KeyEventFlag.UNCONFIRMED
+                key_event.path = "2.5"
+                self.unconfirmed_key_event = key_event
+                self.path = "2.5"
+
+                confirming_txn = hash_collection.prerotated_key_hashes[
+                    key_event.txn.twice_prerotated_key_hash
+                ]
+                self.confirming_key_event = KeyEvent(
+                    confirming_txn,
+                    KeyEventFlag.CONFIRMING,
+                    KeyEventChainStatus.MEMPOOL,
+                    "2.5",
+                )
+
+                if (
+                    key_event.txn.prerotated_key_hash
+                    in hash_collection.twice_prerotated_key_hashes
+                ):
+                    parent_txn = hash_collection.twice_prerotated_key_hashes[
+                        key_event.txn.prerotated_key_hash
+                    ]
+                    self.base_key_event = KeyEvent(
+                        parent_txn,
+                        flag=(
+                            KeyEventFlag.INCEPTION
+                            if not parent_txn.prev_public_key_hash
+                            else KeyEventFlag.CONFIRMING
+                        ),
+                        status=KeyEventChainStatus.MEMPOOL,
+                        path="2.5",
+                    )
                 else:
                     raise KELException(
                         "No on-chain or mempool key event found for unconfirmed key event.",
                         txn=key_event.txn,
                     )
+
+            elif not getattr(key_event.txn, "coinbase", False):
+                raise KELException(
+                    "No onchain key event for unconfirmed key event.",
+                    txn=key_event.txn,
+                )
+
+            else:
+                raise FatalKeyEventException(
+                    "No unconfirmed or confirming key event present in hash_collection.",
+                    other_txn_to_delete=hash_collection.prerotated_key_hashes.get(
+                        key_event.txn.twice_prerotated_key_hash
+                    ),
+                )
 
         # check that KEL is one of five scenarios.
         # 1. Inception
