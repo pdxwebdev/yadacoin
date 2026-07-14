@@ -357,6 +357,7 @@ class MiningPool(object):
             }
 
         res = {
+            "public_key": self.block_factory.public_key,
             "target": hex(int(self.block_factory.target))[2:].rjust(
                 64, "0"
             ),  # target is now in hex format
