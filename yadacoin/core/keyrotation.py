@@ -875,10 +875,8 @@ class NodeKeyRotationManager:
             twice_prerotated_key_hash=jump2_address,
             public_key_hash=kn1_address,
             prev_public_key_hash=kn_address,
-            relationship=relationship,
-            relationship_hash=hashlib.sha256(relationship.encode("utf-8"))
-            .digest()
-            .hex(),
+            relationship="",
+            relationship_hash="",
             rid="",
             dh_public_key="",
         )
