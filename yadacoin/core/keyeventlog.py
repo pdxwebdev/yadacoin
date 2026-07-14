@@ -1041,7 +1041,7 @@ class KeyEventLog:
                             key_event.txn.twice_prerotated_key_hash
                         ),
                     )
-
+                parent_event = result["key_event"]
                 key_event.flag = KeyEventFlag.UNCONFIRMED
                 key_event.path = "1.5"
                 self.unconfirmed_key_event = key_event
@@ -1128,7 +1128,9 @@ class KeyEventLog:
                     )
 
                 key_event.flag = KeyEventFlag.UNCONFIRMED
+                key_event.path = "1.6"
                 self.unconfirmed_key_event = key_event
+                parent_event.path = "1.6"
                 self.base_key_event = parent_event
 
                 if (
@@ -1189,7 +1191,7 @@ class KeyEventLog:
                 not key_event.txn.relationship
                 and len(key_event.txn.outputs) == 1
                 and key_event.txn.outputs[0].to == key_event.txn.prerotated_key_hash
-                and not key_event.txn.coinbase
+                and not getattr(key_event.txn, "coinbase", False)
             )
 
             if looks_confirming and (
