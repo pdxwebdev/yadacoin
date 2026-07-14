@@ -1205,7 +1205,7 @@ class KeyEventLog:
                 mempool_base = await unconfirmed_key_event.get_mempool_parent()
                 if mempool_base and mempool_base["key_event"]:
                     self.base_key_event = mempool_base["key_event"]
-                elif not key_event.txn.coinbase:
+                else:
                     raise KELException(
                         "No on-chain or mempool key event found for unconfirmed key event.",
                         txn=key_event.txn,

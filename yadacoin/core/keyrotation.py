@@ -833,6 +833,13 @@ class NodeKeyRotationManager:
         jump3_pub_bytes = jump3_priv_obj.public_key.format(compressed=True)
         jump3_address = str(P2PKHBitcoinAddress.from_pubkey(jump3_pub_bytes))
 
+        jump4 = derive_secure_path(
+            jump2["private_key"], jump2["chain_code"], second_factor
+        )
+        jump4_priv_obj = _CoincurvePrivateKey(jump4["private_key"])
+        jump4_pub_bytes = jump4_priv_obj.public_key.format(compressed=True)
+        jump4_address = str(P2PKHBitcoinAddress.from_pubkey(jump4_pub_bytes))
+
         prev_pkh = kel[-1].public_key_hash
 
         # --- UNCONFIRMED ---
@@ -878,12 +885,40 @@ class NodeKeyRotationManager:
             rid="",
             dh_public_key="",
         )
+
+        mempool_txns = [unconfirmed_txn, confirming_txn]
         confirming_txn.hash = await confirming_txn.generate_hash()
         confirming_txn.transaction_signature = NodeKeyRotationManager._sign(
             kn1["private_key"].hex(), confirming_txn.hash
         )
+        if block:
+            # --- CONFIRMING ---
+            coinbase_confirming_txn = Transaction(
+                txn_time=int(time.time()),
+                public_key=jump2_pub_bytes.hex(),
+                outputs=[{"to": jump3_address, "value": 0.0}],
+                inputs=[],
+                fee=0.0,
+                masternode_fee=0.0,
+                version=7,
+                prerotated_key_hash=jump3_address,
+                twice_prerotated_key_hash=jump4_address,
+                public_key_hash=jump2_address,
+                prev_public_key_hash=jump_address,
+                relationship="",
+                relationship_hash="",
+                rid="",
+                dh_public_key="",
+            )
+            coinbase_confirming_txn.hash = await coinbase_confirming_txn.generate_hash()
+            coinbase_confirming_txn.transaction_signature = (
+                NodeKeyRotationManager._sign(
+                    kn1["private_key"].hex(), coinbase_confirming_txn.hash
+                )
+            )
+            mempool_txns.append(coinbase_confirming_txn)
 
-        for txn in (unconfirmed_txn, confirming_txn):
+        for txn in mempool_txns:
             await config.mongo.async_db.miner_transactions.replace_one(
                 {
                     "$or": [
