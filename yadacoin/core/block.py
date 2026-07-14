@@ -421,16 +421,16 @@ class Block(object):
                         transaction_obj.transaction_signature
                     )
                 )
-                self.excluded.append(
+                self.config.mp.excluded.append(
                     {
                         "id": transaction_obj.transaction_signature,
                         "reason": "input spent already",
                     }
                 )
-                await self.mongo.async_db.miner_transactions.delete_many(
+                await self.config.mongo.async_db.miner_transactions.delete_many(
                     {"id": transaction_obj.transaction_signature}
                 )
-                await self.mongo.async_db.failed_transactions.insert_one(
+                await self.config.mongo.async_db.failed_transactions.insert_one(
                     {"reason": "input spent already", "txn": transaction_obj.to_dict()}
                 )
             elif failed2:
@@ -445,10 +445,10 @@ class Block(object):
                         "reason": "using an input used by another transaction in this block",
                     }
                 )
-                await self.mongo.async_db.miner_transactions.delete_many(
+                await self.config.mongo.async_db.miner_transactions.delete_many(
                     {"id": transaction_obj.transaction_signature}
                 )
-                await self.mongo.async_db.failed_transactions.insert_one(
+                await self.config.mongo.async_db.failed_transactions.insert_one(
                     {
                         "reason": "using an input used by another transaction in this block",
                         "txn": transaction_obj.to_dict(),
