@@ -657,6 +657,7 @@ class NodeKeyRotationManager:
             block=block,
             signer_private_key=prev_key["private_key"].hex(),
             signer_public_key=prev_pub_hex,
+            relationship="block reanchor",
         )
 
         self._auth_counter += 1
@@ -667,7 +668,9 @@ class NodeKeyRotationManager:
         """Trigger a re-anchor if the off-chain counter has reached the interval."""
         if self._auth_counter % self.OFFCHAIN_ANCHOR_INTERVAL == 0:
             try:
-                await self._queue_reanchor(block=None)
+                await self._queue_reanchor(
+                    block=None, relationship="reanchor 100 interval"
+                )
             except Exception as exc:
                 self.config.app_log.warning(
                     "NodeKeyRotationManager: re-anchor error: %s", exc
@@ -678,6 +681,7 @@ class NodeKeyRotationManager:
         block=None,
         signer_private_key=None,
         signer_public_key=None,
+        relationship=None,
         coinbase_prerotated=None,
         coinbase_twice_prerotated=None,
         coinbase_public_key_hash=None,
@@ -846,7 +850,7 @@ class NodeKeyRotationManager:
             twice_prerotated_key_hash=jump_address,
             public_key_hash=kn_address,
             prev_public_key_hash=prev_pkh,
-            relationship="reanchor",
+            relationship=relationship,
             relationship_hash=hashlib.sha256(b"reanchor").digest().hex(),
             rid="",
             dh_public_key="",
@@ -869,7 +873,7 @@ class NodeKeyRotationManager:
             twice_prerotated_key_hash=jump2_address,
             public_key_hash=kn1_address,
             prev_public_key_hash=kn_address,
-            relationship="",
+            relationship=relationship,
             relationship_hash="",
             rid="",
             dh_public_key="",
