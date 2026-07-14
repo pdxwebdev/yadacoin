@@ -448,29 +448,29 @@ class MineBlockHandler(BaseHandler):
 
         self.get_argument("private_key", None)
 
-        # if private_key_param:
-        #     # KEL-based authorization: derive public key and verify against latest KEL entry
-        #     try:
-        #         priv_bytes = bytes.fromhex(private_key_param)
-        #         priv_obj = _CoincurvePrivateKey(priv_bytes)
-        #         pub_bytes = priv_obj.public_key.format(compressed=True)
-        #         pub_hex = pub_bytes.hex()
-        #         address = str(P2PKHBitcoinAddress.from_pubkey(pub_bytes))
-        #     except Exception:
-        #         return self.render_as_json({"error": "invalid private_key parameter"})
+        if private_key_param:
+            # KEL-based authorization: derive public key and verify against latest KEL entry
+            try:
+                priv_bytes = bytes.fromhex(private_key_param)
+                priv_obj = _CoincurvePrivateKey(priv_bytes)
+                pub_bytes = priv_obj.public_key.format(compressed=True)
+                pub_hex = pub_bytes.hex()
+                address = str(P2PKHBitcoinAddress.from_pubkey(pub_bytes))
+            except Exception:
+                return self.render_as_json({"error": "invalid private_key parameter"})
 
-        #     kel = await KeyEventLog.build_from_public_key(pub_hex)
-        #     if not kel or kel[-1].public_key_hash != address:
-        #         return self.render_as_json({"error": "not authorized"})
+            kel = await KeyEventLog.build_from_public_key(pub_hex)
+            if not kel or kel[-1].public_key_hash != address:
+                return self.render_as_json({"error": "not authorized"})
 
-        # else:
-        #     if not await self.wallet_is_unlocked():
-        #         return self.render_as_json({"error": "not authorized"})
+        else:
+            if not await self.wallet_is_unlocked():
+                return self.render_as_json({"error": "not authorized"})
 
-        # if self.config.network != "regnet":
-        #     return self.render_as_json(
-        #         {"status": False, "message": "Node not in regnet mode."}
-        #     )
+        if self.config.network != "regnet":
+            return self.render_as_json(
+                {"status": False, "message": "Node not in regnet mode."}
+            )
         if not self.config.mp or not self.config.mp.block_factory:
             return self.render_as_json(
                 {"status": False, "message": "Mining pool not initialized."}
