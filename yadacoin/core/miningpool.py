@@ -317,7 +317,6 @@ class MiningPool(object):
             if self.block_factory:
                 self.last_block_time = int(self.block_factory.time)
             self.block_factory = await self.create_block(
-                await self.get_pending_transactions(),
                 index=self.config.LatestBlock.block.index + 1,
             )
             self.block_factory.header = self.block_factory.generate_header()
@@ -329,8 +328,8 @@ class MiningPool(object):
             self.app_log.error("Exception {} mp.refresh".format(format_exc()))
             raise
 
-    async def create_block(self, transactions, index):
-        return await Block.generate(transactions, index=index)
+    async def create_block(self, index):
+        return await Block.generate(index=index)
 
     async def block_to_mine_info(self):
         """Returns info for current block to mine"""

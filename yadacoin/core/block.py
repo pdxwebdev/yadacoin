@@ -194,7 +194,6 @@ class Block(object):
     @classmethod
     async def generate(
         cls,
-        transactions=None,
         force_version=None,
         index=0,
         force_time=None,
@@ -219,7 +218,6 @@ class Block(object):
         transactions = transactions or []
 
         transaction_objs = []
-        fee_sum = 0.0
         used_sigs = []
         used_inputs = {}
         regular_txns = []
@@ -240,17 +238,6 @@ class Block(object):
                     continue
                 regular_txns.append(x)
 
-        await Block.validate_transactions(
-            regular_txns, transaction_objs, used_sigs, used_inputs, index, xtime
-        )
-
-        await Block.validate_transactions(
-            generated_txns, transaction_objs, used_sigs, used_inputs, index, xtime
-        )
-
-        fee_sum = sum(
-            [float(transaction_obj.fee) for transaction_obj in transaction_objs]
-        )
         block_reward = CHAIN.get_block_reward(index)
 
         block = await cls.init_async(
@@ -267,30 +254,22 @@ class Block(object):
 
         triplet = await config.kel_manager.advance_block_ratchet(block=block)
 
-        # check transactions for reanchor txns that may conflict with our coinbase KEL entry
-        for txn in transaction_objs[:]:
-            if txn not in block.transactions:
-                if txn.twice_prerotated_key_hash == triplet.coinbase_twice_prerotated:
-                    transaction_objs.remove(txn)
-                if txn.prerotated_key_hash == triplet.coinbase_prerotated:
-                    transaction_objs.remove(txn)
-                if txn.public_key_hash == triplet.coinbase_public_key_hash:
-                    transaction_objs.remove(txn)
-                if (
-                    txn.prev_public_key_hash
-                    and txn.prev_public_key_hash
-                    == triplet.coinbase_prev_public_key_hash
-                ):
-                    transaction_objs.remove(txn)
-        transaction_objs.extend([triplet.unconfirmed, triplet.confirming])
+        regular_txns.extend([triplet.unconfirmed, triplet.confirming])
+
+        coinbase_txn = await block.pay_masternodes(
+            transaction_objs=transaction_objs,
+            triplet=triplet,
+            block_reward=block_reward,
+        )
+        regular_txns.append(coinbase_txn)
+
+        await Block.validate_transactions(
+            regular_txns, transaction_objs, used_sigs, used_inputs, index, xtime
+        )
+
         block.transactions = transaction_objs
 
         await block.check_kel_transactions()
-
-        # dry run after kel removals
-        await block.pay_masternodes(
-            triplet=triplet, fee_sum=fee_sum, block_reward=block_reward
-        )
 
         txn_hashes = block.get_transaction_hashes()
         block.set_merkle_root(txn_hashes)
@@ -492,7 +471,7 @@ class Block(object):
                 if pre_pass_sigs == post_pass_sigs:
                     break
 
-    async def pay_masternodes(self, triplet, block_reward, fee_sum):
+    async def pay_masternodes(self, tranaction_objs, triplet, block_reward):
         """Build the coinbase transaction.
 
         ``triplet`` is a :class:`ReanchorTriplet` from the key rotation manager
@@ -507,7 +486,7 @@ class Block(object):
         # too large.  Recompute from the surviving non-coinbase transactions and
         # rebuild the coinbase in-place.
         if index >= CHAIN.PAY_MASTER_NODES_FORK:
-            non_coinbase = [t for t in self.transactions if not t.coinbase]
+            non_coinbase = [t for t in tranaction_objs if not t.coinbase]
             fee_sum = sum(float(t.fee) for t in non_coinbase)
             masternode_fee_sum = 0.0
             if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
@@ -558,7 +537,6 @@ class Block(object):
                 outputs=updated_outputs,
                 coinbase=True,
             )
-            self.transactions = non_coinbase + [new_coinbase]
         else:
             return
 
