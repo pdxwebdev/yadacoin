@@ -439,7 +439,7 @@ class Block(object):
                         transaction_obj.transaction_signature
                     )
                 )
-                self.excluded.append(
+                self.config.mp.excluded.append(
                     {
                         "id": transaction_obj.transaction_signature,
                         "reason": "using an input used by another transaction in this block",
@@ -467,7 +467,7 @@ class Block(object):
                 f"verify_pending_transaction, transient — skipping for this block: "
                 f"{transaction_obj.transaction_signature}: {e}"
             )
-            self.excluded.append(
+            self.config.mp.excluded.append(
                 {
                     "id": transaction_obj.transaction_signature,
                     "reason": f"{e.__class__.__name__} - {e}",
@@ -475,7 +475,7 @@ class Block(object):
             )
             return
         except Exception as e:
-            self.excluded.append(
+            self.config.mp.excluded.append(
                 {
                     "id": transaction_obj.transaction_signature,
                     "reason": f"{e.__class__.__name__} - {e}",
