@@ -19,11 +19,11 @@ import time
 from decimal import Decimal, getcontext
 from logging import getLogger
 
-import pyrx
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
 
+import pyrx
 import yadacoin.core.config
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
@@ -331,6 +331,9 @@ class Block(object):
                 if txn not in self.transactions:
                     continue  # it's already been deleted due to its failed counterpart
 
+                if txn.coinbase:
+                    continue  # coinbase key event is exempt due to its spending ability
+
                 if self.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
                     try:
                         await txn.verify_kel_output_rules(block=self)
@@ -556,6 +559,8 @@ class Block(object):
                 coinbase=True,
             )
             self.transactions = non_coinbase + [new_coinbase]
+        else:
+            return
 
         new_coinbase.public_key = triplet.signer_public_key
         new_coinbase.prerotated_key_hash = triplet.coinbase_prerotated
@@ -849,24 +854,19 @@ class Block(object):
 
     @staticmethod
     def is_coinbase(block, txn):
+        block_address = str(
+            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.public_key))
+        )
         return (
             block.public_key == txn.public_key
+            and len(txn.inputs) == 0
             and (
-                (
-                    str(
-                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.public_key))
-                    )
-                    in [x.to for x in txn.outputs]
-                )
+                block_address in [x.to for x in txn.outputs]
                 or (
-                    str(
-                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.public_key))
-                    )
-                    == txn.public_key_hash
+                    block_address == txn.public_key_hash
                     and txn.prerotated_key_hash in [x.to for x in txn.outputs]
                 )
             )
-            and len(txn.inputs) == 0
         )
 
     async def generate_hash_from_header(self, height, header, nonce):
@@ -1064,10 +1064,15 @@ class Block(object):
             if txn.coinbase:
                 if self.index >= CHAIN.PAY_MASTER_NODES_FORK:
                     block_creator_address = address
+                    miner_target = (
+                        txn.prerotated_key_hash
+                        if self.index >= CHAIN.CHECK_MASTERNODE_KEL_ADDRESS
+                        else block_creator_address
+                    )
                     for output in txn.outputs:
                         if float(output.value) < 0:
                             raise Exception("Coinbase output value cannot be negative")
-                        if output.to == block_creator_address:
+                        if output.to == miner_target:
                             coinbase_sum += float(output.value)
                         elif output.to in masernodes_by_address:
                             if output.to not in masternode_sums:
