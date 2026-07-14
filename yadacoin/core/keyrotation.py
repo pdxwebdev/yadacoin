@@ -899,13 +899,13 @@ class NodeKeyRotationManager:
             )
 
         if block:
-            signer_pub = signer_public_key or kn_pub_hex
+            signer_pub = jump_pub_bytes.hex()
             signer_pub_bytes = bytes.fromhex(signer_pub)
             signer_address = str(P2PKHBitcoinAddress.from_pubkey(signer_pub_bytes))
             return ReanchorTriplet(
                 unconfirmed=unconfirmed_txn,
                 confirming=confirming_txn,
-                signer_private_key=(signer_private_key or kn["private_key"].hex()),
+                signer_private_key=jump_cur["private_key"].hex(),
                 signer_public_key=signer_pub,
                 coinbase_prerotated=jump2_address,
                 coinbase_twice_prerotated=jump3_address,
