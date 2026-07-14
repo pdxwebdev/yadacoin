@@ -447,6 +447,9 @@ class MineBlockHandler(BaseHandler):
         """
         :return:
         """
+        from bitcoin.wallet import P2PKHBitcoinAddress
+        from coincurve import PrivateKey as _CoincurvePrivateKey
+
         private_key_param = self.get_argument("private_key", None)
 
         if private_key_param:
