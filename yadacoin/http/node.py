@@ -19,9 +19,12 @@ import json
 import time
 from datetime import datetime, timezone
 
+from bitcoin.wallet import P2PKHBitcoinAddress
+from coincurve import PrivateKey as _CoincurvePrivateKey
 from tornado import escape
 
 from yadacoin.core.chain import CHAIN
+from yadacoin.core.keyeventlog import KeyEventLog
 from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.http.base import BaseHandler
 
@@ -447,8 +450,6 @@ class MineBlockHandler(BaseHandler):
         """
         :return:
         """
-        from bitcoin.wallet import P2PKHBitcoinAddress
-        from coincurve import PrivateKey as _CoincurvePrivateKey
 
         private_key_param = self.get_argument("private_key", None)
 
