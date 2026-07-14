@@ -649,9 +649,7 @@ class NodeKeyRotationManager:
             prev_address,
         ) = await self._ensure_ratchet_ready()
 
-        prev_priv_obj = _CoincurvePrivateKey(prev_key["private_key"])
-        block.public_key = prev_pub_hex
-        block.private_key = prev_priv_obj.to_hex()
+        _CoincurvePrivateKey(prev_key["private_key"])
 
         triplet = await self._queue_reanchor(
             block=block,
@@ -899,6 +897,8 @@ class NodeKeyRotationManager:
             )
 
         if block:
+            block.private_key = jump_cur["private_key"].hex()
+            block.public_key = jump_pub_bytes.hex()
             signer_pub = jump_pub_bytes.hex()
             signer_pub_bytes = bytes.fromhex(signer_pub)
             signer_address = str(P2PKHBitcoinAddress.from_pubkey(signer_pub_bytes))
