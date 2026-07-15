@@ -2,7 +2,6 @@
 Coverage for previously-untested branches in yadacoin/core/peer.py.
 """
 
-import unittest
 from collections import OrderedDict
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -275,22 +274,6 @@ class TestSeedGetInboundPeers(AsyncTestCase):
         await super().asyncSetUp()
         self.config = Config()
 
-    @unittest.skip("Skip: config.seeds removed from Config")
-    async def test_get_inbound_peers_includes_seed_gateway(self):
-        seed = Seed.from_dict(SAMPLE_PEER_DICT)
-        seed.seed_gateway = "sg_sig"
-        my_sig = self.config.username_signature
-        seeds_map = {my_sig: MagicMock(), "other_seed_sig": MagicMock()}
-        sg = MagicMock()
-        sg.identity.username_signature = "sg_unique"
-        with patch.object(self.config, "seeds", seeds_map, create=True), patch.object(
-            self.config, "seed_gateways", {"sg_sig": sg}, create=True
-        ):
-            result = await seed.get_inbound_peers()
-        self.assertNotIn(my_sig, result)
-        self.assertIn("other_seed_sig", result)
-        self.assertIn("sg_unique", result)
-
 
 class TestSeedGetRoutePeers(AsyncTestCase):
     """Lines 362-406: Seed.get_route_peers."""
@@ -362,23 +345,6 @@ class TestSeedGetRoutePeers(AsyncTestCase):
         ):
             with self.assertRaises(UnboundLocalError):
                 [x async for x in self.seed.get_route_peers(sg_peer, payload)]
-
-    @unittest.skip("Skip: config.seeds removed from Config")
-    async def test_route_peer_seedgateway_originator_branch(self):
-        bridge_seed_gateway = MagicMock()
-        bridge_seed_gateway.seed = MagicMock(rid="bridge_rid")
-        stream = MagicMock()
-        ns = make_node_server_mock(inbound_streams={"Seed": {"bridge_rid": stream}})
-        with patch.object(self.config, "seeds", MagicMock(), create=True), patch.object(
-            self.config, "nodeServer", ns, create=True
-        ):
-            result = [
-                x
-                async for x in self.seed.get_service_provider_request_peers(
-                    seed_peer, {}
-                )
-            ]
-        self.assertEqual(result, [s1])
 
     async def test_seedgateway_response_inbound(self):
         bridge_seed = MagicMock(rid="bridge_rid")
@@ -769,95 +735,6 @@ class TestServiceProviderRoutePeersAndRequest(AsyncTestCase):
             result = [x async for x in self.sp.get_route_peers(sg_peer, {})]
         self.assertEqual(result, [])
 
-    @unittest.skip("Skip: config.seeds removed from Config")
-    async def test_route_peers_seedgateway_txn_sum_branch(self):
-        sg_peer = SeedGateway.from_dict(SAMPLE_PEER_DICT)
-        txn = MagicMock()
-        out = MagicMock()
-        out.value = 5
-        txn.outputs = [out]
-        txn.transaction_signature = "sig123"
-        txn.requester_rid = "req_rid"
-        txn.requested_rid = "rcv_rid"
-        txn.to_dict.return_value = {"id": "abc"}
-        u_stream = MagicMock()
-        ns = make_node_server_mock(inbound_streams={"User": {"req_rid": u_stream}})
-        nc = make_node_client_mock(outbound_streams={"SeedGateway": {}})
-        mongo = MagicMock()
-        mongo.async_db.miner_transactions.replace_one = MagicMock()
-        with patch.object(self.sp, "get_payload_txn", lambda p: txn), patch.object(
-            self.config, "nodeServer", ns, create=True
-        ), patch.object(self.config, "nodeClient", nc, create=True), patch.object(
-            self.config, "mongo", mongo, create=True
-        ):
-            result = [
-                x async for x in self.sp.get_route_peers(sg_peer, {"transaction": {}})
-            ]
-        self.assertIn(u_stream, result)
-
-    @unittest.skip("Skip: config.seeds removed from Config")
-    async def test_route_peers_seedgateway_zero_sum_with_rid(self):
-        sg_peer = SeedGateway.from_dict(SAMPLE_PEER_DICT)
-        txn = MagicMock()
-        out = MagicMock()
-        out.value = 0
-        txn.outputs = [out]
-        txn.requester_rid = "req_rid"
-        txn.requested_rid = "rcv_rid"
-        u_stream = MagicMock()
-        ns = make_node_server_mock(inbound_streams={"User": {"req_rid": u_stream}})
-        nc = make_node_client_mock(outbound_streams={"SeedGateway": {}})
-        with patch.object(self.sp, "get_payload_txn", lambda p: txn), patch.object(
-            self.config, "nodeServer", ns, create=True
-        ), patch.object(self.config, "nodeClient", nc, create=True):
-            result = [
-                x async for x in self.sp.get_route_peers(sg_peer, {"transaction": {}})
-            ]
-        self.assertEqual(result, [u_stream])
-
-    @unittest.skip("Skip: config.seeds removed from Config")
-    async def test_route_peers_seedgateway_zero_sum_requested_path(self):
-        sg_peer = SeedGateway.from_dict(SAMPLE_PEER_DICT)
-        txn = MagicMock()
-        out = MagicMock()
-        out.value = 0
-        txn.outputs = [out]
-        txn.requester_rid = "missing"
-        txn.requested_rid = "rcv_rid"
-        u_stream = MagicMock()
-        ns = make_node_server_mock(inbound_streams={"User": {"rcv_rid": u_stream}})
-        nc = make_node_client_mock(outbound_streams={"SeedGateway": {}})
-        with patch.object(self.sp, "get_payload_txn", lambda p: txn), patch.object(
-            self.config, "nodeServer", ns, create=True
-        ), patch.object(self.config, "nodeClient", nc, create=True):
-            result = [
-                x async for x in self.sp.get_route_peers(sg_peer, {"transaction": {}})
-            ]
-        self.assertEqual(result, [u_stream])
-
-    @unittest.skip("Skip: config.seeds removed from Config")
-    async def test_route_peers_seedgateway_no_user_logs_error(self):
-        sg_peer = SeedGateway.from_dict(SAMPLE_PEER_DICT)
-        txn = MagicMock()
-        out = MagicMock()
-        out.value = 0
-        txn.outputs = [out]
-        txn.requester_rid = "missing1"
-        txn.requested_rid = "missing2"
-        ns = make_node_server_mock(inbound_streams={"User": {}})
-        nc = make_node_client_mock(outbound_streams={"SeedGateway": {}})
-        log = MagicMock()
-        with patch.object(self.sp, "get_payload_txn", lambda p: txn), patch.object(
-            self.config, "nodeServer", ns, create=True
-        ), patch.object(self.config, "nodeClient", nc, create=True), patch.object(
-            self.config, "app_log", log, create=True
-        ):
-            result = [
-                x async for x in self.sp.get_route_peers(sg_peer, {"transaction": {}})
-            ]
-        self.assertEqual(result, [])
-        log.error.assert_called()
-
     async def test_sp_request_peers_user_branch(self):
         user_peer = User.from_dict(SAMPLE_PEER_DICT)
         s1, s2 = MagicMock(), MagicMock()
@@ -962,41 +839,6 @@ class TestExtraBranches(AsyncTestCase):
         ):
             result = await group.calculate_seed_gateway()
         self.assertIsNone(result)
-
-    @unittest.skip("Skip: config.seeds removed from Config")
-    async def test_route_peers_seedgateway_from_peer_branch(self):
-        from yadacoin.core.identity import Identity
-
-        sp = ServiceProvider.from_dict(SAMPLE_PEER_DICT)
-        sg_peer = SeedGateway.from_dict(SAMPLE_PEER_DICT)
-        txn = MagicMock()
-        out = MagicMock()
-        out.value = 0
-        txn.outputs = [out]
-        txn.requester_rid = "missing1"
-        txn.requested_rid = "missing2"
-        # Build an Identity instance for from_peer.
-        from_id_dict = dict(SAMPLE_IDENTITY_DICT)
-        from_identity = Identity.from_dict(from_id_dict)
-        # The source checks `from_peer in inbound_streams[User]` — use the
-        # Identity instance directly as the key so membership matches.
-        u_stream = MagicMock()
-        ns = make_node_server_mock(inbound_streams={"User": {from_identity: u_stream}})
-        nc = make_node_client_mock(outbound_streams={"SeedGateway": {}})
-        with patch.object(sp, "get_payload_txn", lambda p: txn), patch.object(
-            self.config, "nodeServer", ns, create=True
-        ), patch.object(self.config, "nodeClient", nc, create=True), patch(
-            "yadacoin.core.peer.Identity.from_dict", return_value=from_identity
-        ):
-            # Make Identity hashable+truthy and have rid that's also a key.
-            from_identity.rid = from_identity
-            result = [
-                x
-                async for x in sp.get_route_peers(
-                    sg_peer, {"transaction": {}, "from_peer": from_id_dict}
-                )
-            ]
-        self.assertEqual(result, [u_stream])
 
     async def test_sp_request_peers_user_filters_self(self):
         sp = ServiceProvider.from_dict(SAMPLE_PEER_DICT)

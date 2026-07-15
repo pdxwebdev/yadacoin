@@ -441,9 +441,6 @@ class Nodes:
                 username_sig = _ia_identity.get("username_signature")
                 username = _ia_identity.get("username", "")
 
-                if not pub or not username_sig:
-                    continue
-
                 # Verify username_signature against the username using the public key
                 try:
                     sig_bytes = base64.b64decode(username_sig)

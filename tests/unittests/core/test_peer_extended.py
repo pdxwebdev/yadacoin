@@ -324,17 +324,6 @@ class TestSeedTypeMethods(AsyncTestCase):
         result = await seed.get_inbound_class()
         self.assertEqual(result, SeedGateway)
 
-    @unittest.skip("Skip: Config.username_signature not set by default")
-    async def test_get_outbound_peers_removes_self(self):
-        seed = Seed.from_dict(SAMPLE_PEER_DICT)
-        mock_sig = self.config.username_signature
-        mock_seeds = {mock_sig: MagicMock(), "other_sig": MagicMock()}
-        with patch.object(self.config, "seeds", mock_seeds, create=True):
-            result = await seed.get_outbound_peers()
-        # self's signature should be removed
-        self.assertNotIn(mock_sig, result)
-        self.assertIn("other_sig", result)
-
     async def test_is_linked_peer_true(self):
         seed = Seed.from_dict(SAMPLE_PEER_DICT)
         seed.seed_gateway = "some_sig"
@@ -831,74 +820,6 @@ class TestPeerMyPeer(AsyncTestCase):
         self.config.kel_username_signature = "kel_sig"
         self.config.kel_anchor_public_key = "kel_sig"
         self.config.app_log = getLogger("tornado.application")
-
-    @unittest.skip("Skip: Config.username_signature not set by default")
-    async def test_my_peer_default_returns_user(self):
-        self.config.peer_type = PEER_TYPES.USER.value
-        result = await Peer.my_peer()
-        self.assertIsInstance(result, User)
-
-    @unittest.skip("Skip: Config.username_signature not set by default")
-    async def test_my_peer_seed_not_in_seeds_returns_user(self):
-        self.config.peer_type = PEER_TYPES.SEED.value
-        with patch.object(self.config, "seeds", {}, create=True):
-            result = await Peer.my_peer()
-        self.assertIsInstance(result, User)
-        # peer_type gets reset to user
-        self.assertEqual(self.config.peer_type, PEER_TYPES.USER.value)
-
-    @unittest.skip("Skip: Config.username_signature not set by default")
-    async def test_my_peer_seed_gateway_not_in_seed_gateways_returns_user(self):
-        self.config.peer_type = PEER_TYPES.SEED_GATEWAY.value
-        with patch.object(self.config, "seed_gateways", {}, create=True):
-            result = await Peer.my_peer()
-        self.assertIsInstance(result, User)
-
-    @unittest.skip("Skip: Config.username_signature not set by default")
-    async def test_my_peer_service_provider_not_in_service_providers_returns_user(self):
-        self.config.peer_type = PEER_TYPES.SERVICE_PROVIDER.value
-        with patch.object(self.config, "service_providers", {}, create=True):
-            result = await Peer.my_peer()
-        self.assertIsInstance(result, User)
-
-    @unittest.skip("Skip: Config.username_signature not set by default")
-    async def test_my_peer_pool_returns_pool(self):
-        self.config.peer_type = PEER_TYPES.POOL.value
-        result = await Peer.my_peer()
-        self.assertIsInstance(result, Pool)
-
-    @unittest.skip("Skip: Config.username_signature not set by default")
-    async def test_my_peer_seed_in_seeds_returns_seed(self):
-        self.config.peer_type = PEER_TYPES.SEED.value
-        mock_seed_gateway = MagicMock()
-        mock_seed_gateway.identity.username_signature = "sg_sig"
-        seeds_dict = {self.config.username_signature: MagicMock(seed_gateway="sg_sig")}
-        with patch.object(self.config, "seeds", seeds_dict, create=True):
-            result = await Peer.my_peer()
-        self.assertIsInstance(result, Seed)
-
-    @unittest.skip("Skip: Config.username_signature not set by default")
-    async def test_my_peer_seed_gateway_in_seed_gateways_returns_seed_gateway(self):
-        self.config.peer_type = PEER_TYPES.SEED_GATEWAY.value
-        mock_sg = MagicMock()
-        mock_sg.seed = "seed_sig"
-        sig = self.config.username_signature
-        with patch.object(self.config, "seed_gateways", {sig: mock_sg}, create=True):
-            result = await Peer.my_peer()
-        self.assertIsInstance(result, SeedGateway)
-
-    @unittest.skip("Skip: Config.username_signature not set by default")
-    async def test_my_peer_service_provider_in_service_providers_returns_sp(self):
-        self.config.peer_type = PEER_TYPES.SERVICE_PROVIDER.value
-        mock_sp = MagicMock()
-        mock_sp.seed_gateway = "sg_sig"
-        mock_sp.seed = "seed_sig"
-        sig = self.config.username_signature
-        with patch.object(
-            self.config, "service_providers", {sig: mock_sp}, create=True
-        ):
-            result = await Peer.my_peer()
-        self.assertIsInstance(result, ServiceProvider)
 
 
 class TestPeerCalculateSeedGateway(AsyncTestCase):

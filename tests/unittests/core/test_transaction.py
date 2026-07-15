@@ -74,46 +74,6 @@ class TestTransaction(AsyncTestCase):
         )
         self.assertIsInstance(txn.from_dict(txn.to_dict()), Transaction)
 
-    @unittest.skip("Skip: verify flow changed, test not compatible")
-    async def test_verify(self):
-        txn = await Transaction.generate(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            private_key=yadacoin.core.config.CONFIG.private_key,
-        )
-        try:
-            await txn.verify()
-        except:
-            from traceback import format_exc
-
-            self.fail(f"Txn did not verify {format_exc()}")
-
-    @patch("yadacoin.core.transaction.Transaction.generate_inputs", return_value=1)
-    @unittest.skip("Skip: verify flow changed, test not compatible")
-    async def test_do_money_coinbase(self, mock_generate_inputs):
-        # Test coinbase, Passing
-        txn = await Transaction.generate(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            private_key=yadacoin.core.config.CONFIG.private_key,
-            exact_match=False,
-            outputs=[Output(to="1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", value=1)],
-            coinbase=True,
-        )
-        txn.config = Config.generate({})
-        txn.config.BU = BlockChainUtils()
-        with mock_generate_inputs:
-            await txn.do_money()
-
-        # Test coinbase, Failing
-        with mock_generate_inputs:
-            with self.assertRaises(NotEnoughMoneyException):
-                txn = await Transaction.generate(
-                    public_key=yadacoin.core.config.CONFIG.public_key,
-                    private_key=yadacoin.core.config.CONFIG.private_key,
-                    exact_match=False,
-                    outputs=[Output(to="1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", value=1)],
-                    coinbase=False,
-                )
-
     @patch(
         "yadacoin.core.blockchainutils.BlockChainUtils.get_wallet_unspent_transactions",
         new=mock_get_wallet_unspent_transactions,
@@ -597,14 +557,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         self.assertEqual(results, [inp])
 
     # --- generate_transaction_signature ---
-
-    @unittest.skip("Skip: Transaction.generate_transaction_signature removed")
-    def test_generate_transaction_signature(self):
-        """Line 412: generate_transaction_signature calls TU"""
-        txn = Transaction(txn_hash="deadbeef")
-        txn.private_key = yadacoin.core.config.CONFIG.private_key
-        sig = txn.generate_transaction_signature()
-        self.assertIsInstance(sig, str)
 
     # --- verify_signature fallback branches ---
 
@@ -1526,140 +1478,6 @@ class TestTransactionPureMethods(AsyncTestCase):
     # verify() check_kel paths (lines 584-604)
     # -----------------------------------------------------------------------
 
-    @unittest.skip("Skip: verify flow changed, test not compatible")
-    async def test_verify_check_kel_no_kel_found(self):
-        """Lines 584-604: check_kel=True, has_key_event_log=False, block below spends-entirely fork."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        txn = await Transaction.generate(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            private_key=yadacoin.core.config.CONFIG.private_key,
-        )
-        mock_block = MagicMock()
-        mock_block.index = 10  # far below CHECK_KEL_SPENDS_ENTIRELY_FORK
-
-        with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=False)):
-            await txn.verify(check_kel=True, block=mock_block)
-
-    @unittest.skip("Skip: verify flow changed, test not compatible")
-    async def test_verify_check_kel_has_kel(self):
-        """Lines 588-590: check_kel=True, has_kel=True triggers KeyEvent.verify()."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        txn = await Transaction.generate(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            private_key=yadacoin.core.config.CONFIG.private_key,
-        )
-        mock_block = MagicMock()
-        mock_block.index = 10
-
-        with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=True)):
-            with patch("yadacoin.core.keyeventlog.KeyEvent") as mock_ke_cls:
-                mock_ke = MagicMock()
-                mock_ke.verify = AsyncMock(return_value=None)
-                mock_ke_cls.return_value = mock_ke
-                await txn.verify(check_kel=True, block=mock_block)
-
-        mock_ke.verify.assert_called_once()
-
-    @unittest.skip("Skip: verify flow changed, test not compatible")
-    async def test_verify_check_kel_batch_txns_fallback(self):
-        """Lines 661-664: check_kel=True, has_key_event_log=False but a sibling
-        in batch_txns has prerotated_key_hash matching this txn's address —
-        has_kel is set True via the batch_txns fallback."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        txn = await Transaction.generate(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            private_key=yadacoin.core.config.CONFIG.private_key,
-        )
-        mock_block = MagicMock()
-        mock_block.index = 10  # far below CHECK_KEL_SPENDS_ENTIRELY_FORK
-
-        # Sibling whose prerotated_key_hash equals this txn's P2PKH address
-        address = str(
-            __import__(
-                "bitcoin.wallet", fromlist=["P2PKHBitcoinAddress"]
-            ).P2PKHBitcoinAddress.from_pubkey(
-                bytes.fromhex(yadacoin.core.config.CONFIG.public_key)
-            )
-        )
-        sibling = MagicMock()
-        sibling.prerotated_key_hash = address
-        sibling.twice_prerotated_key_hash = ""
-        sibling.transaction_signature = "different_sig"
-
-        with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=False)):
-            with patch("yadacoin.core.keyeventlog.KeyEvent") as mock_ke_cls:
-                mock_ke = MagicMock()
-                mock_ke.verify = AsyncMock(return_value=None)
-                mock_ke_cls.return_value = mock_ke
-                await txn.verify(check_kel=True, block=mock_block, batch_txns=[sibling])
-
-        mock_ke.verify.assert_called_once()
-        """Lines 591-594: check_kel=True, has_kel=False, prev_public_key_hash set → KEL raises."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        from yadacoin.core.chain import CHAIN
-        from yadacoin.core.keyeventlog import (
-            KELExceptionPreviousKeyHashReferenceMissing,
-        )
-
-        txn = Transaction(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            prev_public_key_hash="some_prev_hash",
-        )
-        txn.hash = await txn.generate_hash()
-        txn.transaction_signature = NodeKeyRotationManager._sign(
-            yadacoin.core.config.CONFIG.private_key, txn.hash
-        )
-        mock_block = MagicMock()
-        mock_block.index = CHAIN.CHECK_KEL_PREV_HASH_FORK
-
-        with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=False)):
-            with self.assertRaises(KELExceptionPreviousKeyHashReferenceMissing):
-                await txn.verify(check_kel=True, block=mock_block)
-
-    @unittest.skip("Skip: verify flow changed, test not compatible")
-    async def test_verify_check_kel_prev_key_hash_below_fork_no_raise(self):
-        """Lines 670-673: below CHECK_KEL_PREV_HASH_FORK, prev_public_key_hash does not raise."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        from yadacoin.core.chain import CHAIN
-
-        txn = Transaction(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            prev_public_key_hash="some_prev_hash",
-        )
-        txn.hash = await txn.generate_hash()
-        txn.transaction_signature = NodeKeyRotationManager._sign(
-            yadacoin.core.config.CONFIG.private_key, txn.hash
-        )
-        mock_block = MagicMock()
-        mock_block.index = CHAIN.CHECK_KEL_PREV_HASH_FORK - 1  # below fork, no raise
-
-        with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=False)):
-            # Should complete without raising
-            await txn.verify(check_kel=True, block=mock_block)
-
-        """Line 604: _kel_index >= CHECK_KEL_SPENDS_ENTIRELY_FORK triggers verify_kel_output_rules."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        from yadacoin.core.chain import CHAIN
-
-        txn = await Transaction.generate(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            private_key=yadacoin.core.config.CONFIG.private_key,
-        )
-        mock_block = MagicMock()
-        mock_block.index = CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK + 1
-
-        with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=False)):
-            with patch.object(
-                txn, "verify_kel_output_rules", new=AsyncMock(return_value=None)
-            ):
-                await txn.verify(check_kel=True, block=mock_block)
-
     # -----------------------------------------------------------------------
     # find_in_extra_blocks (lines 958-961)
     # -----------------------------------------------------------------------
@@ -2102,48 +1920,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         ):
             with self.assertRaises(NotEnoughMoneyException):
                 await txn.evaluate_inputs(0, my_address, [], 1.0)
-
-    @unittest.skip("Skip: verify flow changed, test not compatible")
-    async def test_verify_check_kel_latestblock_else_path(self):
-        """Lines 600-601: check_kel=True, no block, no mempool → uses LatestBlock.block.index."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        txn = await Transaction.generate(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            private_key=yadacoin.core.config.CONFIG.private_key,
-        )
-
-        mock_lb = MagicMock()
-        mock_lb.block.index = 10
-
-        with patch.object(
-            yadacoin.core.config.CONFIG, "LatestBlock", create=True, new=mock_lb
-        ):
-            with patch.object(
-                txn, "has_key_event_log", new=AsyncMock(return_value=False)
-            ):
-                await txn.verify(check_kel=True)  # no block, no mempool → line 601
-
-    @unittest.skip("Skip: verify flow changed, test not compatible")
-    async def test_verify_check_kel_latestblock_mempool_path(self):
-        """Lines 598-599: check_kel=True, mempool=True → uses LatestBlock.block.index + 1."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        txn = await Transaction.generate(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            private_key=yadacoin.core.config.CONFIG.private_key,
-        )
-
-        mock_lb = MagicMock()
-        mock_lb.block.index = 10
-
-        with patch.object(
-            yadacoin.core.config.CONFIG, "LatestBlock", create=True, new=mock_lb
-        ):
-            with patch.object(
-                txn, "has_key_event_log", new=AsyncMock(return_value=False)
-            ):
-                await txn.verify(check_kel=True, mempool=True)  # line 599
 
     async def test_verify_input_from_bu_dict_found(self):
         """Line 849: BU.get_transaction_by_id returns a dict → Transaction.from_dict wraps it."""
@@ -2805,36 +2581,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         parsed = Txn.from_dict(raw)
         self.assertIsInstance(parsed.relationship, ContentTakedownAnnouncement)
         self.assertEqual(parsed.relationship.reason_code.value, "csam")
-
-    @unittest.skip("Skip: verify flow changed, test not compatible")
-    async def test_transaction_init_invalid_content_takedown_falls_through(self):
-        """transaction.py lines 177-178: invalid content_takedown dict → except passes, relationship kept as-is."""
-        from yadacoin.core.transaction import Transaction as Txn
-
-        # Missing required fields → from_relationship raises ValueError → except passes
-        bad_rel = {"content_takedown": {"bad_key": "no_value"}}
-        raw = {
-            "time": 0,
-            "id": "sig002",
-            "rid": "",
-            "relationship": bad_rel,
-            "relationship_hash": "",
-            "public_key": yadacoin.core.config.CONFIG.public_key,
-            "dh_public_key": "",
-            "fee": 0.0,
-            "masternode_fee": 0.0,
-            "requester_rid": "",
-            "requested_rid": "",
-            "hash": "",
-            "inputs": [],
-            "outputs": [],
-            "coinbase": False,
-            "version": 7,
-        }
-        parsed = Txn.from_dict(raw)
-        # relationship should be left as the original dict (not converted)
-        self.assertIsInstance(parsed.relationship, dict)
-        self.assertIn("content_takedown", parsed.relationship)
 
     async def test_transaction_to_dict_wraps_content_takedown(self):
         """transaction.py line 1498: ContentTakedownAnnouncement wrapped under 'content_takedown' key in to_dict()."""

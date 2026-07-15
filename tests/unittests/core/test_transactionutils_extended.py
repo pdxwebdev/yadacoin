@@ -57,41 +57,6 @@ class TestTUHash(unittest.TestCase):
         self.assertNotEqual(TU.hash("abc"), TU.hash("def"))
 
 
-class TestTUGenerateDeterministicSignature(TUTestCase):
-    @unittest.skip(
-        "Skip: TU.generate_deterministic_signature moved to NodeKeyRotationManager"
-    )
-    async def test_with_explicit_private_key(self):
-        sig = TU.generate_deterministic_signature(
-            config=None, message="test", private_key=self.private_key
-        )
-        self.assertIsInstance(sig, str)
-        # base64-encoded signature
-        import base64
-
-        decoded = base64.b64decode(sig)
-        self.assertGreater(len(decoded), 0)
-
-    @unittest.skip(
-        "Skip: TU.generate_deterministic_signature moved to NodeKeyRotationManager"
-    )
-    async def test_with_config_private_key(self):
-        sig = TU.generate_deterministic_signature(config=self.config, message="hello")
-        self.assertIsInstance(sig, str)
-
-    @unittest.skip(
-        "Skip: TU.generate_deterministic_signature moved to NodeKeyRotationManager"
-    )
-    async def test_deterministic_same_output(self):
-        sig1 = TU.generate_deterministic_signature(
-            config=None, message="fixed msg", private_key=self.private_key
-        )
-        sig2 = TU.generate_deterministic_signature(
-            config=None, message="fixed msg", private_key=self.private_key
-        )
-        self.assertEqual(sig1, sig2)
-
-
 class TestNodeKeyRotationManagerSign(TUTestCase):
     async def test_sign_returns_string(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
@@ -110,37 +75,8 @@ class TestNodeKeyRotationManagerSign(TUTestCase):
         base64.b64decode(sig1)
         base64.b64decode(sig2)
 
-    @unittest.skip("Skip: advance_auth_ratchet API changed")
-    async def test_generate_signature_uses_kel_tip(self):
-        """generate_signature resolves the KEL tip and falls back to kel_anchor_private_key."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        from yadacoin.core.keyrotation import NodeKeyRotationManager
-
-        manager = MagicMock(spec=NodeKeyRotationManager)
-        manager._k0 = None  # trigger fallback path
-        manager._second_factor = ""
-        manager.config = self.config
-        manager.config.kel_anchor_private_key = self.private_key
-
-        with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-            new=AsyncMock(side_effect=Exception("db unavailable")),
-        ):
-            sig = await NodeKeyRotationManager.generate_signature(manager, "test msg")
-        self.assertIsInstance(sig, str)
-        import base64
-
-        base64.b64decode(sig)
-
 
 class TestTUGenerateRid(TUTestCase):
-    @unittest.skip("Skip: TU.generate_rid call signature changed")
-    async def test_generate_rid_returns_hex(self):
-        rid = TU.generate_rid(self.config, "some_username_signature")
-        self.assertEqual(len(rid), 64)
-        int(rid, 16)  # should be valid hex
-
     async def test_generate_rid_is_symmetric(self):
         """RID is the same regardless of argument order because signatures are sorted."""
         sig_a = "aaa_sig"
@@ -196,21 +132,6 @@ class TestTUSend(TUTestCase):
             )
         self.assertEqual(result["status"], "error")
         self.assertIn("not enough money", result["message"])
-
-    @unittest.skip("Skip: TU.send flow changed")
-    async def test_send_from_other_address_not_found(self):
-        """When child_keys lookup returns None, send returns error."""
-        mock_db = MagicMock()
-        mock_db.child_keys.find_one = AsyncMock(return_value=None)
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            result = await TU.send(
-                config=self.config,
-                to="someaddr",
-                value=1.0,
-                from_address="some_other_address",
-            )
-        self.assertEqual(result["status"], "error")
-        self.assertIn("no wallet matching from address", result["message"])
 
     async def test_send_from_other_address_found_generates_transaction(self):
         """When child_keys lookup returns a key, send uses it for the transaction."""

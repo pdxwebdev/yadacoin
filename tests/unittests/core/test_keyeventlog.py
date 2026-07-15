@@ -1816,31 +1816,6 @@ class TestKeyEventSendsAndParent(AsyncTestCase):
         cursor.to_list = AsyncMock(return_value=docs)
         return cursor
 
-    @unittest.skip(
-        "Skip: sends_to_past_kel_entry now returns False without calling aggregate"
-    )
-    async def test_sends_to_past_kel_entry_returns_key_event(self):
-        """Lines 330-340: aggregate returns a block txn → returns a KeyEvent."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        from yadacoin.core.keyeventlog import KeyEvent
-
-        block_doc = {"transactions": dict(_INCEPTION_TXN_DICT)}
-
-        ke = _make_mock_ke(outputs_to=_VALID_ADDR_A)
-
-        mock_cursor = MagicMock()
-        mock_cursor.to_list = AsyncMock(return_value=[block_doc])
-
-        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
-            mock_cfg = MagicMock()
-            mock_config_cls.return_value = mock_cfg
-            mock_cfg.mongo.async_db.blocks.aggregate.return_value = mock_cursor
-            result = await ke.sends_to_past_kel_entry()
-
-        self.assertIsNotNone(result)
-        self.assertIsInstance(result, KeyEvent)
-
     async def test_get_onchain_parent_returns_key_event(self):
         """get_onchain_parent: aggregate returns a block txn → returns dict with KeyEvent."""
         from unittest.mock import AsyncMock, MagicMock, patch
@@ -1892,58 +1867,6 @@ class TestKeyEventSendsAndParent(AsyncTestCase):
 
         self.assertIsNotNone(result)
         self.assertIsInstance(result, KeyEvent)
-
-    @unittest.skip(
-        "Skip: sends_to_past_kel_entry now returns False without calling aggregate"
-    )
-    async def test_sends_to_past_kel_entry_with_block_index(self):
-        """Line 634: block_index is passed → match_clause includes {\"index\": {\"$lt\": block_index}}."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        block_doc = {"transactions": dict(_INCEPTION_TXN_DICT)}
-
-        ke = _make_mock_ke(outputs_to=_VALID_ADDR_A)
-
-        mock_cursor = MagicMock()
-        mock_cursor.to_list = AsyncMock(return_value=[block_doc])
-
-        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
-            mock_cfg = MagicMock()
-            mock_config_cls.return_value = mock_cfg
-            mock_cfg.mongo.async_db.blocks.aggregate.return_value = mock_cursor
-            result = await ke.sends_to_past_kel_entry(block_index=597214)
-
-        # Verify the aggregate was called with the index constraint
-        aggregate_call_args = mock_cfg.mongo.async_db.blocks.aggregate.call_args
-        pipeline = aggregate_call_args[0][0]
-        match_stage = pipeline[0]["$match"]
-        self.assertIn("index", match_stage)
-        self.assertEqual(match_stage["index"], {"$lt": 597214})
-        self.assertIsNotNone(result)
-
-    @unittest.skip(
-        "Skip: sends_to_past_kel_entry now returns False without calling aggregate"
-    )
-    async def test_sends_to_past_kel_entry_no_block_index(self):
-        """Line 634 not reached: block_index is None → match_clause has no index constraint."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        mock_cursor = MagicMock()
-        mock_cursor.to_list = AsyncMock(return_value=[])
-
-        ke = _make_mock_ke(outputs_to=_VALID_ADDR_A)
-
-        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
-            mock_cfg = MagicMock()
-            mock_config_cls.return_value = mock_cfg
-            mock_cfg.mongo.async_db.blocks.aggregate.return_value = mock_cursor
-            result = await ke.sends_to_past_kel_entry(block_index=None)
-
-        aggregate_call_args = mock_cfg.mongo.async_db.blocks.aggregate.call_args
-        pipeline = aggregate_call_args[0][0]
-        match_stage = pipeline[0]["$match"]
-        self.assertNotIn("index", match_stage)
-        self.assertFalse(result)
 
 
 # ---------------------------------------------------------------------------

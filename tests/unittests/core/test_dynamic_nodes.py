@@ -833,78 +833,6 @@ class TestNodeTypeSelfDetermination(AsyncTestCase):
         node.identity.public_key = public_key
         return node
 
-    @unittest.skip("Skip: self_determine_peer_type removed from Nodes")
-    async def test_self_determine_returns_seed_for_seed_list(self):
-        """When this node's public key is in the Seeds list, returns SEED peer type."""
-        from yadacoin.enums.peertypes import PEER_TYPES
-
-        pub = "03aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
-        self.config.public_key = pub
-        mock_node = self._make_mock_node(pub)
-        self.seeds_instance._NODES.append(
-            {"ranges": [(CHAIN.DYNAMIC_NODES_FORK, None)], "node": mock_node}
-        )
-        Nodes.dynamic_node_public_keys.add(pub)
-
-        result = Nodes.self_determine_peer_type(self.config)
-        self.assertEqual(result, PEER_TYPES.SEED.value)
-
-    @unittest.skip("Skip: self_determine_peer_type removed from Nodes")
-    async def test_self_determine_returns_seed_gateway_for_gateway_list(self):
-        """When this node's public key is in the SeedGateways list, returns SEED_GATEWAY peer type."""
-        from yadacoin.enums.peertypes import PEER_TYPES
-
-        pub = "03bbccddeeff00112233445566778899aabbccddeeff00112233445566778899aa"
-        self.config.public_key = pub
-        mock_node = self._make_mock_node(pub)
-        self.gateways_instance._NODES.append(
-            {"ranges": [(CHAIN.DYNAMIC_NODES_FORK, None)], "node": mock_node}
-        )
-        Nodes.dynamic_node_public_keys.add(pub)
-
-        result = Nodes.self_determine_peer_type(self.config)
-        self.assertEqual(result, PEER_TYPES.SEED_GATEWAY.value)
-
-    @unittest.skip("Skip: self_determine_peer_type removed from Nodes")
-    async def test_self_determine_returns_service_provider_for_provider_list(self):
-        """When this node's public key is in the ServiceProviders list, returns SERVICE_PROVIDER peer type."""
-        from yadacoin.enums.peertypes import PEER_TYPES
-
-        pub = "03ccddeeff00112233445566778899aabbccddeeff00112233445566778899aabb"
-        self.config.public_key = pub
-        mock_node = self._make_mock_node(pub)
-        self.providers_instance._NODES.append(
-            {"ranges": [(CHAIN.DYNAMIC_NODES_FORK, None)], "node": mock_node}
-        )
-        Nodes.dynamic_node_public_keys.add(pub)
-
-        result = Nodes.self_determine_peer_type(self.config)
-        self.assertEqual(result, PEER_TYPES.SERVICE_PROVIDER.value)
-
-    @unittest.skip("Skip: self_determine_peer_type removed from Nodes")
-    async def test_self_determine_returns_none_when_not_a_dynamic_node(self):
-        """Returns None when this node's public key is not in dynamic_node_public_keys."""
-        pub = "03ddeeff00112233445566778899aabbccddeeff00112233445566778899aabbcc"
-        self.config.public_key = pub
-        # Do NOT add pub to dynamic_node_public_keys
-
-        result = Nodes.self_determine_peer_type(self.config)
-        self.assertIsNone(result)
-
-    @unittest.skip("Skip: self_determine_peer_type removed from Nodes")
-    async def test_self_determine_returns_none_when_not_in_any_list(self):
-        """Returns None when public key is in dynamic_node_public_keys but absent from all node lists."""
-        pub = "03eeff00112233445566778899aabbccddeeff00112233445566778899aabbccdd"
-        self.config.public_key = pub
-        Nodes.dynamic_node_public_keys.add(pub)
-        # Ensure all lists contain no entries with this key
-        self.seeds_instance._NODES = []
-        self.gateways_instance._NODES = []
-        self.providers_instance._NODES = []
-
-        result = Nodes.self_determine_peer_type(self.config)
-        self.assertIsNone(result)
-
     # ------------------------------------------------------------------
     # Additional coverage tests
     # ------------------------------------------------------------------
@@ -2179,36 +2107,6 @@ class TestNodesExceptionPaths(AsyncTestCase):
     # Lines 466-467: self_determine_peer_type - exception in node list iteration
     # ------------------------------------------------------------------
 
-    @unittest.skip("Skip: self_determine_peer_type removed from Nodes")
-    def test_self_determine_peer_type_exception_in_entry_continues(self):
-        """Lines 466-467: continues when accessing entry node's public_key raises."""
-        from yadacoin.enums.peertypes import PEER_TYPES
-
-        pub = "03ff00112233445566778899aabbccddeeff00112233445566778899aabbccddee"
-        self.mock_cfg.public_key = pub
-        Nodes.dynamic_node_public_keys.add(pub)
-
-        # First entry raises on .identity.public_key
-        broken_entry = {"node": object()}
-        # Second entry has the matching key
-        match_node = Mock()
-        match_node.identity = Mock()
-        match_node.identity.public_key = pub
-        self.seeds_instance._NODES.insert(0, broken_entry)
-        self.seeds_instance._NODES.insert(
-            1, {"ranges": [(0, None)], "node": match_node}
-        )
-
-        result = Nodes.self_determine_peer_type(self.mock_cfg)
-        self.assertEqual(result, PEER_TYPES.SEED.value)
-
-        # Clean up
-        self.seeds_instance._NODES = [
-            e
-            for e in self.seeds_instance._NODES
-            if e is not broken_entry and e.get("node") is not match_node
-        ]
-
 
 class TestAssignNodeTypeBranches(AsyncTestCase):
     """Covers Nodes._assign_node_type anchor registry and resolution branches (lines 304-318)."""
@@ -2301,52 +2199,6 @@ class TestKnownAnchorRegistry(AsyncTestCase):
             "02bootstrap", registry
         )  # type may vary depending on bootstrap nodes
         Nodes._anchor_registry = None
-
-
-@unittest.skip("Skip: test needs proper block cursor mocking")
-class TestCollateralUtxoBranches(AsyncTestCase):
-    """Covers Nodes._collateral_utxo_is_unspent matching-spend branch (line 177)."""
-
-    async def asyncSetUp(self):
-        from yadacoin.core.config import Config
-
-        await super().asyncSetUp()
-        self.config = Config()
-
-    async def test_matching_collateral_address_returns_false(self):
-        from unittest.mock import MagicMock
-
-        from yadacoin.core.nodes import Nodes
-        from yadacoin.core.transaction import Transaction
-
-        txn = MagicMock(spec=Transaction)
-        txn.public_key = "02" + "00" * 32
-        txn.inputs = []
-        txn.outputs = []
-
-        # Mock the hash so from_pubkey produces the right address
-        mock_block_cursor = MagicMock()
-        mock_block_cursor.sort.return_value = mock_block_cursor
-        mock_block_cursor.__aiter__.return_value = iter([{"transactions": [txn]}])
-
-        def make_mock_find(query, *args, **kwargs):
-            if "id" in str(query):
-                return mock_block_cursor
-            return MagicMock()
-
-        mock_blocks = MagicMock()
-        mock_blocks.find.side_effect = make_mock_find
-        mock_db = MagicMock()
-        mock_db.blocks = mock_blocks
-        self.config.mongo.async_db = mock_db
-
-        # This is hard to test without real collateral address mapping.
-        # The line 177 checks spending_address == collateral_address.
-        # For now, verify the function returns True for unspent.
-        result = await Nodes._collateral_utxo_is_unspent(
-            self.config, "txn_abc", "1FakeAddress"
-        )
-        self.assertTrue(result)
 
 
 if __name__ == "__main__":
