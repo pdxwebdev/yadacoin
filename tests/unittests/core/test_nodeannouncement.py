@@ -297,5 +297,115 @@ class TestNodeAnnouncementDirectInit(unittest.TestCase):
         self.assertIn("port", str(ctx.exception).lower())
 
 
+class TestResolveIdentityAnnouncement(AsyncTestCase):
+    """Covers NodeAnnouncement.resolve_identity_announcement (lines 137-154)."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.VALID_PUB = "02" + "00" * 32
+
+    async def test_identity_already_set_returns_true(self):
+        na = NodeAnnouncement(
+            identity={
+                "public_key": self.VALID_PUB,
+                "username": "test",
+                "username_signature": "ab" * 32,
+            },
+            host="127.0.0.1",
+            port=8000,
+        )
+        result = await na.resolve_identity_announcement()
+        self.assertTrue(result)
+
+    async def test_no_ia_id_returns_true(self):
+        na = NodeAnnouncement(
+            identity_announcement="some_id",
+            host="127.0.0.1",
+            port=8000,
+        )
+        na.identity_announcement = None
+        result = await na.resolve_identity_announcement()
+        self.assertTrue(result)
+
+    async def test_resolve_success_sets_identity(self):
+        from unittest.mock import AsyncMock, patch
+
+        na = NodeAnnouncement(
+            identity_announcement="ia_txn_id_123",
+            host="127.0.0.1",
+            port=8000,
+        )
+        mock_result = {
+            "public_key": self.VALID_PUB,
+            "identity": {
+                "username": "resolved_user",
+                "username_signature": "cd" * 32,
+            },
+        }
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_transaction_id",
+            new=AsyncMock(return_value=mock_result),
+        ):
+            result = await na.resolve_identity_announcement()
+        self.assertTrue(result)
+        self.assertIsNotNone(na.identity)
+        self.assertEqual(na.identity.public_key, self.VALID_PUB)
+        self.assertEqual(na.identity.username, "resolved_user")
+        self.assertEqual(na.anchor_public_key, self.VALID_PUB)
+
+    async def test_resolve_not_found_returns_false(self):
+        from unittest.mock import AsyncMock, patch
+
+        na = NodeAnnouncement(
+            identity_announcement="ia_txn_id_missing",
+            host="127.0.0.1",
+            port=8000,
+        )
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_transaction_id",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await na.resolve_identity_announcement()
+        self.assertFalse(result)
+
+
+class TestToDictIdentityAnnouncement(unittest.TestCase):
+    """Covers to_dict() with identity_announcement (line 173)."""
+
+    def test_to_dict_includes_identity_announcement(self):
+        na = NodeAnnouncement(
+            identity_announcement="ia_txn_id_xyz",
+            host="127.0.0.1",
+            port=8000,
+        )
+        d = na.to_dict()
+        self.assertIn("identity_announcement", d)
+        self.assertEqual(d["identity_announcement"], "ia_txn_id_xyz")
+
+    def test_to_dict_no_identity_announcement_no_key(self):
+        na = NodeAnnouncement(
+            identity={
+                "public_key": "02" + "00" * 32,
+                "username": "test",
+                "username_signature": "ab" * 32,
+            },
+            host="127.0.0.1",
+            port=8000,
+        )
+        d = na.to_dict()
+        self.assertNotIn("identity_announcement", d)
+
+    def test_to_dict_with_extra_fields(self):
+        na = NodeAnnouncement(
+            identity_announcement="ia_txn_123",
+            host="127.0.0.1",
+            port=8000,
+            custom_field="custom_value",
+        )
+        d = na.to_dict()
+        self.assertIn("custom_field", d)
+        self.assertEqual(d["custom_field"], "custom_value")
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

@@ -34,3 +34,41 @@ def initialize_config():
     test file, without each test class needing its own setUpClass/generate call.
     """
     core_config.Config.generate()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_config_singleton():
+    """Config is a process-wide singleton shared by every test in the
+    session. Many test classes (across many test files) reassign attributes
+    on it directly (e.g. ``Config().app_log = SomeStub()``,
+    ``config.public_key = "..."``) without restoring the original value, and
+    some of those test classes override ``asyncSetUp``/``setUp`` without
+    calling ``super().asyncSetUp()``/``super().setUp()``, so a base-class
+    cleanup hook alone cannot catch every case.
+
+    This autouse, function-scoped fixture snapshots the singleton's
+    top-level attributes before every test (regardless of test class) and
+    unconditionally restores them afterward, so mutations never leak into
+    other tests regardless of run order.
+
+    ``BU`` (a ``BlockChainUtils`` instance) is deliberately excluded from
+    this reset: ``tests/unittests/test_setup.py::AsyncTestCase`` lazily
+    creates it once ("if c.BU is None") and many test classes rely on that
+    single, session-persistent instance already being present even when
+    they skip calling ``super().asyncSetUp()``. We replicate that same
+    lazy-init here (idempotent) before snapshotting so ``BU`` is always
+    populated and is left untouched by the restore.
+    """
+    from yadacoin.core.blockchainutils import BlockChainUtils
+
+    c = core_config.Config()
+    if getattr(c, "BU", None) is None:
+        c.BU = BlockChainUtils()
+    snapshot = {k: v for k, v in vars(c).items() if k != "BU"}
+    try:
+        yield
+    finally:
+        bu = c.BU
+        c.__dict__.clear()
+        c.__dict__.update(snapshot)
+        c.BU = bu

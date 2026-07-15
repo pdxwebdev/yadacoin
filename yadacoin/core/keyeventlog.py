@@ -720,40 +720,6 @@ class KeyEvent:
 
     async def sends_to_past_kel_entry(self, block_index=None):
         return False  # we're no longer checking past KEL entries
-        for output in self.txn.outputs:
-            config = Config()
-            match_clause = {
-                BlocksQueryFields.PUBLIC_KEY_HASH.value: output.to,
-            }
-            if block_index is not None:
-                match_clause["index"] = {"$lt": block_index}
-            result = config.mongo.async_db.blocks.aggregate(
-                [
-                    {
-                        "$match": match_clause,
-                    },
-                    {"$unwind": "$transactions"},
-                    {
-                        "$match": {
-                            BlocksQueryFields.PUBLIC_KEY_HASH.value: output.to,
-                        },
-                    },
-                ]
-            )
-            res = await result.to_list(length=1)
-            if res:
-                txn = Transaction.from_dict(res[0]["transactions"])
-                key_event = KeyEvent(
-                    txn,
-                    flag=(
-                        KeyEventFlag.CONFIRMING
-                        if txn.prev_public_key_hash
-                        else KeyEventFlag.INCEPTION
-                    ),
-                    status=KeyEventChainStatus.ONCHAIN,
-                )
-                return key_event
-        return False
 
     async def get_onchain_parent(self):
         config = Config()

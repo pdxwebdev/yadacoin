@@ -581,13 +581,15 @@ class TestDoPayout(AsyncTestCase):
             )
             await p.do_payout()
 
-    async def test_generate_generic_exception_then_verify_raises(self):
-        """Transaction.generate raises generic Exception (debug branch),
-        then `transaction` is undefined, so verify call NameErrors which is re-raised.
+    async def test_generate_generic_exception_returns(self):
+        """Transaction.generate raises a generic Exception (debug branch) ->
+        the except Exception handler logs (when debug) and returns without
+        proceeding to verify/broadcast.
         """
         p, cfg = await self._setup_basic(debug=True)
         cfg.payout_frequency = 1
         cfg.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
+        cfg.mongo.async_db.miner_transactions.insert_one = AsyncMock()
         cfg.mongo.async_db.blocks.aggregate = MagicMock(
             return_value=_AsyncIter(
                 [
@@ -608,8 +610,43 @@ class TestDoPayout(AsyncTestCase):
             p.get_share_list_for_height = AsyncMock(
                 return_value={"a1": {"payout_share": 1.0}}
             )
-            with self.assertRaises(Exception):
-                await p.do_payout()
+            p.broadcast_transaction = AsyncMock()
+            # Should return cleanly, not raise.
+            await p.do_payout()
+        p.broadcast_transaction.assert_not_awaited()
+        cfg.mongo.async_db.miner_transactions.insert_one.assert_not_awaited()
+
+    async def test_generate_generic_exception_returns_no_debug(self):
+        """Same generic-exception branch but with debug=False, exercising the
+        `if self.config.debug` guard's False path (no logging call)."""
+        p, cfg = await self._setup_basic(debug=False)
+        cfg.payout_frequency = 1
+        cfg.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
+        cfg.mongo.async_db.miner_transactions.insert_one = AsyncMock()
+        cfg.mongo.async_db.blocks.aggregate = MagicMock(
+            return_value=_AsyncIter(
+                [
+                    {"index": 10, "id": "i1", "hash": "h1"},
+                    {"index": 11, "id": "i2", "hash": "h2"},
+                ]
+            )
+        )
+        cfg.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
+        with patch(
+            "yadacoin.core.miningpoolpayout.Block.from_dict",
+            new=AsyncMock(side_effect=[_mk_block(10), _mk_block(11)]),
+        ), patch(
+            "yadacoin.core.miningpoolpayout.Transaction.generate",
+            new=AsyncMock(side_effect=Exception("oops")),
+        ):
+            p.already_used = AsyncMock(return_value=[])
+            p.get_share_list_for_height = AsyncMock(
+                return_value={"a1": {"payout_share": 1.0}}
+            )
+            p.broadcast_transaction = AsyncMock()
+            await p.do_payout()
+        p.broadcast_transaction.assert_not_awaited()
+        cfg.mongo.async_db.miner_transactions.insert_one.assert_not_awaited()
 
     async def test_verify_raises(self):
         p, cfg = await self._setup_basic(debug=True)

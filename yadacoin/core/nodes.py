@@ -466,9 +466,10 @@ class Nodes:
 
                 # collateral_address is required and must be a valid address
                 collateral_address = node_def.get("collateral_address")
-                if not collateral_address or not config.address_is_valid(
-                    collateral_address
-                ):
+                collateral_address_valid = (
+                    collateral_address and config.address_is_valid(collateral_address)
+                )
+                if not collateral_address_valid:
                     continue
 
                 # Verify the announcement transaction's collateral output is still unspent.

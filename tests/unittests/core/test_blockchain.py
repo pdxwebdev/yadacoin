@@ -280,8 +280,12 @@ class TestBlockchainTestBlock(AsyncTestCase):
     """Cover Blockchain.test_block branches not exercised elsewhere."""
 
     async def asyncSetUp(self):
-        await super().asyncSetUp()
+        from mongomock import MongoClient
+
         self.config = Config()
+        self.config.network = "regnet"
+        self.config.mongo = MongoClient()
+        self.config.mongo.async_db = MagicMock()
         # Replace BU with a mock so transaction-input branches don't hit network
         self.config.BU = MagicMock()
         self.config.BU.get_transaction_by_id = AsyncMock(return_value=None)
@@ -731,9 +735,7 @@ class TestBlockchainTestBlock(AsyncTestCase):
             target=0,
         )
         block.hash = "f" * 64
-        with mock.patch.object(
-            CHAIN, "get_target_10min", new=AsyncMock(return_value=0)
-        ):
+        with mock.patch.object(CHAIN, "get_target", new=AsyncMock(return_value=0)):
             with mock.patch.object(CHAIN, "special_target", return_value=0):
                 with mock.patch.object(CHAIN, "target_block_time", return_value=600):
                     # block.special_min must be False on line 182 path? Let's

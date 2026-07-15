@@ -187,6 +187,7 @@ class Block(object):
     @classmethod
     async def generate(
         cls,
+        transactions=None,
         force_version=None,
         index=0,
         force_time=None,
@@ -230,15 +231,18 @@ class Block(object):
 
         triplet = await config.kel_manager.advance_block_ratchet(block=block)
 
-        transactions = [
-            txn
-            async for txn in config.mongo.async_db.miner_transactions.find(
-                {"relationship.smart_contract": {"$exists": False}}
-            )
-            .sort([("fee", -1), ("time", 1)])
-            .limit(1000)
-        ]
-        transactions = [Transaction.from_dict(txn) for txn in transactions]
+        if transactions is not None:
+            transactions = [Transaction.from_dict(txn) for txn in transactions]
+        else:
+            transactions = [
+                txn
+                async for txn in config.mongo.async_db.miner_transactions.find(
+                    {"relationship.smart_contract": {"$exists": False}}
+                )
+                .sort([("fee", -1), ("time", 1)])
+                .limit(1000)
+            ]
+            transactions = [Transaction.from_dict(txn) for txn in transactions]
         pending_txns.extend(transactions)
 
         coinbase_txn = await block.pay_masternodes(
@@ -246,7 +250,8 @@ class Block(object):
             triplet,
             block_reward,
         )
-        pending_txns.append(coinbase_txn)
+        if coinbase_txn is not None:
+            pending_txns.append(coinbase_txn)
         if config.LatestBlock.block.index + 1 >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK:
             items_indexed = {x.transaction_signature: x for x in pending_txns}
             for txn in pending_txns:

@@ -11,6 +11,7 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import logging
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -452,6 +453,11 @@ class TestDeuggingListener(AsyncTestCase):
 
 class TestMongoInitPaths(AsyncTestCase):
     """Tests for exception and special code paths in Mongo.__init__"""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.config = Config()
+        self.config.app_log = logging.getLogger("tornado.application")
 
     def _make_default_mock_db(self):
         """Returns a mock db where all operations succeed by default."""

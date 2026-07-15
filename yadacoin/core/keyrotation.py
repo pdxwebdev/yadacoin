@@ -866,8 +866,8 @@ class NodeKeyRotationManager:
             twice_prerotated_key_hash=jump_address,
             public_key_hash=kn_address,
             prev_public_key_hash=prev_pkh,
-            relationship=relationship,
-            relationship_hash=hashlib.sha256(relationship.encode("utf-8"))
+            relationship=relationship or "",
+            relationship_hash=hashlib.sha256((relationship or "").encode("utf-8"))
             .digest()
             .hex(),
             rid="",
@@ -1029,6 +1029,7 @@ class NodeKeyRotationManager:
         config = self.config
         username = getattr(config, "username", "") or ""
         identity_rel_hash = ""
+        announcement = None
         if username.strip():
             username_sig = NodeKeyRotationManager.generate_deterministic_signature(
                 username
@@ -1342,6 +1343,12 @@ class NodeKeyRotationManager:
 
 
 def _fatal(message: str) -> None:
-    """Print message to stderr and exit the process."""
+    """Print message to stderr and exit the process.
+
+    If NodeKeyRotationManager._TEST_MODE is set, raises RuntimeError
+    instead of exiting so test harnesses can assert on the message.
+    """
     print(message, file=sys.stderr)
+    if getattr(NodeKeyRotationManager, "_TEST_MODE", False):
+        raise RuntimeError(message)
     sys.exit(1)

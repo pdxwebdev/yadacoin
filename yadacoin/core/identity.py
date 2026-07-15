@@ -15,7 +15,9 @@ import binascii
 import hashlib
 
 import base58
+from bip32utils import BIP32Key
 from coincurve import PublicKey
+from mnemonic import Mnemonic
 
 from yadacoin.core.collections import Collections
 
@@ -37,29 +39,29 @@ class Identity:
         self.parent = parent
         self.wif = wif
 
-    # @classmethod
-    # def generate(cls, username="", collection=None, parent=None):
-    #     if not collection:
-    #         collection = Collections.CONTACT.value
-    #     mnemonic = Mnemonic("english")
-    #     seed = mnemonic.generate(256)
-    #     entropy = mnemonic.to_entropy(seed)
-    #     key = BIP32Key.fromEntropy(entropy)
-    #     private_key = key.PrivateKey().hex()
-    #     public_key = (
-    #         PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y())
-    #         .format()
-    #         .hex()
-    #     )
-    #     wif = cls.generate_wif(private_key)
-    #     username_signature = cls.get_username_signature(private_key, username)
-    #     return cls(
-    #         public_key=public_key,
-    #         username=username,
-    #         username_signature=username_signature,
-    #         parent=parent,
-    #         wif=wif,
-    #     )
+    @classmethod
+    def generate(cls, username="", collection=None, parent=None):
+        if not collection:
+            collection = Collections.CONTACT.value
+        mnemonic = Mnemonic("english")
+        seed = mnemonic.generate(256)
+        entropy = mnemonic.to_entropy(seed)
+        key = BIP32Key.fromEntropy(entropy)
+        private_key = key.PrivateKey().hex()
+        public_key = (
+            PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y())
+            .format()
+            .hex()
+        )
+        wif = cls.generate_wif(private_key)
+        username_signature = cls.get_username_signature(username)
+        return cls(
+            public_key=public_key,
+            username=username,
+            username_signature=username_signature,
+            parent=parent,
+            wif=wif,
+        )
 
     @classmethod
     def from_dict(cls, data):

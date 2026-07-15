@@ -229,5 +229,125 @@ class TestIdentityPublicKeyHex(unittest.TestCase):
         self.assertEqual(result, "abcdef1234")
 
 
+class TestGetUsernameSignature(unittest.TestCase):
+    """Covers Identity.get_username_signature (lines 90-93)."""
+
+    def test_returns_non_empty_string(self):
+        from unittest.mock import patch
+
+        from yadacoin.core.config import Config
+
+        cfg = Config()
+        cfg.kel_anchor_private_key = (
+            "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        )
+        with patch("yadacoin.core.keyrotation.Config", return_value=cfg):
+            sig = Identity.get_username_signature("testuser")
+        self.assertIsInstance(sig, str)
+        self.assertGreater(len(sig), 0)
+
+    def test_different_usernames_differ(self):
+        from unittest.mock import patch
+
+        from yadacoin.core.config import Config
+
+        cfg = Config()
+        cfg.kel_anchor_private_key = (
+            "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        )
+        with patch("yadacoin.core.keyrotation.Config", return_value=cfg):
+            sig1 = Identity.get_username_signature("alice")
+            sig2 = Identity.get_username_signature("bob")
+        self.assertNotEqual(sig1, sig2)
+
+
+class TestGenerateWif(unittest.TestCase):
+    """Covers Identity.generate_wif (lines 96-103)."""
+
+    def test_returns_wif_string(self):
+        pk = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        wif = Identity.generate_wif(pk)
+        self.assertIsInstance(wif, str)
+        # Compressed WIF starts with K or L
+        self.assertIn(wif[0], ("K", "L"))
+
+    def test_deterministic_same_key(self):
+        pk = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        wif1 = Identity.generate_wif(pk)
+        wif2 = Identity.generate_wif(pk)
+        self.assertEqual(wif1, wif2)
+
+    def test_different_keys_differ(self):
+        pk1 = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        pk2 = "611d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f695"
+        wif1 = Identity.generate_wif(pk1)
+        wif2 = Identity.generate_wif(pk2)
+        self.assertNotEqual(wif1, wif2)
+
+
+class TestPrivateIdentityDirect(unittest.TestCase):
+    """Covers PrivateIdentity.from_dict and to_dict (lines 126, 137)."""
+
+    def test_from_dict_returns_private_identity(self):
+        data = {
+            "public_key": "02" + "00" * 32,
+            "username": "testuser",
+            "username_signature": "ab" * 32,
+            "collection": "contact",
+            "parent": "",
+            "wif": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn",
+        }
+        pi = PrivateIdentity.from_dict(data)
+        self.assertIsInstance(pi, PrivateIdentity)
+        self.assertEqual(pi.wif, data["wif"])
+
+    def test_to_dict_includes_wif(self):
+        data = {
+            "public_key": "02" + "00" * 32,
+            "username": "testuser",
+            "username_signature": "ab" * 32,
+            "collection": "contact",
+            "parent": "parent123",
+            "wif": "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn",
+        }
+        pi = PrivateIdentity.from_dict(data)
+        d = pi.to_dict
+        self.assertIn("wif", d)
+        self.assertEqual(d["public_key"], "02" + "00" * 32)
+        self.assertEqual(d["username"], "testuser")
+        self.assertEqual(d["username_signature"], "ab" * 32)
+        self.assertEqual(d["parent"], "parent123")
+
+
+class TestPublicIdentityDirect(unittest.TestCase):
+    """Covers PublicIdentity.to_dict (line 150)."""
+
+    def test_to_dict_does_not_include_wif(self):
+        data = {
+            "public_key": "02" + "00" * 32,
+            "username": "testuser",
+            "username_signature": "ab" * 32,
+        }
+        pi = PublicIdentity.from_dict(data)
+        d = pi.to_dict
+        self.assertNotIn("wif", d)
+
+    def test_to_dict_has_required_keys(self):
+        data = {
+            "public_key": "02" + "00" * 32,
+            "username": "testuser",
+            "username_signature": "ab" * 32,
+            "collection": "contact",
+            "parent": "parent123",
+        }
+        pi = PublicIdentity.from_dict(data)
+        d = pi.to_dict
+        self.assertIn("public_key", d)
+        self.assertIn("username_signature", d)
+        self.assertIn("username", d)
+        self.assertEqual(d["collection"], "contact")
+        self.assertEqual(d["parent"], "parent123")
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

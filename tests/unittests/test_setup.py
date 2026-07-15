@@ -43,6 +43,21 @@ class AsyncTestCase(IsolatedAsyncioTestCase):
         if c.BU is None:
             c.BU = BlockChainUtils()
 
+        # Config is a process-wide singleton shared by every test in the
+        # session. Individual tests frequently reassign attributes on it
+        # (e.g. public_key, network, username) without restoring them,
+        # which silently poisons unrelated tests that run later in the same
+        # session/full-suite run. Snapshot the known-good baseline set up
+        # above and restore it unconditionally after each test so tests
+        # remain isolated regardless of run order.
+        snapshot = dict(vars(c))
+
+        def _restore_config():
+            c.__dict__.clear()
+            c.__dict__.update(snapshot)
+
+        self.addAsyncCleanup(_restore_config)
+
 
 class BaseTestCase(testing.AsyncHTTPTestCase):
     def get_new_ioloop(self):
