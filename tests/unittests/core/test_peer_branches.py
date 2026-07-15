@@ -10,7 +10,6 @@ from yadacoin.core.config import Config
 from yadacoin.core.peer import (
     Group,
     Peer,
-    Peers,
     Pool,
     Seed,
     SeedGateway,
@@ -938,101 +937,6 @@ class TestUserPoolGetRoutePeers(AsyncTestCase):
             result = [x async for x in pool.get_route_peers(None, {})]
         self.assertIn(s1, result)
         self.assertIn(s2, result)
-
-
-class TestPeersGetRoutes(AsyncTestCase):
-    """Lines 1093-1118: Peers.get_routes."""
-
-    async def asyncSetUp(self):
-        await super().asyncSetUp()
-        self.config = Config()
-
-    async def _setup(self, peer_type):
-        self.config.peer_type = peer_type
-        my_peer = MagicMock()
-        outbound_peer = MagicMock()
-        outbound_peer.rid = "out_rid"
-        outbound_peer.identity.username_signature = "out_sig"
-        outbound_peer.seed = "seed_sig"
-        outbound_peer.seed_gateway = "sg_sig"
-        my_peer.get_outbound_peers = AsyncMock(return_value={"out_sig": outbound_peer})
-        self.config.identity = MagicMock()
-        self.config.identity.generate_rid = MagicMock(return_value="my_rid")
-        seed_obj = MagicMock()
-        seed_obj.identity = MagicMock()
-        seed_obj.identity.generate_rid = MagicMock(return_value="seed_rid")
-        sg_obj = MagicMock()
-        sg_obj.identity = MagicMock()
-        sg_obj.identity.username_signature = "sg_un_sig"
-        sg_obj.identity.generate_rid = MagicMock(return_value="sg_rid")
-        return my_peer, seed_obj, sg_obj
-
-    async def test_get_routes_seed(self):
-        my_peer, seed, sg = await self._setup(PEER_TYPES.SEED.value)
-        with patch.object(self.config, "peer", my_peer, create=True):
-            result = await Peers.get_routes()
-        self.assertEqual(result, ["my_rid"])
-
-    async def test_get_routes_seed_gateway(self):
-        my_peer, seed, sg = await self._setup(PEER_TYPES.SEED_GATEWAY.value)
-        with patch.object(self.config, "peer", my_peer, create=True):
-            result = await Peers.get_routes()
-        self.assertEqual(result, ["out_rid"])
-
-    async def test_get_routes_service_provider(self):
-        my_peer, seed, sg = await self._setup(PEER_TYPES.SERVICE_PROVIDER.value)
-        with patch.object(self.config, "peer", my_peer, create=True), patch.object(
-            self.config, "seeds", {"seed_sig": seed}, create=True
-        ), patch.object(self.config, "seed_gateways", {"out_sig": sg}, create=True):
-            result = await Peers.get_routes()
-        self.assertEqual(result, ["seed_rid:out_rid"])
-
-    async def test_get_routes_user(self):
-        my_peer, seed, sg = await self._setup(PEER_TYPES.USER.value)
-        with patch.object(self.config, "peer", my_peer, create=True), patch.object(
-            self.config, "seeds", {"seed_sig": seed}, create=True
-        ), patch.object(self.config, "seed_gateways", {"sg_sig": sg}, create=True):
-            result = await Peers.get_routes()
-        self.assertEqual(result, ["seed_rid:sg_rid:out_rid"])
-
-    async def test_get_routes_pool(self):
-        my_peer, seed, sg = await self._setup(PEER_TYPES.POOL.value)
-        with patch.object(self.config, "peer", my_peer, create=True), patch.object(
-            self.config, "seeds", {"seed_sig": seed}, create=True
-        ), patch.object(self.config, "seed_gateways", {"sg_sig": sg}, create=True):
-            result = await Peers.get_routes()
-        self.assertEqual(result, ["seed_rid:sg_rid:out_rid"])
-
-    async def test_get_routes_service_provider_seed_none_continues(self):
-        """Line 1265: SERVICE_PROVIDER branch continues when seed/seed_gateway
-        cannot be resolved."""
-        my_peer, seed, sg = await self._setup(PEER_TYPES.SERVICE_PROVIDER.value)
-        with patch.object(self.config, "peer", my_peer, create=True), patch.object(
-            self.config, "seeds", {}, create=True
-        ), patch.object(self.config, "seed_gateways", {}, create=True):
-            result = await Peers.get_routes()
-        self.assertEqual(result, [])
-
-    async def test_get_routes_user_seed_none_continues(self):
-        """Line 1281: USER/POOL branch continues when seed/seed_gateway
-        cannot be resolved."""
-        my_peer, seed, sg = await self._setup(PEER_TYPES.USER.value)
-        with patch.object(self.config, "peer", my_peer, create=True), patch.object(
-            self.config, "seeds", {}, create=True
-        ), patch.object(self.config, "seed_gateways", {}, create=True):
-            result = await Peers.get_routes()
-        self.assertEqual(result, [])
-
-    async def test_get_routes_pool_seed_gateway_identity_none_continues(self):
-        """Line 1281: USER/POOL branch continues when seed_gateway is found
-        but has no identity."""
-        my_peer, seed, sg = await self._setup(PEER_TYPES.POOL.value)
-        sg.identity = None
-        with patch.object(self.config, "peer", my_peer, create=True), patch.object(
-            self.config, "seeds", {"seed_sig": seed}, create=True
-        ), patch.object(self.config, "seed_gateways", {"sg_sig": sg}, create=True):
-            result = await Peers.get_routes()
-        self.assertEqual(result, [])
 
 
 class TestExtraBranches(AsyncTestCase):

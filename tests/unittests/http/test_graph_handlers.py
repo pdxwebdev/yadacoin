@@ -1745,26 +1745,6 @@ class TestChallengeHandler(GraphHandlerTestBase):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# MyRoutesHandler — lines 1096-1097
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-class TestMyRoutesHandler(GraphHandlerTestBase):
-    def test_get_returns_routes(self):
-        """Lines 1096-1097: returns routes."""
-        with patch(
-            "yadacoin.http.graph.Peers.get_routes",
-            new=AsyncMock(return_value=[{"host": "1.2.3.4"}]),
-        ):
-            response, _ = self._fetch_with_graph(
-                "/my-routes?username_signature=testsig"
-            )
-        self.assertEqual(response.code, 200)
-        data = json.loads(response.body)
-        self.assertIn("routes", data)
-
-
-# ──────────────────────────────────────────────────────────────────────────────
 # PrerotatedKeyForUserNameSignature — lines 1106-1127
 # ──────────────────────────────────────────────────────────────────────────────
 

@@ -27,7 +27,7 @@ from tornado.httpclient import HTTPRequest
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.graph import Graph
-from yadacoin.core.peer import Group, Peers, User
+from yadacoin.core.peer import Group, User
 from yadacoin.core.transaction import (
     InvalidTransactionException,
     InvalidTransactionSignatureException,
@@ -979,12 +979,6 @@ class WebSignInHandler(BaseGraphHandler):
         return self.render_as_json({"success": False})
 
 
-class MyRoutesHandler(BaseGraphHandler):
-    async def get(self):
-        routes = await Peers.get_routes()
-        return self.render_as_json({"routes": routes})
-
-
 class PrerotatedKeyForUserNameSignature(BaseGraphHandler):
     async def get(self):
         # once a user searches their contacts for a given RID,
@@ -1063,6 +1057,5 @@ GRAPH_HANDLERS = [
     ),  # stream the file from the sia network, we need this because of cross origin
     (r"/ns", NSHandler),  # name server endpoints
     (r"/web-signin", WebSignInHandler),
-    (r"/my-routes", MyRoutesHandler),
     (r"/prerotated-key-hash-for-username-signature", PrerotatedKeyForUserNameSignature),
 ]

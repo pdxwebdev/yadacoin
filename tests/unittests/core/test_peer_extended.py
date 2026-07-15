@@ -1908,12 +1908,6 @@ class TestPeersGetRoutesContinuePaths(AsyncTestCase):
         self.config.nodeServer.inbound_streams[SeedGateway.__name__] = {}
         # Use existing Config singleton, patch specific attributes
 
-    @unittest.skip(
-        "Skip: needs full Seed peer setup with service_providers/seed_gateways"
-    )
-    async def test_seed_not_found_continues(self):
-        pass
-
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
