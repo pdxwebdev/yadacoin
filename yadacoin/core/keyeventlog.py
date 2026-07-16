@@ -327,7 +327,7 @@ class KeyEvent:
             and not is_identity_announcement_inception(self.txn)
         ):
             raise KeyEventTransactionRelationshipException(
-                f"{self.flag.value.upper()} key event attempts to populate relationship field. This is not allowed.  {self.txn.transaction_signature}"
+                f"{self.flag.value.upper()} key event attempts to populate relationship field. This is not allowed."
             )
 
         if (onchain and self.status == KeyEventChainStatus.MEMPOOL) or (
@@ -564,8 +564,7 @@ class KeyEvent:
             )
         if self.txn.relationship != "" and not is_recovers_inception(self.txn):
             raise KeyEventTransactionRelationshipException(
-                f"{self.flag.value.upper()} key event attempts to populate relationship field. This is not allowed. {self.txn.transaction_signature}"
-                f"txn={self.txn.transaction_signature}"
+                f"{self.flag.value.upper()} key event attempts to populate relationship field. This is not allowed."
             )
 
         if (onchain and self.status == KeyEventChainStatus.MEMPOOL) or (
@@ -913,6 +912,7 @@ class KeyEventLog:
         hash_collection: KELHashCollection = None,
         block_index: int = None,
         batch_txns=None,
+        use_mempool=False,
     ):
         self = KeyEventLog()
         self.config = Config()
@@ -928,7 +928,7 @@ class KeyEventLog:
                     "KEL recovery is not yet active at this block height"
                 )
             await key_event.verify_recovery_inception(
-                block_index=block_index, batch_txns=batch_txns
+                block_index=block_index, batch_txns=batch_txns, use_mempool=use_mempool
             )
             key_event.flag = KeyEventFlag.INCEPTION
             key_event.path = "recovery"
@@ -1185,13 +1185,44 @@ class KeyEventLog:
                     result["key_event"].path = "2.2"
                     self.base_key_event = result["key_event"]
                 else:
-                    mempool_base = await unconfirmed_key_event.get_mempool_parent()
-                    if mempool_base and mempool_base["key_event"]:
-                        mempool_base["key_event"].path = "2.2"
-                        self.base_key_event = mempool_base["key_event"]
+                    # Check batch_txns for the parent — it may be in the same
+                    # block being validated, not yet on-chain.
+                    parent_in_batch = None
+                    if batch_txns:
+                        parent_in_batch = next(
+                            (
+                                t
+                                for t in batch_txns
+                                if t.public_key_hash
+                                == unconfirmed_key_event.txn.prev_public_key_hash
+                            ),
+                            None,
+                        )
+                    if parent_in_batch:
+                        self.base_key_event = KeyEvent(
+                            parent_in_batch,
+                            flag=(
+                                KeyEventFlag.INCEPTION
+                                if not parent_in_batch.prev_public_key_hash
+                                or is_recovers_inception(parent_in_batch)
+                                else KeyEventFlag.CONFIRMING
+                            ),
+                            status=KeyEventChainStatus.MEMPOOL,
+                            path="2.2",
+                        )
+                    elif use_mempool and block_index is None:
+                        mempool_base = await unconfirmed_key_event.get_mempool_parent()
+                        if mempool_base and mempool_base["key_event"]:
+                            mempool_base["key_event"].path = "2.2"
+                            self.base_key_event = mempool_base["key_event"]
+                        else:
+                            raise KELException(
+                                "No on-chain or mempool key event found for unconfirmed key event.",
+                                txn=key_event.txn,
+                            )
                     else:
                         raise KELException(
-                            "No on-chain or mempool key event found for unconfirmed key event.",
+                            "No on-chain key event found for unconfirmed key event.",
                             txn=key_event.txn,
                         )
 
@@ -1234,10 +1265,46 @@ class KeyEventLog:
                         path="2.5",
                     )
                 else:
-                    raise KELException(
-                        "No on-chain or mempool key event found for unconfirmed key event.",
-                        txn=key_event.txn,
-                    )
+                    # Check batch_txns for the parent — it may be in the same
+                    # block being validated, not yet tracked in hash_collection.
+                    parent_in_batch = None
+                    if batch_txns:
+                        parent_in_batch = next(
+                            (
+                                t
+                                for t in batch_txns
+                                if t.public_key_hash
+                                == key_event.txn.prerotated_key_hash
+                            ),
+                            None,
+                        )
+                    if parent_in_batch:
+                        self.base_key_event = KeyEvent(
+                            parent_in_batch,
+                            flag=(
+                                KeyEventFlag.INCEPTION
+                                if not parent_in_batch.prev_public_key_hash
+                                or is_recovers_inception(parent_in_batch)
+                                else KeyEventFlag.CONFIRMING
+                            ),
+                            status=KeyEventChainStatus.MEMPOOL,
+                            path="2.5",
+                        )
+                    elif use_mempool and block_index is None:
+                        mempool_base = await key_event.get_mempool_parent()
+                        if mempool_base and mempool_base["key_event"]:
+                            mempool_base["key_event"].path = "2.5"
+                            self.base_key_event = mempool_base["key_event"]
+                        else:
+                            raise KELException(
+                                "No on-chain or mempool key event found for unconfirmed key event.",
+                                txn=key_event.txn,
+                            )
+                    else:
+                        raise KELException(
+                            "No on-chain key event found for unconfirmed key event.",
+                            txn=key_event.txn,
+                        )
 
             elif not getattr(key_event.txn, "coinbase", False):
                 raise KELException(

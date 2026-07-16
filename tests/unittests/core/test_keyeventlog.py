@@ -2307,7 +2307,7 @@ class TestKeyEventLogInitAsyncBranches(AsyncTestCase):
                 new=AsyncMock(return_value=[MagicMock()]),
             ):
                 with self.assertRaises(KELException) as ctx:
-                    await KeyEventLog.init_async(ke, hash_collection)
+                    await KeyEventLog.init_async(ke, hash_collection, use_mempool=True)
                 self.assertIn("No on-chain or mempool key event", str(ctx.exception))
 
     async def test_init_async_invalid_scenario_raises(self):

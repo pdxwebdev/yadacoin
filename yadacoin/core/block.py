@@ -920,6 +920,7 @@ class Block(object):
                         kel_hash_collection,
                         block_index=self.index,
                         batch_txns=self.transactions,
+                        use_mempool=False,
                     )
                 elif isinstance(txn.relationship, (RecoveryProof, RecoveryTransition)):
                     # A recovers-inception is signed by a brand-new K_0 whose signing
@@ -941,6 +942,7 @@ class Block(object):
                         kel_hash_collection,
                         block_index=self.index,
                         batch_txns=self.transactions,
+                        use_mempool=False,
                     )
                 elif txn.prev_public_key_hash:
                     raise KELExceptionPreviousKeyHashReferenceMissing(
