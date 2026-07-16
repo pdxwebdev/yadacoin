@@ -245,10 +245,13 @@ class TestKelResync(AsyncTestCase):
         stream = _make_stream()
         rpc.write_params = AsyncMock()
 
-        fake_txn = MagicMock()
-        fake_txn.to_dict = MagicMock(return_value={"id": "my_inception"})
-        fake_key_event = MagicMock()
-        fake_key_event.txn = fake_txn
+        # KeyEventLog.build_from_public_key returns a list of raw Transaction
+        # objects directly (not KeyEvent-wrapped) — kel[-1].to_dict() is the
+        # anchor entry's own serialization.
+        fake_txn_older = MagicMock()
+        fake_txn_older.to_dict = MagicMock(return_value={"id": "older_entry"})
+        fake_txn_anchor = MagicMock()
+        fake_txn_anchor.to_dict = MagicMock(return_value={"id": "anchor_entry"})
 
         with patch(
             "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username",
@@ -257,7 +260,7 @@ class TestKelResync(AsyncTestCase):
         ), patch(
             "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
             new_callable=AsyncMock,
-            return_value=[fake_key_event],
+            return_value=[fake_txn_older, fake_txn_anchor],
         ):
             await rpc.request_kel_resync({"params": {"id": "req1"}}, stream)
 
@@ -266,7 +269,8 @@ class TestKelResync(AsyncTestCase):
         self.assertEqual(call_args[0][1], "kel_resync_response")
         payload = call_args[0][2]
         self.assertEqual(payload["id"], "req1")
-        self.assertEqual(payload["kel_chain"], [{"id": "my_inception"}])
+        # Only the anchor (last/tip) entry is sent — not the older history.
+        self.assertEqual(payload["kel_chain"], [{"id": "anchor_entry"}])
 
     async def test_request_kel_resync_handler_no_k0_sends_empty_chain(self):
         rpc = _make_rpc()

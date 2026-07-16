@@ -56,6 +56,7 @@ class Config:
         self.seed = config.get("seed", "")
         self.xprv = config.get("xprv", "")
         self.username = config.get("username", "")
+        self.username_signature = config.get("username_signature", "")
         self.network = config.get("network", "mainnet")
         self.ssl = SSLConfig.from_dict(config.get("ssl"))
         self.origin = config.get("origin", False)
