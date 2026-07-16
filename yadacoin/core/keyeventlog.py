@@ -327,7 +327,7 @@ class KeyEvent:
             and not is_identity_announcement_inception(self.txn)
         ):
             raise KeyEventTransactionRelationshipException(
-                f"{self.flag.value.upper()} key event attempts to populate relationship field. This is not allowed."
+                f"{self.flag.value.upper()} key event attempts to populate relationship field. This is not allowed.  {self.txn.transaction_signature}"
             )
 
         if (onchain and self.status == KeyEventChainStatus.MEMPOOL) or (
@@ -564,7 +564,8 @@ class KeyEvent:
             )
         if self.txn.relationship != "" and not is_recovers_inception(self.txn):
             raise KeyEventTransactionRelationshipException(
-                f"{self.flag.value.upper()} key event attempts to populate relationship field. This is not allowed."
+                f"{self.flag.value.upper()} key event attempts to populate relationship field. This is not allowed. {self.txn.transaction_signature}"
+                f"txn={self.txn.transaction_signature}"
             )
 
         if (onchain and self.status == KeyEventChainStatus.MEMPOOL) or (
