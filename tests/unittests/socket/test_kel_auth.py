@@ -158,6 +158,179 @@ def _real_sign(message: str, priv_hex: str) -> str:
 # ─── KEL "start over" resync ──────────────────────────────────────────────────
 
 
+class TestIdentityAnnouncementPull(AsyncTestCase):
+    """_request_peer_identity_announcement / request_identity_announcement /
+    identity_announcement_response."""
+
+    async def test_timeout_returns_false(self):
+        pass
+
+        rpc = _make_rpc()
+        stream = _make_stream()
+        rpc.write_params = AsyncMock()
+
+        result = await rpc._request_peer_identity_announcement(
+            stream, "some_txn_id", timeout=0.05
+        )
+
+        self.assertFalse(result)
+        rpc.write_params.assert_awaited_once()
+        self.assertEqual(
+            rpc.write_params.call_args[0][1], "request_identity_announcement"
+        )
+
+    async def test_response_resolves_future_and_accepts_txn(self):
+        import asyncio
+
+        rpc = _make_rpc()
+        stream = _make_stream()
+        sent = {}
+
+        async def mock_write_params(s, method, payload):
+            sent[method] = payload
+
+        rpc.write_params = mock_write_params
+        rpc._accept_peer_kel_chain = AsyncMock()
+
+        async def simulate_peer_response():
+            await asyncio.sleep(0.01)
+            req_id = sent["request_identity_announcement"]["id"]
+            await rpc.identity_announcement_response(
+                {"params": {"id": req_id, "txn": {"id": "ia_txn_123"}}},
+                stream,
+            )
+
+        responder = asyncio.create_task(simulate_peer_response())
+        result = await rpc._request_peer_identity_announcement(
+            stream, "some_txn_id", timeout=5
+        )
+        await responder
+
+        self.assertTrue(result)
+        rpc._accept_peer_kel_chain.assert_awaited_once_with([{"id": "ia_txn_123"}])
+        self.assertEqual(rpc._ia_resync_waiters, {})
+
+    async def test_response_with_empty_txn_returns_false(self):
+        import asyncio
+
+        rpc = _make_rpc()
+        stream = _make_stream()
+        sent = {}
+
+        async def mock_write_params(s, method, payload):
+            sent[method] = payload
+
+        rpc.write_params = mock_write_params
+        rpc._accept_peer_kel_chain = AsyncMock()
+
+        async def simulate_empty_response():
+            await asyncio.sleep(0.01)
+            req_id = sent["request_identity_announcement"]["id"]
+            await rpc.identity_announcement_response(
+                {"params": {"id": req_id, "txn": {}}}, stream
+            )
+
+        responder = asyncio.create_task(simulate_empty_response())
+        result = await rpc._request_peer_identity_announcement(
+            stream, "some_txn_id", timeout=5
+        )
+        await responder
+
+        self.assertFalse(result)
+        rpc._accept_peer_kel_chain.assert_not_awaited()
+
+    async def test_response_ignores_unknown_request_id(self):
+        rpc = _make_rpc()
+        stream = _make_stream()
+        await rpc.identity_announcement_response(
+            {"params": {"id": "no-such-id", "txn": {}}}, stream
+        )
+
+    async def test_handler_finds_txn_in_mempool(self):
+        rpc = _make_rpc()
+        stream = _make_stream()
+        rpc.write_params = AsyncMock()
+
+        rpc.config.mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value={"id": "ia_txn_123", "public_key": "abc"}
+        )
+
+        await rpc.request_identity_announcement(
+            {"params": {"id": "req1", "txn_id": "ia_txn_123"}}, stream
+        )
+
+        payload = rpc.write_params.call_args[0][2]
+        self.assertEqual(payload["id"], "req1")
+        self.assertEqual(payload["txn"]["id"], "ia_txn_123")
+
+    async def test_handler_finds_txn_in_blocks(self):
+        rpc = _make_rpc()
+        stream = _make_stream()
+        rpc.write_params = AsyncMock()
+
+        rpc.config.mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value=None
+        )
+        fake_block_txn = {"id": "ia_txn_456", "public_key": "def"}
+
+        class _AsyncIter:
+            def __init__(self, items):
+                self._items = list(items)
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if self._items:
+                    return self._items.pop(0)
+                raise StopAsyncIteration
+
+        def mock_aggregate(pipeline):
+            return _AsyncIter([fake_block_txn])
+
+        rpc.config.mongo.async_db.blocks.aggregate = mock_aggregate
+
+        await rpc.request_identity_announcement(
+            {"params": {"id": "req2", "txn_id": "ia_txn_456"}}, stream
+        )
+
+        payload = rpc.write_params.call_args[0][2]
+        self.assertEqual(payload["txn"]["id"], "ia_txn_456")
+
+    async def test_handler_not_found_sends_empty(self):
+        rpc = _make_rpc()
+        stream = _make_stream()
+        rpc.write_params = AsyncMock()
+
+        rpc.config.mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value=None
+        )
+
+        class _AsyncIter:
+            def __init__(self, items):
+                self._items = list(items)
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if self._items:
+                    return self._items.pop(0)
+                raise StopAsyncIteration
+
+        def mock_aggregate(pipeline):
+            return _AsyncIter([])
+
+        rpc.config.mongo.async_db.blocks.aggregate = mock_aggregate
+
+        await rpc.request_identity_announcement(
+            {"params": {"id": "req3", "txn_id": "missing"}}, stream
+        )
+
+        payload = rpc.write_params.call_args[0][2]
+        self.assertEqual(payload["txn"], {})
+
+
 class TestKelResync(AsyncTestCase):
     """_request_peer_kel_resync / request_kel_resync / kel_resync_response."""
 

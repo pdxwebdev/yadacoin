@@ -92,6 +92,10 @@ class NodeRPC(BaseRPC):
     # are globally unique so there's no cross-talk risk.  See
     # _request_peer_kel_resync / request_kel_resync / kel_resync_response.
     _kel_resync_waiters: dict = {}
+    # Same pattern for identity-announcement pulls — see
+    # _request_peer_identity_announcement / request_identity_announcement /
+    # identity_announcement_response.
+    _ia_resync_waiters: dict = {}
 
     def __init__(self):
         super(NodeRPC, self).__init__()
@@ -277,6 +281,88 @@ class NodeRPC(BaseRPC):
             fut.set_result(params.get("kel_chain") or [])
 
     # ── end KEL "start over" resync ────────────────────────────────────────
+
+    async def _request_peer_identity_announcement(
+        self, stream, txn_id: str, timeout: float = 5.0
+    ) -> bool:
+        """Ask the peer to send us the specific identity-announcement
+        transaction identified by *txn_id* (which we couldn't find locally),
+        then wait briefly for the reply.  Returns True if a transaction
+        arrived and was ingested into our mempool; False on timeout/send
+        failure.  Mirrors ``_request_peer_kel_resync``'s request/future
+        pattern."""
+        req_id = str(uuid4())
+        fut = asyncio.get_event_loop().create_future()
+        self._ia_resync_waiters[req_id] = fut
+        try:
+            await self.write_params(
+                stream,
+                "request_identity_announcement",
+                {"id": req_id, "txn_id": txn_id},
+            )
+            try:
+                txn_dict = await asyncio.wait_for(fut, timeout=timeout)
+            except asyncio.TimeoutError:
+                self.config.app_log.warning(
+                    "ratchet: peer did not respond to identity_announcement "
+                    "request in time"
+                )
+                return False
+        finally:
+            self._ia_resync_waiters.pop(req_id, None)
+
+        if not txn_dict:
+            return False
+        await self._accept_peer_kel_chain([txn_dict])
+        return True
+
+    async def request_identity_announcement(self, body, stream):
+        """Peer is asking us to send a specific identity-announcement
+        transaction by id — they couldn't find it locally and need it to
+        validate our KEL anchor."""
+        params = body.get("params", {})
+        req_id = params.get("id", "")
+        txn_id = params.get("txn_id", "")
+
+        txn_dict = None
+        if txn_id:
+            doc = await self.config.mongo.async_db.miner_transactions.find_one(
+                {"id": txn_id}, {"_id": 0}
+            )
+            if not doc:
+                async for block_doc in self.config.mongo.async_db.blocks.aggregate(
+                    [
+                        {"$match": {"transactions.id": txn_id}},
+                        {"$unwind": "$transactions"},
+                        {"$match": {"transactions.id": txn_id}},
+                        {"$replaceRoot": {"newRoot": "$transactions"}},
+                        {"$limit": 1},
+                    ]
+                ):
+                    txn_dict = block_doc
+                    break
+            else:
+                txn_dict = doc
+
+        await self.write_params(
+            stream,
+            "identity_announcement_response",
+            {"id": req_id, "txn": txn_dict or {}},
+        )
+        self.config.app_log.info(
+            "  [→]   identity_announcement_response sent (%s)",
+            "found" if txn_dict else "not found",
+        )
+
+    async def identity_announcement_response(self, body, stream):
+        """Resolve the matching _request_peer_identity_announcement() future."""
+        params = body.get("params", {})
+        req_id = params.get("id", "")
+        fut = self._ia_resync_waiters.get(req_id)
+        if fut and not fut.done():
+            fut.set_result(params.get("txn") or {})
+
+    # ── end identity-announcement pull ─────────────────────────────────────
 
     async def getblocks(self, body, stream):
         # get blocks should be done only by syncing peers
@@ -1395,6 +1481,26 @@ class NodeRPC(BaseRPC):
         if _ia_id:
             _anchor_doc = await _IApeer.get_by_transaction_id(_ia_id)
             if not _anchor_doc:
+                # We don't have the peer's identity-announcement transaction
+                # locally.  Instead of disconnecting, actively ask the peer
+                # to send it to us over this same stream, ingest it into our
+                # mempool, and retry the lookup once — same "actively
+                # re-request what's missing" pattern as the KEL resync below.
+                if not _retried:
+                    self.config.app_log.warning(
+                        "ratchet: identity_announcement %s not found locally "
+                        "— requesting it from peer %s",
+                        _ia_id,
+                        peer_username,
+                    )
+                    if await self._request_peer_identity_announcement(stream, _ia_id):
+                        return await self._process_ratchet_auth(
+                            stream,
+                            ratchet_chain,
+                            ratchet_public_key,
+                            latest_ratchet_pkh,
+                            _retried=True,
+                        )
                 await self.remove_peer(
                     stream, reason="ratchet: identity_announcement txn not found"
                 )

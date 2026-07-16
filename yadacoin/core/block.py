@@ -876,6 +876,36 @@ class Block(object):
                         ):
                             has_kel = True
                             break
+                if not has_kel and txn.prev_public_key_hash:
+                    # The parent may also live in the mempool (not yet mined
+                    # and not included in this block) or in the off-chain
+                    # key_event_log collection (peer-branch bridge/advance
+                    # entries).  has_key_event_log(block=self) only checks
+                    # on-chain blocks, so check those two sources here before
+                    # falling through to the hard reject below.
+                    mempool_parent = (
+                        await self.config.mongo.async_db.miner_transactions.find_one(
+                            {
+                                "$or": [
+                                    {"prerotated_key_hash": txn.public_key_hash},
+                                    {"twice_prerotated_key_hash": txn.public_key_hash},
+                                ]
+                            }
+                        )
+                    )
+                    if mempool_parent:
+                        has_kel = True
+                    else:
+                        offchain_parent = await self.config.mongo.async_db.key_event_log.find_one(
+                            {
+                                "$or": [
+                                    {"prerotated_key_hash": txn.public_key_hash},
+                                    {"twice_prerotated_key_hash": txn.public_key_hash},
+                                ]
+                            }
+                        )
+                        if offchain_parent:
+                            has_kel = True
 
                 if has_kel:
                     kel_hash_collection = await KELHashCollection.init_async(
