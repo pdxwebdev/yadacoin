@@ -2044,4 +2044,374 @@ class TestGenerateSignature(AsyncTestCase):
 
         self.assertEqual(result_pub, pub_hex)
         self.assertIsInstance(result_sig, str)
-        self.assertGreater(len(result_sig), 0)
+
+
+# ---------------------------------------------------------------------------
+# Per-peer KEL branches (advance_peer_auth_ratchet / peer_branch_anchor_pub)
+# ---------------------------------------------------------------------------
+
+
+class _FakeKeyEventLogCollection:
+    """Minimal in-memory stand-in for the ``key_event_log`` Mongo collection,
+    sufficient for exercising the peer-branch upsert/tip-lookup logic without
+    a real database."""
+
+    def __init__(self):
+        self.docs = []
+
+    async def find_one(self, filt, sort=None):
+        matches = [d for d in self.docs if self._matches(d, filt)]
+        if not matches:
+            return None
+        if sort:
+            key, direction = sort[0]
+            matches.sort(key=lambda d: d.get(key, 0), reverse=(direction == -1))
+        return matches[0]
+
+    async def replace_one(self, filt, doc, upsert=False):
+        for i, d in enumerate(self.docs):
+            if self._matches(d, filt):
+                self.docs[i] = doc
+                return
+        if upsert:
+            self.docs.append(doc)
+
+    @staticmethod
+    def _matches(doc, filt):
+        return all(doc.get(k) == v for k, v in filt.items())
+
+
+def _make_branch_config(priv_hex, pub_hex, cc_hex):
+    cfg = _make_config(
+        kel_anchor_private_key=priv_hex,
+        kel_anchor_public_key=pub_hex,
+        kel_anchor_chain_code=cc_hex,
+    )
+    cfg.mongo.async_db.key_event_log = _FakeKeyEventLogCollection()
+    return cfg
+
+
+class TestPeerBranchAuthRatchet(AsyncTestCase):
+    # These represent K0 (the genesis/inception key), not K_n — peer
+    # branches now root at the *current on-chain/mempool anchor*, which
+    # _resolve_latest_kel_anchor derives fresh by walking `KEL_DEPTH` steps
+    # forward from K0 (simulating however many rotations have already been
+    # confirmed on-chain or sit in the mempool).
+    PRIV_HEX = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+    PUB_HEX = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
+    KEL_DEPTH = 2  # pretend 2 rotations already exist on-chain/in mempool
+
+    def _cc_hex(self):
+        import hashlib
+        import hmac as _hmac
+
+        return (
+            _hmac.new(bytes.fromhex(self.PRIV_HEX), b"test-cc", hashlib.sha256)
+            .digest()
+            .hex()
+        )
+
+    def _make_mgr(self, cfg, kel_depth=None):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        mgr = NodeKeyRotationManager(cfg)
+        mgr._second_factor = "mysecret"
+        mgr._k0 = {
+            "private_key": bytes.fromhex(self.PRIV_HEX),
+            "chain_code": bytes.fromhex(self._cc_hex()),
+        }
+        mgr._test_kel_depth = self.KEL_DEPTH if kel_depth is None else kel_depth
+        return mgr
+
+    def _patch_kel_depth(self, mgr):
+        """Patch KeyEventLog.build_from_public_key so
+        _resolve_latest_kel_anchor sees a KEL of length mgr._test_kel_depth
+        (only its length is used)."""
+        fake_kel = [object()] * mgr._test_kel_depth
+        return patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+            new=AsyncMock(return_value=fake_kel),
+        )
+
+    async def test_peer_branch_anchor_first_use_creates_branch(self):
+        """peer_branch_anchor_pub is read-only, but once
+        advance_peer_auth_ratchet has established a branch, it must return
+        that branch's stable anchor — unique per peer, and different from
+        raw K0."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+
+        # No branch yet → read-only lookup returns ""
+        self.assertEqual(await mgr.peer_branch_anchor_pub("peerA_sig"), "")
+
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            await mgr.advance_peer_auth_ratchet("peerA_username_signature")
+            await mgr.advance_peer_auth_ratchet("peerB_username_signature")
+
+        anchor_a = await mgr.peer_branch_anchor_pub("peerA_username_signature")
+        anchor_b = await mgr.peer_branch_anchor_pub("peerB_username_signature")
+
+        self.assertTrue(anchor_a)
+        self.assertTrue(anchor_b)
+        self.assertNotEqual(anchor_a, anchor_b)
+        self.assertNotEqual(anchor_a, self.PUB_HEX)
+
+    async def test_peer_branch_anchor_no_branch_returns_empty(self):
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        self.assertEqual(await mgr.peer_branch_anchor_pub("peerA_sig"), "")
+        self.assertEqual(await mgr.peer_branch_anchor_pub(""), "")
+
+    async def test_first_contact_creates_signed_bridge_entry(self):
+        """First advance for a new peer must persist a K_n → Kp0 bridge entry
+        signed by K_n (the current on-chain/mempool anchor, not raw K0),
+        with counter=0 and root_depth recorded, before returning Kp0 as the
+        signing key."""
+        from yadacoin.core.transaction import Transaction
+
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            (
+                cur_priv,
+                cur_pub,
+                next_priv,
+                next_pub,
+                two_ahead_pkh,
+                is_new_branch,
+            ) = await mgr.advance_peer_auth_ratchet("peerA_username_signature")
+
+        # First call signs with Kp0 itself (counter 0 → position 0 → position 1)
+        self.assertTrue(is_new_branch)
+        self.assertEqual(
+            cur_pub, await mgr.peer_branch_anchor_pub("peerA_username_signature")
+        )
+        self.assertNotEqual(cur_pub, self.PUB_HEX)
+        self.assertNotEqual(next_pub, cur_pub)
+
+        docs = cfg.mongo.async_db.key_event_log.docs
+        self.assertEqual(len(docs), 2)  # bridge (counter 0) + first advance (counter 1)
+
+        bridge = next(d for d in docs if d["counter"] == 0)
+        # public_key is K_n (K0 advanced KEL_DEPTH steps), NOT raw K0.
+        self.assertNotEqual(bridge["public_key"], self.PUB_HEX)
+        self.assertEqual(bridge["branch_peer"], "peerA_username_signature")
+        self.assertEqual(bridge["root_depth"], self.KEL_DEPTH)
+        self.assertEqual(bridge["prerotated_key_hash"], docs[0]["prerotated_key_hash"])
+
+        # The bridge txn must carry a real signature verifiable against K_n,
+        # and a hash matching a fresh recompute (the bug this fixes: a blank
+        # signature/hash would make every peer reject the branch).
+        bridge_txn = Transaction.from_dict(bridge["txn"])
+        self.assertTrue(bridge_txn.transaction_signature)
+        self.assertTrue(bridge_txn.hash)
+        recomputed_hash = await bridge_txn.generate_hash()
+        self.assertEqual(recomputed_hash, bridge_txn.hash)
+
+    async def test_advance_signs_ratchet_txn(self):
+        """Regression test for the missing-signature bug: every entry written
+        by advance_peer_auth_ratchet must have a valid hash + signature."""
+        from yadacoin.core.transaction import Transaction
+
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            await mgr.advance_peer_auth_ratchet("peerA_username_signature")
+            await mgr.advance_peer_auth_ratchet("peerA_username_signature")
+
+        docs = cfg.mongo.async_db.key_event_log.docs
+        self.assertEqual(len(docs), 3)  # bridge + 2 advances
+        for doc in docs:
+            txn = Transaction.from_dict(doc["txn"])
+            if doc["counter"] == 0:
+                continue  # bridge already checked above
+            self.assertTrue(txn.transaction_signature, "entry missing signature")
+            self.assertTrue(txn.hash, "entry missing hash")
+            recomputed = await txn.generate_hash()
+            self.assertEqual(recomputed, txn.hash)
+
+    async def test_global_advance_auth_ratchet_signs_txn(self):
+        """Same signature-bug regression, but for the global (non-branched)
+        advance_auth_ratchet path used by generate_signature()/node
+        announcements."""
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+        from yadacoin.core.transaction import Transaction
+
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = NodeKeyRotationManager(cfg)
+        mgr._second_factor = "mysecret"
+
+        with patch("yadacoin.core.transaction.Config", return_value=cfg):
+            await mgr.advance_auth_ratchet()
+
+        docs = cfg.mongo.async_db.key_event_log.docs
+        self.assertEqual(len(docs), 1)
+        txn = Transaction.from_dict(docs[0]["txn"])
+        self.assertTrue(txn.transaction_signature)
+        self.assertTrue(txn.hash)
+        recomputed = await txn.generate_hash()
+        self.assertEqual(recomputed, txn.hash)
+
+    async def test_peer_branches_are_isolated(self):
+        """Entries written for peer A must never appear in peer B's branch
+        (and vice versa) — the core scalability fix."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            # Peer A reconnects 3 times, peer B reconnects once.
+            for _ in range(3):
+                await mgr.advance_peer_auth_ratchet("peerA_sig")
+            await mgr.advance_peer_auth_ratchet("peerB_sig")
+
+        anchor_a = await mgr.peer_branch_anchor_pub("peerA_sig")
+        anchor_b = await mgr.peer_branch_anchor_pub("peerB_sig")
+        docs = cfg.mongo.async_db.key_event_log.docs
+
+        a_docs = [d for d in docs if d["anchor_public_key"] == anchor_a]
+        b_docs = [d for d in docs if d["anchor_public_key"] == anchor_b]
+
+        self.assertEqual(len(a_docs), 4)  # bridge + 3 advances
+        self.assertEqual(len(b_docs), 2)  # bridge + 1 advance
+        # No overlap between the two peers' entries at all.
+        a_ids = {d["id"] for d in a_docs}
+        b_ids = {d["id"] for d in b_docs}
+        self.assertEqual(a_ids & b_ids, set())
+
+    async def test_resumes_branch_tip_across_calls(self):
+        """A brand new manager instance (simulating a restart) must resume
+        the peer's branch from its persisted tip rather than re-minting a
+        bridge entry — even though the "current" on-chain/mempool anchor may
+        have moved on by the time of the restart."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+
+        mgr1 = self._make_mgr(cfg, kel_depth=2)
+        with self._patch_kel_depth(mgr1), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            await mgr1.advance_peer_auth_ratchet("peerA_sig")
+            (
+                _,
+                _,
+                expected_next_priv,
+                expected_next_pub,
+                _,
+                _,
+            ) = await mgr1.advance_peer_auth_ratchet("peerA_sig")
+
+        # Simulate a process restart *and* that 3 more on-chain/mempool
+        # rotations have happened since (kel_depth moved from 2 → 5). The
+        # resumed branch must still use the ORIGINAL root (depth 2, recorded
+        # on the bridge entry), not blindly re-root at the new "latest".
+        mgr2 = self._make_mgr(cfg, kel_depth=5)
+        with self._patch_kel_depth(mgr2), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            cur_priv, cur_pub, *_ = await mgr2.advance_peer_auth_ratchet("peerA_sig")
+
+        # mgr2 must resume from the tip mgr1 left behind, not restart at Kp0
+        # and not re-root against the now-advanced "latest" anchor.
+        self.assertEqual(cur_priv, expected_next_priv)
+        self.assertEqual(cur_pub, expected_next_pub)
+
+        docs = cfg.mongo.async_db.key_event_log.docs
+        anchor = await mgr2.peer_branch_anchor_pub("peerA_sig")
+        branch_docs = [d for d in docs if d["anchor_public_key"] == anchor]
+        # bridge(0) + mgr1's 2 advances(1,2) + mgr2's 1 advance(3) = 4 entries
+        self.assertEqual(len(branch_docs), 4)
+        self.assertEqual(max(d["counter"] for d in branch_docs), 3)
+        # Still exactly one bridge entry for this peer — no re-minting.
+        self.assertEqual(len([d for d in branch_docs if d["counter"] == 0]), 1)
+
+    async def test_missing_peer_username_signature_is_fatal(self):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+
+        NodeKeyRotationManager._TEST_MODE = True
+        try:
+            with self.assertRaises(RuntimeError) as ctx:
+                await mgr.advance_peer_auth_ratchet("")
+            self.assertIn("username_signature", str(ctx.exception))
+        finally:
+            NodeKeyRotationManager._TEST_MODE = False
+
+    async def test_missing_k0_is_fatal(self):
+        """If K0 hasn't been derived yet (startup_check hasn't run), minting
+        a new peer branch must fail loudly rather than silently rooting at
+        garbage."""
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = NodeKeyRotationManager(cfg)
+        mgr._second_factor = "mysecret"
+        mgr._k0 = None  # never derived
+
+        NodeKeyRotationManager._TEST_MODE = True
+        try:
+            with self.assertRaises(RuntimeError) as ctx:
+                await mgr.advance_peer_auth_ratchet("peerA_sig")
+            self.assertIn("KEL signing key is", str(ctx.exception))
+        finally:
+            NodeKeyRotationManager._TEST_MODE = False
+
+    async def test_resolve_latest_kel_anchor_missing_second_factor_returns_none(self):
+        """_resolve_latest_kel_anchor must bail out cleanly (not raise) when
+        K0 is available but SECOND_FACTOR cannot be resolved at all."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        mgr._second_factor = ""
+
+        with patch("yadacoin.core.keyrotation._read_second_factor", return_value=""):
+            kn, depth = await mgr._resolve_latest_kel_anchor()
+
+        self.assertIsNone(kn)
+        self.assertEqual(depth, 0)
+
+    async def test_resolve_latest_kel_anchor_build_error_falls_back_to_k0(self):
+        """A KeyEventLog.build_from_public_key error must be swallowed and
+        treated as "no KEL yet" (depth 0) rather than propagating."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+            new=AsyncMock(side_effect=RuntimeError("mongo down")),
+        ):
+            kn, depth = await mgr._resolve_latest_kel_anchor()
+
+        self.assertIsNotNone(kn)
+        self.assertEqual(depth, 0)
+        # depth 0 → 0 derivation steps applied → kn is just K0 itself.
+        self.assertEqual(kn["private_key"], mgr._k0["private_key"])
+
+    async def test_key_event_log_write_errors_are_swallowed(self):
+        """DB errors while persisting the bridge entry and the subsequent
+        advance must not raise — the in-memory branch state stays usable
+        for the rest of this process even if persistence fails."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        cfg.mongo.async_db.key_event_log.replace_one = AsyncMock(
+            side_effect=RuntimeError("write failed")
+        )
+
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            result = await mgr.advance_peer_auth_ratchet("peerA_username_signature")
+
+        cur_priv, cur_pub, next_priv, next_pub, two_ahead_pkh, is_new_branch = result
+        self.assertTrue(cur_priv)
+        self.assertTrue(next_priv)
+        self.assertTrue(is_new_branch)

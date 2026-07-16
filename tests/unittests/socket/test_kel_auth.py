@@ -40,9 +40,13 @@ def _make_config():
     config.proxy_port = 8888
     config.kel_anchor_public_key = None
     config.kel_manager = MagicMock()
-    config.kel_manager.advance_auth_ratchet = AsyncMock(
-        return_value=("default_priv", "default_pub", None, None)
+    config.kel_manager.advance_peer_auth_ratchet = AsyncMock(
+        return_value=("default_priv", "default_pub", None, None, "default_tpkh", False)
     )
+    # Peer-branch anchor lookup — returns falsy by default so ratchet_chain
+    # delta building takes the "no anchor" short-circuit, matching the
+    # pre-branching tests' expectation of an empty chain by default.
+    config.kel_manager.peer_branch_anchor_pub = AsyncMock(return_value="")
     config.peer = MagicMock()
     config.peer.to_dict = MagicMock(return_value={"host": "127.0.0.1"})
 
@@ -104,6 +108,7 @@ def _make_peer(host="127.0.0.2"):
     peer.authenticated = False
     peer.identity = MagicMock()
     peer.identity.username = "peernode"
+    peer.identity.username_signature = "peernode_username_signature"
     peer.to_dict = MagicMock(return_value={"host": host})
     return peer
 
@@ -150,6 +155,135 @@ def _real_sign(message: str, priv_hex: str) -> str:
     return base64.b64encode(sig).decode()
 
 
+# ─── KEL "start over" resync ──────────────────────────────────────────────────
+
+
+class TestKelResync(AsyncTestCase):
+    """_request_peer_kel_resync / request_kel_resync / kel_resync_response."""
+
+    async def test_timeout_returns_false(self):
+        pass
+
+        rpc = _make_rpc()
+        stream = _make_stream()
+        rpc.write_params = AsyncMock()
+
+        result = await rpc._request_peer_kel_resync(stream, timeout=0.05)
+
+        self.assertFalse(result)
+        rpc.write_params.assert_awaited_once()
+        self.assertEqual(rpc.write_params.call_args[0][1], "request_kel_resync")
+
+    async def test_response_resolves_future_and_accepts_chain(self):
+        import asyncio
+
+        rpc = _make_rpc()
+        stream = _make_stream()
+        sent = {}
+
+        async def mock_write_params(s, method, payload):
+            sent[method] = payload
+
+        rpc.write_params = mock_write_params
+        rpc._accept_peer_kel_chain = AsyncMock()
+
+        async def simulate_peer_response():
+            # Let _request_peer_kel_resync register its future first.
+            await asyncio.sleep(0.01)
+            req_id = sent["request_kel_resync"]["id"]
+            await rpc.kel_resync_response(
+                {"params": {"id": req_id, "kel_chain": [{"id": "inception_txn"}]}},
+                stream,
+            )
+
+        responder = asyncio.create_task(simulate_peer_response())
+        result = await rpc._request_peer_kel_resync(stream, timeout=5)
+        await responder
+
+        self.assertTrue(result)
+        rpc._accept_peer_kel_chain.assert_awaited_once_with([{"id": "inception_txn"}])
+        # No leaked waiter after resolution.
+        self.assertEqual(rpc._kel_resync_waiters, {})
+
+    async def test_response_with_empty_chain_returns_false(self):
+        import asyncio
+
+        rpc = _make_rpc()
+        stream = _make_stream()
+        sent = {}
+
+        async def mock_write_params(s, method, payload):
+            sent[method] = payload
+
+        rpc.write_params = mock_write_params
+        rpc._accept_peer_kel_chain = AsyncMock()
+
+        async def simulate_empty_response():
+            await asyncio.sleep(0.01)
+            req_id = sent["request_kel_resync"]["id"]
+            await rpc.kel_resync_response(
+                {"params": {"id": req_id, "kel_chain": []}}, stream
+            )
+
+        responder = asyncio.create_task(simulate_empty_response())
+        result = await rpc._request_peer_kel_resync(stream, timeout=5)
+        await responder
+
+        self.assertFalse(result)
+        rpc._accept_peer_kel_chain.assert_not_awaited()
+
+    async def test_kel_resync_response_ignores_unknown_request_id(self):
+        rpc = _make_rpc()
+        stream = _make_stream()
+        # Must not raise even though nothing is waiting on this id.
+        await rpc.kel_resync_response(
+            {"params": {"id": "no-such-id", "kel_chain": []}}, stream
+        )
+
+    async def test_request_kel_resync_handler_sends_local_kel(self):
+        rpc = _make_rpc()
+        stream = _make_stream()
+        rpc.write_params = AsyncMock()
+
+        fake_txn = MagicMock()
+        fake_txn.to_dict = MagicMock(return_value={"id": "my_inception"})
+        fake_key_event = MagicMock()
+        fake_key_event.txn = fake_txn
+
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username",
+            new_callable=AsyncMock,
+            return_value={"public_key": "abc123"},
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+            new_callable=AsyncMock,
+            return_value=[fake_key_event],
+        ):
+            await rpc.request_kel_resync({"params": {"id": "req1"}}, stream)
+
+        rpc.write_params.assert_awaited_once()
+        call_args = rpc.write_params.call_args
+        self.assertEqual(call_args[0][1], "kel_resync_response")
+        payload = call_args[0][2]
+        self.assertEqual(payload["id"], "req1")
+        self.assertEqual(payload["kel_chain"], [{"id": "my_inception"}])
+
+    async def test_request_kel_resync_handler_no_k0_sends_empty_chain(self):
+        rpc = _make_rpc()
+        stream = _make_stream()
+        rpc.write_params = AsyncMock()
+
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            await rpc.request_kel_resync({"params": {"id": "req2"}}, stream)
+
+        payload = rpc.write_params.call_args[0][2]
+        self.assertEqual(payload["kel_chain"], [])
+
+
 # ─── _process_ratchet_auth ────────────────────────────────────────────────────
 
 
@@ -181,6 +315,151 @@ class TestProcessRatchetAuthEmptyChain(AsyncTestCase):
         rpc.remove_peer.assert_awaited_once()
         call_kwargs = rpc.remove_peer.call_args
         self.assertIn("no KEL inception", call_kwargs[1].get("reason", ""))
+
+
+def _fix_key_event_log_find_chain(rpc):
+    """The shared _make_config() mock's find().sort().to_list() chain is
+    only wired correctly for a MagicMock().find() call *object*, not for
+    chaining .sort() off the .find() *return value* — harmless while
+    _peer_k0 stays falsy (never exercised), but the resync-retry tests
+    below need _peer_k0 truthy to reach this code path at all."""
+    sort_result = MagicMock()
+    sort_result.to_list = AsyncMock(return_value=[])
+    find_result = MagicMock()
+    find_result.sort = MagicMock(return_value=sort_result)
+    rpc.config.mongo.async_db.key_event_log.find = MagicMock(return_value=find_result)
+
+
+class TestProcessRatchetAuthResyncRetry(AsyncTestCase):
+    """_process_ratchet_auth should attempt a "start over" resync before
+    giving up on a missing KEL inception, and retry exactly once."""
+
+    async def test_resync_succeeds_and_retry_passes(self):
+        rpc = _make_rpc()
+        stream = _make_stream()
+        stream.peer.identity_announcement = None  # avoid on-chain-anchor branch
+        rpc.remove_peer = AsyncMock(return_value=None)
+        _fix_key_event_log_find_chain(rpc)
+
+        # First _has_kel check: nothing found. Every call from the second
+        # (post-resync) pass onward — including the later "is the signing
+        # key authorized" check further down the function — now succeeds,
+        # since the peer's inception has materialised locally.
+        _calls = {"n": 0}
+
+        def _find_one_side_effect(*_args, **_kwargs):
+            _calls["n"] += 1
+            return None if _calls["n"] == 1 else {"id": "peer_inception"}
+
+        rpc.config.mongo.async_db.miner_transactions.find_one = AsyncMock(
+            side_effect=_find_one_side_effect
+        )
+        rpc._request_peer_kel_resync = AsyncMock(return_value=True)
+
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username",
+            new_callable=AsyncMock,
+            return_value={"public_key": "peerpub123"},
+        ):
+            result = await rpc._process_ratchet_auth(
+                stream,
+                ratchet_chain=[],
+                ratchet_public_key="0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            )
+
+        rpc._request_peer_kel_resync.assert_awaited_once_with(stream)
+        rpc.remove_peer.assert_not_awaited()
+        self.assertIsNotNone(result)
+        self.assertEqual(result[0], "peerpub123")
+        self.assertTrue(result[1])  # has_kel
+        # First call = failed has_kel check (pass 1); the rest succeed on
+        # the retried pass (has_kel check + signing-key authorization check).
+        self.assertGreaterEqual(
+            rpc.config.mongo.async_db.miner_transactions.find_one.await_count, 2
+        )
+
+    async def test_resync_fails_still_removes_peer_without_looping(self):
+        rpc = _make_rpc()
+        stream = _make_stream()
+        stream.peer.identity_announcement = None
+        rpc.remove_peer = AsyncMock(return_value=None)
+        _fix_key_event_log_find_chain(rpc)
+
+        rpc.config.mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value=None
+        )
+        rpc._request_peer_kel_resync = AsyncMock(return_value=False)
+
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username",
+            new_callable=AsyncMock,
+            return_value={"public_key": "peerpub123"},
+        ):
+            result = await rpc._process_ratchet_auth(
+                stream,
+                ratchet_chain=[],
+                ratchet_public_key="0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            )
+
+        self.assertIsNone(result)
+        # Exactly one resync attempt — no retry loop even though it failed.
+        rpc._request_peer_kel_resync.assert_awaited_once()
+        rpc.remove_peer.assert_awaited_once()
+        reason = rpc.remove_peer.call_args[1].get("reason", "")
+        self.assertIn("no KEL inception", reason)
+
+    async def test_resync_still_missing_after_retry_removes_peer(self):
+        """Resync round-trip completes, but the inception is still not
+        found — must fail after exactly one retry, not loop forever."""
+        rpc = _make_rpc()
+        stream = _make_stream()
+        stream.peer.identity_announcement = None
+        rpc.remove_peer = AsyncMock(return_value=None)
+        _fix_key_event_log_find_chain(rpc)
+
+        rpc.config.mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value=None
+        )
+        rpc._request_peer_kel_resync = AsyncMock(return_value=True)
+
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username",
+            new_callable=AsyncMock,
+            return_value={"public_key": "peerpub123"},
+        ):
+            result = await rpc._process_ratchet_auth(
+                stream,
+                ratchet_chain=[],
+                ratchet_public_key="0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            )
+
+        self.assertIsNone(result)
+        rpc._request_peer_kel_resync.assert_awaited_once()
+        rpc.remove_peer.assert_awaited_once()
+
+    async def test_no_peer_k0_skips_resync_attempt(self):
+        """Without a resolvable peer K0 there's nobody to ask — must not
+        attempt a resync at all."""
+        rpc = _make_rpc()
+        stream = _make_stream()
+        stream.peer.identity_announcement = None
+        rpc.remove_peer = AsyncMock(return_value=None)
+        rpc._request_peer_kel_resync = AsyncMock(return_value=True)
+        _fix_key_event_log_find_chain(rpc)
+
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            result = await rpc._process_ratchet_auth(
+                stream,
+                ratchet_chain=[],
+                ratchet_public_key="0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            )
+
+        self.assertIsNone(result)
+        rpc._request_peer_kel_resync.assert_not_awaited()
 
 
 class TestProcessRatchetAuthMalformedTxn(AsyncTestCase):
@@ -243,8 +522,8 @@ class TestHandleKelConnect(AsyncTestCase):
             "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
         )
         _auth_priv, _auth_pub = _real_keys()
-        rpc.config.kel_manager.advance_auth_ratchet = AsyncMock(
-            return_value=(_auth_priv, _auth_pub, None, None)
+        rpc.config.kel_manager.advance_peer_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
         )
 
         with patch(
@@ -287,8 +566,8 @@ class TestHandleKelConnect(AsyncTestCase):
             "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
         )
         _auth_priv, _auth_pub = _real_keys()
-        rpc.config.kel_manager.advance_auth_ratchet = AsyncMock(
-            return_value=(_auth_priv, _auth_pub, None, None)
+        rpc.config.kel_manager.advance_peer_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
         )
 
         with patch(
@@ -337,8 +616,8 @@ class TestHandleKelConnect(AsyncTestCase):
             "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
         )
         _auth_priv, _auth_pub = _real_keys()
-        rpc.config.kel_manager.advance_auth_ratchet = AsyncMock(
-            return_value=(_auth_priv, _auth_pub, None, None)
+        rpc.config.kel_manager.advance_peer_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
         )
 
         with patch(
@@ -507,8 +786,8 @@ class TestRequestSig(AsyncTestCase):
             server_kel_tip_pkh="",
         )
 
-        rpc.config.kel_manager.advance_auth_ratchet = AsyncMock(
-            return_value=(_auth_priv, _auth_pub, None, None)
+        rpc.config.kel_manager.advance_peer_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
         )
         await rpc.request_sig(body=body, stream=stream)
 
@@ -545,8 +824,8 @@ class TestRequestSig(AsyncTestCase):
             return_value=(_auth_pub, True, "ratchet", 1)
         )
 
-        rpc.config.kel_manager.advance_auth_ratchet = AsyncMock(
-            return_value=(_auth_priv, _auth_pub, None, None)
+        rpc.config.kel_manager.advance_peer_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
         )
         with patch(
             "yadacoin.core.keyrotation.NodeKeyRotationManager._sign",
@@ -586,8 +865,8 @@ class TestRequestSig(AsyncTestCase):
 
         rpc._process_ratchet_auth = AsyncMock(return_value=None)
 
-        rpc.config.kel_manager.advance_auth_ratchet = AsyncMock(
-            return_value=(_auth_priv, _auth_pub, None, None)
+        rpc.config.kel_manager.advance_peer_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
         )
         with patch(
             "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username",

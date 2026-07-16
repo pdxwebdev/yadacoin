@@ -18,6 +18,7 @@ import json
 import logging
 import socket
 import time
+import zlib
 from datetime import timedelta
 from traceback import format_exc
 from uuid import uuid4
@@ -221,14 +222,23 @@ class BaseRPC:
 
         try:
             cipher = getattr(stream, "session_cipher", None)
+            # Every message is deflate-compressed before it hits the wire —
+            # transparent to callers/handlers, applied uniformly whether the
+            # message ends up encrypted or plaintext (pre-auth). KEL/ratchet
+            # payloads in particular are large, highly repetitive JSON and
+            # compress very well; small messages (keepalive, etc.) pay a
+            # negligible ~6-byte zlib header/checksum overhead.
+            plain = json.dumps(rpc_data).encode("utf-8")
+            compressed = zlib.compress(plain)
             if cipher and method not in PRE_AUTH_METHODS:
-                plain = json.dumps(rpc_data).encode("utf-8")
-                ct = cipher.encrypt(plain)
+                ct = cipher.encrypt(compressed)
                 line = (
                     json.dumps({"enc": base64.b64encode(ct).decode()}) + "\n"
                 ).encode()
             else:
-                line = "{}\n".format(json.dumps(rpc_data)).encode()
+                line = (
+                    json.dumps({"z": base64.b64encode(compressed).decode()}) + "\n"
+                ).encode()
             await asyncio.wait_for(stream.write(line), timeout=5)
 
         except asyncio.TimeoutError:
@@ -341,8 +351,18 @@ class RPCSocketServer(TCPServer, BaseRPC):
                         enc_obj = json.loads(raw)
                         ct = base64.b64decode(enc_obj["enc"])
                         raw = cipher.decrypt(ct)
+                        # Plaintext behind the cipher is deflate-compressed by
+                        # write_as_json; fall back to treating it as raw JSON
+                        # for peers running an older, uncompressed build.
+                        try:
+                            raw = zlib.decompress(raw)
+                        except zlib.error:
+                            pass
+                    elif raw.startswith(b'{"z":'):
+                        z_obj = json.loads(raw)
+                        raw = zlib.decompress(base64.b64decode(z_obj["z"]))
                     body = json.loads(raw)
-                except (json.JSONDecodeError, UnicodeDecodeError):
+                except (json.JSONDecodeError, UnicodeDecodeError, zlib.error):
                     self.config.app_log.warning(
                         f"Invalid data from peer, skipping message: {data[:200]}"
                     )
@@ -643,9 +663,24 @@ class RPCSocketClient(TCPClient):
                         enc_obj = json.loads(raw)
                         ct = base64.b64decode(enc_obj["enc"])
                         raw = cipher.decrypt(ct)
+                        # Plaintext behind the cipher is deflate-compressed;
+                        # fall back to raw JSON for older, uncompressed peers.
+                        try:
+                            raw = zlib.decompress(raw)
+                        except zlib.error:
+                            pass
                     except Exception:
                         self.config.app_log.warning(
                             "wait_for_data: decryption failed, skipping message"
+                        )
+                        continue
+                elif raw.startswith(b'{"z":'):
+                    try:
+                        z_obj = json.loads(raw)
+                        raw = zlib.decompress(base64.b64decode(z_obj["z"]))
+                    except Exception:
+                        self.config.app_log.warning(
+                            "wait_for_data: decompression failed, skipping message"
                         )
                         continue
                 body = json.loads(raw)

@@ -201,6 +201,31 @@ class NodeKeyRotationManager:
         # before either writes the next key back, signing two different messages
         # with the same key.
 
+        # Per-peer off-chain auth ratchet branches.
+        #
+        # Instead of a single global off-chain chain shared by every P2P peer
+        # (which forces every handshake to replay/send the *entire* auth
+        # history — including history that has nothing to do with the peer on
+        # the other end of this specific connection — each peer relationship
+        # gets its own independent branch, keyed by the peer's
+        # ``username_signature`` (from their own K0/identity announcement).
+        #
+        # Branch root: Kp0 = derive_secure_path(K0, SECOND_FACTOR + peer_username_signature)
+        #
+        # Kp0 is deterministic and reproducible from K0 alone (no extra state
+        # to persist beyond key_event_log), and is unique per peer since
+        # username_signature is unique per identity.  The transition from K0
+        # to Kp0 is recorded as an explicit signed KEL "bridge" entry — a
+        # normal rotation transaction (public_key_hash=K0 address,
+        # prerotated_key_hash=Kp0 address) signed by K0 — so any peer holding
+        # our on-chain K0 (from our identity announcement) can verify the
+        # branch is authorized by our real identity, without ever seeing the
+        # off-chain history we use with anyone else.
+        #
+        # {peer_username_signature: {"ratchet_key", "ratchet_pub", "counter",
+        #                             "prev_pkh", "branch_anchor_pub"}}
+        self._peer_branches: dict = {}
+
     # ------------------------------------------------------------------
     # Public entry points
     # ------------------------------------------------------------------
@@ -596,6 +621,14 @@ class NodeKeyRotationManager:
             rid="",
             dh_public_key="",
         )
+        # Self-sign the rotation with the key it rotates *from* — without
+        # this, txn.hash stays "" and any peer that receives this entry in a
+        # ratchet_chain fails verify() (verify_hash != self.hash) on every
+        # single off-chain entry, which is fatal in _process_ratchet_auth.
+        ratchet_txn.hash = await ratchet_txn.generate_hash()
+        ratchet_txn.transaction_signature = NodeKeyRotationManager._sign(
+            prev_key["private_key"].hex(), ratchet_txn.hash
+        )
 
         self._auth_counter += 1
 
@@ -631,6 +664,385 @@ class NodeKeyRotationManager:
             next_key["private_key"].hex(),
             next_pub_hex,
             two_ahead_address,
+        )
+
+    # ------------------------------------------------------------------
+    # Per-peer off-chain auth ratchet branches
+    # ------------------------------------------------------------------
+
+    def peer_branch_factor(self, peer_username_signature: str) -> str:
+        """Return the per-peer derivation factor: SECOND_FACTOR + the peer's
+        username_signature (unique per remote identity, taken from their own
+        K0/identity announcement)."""
+        second_factor = self._second_factor or _read_second_factor()
+        return second_factor + (peer_username_signature or "")
+
+    async def _resolve_latest_kel_anchor(self):
+        """Return ``({"private_key","chain_code"}, depth)`` for the most
+        recent on-chain OR mempool KEL entry for our own identity (K0).
+
+        Freshly resolved from the actual KEL every call — *not* the
+        ``config.kel_anchor_*`` snapshot, which is only ever refreshed at
+        startup/inception-confirmation and otherwise goes stale as later
+        on-chain re-anchors get mined during a long-running process.  New
+        peer branches must always root at our truly current position.
+        ``depth`` is the number of derivation steps from K0 (i.e. the KEL
+        length), recorded on the bridge entry so a *resumed* branch can
+        reproduce this exact same root later without depending on whatever
+        the "latest" anchor happens to be at resume time.
+        """
+        if not self._k0:
+            return None, 0
+        second_factor = self._second_factor or _read_second_factor()
+        if not second_factor:
+            return None, 0
+
+        k0_pub_hex = (
+            _CoincurvePrivateKey(self._k0["private_key"])
+            .public_key.format(compressed=True)
+            .hex()
+        )
+
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        try:
+            kel = await KeyEventLog.build_from_public_key(
+                k0_pub_hex, onchain_only=False
+            )
+        except Exception as exc:
+            self.config.app_log.debug(
+                "NodeKeyRotationManager: latest KEL anchor lookup error: %s", exc
+            )
+            kel = []
+
+        depth = len(kel)
+        cur = self._k0
+        for _ in range(depth):
+            cur = derive_secure_path(
+                cur["private_key"], cur["chain_code"], second_factor
+            )
+        return cur, depth
+
+    async def peer_branch_anchor_pub(self, peer_username_signature: str) -> str:
+        """Return Kp0's public key (hex) for *peer_username_signature*, if a
+        branch has already been established for them — read-only, never
+        mints a new bridge.  Checks the in-memory cache first, then falls
+        back to the persistent ``branch_peer`` marker in ``key_event_log``
+        (so this works even before ``advance_peer_auth_ratchet`` has run in
+        this process, e.g. right after a restart).  Returns "" if this peer
+        has no branch yet.
+        """
+        cached = self._peer_branches.get(peer_username_signature)
+        if cached:
+            return cached["branch_anchor_pub"]
+        if not peer_username_signature:
+            return ""
+        bridge = await self.config.mongo.async_db.key_event_log.find_one(
+            {"branch_peer": peer_username_signature, "counter": 0}
+        )
+        return (bridge or {}).get("anchor_public_key", "")
+
+    async def _ensure_peer_branch_ready(self, peer_username_signature: str) -> dict:
+        """Return (initialising/resuming if needed) this peer's branch state.
+
+        On first contact with a peer, roots the branch at our *current*
+        on-chain/mempool KEL anchor (not a stale snapshot, and not raw K0 —
+        see ``_resolve_latest_kel_anchor``) and writes a signed "bridge" KEL
+        entry (K_n → Kp0) recording that root's depth, so the peer — who can
+        trace K_n to our on-chain identity — can verify the branch is
+        authorized by our real identity.  On subsequent calls (including
+        across restarts), resumes from whatever this branch's current tip
+        already is in ``key_event_log``, reproducing the *original* root
+        exactly rather than re-resolving "latest" again (which may have
+        moved on since the branch was created).
+
+        Returns ``(state, is_new_branch)`` — ``is_new_branch`` is True only
+        on the exact call that mints the bridge entry (i.e. genuinely the
+        first-ever contact with this peer, not merely a process restart
+        resuming an existing branch), so callers know whether the peer also
+        needs the single KEL entry that establishes K_n alongside the
+        branch/ratchet_chain — a brand-new peer relationship has no other
+        way to validate the bridge's parent (K_n) since it likely hasn't
+        synced our blocks yet.
+        """
+        if peer_username_signature in self._peer_branches:
+            return self._peer_branches[peer_username_signature], False
+
+        if not peer_username_signature:
+            # Without a peer-specific suffix, peer_factor degrades to the
+            # plain SECOND_FACTOR, which would collide with the global chain.
+            _fatal(
+                "\n"
+                "═══════════════════════════════════════════════════════════════\n"
+                "  FATAL: cannot start a peer KEL branch without the peer's\n"
+                "  username_signature.\n"
+                "═══════════════════════════════════════════════════════════════\n"
+            )
+
+        config = self.config
+        peer_factor = self.peer_branch_factor(peer_username_signature)
+        second_factor = self._second_factor or _read_second_factor()
+
+        # The bridge entry (counter 0) is the stable, permanent identifier
+        # for this peer's branch — look it up by the branch_peer marker
+        # (not by anchor_public_key, which we don't know yet without first
+        # knowing which root produced it).
+        bridge_doc = await config.mongo.async_db.key_event_log.find_one(
+            {"branch_peer": peer_username_signature, "counter": 0}
+        )
+
+        if bridge_doc is None:
+            # First contact with this peer — root at our current on-chain/
+            # mempool anchor.
+            kn, root_depth = await self._resolve_latest_kel_anchor()
+            if not kn:
+                _fatal(
+                    "\n"
+                    "═══════════════════════════════════════════════════════════════\n"
+                    "  FATAL: cannot start a peer KEL branch — KEL signing key is\n"
+                    "  not yet active.  Wait for startup_check to complete before\n"
+                    "  accepting connections.\n"
+                    "═══════════════════════════════════════════════════════════════\n"
+                )
+
+            kn_pub_bytes = _CoincurvePrivateKey(kn["private_key"]).public_key.format(
+                compressed=True
+            )
+            kn_pub_hex = kn_pub_bytes.hex()
+            kn_address = str(P2PKHBitcoinAddress.from_pubkey(kn_pub_bytes))
+
+            kp0 = derive_secure_path(kn["private_key"], kn["chain_code"], peer_factor)
+            kp0_pub_bytes = _CoincurvePrivateKey(kp0["private_key"]).public_key.format(
+                compressed=True
+            )
+            kp0_pub_hex = kp0_pub_bytes.hex()
+            kp0_address = str(P2PKHBitcoinAddress.from_pubkey(kp0_pub_bytes))
+
+            from yadacoin.core.transaction import Transaction
+
+            kp1 = derive_secure_path(kp0["private_key"], kp0["chain_code"], peer_factor)
+            kp1_pub_bytes = _CoincurvePrivateKey(kp1["private_key"]).public_key.format(
+                compressed=True
+            )
+            kp1_address = str(P2PKHBitcoinAddress.from_pubkey(kp1_pub_bytes))
+
+            bridge_txn = Transaction(
+                txn_time=int(time.time()),
+                public_key=kn_pub_hex,
+                outputs=[{"to": kp0_address, "value": 0.0}],
+                inputs=[],
+                fee=0.0,
+                masternode_fee=0.0,
+                version=7,
+                prerotated_key_hash=kp0_address,
+                twice_prerotated_key_hash=kp1_address,
+                public_key_hash=kn_address,
+                prev_public_key_hash="",
+                relationship="peer-kel-branch",
+                relationship_hash=hashlib.sha256(b"peer-kel-branch").digest().hex(),
+                rid="",
+                dh_public_key="",
+            )
+            bridge_txn.hash = await bridge_txn.generate_hash()
+            bridge_txn.transaction_signature = NodeKeyRotationManager._sign(
+                kn["private_key"].hex(), bridge_txn.hash
+            )
+
+            try:
+                await config.mongo.async_db.key_event_log.replace_one(
+                    {"public_key_hash": kn_address, "anchor_public_key": kp0_pub_hex},
+                    {
+                        "counter": 0,
+                        "anchor_public_key": kp0_pub_hex,
+                        "branch_peer": peer_username_signature,
+                        "root_depth": root_depth,
+                        "id": bridge_txn.transaction_signature,
+                        "public_key": kn_pub_hex,
+                        "public_key_hash": kn_address,
+                        "prerotated_key_hash": kp0_address,
+                        "txn": bridge_txn.to_dict(),
+                        "timestamp": time.time(),
+                    },
+                    upsert=True,
+                )
+            except Exception as exc:
+                config.app_log.debug(
+                    "NodeKeyRotationManager: peer branch bridge write error: %s", exc
+                )
+
+            state = {
+                "ratchet_key": kp0,
+                "ratchet_pub": kp0_pub_hex,
+                "counter": 0,
+                "prev_pkh": kn_address,
+                "branch_anchor_pub": kp0_pub_hex,
+            }
+        else:
+            # Resume: reproduce the *original* root exactly — replay
+            # root_depth steps from K0 with the plain factor (not "latest",
+            # which may have advanced since this branch was created) — then
+            # re-derive Kp0 and fast-forward to the branch's current tip.
+            kp0_pub_hex = bridge_doc["anchor_public_key"]
+            root_depth = bridge_doc.get("root_depth", 0) or 0
+
+            cur_root = self._k0
+            for _ in range(root_depth):
+                cur_root = derive_secure_path(
+                    cur_root["private_key"], cur_root["chain_code"], second_factor
+                )
+            kp0 = derive_secure_path(
+                cur_root["private_key"], cur_root["chain_code"], peer_factor
+            )
+            kp0_address = str(
+                P2PKHBitcoinAddress.from_pubkey(
+                    _CoincurvePrivateKey(kp0["private_key"]).public_key.format(
+                        compressed=True
+                    )
+                )
+            )
+
+            tip = await config.mongo.async_db.key_event_log.find_one(
+                {"anchor_public_key": kp0_pub_hex},
+                sort=[("counter", -1)],
+            )
+            counter = tip.get("counter", 0) if tip else 0
+            cur = kp0
+            for _ in range(counter):
+                cur = derive_secure_path(
+                    cur["private_key"], cur["chain_code"], peer_factor
+                )
+            cur_pub_hex = (
+                _CoincurvePrivateKey(cur["private_key"])
+                .public_key.format(compressed=True)
+                .hex()
+            )
+            state = {
+                "ratchet_key": cur,
+                "ratchet_pub": cur_pub_hex,
+                "counter": counter,
+                "prev_pkh": (tip or {}).get("public_key_hash", kp0_address),
+                "branch_anchor_pub": kp0_pub_hex,
+            }
+
+        is_new_branch = bridge_doc is None
+        self._peer_branches[peer_username_signature] = state
+        return state, is_new_branch
+
+    async def advance_peer_auth_ratchet(self, peer_username_signature: str):
+        """Advance the off-chain signing ratchet by one step *within this
+        peer's own branch* and return a 6-tuple:
+        ``(current_priv_hex, current_pub_hex, next_priv_hex, next_pub_hex, twice_prerotated_key_hash, is_new_branch)``.
+
+        Unlike ``advance_auth_ratchet`` (one global chain shared by every
+        peer), each peer gets an isolated branch rooted at
+        ``Kp0 = derive(K_n, SECOND_FACTOR + peer_username_signature)``, so
+        the ratchet_chain delta sent to a given peer only ever contains
+        entries that were generated for connections with *that* peer —
+        never the history accumulated talking to anyone else.
+
+        ``is_new_branch`` is True only on the very first call ever made for
+        this peer (the one that mints the bridge entry) — callers should use
+        it to decide whether the peer also needs the single KEL entry that
+        establishes K_n (see NodeRPC._get_kel_anchor_chain in
+        tcpsocket/node.py), since a brand-new peer relationship has no other
+        way to validate the bridge's on-chain parent before block sync has
+        even started.
+        """
+        config = self.config
+        peer_factor = self.peer_branch_factor(peer_username_signature)
+        state, is_new_branch = await self._ensure_peer_branch_ready(
+            peer_username_signature
+        )
+
+        prev_key = state["ratchet_key"]
+        prev_pub_hex = state["ratchet_pub"]
+        prev_priv_obj = _CoincurvePrivateKey(prev_key["private_key"])
+        prev_pub_bytes = prev_priv_obj.public_key.format(compressed=True)
+        prev_address = str(P2PKHBitcoinAddress.from_pubkey(prev_pub_bytes))
+
+        next_key = derive_secure_path(
+            prev_key["private_key"], prev_key["chain_code"], peer_factor
+        )
+        next_priv_obj = _CoincurvePrivateKey(next_key["private_key"])
+        next_pub_hex = next_priv_obj.public_key.format(compressed=True).hex()
+        next_pub_bytes = next_priv_obj.public_key.format(compressed=True)
+        next_address = str(P2PKHBitcoinAddress.from_pubkey(next_pub_bytes))
+
+        two_ahead = derive_secure_path(
+            next_key["private_key"], next_key["chain_code"], peer_factor
+        )
+        two_ahead_pub = _CoincurvePrivateKey(
+            two_ahead["private_key"]
+        ).public_key.format(compressed=True)
+        two_ahead_address = str(P2PKHBitcoinAddress.from_pubkey(two_ahead_pub))
+
+        from yadacoin.core.transaction import Transaction
+
+        ratchet_txn = Transaction(
+            txn_time=int(time.time()),
+            public_key=prev_pub_hex,
+            outputs=[{"to": next_address, "value": 0.0}],
+            inputs=[],
+            fee=0.0,
+            masternode_fee=0.0,
+            version=7,
+            prerotated_key_hash=next_address,
+            twice_prerotated_key_hash=two_ahead_address,
+            public_key_hash=prev_address,
+            prev_public_key_hash=state.get("prev_pkh") or "",
+            relationship="",
+            relationship_hash="",
+            rid="",
+            dh_public_key="",
+        )
+        ratchet_txn.hash = await ratchet_txn.generate_hash()
+        ratchet_txn.transaction_signature = NodeKeyRotationManager._sign(
+            prev_key["private_key"].hex(), ratchet_txn.hash
+        )
+
+        next_counter = state["counter"] + 1
+        branch_anchor_pub = state["branch_anchor_pub"]
+
+        try:
+            await config.mongo.async_db.key_event_log.replace_one(
+                {
+                    "public_key_hash": prev_address,
+                    "anchor_public_key": branch_anchor_pub,
+                },
+                {
+                    "counter": next_counter,
+                    "anchor_public_key": branch_anchor_pub,
+                    "branch_peer": peer_username_signature,
+                    "id": ratchet_txn.transaction_signature,
+                    "public_key": prev_pub_hex,
+                    "public_key_hash": prev_address,
+                    "prerotated_key_hash": next_address,
+                    "txn": ratchet_txn.to_dict(),
+                    "timestamp": time.time(),
+                },
+                upsert=True,
+            )
+        except Exception as exc:
+            config.app_log.debug(
+                "NodeKeyRotationManager: peer branch key_event_log write error: %s",
+                exc,
+            )
+
+        self._peer_branches[peer_username_signature] = {
+            "ratchet_key": next_key,
+            "ratchet_pub": next_pub_hex,
+            "counter": next_counter,
+            "prev_pkh": prev_address,
+            "branch_anchor_pub": branch_anchor_pub,
+        }
+
+        return (
+            prev_key["private_key"].hex(),
+            prev_pub_hex,
+            next_key["private_key"].hex(),
+            next_pub_hex,
+            two_ahead_address,
+            is_new_branch,
         )
 
     async def advance_block_ratchet(self, block):
