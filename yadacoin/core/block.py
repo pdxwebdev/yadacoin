@@ -377,32 +377,74 @@ class Block(object):
         )
         return new_coinbase
 
-    async def remove_transaction(
-        self, txn: Transaction, hash_collection: KELHashCollection
-    ):
-        other_txn_to_delete = hash_collection.prerotated_key_hashes.get(
-            txn.twice_prerotated_key_hash
-        )
-        if not other_txn_to_delete:
-            other_txn_to_delete = hash_collection.twice_prerotated_key_hashes.get(
-                txn.prerotated_key_hash
-            )
-        self.config.app_log.info(
-            f"Fatal - Txn removed from block: {txn.transaction_signature}"
-        )
-        await self.config.mongo.async_db.miner_transactions.delete_one(
-            {"id": txn.transaction_signature}
-        )
-        self.transactions.remove(txn)
-        if other_txn_to_delete:
-            await self.config.mongo.async_db.miner_transactions.delete_one(
-                {"id": other_txn_to_delete.transaction_signature}
-            )
-            self.transactions.remove(other_txn_to_delete)
+    @staticmethod
+    def find_kel_linked_group(txn: Transaction, candidates) -> list:
+        """Return every transaction in *candidates* that is transitively
+        linked to *txn* via the prerotated_key_hash/twice_prerotated_key_hash
+        double-commitment used throughout the KEL/ratchet chain — one
+        entry's ``twice_prerotated_key_hash`` names the address the *next*
+        entry commits to as its own ``prerotated_key_hash`` (the
+        "unconfirmed"/"confirming" pre-commitment check).
 
-            self.config.app_log.info(
-                f"Fatal - Linked txn removed from block: {other_txn_to_delete.transaction_signature}"
+        This used to be assumed to pair up at most one "unconfirmed" entry
+        with a single "confirming" entry.  Peer-branch bridges
+        (``NodeKeyRotationManager._ensure_peer_branch_ready``/
+        ``advance_peer_auth_ratchet``) and multi-step re-anchor triplets
+        (``_queue_reanchor`` plus its chained coinbase-confirming entry) now
+        link arbitrarily many entries this same way — bridge -> branch step
+        1 -> branch step 2 -> ... — so a KEL failure on any one entry must
+        cascade through the *entire* chain, not just one hop.  The walk
+        below is a plain BFS over that relation, symmetric in both
+        directions, so it finds the whole connected component regardless of
+        which entry in the chain actually failed.
+
+        *txn* is always included in the returned list (even with no other
+        linked entries), so callers can iterate the result uniformly.
+        """
+
+        def _linked(a, b):
+            return (
+                a.twice_prerotated_key_hash
+                and a.twice_prerotated_key_hash == b.prerotated_key_hash
+            ) or (
+                b.twice_prerotated_key_hash
+                and b.twice_prerotated_key_hash == a.prerotated_key_hash
             )
+
+        group = {id(txn): txn}
+        frontier = [txn]
+        while frontier:
+            current = frontier.pop()
+            for candidate in candidates:
+                if id(candidate) in group:
+                    continue
+                if _linked(current, candidate):
+                    group[id(candidate)] = candidate
+                    frontier.append(candidate)
+        return list(group.values())
+
+    async def remove_transaction(
+        self, txn: Transaction, hash_collection: KELHashCollection = None
+    ):
+        """Remove *txn* — and every other transaction transitively KEL-linked
+        to it (see ``find_kel_linked_group``) — from both this block's
+        candidate list and the mempool.
+
+        ``hash_collection`` is accepted for backwards compatibility with
+        existing callers but is no longer required: the search now walks
+        ``self.transactions`` directly so it isn't limited to a single hop.
+        """
+        linked_group = self.find_kel_linked_group(txn, self.transactions)
+        for linked_txn in linked_group:
+            label = "Txn" if linked_txn is txn else "Linked txn"
+            self.config.app_log.info(
+                f"Fatal - {label} removed from block: {linked_txn.transaction_signature}"
+            )
+            await self.config.mongo.async_db.miner_transactions.delete_one(
+                {"id": linked_txn.transaction_signature}
+            )
+            if linked_txn in self.transactions:
+                self.transactions.remove(linked_txn)
 
     @staticmethod
     async def validate_transactions(
@@ -510,9 +552,25 @@ class Block(object):
             except Exception as e:
                 await Transaction.handle_exception(e, transaction_obj)
                 # Remove from txns so subsequent transactions cannot use this
-                # failed transaction as a phantom batch_txns sibling.
-                if transaction_obj in txns:
-                    txns.remove(transaction_obj)
+                # failed transaction as a phantom batch_txns sibling. Also
+                # cascade to every other txn transitively KEL-linked to it
+                # via the prerotated_key_hash/twice_prerotated_key_hash
+                # double-commitment chain — peer-branch bridges and
+                # multi-step re-anchor triplets can link more than a single
+                # unconfirmed/confirming pair now, so one failing entry can
+                # orphan an arbitrarily long chain of siblings, not just one.
+                linked_group = Block.find_kel_linked_group(transaction_obj, txns)
+                for linked_txn in linked_group:
+                    if linked_txn in txns:
+                        txns.remove(linked_txn)
+                    if linked_txn is not transaction_obj:
+                        config.app_log.info(
+                            f"KEL cascade: linked txn removed from block: "
+                            f"{linked_txn.transaction_signature}"
+                        )
+                        await config.mongo.async_db.miner_transactions.delete_one(
+                            {"id": linked_txn.transaction_signature}
+                        )
                 if (
                     transaction_obj.spent_in_txn
                     and transaction_obj.spent_in_txn in txns

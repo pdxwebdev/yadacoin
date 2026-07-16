@@ -1112,6 +1112,9 @@ class NodeRPC(BaseRPC):
 
         elif isinstance(self.config.peer, User):
             peerCls = User
+
+        elif isinstance(self.config.peer, Pool):
+            peerCls = User
         else:
             self.config.app_log.error("inbound peer is not defined, disconnecting")
             stream.close()

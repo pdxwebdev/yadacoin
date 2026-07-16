@@ -1304,6 +1304,69 @@ class TestBlock(AsyncTestCase):
         self.assertNotIn(txn_a, block.transactions)
         self.assertNotIn(txn_b, block.transactions)
 
+    async def test_remove_transaction_cascades_through_chain_longer_than_pair(self):
+        """A chain of more than two KEL-linked entries (e.g. a peer-branch
+        bridge followed by several branch-advance steps, or a multi-step
+        re-anchor with a chained coinbase-confirming entry) must all be
+        removed together — not just a single "linked" partner one hop away."""
+        block = await Block.init_async(
+            version=5,
+            block_index=100,
+            target=1,
+        )
+
+        def _make_txn(sig, prerotated, twice_prerotated):
+            t = Mock()
+            t.transaction_signature = sig
+            t.prerotated_key_hash = prerotated
+            t.twice_prerotated_key_hash = twice_prerotated
+            return t
+
+        # bridge -> step1 -> step2 -> step3, each linked to the next solely
+        # via the twice_prerotated_key_hash <-> prerotated_key_hash
+        # double-commitment (mirroring advance_peer_auth_ratchet's chaining).
+        bridge = _make_txn("bridge", "k1", "k2")
+        step1 = _make_txn("step1", "k2", "k3")
+        step2 = _make_txn("step2", "k3", "k4")
+        step3 = _make_txn("step3", "k4", "k5")
+        # An unrelated transaction that must survive the cascade.
+        unrelated = _make_txn("unrelated", "zzz", "yyy")
+
+        block.transactions = [bridge, step1, step2, step3, unrelated]
+
+        miner_txns = Mock()
+        miner_txns.delete_one = AsyncMock(return_value=None)
+        Config().mongo.async_db.miner_transactions = miner_txns
+
+        # Removing the *middle* of the chain (step1) must still cascade to
+        # every other entry in the same chain, in both directions.
+        await block.remove_transaction(step1)
+
+        self.assertNotIn(bridge, block.transactions)
+        self.assertNotIn(step1, block.transactions)
+        self.assertNotIn(step2, block.transactions)
+        self.assertNotIn(step3, block.transactions)
+        self.assertIn(unrelated, block.transactions)
+        self.assertEqual(miner_txns.delete_one.await_count, 4)
+
+    async def test_find_kel_linked_group_no_hash_collection_needed(self):
+        """find_kel_linked_group is a pure helper — no KELHashCollection
+        required — and returns just the starting txn when nothing else in
+        the candidate pool is linked to it."""
+
+        def _make_txn(sig, prerotated, twice_prerotated):
+            t = Mock()
+            t.transaction_signature = sig
+            t.prerotated_key_hash = prerotated
+            t.twice_prerotated_key_hash = twice_prerotated
+            return t
+
+        lone = _make_txn("lone", "a", "b")
+        other = _make_txn("other", "x", "y")
+
+        group = Block.find_kel_linked_group(lone, [lone, other])
+        self.assertEqual(group, [lone])
+
     async def test_validate_transactions_duplicate_sig_and_spent_in_txn_removal(self):
         """Lines 597, 638-642: duplicate sig raises + spent_in_txn removed from txns list."""
         from yadacoin.core.blockchainutils import BlockChainUtils
@@ -1362,6 +1425,73 @@ class TestBlock(AsyncTestCase):
         self.assertNotIn(txn_a, txns)
         # txn_b failed validation - not in transaction_objs
         self.assertNotIn(txn_b, transaction_objs)
+
+    async def test_validate_transactions_cascades_kel_linked_chain_on_failure(self):
+        """When a txn fails verify() during block generation, every other
+        txn transitively KEL-linked to it (via the
+        prerotated_key_hash/twice_prerotated_key_hash chain — bridge ->
+        branch step 1 -> branch step 2 -> ..., not just a single
+        unconfirmed/confirming pair) must also be dropped from the
+        candidate list and the mempool, not just the failing txn itself."""
+        from yadacoin.core.chain import CHAIN
+
+        def _make_txn(sig, prerotated, twice_prerotated, fail=False):
+            t = Mock()
+            t.transaction_signature = sig
+            t.prerotated_key_hash = prerotated
+            t.twice_prerotated_key_hash = twice_prerotated
+            t.spent_in_txn = None
+            t.inputs = []
+            t.outputs = []
+            t.fee = 0.0
+            t.masternode_fee = 0.0
+            t.time = 0
+            if fail:
+                t.verify = AsyncMock(side_effect=Exception("kel failure"))
+            else:
+                t.verify = AsyncMock(return_value=None)
+            return t
+
+        txn_fail = _make_txn("fail", "k1", "k2", fail=True)
+        txn_linked1 = _make_txn("linked1", "k2", "k3")
+        txn_linked2 = _make_txn("linked2", "k3", "k4")
+        txn_unrelated = _make_txn("unrelated", "zzz", "yyy")
+
+        txns = [txn_fail, txn_linked1, txn_linked2, txn_unrelated]
+        transaction_objs = []
+        used_sigs = []
+        used_inputs = {}
+
+        miner_txns = Mock()
+        miner_txns.delete_one = AsyncMock(return_value=None)
+        Config().mongo.async_db.miner_transactions = miner_txns
+
+        with mock.patch(
+            "yadacoin.core.transaction.Transaction.handle_exception",
+            new=AsyncMock(return_value=None),
+        ):
+            await Block.validate_transactions(
+                None,
+                txns,
+                transaction_objs,
+                used_sigs,
+                used_inputs,
+                CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK,
+                int(time_module.time()),
+            )
+
+        self.assertNotIn(txn_fail, txns)
+        self.assertNotIn(txn_linked1, txns)
+        self.assertNotIn(txn_linked2, txns)
+        self.assertIn(txn_unrelated, txns)
+        # The two cascaded siblings (not txn_fail itself, which
+        # Transaction.handle_exception is responsible for) are explicitly
+        # deleted from the mempool by the cascade.
+        self.assertEqual(miner_txns.delete_one.await_count, 2)
+        deleted_ids = {
+            call.args[0]["id"] for call in miner_txns.delete_one.await_args_list
+        }
+        self.assertEqual(deleted_ids, {"linked1", "linked2"})
 
     async def test_validate_transactions_check_dynamic_nodes_flag(self):
         """Line 614: check_dynamic_nodes set to True at DYNAMIC_NODES_FORK."""
