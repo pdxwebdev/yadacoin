@@ -96,6 +96,11 @@ class NodeRPC(BaseRPC):
     # _request_peer_identity_announcement / request_identity_announcement /
     # identity_announcement_response.
     _ia_resync_waiters: dict = {}
+    # Pending re-auth callbacks fired when a resync response arrives while
+    # the read loop was blocked inside the original handler.  Keyed by the
+    # same request id as the corresponding _*_waiters entry.  See
+    # _request_peer_kel_resync / _request_peer_identity_announcement.
+    _resync_reauth: dict = {}
 
     def __init__(self):
         super(NodeRPC, self).__init__()
@@ -234,29 +239,24 @@ class NodeRPC(BaseRPC):
     # same "actively re-request what's missing" pattern fill_gap() already
     # uses for block gaps.
 
-    async def _request_peer_kel_resync(self, stream, timeout: float = 5.0) -> bool:
-        """Ask the peer to resend its full KEL and wait briefly for the
-        reply.  Returns True if a (possibly empty) response arrived and was
-        ingested into our mempool; False on timeout/send failure."""
-        req_id = str(uuid4())
-        fut = asyncio.get_event_loop().create_future()
-        self._kel_resync_waiters[req_id] = fut
-        try:
-            await self.write_params(stream, "request_kel_resync", {"id": req_id})
-            try:
-                kel_chain = await asyncio.wait_for(fut, timeout=timeout)
-            except asyncio.TimeoutError:
-                self.config.app_log.warning(
-                    "ratchet: peer did not respond to KEL resync request in time"
-                )
-                return False
-        finally:
-            self._kel_resync_waiters.pop(req_id, None)
+    async def _request_peer_kel_resync(self, stream, reauth_cb=None) -> None:
+        """Ask the peer to resend its full KEL.  Non-blocking — sends the
+        request and returns immediately so the stream's read loop stays
+        free to dispatch the peer's response.  When the response arrives,
+        ``kel_resync_response`` ingests it and fires *reauth_cb* (if any)
+        to re-run the handshake with the freshly-populated mempool.
 
-        if not kel_chain:
-            return False
-        await self._accept_peer_kel_chain(kel_chain)
-        return True
+        This must NOT await the response inline: ``handle_stream`` dispatches
+        handlers via ``await getattr(self, method)(body, stream)``
+        (base.py:409), so blocking inside a handler deadlocks the read loop
+        — the peer's response would sit in the socket buffer unread until
+        this handler returns, which it never does because it's waiting for
+        that same response."""
+        req_id = str(uuid4())
+        self._kel_resync_waiters[req_id] = True
+        if reauth_cb:
+            self._resync_reauth[req_id] = reauth_cb
+        await self.write_params(stream, "request_kel_resync", {"id": req_id})
 
     async def request_kel_resync(self, body, stream):
         """Peer is asking us to resend our complete KEL (on-chain + mempool)
@@ -273,48 +273,37 @@ class NodeRPC(BaseRPC):
         )
 
     async def kel_resync_response(self, body, stream):
-        """Resolve the matching _request_peer_kel_resync() future, if any."""
+        """Ingest the peer's KEL and fire any pending re-auth callback."""
         params = body.get("params", {})
         req_id = params.get("id", "")
-        fut = self._kel_resync_waiters.get(req_id)
-        if fut and not fut.done():
-            fut.set_result(params.get("kel_chain") or [])
+        kel_chain = params.get("kel_chain") or []
+        self._kel_resync_waiters.pop(req_id, None)
+        if kel_chain:
+            await self._accept_peer_kel_chain(kel_chain)
+        reauth_cb = self._resync_reauth.pop(req_id, None)
+        if reauth_cb:
+            await reauth_cb(kel_chain)
 
     # ── end KEL "start over" resync ────────────────────────────────────────
 
     async def _request_peer_identity_announcement(
-        self, stream, txn_id: str, timeout: float = 5.0
-    ) -> bool:
+        self, stream, txn_id: str, reauth_cb=None
+    ) -> None:
         """Ask the peer to send us the specific identity-announcement
-        transaction identified by *txn_id* (which we couldn't find locally),
-        then wait briefly for the reply.  Returns True if a transaction
-        arrived and was ingested into our mempool; False on timeout/send
-        failure.  Mirrors ``_request_peer_kel_resync``'s request/future
-        pattern."""
+        transaction identified by *txn_id*.  Non-blocking — same pattern as
+        ``_request_peer_kel_resync``: sends the request and returns
+        immediately so the read loop can dispatch the response.  When it
+        arrives, ``identity_announcement_response`` ingests it and fires
+        *reauth_cb* to retry the handshake."""
         req_id = str(uuid4())
-        fut = asyncio.get_event_loop().create_future()
-        self._ia_resync_waiters[req_id] = fut
-        try:
-            await self.write_params(
-                stream,
-                "request_identity_announcement",
-                {"id": req_id, "txn_id": txn_id},
-            )
-            try:
-                txn_dict = await asyncio.wait_for(fut, timeout=timeout)
-            except asyncio.TimeoutError:
-                self.config.app_log.warning(
-                    "ratchet: peer did not respond to identity_announcement "
-                    "request in time"
-                )
-                return False
-        finally:
-            self._ia_resync_waiters.pop(req_id, None)
-
-        if not txn_dict:
-            return False
-        await self._accept_peer_kel_chain([txn_dict])
-        return True
+        self._ia_resync_waiters[req_id] = True
+        if reauth_cb:
+            self._resync_reauth[req_id] = reauth_cb
+        await self.write_params(
+            stream,
+            "request_identity_announcement",
+            {"id": req_id, "txn_id": txn_id},
+        )
 
     async def request_identity_announcement(self, body, stream):
         """Peer is asking us to send a specific identity-announcement
@@ -355,12 +344,17 @@ class NodeRPC(BaseRPC):
         )
 
     async def identity_announcement_response(self, body, stream):
-        """Resolve the matching _request_peer_identity_announcement() future."""
+        """Ingest the peer's identity-announcement txn and fire any pending
+        re-auth callback."""
         params = body.get("params", {})
         req_id = params.get("id", "")
-        fut = self._ia_resync_waiters.get(req_id)
-        if fut and not fut.done():
-            fut.set_result(params.get("txn") or {})
+        txn_dict = params.get("txn") or {}
+        self._ia_resync_waiters.pop(req_id, None)
+        if txn_dict:
+            await self._accept_peer_kel_chain([txn_dict])
+        reauth_cb = self._resync_reauth.pop(req_id, None)
+        if reauth_cb:
+            await reauth_cb(txn_dict)
 
     # ── end identity-announcement pull ─────────────────────────────────────
 
@@ -1483,9 +1477,10 @@ class NodeRPC(BaseRPC):
             if not _anchor_doc:
                 # We don't have the peer's identity-announcement transaction
                 # locally.  Instead of disconnecting, actively ask the peer
-                # to send it to us over this same stream, ingest it into our
-                # mempool, and retry the lookup once — same "actively
-                # re-request what's missing" pattern as the KEL resync below.
+                # to send it to us over this same stream.  The request is
+                # non-blocking — we return None here to unblock the read
+                # loop, and the response handler will ingest the txn and
+                # re-run the handshake via a callback.
                 if not _retried:
                     self.config.app_log.warning(
                         "ratchet: identity_announcement %s not found locally "
@@ -1493,14 +1488,21 @@ class NodeRPC(BaseRPC):
                         _ia_id,
                         peer_username,
                     )
-                    if await self._request_peer_identity_announcement(stream, _ia_id):
-                        return await self._process_ratchet_auth(
-                            stream,
-                            ratchet_chain,
-                            ratchet_public_key,
-                            latest_ratchet_pkh,
-                            _retried=True,
-                        )
+
+                    async def _ia_reauth(_txn_dict, _stream=stream):
+                        if _txn_dict:
+                            await self._process_ratchet_auth(
+                                _stream,
+                                ratchet_chain,
+                                ratchet_public_key,
+                                latest_ratchet_pkh,
+                                _retried=True,
+                            )
+
+                    await self._request_peer_identity_announcement(
+                        stream, _ia_id, reauth_cb=_ia_reauth
+                    )
+                    return None
                 await self.remove_peer(
                     stream, reason="ratchet: identity_announcement txn not found"
                 )
@@ -1649,14 +1651,19 @@ class NodeRPC(BaseRPC):
                     _peer_k0,
                     peer_username,
                 )
-                if await self._request_peer_kel_resync(stream):
-                    return await self._process_ratchet_auth(
-                        stream,
-                        ratchet_chain,
-                        ratchet_public_key,
-                        latest_ratchet_pkh,
-                        _retried=True,
-                    )
+
+                async def _kel_reauth(_kel_chain, _stream=stream):
+                    if _kel_chain:
+                        await self._process_ratchet_auth(
+                            _stream,
+                            ratchet_chain,
+                            ratchet_public_key,
+                            latest_ratchet_pkh,
+                            _retried=True,
+                        )
+
+                await self._request_peer_kel_resync(stream, reauth_cb=_kel_reauth)
+                return None
             await self.remove_peer(
                 stream,
                 reason="ratchet: no KEL inception found — peer must send inception in connect",
