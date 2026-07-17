@@ -1755,8 +1755,16 @@ class KeyEventLog:
         if inception:
             log.append(inception)
             txn = inception
+            # Guard against cycles in the KEL walk.  When onchain_only is False
+            # (e.g. during block verification) the walk also follows mempool
+            # entries, and a repeated public_key_hash would otherwise loop
+            # forever between on-chain and mempool copies of the same entry.
+            seen_addresses = {txn.public_key_hash}
             while True:
                 address = txn.prerotated_key_hash
+                if address in seen_addresses:
+                    break
+                seen_addresses.add(address)
                 result = config.mongo.async_db.blocks.aggregate(
                     [
                         {

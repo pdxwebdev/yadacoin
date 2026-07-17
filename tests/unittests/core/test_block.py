@@ -395,7 +395,22 @@ class TestBlock(AsyncTestCase):
                 float(quantize_eight(sum([x.value for x in coinbase.outputs]))),
                 12.6001,
             )
-            self.assertEqual(float(quantize_eight(coinbase.outputs[1].value)), 0.45)
+            # Per-node masternode payout = (block_reward * 0.1 + masternode_fee_sum)
+            # / len(nodes), matching Block.pay_masternodes.  Derived from the
+            # live masternode set rather than hardcoded so the test stays valid
+            # as the network's masternode count changes.
+            # The block pays masternodes from the fee carried by the
+            # transaction it actually includes (masternode_fee_block), not the
+            # separate masternode_fee_input lookup fixture.
+            block_masternode_fee = float(
+                masternode_fee_block["transactions"][0].get("masternode_fee", 0)
+            )
+            block_reward = CHAIN.get_block_reward(CHAIN.CHECK_MASTERNODE_FEE_FORK)
+            expected_per_node = (block_reward * 0.1 + block_masternode_fee) / len(nodes)
+            self.assertEqual(
+                float(quantize_eight(coinbase.outputs[1].value)),
+                float(quantize_eight(expected_per_node)),
+            )
 
             masternode_fee_block["transactions"][0]["masternode_fee"] = 5
             with self.assertRaises(TotalValueMismatchException):

@@ -127,12 +127,22 @@ class Nodes:
     @classmethod
     def get_all_nodes_indexed_by_address_for_block_height(cls, height):
         nodes = cls().get_all_nodes_for_block_height(height)
-        return {
-            str(
-                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(node.identity.public_key))
-            ): node
-            for node in nodes
-        }
+        indexed = {}
+        for node in nodes:
+            # Nodes keyed only by an identity_announcement id (KEL-anchored
+            # seeds/gateways/providers) have no inline identity resolved yet,
+            # so their payment address cannot be derived locally.  Skip them
+            # rather than crashing — they are not payable until resolved.
+            if node.identity is None:
+                continue
+            indexed[
+                str(
+                    P2PKHBitcoinAddress.from_pubkey(
+                        bytes.fromhex(node.identity.public_key)
+                    )
+                )
+            ] = node
+        return indexed
 
     @classmethod
     def _count_nodes_by_type(cls):
@@ -717,12 +727,8 @@ class Seeds(Nodes):
                         "port": 8000,
                         "http_protocol": "http",
                         "http_port": 80,
-                        "identity": {
-                            "username": "",
-                            "username_signature": "MEUCIQDArjnhho8q8tCxHLmgvuDDS4qdSgQx1y7aNEGYHi/4ywIgWG/aboG4krfQQ4MS5MaPkedsc1syIbz+jfAGsg/siG4=",
-                            "public_key": "02549a9dc415bc2fd7a4ad8d3ead9be82d051ff605590db8781f45b3f8c5ede431",
-                        },
-                        "seed_gateway": "MEUCIQDFjb4L3Pv0GaBqdzB0WazxMjUQ8cNG7FBY/v/n9yUgIwIgA+FFy88yMIWqM6fyIeariS4EpyZj33JChr8UJe+Ummc=",
+                        "identity_announcement": "MEUCIQDjtiMuueSJy2QT/SN894AiOcUM0e01RbeP3yq07ywYUgIgEhchD96411tTnSksfwsYBfrKgdpC3mbnIY5diNuPpS4=",
+                        "seed_gateway": "MEQCIGm+m6vE+/6X/w8XvIvbbFzfOGQ0Eoq5rM69PQN+S+WjAiBO04VgcZPm0ZuXxg9Ik5qUlzW8Ms2Hv05rxJNPbX6CdA==",
                     }
                 ),
             },
@@ -1021,12 +1027,8 @@ class SeedGateways(Nodes):
                         "port": 8000,
                         "http_protocol": "http",
                         "http_port": 80,
-                        "identity": {
-                            "username": "",
-                            "username_signature": "MEUCIQDFjb4L3Pv0GaBqdzB0WazxMjUQ8cNG7FBY/v/n9yUgIwIgA+FFy88yMIWqM6fyIeariS4EpyZj33JChr8UJe+Ummc=",
-                            "public_key": "03e1ab14af772224ba6cca0a8be1a8471c3deffd0745b7a911634320b30416d910",
-                        },
-                        "seed": "MEUCIQDArjnhho8q8tCxHLmgvuDDS4qdSgQx1y7aNEGYHi/4ywIgWG/aboG4krfQQ4MS5MaPkedsc1syIbz+jfAGsg/siG4=",
+                        "identity_announcement": "MEUCIQCL8rpjnYvfjbO2Mbswg9cm8hUIHh1C7oplVUn5zWS17QIgK0FSj5C8dVdTTjz6G0f3LlUHPDkH8I/oXnj44igVCxo=",
+                        "seed": "MEUCIQCRhqjjKwQ2ISW+oTBML3nlm/7YEgeulhYr3XgEKHK6TQIgcrWyMA2ECUfeNE9N6gb8lYRrQhwJXZIf8r+9KiH2e2g=",
                     }
                 ),
             },
@@ -1331,13 +1333,9 @@ class ServiceProviders(Nodes):
                         "port": 8000,
                         "http_protocol": "http",
                         "http_port": 80,
-                        "identity": {
-                            "username": "",
-                            "username_signature": "MEQCICD0iFCEux94iEwHKMBQxxV665VW/ozsr9rSfktt+BRSAiB0FvEvODTVufiBKiARKOq2zSyFKIckjvGtRi52ow45Ig==",
-                            "public_key": "0276534e0133e6ee3b1267d4ad9046d23db89dbe2b4e1ba5d18382791cf7f63a93",
-                        },
-                        "seed_gateway": "MEUCIQDFjb4L3Pv0GaBqdzB0WazxMjUQ8cNG7FBY/v/n9yUgIwIgA+FFy88yMIWqM6fyIeariS4EpyZj33JChr8UJe+Ummc=",
-                        "seed": "MEUCIQDArjnhho8q8tCxHLmgvuDDS4qdSgQx1y7aNEGYHi/4ywIgWG/aboG4krfQQ4MS5MaPkedsc1syIbz+jfAGsg/siG4=",
+                        "identity_announcement": "MEQCIBIYT9P285J+u9R5zS1nJ1q5AQ/vuXaoMPULkIwQcjq5AiBvAfmstFw12gZCVfNnTRI5oLQi8MUInP1Dzz9rgVZ7Qw==",
+                        "seed_gateway": "MEQCIGm+m6vE+/6X/w8XvIvbbFzfOGQ0Eoq5rM69PQN+S+WjAiBO04VgcZPm0ZuXxg9Ik5qUlzW8Ms2Hv05rxJNPbX6CdA==",
+                        "seed": "MEUCIQCRhqjjKwQ2ISW+oTBML3nlm/7YEgeulhYr3XgEKHK6TQIgcrWyMA2ECUfeNE9N6gb8lYRrQhwJXZIf8r+9KiH2e2g=",
                     }
                 ),
             },
