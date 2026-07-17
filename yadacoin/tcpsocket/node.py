@@ -139,22 +139,14 @@ class NodeRPC(BaseRPC):
         return docs
 
     async def _get_kel_anchor_chain(self) -> list:
-        """Return the single KEL entry that establishes our current on-chain/
-        mempool anchor (K_n) — as a one-element list of a raw txn dict (or
+        """Return our complete KEL chain as a list of raw txn dicts (or
         empty if we have no resolvable K0 yet).
 
-        This is the *inception itself* if we haven't rotated since (K_n is
-        one step past it), or the most recent on-chain/mempool re-anchor
-        transaction otherwise — whichever transaction's own
-        ``prerotated_key_hash`` names K_n. That single transaction is all a
-        peer needs to validate a peer-branch bridge entry's on-chain parent;
-        the rest of the historical chain behind it isn't needed for that and
-        is skipped, keeping this bounded regardless of how long our identity
-        has existed. Used for peers who have no other way to confirm K_n
-        descends from our real on-chain identity: a brand-new peer
-        relationship, or an explicit resync request (see
-        ``request_kel_resync``), where the recipient likely hasn't synced
-        our blocks yet.
+        The full chain is needed because a peer who cannot find our inception
+        needs every entry from the inception onwards — the inception (with
+        ``prev_public_key_hash == ""``) is what satisfies their ``_has_kel``
+        check, and subsequent entries establish the chain of trust up to our
+        current signing key.
         """
         from yadacoin.core.identityannouncement import IdentityAnnouncement
         from yadacoin.core.keyeventlog import KeyEventLog
@@ -176,7 +168,7 @@ class NodeRPC(BaseRPC):
             return []
         if not kel:
             return []
-        return [kel[-1].to_dict()]
+        return [ke.to_dict() for ke in kel]
 
     async def _accept_peer_kel_chain(self, txn_list: list) -> None:
         """Receive, verify, and store a peer's unconfirmed KEL chain into the
@@ -269,7 +261,7 @@ class NodeRPC(BaseRPC):
             stream, "kel_resync_response", {"id": req_id, "kel_chain": kel_chain}
         )
         self.config.app_log.info(
-            "  [→]   kel_resync_response sent (%d entries)", len(kel_chain)
+            "  [>]   kel_resync_response sent (%d entries)", len(kel_chain)
         )
 
     async def kel_resync_response(self, body, stream):
@@ -339,7 +331,7 @@ class NodeRPC(BaseRPC):
             {"id": req_id, "txn": txn_dict or {}},
         )
         self.config.app_log.info(
-            "  [→]   identity_announcement_response sent (%s)",
+            "  [>]   identity_announcement_response sent (%s)",
             "found" if txn_dict else "not found",
         )
 
@@ -1656,7 +1648,7 @@ class NodeRPC(BaseRPC):
                     if _kel_chain:
                         await self._process_ratchet_auth(
                             _stream,
-                            ratchet_chain,
+                            _kel_chain,
                             ratchet_public_key,
                             latest_ratchet_pkh,
                             _retried=True,
@@ -1724,7 +1716,7 @@ class NodeRPC(BaseRPC):
 
         self.config.app_log.info(
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  KEL Auth (ECDH exchange)  ←  %s (%s)\n"
+            "  KEL Auth (ECDH exchange)  <  %s (%s)\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
             peer_username,
             peer_host,
@@ -1910,7 +1902,7 @@ class NodeRPC(BaseRPC):
 
         await self.write_params(stream, "request_sig", request_payload)
         self.config.app_log.info(
-            "  [→]   request_sig sent (encrypted)  (peer=%s, new_branch=%s)",
+            "  [>]   request_sig sent (encrypted)  (peer=%s, new_branch=%s)",
             peer_username,
             _is_new_branch,
         )
@@ -1942,7 +1934,7 @@ class NodeRPC(BaseRPC):
 
         peer_username = getattr(stream.peer.identity, "username") or stream.peer.host
         self.config.app_log.info(
-            "  [→]   session cipher derived, awaiting encrypted request_sig  (%s)",
+            "  [>]   session cipher derived, awaiting encrypted request_sig  (%s)",
             peer_username,
         )
 
@@ -2086,7 +2078,7 @@ class NodeRPC(BaseRPC):
 
         await self.write_params(stream, "sig_response", sig_response_payload)
         self.config.app_log.info(
-            "  [→]   sig_response sent (encrypted)  (%s, new_branch=%s)",
+            "  [>]   sig_response sent (encrypted)  (%s, new_branch=%s)",
             peer_username,
             _is_new_branch,
         )
@@ -2164,7 +2156,7 @@ class NodeRPC(BaseRPC):
 
         stream.peer.authenticated = True
         self.config.app_log.info(
-            "  [✓]   %s mutually authenticated via cross-signing\n"
+            "  [OK]   %s mutually authenticated via cross-signing\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
             peer_username,
         )

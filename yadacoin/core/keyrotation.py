@@ -1634,7 +1634,7 @@ class NodeKeyRotationManager:
             return
 
         config.app_log.info(
-            "NodeKeyRotationManager: sweeping %.8f YDA from legacy address %s → KEL address %s",
+            "NodeKeyRotationManager: sweeping %.8f YDA from legacy address %s to KEL address %s",
             total,
             legacy_address,
             sweep_target,
