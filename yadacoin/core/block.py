@@ -532,6 +532,30 @@ class Block(object):
                     mempool=False,
                     batch_txns=txns,
                 )
+                if (
+                    check_kel
+                    and isinstance(transaction_obj, Transaction)
+                    and transaction_obj.prev_public_key_hash
+                ):
+                    from yadacoin.core.keyeventlog import KeyEventLog
+
+                    kel_hash_collection = KELHashCollection()
+                    kel_hash_collection.config = Config()
+                    for candidate in txns:
+                        try:
+                            kel_hash_collection.add(candidate)
+                        except KELHashCollectionException:
+                            pass
+                    txn_key_event = KeyEvent(
+                        transaction_obj, status=KeyEventChainStatus.MEMPOOL
+                    )
+                    await KeyEventLog.init_async(
+                        txn_key_event,
+                        kel_hash_collection,
+                        block_index=index,
+                        batch_txns=txns,
+                        use_mempool=False,
+                    )
                 for output in transaction_obj.outputs:
                     if not config.address_is_valid(output.to):
                         raise TransactionAddressInvalidException(

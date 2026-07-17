@@ -952,14 +952,16 @@ class KELCache:
 
 
 class KELHashCollection:
-    @classmethod
-    async def init_async(cls, block: "Block", verify_only=False):
-        self = cls()
-        self.config = Config()
+    def __init__(self):
         self.twice_prerotated_key_hashes = {}
         self.prerotated_key_hashes = {}
         self.public_key_hashes = {}
         self.prev_public_key_hashes = {}
+
+    @classmethod
+    async def init_async(cls, block: "Block", verify_only=False):
+        self = cls()
+        self.config = Config()
         for transaction in block.transactions[:]:
             try:
                 self.add(transaction)
