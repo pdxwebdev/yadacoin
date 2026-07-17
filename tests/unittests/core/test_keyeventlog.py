@@ -4076,6 +4076,42 @@ class TestKeyEventLogFinalCoverage(AsyncTestCase):
         self.assertEqual(result["key_event"].flag, KeyEventFlag.INCEPTION)
         self.assertEqual(result["key_event"].status, KeyEventChainStatus.MEMPOOL)
 
+    async def test_get_mempool_parent_unconfirmed_relationship_classified_unconfirmed(
+        self,
+    ):
+        """Regression: a mempool parent that carries a non-empty relationship
+        (an UNCONFIRMED re-anchor event) must be flagged UNCONFIRMED, never
+        CONFIRMING.  Otherwise the confirming sibling misclassifies it and
+        verify_confirming() rejects it for "populating relationship field"."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from yadacoin.core.keyeventlog import (
+            KeyEvent,
+            KeyEventChainStatus,
+            KeyEventFlag,
+        )
+
+        parent_doc = dict(_INCEPTION_TXN_DICT)
+        parent_doc["prev_public_key_hash"] = "PREV_PKH"
+        parent_doc["relationship"] = "reanchor 100 interval"
+        parent_doc[
+            "relationship_hash"
+        ] = "55afdc41381d988f1e8530feaceee222d6a7aef1421693cb8616cca83fbbb34c"
+
+        ke = _make_mock_ke()
+        mock_mongo = MagicMock()
+        mock_mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value=parent_doc
+        )
+        ke.config.mongo = mock_mongo
+
+        result = await ke.get_mempool_parent()
+
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result["key_event"], KeyEvent)
+        self.assertEqual(result["key_event"].flag, KeyEventFlag.UNCONFIRMED)
+        self.assertEqual(result["key_event"].status, KeyEventChainStatus.MEMPOOL)
+
     async def test_init_async_step1_onchain_parent_pkh_mismatch_raises(self):
         """Line 1004: onchain parent found (no onchain child) but its public_key_hash
         does not equal key_event.txn.prev_public_key_hash → FatalKeyEventException."""

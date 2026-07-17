@@ -798,9 +798,11 @@ class KeyEvent:
             key_event = KeyEvent(
                 txn,
                 flag=(
-                    KeyEventFlag.CONFIRMING
-                    if txn.prev_public_key_hash
-                    else KeyEventFlag.INCEPTION
+                    KeyEventFlag.INCEPTION
+                    if not txn.prev_public_key_hash or is_recovers_inception(txn)
+                    else KeyEventFlag.UNCONFIRMED
+                    if txn.relationship
+                    else KeyEventFlag.CONFIRMING
                 ),
                 status=KeyEventChainStatus.MEMPOOL,
             )
