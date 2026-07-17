@@ -31,11 +31,13 @@ from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.blockchainutils import BlockChainUtils
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
+from yadacoin.core.keyeventlog import KELCache
 from yadacoin.core.mongo import Mongo
 
 
 class AsyncTestCase(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        KELCache.clear()
         c = Config()
         c.network = "regnet"
         c.mongo = Mongo()

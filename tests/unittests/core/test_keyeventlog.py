@@ -20,6 +20,7 @@ from yadacoin.core.keyeventlog import (
     DoesNotSpendEntirelyToPrerotatedKeyHashException,
     FatalKeyEventException,
     KELException,
+    KELResult,
     KeyEventException,
     PublicKeyMismatchException,
 )
@@ -1708,14 +1709,16 @@ class TestKeyEventVerifyAsyncBranches(AsyncTestCase):
             mock_btc.from_pubkey.return_value = _VALID_ADDR_A
             ke.sends_to_past_kel_entry = AsyncMock(return_value=False)
 
-            with patch.object(
-                KeyEventLog,
-                "build_from_public_key",
-                new=AsyncMock(return_value=[last_entry]),
-            ):
-                with self.assertRaises(KELException) as ctx:
-                    await ke.verify()
-                self.assertIn("already onchain", str(ctx.exception))
+        with patch.object(
+            KeyEventLog,
+            "build_from_public_key",
+            new=AsyncMock(
+                return_value=KELResult([last_entry], {last_entry.prerotated_key_hash})
+            ),
+        ):
+            with self.assertRaises(KELException) as ctx:
+                await ke.verify()
+            self.assertIn("already onchain", str(ctx.exception))
 
     async def test_verify_confirming_offchain_parent_in_kel_returns(self):
         """Lines 622-628: confirming, no mempool parent, no batch match, but
@@ -2762,7 +2765,9 @@ class TestBuildFromPublicKeyBranches(AsyncTestCase):
     """Cover missing branches in KeyEventLog.build_from_public_key using module-level Config mock."""
 
     async def asyncSetUp(self):
-        pass
+        from yadacoin.core.keyeventlog import KELCache
+
+        KELCache.clear()
 
     def _make_cursor(self, docs):
         """Return a mock aggregate cursor whose to_list returns docs."""
@@ -3007,6 +3012,10 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
         Config().mongo = Mongo()
         Config().network = "regnet"
         self.config = Config()
+
+        from yadacoin.core.keyeventlog import KELCache
+
+        KELCache.clear()
 
         class AppLog:
             def warning(self, msg):

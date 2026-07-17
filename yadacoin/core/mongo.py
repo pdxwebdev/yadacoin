@@ -363,6 +363,19 @@ class Mongo(object):
         __rel_smart_contract = IndexModel(
             [("relationship.smart_contract", ASCENDING)], name="__rel_smart_contract"
         )
+        __public_key_hash = IndexModel(
+            [("public_key_hash", ASCENDING)], name="__public_key_hash"
+        )
+        __prerotated_key_hash = IndexModel(
+            [("prerotated_key_hash", ASCENDING)], name="__prerotated_key_hash"
+        )
+        __twice_prerotated_key_hash = IndexModel(
+            [("twice_prerotated_key_hash", ASCENDING)],
+            name="__twice_prerotated_key_hash",
+        )
+        __prev_public_key_hash = IndexModel(
+            [("prev_public_key_hash", ASCENDING)], name="__prev_public_key_hash"
+        )
         try:
             self.db.miner_transactions.create_indexes(
                 [
@@ -377,6 +390,10 @@ class Mongo(object):
                     __inputs_id,
                     __fee_time,
                     __rel_smart_contract,
+                    __public_key_hash,
+                    __prerotated_key_hash,
+                    __twice_prerotated_key_hash,
+                    __prev_public_key_hash,
                 ]
             )
         except:

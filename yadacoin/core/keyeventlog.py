@@ -11,6 +11,7 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+from collections.abc import Sequence
 from enum import Enum
 from hashlib import sha256
 from typing import TYPE_CHECKING
@@ -711,11 +712,21 @@ class KeyEvent:
                     )
 
         if await self.txn.is_already_onchain(block_index=block_index):
-            key_log = await KeyEventLog.build_from_public_key(self.txn.public_key)
-            if (
-                len(self.txn.outputs) != 1
-                or key_log[-1].prerotated_key_hash != self.txn.outputs[0].to
-            ):
+            # Only consult the cache off the validation path (mempool); block
+            # verification must read fresh so a newly mined block is reflected.
+            key_log = await KeyEventLog.build_from_public_key(
+                self.txn.public_key, use_cache=(block_index is None)
+            )
+            # The txn is already on-chain, so re-accepting it as a new key event
+            # is an error.  We only require that the txn spends its balance to a
+            # single output whose destination belongs to the same KEL as the
+            # sender — not that it sends to the final KEL entry specifically.
+            # key_log.addresses is the set of every address that has ever
+            # appeared in this KEL (built during the walk), so the membership
+            # test is O(1) without re-scanning the log.
+            kel_addresses = key_log.addresses | {self.txn.public_key_hash}
+            output_addresses = {output.to for output in self.txn.outputs}
+            if len(self.txn.outputs) != 1 or not (output_addresses & kel_addresses):
                 raise KELException("Key event is already onchain", txn=self.txn)
 
     async def sends_to_past_kel_entry(self, block_index=None):
@@ -845,6 +856,101 @@ class KELHashCollectionException(Exception):
     pass
 
 
+class KELResult(Sequence):
+    """Ordered KEL plus the set of addresses that have appeared in it.
+
+    ``build_from_public_key`` returns one of these instead of a bare list so
+    that consumers (e.g. ``KeyEvent.verify``) can test membership in the KEL's
+    address space in O(1) without re-scanning the log.  It is a
+    :class:`collections.abc.Sequence` over the underlying transaction list, so
+    existing call sites that use ``kel[-1]``, ``len(kel)``, ``for e in kel``,
+    and list comprehensions keep working unchanged.
+    """
+
+    __slots__ = ("_log", "addresses")
+
+    def __init__(self, log, addresses):
+        self._log = log
+        self.addresses = addresses
+
+    def __getitem__(self, index):
+        return self._log[index]
+
+    def __len__(self):
+        return len(self._log)
+
+    def __iter__(self):
+        return iter(self._log)
+
+    def __eq__(self, other):
+        if isinstance(other, KELResult):
+            return self._log == other._log
+        if isinstance(other, list):
+            return self._log == other
+        return NotImplemented
+
+    def __hash__(self):
+        return hash(tuple(self._log))
+
+    def __repr__(self):
+        return f"KELResult(len={len(self._log)}, addresses={len(self.addresses)})"
+
+
+class KELCache:
+    """Process-lifetime in-memory cache for ``KeyEventLog.build_from_public_key``.
+
+    The KEL rebuild is an O(2 × rotations) sequence of MongoDB aggregation
+    round-trips, and it is frequently re-requested for the same public key
+    within a short window (P2P handshake, the key-rotation polling loop, and
+    repeated mempool/block lookups).  This cache collapses those repeats into a
+    single rebuild.
+
+    Safety contract:
+    * Results are keyed on ``(public_key, onchain_only, follow_recovery,
+      segment_only)`` — the full set of parameters that affect the walk.
+    * The cache is only consulted / populated on **non-block-validation** paths.
+      Block verification must never trust a cached KEL (a freshly mined block
+      must be reflected immediately), so the validation call sites pass
+      ``use_cache=False``.  See ``KeyEvent.verify`` and ``Block.verify_transactions``.
+    * It is invalidated explicitly: ``clear()`` (full) and ``invalidate(pkh)``
+      (single key) are called by the write paths that introduce new KEL entries
+      (block acceptance, mempool add/remove).  There is no TTL — staleness is
+      prevented by explicit invalidation rather than time.
+    """
+
+    _store: dict = {}
+
+    @classmethod
+    def _key(cls, public_key, onchain_only, follow_recovery, segment_only):
+        return (public_key, onchain_only, follow_recovery, segment_only)
+
+    @classmethod
+    def get(cls, public_key, onchain_only, follow_recovery, segment_only):
+        return cls._store.get(
+            cls._key(public_key, onchain_only, follow_recovery, segment_only)
+        )
+
+    @classmethod
+    def set(cls, public_key, onchain_only, follow_recovery, segment_only, log):
+        cls._store[
+            cls._key(public_key, onchain_only, follow_recovery, segment_only)
+        ] = log
+        return log
+
+    @classmethod
+    def invalidate(cls, public_key=None):
+        """Drop cache entries.  When *public_key* is given only that key's
+        entries are dropped; otherwise the entire cache is cleared."""
+        if public_key is None:
+            cls._store.clear()
+        else:
+            cls._store = {k: v for k, v in cls._store.items() if k[0] != public_key}
+
+    @classmethod
+    def clear(cls):
+        cls._store.clear()
+
+
 class KELHashCollection:
     @classmethod
     async def init_async(cls, block: "Block", verify_only=False):
@@ -945,7 +1051,9 @@ class KeyEventLog:
         mempool_result = None
         if not result and key_event.txn.prev_public_key_hash:
             mempool_result = await key_event.get_mempool_parent()
-        entire_log = await KeyEventLog.build_from_public_key(key_event.txn.public_key)
+        entire_log = await KeyEventLog.build_from_public_key(
+            key_event.txn.public_key, use_cache=False
+        )
         if result and result["key_event"]:
             # step 1.1: If found, check that this entry is the latest entry, if not, raise exception
             onchain_child = await result["key_event"].get_onchain_child()
@@ -1673,7 +1781,11 @@ class KeyEventLog:
 
     @staticmethod
     async def build_from_public_key(
-        public_key, onchain_only=False, follow_recovery=True, segment_only=False
+        public_key,
+        onchain_only=False,
+        follow_recovery=True,
+        segment_only=False,
+        use_cache=True,
     ):
         """Build the ordered KEL for *public_key*.
 
@@ -1689,9 +1801,25 @@ class KeyEventLog:
         and continues walking into the new KEL.  Set False when validating a
         recovery itself (to avoid feedback loops) or when consumers want only
         the segment up to the first recovery boundary.
+
+        *use_cache* (default True) consults / populates :class:`KELCache`.  It
+        MUST be False on block-validation paths, which must always read fresh
+        from Mongo so a newly mined block is reflected immediately.
         """
+        if use_cache:
+            cached = KELCache.get(
+                public_key, onchain_only, follow_recovery, segment_only
+            )
+            if cached is not None:
+                return cached
+
         config = Config()
         log = []
+        # Addresses that have appeared in this KEL (the on-chain
+        # prerotated_key_hash of each entry).  Built incrementally as the walk
+        # progresses and exposed via KELResult.addresses so consumers can do an
+        # O(1) membership test instead of re-scanning the whole log.
+        addresses = set()
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
         inception = None
         while True:
@@ -1765,6 +1893,8 @@ class KeyEventLog:
                 address = txn.prev_public_key_hash
         if inception:
             log.append(inception)
+            if not getattr(inception, "mempool", False):
+                addresses.add(inception.prerotated_key_hash)
             txn = inception
             # Guard against cycles in the KEL walk.  When onchain_only is False
             # (e.g. during block verification) the walk also follows mempool
@@ -1797,6 +1927,8 @@ class KeyEventLog:
                 if res:
                     txn = Transaction.from_dict(res[0]["transactions"])
                     log.append(txn)
+                    if not getattr(txn, "mempool", False):
+                        addresses.add(txn.prerotated_key_hash)
                     continue
 
                 if not onchain_only:
@@ -1821,8 +1953,17 @@ class KeyEventLog:
                     )
                     if successor is not None:
                         log.append(successor)
+                        if not getattr(successor, "mempool", False):
+                            addresses.add(successor.prerotated_key_hash)
                         txn = successor
                         continue
                 break  # pragma: no cover
 
-        return log
+        result = KELResult(log, frozenset(addresses))
+
+        if use_cache:
+            KELCache.set(
+                public_key, onchain_only, follow_recovery, segment_only, result
+            )
+
+        return result

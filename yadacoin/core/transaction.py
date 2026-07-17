@@ -655,6 +655,11 @@ class Transaction(object):
         verify_hash = await self.generate_hash()
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
 
+        # Reused by both verify_kel_output_rules and get_kel_cross_key_auth so
+        # the KEL chain is not rebuilt twice in the same verify() call.  It is
+        # populated lazily only when KEL spend rules apply (inside check_kel).
+        key_log = None
+
         if check_kel:
             from yadacoin.core.keyeventlog import KeyEvent
 
@@ -734,7 +739,21 @@ class Transaction(object):
                     _kel_index = self.config.LatestBlock.block.index
 
                 if _kel_index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
-                    await self.verify_kel_output_rules(block=block, mempool=mempool)
+                    from yadacoin.core.keyeventlog import KeyEventLog
+
+                    # Build the KEL once and reuse it for both output-rule
+                    # enforcement and cross-key spend authorization below,
+                    # instead of rebuilding the chain twice.  Block verification
+                    # must never trust the cache (use_cache=False); the mempool
+                    # path may cache for the next lookup of the same key.
+                    key_log = await KeyEventLog.build_from_public_key(
+                        self.public_key,
+                        onchain_only=(block is not None),
+                        use_cache=(block is None),
+                    )
+                    await self.verify_kel_output_rules(
+                        block=block, mempool=mempool, key_log=key_log
+                    )
 
         if verify_hash != self.hash:
             raise InvalidTransactionException(
@@ -832,7 +851,9 @@ class Transaction(object):
         # address equals kel[-1].prerotated_key_hash, and it is authorised to
         # spend UTXOs locked to any previous KEL address.
         kel_authorized_addresses, kel_authorized_pub_keys = (
-            await self.get_kel_cross_key_auth(address, block=block, mempool=mempool)
+            await self.get_kel_cross_key_auth(
+                address, block=block, mempool=mempool, key_log=key_log
+            )
             if self.inputs
             else (None, None)
         )
@@ -1307,13 +1328,20 @@ class Transaction(object):
             return True
         return False
 
-    async def get_kel_cross_key_auth(self, address, block=None, mempool=False):
+    async def get_kel_cross_key_auth(
+        self, address, block=None, mempool=False, key_log=None
+    ):
         """Return (authorized_addresses, authorized_pub_keys) when the signer is
         the latest KEL key (its address equals kel[-1].prerotated_key_hash),
         enabling it to spend UTXOs locked to any previous KEL address.
 
         Returns (None, None) when cross-key spending does not apply (non-KEL
         signer, or below the KEL_CROSS_KEY_SPENDING_FORK height).
+
+        *key_log* may carry a pre-built KEL (a list of KeyEvent txns) so callers
+        like Transaction.verify() can reuse the same reconstruction that
+        verify_kel_output_rules already performed, rather than rebuilding the
+        chain a second time.  When omitted the KEL is built on demand.
         """
         if block is not None:
             effective_index = block.index
@@ -1327,10 +1355,14 @@ class Transaction(object):
 
         from yadacoin.core.keyeventlog import KeyEventLog
 
-        kel = await KeyEventLog.build_from_public_key(
-            self.public_key, onchain_only=True
-        )
+        kel = key_log
+        if kel is None:
+            kel = await KeyEventLog.build_from_public_key(
+                self.public_key, onchain_only=True, use_cache=(block is None)
+            )
         if kel and kel[-1].prerotated_key_hash == address:
+            # Build fast membership sets once rather than scanning the whole
+            # log per output during input validation.
             authorized_addresses = {entry.public_key_hash for entry in kel} | {address}
             authorized_pub_keys = {entry.public_key for entry in kel} | {
                 self.public_key
@@ -1410,7 +1442,7 @@ class Transaction(object):
                     return True
         return False
 
-    async def verify_kel_output_rules(self, block=None, mempool=False):
+    async def verify_kel_output_rules(self, block=None, mempool=False, key_log=None):
         from yadacoin.core.keyeventlog import (
             KELDoesNotSpendAllUTXOsException,
             KELLogUnbuildableException,
@@ -1430,7 +1462,8 @@ class Transaction(object):
 
         # If KEL fields indicate this is a key event, it must not send back to its own address
         if self.are_kel_fields_populated():
-            if self.public_key_hash in [output.to for output in self.outputs]:
+            output_addresses = {output.to for output in self.outputs}
+            if self.public_key_hash in output_addresses:
                 raise KELSelfSendException(
                     f"Key event tx sends to its own public_key_hash ({self.public_key_hash}) instead of prerotated_key_hash."
                 )
@@ -1444,10 +1477,12 @@ class Transaction(object):
 
         # Build the full log (including mempool entries) so that inception transactions
         # that are only in the mempool can still be found.  Mempool entries are tagged
-        # with txn.mempool = True by build_from_public_key.
-        key_log = await KeyEventLog.build_from_public_key(
-            self.public_key, onchain_only=(block is not None)
-        )
+        # with txn.mempool = True by build_from_public_key.  Reuse a pre-built log when
+        # one was supplied (e.g. by Transaction.verify) to avoid rebuilding the chain.
+        if key_log is None:
+            key_log = await KeyEventLog.build_from_public_key(
+                self.public_key, onchain_only=(block is not None)
+            )
         if not key_log:
             raise KELLogUnbuildableException(
                 f"Key event log exists for public_key={self.public_key} but could not be reconstructed."
@@ -1465,11 +1500,12 @@ class Transaction(object):
             # recorded in the confirmed (on-chain) key event log.
             # Exclude the current transaction itself to avoid falsely treating it
             # as an existing entry when it appears in the mempool routing_log.
-            is_new_key_log_entry = not any(
-                entry.public_key_hash == self.public_key_hash
-                and entry.transaction_signature != self.transaction_signature
+            routing_pkh_set = {
+                entry.public_key_hash
                 for entry in routing_log
-            )
+                if entry.transaction_signature != self.transaction_signature
+            }
+            is_new_key_log_entry = self.public_key_hash not in routing_pkh_set
 
             if not is_new_key_log_entry:
                 # Not a new key log entry: all outputs must only go to the latest
@@ -1482,9 +1518,9 @@ class Transaction(object):
                         )
                 return
 
-        if self.public_key_hash in [
+        if self.public_key_hash in {
             output.to for output in self.outputs
-        ]:  # pragma: no cover
+        }:  # pragma: no cover
             raise KELSelfSendException(
                 f"Key event tx sends to its own public_key_hash ({self.public_key_hash}) instead of prerotated_key_hash."
             )
