@@ -550,6 +550,10 @@ class Block(object):
                 for linked_txn in linked_group:
                     if linked_txn in txns:
                         txns.remove(linked_txn)
+
+                    if linked_txn in transaction_objs:
+                        transaction_objs.remove(linked_txn)
+
                     if linked_txn is not transaction_obj:
                         config.app_log.info(
                             f"KEL cascade: linked txn removed from block: "
@@ -557,6 +561,9 @@ class Block(object):
                         )
                 if transaction_obj in txns:
                     txns.remove(transaction_obj)
+
+                if transaction_obj in transaction_objs:
+                    transaction_objs.remove(transaction_obj)
                 continue
             except Exception as e:
                 await Transaction.handle_exception(e, transaction_obj)
@@ -572,6 +579,10 @@ class Block(object):
                 for linked_txn in linked_group:
                     if linked_txn in txns:
                         txns.remove(linked_txn)
+
+                    if linked_txn in transaction_objs:
+                        transaction_objs.remove(linked_txn)
+
                     if linked_txn is not transaction_obj:
                         config.app_log.info(
                             f"KEL cascade: linked txn removed from block: "
@@ -582,9 +593,9 @@ class Block(object):
                         )
                 if (
                     transaction_obj.spent_in_txn
-                    and transaction_obj.spent_in_txn in txns
+                    and transaction_obj.spent_in_txn in transaction_objs
                 ):
-                    txns.remove(transaction_obj.spent_in_txn)
+                    transaction_objs.remove(transaction_obj.spent_in_txn)
                 continue
             try:
                 if int(index) > CHAIN.CHECK_TIME_FROM and (
