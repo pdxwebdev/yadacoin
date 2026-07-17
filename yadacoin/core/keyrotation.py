@@ -1223,13 +1223,19 @@ class NodeKeyRotationManager:
                 {"anchor_public_key": txn_doc["anchor_public_key"]},
                 sort=[("counter", -1)],
             )
-            while curr_address != txn_doc["prerotated_key_hash"]:
+            i = len(kel) - 1
+            while (
+                curr_address != txn_doc["prerotated_key_hash"]
+                and curr_address != kel[-1].prerotated_key_hash
+                and i < txn_doc["counter"]
+            ):
                 jump_cur = derive_secure_path(
                     jump_cur["private_key"], jump_cur["chain_code"], second_factor
                 )
                 curr_priv_obj = _CoincurvePrivateKey(jump_cur["private_key"])
                 curr_pub_bytes = curr_priv_obj.public_key.format(compressed=True)
                 curr_address = str(P2PKHBitcoinAddress.from_pubkey(curr_pub_bytes))
+                i += 1
         else:
             jump_cur = derive_secure_path(
                 jump_cur["private_key"], jump_cur["chain_code"], second_factor
