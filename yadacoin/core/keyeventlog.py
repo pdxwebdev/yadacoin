@@ -1096,8 +1096,19 @@ class KeyEventLog:
                     self.unconfirmed_key_event = parent_event
                     self.confirming_key_event = key_event
                     grandparent = await parent_event.get_onchain_parent()
-                    if not grandparent:
+                    if not grandparent and use_mempool:
                         grandparent = await parent_event.get_mempool_parent()
+
+                    if not grandparent and batch_txns:
+                        grandparent = next(
+                            (
+                                t
+                                for t in batch_txns
+                                if t.public_key_hash
+                                == parent_event.txn.prev_public_key_hash
+                            ),
+                            None,
+                        )
                     if grandparent and grandparent["key_event"]:
                         grandparent["key_event"].path = "1.5b"
                         self.base_key_event = grandparent["key_event"]
