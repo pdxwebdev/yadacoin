@@ -4349,7 +4349,9 @@ class TestKeyEventLogFinalCoverage(AsyncTestCase):
             new=AsyncMock(return_value=[]),
         ):
             with self.assertRaises(KELException) as ctx:
-                await KeyEventLog.init_async(key_event, hash_collection)
+                await KeyEventLog.init_async(
+                    key_event, hash_collection, use_mempool=True
+                )
             self.assertIn(
                 "No on-chain or mempool key event found for unconfirmed key event",
                 str(ctx.exception),

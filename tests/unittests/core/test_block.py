@@ -249,11 +249,14 @@ class TestBlock(AsyncTestCase):
         mongo.async_db = mock.MagicMock()
         mongo.async_db.blocks = mock.MagicMock()
         mongo.async_db.miner_transactions = Mock()
+        mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
         mongo.async_db.miner_transactions.delete_one = AsyncMock(return_value=None)
         mongo.async_db.miner_transactions.delete_many = AsyncMock(return_value=None)
         mongo.async_db.miner_transactions.find = mock.MagicMock(
             return_value=_MockAsyncCursor([])
         )
+        mongo.async_db.key_event_log = Mock()
+        mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
         mongo.async_db.failed_transactions = Mock()
         mongo.async_db.failed_transactions.insert_one = AsyncMock(return_value=None)
         yadacoin.core.config.CONFIG = Config()
@@ -2534,6 +2537,9 @@ class TestBlock(AsyncTestCase):
             ), mock.patch(
                 "yadacoin.core.transaction.Transaction.verify_kel_output_rules",
                 new=verify_kel_output_rules,
+            ), mock.patch(
+                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
+                return_value={},
             ):
                 with self.assertRaises(KELExceptionPreviousKeyHashReferenceMissing):
                     await block.verify()
@@ -3494,11 +3500,14 @@ class TestBlockCoverageGaps(AsyncTestCase):
         mongo.async_db = mock.MagicMock()
         mongo.async_db.blocks = mock.MagicMock()
         mongo.async_db.miner_transactions = Mock()
+        mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
         mongo.async_db.miner_transactions.delete_one = AsyncMock(return_value=None)
         mongo.async_db.miner_transactions.delete_many = AsyncMock(return_value=None)
         mongo.async_db.miner_transactions.find = mock.MagicMock(
             return_value=_MockAsyncCursor([])
         )
+        mongo.async_db.key_event_log = Mock()
+        mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
         mongo.async_db.failed_transactions = Mock()
         mongo.async_db.failed_transactions.insert_one = AsyncMock(return_value=None)
         yadacoin.core.config.CONFIG = Config()
