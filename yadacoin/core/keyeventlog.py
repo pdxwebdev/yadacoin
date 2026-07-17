@@ -1274,7 +1274,7 @@ class KeyEventLog:
                                 t
                                 for t in batch_txns
                                 if t.public_key_hash
-                                == key_event.txn.prerotated_key_hash
+                                == key_event.txn.prev_public_key_hash
                             ),
                             None,
                         )

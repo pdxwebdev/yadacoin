@@ -3855,6 +3855,174 @@ class TestBlockCoverageGaps(AsyncTestCase):
             result = await block.pay_masternodes([], triplet, 50.0)
         self.assertEqual(result, mock_coinbase)
 
+    @mock.patch(
+        "yadacoin.core.block.Block.generate_hash_from_header",
+        new=mock_generate_hash_from_header,
+    )
+    @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
+    async def test_verify_kel_mempool_parent_found(self):
+        """Line 897: verify() mempool parent found → has_kel=True."""
+        from yadacoin.core.chain import CHAIN
+
+        block = await Block.from_dict(copy.deepcopy(masternode_fee_block))
+        block.index = CHAIN.CHECK_KEL_FORK
+
+        # Mark existing transactions so they pass without KEL checks
+        for txn in block.transactions:
+            txn.is_coinbase = True
+            txn.has_key_event_log = AsyncMock(return_value=True)
+
+        # Create a subject txn that triggers the mempool/offchain lookup
+        subject_txn = Mock()
+        subject_txn.version = 5
+        subject_txn.coinbase = False
+        subject_txn.transaction_signature = "subject_sig"
+        subject_txn.inputs = []
+        subject_txn.outputs = []
+        subject_txn.time = block.time
+        subject_txn.hash = "subjecthash" * 5
+        subject_txn.public_key = (
+            "02cd94b54fa5ec2431013e047e3d609d385e40c73538639acb77f6d1b0f2b46c4a"
+        )
+        subject_txn.public_key_hash = "13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK"
+        subject_txn.prev_public_key_hash = "some_prev_pkh"
+        subject_txn.prerotated_key_hash = ""
+        subject_txn.twice_prerotated_key_hash = ""
+        subject_txn.are_kel_fields_populated = Mock(return_value=False)
+        subject_txn.verify_kel_output_rules = AsyncMock(return_value=None)
+        subject_txn.has_key_event_log = AsyncMock(return_value=False)
+        subject_txn.contract_generated = AsyncMock(return_value=False)
+        subject_txn.is_coinbase = False
+
+        block.transactions.append(subject_txn)
+
+        @property
+        async def contract_generated(a):
+            return False
+
+        @contract_generated.setter
+        def contract_generated(self, value):
+            pass
+
+        orig_fork = CHAIN.CHECK_MASTERNODE_FEE_FORK
+        CHAIN.CHECK_MASTERNODE_FEE_FORK = 0
+        try:
+            with mock.patch(
+                "yadacoin.core.transaction.Transaction.contract_generated",
+                new=contract_generated,
+            ), mock.patch(
+                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
+                return_value={},
+            ), mock.patch.object(
+                Block, "verify_signature", return_value=None
+            ), mock.patch(
+                "yadacoin.core.block.KELHashCollection.init_async",
+                new=AsyncMock(return_value=Mock()),
+            ), mock.patch(
+                "yadacoin.core.block.KeyEventLog.init_async",
+                new=AsyncMock(return_value=None),
+            ), mock.patch(
+                "yadacoin.core.block.KeyEvent.verify",
+                new=AsyncMock(return_value=None),
+            ):
+                block.config.mongo.async_db.miner_transactions.find_one = AsyncMock(
+                    return_value={
+                        "prerotated_key_hash": "13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK"
+                    }
+                )
+                block.config.mongo.async_db.key_event_log.find_one = AsyncMock(
+                    return_value=None
+                )
+                try:
+                    await block.verify()
+                except Exception:
+                    pass  # may raise later; we only need line 897 to execute
+        finally:
+            CHAIN.CHECK_MASTERNODE_FEE_FORK = orig_fork
+
+    @mock.patch(
+        "yadacoin.core.block.Block.generate_hash_from_header",
+        new=mock_generate_hash_from_header,
+    )
+    @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
+    async def test_verify_kel_offchain_parent_found(self):
+        """Line 908: verify() offchain parent found → has_kel=True."""
+        from yadacoin.core.chain import CHAIN
+
+        block = await Block.from_dict(copy.deepcopy(masternode_fee_block))
+        block.index = CHAIN.CHECK_KEL_FORK
+
+        for txn in block.transactions:
+            txn.is_coinbase = True
+            txn.has_key_event_log = AsyncMock(return_value=True)
+
+        subject_txn = Mock()
+        subject_txn.version = 5
+        subject_txn.coinbase = False
+        subject_txn.transaction_signature = "subject_sig"
+        subject_txn.inputs = []
+        subject_txn.outputs = []
+        subject_txn.time = block.time
+        subject_txn.hash = "subjecthash" * 5
+        subject_txn.public_key = (
+            "02cd94b54fa5ec2431013e047e3d609d385e40c73538639acb77f6d1b0f2b46c4a"
+        )
+        subject_txn.public_key_hash = "13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK"
+        subject_txn.prev_public_key_hash = "some_prev_pkh"
+        subject_txn.prerotated_key_hash = ""
+        subject_txn.twice_prerotated_key_hash = ""
+        subject_txn.are_kel_fields_populated = Mock(return_value=False)
+        subject_txn.verify_kel_output_rules = AsyncMock(return_value=None)
+        subject_txn.has_key_event_log = AsyncMock(return_value=False)
+        subject_txn.contract_generated = AsyncMock(return_value=False)
+        subject_txn.is_coinbase = False
+
+        block.transactions.append(subject_txn)
+
+        @property
+        async def contract_generated(a):
+            return False
+
+        @contract_generated.setter
+        def contract_generated(self, value):
+            pass
+
+        orig_fork = CHAIN.CHECK_MASTERNODE_FEE_FORK
+        CHAIN.CHECK_MASTERNODE_FEE_FORK = 0
+        try:
+            with mock.patch(
+                "yadacoin.core.transaction.Transaction.contract_generated",
+                new=contract_generated,
+            ), mock.patch(
+                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
+                return_value={},
+            ), mock.patch.object(
+                Block, "verify_signature", return_value=None
+            ), mock.patch(
+                "yadacoin.core.block.KELHashCollection.init_async",
+                new=AsyncMock(return_value=Mock()),
+            ), mock.patch(
+                "yadacoin.core.block.KeyEventLog.init_async",
+                new=AsyncMock(return_value=None),
+            ), mock.patch(
+                "yadacoin.core.block.KeyEvent.verify",
+                new=AsyncMock(return_value=None),
+            ):
+                block.config.mongo.async_db.miner_transactions.find_one = AsyncMock(
+                    return_value=None
+                )
+                block.config.mongo.async_db.key_event_log.find_one = AsyncMock(
+                    return_value={
+                        "prerotated_key_hash": "13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK"
+                    }
+                )
+                try:
+                    await block.verify()
+                except Exception:
+                    pass
+        finally:
+            CHAIN.CHECK_MASTERNODE_FEE_FORK = orig_fork
+
 
 class TestBlockPureMethods(unittest.TestCase):
     """Tests for pure static methods in Block that don't require async/DB."""

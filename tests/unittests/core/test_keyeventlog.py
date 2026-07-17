@@ -4357,6 +4357,360 @@ class TestKeyEventLogFinalCoverage(AsyncTestCase):
                 str(ctx.exception),
             )
 
+    async def test_init_async_step2_2_batch_txns_parent_match(self):
+        """Lines 1192, 1202: step 2.2 batch_txns parent match."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyeventlog import (
+            KELException,
+            KeyEvent,
+            KeyEventChainStatus,
+            KeyEventFlag,
+            KeyEventLog,
+        )
+
+        ke = _make_mock_ke(
+            public_key_hash="ADDR_PKH",
+            prerotated_key_hash="ADDR_PKR",
+            twice_prerotated_key_hash="ADDR_TPKR",
+            prev_public_key_hash="",
+            relationship="",
+            outputs_to="ADDR_PKR",
+        )
+        ke.get_onchain_parent = AsyncMock(return_value=None)
+
+        unconf_txn = MagicMock()
+        unconf_txn.twice_prerotated_key_hash = "UNCONF_TWICE"
+        unconf_txn.prerotated_key_hash = "ADDR_PKR"
+        unconf_txn.public_key_hash = "ADDR_PKH"
+        unconf_txn.prev_public_key_hash = "SOME_PREV"
+        unconf_txn.relationship = "some_rel"
+        unconf_txn.transaction_signature = "unconf_sig"
+        out = MagicMock()
+        out.to = "SOME_OTHER"
+        unconf_txn.outputs = [out]
+
+        hash_collection = _make_hash_collection(
+            prerotated={"ADDR_PKH": MagicMock()},
+            twice_prerotated={"ADDR_PKR": unconf_txn},
+        )
+
+        parent_txn = MagicMock()
+        parent_txn.public_key_hash = "SOME_PREV"
+        parent_txn.prev_public_key_hash = ""
+        parent_txn.transaction_signature = "parent_sig"
+
+        unconf_ke = KeyEvent.__new__(KeyEvent)
+        unconf_ke.txn = unconf_txn
+        unconf_ke.flag = KeyEventFlag.UNCONFIRMED
+        unconf_ke.status = KeyEventChainStatus.MEMPOOL
+        unconf_ke.config = Config()
+        unconf_ke.get_onchain_parent = AsyncMock(return_value=None)
+        unconf_ke.get_mempool_parent = AsyncMock(return_value=None)
+
+        base_ke = MagicMock()
+
+        def _ke_factory(txn, flag=None, status=None, path=None):
+            if txn is unconf_txn:
+                return unconf_ke
+            if txn is parent_txn:
+                base_ke.path = path
+                return base_ke
+            return MagicMock()
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEvent",
+            side_effect=_ke_factory,
+        ):
+            with patch.object(
+                KeyEventLog,
+                "build_from_public_key",
+                new=AsyncMock(return_value=[MagicMock()]),
+            ):
+                with self.assertRaises(KELException):
+                    await KeyEventLog.init_async(
+                        ke, hash_collection, batch_txns=[parent_txn]
+                    )
+
+        self.assertEqual(base_ke.path, "2.2")
+
+    async def test_init_async_step2_2_mempool_parent_match(self):
+        """Lines 1216-1217: step 2.2 mempool parent path assignment."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyeventlog import (
+            KELException,
+            KeyEvent,
+            KeyEventChainStatus,
+            KeyEventFlag,
+            KeyEventLog,
+        )
+
+        ke = _make_mock_ke(
+            public_key_hash="ADDR_PKH",
+            prerotated_key_hash="ADDR_PKR",
+            twice_prerotated_key_hash="ADDR_TPKR",
+            prev_public_key_hash="",
+            relationship="",
+            outputs_to="ADDR_PKR",
+        )
+        ke.get_onchain_parent = AsyncMock(return_value=None)
+
+        unconf_txn = MagicMock()
+        unconf_txn.twice_prerotated_key_hash = "UNCONF_TWICE"
+        unconf_txn.prerotated_key_hash = "ADDR_PKR"
+        unconf_txn.public_key_hash = "ADDR_PKH"
+        unconf_txn.prev_public_key_hash = "SOME_PREV"
+        unconf_txn.relationship = "some_rel"
+        unconf_txn.transaction_signature = "unconf_sig"
+        out = MagicMock()
+        out.to = "SOME_OTHER"
+        unconf_txn.outputs = [out]
+
+        hash_collection = _make_hash_collection(
+            prerotated={"ADDR_PKH": MagicMock()},
+            twice_prerotated={"ADDR_PKR": unconf_txn},
+        )
+
+        base_ke = MagicMock()
+
+        unconf_ke = KeyEvent.__new__(KeyEvent)
+        unconf_ke.txn = unconf_txn
+        unconf_ke.flag = KeyEventFlag.UNCONFIRMED
+        unconf_ke.status = KeyEventChainStatus.MEMPOOL
+        unconf_ke.config = Config()
+        unconf_ke.get_onchain_parent = AsyncMock(return_value=None)
+        unconf_ke.get_mempool_parent = AsyncMock(return_value={"key_event": base_ke})
+
+        def _ke_factory(txn, flag=None, status=None, path=None):
+            if txn is unconf_txn:
+                return unconf_ke
+            return MagicMock()
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEvent",
+            side_effect=_ke_factory,
+        ):
+            with patch.object(
+                KeyEventLog,
+                "build_from_public_key",
+                new=AsyncMock(return_value=[MagicMock()]),
+            ):
+                with self.assertRaises(KELException):
+                    await KeyEventLog.init_async(ke, hash_collection, use_mempool=True)
+
+        self.assertEqual(base_ke.path, "2.2")
+
+    async def test_init_async_step2_5_batch_txns_parent_match(self):
+        """Lines 1272, 1282: step 2.5 batch_txns parent match."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyeventlog import (
+            KELException,
+            KeyEvent,
+            KeyEventChainStatus,
+            KeyEventFlag,
+            KeyEventLog,
+        )
+
+        key_event = _make_mock_ke(
+            public_key_hash="ADDR_PKH",
+            prerotated_key_hash="ADDR_PKR",
+            twice_prerotated_key_hash="ADDR_TPKR",
+            prev_public_key_hash="SOME_PREV",
+            relationship="some_data",
+            outputs_to="SOMEWHERE_ELSE",
+        )
+        key_event.get_onchain_parent = AsyncMock(return_value=None)
+        key_event.get_mempool_parent = AsyncMock(return_value=None)
+
+        confirming_txn = MagicMock()
+        confirming_txn.public_key_hash = "ADDR_TPKR"
+        confirming_txn.prerotated_key_hash = "ADDR_PKR"
+        confirming_txn.prev_public_key_hash = "ADDR_PKH"
+        confirming_txn.transaction_signature = "confirming_sig"
+        confirming_txn.relationship = ""
+        out = MagicMock()
+        out.to = "ADDR_PKR"
+        confirming_txn.outputs = [out]
+
+        hash_collection = _make_hash_collection(
+            prerotated={"ADDR_TPKR": confirming_txn},
+            twice_prerotated={},
+        )
+
+        parent_txn = MagicMock()
+        parent_txn.public_key_hash = "SOME_PREV"
+        parent_txn.prev_public_key_hash = ""
+        parent_txn.transaction_signature = "parent_sig"
+
+        confirming_ke = KeyEvent.__new__(KeyEvent)
+        confirming_ke.txn = confirming_txn
+        confirming_ke.flag = KeyEventFlag.CONFIRMING
+        confirming_ke.status = KeyEventChainStatus.MEMPOOL
+        confirming_ke.config = Config()
+
+        base_ke = MagicMock()
+
+        def _ke_factory(txn, flag=None, status=None, path=None):
+            if txn is confirming_txn:
+                return confirming_ke
+            if txn is parent_txn:
+                base_ke.path = path
+                return base_ke
+            return MagicMock()
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEvent",
+            side_effect=_ke_factory,
+        ):
+            with patch.object(
+                KeyEventLog,
+                "build_from_public_key",
+                new=AsyncMock(return_value=[MagicMock()]),
+            ):
+                with self.assertRaises(KELException):
+                    await KeyEventLog.init_async(
+                        key_event, hash_collection, batch_txns=[parent_txn]
+                    )
+
+        self.assertEqual(base_ke.path, "2.5")
+
+    async def test_init_async_step2_5_mempool_parent_match(self):
+        """Lines 1296-1297: step 2.5 mempool parent path assignment."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyeventlog import (
+            KELException,
+            KeyEvent,
+            KeyEventChainStatus,
+            KeyEventFlag,
+            KeyEventLog,
+        )
+
+        key_event = _make_mock_ke(
+            public_key_hash="ADDR_PKH",
+            prerotated_key_hash="ADDR_PKR",
+            twice_prerotated_key_hash="ADDR_TPKR",
+            prev_public_key_hash="SOME_PREV",
+            relationship="some_data",
+            outputs_to="SOMEWHERE_ELSE",
+        )
+        key_event.get_onchain_parent = AsyncMock(return_value=None)
+
+        confirming_txn = MagicMock()
+        confirming_txn.public_key_hash = "ADDR_TPKR"
+        confirming_txn.prerotated_key_hash = "ADDR_PKR"
+        confirming_txn.prev_public_key_hash = "ADDR_PKH"
+        confirming_txn.transaction_signature = "confirming_sig"
+        confirming_txn.relationship = ""
+        out = MagicMock()
+        out.to = "ADDR_PKR"
+        confirming_txn.outputs = [out]
+
+        hash_collection = _make_hash_collection(
+            prerotated={"ADDR_TPKR": confirming_txn},
+            twice_prerotated={},
+        )
+
+        base_ke = MagicMock()
+
+        confirming_ke = KeyEvent.__new__(KeyEvent)
+        confirming_ke.txn = confirming_txn
+        confirming_ke.flag = KeyEventFlag.CONFIRMING
+        confirming_ke.status = KeyEventChainStatus.MEMPOOL
+        confirming_ke.config = Config()
+
+        def _ke_factory(txn, flag=None, status=None, path=None):
+            if txn is confirming_txn:
+                return confirming_ke
+            return MagicMock()
+
+        key_event.get_mempool_parent = AsyncMock(
+            side_effect=[None, {"key_event": base_ke}]
+        )
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEvent",
+            side_effect=_ke_factory,
+        ):
+            with patch.object(
+                KeyEventLog,
+                "build_from_public_key",
+                new=AsyncMock(return_value=[MagicMock()]),
+            ):
+                with self.assertRaises(KELException):
+                    await KeyEventLog.init_async(
+                        key_event, hash_collection, use_mempool=True
+                    )
+
+        self.assertEqual(base_ke.path, "2.5")
+
+    async def test_init_async_step2_5_block_verify_no_parent_raises(self):
+        """Line 1304: step 2.5 block verification no parent raise."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyeventlog import (
+            KELException,
+            KeyEvent,
+            KeyEventChainStatus,
+            KeyEventFlag,
+            KeyEventLog,
+        )
+
+        key_event = _make_mock_ke(
+            public_key_hash="ADDR_PKH",
+            prerotated_key_hash="ADDR_PKR",
+            twice_prerotated_key_hash="ADDR_TPKR",
+            prev_public_key_hash="SOME_PREV",
+            relationship="some_data",
+            outputs_to="SOMEWHERE_ELSE",
+        )
+        key_event.get_onchain_parent = AsyncMock(return_value=None)
+        key_event.get_mempool_parent = AsyncMock(return_value=None)
+
+        confirming_txn = MagicMock()
+        confirming_txn.public_key_hash = "ADDR_TPKR"
+        confirming_txn.prerotated_key_hash = "ADDR_PKR"
+        confirming_txn.prev_public_key_hash = "ADDR_PKH"
+        confirming_txn.transaction_signature = "confirming_sig"
+        confirming_txn.relationship = ""
+        out = MagicMock()
+        out.to = "ADDR_PKR"
+        confirming_txn.outputs = [out]
+
+        confirming_ke = KeyEvent.__new__(KeyEvent)
+        confirming_ke.txn = confirming_txn
+        confirming_ke.flag = KeyEventFlag.CONFIRMING
+        confirming_ke.status = KeyEventChainStatus.MEMPOOL
+        confirming_ke.config = Config()
+
+        hash_collection = _make_hash_collection(
+            prerotated={"ADDR_TPKR": confirming_txn},
+            twice_prerotated={},
+        )
+
+        def _ke_factory(txn, flag=None, status=None, path=None):
+            if txn is confirming_txn:
+                return confirming_ke
+            return MagicMock()
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEvent",
+            side_effect=_ke_factory,
+        ):
+            with patch.object(
+                KeyEventLog,
+                "build_from_public_key",
+                new=AsyncMock(return_value=[MagicMock()]),
+            ):
+                with self.assertRaises(KELException) as ctx:
+                    await KeyEventLog.init_async(key_event, hash_collection)
+                self.assertIn(
+                    "No on-chain key event found for unconfirmed key event",
+                    str(ctx.exception),
+                )
+
     async def test_init_async_step2_final_else_coinbase_raises(self):
         """Line 1282: final else — not looks_confirming, twice_prerotated_key_hash not
         cross-linked, and txn.coinbase is True → FatalKeyEventException."""
