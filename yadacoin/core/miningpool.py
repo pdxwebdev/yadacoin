@@ -300,6 +300,8 @@ class MiningPool(object):
         trigger the events for the pools, even if the block index did not change."""
         # TODO: to be taken care of, no refresh atm between blocks
         try:
+            if not hasattr(self.config, "peer"):
+                return
             if self.refreshing or not await Peer.is_synced():
                 return
             self.refreshing = True
