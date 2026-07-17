@@ -1078,12 +1078,44 @@ class KeyEventLog:
                 )
                 and key_event.txn.prev_public_key_hash
             ):
-                key_event.flag = KeyEventFlag.CONFIRMING
-                key_event.path = "1.5"
-                self.confirming_key_event = key_event
-                parent_event.path = "1.5"
-                self.base_key_event = parent_event
-                self.path = "1.5"
+                # If the mempool parent is itself an UNCONFIRMED key event
+                # (it carries a relationship), then key_event is the confirming
+                # child of that unconfirmed event, not the direct confirming
+                # child of the base.  The lineage is
+                # base -> unconfirmed(parent) -> confirming(key_event).  Thread
+                # the parent in as the unconfirmed_key_event and resolve the
+                # grandparent as the base so the standard scenarios apply.
+                if (
+                    parent_event.flag == KeyEventFlag.UNCONFIRMED
+                    or parent_event.txn.relationship
+                ):
+                    parent_event.flag = KeyEventFlag.UNCONFIRMED
+                    parent_event.path = "1.5b"
+                    key_event.flag = KeyEventFlag.CONFIRMING
+                    key_event.path = "1.5b"
+                    self.unconfirmed_key_event = parent_event
+                    self.confirming_key_event = key_event
+                    grandparent = await parent_event.get_onchain_parent()
+                    if not grandparent:
+                        grandparent = await parent_event.get_mempool_parent()
+                    if grandparent and grandparent["key_event"]:
+                        grandparent["key_event"].path = "1.5b"
+                        self.base_key_event = grandparent["key_event"]
+                        self.path = "1.5b"
+                    else:
+                        raise FatalKeyEventException(
+                            "Unconfirmed key event has no on-chain or mempool base key event.",
+                            other_txn_to_delete=hash_collection.prerotated_key_hashes.get(
+                                key_event.txn.twice_prerotated_key_hash
+                            ),
+                        )
+                else:
+                    key_event.flag = KeyEventFlag.CONFIRMING
+                    key_event.path = "1.5"
+                    self.confirming_key_event = key_event
+                    parent_event.path = "1.5"
+                    self.base_key_event = parent_event
+                    self.path = "1.5"
             else:
                 past_key_event = await key_event.sends_to_past_kel_entry(
                     block_index=block_index

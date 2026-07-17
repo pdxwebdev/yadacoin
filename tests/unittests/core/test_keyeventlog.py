@@ -2669,6 +2669,87 @@ class TestKeyEventLogInitAsyncBranches(AsyncTestCase):
         self.assertEqual(kel.confirming_key_event.flag, KeyEventFlag.CONFIRMING)
         self.assertEqual(kel.confirming_key_event.status, KeyEventChainStatus.MEMPOOL)
 
+    async def test_init_async_scenario1_5b_confirming_child_of_unconfirmed_mempool_parent(
+        self,
+    ):
+        """Regression: a CONFIRMING block txn (A) whose mempool parent is itself
+        an UNCONFIRMED re-anchor event (B) must build the triplet
+        base=C -> unconfirmed=B -> confirming=A (scenario 9), not drop B into
+        base_key_event with no unconfirmed_key_event (which caused
+        'Invalid KEL scenario').  Reproduces a re-anchor mined into a block while
+        its unconfirmed + grandparent entries are still only in the mempool."""
+        from unittest.mock import AsyncMock, patch
+
+        from yadacoin.core.keyeventlog import (
+            KeyEventChainStatus,
+            KeyEventFlag,
+            KeyEventLog,
+        )
+
+        # Grandparent C: a plain confirming key event in the mempool (B's parent).
+        grandparent_ke = _make_mock_ke(
+            flag=KeyEventFlag.CONFIRMING,
+            status=KeyEventChainStatus.MEMPOOL,
+            public_key_hash=_VALID_ADDR_A,
+            prerotated_key_hash=_VALID_ADDR_B,
+            twice_prerotated_key_hash=_VALID_ADDR_C,
+            prev_public_key_hash=_VALID_ADDR_PKR2,
+            relationship="",
+            outputs_to=_VALID_ADDR_B,
+        )
+
+        # Parent B: UNCONFIRMED re-anchor event (carries a relationship).
+        # pkh=B (== C.pkr), pkr=C (== C.tpkr), tpkr=PKH2, prev=A (== C.pkh)
+        unconfirmed_parent_ke = _make_mock_ke(
+            flag=KeyEventFlag.UNCONFIRMED,
+            status=KeyEventChainStatus.MEMPOOL,
+            public_key_hash=_VALID_ADDR_B,
+            prerotated_key_hash=_VALID_ADDR_C,
+            twice_prerotated_key_hash=_VALID_ADDR_PKH2,
+            prev_public_key_hash=_VALID_ADDR_A,
+            relationship="reanchor 100 interval",
+            outputs_to=_VALID_ADDR_PKR2,
+        )
+        unconfirmed_parent_ke.get_onchain_parent = AsyncMock(return_value=None)
+        # B's own parent is the grandparent C (in mempool).
+        unconfirmed_parent_ke.get_mempool_parent = AsyncMock(
+            return_value={"key_event": grandparent_ke}
+        )
+
+        # Confirming txn A being validated (the only KEL txn in the block).
+        # pkh=C (== B.pkr), pkr=PKH2 (== B.tpkr), tpkr=PKR2, prev=B (== B.pkh)
+        confirming_ke = _make_mock_ke(
+            status=KeyEventChainStatus.MEMPOOL,
+            public_key_hash=_VALID_ADDR_C,
+            prerotated_key_hash=_VALID_ADDR_PKH2,
+            twice_prerotated_key_hash=_VALID_ADDR_PKR2,
+            prev_public_key_hash=_VALID_ADDR_B,
+            relationship="",
+            outputs_to=_VALID_ADDR_PKH2,
+        )
+        confirming_ke.get_onchain_parent = AsyncMock(return_value=None)
+        # A's mempool parent is the UNCONFIRMED event B.
+        confirming_ke.get_mempool_parent = AsyncMock(
+            return_value={"key_event": unconfirmed_parent_ke}
+        )
+
+        hash_collection = _make_hash_collection()
+
+        with patch.object(
+            KeyEventLog,
+            "build_from_public_key",
+            new=AsyncMock(return_value=[]),
+        ):
+            kel = await KeyEventLog.init_async(confirming_ke, hash_collection)
+
+        self.assertEqual(kel.base_key_event.flag, KeyEventFlag.CONFIRMING)
+        self.assertEqual(kel.base_key_event.status, KeyEventChainStatus.MEMPOOL)
+        self.assertEqual(kel.unconfirmed_key_event.flag, KeyEventFlag.UNCONFIRMED)
+        self.assertEqual(kel.unconfirmed_key_event.status, KeyEventChainStatus.MEMPOOL)
+        self.assertEqual(kel.confirming_key_event.flag, KeyEventFlag.CONFIRMING)
+        self.assertEqual(kel.confirming_key_event.status, KeyEventChainStatus.MEMPOOL)
+        self.assertEqual(kel.unconfirmed_key_event, unconfirmed_parent_ke)
+
 
 # ---------------------------------------------------------------------------
 # Tests for KeyEventLog.build_from_public_key missing branches
