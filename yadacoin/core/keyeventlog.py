@@ -1808,14 +1808,31 @@ class KeyEventLog:
         MUST be False on block-validation paths, which must always read fresh
         from Mongo so a newly mined block is reflected immediately.
         """
+        config = Config()
         if use_cache:
             cached = KELCache.get(
                 public_key, onchain_only, follow_recovery, segment_only
             )
             if cached is not None:
+                config.app_log.debug(
+                    "build_from_public_key cache HIT public_key=%s onchain_only=%s "
+                    "follow_recovery=%s segment_only=%s len=%d",
+                    public_key[:16],
+                    onchain_only,
+                    follow_recovery,
+                    segment_only,
+                    len(cached),
+                )
                 return cached
+            config.app_log.debug(
+                "build_from_public_key cache MISS public_key=%s onchain_only=%s "
+                "follow_recovery=%s segment_only=%s",
+                public_key[:16],
+                onchain_only,
+                follow_recovery,
+                segment_only,
+            )
 
-        config = Config()
         log = []
         # Addresses that have appeared in this KEL (the on-chain
         # prerotated_key_hash of each entry).  Built incrementally as the walk
@@ -1824,7 +1841,10 @@ class KeyEventLog:
         addresses = set()
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
         inception = None
+        backward_iter = 0
+        forward_iter = 0
         while True:
+            backward_iter += 1
             result = config.mongo.async_db.blocks.aggregate(
                 [
                     {
@@ -1857,6 +1877,14 @@ class KeyEventLog:
             res = await result.to_list(length=1)
             if res:
                 txn = Transaction.from_dict(res[0]["transactions"])
+                config.app_log.debug(
+                    "build_from_public_key backward iter=%d address=%s found_onchain "
+                    "txn=%s prev_public_key_hash=%s",
+                    backward_iter,
+                    address,
+                    txn.transaction_signature[:16],
+                    txn.prev_public_key_hash[:16] if txn.prev_public_key_hash else None,
+                )
                 # When segment_only is True, treat a recovers-inception as the
                 # inception boundary for this KEL segment so the backward walk
                 # does not cross into the delegator KEL's history.  When
@@ -1871,6 +1899,12 @@ class KeyEventLog:
             else:
                 # This case for pending inception transactions
                 if onchain_only:
+                    config.app_log.debug(
+                        "build_from_public_key backward iter=%d address=%s "
+                        "onchain_only=True stopping here",
+                        backward_iter,
+                        address,
+                    )
                     break
                 result_mempool = await config.mongo.async_db.miner_transactions.find_one(
                     {
@@ -1884,9 +1918,23 @@ class KeyEventLog:
                     },
                 )
                 if not result_mempool:
+                    config.app_log.debug(
+                        "build_from_public_key backward iter=%d address=%s "
+                        "not found onchain or mempool stopping here",
+                        backward_iter,
+                        address,
+                    )
                     break
                 txn = Transaction.from_dict(result_mempool)
                 txn.mempool = True
+                config.app_log.debug(
+                    "build_from_public_key backward iter=%d address=%s found_mempool "
+                    "txn=%s prev_public_key_hash=%s",
+                    backward_iter,
+                    address,
+                    txn.transaction_signature[:16],
+                    txn.prev_public_key_hash[:16] if txn.prev_public_key_hash else None,
+                )
                 if not txn.prev_public_key_hash or (
                     segment_only and is_recovers_inception(txn)
                 ):
@@ -1903,9 +1951,20 @@ class KeyEventLog:
             # entries, and a repeated public_key_hash would otherwise loop
             # forever between on-chain and mempool copies of the same entry.
             seen_addresses = {txn.public_key_hash}
+            forward_iter = 0
             while True:
+                forward_iter += 1
                 address = txn.prerotated_key_hash
                 if address in seen_addresses:
+                    config.app_log.warning(
+                        "build_from_public_key forward iter=%d public_key=%s "
+                        "CYCLE DETECTED address=%s already in seen_addresses "
+                        "log_len=%d",
+                        forward_iter,
+                        public_key[:16],
+                        address,
+                        len(log),
+                    )
                     break
                 seen_addresses.add(address)
                 result = config.mongo.async_db.blocks.aggregate(
@@ -1929,6 +1988,14 @@ class KeyEventLog:
                 if res:
                     txn = Transaction.from_dict(res[0]["transactions"])
                     log.append(txn)
+                    config.app_log.debug(
+                        "build_from_public_key forward iter=%d address=%s found_onchain "
+                        "txn=%s log_len=%d",
+                        forward_iter,
+                        address,
+                        txn.transaction_signature[:16],
+                        len(log),
+                    )
                     if not getattr(txn, "mempool", False):
                         addresses.add(txn.prerotated_key_hash)
                     continue
@@ -1943,6 +2010,14 @@ class KeyEventLog:
                         txn = Transaction.from_dict(result_mempool)
                         txn.mempool = True
                         log.append(txn)
+                        config.app_log.debug(
+                            "build_from_public_key forward iter=%d address=%s found_mempool "
+                            "txn=%s log_len=%d",
+                            forward_iter,
+                            address,
+                            txn.transaction_signature[:16],
+                            len(log),
+                        )
                         continue
 
                 # Natural rotation chain exhausted.  If recovery-following is
@@ -1955,13 +2030,42 @@ class KeyEventLog:
                     )
                     if successor is not None:
                         log.append(successor)
+                        config.app_log.debug(
+                            "build_from_public_key forward iter=%d address=%s "
+                            "follow_recovery successor=%s log_len=%d",
+                            forward_iter,
+                            address,
+                            successor.transaction_signature[:16],
+                            len(log),
+                        )
                         if not getattr(successor, "mempool", False):
                             addresses.add(successor.prerotated_key_hash)
                         txn = successor
                         continue
+                config.app_log.debug(
+                    "build_from_public_key forward iter=%d address=%s chain_exhausted "
+                    "log_len=%d",
+                    forward_iter,
+                    address,
+                    len(log),
+                )
                 break  # pragma: no cover
 
         result = KELResult(log, frozenset(addresses))
+        config.app_log.debug(
+            "build_from_public_key done public_key=%s onchain_only=%s "
+            "follow_recovery=%s segment_only=%s backward_iter=%d forward_iter=%d "
+            "log_len=%d addresses=%d use_cache=%s",
+            public_key[:16],
+            onchain_only,
+            follow_recovery,
+            segment_only,
+            backward_iter,
+            forward_iter,
+            len(log),
+            len(addresses),
+            use_cache,
+        )
 
         if use_cache:
             KELCache.set(

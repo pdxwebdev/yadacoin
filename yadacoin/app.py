@@ -955,7 +955,9 @@ class NodeApplication(Application):
         formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
         rotateHandler.setFormatter(formatter)
         self.config.app_log.addHandler(rotateHandler)
-        self.config.app_log.setLevel(logging.INFO)
+        self.config.app_log.setLevel(
+            getattr(logging, self.config.log_level, logging.INFO)
+        )
         if self.config.debug:
             self.config.app_log.setLevel(logging.DEBUG)
         if hasattr(self.config, "asyncio_debug") and self.config.asyncio_debug:

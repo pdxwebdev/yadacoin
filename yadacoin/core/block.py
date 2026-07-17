@@ -31,6 +31,7 @@ from yadacoin.core.keyeventlog import (
     DoesNotSpendEntirelyToPrerotatedKeyHashException,
     KELExceptionPreviousKeyHashReferenceMissing,
     KELHashCollection,
+    KELHashCollectionException,
     KeyEvent,
     KeyEventChainStatus,
     KeyEventLog,

@@ -115,6 +115,7 @@ class Config:
         self.GU = None
         self.SIO = None
         self.debug = False
+        self.log_level = config.get("log_level", "INFO")
         self.mp = None
         self.pp = None
         self.stratum_pool_port = config.get("stratum_pool_port", 3333)
@@ -424,6 +425,7 @@ class Config:
                 "dns_bypass_ips": [],
                 "masternode_fee_minimum": 1,
                 "balance_min_utxo": 1,
+                "log_level": "INFO",
             }
         )
 
@@ -527,6 +529,7 @@ class Config:
 
         cls.masternode_fee_minimum = config.get("masternode_fee_minimum", 1)
         cls.balance_min_utxo = config.get("balance_min_utxo", 1)
+        cls.log_level = config.get("log_level", "INFO")
 
     @staticmethod
     def address_is_valid(address):
@@ -661,6 +664,9 @@ class Config:
             "proxy_port": self.proxy_port,
             "dns_resolvers": self.dns_resolvers,
             "dns_bypass_ips": self.dns_bypass_ips,
+            "masternode_fee_minimum": self.masternode_fee_minimum,
+            "balance_min_utxo": self.balance_min_utxo,
+            "log_level": self.log_level,
         }
         if include_sensitive:
             d.update(
