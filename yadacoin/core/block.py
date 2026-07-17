@@ -546,6 +546,15 @@ class Block(object):
                 config.app_log.warning(
                     f"validate_transactions transient KEL skip: {e} | txn={transaction_obj.transaction_signature}"
                 )
+                linked_group = Block.find_kel_linked_group(transaction_obj, txns)
+                for linked_txn in linked_group:
+                    if linked_txn in txns:
+                        txns.remove(linked_txn)
+                    if linked_txn is not transaction_obj:
+                        config.app_log.info(
+                            f"KEL cascade: linked txn removed from block: "
+                            f"{linked_txn.transaction_signature}"
+                        )
                 if transaction_obj in txns:
                     txns.remove(transaction_obj)
                 continue
