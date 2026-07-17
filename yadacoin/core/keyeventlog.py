@@ -1115,7 +1115,7 @@ class KeyEventLog:
                         self.path = "1.5b"
                     else:
                         raise FatalKeyEventException(
-                            "Unconfirmed key event has no on-chain or mempool base key event.",
+                            f"Unconfirmed key event has no on-chain or mempool base key event. {key_event.txn.transaction_signature}",
                             other_txn_to_delete=hash_collection.prerotated_key_hashes.get(
                                 key_event.txn.twice_prerotated_key_hash
                             ),
