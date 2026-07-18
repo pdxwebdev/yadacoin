@@ -306,18 +306,14 @@ class BlockChainUtils(object):
             {"$match": {"transactions.outputs.to": address}},
             {
                 "$group": {
-                    "_id": None,  # Group all documents together
-                    "all_ids": {"$addToSet": "$transactions.id"},
-                    "unique_public_keys": {
-                        "$addToSet": "$transactions.public_key"
-                    },  # Collect unique public keys
+                    "_id": None,
+                    "unique_public_keys": {"$addToSet": "$transactions.public_key"},
                 }
             },
             {
                 "$project": {
-                    "_id": 0,  # Exclude the _id field
-                    "all_ids": 1,
-                    "unique_public_keys": 1,  # Only return the list of unique public keys
+                    "_id": 0,
+                    "unique_public_keys": 1,
                 }
             },
         ]
@@ -348,32 +344,7 @@ class BlockChainUtils(object):
                 )
                 return public_key
 
-        for txn_id in public_key_address_pairs[0]["all_ids"]:
-            txns = self.config.mongo.async_db.blocks.aggregate(
-                [
-                    {
-                        "$match": {"transactions.inputs.id": txn_id},
-                    },
-                    {
-                        "$unwind": "$transactions",
-                    },
-                    {
-                        "$match": {"transactions.inputs.id": txn_id},
-                    },
-                ]
-            )
-            async for block_txn in txns:
-                public_key = block_txn["transactions"]["public_key"]
-                xaddress = str(
-                    P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
-                )
-                if xaddress == address:
-                    await self.mongo.async_db.reversed_public_keys.update_one(
-                        {"address": address, "public_key": public_key},
-                        {"$set": {"address": address, "public_key": public_key}},
-                        upsert=True,
-                    )
-                    return public_key
+        return None
 
     def get_wallet_unspent_transactions_for_dusting(self, address, limit=None):
         query = [
