@@ -1186,22 +1186,20 @@ class NodeKeyRotationManager:
         # Walk the on-chain KEL to find the current anchor tip (K_n).
         # This determines where the UNCONFIRMED entry signs from.
         cur = k0
-        for i in range(latest.counter):
+
+        cur = derive_secure_path(cur["private_key"], cur["chain_code"], second_factor)
+        cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
+        cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
+        cur_address = str(P2PKHBitcoinAddress.from_pubkey(cur_pub_bytes))
+        while latest.prerotated_key_hash != cur_address:
             cur = derive_secure_path(
                 cur["private_key"], cur["chain_code"], second_factor
             )
             cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
             cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
             cur_address = str(P2PKHBitcoinAddress.from_pubkey(cur_pub_bytes))
-            while latest.prerotated_key_hash != cur_address:
-                cur = derive_secure_path(
-                    cur["private_key"], cur["chain_code"], second_factor
-                )
-                cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
-                cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
-                cur_address = str(P2PKHBitcoinAddress.from_pubkey(cur_pub_bytes))
-                if latest.prerotated_key_hash == cur_address:
-                    break
+            if latest.prerotated_key_hash == cur_address:
+                break
         kn = cur
 
         kn1 = derive_secure_path(kn["private_key"], kn["chain_code"], second_factor)
