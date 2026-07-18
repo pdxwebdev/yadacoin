@@ -426,7 +426,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
                             stream.peer.__class__.__name__, stream.peer.to_json()
                         )
                     )
-                await self.remove_peer(stream, reason="BaseRPC: unhandled exception 2")
+                await self.remove_peer(stream, reason=f"BaseRPC: {format_exc()}")
                 self.config.app_log.warning("{}".format(format_exc()))
                 self.config.app_log.warning(data)
                 break
@@ -644,9 +644,7 @@ class RPCSocketClient(TCPClient):
                     )
                 )
 
-            await self.remove_peer(
-                stream, reason="RPCSocketClient: unhandled exception 2"
-            )
+            await self.remove_peer(stream, reason=f"RPCSocketClient: {format_exc()}")
             self.config.app_log.warning("{}".format(format_exc()))
         finally:
             peer_label_var.reset(token)
