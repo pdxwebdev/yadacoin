@@ -2204,6 +2204,11 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
         try:
             stream = await super(NodeSocketClient, self).connect(peer)
             if not stream:
+                self.config.app_log.info(
+                    "NodeSocketClient.connect: skipping %s %s — super().connect returned None",
+                    peer.__class__.__name__,
+                    getattr(peer, peer.id_attribute),
+                )
                 return
 
             # Generate ephemeral ECDH keypair

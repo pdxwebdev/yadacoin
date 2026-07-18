@@ -511,27 +511,64 @@ class RPCSocketClient(TCPClient):
                 return
             id_attr = getattr(peer, peer.id_attribute)
             if id_attr in self.outbound_ignore[peer.__class__.__name__]:
+                self.config.app_log.info(
+                    "connect: skipping %s %s — in outbound_ignore",
+                    peer.__class__.__name__,
+                    id_attr,
+                )
                 return
             if id_attr in self.outbound_pending[peer.__class__.__name__]:
+                self.config.app_log.info(
+                    "connect: skipping %s %s — already outbound_pending",
+                    peer.__class__.__name__,
+                    id_attr,
+                )
                 return
             if id_attr in self.outbound_streams[peer.__class__.__name__]:
+                self.config.app_log.info(
+                    "connect: skipping %s %s — already outbound_streams",
+                    peer.__class__.__name__,
+                    id_attr,
+                )
                 return
             if (
                 id_attr
                 in self.config.nodeServer.inbound_pending[peer.__class__.__name__]
             ):
+                self.config.app_log.info(
+                    "connect: skipping %s %s — already inbound_pending",
+                    peer.__class__.__name__,
+                    id_attr,
+                )
                 return
             if (
                 id_attr
                 in self.config.nodeServer.inbound_streams[peer.__class__.__name__]
             ):
+                self.config.app_log.info(
+                    "connect: skipping %s %s — already inbound_streams",
+                    peer.__class__.__name__,
+                    id_attr,
+                )
                 return
             if peer.identity is not None and (
                 self.config.peer.identity.username_signature
                 == peer.identity.username_signature
             ):
+                self.config.app_log.info(
+                    "connect: skipping %s %s — same identity as self",
+                    peer.__class__.__name__,
+                    id_attr,
+                )
                 return
             if (self.config.peer.host, self.config.peer.port) == (peer.host, peer.port):
+                self.config.app_log.info(
+                    "connect: skipping %s %s — same host/port as self (%s:%s)",
+                    peer.__class__.__name__,
+                    id_attr,
+                    peer.host,
+                    peer.port,
+                )
                 return
             stream = DummyStream(peer)
             stream.last_activity = int(time.time())
