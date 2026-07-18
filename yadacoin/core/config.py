@@ -222,13 +222,8 @@ class Config:
         """Dispatcher for the new bloc event
         This is called with a block object when we insert a new one in the chain."""
         # A newly accepted block can change any key event log (new rotation,
-        # confirming, or recovery entries).  Drop all cached KEL rebuilds so
-        # subsequent reads see the freshly mined chain.  KEL reads on the
-        # validation path already bypass the cache, so this only affects
-        # non-validation lookups (P2P, key-rotation polling).
-        from yadacoin.core.keyeventlog import KELCache
-
-        KELCache.clear()
+        # confirming, or recovery entries).  KEL tagging in Mongo is the
+        # source of truth now; no in-memory cache to clear.
         # Update BU
         # We can either invalidate, or directly set the block as cached one.
         # self.BU.invalidate_last_block()

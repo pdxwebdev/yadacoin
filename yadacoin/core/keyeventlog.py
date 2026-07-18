@@ -450,8 +450,10 @@ class KeyEvent:
         # referenced entry really is its tip (latest entry with no successor).
         # Use segment_only=True so the backward walk stops at a recovers-inception
         # boundary, building only the delegator's own KEL segment rather than
-        # walking all the way back to the original KEL's inception.
-        delegator_log = await KeyEventLog.build_from_public_key(
+        # walking all the way back to the original KEL's inception.  The full
+        # log (not just the tip) is required below to scan every entry for a
+        # {"recovery": ...} announcement.
+        delegator_log = await KeyEventLog.get_latest(
             delegator_tip_txn.public_key,
             onchain_only=not delegator_in_mempool,
             follow_recovery=False,
@@ -549,7 +551,7 @@ class KeyEvent:
                 "not a valid unconfirmed key event. Invalid status."
             )
 
-    def verify_confirming(self, entire_log, onchain=False):
+    def verify_confirming(self, latest_entry, onchain=False):
         self.verify_fields(prev_public_key_hash_required=True)
 
         if len(self.txn.outputs) != 1:
@@ -558,7 +560,7 @@ class KeyEvent:
             )
         if (
             self.txn.outputs[0].to != self.txn.prerotated_key_hash
-            and self.txn.outputs[0].to != entire_log[-1].prerotated_key_hash
+            and self.txn.outputs[0].to != latest_entry.prerotated_key_hash
         ):
             raise KeyEventPrerotatedKeyHashException(
                 f"{self.flag.value.upper()} key event output should equal the prerotated_key_hash"
@@ -712,11 +714,6 @@ class KeyEvent:
                     )
 
         if await self.txn.is_already_onchain(block_index=block_index):
-            # Only consult the cache off the validation path (mempool); block
-            # verification must read fresh so a newly mined block is reflected.
-            key_log = await KeyEventLog.build_from_public_key(
-                self.txn.public_key, use_cache=(block_index is None)
-            )
             # The txn is already on-chain, so re-accepting it as a new key event
             # is an error.  We only require that the txn spends its balance to a
             # single output whose destination belongs to the same KEL as the
@@ -724,10 +721,14 @@ class KeyEvent:
             # key_log.addresses is the set of every address that has ever
             # appeared in this KEL (built during the walk), so the membership
             # test is O(1) without re-scanning the log.
-            kel_addresses = key_log.addresses | {self.txn.public_key_hash}
-            output_addresses = {output.to for output in self.txn.outputs}
-            if len(self.txn.outputs) != 1 or not (output_addresses & kel_addresses):
-                raise KELException("Key event is already onchain", txn=self.txn)
+            for output in self.txn.outputs:
+                same_kel = await KeyEventLog.is_same_kel(
+                    public_key_hash_a=self.txn.public_key_hash,
+                    public_key_hash_b=output.to,
+                    onchain_only=False,
+                )
+                if not same_kel:
+                    raise KELException("Key event is already onchain", txn=self.txn)
 
     async def sends_to_past_kel_entry(self, block_index=None):
         return False  # we're no longer checking past KEL entries
@@ -896,61 +897,6 @@ class KELResult(Sequence):
         return f"KELResult(len={len(self._log)}, addresses={len(self.addresses)})"
 
 
-class KELCache:
-    """Process-lifetime in-memory cache for ``KeyEventLog.build_from_public_key``.
-
-    The KEL rebuild is an O(2 × rotations) sequence of MongoDB aggregation
-    round-trips, and it is frequently re-requested for the same public key
-    within a short window (P2P handshake, the key-rotation polling loop, and
-    repeated mempool/block lookups).  This cache collapses those repeats into a
-    single rebuild.
-
-    Safety contract:
-    * Results are keyed on ``(public_key, onchain_only, follow_recovery,
-      segment_only)`` — the full set of parameters that affect the walk.
-    * The cache is only consulted / populated on **non-block-validation** paths.
-      Block verification must never trust a cached KEL (a freshly mined block
-      must be reflected immediately), so the validation call sites pass
-      ``use_cache=False``.  See ``KeyEvent.verify`` and ``Block.verify_transactions``.
-    * It is invalidated explicitly: ``clear()`` (full) and ``invalidate(pkh)``
-      (single key) are called by the write paths that introduce new KEL entries
-      (block acceptance, mempool add/remove).  There is no TTL — staleness is
-      prevented by explicit invalidation rather than time.
-    """
-
-    _store: dict = {}
-
-    @classmethod
-    def _key(cls, public_key, onchain_only, follow_recovery, segment_only):
-        return (public_key, onchain_only, follow_recovery, segment_only)
-
-    @classmethod
-    def get(cls, public_key, onchain_only, follow_recovery, segment_only):
-        return cls._store.get(
-            cls._key(public_key, onchain_only, follow_recovery, segment_only)
-        )
-
-    @classmethod
-    def set(cls, public_key, onchain_only, follow_recovery, segment_only, log):
-        cls._store[
-            cls._key(public_key, onchain_only, follow_recovery, segment_only)
-        ] = log
-        return log
-
-    @classmethod
-    def invalidate(cls, public_key=None):
-        """Drop cache entries.  When *public_key* is given only that key's
-        entries are dropped; otherwise the entire cache is cleared."""
-        if public_key is None:
-            cls._store.clear()
-        else:
-            cls._store = {k: v for k, v in cls._store.items() if k[0] != public_key}
-
-    @classmethod
-    def clear(cls):
-        cls._store.clear()
-
-
 class KELHashCollection:
     def __init__(self):
         self.twice_prerotated_key_hashes = {}
@@ -1053,9 +999,10 @@ class KeyEventLog:
         mempool_result = None
         if not result and key_event.txn.prev_public_key_hash:
             mempool_result = await key_event.get_mempool_parent()
-        entire_log = await KeyEventLog.build_from_public_key(
-            key_event.txn.public_key, use_cache=False
-        )
+        # Only the tip of key_event.txn's own KEL is ever needed below (every
+        # use is entire_log[-1]), so get_latest is used instead of rebuilding
+        # the whole chain.
+        latest_entry = await KeyEventLog.get_latest(key_event.txn.public_key)
         if result and result["key_event"]:
             # step 1.1: If found, check that this entry is the latest entry, if not, raise exception
             onchain_child = await result["key_event"].get_onchain_child()
@@ -1095,7 +1042,7 @@ class KeyEventLog:
                 and len(key_event.txn.outputs) == 1
                 and (
                     key_event.txn.outputs[0].to == key_event.txn.prerotated_key_hash
-                    or key_event.txn.outputs[0].to == entire_log[-1].prerotated_key_hash
+                    or key_event.txn.outputs[0].to == latest_entry.prerotated_key_hash
                 )
                 and key_event.txn.prev_public_key_hash
             ):
@@ -1181,9 +1128,9 @@ class KeyEventLog:
                 and (
                     key_event.txn.outputs[0].to == key_event.txn.prerotated_key_hash
                     or (
-                        entire_log
+                        latest_entry
                         and key_event.txn.outputs[0].to
-                        == entire_log[-1].prerotated_key_hash
+                        == latest_entry.prerotated_key_hash
                     )
                 )
                 and key_event.txn.prev_public_key_hash
@@ -1499,7 +1446,7 @@ class KeyEventLog:
             # we don't need to check if the onchain key event is an inception or not.
             # If prev_hash has is not set, then it must be an inception which is enforced by rule 1
             self.base_key_event.verify_inception(onchain=True)
-            self.confirming_key_event.verify_confirming(entire_log)
+            self.confirming_key_event.verify_confirming(latest_entry)
             self.verify_links()
 
         # 3. onchain confirming and confirming
@@ -1512,8 +1459,8 @@ class KeyEventLog:
             and self.confirming_key_event.flag == KeyEventFlag.CONFIRMING
             and self.confirming_key_event.status == KeyEventChainStatus.MEMPOOL
         ):
-            self.base_key_event.verify_confirming(entire_log, onchain=True)
-            self.confirming_key_event.verify_confirming(entire_log)
+            self.base_key_event.verify_confirming(latest_entry, onchain=True)
+            self.confirming_key_event.verify_confirming(latest_entry)
             self.verify_links()
 
         # 3b. Onchain unconfirmed base + confirming (mempool).
@@ -1530,7 +1477,7 @@ class KeyEventLog:
             and self.confirming_key_event.flag == KeyEventFlag.CONFIRMING
             and self.confirming_key_event.status == KeyEventChainStatus.MEMPOOL
         ):
-            self.confirming_key_event.verify_confirming(entire_log)
+            self.confirming_key_event.verify_confirming(latest_entry)
             self.verify_links()
 
         # 4. Inception, unconfirmed, and confirming
@@ -1547,7 +1494,7 @@ class KeyEventLog:
         ):
             self.base_key_event.verify_inception(onchain=True)
             self.unconfirmed_key_event.verify_unconfirmed()
-            self.confirming_key_event.verify_confirming(entire_log)
+            self.confirming_key_event.verify_confirming(latest_entry)
             self.verify_links()
 
         # 5. Onchain confirming, unconfirmed, and confirming
@@ -1562,9 +1509,9 @@ class KeyEventLog:
             and self.confirming_key_event.flag == KeyEventFlag.CONFIRMING
             and self.confirming_key_event.status == KeyEventChainStatus.MEMPOOL
         ):
-            self.base_key_event.verify_confirming(entire_log, onchain=True)
+            self.base_key_event.verify_confirming(latest_entry, onchain=True)
             self.unconfirmed_key_event.verify_unconfirmed()
-            self.confirming_key_event.verify_confirming(entire_log)
+            self.confirming_key_event.verify_confirming(latest_entry)
             self.verify_links()
 
         # 6. Mempool inception + confirming (mempool) — inception not yet mined
@@ -1578,7 +1525,7 @@ class KeyEventLog:
             and self.confirming_key_event.status == KeyEventChainStatus.MEMPOOL
         ):
             self.base_key_event.verify_inception()
-            self.confirming_key_event.verify_confirming(entire_log)
+            self.confirming_key_event.verify_confirming(latest_entry)
             self.verify_links()
 
         # 7. Mempool inception + unconfirmed (mempool) + confirming (mempool)
@@ -1595,7 +1542,7 @@ class KeyEventLog:
         ):
             self.base_key_event.verify_inception()
             self.unconfirmed_key_event.verify_unconfirmed()
-            self.confirming_key_event.verify_confirming(entire_log)
+            self.confirming_key_event.verify_confirming(latest_entry)
             self.verify_links()
 
         # 8. Mempool confirming base (prev rotation unconfirmed/not yet mined) + confirming (mempool)
@@ -1608,8 +1555,8 @@ class KeyEventLog:
             and self.confirming_key_event.flag == KeyEventFlag.CONFIRMING
             and self.confirming_key_event.status == KeyEventChainStatus.MEMPOOL
         ):
-            self.base_key_event.verify_confirming(entire_log)
-            self.confirming_key_event.verify_confirming(entire_log)
+            self.base_key_event.verify_confirming(latest_entry)
+            self.confirming_key_event.verify_confirming(latest_entry)
             self.verify_links()
 
         # 9. Mempool confirming base + unconfirmed (mempool) + confirming (mempool)
@@ -1624,9 +1571,9 @@ class KeyEventLog:
             and self.confirming_key_event.flag == KeyEventFlag.CONFIRMING
             and self.confirming_key_event.status == KeyEventChainStatus.MEMPOOL
         ):
-            self.base_key_event.verify_confirming(entire_log)
+            self.base_key_event.verify_confirming(latest_entry)
             self.unconfirmed_key_event.verify_unconfirmed()
-            self.confirming_key_event.verify_confirming(entire_log)
+            self.confirming_key_event.verify_confirming(latest_entry)
             self.verify_links()
 
         else:
@@ -1787,7 +1734,6 @@ class KeyEventLog:
         onchain_only=False,
         follow_recovery=True,
         segment_only=False,
-        use_cache=True,
     ):
         """Build the ordered KEL for *public_key*.
 
@@ -1803,48 +1749,568 @@ class KeyEventLog:
         and continues walking into the new KEL.  Set False when validating a
         recovery itself (to avoid feedback loops) or when consumers want only
         the segment up to the first recovery boundary.
-
-        *use_cache* (default True) consults / populates :class:`KELCache`.  It
-        MUST be False on block-validation paths, which must always read fresh
-        from Mongo so a newly mined block is reflected immediately.
         """
         config = Config()
-        if use_cache:
-            cached = KELCache.get(
-                public_key, onchain_only, follow_recovery, segment_only
-            )
-            if cached is not None:
-                config.app_log.debug(
-                    "build_from_public_key cache HIT public_key=%s onchain_only=%s "
-                    "follow_recovery=%s segment_only=%s len=%d",
-                    public_key[:16],
-                    onchain_only,
-                    follow_recovery,
-                    segment_only,
-                    len(cached),
-                )
-                return cached
-            config.app_log.debug(
-                "build_from_public_key cache MISS public_key=%s onchain_only=%s "
-                "follow_recovery=%s segment_only=%s",
-                public_key[:16],
-                onchain_only,
-                follow_recovery,
-                segment_only,
-            )
+        inception = await KeyEventLog.get_inception(
+            public_key,
+            onchain_only=onchain_only,
+            follow_recovery=follow_recovery,
+            segment_only=segment_only,
+        )
+        if inception is None:
+            return KELResult([], frozenset())
 
-        log = []
-        # Addresses that have appeared in this KEL (the on-chain
-        # prerotated_key_hash of each entry).  Built incrementally as the walk
-        # progresses and exposed via KELResult.addresses so consumers can do an
-        # O(1) membership test instead of re-scanning the whole log.
+        log, addresses = await KeyEventLog._walk_forward_and_tag(
+            inception,
+            public_key,
+            onchain_only=onchain_only,
+            follow_recovery=follow_recovery,
+        )
+
+        result = KELResult(log, frozenset(addresses))
+        config.app_log.debug(
+            "build_from_public_key done public_key=%s onchain_only=%s "
+            "follow_recovery=%s segment_only=%s log_len=%d addresses=%d",
+            public_key[:16],
+            onchain_only,
+            follow_recovery,
+            segment_only,
+            len(log),
+            len(addresses),
+        )
+
+        return result
+
+    @staticmethod
+    async def _walk_forward_and_tag(
+        inception, public_key, onchain_only=False, follow_recovery=True
+    ):
+        """Walk forward from *inception* via ``prerotated_key_hash`` links,
+        appending every subsequent KEL entry — on-chain, then mempool, then
+        (when *follow_recovery* is True) recovery successors — until the
+        chain is exhausted.  Each entry is tagged (``inception_public_key_hash``
+        and a sequential ``counter``) and persisted via
+        ``_tag_kel_entry_in_mongo`` right in this loop, as it is discovered —
+        there is no separate pass over the finished list afterward.
+
+        This is deliberately kept separate from ``get_inception`` (which
+        only locates the inception) so each concern can be tested and reused
+        independently.  Returns ``(log, addresses)`` where ``log`` starts
+        with *inception* and ``addresses`` is the set of on-chain
+        ``prerotated_key_hash`` values seen along the way.  This is the
+        slow-path building block used by both ``build_from_public_key`` and
+        ``get_latest`` when an untagged KEL needs to be walked and tagged
+        from scratch.
+        """
+        config = Config()
+        inception_pkh = inception.public_key_hash
+        counter = 0
+        inception.inception_public_key_hash = inception_pkh
+        inception.counter = counter
+        await KeyEventLog._tag_kel_entry_in_mongo(inception)
+
+        log = [inception]
         addresses = set()
-        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
-        inception = None
-        backward_iter = 0
+        if not getattr(inception, "mempool", False):
+            addresses.add(inception.prerotated_key_hash)
+        txn = inception
+        seen_addresses = {txn.public_key_hash}
         forward_iter = 0
+
         while True:
-            backward_iter += 1
+            forward_iter += 1
+            address = txn.prerotated_key_hash
+            if address in seen_addresses:
+                config.app_log.warning(
+                    "_walk_forward_and_tag iter=%d public_key=%s "
+                    "CYCLE DETECTED address=%s already in seen_addresses "
+                    "log_len=%d",
+                    forward_iter,
+                    public_key[:16],
+                    address,
+                    len(log),
+                )
+                break
+            seen_addresses.add(address)
+            result = config.mongo.async_db.blocks.aggregate(
+                [
+                    {
+                        "$match": {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
+                    },
+                    {"$unwind": "$transactions"},
+                    {
+                        "$match": {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
+                    },
+                ]
+            )
+            res = await result.to_list(length=1)
+            if res:
+                txn = Transaction.from_dict(res[0]["transactions"])
+                counter += 1
+                txn.inception_public_key_hash = inception_pkh
+                txn.counter = counter
+                await KeyEventLog._tag_kel_entry_in_mongo(txn)
+                log.append(txn)
+                config.app_log.debug(
+                    "_walk_forward_and_tag iter=%d address=%s found_onchain "
+                    "txn=%s log_len=%d",
+                    forward_iter,
+                    address,
+                    txn.transaction_signature[:16],
+                    len(log),
+                )
+                if not getattr(txn, "mempool", False):
+                    addresses.add(txn.prerotated_key_hash)
+                continue
+
+            if not onchain_only:
+                result_mempool = (
+                    await config.mongo.async_db.miner_transactions.find_one(
+                        {MempoolQueryFields.PUBLIC_KEY_HASH.value: address},
+                    )
+                )
+                if result_mempool:
+                    txn = Transaction.from_dict(result_mempool)
+                    txn.mempool = True
+                    counter += 1
+                    txn.inception_public_key_hash = inception_pkh
+                    txn.counter = counter
+                    await KeyEventLog._tag_kel_entry_in_mongo(txn)
+                    log.append(txn)
+                    config.app_log.debug(
+                        "_walk_forward_and_tag iter=%d address=%s found_mempool "
+                        "txn=%s log_len=%d",
+                        forward_iter,
+                        address,
+                        txn.transaction_signature[:16],
+                        len(log),
+                    )
+                    continue
+
+            if follow_recovery:
+                successor = await KeyEventLog.find_recovery_successor(
+                    log[-1].public_key_hash, onchain_only=onchain_only
+                )
+                if successor is not None:
+                    counter += 1
+                    successor.inception_public_key_hash = inception_pkh
+                    successor.counter = counter
+                    await KeyEventLog._tag_kel_entry_in_mongo(successor)
+                    log.append(successor)
+                    config.app_log.debug(
+                        "_walk_forward_and_tag iter=%d address=%s "
+                        "follow_recovery successor=%s log_len=%d",
+                        forward_iter,
+                        address,
+                        successor.transaction_signature[:16],
+                        len(log),
+                    )
+                    if not getattr(successor, "mempool", False):
+                        addresses.add(successor.prerotated_key_hash)
+                    txn = successor
+                    continue
+            config.app_log.debug(
+                "_walk_forward_and_tag iter=%d address=%s chain_exhausted "
+                "log_len=%d",
+                forward_iter,
+                address,
+                len(log),
+            )
+            break
+
+        return log, addresses
+
+    @staticmethod
+    async def is_same_kel(public_key_hash_a, public_key_hash_b, onchain_only=False):
+        """Return True if *public_key_a* and *public_key_b* are in the same
+        KEL (i.e., share the same inception), False otherwise.
+
+        This is a convenience wrapper around ``get_inception`` that avoids
+        building the full KELs for both keys.
+        """
+        inception_a = await KeyEventLog.get_inception(
+            address=public_key_hash_a, onchain_only=onchain_only
+        )
+        inception_b = await KeyEventLog.get_inception(
+            address=public_key_hash_b, onchain_only=onchain_only
+        )
+        if inception_a is None or inception_b is None:
+            return False
+        return getattr(inception_a, "inception_public_key_hash", None) == getattr(
+            inception_b, "inception_public_key_hash", None
+        )
+
+    @staticmethod
+    async def get_latest(
+        public_key, onchain_only=False, follow_recovery=True, segment_only=False
+    ):
+        """Return the latest (tip) KEL entry for *public_key* — the mirror
+        image of ``get_inception``.
+
+        Locates the entry whose own ``public_key_hash`` equals this key's
+        address (checking ``blocks`` then ``miner_transactions``, exactly
+        like a single step of the forward walk).  If that entry is already
+        tagged with ``inception_public_key_hash``/``counter``, the tip is
+        fetched directly via :meth:`_latest_from_inception_tag` — a single
+        sorted query, no walking required.
+
+        If the entry has not been tagged yet, ``get_inception`` is used to
+        walk back to the true inception, the KEL is then walked forward and
+        tagged end to end (the same bookkeeping ``build_from_public_key``
+        performs), and the last entry reached is returned.  Once this has
+        run once for a given KEL, every subsequent ``get_latest`` call for
+        any key in that KEL hits the fast path above.
+        """
+        config = Config()
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+
+        result = config.mongo.async_db.blocks.aggregate(
+            [
+                {
+                    "$match": {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
+                },
+                {"$unwind": "$transactions"},
+                {
+                    "$match": {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
+                },
+            ]
+        )
+        res = await result.to_list(length=1)
+        if res:
+            txn = Transaction.from_dict(res[0]["transactions"])
+        else:
+            if onchain_only:
+                return None
+            result_mempool = await config.mongo.async_db.miner_transactions.find_one(
+                {MempoolQueryFields.PUBLIC_KEY_HASH.value: address},
+            )
+            if not result_mempool:
+                return None
+            txn = Transaction.from_dict(result_mempool)
+            txn.mempool = True
+
+        if (
+            getattr(txn, "inception_public_key_hash", None)
+            and getattr(txn, "counter", None) is not None
+        ):
+            config.app_log.debug(
+                "get_latest public_key=%s address=%s already tagged "
+                "inception_public_key_hash=%s counter=%s — fast lookup",
+                public_key[:16],
+                address,
+                txn.inception_public_key_hash,
+                txn.counter,
+            )
+            latest = await KeyEventLog._latest_from_inception_tag(
+                txn.inception_public_key_hash, onchain_only=onchain_only
+            )
+            if latest is not None:
+                walked = await KeyEventLog._walk_forward(
+                    latest, public_key, onchain_only=onchain_only
+                )
+                return walked
+            # Tag existed but the sorted lookup came up empty (shouldn't
+            # normally happen) — fall through to the slow path below.
+
+        config.app_log.debug(
+            "get_latest public_key=%s address=%s untagged — walking back "
+            "via get_inception to orient and tag the KEL",
+            public_key[:16],
+            address,
+        )
+        inception = await KeyEventLog.get_inception(
+            public_key,
+            onchain_only=onchain_only,
+            follow_recovery=follow_recovery,
+            segment_only=segment_only,
+        )
+        if inception is None:
+            return txn
+
+        config.app_log.debug(
+            "get_latest public_key=%s inception_tagged=%s — walking forward "
+            "and tagging every entry",
+            public_key[:16],
+            bool(getattr(inception, "inception_public_key_hash", None)),
+        )
+        return await KeyEventLog._walk_forward(
+            inception,
+            public_key,
+            onchain_only=onchain_only,
+            follow_recovery=follow_recovery,
+        )
+
+    @staticmethod
+    async def _walk_forward(
+        start_entry, public_key, onchain_only=False, follow_recovery=True
+    ):
+        """Walk forward from *start_entry* via ``prerotated_key_hash`` links,
+        tagging any untagged successors until the chain is exhausted.
+
+        If *start_entry* is not yet tagged (no ``inception_public_key_hash``),
+        it is tagged as the inception (counter=0) before the walk begins.
+        Already-tagged entries (e.g. the tip returned by
+        ``_latest_from_inception_tag``) are not retagged — the walk starts
+        from ``start_entry.prerotated_key_hash`` and continues with
+        ``start_entry.counter + 1``, ``start_entry.counter + 2``, etc.
+
+        Returns the final tip entry reached (which may be *start_entry*
+        itself if there are no untagged successors).
+        """
+        config = Config()
+        inception_pkh = getattr(start_entry, "inception_public_key_hash", None)
+        counter = getattr(start_entry, "counter", None)
+
+        if inception_pkh is None or counter is None:
+            inception_pkh = start_entry.public_key_hash
+            start_entry.inception_public_key_hash = inception_pkh
+            start_entry.counter = 0
+            await KeyEventLog._tag_kel_entry_in_mongo(start_entry)
+            counter = 0
+
+        txn = start_entry
+        forward_iter = 0
+        result_txn = start_entry
+
+        while True:
+            forward_iter += 1
+            address = txn.prerotated_key_hash
+
+            result = config.mongo.async_db.blocks.aggregate(
+                [
+                    {
+                        "$match": {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
+                    },
+                    {"$unwind": "$transactions"},
+                    {
+                        "$match": {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
+                    },
+                ]
+            )
+            res = await result.to_list(length=1)
+            if res:
+                candidate = Transaction.from_dict(res[0]["transactions"])
+                candidate_inception = getattr(
+                    candidate, "inception_public_key_hash", None
+                )
+                if candidate_inception == inception_pkh:
+                    config.app_log.debug(
+                        "_walk_forward iter=%d address=%s "
+                        "already_tagged counter=%d — stop",
+                        forward_iter,
+                        address,
+                        candidate.counter,
+                    )
+                    result_txn = candidate
+                    break
+                if candidate_inception is not None:
+                    config.app_log.debug(
+                        "_walk_forward iter=%d address=%s "
+                        "different_inception=%s — stop",
+                        forward_iter,
+                        address,
+                        candidate_inception[:16],
+                    )
+                    break
+                else:
+                    counter += 1
+                    candidate.inception_public_key_hash = inception_pkh
+                    candidate.counter = counter
+                    await KeyEventLog._tag_kel_entry_in_mongo(candidate)
+                    config.app_log.debug(
+                        "_walk_forward iter=%d address=%s "
+                        "found_onchain txn=%s counter=%d",
+                        forward_iter,
+                        address,
+                        candidate.transaction_signature[:16],
+                        counter,
+                    )
+                    txn = candidate
+                    continue
+
+            if not onchain_only:
+                result_mempool = (
+                    await config.mongo.async_db.miner_transactions.find_one(
+                        {MempoolQueryFields.PUBLIC_KEY_HASH.value: address},
+                    )
+                )
+                if result_mempool:
+                    candidate = Transaction.from_dict(result_mempool)
+                    candidate.mempool = True
+                    candidate_inception = getattr(
+                        candidate, "inception_public_key_hash", None
+                    )
+                    if candidate_inception == inception_pkh:
+                        config.app_log.debug(
+                            "_walk_forward iter=%d address=%s "
+                            "mempool already_tagged counter=%d — stop",
+                            forward_iter,
+                            address,
+                            candidate.counter,
+                        )
+                        result_txn = candidate
+                        break
+                    if candidate_inception is not None:
+                        config.app_log.debug(
+                            "_walk_forward iter=%d address=%s "
+                            "mempool different_inception=%s — stop",
+                            forward_iter,
+                            address,
+                            candidate_inception[:16],
+                        )
+                        break
+                    counter += 1
+                    candidate.inception_public_key_hash = inception_pkh
+                    candidate.counter = counter
+                    await KeyEventLog._tag_kel_entry_in_mongo(candidate)
+                    config.app_log.debug(
+                        "_walk_forward iter=%d address=%s "
+                        "found_mempool txn=%s counter=%d",
+                        forward_iter,
+                        address,
+                        candidate.transaction_signature[:16],
+                        counter,
+                    )
+                    txn = candidate
+                    continue
+
+            if follow_recovery:
+                successor = await KeyEventLog.find_recovery_successor(
+                    txn.public_key_hash, onchain_only=onchain_only
+                )
+                if successor is not None:
+                    counter += 1
+                    successor.inception_public_key_hash = inception_pkh
+                    successor.counter = counter
+                    await KeyEventLog._tag_kel_entry_in_mongo(successor)
+                    config.app_log.debug(
+                        "_walk_forward iter=%d address=%s "
+                        "follow_recovery successor=%s counter=%d",
+                        forward_iter,
+                        address,
+                        successor.transaction_signature[:16],
+                        counter,
+                    )
+                    txn = successor
+                    continue
+
+            config.app_log.debug(
+                "_walk_forward iter=%d address=%s chain_exhausted",
+                forward_iter,
+                address,
+            )
+            break
+
+        return result_txn
+
+    @staticmethod
+    async def _latest_from_inception_tag(inception_pkh, onchain_only=False):
+        """Return the highest-``counter`` entry tagged with *inception_pkh*.
+
+        Checks ``blocks`` (confirmed, sorted by ``counter`` descending) and,
+        unless *onchain_only*, ``miner_transactions`` (mempool) — returning
+        whichever of the two has the higher counter.  This is the fast path
+        ``get_latest`` uses once a KEL has been fully tagged: no walking is
+        needed, just one sorted query per collection.
+        """
+        config = Config()
+        latest = None
+
+        cursor = config.mongo.async_db.blocks.aggregate(
+            [
+                {"$match": {"transactions.inception_public_key_hash": inception_pkh}},
+                {"$unwind": "$transactions"},
+                {"$match": {"transactions.inception_public_key_hash": inception_pkh}},
+                {"$sort": {"transactions.counter": -1}},
+                {"$limit": 1},
+            ]
+        )
+        rows = await cursor.to_list(length=1)
+        if rows:
+            latest = Transaction.from_dict(rows[0]["transactions"])
+
+        if not onchain_only:
+            mempool_txn = await config.mongo.async_db.miner_transactions.find_one(
+                {"inception_public_key_hash": inception_pkh}, sort=[("counter", -1)]
+            )
+            if mempool_txn:
+                mempool_txn = Transaction.from_dict(mempool_txn)
+                mempool_txn.mempool = True
+                if latest is None or mempool_txn.counter > latest.counter:
+                    latest = mempool_txn
+
+        return latest
+
+    @staticmethod
+    async def _safe_await(result):
+        """Await *result* if it is a coroutine, otherwise return it unchanged.
+
+        Test suites replace the Motor collection helpers with ``MagicMock``
+        instances, which are not awaitable.  This helper lets the same code
+        path work against both real Mongo and the test doubles.
+        """
+        try:
+            return await result
+        except TypeError:
+            return result
+
+    @staticmethod
+    async def get_inception(
+        public_key=None,
+        address=None,
+        onchain_only=False,
+        follow_recovery=True,
+        segment_only=False,
+    ):
+        """Return the inception transaction for *public_key*.
+
+        Fast path: if any entry for this public_key already has
+        ``inception_public_key_hash`` set, query for ``counter == 0`` on
+        that tag and return the inception directly.
+
+        Slow path: walk backward via ``prev_public_key_hash`` to find the
+        inception.  The caller is responsible for tagging the full KEL after
+        the forward walk.
+        """
+        config = Config()
+        if not public_key and not address:
+            raise ValueError("Either public_key or address must be provided")
+        if not address:
+            address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+
+        tagged = await KeyEventLog._safe_await(
+            config.mongo.async_db.blocks.find_one(
+                {
+                    "$or": [
+                        {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
+                        {BlocksQueryFields.PREROTATED_KEY_HASH.value: address},
+                        {BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: address},
+                    ],
+                    "transactions.inception_public_key_hash": {"$exists": True},
+                },
+                {"transactions.$": 1},
+            )
+        )
+        if isinstance(tagged, dict) and tagged.get("transactions"):
+            inception_pkh = tagged["transactions"][0].get("inception_public_key_hash")
+            if inception_pkh:
+                inception_doc = await KeyEventLog._safe_await(
+                    config.mongo.async_db.blocks.find_one(
+                        {
+                            "transactions.inception_public_key_hash": inception_pkh,
+                            "transactions.counter": 0,
+                        },
+                        {"transactions.$": 1},
+                    )
+                )
+                if isinstance(inception_doc, dict) and inception_doc.get(
+                    "transactions"
+                ):
+                    inception = Transaction.from_dict(inception_doc["transactions"][0])
+                    inception.inception_public_key_hash = inception_pkh
+                    return inception
+
+        while True:
             result = config.mongo.async_db.blocks.aggregate(
                 [
                     {
@@ -1858,9 +2324,7 @@ class KeyEventLog:
                             ]
                         },
                     },
-                    {
-                        "$unwind": "$transactions",
-                    },
+                    {"$unwind": "$transactions"},
                     {
                         "$match": {
                             "$or": [
@@ -1877,35 +2341,14 @@ class KeyEventLog:
             res = await result.to_list(length=1)
             if res:
                 txn = Transaction.from_dict(res[0]["transactions"])
-                config.app_log.debug(
-                    "build_from_public_key backward iter=%d address=%s found_onchain "
-                    "txn=%s prev_public_key_hash=%s",
-                    backward_iter,
-                    address,
-                    txn.transaction_signature[:16],
-                    txn.prev_public_key_hash[:16] if txn.prev_public_key_hash else None,
-                )
-                # When segment_only is True, treat a recovers-inception as the
-                # inception boundary for this KEL segment so the backward walk
-                # does not cross into the delegator KEL's history.  When
-                # segment_only is False (default), follow prev_public_key_hash
-                # across recovery boundaries to reach the original inception.
                 if not txn.prev_public_key_hash or (
                     segment_only and is_recovers_inception(txn)
                 ):
-                    inception = txn
-                    break
+                    return txn
                 address = txn.prev_public_key_hash
             else:
-                # This case for pending inception transactions
                 if onchain_only:
-                    config.app_log.debug(
-                        "build_from_public_key backward iter=%d address=%s "
-                        "onchain_only=True stopping here",
-                        backward_iter,
-                        address,
-                    )
-                    break
+                    return None
                 result_mempool = await config.mongo.async_db.miner_transactions.find_one(
                     {
                         "$or": [
@@ -1918,158 +2361,49 @@ class KeyEventLog:
                     },
                 )
                 if not result_mempool:
-                    config.app_log.debug(
-                        "build_from_public_key backward iter=%d address=%s "
-                        "not found onchain or mempool stopping here",
-                        backward_iter,
-                        address,
-                    )
-                    break
+                    return None
                 txn = Transaction.from_dict(result_mempool)
                 txn.mempool = True
-                config.app_log.debug(
-                    "build_from_public_key backward iter=%d address=%s found_mempool "
-                    "txn=%s prev_public_key_hash=%s",
-                    backward_iter,
-                    address,
-                    txn.transaction_signature[:16],
-                    txn.prev_public_key_hash[:16] if txn.prev_public_key_hash else None,
-                )
                 if not txn.prev_public_key_hash or (
                     segment_only and is_recovers_inception(txn)
                 ):
-                    inception = txn
-                    break
+                    return txn
                 address = txn.prev_public_key_hash
-        if inception:
-            log.append(inception)
-            if not getattr(inception, "mempool", False):
-                addresses.add(inception.prerotated_key_hash)
-            txn = inception
-            # Guard against cycles in the KEL walk.  When onchain_only is False
-            # (e.g. during block verification) the walk also follows mempool
-            # entries, and a repeated public_key_hash would otherwise loop
-            # forever between on-chain and mempool copies of the same entry.
-            seen_addresses = {txn.public_key_hash}
-            forward_iter = 0
-            while True:
-                forward_iter += 1
-                address = txn.prerotated_key_hash
-                if address in seen_addresses:
-                    config.app_log.warning(
-                        "build_from_public_key forward iter=%d public_key=%s "
-                        "CYCLE DETECTED address=%s already in seen_addresses "
-                        "log_len=%d",
-                        forward_iter,
-                        public_key[:16],
-                        address,
-                        len(log),
-                    )
-                    break
-                seen_addresses.add(address)
-                result = config.mongo.async_db.blocks.aggregate(
-                    [
-                        {
-                            "$match": {
-                                BlocksQueryFields.PUBLIC_KEY_HASH.value: address
-                            },
-                        },
-                        {
-                            "$unwind": "$transactions",
-                        },
-                        {
-                            "$match": {
-                                BlocksQueryFields.PUBLIC_KEY_HASH.value: address
-                            },
-                        },
-                    ]
+
+    @staticmethod
+    async def _tag_kel_entry_in_mongo(entry):
+        """Persist the node-side KEL bookkeeping fields for *entry* so that
+        future ``build_from_public_key`` walks can use them as short-cuts.
+
+        Writes ``inception_public_key_hash`` and ``counter`` to whichever
+        collection holds the canonical copy of the transaction:
+        ``miner_transactions`` for mempool entries, ``blocks`` for confirmed
+        entries.  ``key_event_log`` is intentionally excluded because it can
+        contain inter-anchor rotations whose counters would be out of sequence
+        with the main KEL.
+        """
+        config = Config()
+        try:
+            if getattr(entry, "mempool", False):
+                await config.mongo.async_db.miner_transactions.update_one(
+                    {"id": entry.transaction_signature},
+                    {
+                        "$set": {
+                            "inception_public_key_hash": entry.inception_public_key_hash,
+                            "counter": entry.counter,
+                        }
+                    },
                 )
-                res = await result.to_list(length=1)
-                if res:
-                    txn = Transaction.from_dict(res[0]["transactions"])
-                    log.append(txn)
-                    config.app_log.debug(
-                        "build_from_public_key forward iter=%d address=%s found_onchain "
-                        "txn=%s log_len=%d",
-                        forward_iter,
-                        address,
-                        txn.transaction_signature[:16],
-                        len(log),
-                    )
-                    if not getattr(txn, "mempool", False):
-                        addresses.add(txn.prerotated_key_hash)
-                    continue
-
-                if not onchain_only:
-                    result_mempool = (
-                        await config.mongo.async_db.miner_transactions.find_one(
-                            {MempoolQueryFields.PUBLIC_KEY_HASH.value: address},
-                        )
-                    )
-                    if result_mempool:
-                        txn = Transaction.from_dict(result_mempool)
-                        txn.mempool = True
-                        log.append(txn)
-                        config.app_log.debug(
-                            "build_from_public_key forward iter=%d address=%s found_mempool "
-                            "txn=%s log_len=%d",
-                            forward_iter,
-                            address,
-                            txn.transaction_signature[:16],
-                            len(log),
-                        )
-                        continue
-
-                # Natural rotation chain exhausted.  If recovery-following is
-                # enabled, look for a {"recovers": ...} successor whose
-                # prev_public_key_hash references the current tip's pkh and
-                # continue walking forward from there.
-                if follow_recovery:
-                    successor = await KeyEventLog.find_recovery_successor(
-                        log[-1].public_key_hash, onchain_only=onchain_only
-                    )
-                    if successor is not None:
-                        log.append(successor)
-                        config.app_log.debug(
-                            "build_from_public_key forward iter=%d address=%s "
-                            "follow_recovery successor=%s log_len=%d",
-                            forward_iter,
-                            address,
-                            successor.transaction_signature[:16],
-                            len(log),
-                        )
-                        if not getattr(successor, "mempool", False):
-                            addresses.add(successor.prerotated_key_hash)
-                        txn = successor
-                        continue
-                config.app_log.debug(
-                    "build_from_public_key forward iter=%d address=%s chain_exhausted "
-                    "log_len=%d",
-                    forward_iter,
-                    address,
-                    len(log),
+            else:
+                await config.mongo.async_db.blocks.update_one(
+                    {"transactions.id": entry.transaction_signature},
+                    {
+                        "$set": {
+                            "transactions.$[elem].inception_public_key_hash": entry.inception_public_key_hash,
+                            "transactions.$[elem].counter": entry.counter,
+                        }
+                    },
+                    array_filters=[{"elem.id": entry.transaction_signature}],
                 )
-                break  # pragma: no cover
-
-        result = KELResult(log, frozenset(addresses))
-        config.app_log.debug(
-            "build_from_public_key done public_key=%s onchain_only=%s "
-            "follow_recovery=%s segment_only=%s backward_iter=%d forward_iter=%d "
-            "log_len=%d addresses=%d use_cache=%s",
-            public_key[:16],
-            onchain_only,
-            follow_recovery,
-            segment_only,
-            backward_iter,
-            forward_iter,
-            len(log),
-            len(addresses),
-            use_cache,
-        )
-
-        if use_cache:
-            KELCache.set(
-                public_key, onchain_only, follow_recovery, segment_only, result
-            )
-
-        return result
+        except Exception:
+            pass

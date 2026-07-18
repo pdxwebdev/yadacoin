@@ -468,10 +468,13 @@ class TestKeyEventLog(AsyncTestCase):
                     n.identity.public_key = pubkey
 
         class AppLog:
-            def warning(self, message):
+            def warning(self, *args, **kwargs):
                 pass
 
-            def info(self, message):
+            def info(self, *args, **kwargs):
+                pass
+
+            def debug(self, *args, **kwargs):
                 pass
 
         Config().app_log = AppLog()
@@ -1167,12 +1170,12 @@ class TestKeyEventVerifyConfirming(unittest.TestCase):
         ke.config = Config()
         return ke
 
-    def _make_entire_log(self, last_prerotated="1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"):
+    def _make_latest_entry(self, last_prerotated="1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"):
         from unittest.mock import MagicMock
 
-        last = MagicMock()
-        last.prerotated_key_hash = last_prerotated
-        return [last]
+        latest = MagicMock()
+        latest.prerotated_key_hash = last_prerotated
+        return latest
 
     def test_verify_confirming_multiple_outputs_raises(self):
         from unittest.mock import MagicMock
@@ -1181,7 +1184,7 @@ class TestKeyEventVerifyConfirming(unittest.TestCase):
 
         ke = self._make_ke(outputs=[MagicMock(), MagicMock()])
         with self.assertRaises(KeyEventSingleOutputException):
-            ke.verify_confirming(entire_log=self._make_entire_log())
+            ke.verify_confirming(latest_entry=self._make_latest_entry())
 
     def test_verify_confirming_wrong_output_address_raises(self):
         from unittest.mock import MagicMock
@@ -1195,7 +1198,7 @@ class TestKeyEventVerifyConfirming(unittest.TestCase):
         )
         with self.assertRaises(KeyEventPrerotatedKeyHashException):
             ke.verify_confirming(
-                entire_log=self._make_entire_log(last_prerotated="other")
+                latest_entry=self._make_latest_entry(last_prerotated="other")
             )
 
     def test_verify_confirming_non_empty_relationship_raises(self):
@@ -1203,14 +1206,14 @@ class TestKeyEventVerifyConfirming(unittest.TestCase):
 
         ke = self._make_ke(relationship="data")
         with self.assertRaises(KeyEventTransactionRelationshipException):
-            ke.verify_confirming(entire_log=self._make_entire_log())
+            ke.verify_confirming(latest_entry=self._make_latest_entry())
 
     def test_verify_confirming_onchain_with_mempool_status_raises(self):
         from yadacoin.core.keyeventlog import KeyEventChainStatus, KeyEventException
 
         ke = self._make_ke(status=KeyEventChainStatus.MEMPOOL)
         with self.assertRaises(KeyEventException) as ctx:
-            ke.verify_confirming(entire_log=self._make_entire_log(), onchain=True)
+            ke.verify_confirming(latest_entry=self._make_latest_entry(), onchain=True)
         self.assertIn("Invalid status", str(ctx.exception))
 
 
@@ -1550,10 +1553,13 @@ class TestKeyEventVerifyAsyncBranches(AsyncTestCase):
         self.config = Config()
 
         class AppLog:
-            def warning(self, msg):
+            def warning(self, *args, **kwargs):
                 pass
 
-            def info(self, msg):
+            def info(self, *args, **kwargs):
+                pass
+
+            def debug(self, *args, **kwargs):
                 pass
 
         Config().app_log = AppLog()
@@ -1804,10 +1810,13 @@ class TestKeyEventSendsAndParent(AsyncTestCase):
         self.config = Config()
 
         class AppLog:
-            def warning(self, msg):
+            def warning(self, *args, **kwargs):
                 pass
 
-            def info(self, msg):
+            def info(self, *args, **kwargs):
+                pass
+
+            def debug(self, *args, **kwargs):
                 pass
 
         Config().app_log = AppLog()
@@ -1889,10 +1898,13 @@ class TestKELHashCollectionInitNotVerifyOnly(AsyncTestCase):
         self.config = Config()
 
         class AppLog:
-            def warning(self, msg):
+            def warning(self, *args, **kwargs):
                 pass
 
-            def info(self, msg):
+            def info(self, *args, **kwargs):
+                pass
+
+            def debug(self, *args, **kwargs):
                 pass
 
         Config().app_log = AppLog()
@@ -1975,10 +1987,13 @@ class TestKeyEventLogInitAsyncBranches(AsyncTestCase):
         self.config = Config()
 
         class AppLog:
-            def warning(self, msg):
+            def warning(self, *args, **kwargs):
                 pass
 
-            def info(self, msg):
+            def info(self, *args, **kwargs):
+                pass
+
+            def debug(self, *args, **kwargs):
                 pass
 
         Config().app_log = AppLog()
@@ -2765,9 +2780,7 @@ class TestBuildFromPublicKeyBranches(AsyncTestCase):
     """Cover missing branches in KeyEventLog.build_from_public_key using module-level Config mock."""
 
     async def asyncSetUp(self):
-        from yadacoin.core.keyeventlog import KELCache
-
-        KELCache.clear()
+        pass
 
     def _make_cursor(self, docs):
         """Return a mock aggregate cursor whose to_list returns docs."""
@@ -3013,15 +3026,14 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
         Config().network = "regnet"
         self.config = Config()
 
-        from yadacoin.core.keyeventlog import KELCache
-
-        KELCache.clear()
-
         class AppLog:
-            def warning(self, msg):
+            def warning(self, *args, **kwargs):
                 pass
 
-            def info(self, msg):
+            def info(self, *args, **kwargs):
+                pass
+
+            def debug(self, *args, **kwargs):
                 pass
 
         Config().app_log = AppLog()
@@ -3799,10 +3811,13 @@ class TestKeyEventLogCoverageGaps(AsyncTestCase):
         self.config = Config()
 
         class AppLog:
-            def warning(self, msg):
+            def warning(self, *args, **kwargs):
                 pass
 
-            def info(self, msg):
+            def info(self, *args, **kwargs):
+                pass
+
+            def debug(self, *args, **kwargs):
                 pass
 
         Config().app_log = AppLog()
@@ -4080,10 +4095,13 @@ class TestKeyEventLogFinalCoverage(AsyncTestCase):
         self.config = Config()
 
         class AppLog:
-            def warning(self, msg):
+            def warning(self, *args, **kwargs):
                 pass
 
-            def info(self, msg):
+            def info(self, *args, **kwargs):
+                pass
+
+            def debug(self, *args, **kwargs):
                 pass
 
         Config().app_log = AppLog()

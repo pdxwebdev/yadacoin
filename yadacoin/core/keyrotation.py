@@ -368,30 +368,42 @@ class NodeKeyRotationManager:
         from yadacoin.core.keyeventlog import KeyEventLog
 
         try:
-            kel = await KeyEventLog.build_from_public_key(k0_pub_hex)
+            inception = await KeyEventLog.get_inception(k0_pub_hex)
+            latest = (
+                await KeyEventLog.get_latest(k0_pub_hex)
+                if inception is not None
+                else None
+            )
         except Exception as exc:
             config.app_log.error("NodeKeyRotationManager: error checking KEL: %s", exc)
-            kel = []
+            inception = None
+            latest = None
 
-        if kel:
+        if inception is not None:
+            depth = (latest.counter + 1) if latest is not None else 1
+            latest_pkh = (
+                latest.public_key_hash
+                if latest is not None
+                else inception.public_key_hash
+            )
             config.app_log.info(
                 "NodeKeyRotationManager: KEL inception found (depth=%d, inception_id=%s)",
-                len(kel),
-                kel[0].transaction_signature,
+                depth,
+                inception.transaction_signature,
             )
-            self._inception_txn_id = kel[0].transaction_signature
+            self._inception_txn_id = inception.transaction_signature
 
-            self.config.username = kel[0].relationship.username
-            self.config.username_signature = kel[0].relationship.username_signature
+            self.config.username = inception.relationship.username
+            self.config.username_signature = inception.relationship.username_signature
 
             # If already on-chain, finalise immediately
-            inception_onchain = not getattr(kel[0], "mempool", False)
+            inception_onchain = not getattr(inception, "mempool", False)
             if inception_onchain:
-                await self._try_finalise(kel, k0, second_factor)
+                await self._try_finalise(depth, latest_pkh, k0, second_factor)
             else:
                 # Inception is mempool-only; derive K_n from depth-0 so
                 # the node can start signing with it immediately.
-                self._update_active_kel_key(kel, k0, second_factor)
+                self._update_active_kel_key(depth, latest_pkh, k0, second_factor)
         else:
             config.app_log.warning(
                 "NodeKeyRotationManager: no KEL inception found for derived key %s; "
@@ -419,34 +431,32 @@ class NodeKeyRotationManager:
         if not self._inception_complete:
             # Still waiting for inception to confirm on-chain
             try:
-                kel = await KeyEventLog.build_from_public_key(
-                    k0_pub_hex, onchain_only=True
-                )
+                latest = await KeyEventLog.get_latest(k0_pub_hex, onchain_only=True)
             except Exception as exc:
                 config.app_log.debug(
                     "NodeKeyRotationManager: checker KEL error: %s", exc
                 )
                 return
 
-            if not kel:
+            if latest is None:
                 return  # inception not yet mined
 
-            await self._try_finalise(kel, k0, second_factor)
-            await self._check_and_sweep_legacy_funds(kel)
+            await self._try_finalise(
+                latest.counter + 1, latest.public_key_hash, k0, second_factor
+            )
+            await self._check_and_sweep_legacy_funds(latest)
         else:
             # Inception confirmed — skip the expensive KEL build;
             # only check for legacy funds to sweep.
             try:
-                kel = await KeyEventLog.build_from_public_key(
-                    k0_pub_hex, onchain_only=True
-                )
+                latest = await KeyEventLog.get_latest(k0_pub_hex, onchain_only=True)
             except Exception as exc:
                 config.app_log.debug(
                     "NodeKeyRotationManager: checker KEL error: %s", exc
                 )
                 return
-            if kel:
-                await self._check_and_sweep_legacy_funds(kel)
+            if latest is not None:
+                await self._check_and_sweep_legacy_funds(latest)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -706,16 +716,14 @@ class NodeKeyRotationManager:
         from yadacoin.core.keyeventlog import KeyEventLog
 
         try:
-            kel = await KeyEventLog.build_from_public_key(
-                k0_pub_hex, onchain_only=False
-            )
+            latest = await KeyEventLog.get_latest(k0_pub_hex, onchain_only=False)
         except Exception as exc:
             self.config.app_log.debug(
                 "NodeKeyRotationManager: latest KEL anchor lookup error: %s", exc
             )
-            kel = []
+            latest = None
 
-        depth = len(kel)
+        depth = (latest.counter + 1) if latest is not None else 0
         cur = self._k0
         for _ in range(depth):
             cur = derive_secure_path(
@@ -1147,9 +1155,7 @@ class NodeKeyRotationManager:
             .hex()
         )
         try:
-            kel = await KeyEventLog.build_from_public_key(
-                k0_pub_hex, onchain_only=False
-            )
+            latest = await KeyEventLog.get_latest(k0_pub_hex, onchain_only=False)
         except Exception:
             if block:
                 return ReanchorTriplet(
@@ -1163,7 +1169,7 @@ class NodeKeyRotationManager:
                     coinbase_prev_public_key_hash=coinbase_prev_public_key_hash,
                 )
             return
-        if not kel:
+        if not latest:
             if block:
                 return ReanchorTriplet(
                     unconfirmed=None,
@@ -1180,21 +1186,21 @@ class NodeKeyRotationManager:
         # Walk the on-chain KEL to find the current anchor tip (K_n).
         # This determines where the UNCONFIRMED entry signs from.
         cur = k0
-        for ke in kel:
+        for i in range(latest.counter):
             cur = derive_secure_path(
                 cur["private_key"], cur["chain_code"], second_factor
             )
             cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
             cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
             cur_address = str(P2PKHBitcoinAddress.from_pubkey(cur_pub_bytes))
-            while ke.prerotated_key_hash != cur_address:
+            while latest.prerotated_key_hash != cur_address:
                 cur = derive_secure_path(
                     cur["private_key"], cur["chain_code"], second_factor
                 )
                 cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
                 cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
                 cur_address = str(P2PKHBitcoinAddress.from_pubkey(cur_pub_bytes))
-                if ke.prerotated_key_hash == cur_address:
+                if latest.prerotated_key_hash == cur_address:
                     break
         kn = cur
 
@@ -1223,10 +1229,10 @@ class NodeKeyRotationManager:
                 {"anchor_public_key": txn_doc["anchor_public_key"]},
                 sort=[("counter", -1)],
             )
-            i = len(kel) - 1
+            i = latest.counter - 1
             while (
                 curr_address != txn_doc["prerotated_key_hash"]
-                and curr_address != kel[-1].prerotated_key_hash
+                and curr_address != latest.prerotated_key_hash
                 and i < txn_doc["counter"]
             ):
                 jump_cur = derive_secure_path(
@@ -1269,7 +1275,7 @@ class NodeKeyRotationManager:
         jump4_pub_bytes = jump4_priv_obj.public_key.format(compressed=True)
         jump4_address = str(P2PKHBitcoinAddress.from_pubkey(jump4_pub_bytes))
 
-        prev_pkh = kel[-1].public_key_hash
+        prev_pkh = latest.public_key_hash
 
         # --- UNCONFIRMED ---
         unconfirmed_txn = Transaction(
@@ -1527,20 +1533,31 @@ class NodeKeyRotationManager:
                     "NodeKeyRotationManager: inception broadcast error: %s", exc
                 )
 
-    async def _try_finalise(self, kel, k0: dict, second_factor: str):
+    async def _try_finalise(
+        self, depth: int, latest_pkh: str, k0: dict, second_factor: str
+    ):
         """Update the active KEL signing key on config once the inception is
         confirmed on-chain.  The on-chain identity announcement is the
         canonical anchor.
         """
-        self._update_active_kel_key(kel, k0, second_factor)
+        self._update_active_kel_key(depth, latest_pkh, k0, second_factor)
         self._inception_complete = True
 
-    def _update_active_kel_key(self, kel, k0: dict, second_factor: str):
+    def _update_active_kel_key(
+        self, depth: int, latest_pkh: str, k0: dict, second_factor: str
+    ):
         """Derive K_n (one step past the last on-chain KEL entry) and store it
-        on config so all signing operations can use it immediately."""
+        on config so all signing operations can use it immediately.
+
+        *depth* is the total number of entries in the KEL (i.e. what
+        ``len(kel)`` used to be — now derived from the tagged ``counter`` via
+        ``get_latest`` without walking the whole chain), and *latest_pkh* is
+        the latest entry's own ``public_key_hash`` (what ``kel[-1].public_key_hash``
+        used to be).
+        """
         config = self.config
         cur = k0
-        for _ in range(len(kel)):
+        for _ in range(depth):
             cur = derive_secure_path(
                 cur["private_key"], cur["chain_code"], second_factor
             )
@@ -1572,19 +1589,19 @@ class NodeKeyRotationManager:
 
         # Track the previous KEL entry's public_key_hash so ratchet
         # transactions can set prev_public_key_hash correctly.
-        if kel:
-            self._auth_ratchet_prev_pkh = kel[-1].public_key_hash
+        if latest_pkh:
+            self._auth_ratchet_prev_pkh = latest_pkh
 
         config.app_log.info(
             "NodeKeyRotationManager: active KEL signing key updated "
             "(depth=%d, address=%s)",
-            len(kel),
+            depth,
             kn_address,
         )
 
-    async def _check_and_sweep_legacy_funds(self, kel):
+    async def _check_and_sweep_legacy_funds(self, latest):
         """Sweep UTXOs at the legacy node address (P2PKH of config.public_key)
-        to ``kel[-1].prerotated_key_hash``.
+        to ``latest.prerotated_key_hash``.
 
         This transitions funds from the potentially compromised WIF-derived
         address to the KEL-protected address.  The balance cache is keyed by
@@ -1592,7 +1609,7 @@ class NodeKeyRotationManager:
         """
         config = self.config
         legacy_address = config.address
-        sweep_target = kel[-1].prerotated_key_hash
+        sweep_target = latest.prerotated_key_hash
 
         if legacy_address == sweep_target:
             return  # nothing to move

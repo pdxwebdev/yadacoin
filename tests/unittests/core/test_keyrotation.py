@@ -259,8 +259,8 @@ class TestStartupCheckFailures(AsyncTestCase):
                         mock_mn.to_entropy.return_value = b"\x00" * 16
                         mock_mn_cls.return_value = mock_mn
                         with patch(
-                            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-                            new=AsyncMock(return_value=[]),
+                            "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                            new=AsyncMock(return_value=None),
                         ):
                             with patch.object(
                                 mgr, "_create_inception", new=AsyncMock()
@@ -341,8 +341,8 @@ class TestStartupCheckSuccess(AsyncTestCase):
                     mock_mn.to_entropy.return_value = b"\x00" * 16
                     mock_mn_cls.return_value = mock_mn
                     with patch(
-                        "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-                        new=AsyncMock(return_value=[]),
+                        "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                        new=AsyncMock(return_value=None),
                     ):
                         with patch.object(
                             mgr, "_create_inception", new=AsyncMock()
@@ -361,6 +361,7 @@ class TestStartupCheckSuccess(AsyncTestCase):
         mock_entry = MagicMock()
         mock_entry.transaction_signature = "TXNID"
         mock_entry.mempool = True
+        mock_entry.counter = 0
 
         with patch.dict(os.environ, {"SECOND_FACTOR": "mysecret"}):
             with patch("bip32utils.BIP32Key", self._make_bip32_mock()):
@@ -369,11 +370,17 @@ class TestStartupCheckSuccess(AsyncTestCase):
                     mock_mn.to_entropy.return_value = b"\x00" * 16
                     mock_mn_cls.return_value = mock_mn
                     with patch(
-                        "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-                        new=AsyncMock(return_value=[mock_entry]),
+                        "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                        new=AsyncMock(return_value=mock_entry),
                     ):
-                        with patch.object(mgr, "_update_active_kel_key") as mock_update:
-                            await mgr.startup_check()
+                        with patch(
+                            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+                            new=AsyncMock(return_value=mock_entry),
+                        ):
+                            with patch.object(
+                                mgr, "_update_active_kel_key"
+                            ) as mock_update:
+                                await mgr.startup_check()
         mock_update.assert_called_once()
         self.assertEqual(mgr._inception_txn_id, "TXNID")
 
@@ -388,6 +395,7 @@ class TestStartupCheckSuccess(AsyncTestCase):
         mock_entry = MagicMock()
         mock_entry.transaction_signature = "TXNID"
         mock_entry.mempool = False
+        mock_entry.counter = 0
 
         with patch.dict(os.environ, {"SECOND_FACTOR": "mysecret"}):
             with patch("bip32utils.BIP32Key", self._make_bip32_mock()):
@@ -396,13 +404,17 @@ class TestStartupCheckSuccess(AsyncTestCase):
                     mock_mn.to_entropy.return_value = b"\x00" * 16
                     mock_mn_cls.return_value = mock_mn
                     with patch(
-                        "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-                        new=AsyncMock(return_value=[mock_entry]),
+                        "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                        new=AsyncMock(return_value=mock_entry),
                     ):
-                        with patch.object(
-                            mgr, "_try_finalise", new=AsyncMock()
-                        ) as mock_fin:
-                            await mgr.startup_check()
+                        with patch(
+                            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+                            new=AsyncMock(return_value=mock_entry),
+                        ):
+                            with patch.object(
+                                mgr, "_try_finalise", new=AsyncMock()
+                            ) as mock_fin:
+                                await mgr.startup_check()
         mock_fin.assert_awaited_once()
 
     async def test_kel_build_exception_treated_as_empty(self):
@@ -420,7 +432,7 @@ class TestStartupCheckSuccess(AsyncTestCase):
                     mock_mn.to_entropy.return_value = b"\x00" * 16
                     mock_mn_cls.return_value = mock_mn
                     with patch(
-                        "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+                        "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
                         new=AsyncMock(side_effect=Exception("db error")),
                     ):
                         with patch.object(
@@ -491,8 +503,8 @@ class TestStartupCheckSuccess(AsyncTestCase):
                         new=AsyncMock(return_value={"public_key": k0_pub_hex}),
                     ):
                         with patch(
-                            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-                            new=AsyncMock(return_value=[]),
+                            "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                            new=AsyncMock(return_value=None),
                         ):
                             with patch.object(
                                 mgr, "_create_inception", new=AsyncMock()
@@ -514,8 +526,8 @@ class TestBackgroundKelChecker(AsyncTestCase):
         mgr = NodeKeyRotationManager(cfg)
         # _k0 is None by default — should return without error
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-            new=AsyncMock(return_value=[]),
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=None),
         ):
             await mgr.background_kel_checker()  # must not raise
 
@@ -530,8 +542,8 @@ class TestBackgroundKelChecker(AsyncTestCase):
         mgr._inception_complete = False
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-            new=AsyncMock(return_value=[]),
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=None),
         ):
             with patch.object(mgr, "_try_finalise", new=AsyncMock()) as mock_fin:
                 await mgr.background_kel_checker()
@@ -547,9 +559,10 @@ class TestBackgroundKelChecker(AsyncTestCase):
         mgr._inception_complete = False  # not yet complete → finalise path
 
         mock_entry = MagicMock()
+        mock_entry.counter = 0
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-            new=AsyncMock(return_value=[mock_entry]),
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=mock_entry),
         ):
             with patch.object(mgr, "_try_finalise", new=AsyncMock()) as mock_fin:
                 with patch.object(
@@ -569,9 +582,10 @@ class TestBackgroundKelChecker(AsyncTestCase):
         mgr._inception_complete = True  # already done — skip finalise
 
         mock_entry = MagicMock()
+        mock_entry.counter = 0
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-            new=AsyncMock(return_value=[mock_entry]),
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=mock_entry),
         ):
             with patch.object(mgr, "_try_finalise", new=AsyncMock()) as mock_fin:
                 with patch.object(
@@ -591,8 +605,8 @@ class TestBackgroundKelChecker(AsyncTestCase):
         mgr._inception_complete = True
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-            new=AsyncMock(return_value=[]),
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=None),
         ):
             with patch.object(
                 mgr, "_check_and_sweep_legacy_funds", new=AsyncMock()
@@ -610,7 +624,7 @@ class TestBackgroundKelChecker(AsyncTestCase):
         mgr._inception_complete = True
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
             new=AsyncMock(side_effect=Exception("db error")),
         ):
             with patch.object(
@@ -629,7 +643,7 @@ class TestBackgroundKelChecker(AsyncTestCase):
         mgr._inception_complete = False
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
             new=AsyncMock(side_effect=Exception("err")),
         ):
             with patch.object(mgr, "_try_finalise", new=AsyncMock()) as mock_fin:
@@ -659,9 +673,8 @@ class TestUpdateActiveKelKey(unittest.TestCase):
         )
         k0 = {"private_key": priv_bytes, "chain_code": priv_bytes}
         mock_entry = MagicMock()
-        kel = [mock_entry]  # depth 1
 
-        mgr._update_active_kel_key(kel, k0, "factor")
+        mgr._update_active_kel_key(1, mock_entry.public_key_hash, k0, "factor")
 
         # After 1 derive step, kel_anchor_private_key/public_key/address must be set
         self.assertIsNotNone(cfg.kel_anchor_private_key)
@@ -679,9 +692,9 @@ class TestUpdateActiveKelKey(unittest.TestCase):
         mgr = NodeKeyRotationManager(cfg)
 
         k0 = {"private_key": _VALID_PRIV, "chain_code": _VALID_PRIV}
-        kel = []  # depth 0 — loop runs 0 times, cur stays k0
+        # depth 0 — loop runs 0 times, cur stays k0
 
-        mgr._update_active_kel_key(kel, k0, "factor")
+        mgr._update_active_kel_key(0, None, k0, "factor")
 
         # With depth=0, no derivation — kel key IS k0
         expected_pub = CK(_VALID_PRIV).public_key.format(compressed=True).hex()
@@ -701,14 +714,13 @@ class TestUpdateActiveKelKey(unittest.TestCase):
             "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
         )
         k0 = {"private_key": priv_bytes, "chain_code": priv_bytes}
-        kel = []
 
         with patch(
             "yadacoin.core.keyrotation.NodeKeyRotationManager.generate_deterministic_signature",
             side_effect=Exception("sig error"),
         ):
             # Must not raise
-            mgr._update_active_kel_key(kel, k0, "factor")
+            mgr._update_active_kel_key(0, None, k0, "factor")
 
         cfg.app_log.debug.assert_called()
 
@@ -729,7 +741,7 @@ class TestTryFinalise(AsyncTestCase):
         mock_entry.transaction_signature = "INCEPTION_ID"
 
         with patch.object(mgr, "_update_active_kel_key") as mock_update:
-            await mgr._try_finalise([mock_entry], {}, "sf")
+            await mgr._try_finalise(1, mock_entry.public_key_hash, {}, "sf")
 
         mock_update.assert_called_once()
         self.assertTrue(mgr._inception_complete)
@@ -1500,7 +1512,7 @@ class TestQueueReanchor(AsyncTestCase):
                 # Second call: fetch that anchor's current tip. Its
                 # prerotated_key_hash is one derivation past jump_cur's
                 # current address, forcing the while-loop to iterate once.
-                {"prerotated_key_hash": step3_addr},
+                {"prerotated_key_hash": step3_addr, "counter": 5},
             ]
         )
 
@@ -1706,7 +1718,7 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
         mock_entry.prerotated_key_hash = "1SAME"  # same as config.address
 
         with patch.object(mgr, "_sweep_legacy_to_kel", new=AsyncMock()) as mock_sweep:
-            await mgr._check_and_sweep_legacy_funds([mock_entry])
+            await mgr._check_and_sweep_legacy_funds(mock_entry)
         mock_sweep.assert_not_awaited()
 
     async def test_no_utxos_skips_sweep(self):
@@ -1729,7 +1741,7 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
         cfg.BU.get_wallet_unspent_transactions_for_spending = _empty_gen
 
         with patch.object(mgr, "_sweep_legacy_to_kel", new=AsyncMock()) as mock_sweep:
-            await mgr._check_and_sweep_legacy_funds([mock_entry])
+            await mgr._check_and_sweep_legacy_funds(mock_entry)
         mock_sweep.assert_not_awaited()
 
     async def test_with_utxos_calls_sweep(self):
@@ -1753,7 +1765,7 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
         cfg.BU.get_wallet_unspent_transactions_for_spending = _gen
 
         with patch.object(mgr, "_sweep_legacy_to_kel", new=AsyncMock()) as mock_sweep:
-            await mgr._check_and_sweep_legacy_funds([mock_entry])
+            await mgr._check_and_sweep_legacy_funds(mock_entry)
         mock_sweep.assert_awaited_once()
         # Cache must be invalidated after sweep
         self.assertNotIn("1LEGACY", mgr._kel_balance_cache)
@@ -1778,7 +1790,7 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
         cfg.BU.get_wallet_unspent_transactions_for_spending = _bad_gen
 
         with patch.object(mgr, "_sweep_legacy_to_kel", new=AsyncMock()) as mock_sweep:
-            await mgr._check_and_sweep_legacy_funds([mock_entry])
+            await mgr._check_and_sweep_legacy_funds(mock_entry)
         mock_sweep.assert_not_awaited()
 
     async def test_uses_cache_on_same_block(self):
@@ -1810,7 +1822,7 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
         cfg.BU.get_wallet_unspent_transactions_for_spending = _gen
 
         with patch.object(mgr, "_sweep_legacy_to_kel", new=AsyncMock()):
-            await mgr._check_and_sweep_legacy_funds([mock_entry])
+            await mgr._check_and_sweep_legacy_funds(mock_entry)
 
         # Cache hit — should not have called the generator
         self.assertEqual(fetch_called, [])
@@ -1832,7 +1844,7 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
         mock_entry.prerotated_key_hash = "1KEL"
 
         with patch.object(mgr, "_sweep_legacy_to_kel", new=AsyncMock()) as mock_sweep:
-            await mgr._check_and_sweep_legacy_funds([mock_entry])
+            await mgr._check_and_sweep_legacy_funds(mock_entry)
         mock_sweep.assert_not_awaited()
 
     async def test_utxo_fetch_stops_at_chain_input_limit(self):
@@ -1865,7 +1877,7 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
         cfg.BU.get_wallet_unspent_transactions_for_spending = _gen
 
         with patch.object(mgr, "_sweep_legacy_to_kel", new=AsyncMock()) as mock_sweep:
-            await mgr._check_and_sweep_legacy_funds([mock_entry])
+            await mgr._check_and_sweep_legacy_funds(mock_entry)
 
         mock_sweep.assert_awaited_once()
         # The break must stop consumption at 100, well short of the 150
@@ -2124,13 +2136,14 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         return mgr
 
     def _patch_kel_depth(self, mgr):
-        """Patch KeyEventLog.build_from_public_key so
-        _resolve_latest_kel_anchor sees a KEL of length mgr._test_kel_depth
-        (only its length is used)."""
-        fake_kel = [object()] * mgr._test_kel_depth
+        """Patch KeyEventLog.get_latest so
+        _resolve_latest_kel_anchor sees a KEL entry with counter=depth-1.
+        Only its counter is used."""
+        fake_entry = MagicMock()
+        fake_entry.counter = mgr._test_kel_depth - 1
         return patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-            new=AsyncMock(return_value=fake_kel),
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=fake_entry),
         )
 
     async def test_peer_branch_anchor_first_use_creates_branch(self):
@@ -2380,13 +2393,13 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         self.assertEqual(depth, 0)
 
     async def test_resolve_latest_kel_anchor_build_error_falls_back_to_k0(self):
-        """A KeyEventLog.build_from_public_key error must be swallowed and
+        """A KeyEventLog.get_latest error must be swallowed and
         treated as "no KEL yet" (depth 0) rather than propagating."""
         cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
         mgr = self._make_mgr(cfg)
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
             new=AsyncMock(side_effect=RuntimeError("mongo down")),
         ):
             kn, depth = await mgr._resolve_latest_kel_anchor()
@@ -2415,3 +2428,152 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         self.assertTrue(cur_priv)
         self.assertTrue(next_priv)
         self.assertTrue(is_new_branch)
+
+
+# ---------------------------------------------------------------------------
+# _walk_forward
+# ---------------------------------------------------------------------------
+
+
+class TestWalkForwardFromLatest(AsyncTestCase):
+    """Tests for the secondary walk performed by get_latest after the
+    _latest_from_inception_tag fast-path, to catch any untagged successors."""
+
+    @patch("yadacoin.core.keyeventlog.Config")
+    async def test_no_untagged_returns_original_latest(self, mock_cfg_cls):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        cfg = MagicMock()
+        mock_cfg_cls.return_value = cfg
+        cfg.mongo.async_db.blocks.aggregate.return_value.to_list = AsyncMock(
+            return_value=[]
+        )
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+
+        latest = MagicMock()
+        latest.inception_public_key_hash = "0xabc"
+        latest.counter = 2
+        latest.prerotated_key_hash = "1addr"
+
+        result = await KeyEventLog._walk_forward(latest, "02pub", onchain_only=True)
+        self.assertIs(result, latest)
+
+    @patch("yadacoin.core.keyeventlog.Config")
+    async def test_finds_and_tags_onchain_untagged_successor(self, mock_cfg_cls):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        cfg = MagicMock()
+        mock_cfg_cls.return_value = cfg
+
+        candidate = MagicMock()
+        candidate.inception_public_key_hash = None
+        candidate.counter = None
+        candidate.prerotated_key_hash = "1succ_next"
+        candidate.public_key_hash = "1succ_addr"
+        candidate.transaction_signature = "succ_sig"
+        candidate.mempool = False
+
+        cfg.mongo.async_db.blocks.aggregate.return_value.to_list = AsyncMock(
+            return_value=[
+                {
+                    "transactions": {
+                        "public_key_hash": "1succ_addr",
+                        "prerotated_key_hash": "1succ_next",
+                        "transaction_signature": "succ_sig",
+                    }
+                }
+            ]
+        )
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        tag_mock = AsyncMock()
+        cfg.mongo.async_db.key_event_log = MagicMock()
+        cfg.mongo.async_db.key_event_log.replace_one = tag_mock
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog._tag_kel_entry_in_mongo",
+            new=AsyncMock(),
+        ), patch(
+            "yadacoin.core.transaction.Transaction.from_dict",
+            return_value=candidate,
+        ):
+            latest = MagicMock()
+            latest.inception_public_key_hash = "0xabc"
+            latest.counter = 2
+            latest.prerotated_key_hash = "1succ_addr"
+
+            result = await KeyEventLog._walk_forward(latest, "02pub", onchain_only=True)
+
+        self.assertEqual(result.counter, 3)
+        self.assertEqual(result.inception_public_key_hash, "0xabc")
+        self.assertIs(result, candidate)
+
+    @patch("yadacoin.core.keyeventlog.Config")
+    async def test_finds_and_tags_mempool_untagged_successor(self, mock_cfg_cls):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        cfg = MagicMock()
+        mock_cfg_cls.return_value = cfg
+        cfg.mongo.async_db.blocks.aggregate.return_value.to_list = AsyncMock(
+            return_value=[]
+        )
+
+        candidate = MagicMock()
+        candidate.inception_public_key_hash = None
+        candidate.counter = None
+        candidate.prerotated_key_hash = "1mem_next"
+        candidate.public_key_hash = "1mem_addr"
+        candidate.transaction_signature = "mem_sig"
+        candidate.mempool = False
+
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value={
+                "public_key_hash": "1mem_addr",
+                "prerotated_key_hash": "1mem_next",
+                "transaction_signature": "mem_sig",
+            }
+        )
+        tag_mock = AsyncMock()
+        cfg.mongo.async_db.key_event_log = MagicMock()
+        cfg.mongo.async_db.key_event_log.replace_one = tag_mock
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog._tag_kel_entry_in_mongo",
+            new=AsyncMock(),
+        ), patch(
+            "yadacoin.core.transaction.Transaction.from_dict",
+            return_value=candidate,
+        ):
+            latest = MagicMock()
+            latest.inception_public_key_hash = "0xabc"
+            latest.counter = 2
+            latest.prerotated_key_hash = "1mem_addr"
+
+            result = await KeyEventLog._walk_forward(
+                latest, "02pub", onchain_only=False
+            )
+
+        self.assertEqual(result.counter, 3)
+        self.assertEqual(result.inception_public_key_hash, "0xabc")
+        self.assertTrue(getattr(result, "mempool", False))
+
+    @patch("yadacoin.core.keyeventlog.Config")
+    async def test_onchain_only_skips_mempool(self, mock_cfg_cls):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        cfg = MagicMock()
+        mock_cfg_cls.return_value = cfg
+        cfg.mongo.async_db.blocks.aggregate.return_value.to_list = AsyncMock(
+            return_value=[]
+        )
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value={"transaction_signature": "mem_sig"}
+        )
+
+        latest = MagicMock()
+        latest.inception_public_key_hash = "0xabc"
+        latest.counter = 2
+        latest.prerotated_key_hash = "1addr"
+
+        result = await KeyEventLog._walk_forward(latest, "02pub", onchain_only=True)
+        self.assertIs(result, latest)
+        cfg.mongo.async_db.miner_transactions.find_one.assert_not_awaited()
