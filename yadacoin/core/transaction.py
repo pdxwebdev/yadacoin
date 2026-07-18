@@ -666,7 +666,6 @@ class Transaction(object):
         # Reused by both verify_kel_output_rules and get_kel_cross_key_auth so
         # the KEL chain is not rebuilt twice in the same verify() call.  It is
         # populated lazily only when KEL spend rules apply (inside check_kel).
-        key_log = None
 
         if check_kel:
             from yadacoin.core.keyeventlog import KeyEvent
@@ -852,9 +851,7 @@ class Transaction(object):
         # address equals kel[-1].prerotated_key_hash, and it is authorised to
         # spend UTXOs locked to any previous KEL address.
         kel_authorized_addresses, kel_authorized_pub_keys = (
-            await self.get_kel_cross_key_auth(
-                address, block=block, mempool=mempool, key_log=key_log
-            )
+            await self.get_kel_cross_key_auth(address, block=block, mempool=mempool)
             if self.inputs
             else (None, None)
         )
