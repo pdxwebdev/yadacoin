@@ -1240,13 +1240,6 @@ class NodeKeyRotationManager:
                 curr_pub_bytes = curr_priv_obj.public_key.format(compressed=True)
                 curr_address = str(P2PKHBitcoinAddress.from_pubkey(curr_pub_bytes))
                 i += 1
-        else:
-            jump_cur = derive_secure_path(
-                jump_cur["private_key"], jump_cur["chain_code"], second_factor
-            )
-            curr_priv_obj = _CoincurvePrivateKey(jump_cur["private_key"])
-            curr_pub_bytes = curr_priv_obj.public_key.format(compressed=True)
-            curr_address = str(P2PKHBitcoinAddress.from_pubkey(curr_pub_bytes))
 
         jump_priv_obj = _CoincurvePrivateKey(jump_cur["private_key"])
         jump_pub_bytes = jump_priv_obj.public_key.format(compressed=True)
