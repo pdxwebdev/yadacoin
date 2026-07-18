@@ -353,6 +353,7 @@ class Peer:
             self.config.peer.identity.generate_rid(x.identity.username_signature): x
             for x in outbound_peers
             if x.identity is not None
+            and not (self.config.peer.identity.public_key == x.identity.public_key)
         }
         if not peers:
             return
@@ -468,12 +469,18 @@ class Seed(Peer):
         return SeedGateway
 
     async def get_outbound_peers(self):
-        if self.config.username_signature in self.config.seeds:
+        if (
+            self.identity
+            and self.config.peer.identity.public_key == self.identity.public_key
+        ):
             del self.config.seeds[self.config.username_signature]
         return self.config.seeds
 
     async def get_inbound_peers(self):
-        if self.config.username_signature in self.config.seeds:
+        if (
+            self.identity
+            and self.config.peer.identity.public_key == self.identity.public_key
+        ):
             del self.config.seeds[self.config.username_signature]
         peers = {}
         peers.update(self.config.seeds)

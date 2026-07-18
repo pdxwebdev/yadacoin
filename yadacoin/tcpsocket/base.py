@@ -552,13 +552,16 @@ class RPCSocketClient(TCPClient):
                 )
                 return
             if peer.identity is not None and (
-                self.config.peer.identity.username_signature
-                == peer.identity.username_signature
+                self.config.peer.identity.public_key == peer.identity.public_key
             ):
                 self.config.app_log.info(
-                    "connect: skipping %s %s — same identity as self",
+                    "connect: skipping %s %s — same public_key as self (self=%s, peer=%s, host=%s:%s)",
                     peer.__class__.__name__,
                     id_attr,
+                    self.config.peer.identity.public_key[:16],
+                    peer.identity.public_key[:16],
+                    peer.host,
+                    peer.port,
                 )
                 return
             if (self.config.peer.host, self.config.peer.port) == (peer.host, peer.port):
