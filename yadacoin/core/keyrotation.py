@@ -70,6 +70,7 @@ from coincurve._libsecp256k1 import ffi as _ffi
 from coincurve.keys import PrivateKey
 
 from yadacoin.core.config import Config
+from yadacoin.enums.peertypes import PEER_TYPES
 
 # ---------------------------------------------------------------------------
 # Re-anchor triplet — produced by _queue_reanchor for the block mining path.
@@ -1649,6 +1650,12 @@ class NodeKeyRotationManager:
         )
 
         if total <= 0:
+            return
+
+        if config.peer_type == PEER_TYPES.POOL.value:
+            config.app_log.info(
+                "NodeKeyRotationManager: skipping legacy sweep for pool node."
+            )
             return
 
         config.app_log.info(
