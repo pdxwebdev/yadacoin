@@ -2297,6 +2297,7 @@ class KeyEventLog:
                 for t in tagged["transactions"]
                 if t.get("inception_public_key_hash") == address
             ]
+            inception_pkh = None
             if not tagged_txns:
                 config.app_log.debug(
                     "get_inception: fast_path block matched but no transaction has inception_public_key_hash"
