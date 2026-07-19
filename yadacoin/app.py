@@ -1100,7 +1100,7 @@ class NodeApplication(Application):
                 PEER_TYPES.SEED_GATEWAY.value,
                 PEER_TYPES.SEED.value,
                 PEER_TYPES.USER.value,
-            ]:
+            ] and self.config.peer_type not in [PEER_TYPES.POOL.value]:
                 PeriodicCallback(
                     self.background_transactions_combining,
                     self.config.transactions_combining_wait * 1000,
