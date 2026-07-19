@@ -1832,6 +1832,10 @@ class KeyEventLog:
                 )
                 break
             seen_addresses.add(address)
+            # If the current tip is already tagged, we can skip the forward walk and fetch the latest directly via the tag.
+            latest = await KeyEventLog.get_latest(address, onchain_only=onchain_only)
+            if latest:
+                address = latest.public_key_hash
             result = config.mongo.async_db.blocks.aggregate(
                 [
                     {
@@ -2387,7 +2391,7 @@ class KeyEventLog:
                             public_key[:32] if public_key else None,
                         )
                         return None
-                    await config.async_db.blocks.update_one(
+                    await config.mongo.async_db.blocks.update_one(
                         {"transactions.id": txn.transaction_signature},
                         {
                             "$set": {
@@ -2435,7 +2439,7 @@ class KeyEventLog:
                             public_key[:32] if public_key else None,
                         )
                         return None
-                    await config.async_db.miner_transactions.update_one(
+                    await config.mongo.async_db.miner_transactions.update_one(
                         {"id": txn.transaction_signature},
                         {
                             "$set": {
