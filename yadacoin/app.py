@@ -866,6 +866,7 @@ class NodeApplication(Application):
 
     async def background_transactions_combining(self):
         """Responsible for combining small UTXOs into larger ones in the background"""
+        self.config.app_log.debug("background_transactions_combining")
 
         if not hasattr(self.config, "background_transactions_combining"):
             self.config.background_transactions_combining = WorkerVars(busy=False)
