@@ -1354,18 +1354,21 @@ class NodeKeyRotationManager:
             )
             mempool_txns.append(coinbase_confirming_txn)
 
-        for txn in mempool_txns:
-            await config.mongo.async_db.miner_transactions.replace_one(
-                {
-                    "$or": [
-                        {"public_key_hash": txn.public_key_hash},
-                        {"prerotated_key_hash": txn.prerotated_key_hash},
-                        {"twice_prerotated_key_hash": txn.twice_prerotated_key_hash},
-                    ],
-                },
-                txn.to_dict(),
-                upsert=True,
-            )
+        if not block:
+            for txn in mempool_txns:
+                await config.mongo.async_db.miner_transactions.replace_one(
+                    {
+                        "$or": [
+                            {"public_key_hash": txn.public_key_hash},
+                            {"prerotated_key_hash": txn.prerotated_key_hash},
+                            {
+                                "twice_prerotated_key_hash": txn.twice_prerotated_key_hash
+                            },
+                        ],
+                    },
+                    txn.to_dict(),
+                    upsert=True,
+                )
 
         if block:
             block.private_key = jump_cur["private_key"].hex()
