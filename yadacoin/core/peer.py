@@ -136,6 +136,14 @@ class Peer:
                 if ia_doc.get("public_key"):
                     my_public_key = ia_doc["public_key"]
 
+        config.app_log.info(
+            "my_peer: username=%s username_signature=%s public_key=%s ia_id=%s",
+            my_username,
+            my_username_signature[:16] if my_username_signature else None,
+            my_public_key[:16] if my_public_key else None,
+            my_identity_announcement,
+        )
+
         my_peer = {
             "host": config.peer_host,
             "port": config.peer_port,
@@ -349,6 +357,14 @@ class Peer:
         for x in outbound_peers:
             if getattr(x, "identity_announcement", None) and x.identity is None:
                 await x.resolve_identity_announcement()
+        self.config.app_log.info(
+            "ensure_peers_connected: raw outbound_peers=%d [%s]",
+            len(outbound_peers),
+            ", ".join(
+                f"{x.__class__.__name__}:{getattr(x, x.id_attribute, '?')}:id={getattr(x.identity, 'username_signature', '')[:16] if x.identity else None}"
+                for x in outbound_peers
+            ),
+        )
         peers = {}
         for x in outbound_peers:
             if x.identity is None:
@@ -393,6 +409,13 @@ class Peer:
             ].items()
             if (time.time() - v) < 120
         }
+        self.config.app_log.info(
+            "ensure_peers_connected: outbound_class=%s limit=%s stream_collection=%d outbound_ignored=%d",
+            outbound_class.__name__,
+            limit,
+            len(stream_collection),
+            len(outbound_ignored),
+        )
         await self.connect(
             stream_collection,
             limit,

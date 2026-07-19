@@ -2278,6 +2278,13 @@ class KeyEventLog:
         if not address:
             address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
 
+        config.app_log.debug(
+            "get_inception: public_key=%s address=%s onchain_only=%s",
+            public_key[:16] if public_key else None,
+            address,
+            onchain_only,
+        )
+
         tagged = await KeyEventLog._safe_await(
             config.mongo.async_db.blocks.find_one(
                 {
@@ -2288,11 +2295,16 @@ class KeyEventLog:
                     ],
                     "transactions.inception_public_key_hash": {"$exists": True},
                 },
-                {"transactions.$": 1},
+                {"transactions.$[elem].public_key_hash": address},
             )
         )
         if isinstance(tagged, dict) and tagged.get("transactions"):
             inception_pkh = tagged["transactions"][0].get("inception_public_key_hash")
+            config.app_log.debug(
+                "get_inception: fast_path tagged_txn=%s inception_pkh=%s",
+                tagged["transactions"][0].get("transaction_signature", "?")[:16],
+                inception_pkh[:16] if inception_pkh else None,
+            )
             if inception_pkh:
                 inception_doc = await KeyEventLog._safe_await(
                     config.mongo.async_db.blocks.find_one(
@@ -2300,7 +2312,7 @@ class KeyEventLog:
                             "transactions.inception_public_key_hash": inception_pkh,
                             "transactions.counter": 0,
                         },
-                        {"transactions.$": 1},
+                        {"transactions.$[elem].public_key_hash": inception_pkh},
                     )
                 )
                 if isinstance(inception_doc, dict) and inception_doc.get(
@@ -2308,7 +2320,21 @@ class KeyEventLog:
                 ):
                     inception = Transaction.from_dict(inception_doc["transactions"][0])
                     inception.inception_public_key_hash = inception_pkh
+                    config.app_log.debug(
+                        "get_inception: fast_path returning inception txn=%s public_key=%s",
+                        inception.transaction_signature[:16],
+                        inception.public_key[:16] if inception.public_key else None,
+                    )
+                    if inception.public_key != public_key:
+                        config.app_log.warning(
+                            "get_inception: fast_path inception public_key=%s does not match requested public_key=%s — discarding",
+                            inception.public_key[:32] if inception.public_key else None,
+                            public_key[:32] if public_key else None,
+                        )
+                        inception = None
                     return inception
+
+        config.app_log.debug("get_inception: fast_path miss, walking backward")
 
         while True:
             result = config.mongo.async_db.blocks.aggregate(
@@ -2341,13 +2367,30 @@ class KeyEventLog:
             res = await result.to_list(length=1)
             if res:
                 txn = Transaction.from_dict(res[0]["transactions"])
+                config.app_log.debug(
+                    "get_inception: slow_path onchain txn=%s public_key=%s prev_pkh=%s",
+                    txn.transaction_signature[:16],
+                    txn.public_key[:16] if txn.public_key else None,
+                    txn.prev_public_key_hash[:16] if txn.prev_public_key_hash else None,
+                )
                 if not txn.prev_public_key_hash or (
                     segment_only and is_recovers_inception(txn)
                 ):
+                    config.app_log.debug(
+                        "get_inception: slow_path returning inception (no prev_pkh)"
+                    )
+                    if txn.public_key != public_key:
+                        config.app_log.warning(
+                            "get_inception: slow_path inception public_key=%s does not match requested public_key=%s — discarding",
+                            txn.public_key[:32] if txn.public_key else None,
+                            public_key[:32] if public_key else None,
+                        )
+                        return None
                     return txn
                 address = txn.prev_public_key_hash
             else:
                 if onchain_only:
+                    config.app_log.debug("get_inception: slow_path onchain_only miss")
                     return None
                 result_mempool = await config.mongo.async_db.miner_transactions.find_one(
                     {
@@ -2361,12 +2404,29 @@ class KeyEventLog:
                     },
                 )
                 if not result_mempool:
+                    config.app_log.debug("get_inception: slow_path mempool miss")
                     return None
                 txn = Transaction.from_dict(result_mempool)
                 txn.mempool = True
+                config.app_log.debug(
+                    "get_inception: slow_path mempool txn=%s public_key=%s prev_pkh=%s",
+                    txn.transaction_signature[:16],
+                    txn.public_key[:16] if txn.public_key else None,
+                    txn.prev_public_key_hash[:16] if txn.prev_public_key_hash else None,
+                )
                 if not txn.prev_public_key_hash or (
                     segment_only and is_recovers_inception(txn)
                 ):
+                    config.app_log.debug(
+                        "get_inception: slow_path returning inception (mempool, no prev_pkh)"
+                    )
+                    if txn.public_key != public_key:
+                        config.app_log.warning(
+                            "get_inception: slow_path mempool inception public_key=%s does not match requested public_key=%s — discarding",
+                            txn.public_key[:32] if txn.public_key else None,
+                            public_key[:32] if public_key else None,
+                        )
+                        return None
                     return txn
                 address = txn.prev_public_key_hash
 

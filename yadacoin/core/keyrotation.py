@@ -387,10 +387,19 @@ class NodeKeyRotationManager:
                 else inception.public_key_hash
             )
             config.app_log.info(
-                "NodeKeyRotationManager: KEL inception found (depth=%d, inception_id=%s)",
+                "NodeKeyRotationManager: KEL inception found (depth=%d, inception_id=%s, k0_pub=%s, inception_pub=%s, inception_username=%s)",
                 depth,
                 inception.transaction_signature,
+                k0_pub_hex[:16],
+                inception.public_key[:16] if inception.public_key else None,
+                getattr(inception.relationship, "username", None),
             )
+            if inception.public_key != k0_pub_hex:
+                config.app_log.warning(
+                    "NodeKeyRotationManager: MISMATCH! inception public_key=%s does not match k0_pub_hex=%s",
+                    inception.public_key[:32] if inception.public_key else None,
+                    k0_pub_hex[:32],
+                )
             self._inception_txn_id = inception.transaction_signature
 
             self.config.username = inception.relationship.username
