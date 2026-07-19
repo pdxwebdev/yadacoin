@@ -85,6 +85,7 @@ class ReanchorTriplet:
 
     unconfirmed: object  # Transaction
     confirming: object  # Transaction
+    coinbase_confirming_txn: object  # Transaction
     signer_private_key: str  # hex — key that signs the coinbase (== kn private)
     signer_public_key: str  # hex — block public key (== kn public)
     coinbase_prerotated: str  # address — coinbase's prerotated_key_hash
@@ -1375,6 +1376,7 @@ class NodeKeyRotationManager:
             return ReanchorTriplet(
                 unconfirmed=unconfirmed_txn,
                 confirming=confirming_txn,
+                coinbase_confirming_txn=coinbase_confirming_txn,
                 signer_private_key=jump_cur["private_key"].hex(),
                 signer_public_key=signer_pub,
                 coinbase_prerotated=jump2_address,

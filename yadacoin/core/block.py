@@ -246,6 +246,10 @@ class Block(object):
             transactions = [Transaction.from_dict(txn) for txn in transactions]
         pending_txns.extend(transactions)
 
+        pending_txns.extend(
+            [triplet.unconfirmed, triplet.confirming, triplet.coinbase_confirming_txn]
+        )
+
         coinbase_txn = await block.pay_masternodes(
             pending_txns,
             triplet,
