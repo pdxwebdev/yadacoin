@@ -870,9 +870,8 @@ class KELResult(Sequence):
 
     __slots__ = ("_log", "addresses")
 
-    def __init__(self, log, addresses):
+    def __init__(self, log):
         self._log = log
-        self.addresses = addresses
 
     def __getitem__(self, index):
         return self._log[index]
@@ -894,7 +893,7 @@ class KELResult(Sequence):
         return hash(tuple(self._log))
 
     def __repr__(self):
-        return f"KELResult(len={len(self._log)}, addresses={len(self.addresses)})"
+        return f"KELResult(len={len(self._log)})"
 
 
 class KELHashCollection:
@@ -1758,16 +1757,17 @@ class KeyEventLog:
             segment_only=segment_only,
         )
         if inception is None:
-            return KELResult([], frozenset())
+            return KELResult([])
 
-        log, addresses = await KeyEventLog._walk_forward_and_tag(
+        log = await KeyEventLog.get_log(
             inception,
             public_key,
             onchain_only=onchain_only,
             follow_recovery=follow_recovery,
+            segment_only=segment_only,
         )
 
-        result = KELResult(log, frozenset(addresses))
+        result = KELResult(log)
         config.app_log.debug(
             "build_from_public_key done public_key=%s onchain_only=%s "
             "follow_recovery=%s segment_only=%s log_len=%d addresses=%d",
@@ -1782,147 +1782,27 @@ class KeyEventLog:
         return result
 
     @staticmethod
-    async def _walk_forward_and_tag(
-        inception, public_key, onchain_only=False, follow_recovery=True
+    async def get_log(
+        public_key,
+        onchain_only=False,
     ):
-        """Walk forward from *inception* via ``prerotated_key_hash`` links,
-        appending every subsequent KEL entry — on-chain, then mempool, then
-        (when *follow_recovery* is True) recovery successors — until the
-        chain is exhausted.  Each entry is tagged (``inception_public_key_hash``
-        and a sequential ``counter``) and persisted via
-        ``_tag_kel_entry_in_mongo`` right in this loop, as it is discovered —
-        there is no separate pass over the finished list afterward.
-
-        This is deliberately kept separate from ``get_inception`` (which
-        only locates the inception) so each concern can be tested and reused
-        independently.  Returns ``(log, addresses)`` where ``log`` starts
-        with *inception* and ``addresses`` is the set of on-chain
-        ``prerotated_key_hash`` values seen along the way.  This is the
-        slow-path building block used by both ``build_from_public_key`` and
-        ``get_latest`` when an untagged KEL needs to be walked and tagged
-        from scratch.
-        """
         config = Config()
-        inception_pkh = inception.public_key_hash
-        counter = 0
-        inception.inception_public_key_hash = inception_pkh
-        inception.counter = counter
-        await KeyEventLog._tag_kel_entry_in_mongo(inception)
-
-        log = [inception]
-        addresses = set()
-        if not getattr(inception, "mempool", False):
-            addresses.add(inception.prerotated_key_hash)
-        txn = inception
-        seen_addresses = {txn.public_key_hash}
-        forward_iter = 0
-
-        while True:
-            forward_iter += 1
-            address = txn.prerotated_key_hash
-            if address in seen_addresses:
-                config.app_log.warning(
-                    "_walk_forward_and_tag iter=%d public_key=%s "
-                    "CYCLE DETECTED address=%s already in seen_addresses "
-                    "log_len=%d",
-                    forward_iter,
-                    public_key[:16],
-                    address,
-                    len(log),
-                )
-                break
-            seen_addresses.add(address)
-            # If the current tip is already tagged, we can skip the forward walk and fetch the latest directly via the tag.
-            latest = await KeyEventLog.get_latest(address, onchain_only=onchain_only)
-            if latest:
-                address = latest.public_key_hash
-            result = config.mongo.async_db.blocks.aggregate(
-                [
-                    {
-                        "$match": {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
-                    },
-                    {"$unwind": "$transactions"},
-                    {
-                        "$match": {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
-                    },
-                ]
-            )
-            res = await result.to_list(length=1)
-            if res:
-                txn = Transaction.from_dict(res[0]["transactions"])
-                counter += 1
-                txn.inception_public_key_hash = inception_pkh
-                txn.counter = counter
-                await KeyEventLog._tag_kel_entry_in_mongo(txn)
-                log.append(txn)
-                config.app_log.debug(
-                    "_walk_forward_and_tag iter=%d address=%s found_onchain "
-                    "txn=%s log_len=%d",
-                    forward_iter,
-                    address,
-                    txn.transaction_signature[:16],
-                    len(log),
-                )
-                if not getattr(txn, "mempool", False):
-                    addresses.add(txn.prerotated_key_hash)
-                continue
-
-            if not onchain_only:
-                result_mempool = (
-                    await config.mongo.async_db.miner_transactions.find_one(
-                        {MempoolQueryFields.PUBLIC_KEY_HASH.value: address},
-                    )
-                )
-                if result_mempool:
-                    txn = Transaction.from_dict(result_mempool)
-                    txn.mempool = True
-                    counter += 1
-                    txn.inception_public_key_hash = inception_pkh
-                    txn.counter = counter
-                    await KeyEventLog._tag_kel_entry_in_mongo(txn)
-                    log.append(txn)
-                    config.app_log.debug(
-                        "_walk_forward_and_tag iter=%d address=%s found_mempool "
-                        "txn=%s log_len=%d",
-                        forward_iter,
-                        address,
-                        txn.transaction_signature[:16],
-                        len(log),
-                    )
-                    continue
-
-            if follow_recovery:
-                successor = await KeyEventLog.find_recovery_successor(
-                    log[-1].public_key_hash, onchain_only=onchain_only
-                )
-                if successor is not None:
-                    counter += 1
-                    successor.inception_public_key_hash = inception_pkh
-                    successor.counter = counter
-                    await KeyEventLog._tag_kel_entry_in_mongo(successor)
-                    log.append(successor)
-                    config.app_log.debug(
-                        "_walk_forward_and_tag iter=%d address=%s "
-                        "follow_recovery successor=%s log_len=%d",
-                        forward_iter,
-                        address,
-                        successor.transaction_signature[:16],
-                        len(log),
-                    )
-                    if not getattr(successor, "mempool", False):
-                        addresses.add(successor.prerotated_key_hash)
-                    txn = successor
-                    continue
-            config.app_log.debug(
-                "_walk_forward_and_tag iter=%d address=%s chain_exhausted "
-                "log_len=%d",
-                forward_iter,
-                address,
-                len(log),
-            )
-            break
-
-        return log, addresses
+        latest = await KeyEventLog.get_latest(
+            public_key=public_key, onchain_only=onchain_only
+        )
+        if latest is None:
+            return KELResult([])
+        cursor = config.mongo.async_db.blocks.aggregate(
+            [
+                {"$match": {"transactions.inception_public_key_hash": public_key}},
+                {"$unwind": "$transactions"},
+                {"$match": {"transactions.inception_public_key_hash": public_key}},
+                {"$sort": {"transactions.counter": -1}},
+            ]
+        )
+        rows = await cursor.to_list(length=None)
+        log = [Transaction.from_dict(row["transactions"]) for row in rows]
+        return log
 
     @staticmethod
     async def is_same_kel(public_key_hash_a, public_key_hash_b, onchain_only=False):
