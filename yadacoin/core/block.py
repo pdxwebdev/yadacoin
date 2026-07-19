@@ -261,6 +261,10 @@ class Block(object):
                         input_item.input_txn = items_indexed[input_item.id]
                         items_indexed[input_item.id].spent_in_txn = txn
 
+        if config.log_level == "DEBUG":
+            for txn in pending_txns:
+                config.app_log.debug(f"Pending txn: {txn.to_json()}")
+
         await Block.validate_transactions(
             block, pending_txns, transaction_objs, used_sigs, used_inputs, index, xtime
         )
