@@ -162,7 +162,7 @@ class NodeRPC(BaseRPC):
             return []
 
         try:
-            kel = await KeyEventLog.build_from_public_key(k0_pub, onchain_only=False)
+            kel = await KeyEventLog.build_from_public_key(k0_pub)
         except Exception as exc:
             self.config.app_log.debug("_get_kel_anchor_chain: KEL build error: %s", exc)
             return []

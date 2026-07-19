@@ -1730,9 +1730,6 @@ class KeyEventLog:
     @staticmethod
     async def build_from_public_key(
         public_key,
-        onchain_only=False,
-        follow_recovery=True,
-        segment_only=False,
     ):
         """Build the ordered KEL for *public_key*.
 
@@ -1753,14 +1750,12 @@ class KeyEventLog:
 
         log = await KeyEventLog.get_log(
             public_key,
-            onchain_only=onchain_only,
         )
 
         result = KELResult(log)
         config.app_log.debug(
-            "build_from_public_key done public_key=%s onchain_only=%s " "log_len=%d",
+            "build_from_public_key done public_key=%s log_len=%d",
             public_key[:16],
-            onchain_only,
             len(log),
         )
 
@@ -1769,24 +1764,41 @@ class KeyEventLog:
     @staticmethod
     async def get_log(
         public_key,
-        onchain_only=False,
     ):
+        """Return the ordered KEL for *public_key* and a given username"""
         config = Config()
-        latest = await KeyEventLog.get_latest(
-            public_key=public_key, onchain_only=onchain_only
-        )
+        latest = await KeyEventLog.get_latest(public_key=public_key, onchain_only=False)
         if latest is None:
             return KELResult([])
         cursor = config.mongo.async_db.blocks.aggregate(
             [
-                {"$match": {"transactions.inception_public_key_hash": public_key}},
+                {
+                    "$match": {
+                        "transactions.public_key_hash": latest[
+                            "inception_public_key_hash"
+                        ]
+                    }
+                },
                 {"$unwind": "$transactions"},
-                {"$match": {"transactions.inception_public_key_hash": public_key}},
+                {
+                    "$match": {
+                        "transactions.public_key_hash": latest[
+                            "inception_public_key_hash"
+                        ]
+                    }
+                },
                 {"$sort": {"transactions.counter": -1}},
             ]
         )
         rows = await cursor.to_list(length=None)
         log = [Transaction.from_dict(row["transactions"]) for row in rows]
+
+        mempool_cursor = config.mongo.async_db.miner_transactions.find(
+            {"inception_public_key_hash": latest["inception_public_key_hash"]}
+        )
+        async for doc in mempool_cursor:
+            log.append(Transaction.from_dict(doc))
+
         return log
 
     @staticmethod
