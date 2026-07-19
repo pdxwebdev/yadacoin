@@ -2070,7 +2070,6 @@ class KeyEventLog:
 
         txn = start_entry
         forward_iter = 0
-        result_txn = start_entry
 
         while True:
             forward_iter += 1
@@ -2101,7 +2100,6 @@ class KeyEventLog:
                         address,
                         candidate.counter,
                     )
-                    result_txn = candidate
                     break
                 if candidate_inception is not None:
                     config.app_log.debug(
@@ -2148,7 +2146,6 @@ class KeyEventLog:
                             address,
                             candidate.counter,
                         )
-                        result_txn = candidate
                         break
                     if candidate_inception is not None:
                         config.app_log.debug(
@@ -2201,7 +2198,7 @@ class KeyEventLog:
             )
             break
 
-        return result_txn
+        return txn
 
     @staticmethod
     async def _latest_from_inception_tag(inception_pkh, onchain_only=False):
@@ -2295,16 +2292,28 @@ class KeyEventLog:
                     ],
                     "transactions.inception_public_key_hash": {"$exists": True},
                 },
-                {"transactions.$[elem].public_key_hash": address},
+                {"transactions": 1},
             )
         )
         if isinstance(tagged, dict) and tagged.get("transactions"):
-            inception_pkh = tagged["transactions"][0].get("inception_public_key_hash")
-            config.app_log.debug(
-                "get_inception: fast_path tagged_txn=%s inception_pkh=%s",
-                tagged["transactions"][0].get("transaction_signature", "?")[:16],
-                inception_pkh[:16] if inception_pkh else None,
-            )
+            tagged_txns = [
+                t
+                for t in tagged["transactions"]
+                if t.get("inception_public_key_hash") is not None
+            ]
+            if not tagged_txns:
+                config.app_log.debug(
+                    "get_inception: fast_path block matched but no transaction has inception_public_key_hash"
+                )
+                tagged = None
+            else:
+                tagged_txn = tagged_txns[0]
+                inception_pkh = tagged_txn.get("inception_public_key_hash")
+                config.app_log.debug(
+                    "get_inception: fast_path tagged_txn=%s inception_pkh=%s",
+                    tagged_txn.get("transaction_signature", "?")[:16],
+                    inception_pkh[:16] if inception_pkh else None,
+                )
             if inception_pkh:
                 inception_doc = await KeyEventLog._safe_await(
                     config.mongo.async_db.blocks.find_one(
@@ -2312,26 +2321,40 @@ class KeyEventLog:
                             "transactions.inception_public_key_hash": inception_pkh,
                             "transactions.counter": 0,
                         },
-                        {"transactions.$[elem].public_key_hash": inception_pkh},
+                        {"transactions": 1},
                     )
                 )
                 if isinstance(inception_doc, dict) and inception_doc.get(
                     "transactions"
                 ):
-                    inception = Transaction.from_dict(inception_doc["transactions"][0])
-                    inception.inception_public_key_hash = inception_pkh
-                    config.app_log.debug(
-                        "get_inception: fast_path returning inception txn=%s public_key=%s",
-                        inception.transaction_signature[:16],
-                        inception.public_key[:16] if inception.public_key else None,
-                    )
-                    if inception.public_key != public_key:
-                        config.app_log.warning(
-                            "get_inception: fast_path inception public_key=%s does not match requested public_key=%s — discarding",
-                            inception.public_key[:32] if inception.public_key else None,
-                            public_key[:32] if public_key else None,
+                    matching_txns = [
+                        t
+                        for t in inception_doc["transactions"]
+                        if t.get("inception_public_key_hash") == inception_pkh
+                        and t.get("counter") == 0
+                    ]
+                    if not matching_txns:
+                        config.app_log.debug(
+                            "get_inception: fast_path no matching inception txn found in block"
                         )
                         inception = None
+                    else:
+                        inception = Transaction.from_dict(matching_txns[0])
+                        inception.inception_public_key_hash = inception_pkh
+                        config.app_log.debug(
+                            "get_inception: fast_path returning inception txn=%s public_key=%s",
+                            inception.transaction_signature[:16],
+                            inception.public_key[:16] if inception.public_key else None,
+                        )
+                        if inception.public_key != public_key:
+                            config.app_log.warning(
+                                "get_inception: fast_path inception public_key=%s does not match requested public_key=%s — discarding",
+                                inception.public_key[:32]
+                                if inception.public_key
+                                else None,
+                                public_key[:32] if public_key else None,
+                            )
+                            inception = None
                     return inception
 
         config.app_log.debug("get_inception: fast_path miss, walking backward")
