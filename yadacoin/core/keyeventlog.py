@@ -2285,11 +2285,7 @@ class KeyEventLog:
         tagged = await KeyEventLog._safe_await(
             config.mongo.async_db.blocks.find_one(
                 {
-                    "$or": [
-                        {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
-                        {BlocksQueryFields.PREROTATED_KEY_HASH.value: address},
-                        {BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: address},
-                    ],
+                    BlocksQueryFields.PUBLIC_KEY_HASH.value: address,
                     "transactions.inception_public_key_hash": {"$exists": True},
                 },
                 {"transactions": 1},
@@ -2299,7 +2295,7 @@ class KeyEventLog:
             tagged_txns = [
                 t
                 for t in tagged["transactions"]
-                if t.get("inception_public_key_hash") is not None
+                if t.get("inception_public_key_hash") == address
             ]
             if not tagged_txns:
                 config.app_log.debug(
@@ -2363,27 +2359,11 @@ class KeyEventLog:
             result = config.mongo.async_db.blocks.aggregate(
                 [
                     {
-                        "$match": {
-                            "$or": [
-                                {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
-                                {BlocksQueryFields.PREROTATED_KEY_HASH.value: address},
-                                {
-                                    BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: address
-                                },
-                            ]
-                        },
+                        "$match": {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
                     },
                     {"$unwind": "$transactions"},
                     {
-                        "$match": {
-                            "$or": [
-                                {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
-                                {BlocksQueryFields.PREROTATED_KEY_HASH.value: address},
-                                {
-                                    BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: address
-                                },
-                            ]
-                        },
+                        "$match": {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
                     },
                 ]
             )
@@ -2399,9 +2379,6 @@ class KeyEventLog:
                 if not txn.prev_public_key_hash or (
                     segment_only and is_recovers_inception(txn)
                 ):
-                    config.app_log.debug(
-                        "get_inception: slow_path returning inception (no prev_pkh)"
-                    )
                     if txn.public_key != public_key:
                         config.app_log.warning(
                             "get_inception: slow_path inception public_key=%s does not match requested public_key=%s — discarding",
@@ -2415,16 +2392,10 @@ class KeyEventLog:
                 if onchain_only:
                     config.app_log.debug("get_inception: slow_path onchain_only miss")
                     return None
-                result_mempool = await config.mongo.async_db.miner_transactions.find_one(
-                    {
-                        "$or": [
-                            {MempoolQueryFields.PUBLIC_KEY_HASH.value: address},
-                            {MempoolQueryFields.PREROTATED_KEY_HASH.value: address},
-                            {
-                                MempoolQueryFields.TWICE_PREROTATED_KEY_HASH.value: address
-                            },
-                        ]
-                    },
+                result_mempool = (
+                    await config.mongo.async_db.miner_transactions.find_one(
+                        {MempoolQueryFields.PUBLIC_KEY_HASH.value: address},
+                    )
                 )
                 if not result_mempool:
                     config.app_log.debug("get_inception: slow_path mempool miss")
