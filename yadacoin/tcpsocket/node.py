@@ -1508,8 +1508,8 @@ class NodeRPC(BaseRPC):
             _peer_k0 = _anchor_pub
             from yadacoin.core.keyeventlog import KeyEventLog
 
-            _kel = await KeyEventLog.build_from_public_key(_anchor_pub)
-            _onchain_tip = _kel[-1] if _kel else None
+            _onchain_tip = await KeyEventLog.get_latest(_anchor_pub)
+
             # The most current KEL entry is the authoritative tip to
             # authenticate against.  Surface a mismatch as a warning rather than
             # a hard reject so an unconfirmed (mempool) rotation on either side
