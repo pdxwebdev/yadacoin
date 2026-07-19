@@ -1750,33 +1750,18 @@ class KeyEventLog:
         the segment up to the first recovery boundary.
         """
         config = Config()
-        inception = await KeyEventLog.get_inception(
-            public_key,
-            onchain_only=onchain_only,
-            follow_recovery=follow_recovery,
-            segment_only=segment_only,
-        )
-        if inception is None:
-            return KELResult([])
 
         log = await KeyEventLog.get_log(
-            inception,
             public_key,
             onchain_only=onchain_only,
-            follow_recovery=follow_recovery,
-            segment_only=segment_only,
         )
 
         result = KELResult(log)
         config.app_log.debug(
-            "build_from_public_key done public_key=%s onchain_only=%s "
-            "follow_recovery=%s segment_only=%s log_len=%d addresses=%d",
+            "build_from_public_key done public_key=%s onchain_only=%s " "log_len=%d",
             public_key[:16],
             onchain_only,
-            follow_recovery,
-            segment_only,
             len(log),
-            len(addresses),
         )
 
         return result
