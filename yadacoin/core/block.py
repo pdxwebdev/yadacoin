@@ -230,6 +230,8 @@ class Block(object):
         if nonce:
             block.nonce = str(nonce)
 
+        triplet = await config.kel_manager.advance_block_ratchet(block=block)
+
         if transactions is not None:
             transactions = [Transaction.from_dict(txn) for txn in transactions]
         else:
@@ -242,13 +244,7 @@ class Block(object):
                 .limit(1000)
             ]
             transactions = [Transaction.from_dict(txn) for txn in transactions]
-
-        triplet = await config.kel_manager.advance_block_ratchet(block=block)
         pending_txns.extend(transactions)
-
-        pending_txns.extend(
-            [triplet.unconfirmed, triplet.confirming, triplet.coinbase_confirming_txn]
-        )
 
         coinbase_txn = await block.pay_masternodes(
             pending_txns,

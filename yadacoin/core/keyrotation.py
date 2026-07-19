@@ -85,7 +85,6 @@ class ReanchorTriplet:
 
     unconfirmed: object  # Transaction
     confirming: object  # Transaction
-    coinbase_confirming_txn: object  # Transaction
     signer_private_key: str  # hex — key that signs the coinbase (== kn private)
     signer_public_key: str  # hex — block public key (== kn public)
     coinbase_prerotated: str  # address — coinbase's prerotated_key_hash
@@ -388,19 +387,10 @@ class NodeKeyRotationManager:
                 else inception.public_key_hash
             )
             config.app_log.info(
-                "NodeKeyRotationManager: KEL inception found (depth=%d, inception_id=%s, k0_pub=%s, inception_pub=%s, inception_username=%s)",
+                "NodeKeyRotationManager: KEL inception found (depth=%d, inception_id=%s)",
                 depth,
                 inception.transaction_signature,
-                k0_pub_hex[:16],
-                inception.public_key[:16] if inception.public_key else None,
-                getattr(inception.relationship, "username", None),
             )
-            if inception.public_key != k0_pub_hex:
-                config.app_log.warning(
-                    "NodeKeyRotationManager: MISMATCH! inception public_key=%s does not match k0_pub_hex=%s",
-                    inception.public_key[:32] if inception.public_key else None,
-                    k0_pub_hex[:32],
-                )
             self._inception_txn_id = inception.transaction_signature
 
             self.config.username = inception.relationship.username
@@ -1358,21 +1348,18 @@ class NodeKeyRotationManager:
             )
             mempool_txns.append(coinbase_confirming_txn)
 
-        if not block:
-            for txn in mempool_txns:
-                await config.mongo.async_db.miner_transactions.replace_one(
-                    {
-                        "$or": [
-                            {"public_key_hash": txn.public_key_hash},
-                            {"prerotated_key_hash": txn.prerotated_key_hash},
-                            {
-                                "twice_prerotated_key_hash": txn.twice_prerotated_key_hash
-                            },
-                        ],
-                    },
-                    txn.to_dict(),
-                    upsert=True,
-                )
+        for txn in mempool_txns:
+            await config.mongo.async_db.miner_transactions.replace_one(
+                {
+                    "$or": [
+                        {"public_key_hash": txn.public_key_hash},
+                        {"prerotated_key_hash": txn.prerotated_key_hash},
+                        {"twice_prerotated_key_hash": txn.twice_prerotated_key_hash},
+                    ],
+                },
+                txn.to_dict(),
+                upsert=True,
+            )
 
         if block:
             block.private_key = jump_cur["private_key"].hex()
@@ -1383,7 +1370,6 @@ class NodeKeyRotationManager:
             return ReanchorTriplet(
                 unconfirmed=unconfirmed_txn,
                 confirming=confirming_txn,
-                coinbase_confirming_txn=coinbase_confirming_txn,
                 signer_private_key=jump_cur["private_key"].hex(),
                 signer_public_key=signer_pub,
                 coinbase_prerotated=jump2_address,
