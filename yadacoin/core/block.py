@@ -573,6 +573,10 @@ class Block(object):
                 )
                 linked_group = Block.find_kel_linked_group(transaction_obj, txns)
                 for linked_txn in linked_group:
+                    if linked_txn.coinbase:
+                        config.app_log.warning(
+                            f"validate_transactions transient KEL skip: linked coinbase txn removed from block: {linked_txn.transaction_signature}"
+                        )
                     if linked_txn in txns:
                         txns.remove(linked_txn)
 
@@ -602,6 +606,10 @@ class Block(object):
                 # orphan an arbitrarily long chain of siblings, not just one.
                 linked_group = Block.find_kel_linked_group(transaction_obj, txns)
                 for linked_txn in linked_group:
+                    if linked_txn.coinbase:
+                        config.app_log.warning(
+                            f"validate_transactions transient KEL skip: linked coinbase txn removed from block: {linked_txn.transaction_signature}"
+                        )
                     if linked_txn in txns:
                         txns.remove(linked_txn)
 
