@@ -2386,6 +2386,19 @@ class KeyEventLog:
                             public_key[:32] if public_key else None,
                         )
                         return None
+                    await config.async_db.blocks.update_one(
+                        {"transactions.id": txn.transaction_signature},
+                        {
+                            "$set": {
+                                "transactions.$[elem].inception_public_key_hash": txn.public_key_hash,
+                                "transactions.$[elem].counter": 0,
+                            }
+                        },
+                        array_filters=[{"elem.id": txn.transaction_signature}],
+                    )
+                    config.app_log.debug(
+                        "get_inception: slow_path returning inception (onchain, no prev_pkh)"
+                    )
                     return txn
                 address = txn.prev_public_key_hash
             else:
@@ -2421,6 +2434,15 @@ class KeyEventLog:
                             public_key[:32] if public_key else None,
                         )
                         return None
+                    await config.async_db.miner_transactions.update_one(
+                        {"id": txn.transaction_signature},
+                        {
+                            "$set": {
+                                "inception_public_key_hash": txn.public_key_hash,
+                                "counter": 0,
+                            }
+                        },
+                    )
                     return txn
                 address = txn.prev_public_key_hash
 
