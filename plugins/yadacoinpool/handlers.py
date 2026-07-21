@@ -2,6 +2,7 @@ import os
 import time
 
 import requests
+from bitcoin.wallet import P2PKHBitcoinAddress
 from tornado.web import StaticFileHandler
 
 from yadacoin import version
@@ -180,18 +181,49 @@ class MarketInfoHandler(BaseWebHandler):
 class PoolInfoHandler(BaseWebHandler):
     async def get(self):
         await self.config.LatestBlock.block_checker()
-        pool_public_key = (
-            self.config.pool_public_key
-            if hasattr(self.config, "pool_public_key")
-            else self.config.public_key
+        pool_address = str(
+            P2PKHBitcoinAddress.from_pubkey(
+                bytes.fromhex(self.config.inception.public_key)
+            )
         )
-        pool_kel = await get_pool_kel_blocks(self.config, pool_public_key)
-        total_blocks_found = pool_kel["total"]
-        pool_blocks_found_list = pool_kel["last_five"]
+        total_blocks_found = await self.config.mongo.async_db.blocks.aggregate(
+            [
+                {
+                    "$match": {
+                        "transactions.inception_public_key_hash": pool_address,
+                    }
+                },
+                {"$unwind": "$transactions"},
+                {
+                    "$match": {
+                        "transactions.inception_public_key_hash": pool_address,
+                        "$expr": {"$eq": ["$public_key", "$transactions.public_key"]},
+                    }
+                },
+                {"$count": "total"},
+            ]
+        ).to_list(length=1)
+        total_blocks_found = total_blocks_found[0]["total"] if total_blocks_found else 0
+        pool_blocks_found_list = await self.config.mongo.async_db.blocks.aggregate(
+            [
+                {"$match": {"transactions.inception_public_key_hash": pool_address}},
+                {"$unwind": "$transactions"},
+                {
+                    "$match": {
+                        "transactions.inception_public_key_hash": pool_address,
+                        "$expr": {"$eq": ["$public_key", "$transactions.public_key"]},
+                    }
+                },
+                {"$sort": {"transactions.time": -1}},
+                {"$limit": 5},
+            ]
+        ).to_list(length=5)
         expected_blocks = 144
         mining_time_interval = 600
         shares_count = await self.config.mongo.async_db.shares.count_documents(
-            {"time": {"$gte": time.time() - mining_time_interval}}
+            {
+                "time": {"$gte": time.time() - mining_time_interval},
+            }
         )
         if shares_count > 0:
             pool_hash_rate = (

@@ -365,34 +365,6 @@ class Peer:
                 for x in outbound_peers
             ),
         )
-        peers = {}
-        for x in outbound_peers:
-            if x.identity is None:
-                self.config.app_log.info(
-                    "ensure_peers_connected: skipping %s %s — identity is None",
-                    x.__class__.__name__,
-                    getattr(x, x.id_attribute, "?"),
-                )
-                continue
-            if self.config.peer.identity.public_key == x.identity.public_key:
-                self.config.app_log.info(
-                    "ensure_peers_connected: skipping %s %s — same public_key as self (self=%s, peer=%s)",
-                    x.__class__.__name__,
-                    getattr(x, x.id_attribute, "?"),
-                    self.config.peer.identity.public_key[:16],
-                    x.identity.public_key[:16],
-                )
-                continue
-            rid = self.config.peer.identity.generate_rid(x.identity.username_signature)
-            peers[rid] = x
-        if not peers:
-            self.config.app_log.info(
-                "ensure_peers_connected: no outbound peers after filtering "
-                "(outbound_peers=%d, self_pubkey=%s)",
-                len(outbound_peers),
-                self.config.peer.identity.public_key[:16],
-            )
-            return
         outbound_class = await self.get_outbound_class()
         limit = self.__class__.type_limit(outbound_class)
 
@@ -419,7 +391,7 @@ class Peer:
         await self.connect(
             stream_collection,
             limit,
-            peers,
+            await self.get_outbound_peers(),
             outbound_ignored,
         )
 

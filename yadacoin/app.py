@@ -329,8 +329,8 @@ class NodeApplication(Application):
 
     async def background_peers(self):
         """Peers management coroutine. responsible for peers testing and outgoing connections"""
-
-        self.config.app_log.debug("background_peers")
+        if hasattr(self.config, "background_process_debug"):
+            self.config.app_log.debug("background_peers")
         if not hasattr(self.config, "background_peers"):
             self.config.background_peers = WorkerVars(busy=False)
         if self.config.background_peers.busy:
@@ -346,7 +346,8 @@ class NodeApplication(Application):
 
     async def background_status(self):
         """This background co-routine is responsible for status collection and display"""
-        self.config.app_log.debug("background_status")
+        if hasattr(self.config, "background_process_debug"):
+            self.config.app_log.debug("background_status")
         if not hasattr(self.config, "background_status"):
             self.config.background_status = WorkerVars(busy=False, last_summary=None)
             await self.config.mongo.async_db.node_status.delete_many({"archived": True})
@@ -463,7 +464,8 @@ class NodeApplication(Application):
         This mechanism prevents redundant broadcasts while ensuring all peers
         stay up-to-date with the latest blockchain state.
         """
-        self.config.app_log.debug("background_block_checker")
+        if hasattr(self.config, "background_process_debug"):
+            self.config.app_log.debug("background_block_checker")
         if not hasattr(self.config, "background_block_checker"):
             self.config.background_block_checker = WorkerVars(
                 busy=False, last_send=0, last_block_height=0, last_block_hash=None
@@ -479,9 +481,10 @@ class NodeApplication(Application):
             last_block_hash = self.config.background_block_checker.last_block_hash
 
             if current_block:
-                self.config.app_log.debug(
-                    f"Current block: Height={current_block.index}, Hash={current_block.hash}"
-                )
+                if hasattr(self.config, "background_process_debug"):
+                    self.config.app_log.debug(
+                        f"Current block: Height={current_block.index}, Hash={current_block.hash}"
+                    )
 
                 # Check if the block height or hash has changed
                 if (
@@ -514,10 +517,11 @@ class NodeApplication(Application):
                     self.config.background_block_checker.last_send = int(time())
                     await self.config.nodeShared.send_block_to_peers(current_block)
                 else:
-                    self.config.app_log.debug(
-                        f"No propagation needed. Last send: {self.config.background_block_checker.last_send}, "
-                        f"Time since last send: {int(time()) - self.config.background_block_checker.last_send}s"
-                    )
+                    if hasattr(self.config, "background_process_debug"):
+                        self.config.app_log.debug(
+                            f"No propagation needed. Last send: {self.config.background_block_checker.last_send}, "
+                            f"Time since last send: {int(time()) - self.config.background_block_checker.last_send}s"
+                        )
             else:
                 self.config.app_log.debug("No current block available to propagate.")
 
@@ -551,7 +555,8 @@ class NodeApplication(Application):
                     )
 
     async def background_message_sender(self):
-        self.config.app_log.debug("background_message_sender")
+        if hasattr(self.config, "background_process_debug"):
+            self.config.app_log.debug("background_message_sender")
         if not hasattr(self.config, "background_message_sender"):
             self.config.background_message_sender = WorkerVars(busy=False)
         if self.config.background_message_sender.busy:
@@ -655,7 +660,8 @@ class NodeApplication(Application):
         self.config.background_message_sender.busy = False
 
     async def background_txn_queue_processor(self):
-        self.config.app_log.debug("background_txn_queue_processor")
+        if hasattr(self.config, "background_process_debug"):
+            self.config.app_log.debug("background_txn_queue_processor")
         if not hasattr(self.config, "background_txn_queue_processor"):
             self.config.background_txn_queue_processor = WorkerVars(busy=False)
         if self.config.background_txn_queue_processor.busy:
@@ -674,7 +680,8 @@ class NodeApplication(Application):
         self.config.background_txn_queue_processor.busy = False
 
     async def background_block_queue_processor(self):
-        self.config.app_log.debug("background_block_queue_processor")
+        if hasattr(self.config, "background_process_debug"):
+            self.config.app_log.debug("background_block_queue_processor")
         if not hasattr(self.config, "background_block_queue_processor"):
             self.config.background_block_queue_processor = WorkerVars(busy=False)
         if self.config.background_block_queue_processor.busy:
@@ -720,7 +727,8 @@ class NodeApplication(Application):
         This co-routine checks if new transactions have been received, or if special_min is triggered,
         So we can update the miners.
         """
-        self.config.app_log.debug("background_pool_payer")
+        if hasattr(self.config, "background_process_debug"):
+            self.config.app_log.debug("background_pool_payer")
         if not hasattr(self.config, "background_pool_payer"):
             self.config.background_pool_payer = WorkerVars(busy=False)
         if self.config.background_pool_payer.busy:
@@ -739,7 +747,8 @@ class NodeApplication(Application):
     async def background_cache_validator(self):
         """Responsible for validating the cache and clearing it when necessary"""
 
-        self.config.app_log.debug("background_cache_validator")
+        if hasattr(self.config, "background_process_debug"):
+            self.config.app_log.debug("background_cache_validator")
         if not hasattr(self.config, "background_cache_validator"):
             self.config.background_cache_validator = WorkerVars(busy=False)
         if self.config.background_cache_validator.busy:
@@ -832,7 +841,8 @@ class NodeApplication(Application):
     async def background_mempool_cleaner(self):
         """Responsible for removing failed transactions from the mempool and old transaction confirmations"""
 
-        self.config.app_log.debug("background_mempool_cleaner")
+        if hasattr(self.config, "background_process_debug"):
+            self.config.app_log.debug("background_mempool_cleaner")
         if not hasattr(self.config, "background_mempool_cleaner"):
             self.config.background_mempool_cleaner = WorkerVars(busy=False)
         if self.config.background_mempool_cleaner.busy:
@@ -849,7 +859,8 @@ class NodeApplication(Application):
 
     async def background_mempool_sender(self):
         """Responsible for rebroadcasting mempool transactions"""
-        self.config.app_log.debug("background_mempool_sender")
+        if hasattr(self.config, "background_process_debug"):
+            self.config.app_log.debug("background_mempool_sender")
 
         if not hasattr(self.config, "background_mempool_sender"):
             self.config.background_mempool_sender = WorkerVars(busy=False)
@@ -866,7 +877,8 @@ class NodeApplication(Application):
 
     async def background_transactions_combining(self):
         """Responsible for combining small UTXOs into larger ones in the background"""
-        self.config.app_log.debug("background_transactions_combining")
+        if hasattr(self.config, "background_process_debug"):
+            self.config.app_log.debug("background_transactions_combining")
 
         if not hasattr(self.config, "background_transactions_combining"):
             self.config.background_transactions_combining = WorkerVars(busy=False)
@@ -883,7 +895,8 @@ class NodeApplication(Application):
     async def background_nonce_processor(self):
         """Responsible for processing all share submissions from miners"""
 
-        self.config.app_log.debug("background_nonce_processor")
+        if hasattr(self.config, "background_process_debug"):
+            self.config.app_log.debug("background_nonce_processor")
         if not hasattr(self.config, "background_nonce_processor"):
             self.config.background_nonce_processor = WorkerVars(busy=False)
         if self.config.background_nonce_processor.busy:

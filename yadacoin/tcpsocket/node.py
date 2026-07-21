@@ -23,6 +23,7 @@ from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
+from yadacoin.core.identity import Identity
 from yadacoin.core.keyeventlog import (
     KELExceptionPredecessorNotYetInMempool,
     KELExceptionPreviousKeyHashReferenceMissing,
@@ -275,78 +276,6 @@ class NodeRPC(BaseRPC):
         reauth_cb = self._resync_reauth.pop(req_id, None)
         if reauth_cb:
             await reauth_cb(kel_chain)
-
-    # ── end KEL "start over" resync ────────────────────────────────────────
-
-    async def _request_peer_identity_announcement(
-        self, stream, txn_id: str, reauth_cb=None
-    ) -> None:
-        """Ask the peer to send us the specific identity-announcement
-        transaction identified by *txn_id*.  Non-blocking — same pattern as
-        ``_request_peer_kel_resync``: sends the request and returns
-        immediately so the read loop can dispatch the response.  When it
-        arrives, ``identity_announcement_response`` ingests it and fires
-        *reauth_cb* to retry the handshake."""
-        req_id = str(uuid4())
-        self._ia_resync_waiters[req_id] = True
-        if reauth_cb:
-            self._resync_reauth[req_id] = reauth_cb
-        await self.write_params(
-            stream,
-            "request_identity_announcement",
-            {"id": req_id, "txn_id": txn_id},
-        )
-
-    async def request_identity_announcement(self, body, stream):
-        """Peer is asking us to send a specific identity-announcement
-        transaction by id — they couldn't find it locally and need it to
-        validate our KEL anchor."""
-        params = body.get("params", {})
-        req_id = params.get("id", "")
-        txn_id = params.get("txn_id", "")
-
-        txn_dict = None
-        if txn_id:
-            doc = await self.config.mongo.async_db.miner_transactions.find_one(
-                {"id": txn_id}, {"_id": 0}
-            )
-            if not doc:
-                async for block_doc in self.config.mongo.async_db.blocks.aggregate(
-                    [
-                        {"$match": {"transactions.id": txn_id}},
-                        {"$unwind": "$transactions"},
-                        {"$match": {"transactions.id": txn_id}},
-                        {"$replaceRoot": {"newRoot": "$transactions"}},
-                        {"$limit": 1},
-                    ]
-                ):
-                    txn_dict = block_doc
-                    break
-            else:
-                txn_dict = doc
-
-        await self.write_params(
-            stream,
-            "identity_announcement_response",
-            {"id": req_id, "txn": txn_dict or {}},
-        )
-        self.config.app_log.info(
-            "  [>]   identity_announcement_response sent (%s)",
-            "found" if txn_dict else "not found",
-        )
-
-    async def identity_announcement_response(self, body, stream):
-        """Ingest the peer's identity-announcement txn and fire any pending
-        re-auth callback."""
-        params = body.get("params", {})
-        req_id = params.get("id", "")
-        txn_dict = params.get("txn") or {}
-        self._ia_resync_waiters.pop(req_id, None)
-        if txn_dict:
-            await self._accept_peer_kel_chain([txn_dict])
-        reauth_cb = self._resync_reauth.pop(req_id, None)
-        if reauth_cb:
-            await reauth_cb(txn_dict)
 
     # ── end identity-announcement pull ─────────────────────────────────────
 
@@ -1126,9 +1055,18 @@ class NodeRPC(BaseRPC):
         if not params.get("peer"):
             stream.close()
             return {}
-
+        identity_announcement = params["identity_announcement"]
+        await self.config.mongo.async_db.miner_transactions.replace_one(
+            {"id": identity_announcement["id"]}, identity_announcement, upsert=True
+        )
         generic_peer = Peer.from_dict(params.get("peer"))
-
+        generic_peer.identity = Identity(
+            public_key=identity_announcement["public_key"],
+            username=identity_announcement["relationship"]["identity"]["username"],
+            username_signature=identity_announcement["relationship"]["identity"][
+                "username_signature"
+            ],
+        )
         min_major, min_minor, min_patch = self.config.min_supported_version
         peer_major, peer_minor, peer_patch = generic_peer.node_version
 
@@ -1481,20 +1419,6 @@ class NodeRPC(BaseRPC):
                         peer_username,
                     )
 
-                    async def _ia_reauth(_txn_dict, _stream=stream):
-                        if _txn_dict:
-                            await self._process_ratchet_auth(
-                                _stream,
-                                ratchet_chain,
-                                ratchet_public_key,
-                                latest_ratchet_pkh,
-                                _retried=True,
-                            )
-
-                    await self._request_peer_identity_announcement(
-                        stream, _ia_id, reauth_cb=_ia_reauth
-                    )
-                    return None
                 await self.remove_peer(
                     stream, reason="ratchet: identity_announcement txn not found"
                 )
@@ -1793,6 +1717,7 @@ class NodeRPC(BaseRPC):
             {
                 "peer": self.config.peer.to_dict(),
                 "ecdh_public_key": _ecdh_pub,
+                "identity_announcement": self.config.inception.to_dict(),
             },
         )
 
@@ -1928,10 +1853,20 @@ class NodeRPC(BaseRPC):
             stream.session_cipher = SessionCipher.derive(
                 _ecdh_priv, server_ecdh_pub, ""
             )
+        from yadacoin.core.identity import Identity
 
         # Store server's ECDH pub so request_sig handler can build the client nonce
         stream._server_ecdh_pub = server_ecdh_pub
-
+        identity_announcement = params["identity_announcement"]
+        await self.config.mongo.async_db.miner_transactions.replace_one(
+            {"id": identity_announcement["id"]}, identity_announcement, upsert=True
+        )
+        identity = params["identity_announcement"]["relationship"]["identity"]
+        stream.peer.identity = Identity(
+            public_key=params["identity_announcement"]["public_key"],
+            username=identity["username"],
+            username_signature=identity["username_signature"],
+        )
         peer_username = getattr(stream.peer.identity, "username") or stream.peer.host
         self.config.app_log.info(
             "  [>]   session cipher derived, awaiting encrypted request_sig  (%s)",
@@ -2284,7 +2219,7 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
             )
             if kel_chain:
                 connect_payload["kel_chain"] = kel_chain
-
+            connect_payload["identity_announcement"] = self.config.inception.to_dict()
             await self.write_params(stream, "connect", connect_payload)
             asyncio.create_task(self.send_keepalive(stream))
             await self.wait_for_data(stream)

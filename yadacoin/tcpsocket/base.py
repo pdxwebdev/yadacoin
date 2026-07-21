@@ -338,100 +338,74 @@ class RPCSocketServer(TCPServer, BaseRPC):
         stream.syncing = False
         stream.message_queue = {}
         while True:
-            token = peer_label_var.set(peer_label_for(stream))
+            peer_label_var.set(peer_label_for(stream))
+            data = await stream.read_until(b"\n")
+            stream.last_activity = int(time.time())
+            self.config.health.tcp_server.last_activity = time.time()
             try:
-                data = await stream.read_until(b"\n")
-                stream.last_activity = int(time.time())
-                self.config.health.tcp_server.last_activity = time.time()
-                try:
-                    # Decrypt if the peer has an established session cipher
-                    raw = data.strip()
-                    cipher = getattr(stream, "session_cipher", None)
-                    if cipher and raw.startswith(b'{"enc":'):
-                        enc_obj = json.loads(raw)
-                        ct = base64.b64decode(enc_obj["enc"])
-                        raw = cipher.decrypt(ct)
-                        # Plaintext behind the cipher is deflate-compressed by
-                        # write_as_json; fall back to treating it as raw JSON
-                        # for peers running an older, uncompressed build.
-                        try:
-                            raw = zlib.decompress(raw)
-                        except zlib.error:
-                            pass
-                    elif raw.startswith(b'{"z":'):
-                        z_obj = json.loads(raw)
-                        raw = zlib.decompress(base64.b64decode(z_obj["z"]))
-                    body = json.loads(raw)
-                except (json.JSONDecodeError, UnicodeDecodeError, zlib.error):
-                    self.config.app_log.warning(
-                        f"Invalid data from peer, skipping message: {data[:200]}"
-                    )
-                    continue
-                method = body.get("method")
-                if "result" in body:
-                    if method in REQUEST_RESPONSE_MAP:
-                        if body["id"] in stream.message_queue.get(
-                            REQUEST_RESPONSE_MAP[method], {}
-                        ):
-                            del stream.message_queue[REQUEST_RESPONSE_MAP[method]][
-                                body["id"]
-                            ]
-                if not hasattr(self, method):
-                    continue
-                if (
-                    hasattr(self.config, "tcp_traffic_debug")
-                    and self.config.tcp_traffic_debug == True
-                ):
-                    _peer_addr = (
-                        getattr(getattr(stream, "peer", None), "host", None)
-                        or getattr(getattr(stream, "peer", None), "address", None)
-                        or getattr(stream, "socket", None)
-                        or "unknown"
-                    )
-                    self.config.app_log.debug(
-                        f"SERVER RECEIVED {_peer_addr} {method} {body}"
-                    )
-                if hasattr(stream, "peer"):
-                    id_attr = getattr(stream.peer, stream.peer.id_attribute)
-                    if (
-                        id_attr
-                        not in self.config.nodeServer.inbound_streams[
-                            stream.peer.__class__.__name__
-                        ]
+                # Decrypt if the peer has an established session cipher
+                raw = data.strip()
+                cipher = getattr(stream, "session_cipher", None)
+                if cipher and raw.startswith(b'{"enc":'):
+                    enc_obj = json.loads(raw)
+                    ct = base64.b64decode(enc_obj["enc"])
+                    raw = cipher.decrypt(ct)
+                    # Plaintext behind the cipher is deflate-compressed by
+                    # write_as_json; fall back to treating it as raw JSON
+                    # for peers running an older, uncompressed build.
+                    try:
+                        raw = zlib.decompress(raw)
+                    except zlib.error:
+                        pass
+                elif raw.startswith(b'{"z":'):
+                    z_obj = json.loads(raw)
+                    raw = zlib.decompress(base64.b64decode(z_obj["z"]))
+                body = json.loads(raw)
+            except (json.JSONDecodeError, UnicodeDecodeError, zlib.error):
+                self.config.app_log.warning(
+                    f"Invalid data from peer, skipping message: {data[:200]}"
+                )
+                continue
+            method = body.get("method")
+            if "result" in body:
+                if method in REQUEST_RESPONSE_MAP:
+                    if body["id"] in stream.message_queue.get(
+                        REQUEST_RESPONSE_MAP[method], {}
                     ):
-                        await self.remove_peer(
-                            stream,
-                            reason=f"{id_attr} not in nodeServer.inbound_streams",
-                        )
-                if not hasattr(stream, "peer") and method not in ["login", "connect"]:
-                    await self.remove_peer(stream)
-                    break
-                await getattr(self, method)(body, stream)
-            except StreamClosedError:
-                if hasattr(stream, "peer"):
-                    self.config.app_log.warning(
-                        "Disconnected from {0}.{1}".format(
-                            stream.peer.__class__.__name__,
-                            stream.peer.identity.username
-                            if stream.peer.identity
-                            else "(blank)",
-                        )
-                    )
+                        del stream.message_queue[REQUEST_RESPONSE_MAP[method]][
+                            body["id"]
+                        ]
+            if not hasattr(self, method):
+                continue
+            if (
+                hasattr(self.config, "tcp_traffic_debug")
+                and self.config.tcp_traffic_debug == True
+            ):
+                _peer_addr = (
+                    getattr(getattr(stream, "peer", None), "host", None)
+                    or getattr(getattr(stream, "peer", None), "address", None)
+                    or getattr(stream, "socket", None)
+                    or "unknown"
+                )
+                self.config.app_log.debug(
+                    f"SERVER RECEIVED {_peer_addr} {method} {body}"
+                )
+            # if hasattr(stream, "peer"):
+            #     id_attr = getattr(stream.peer, stream.peer.id_attribute)
+            #     if (
+            #         id_attr
+            #         not in self.config.nodeServer.inbound_streams[
+            #             stream.peer.__class__.__name__
+            #         ]
+            #     ):
+            #         await self.remove_peer(
+            #             stream,
+            #             reason=f"{id_attr} not in nodeServer.inbound_streams",
+            #         )
+            if not hasattr(stream, "peer") and method not in ["login", "connect"]:
                 await self.remove_peer(stream)
                 break
-            except:
-                if hasattr(stream, "peer"):
-                    self.config.app_log.warning(
-                        "Bad data from {}: {}".format(
-                            stream.peer.__class__.__name__, stream.peer.to_json()
-                        )
-                    )
-                await self.remove_peer(stream, reason=f"BaseRPC: {format_exc()}")
-                self.config.app_log.warning("{}".format(format_exc()))
-                self.config.app_log.warning(data)
-                break
-            finally:
-                peer_label_var.reset(token)
+            await getattr(self, method)(body, stream)
 
     async def keepalive(self, body, stream):
         """
@@ -499,16 +473,6 @@ class RPCSocketClient(TCPClient):
         token = peer_label_var.set(peer_label_for(peer))
         try:
             stream = None
-            # Resolve an on-chain identity_announcement (if any) into a concrete
-            # Identity before any peer comparisons or signature verification.
-            resolved = await peer.resolve_identity_announcement()
-            if not resolved:
-                self.config.app_log.warning(
-                    "Cannot resolve identity_announcement for {}: {}".format(
-                        peer.__class__.__name__, peer.to_json()
-                    )
-                )
-                return
             id_attr = getattr(peer, peer.id_attribute)
             if id_attr in self.outbound_ignore[peer.__class__.__name__]:
                 self.config.app_log.info(
@@ -606,17 +570,6 @@ class RPCSocketClient(TCPClient):
                     self.config.app_log.info(
                         "new {} peer is valid".format(peer.__class__.__name__)
                     )
-                else:
-                    self.config.app_log.warning(
-                        "new {} peer has no resolvable identity".format(
-                            peer.__class__.__name__
-                        )
-                    )
-                    await self.remove_peer(
-                        stream,
-                        reason="RPCSocketClient: peer identity could not be resolved",
-                    )
-                    return
             except Exception as exc:
                 self.config.app_log.warning("invalid peer identity signature: %s", exc)
                 await self.remove_peer(
@@ -628,8 +581,8 @@ class RPCSocketClient(TCPClient):
             self.outbound_streams[peer.__class__.__name__][id_attr] = stream
             self.config.app_log.info(
                 "Connected to {}: {}".format(
-                    stream.peer.__class__.__name__,
-                    stream.peer.identity.username or "(blank)",
+                    stream.peer.host,
+                    stream.peer.port,
                 )
             )
             return stream
