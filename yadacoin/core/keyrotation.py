@@ -382,6 +382,7 @@ class NodeKeyRotationManager:
             latest = None
 
         if inception is not None:
+            self.config.inception = inception
             depth = (latest.counter + 1) if latest is not None else 1
             latest_pkh = (
                 latest.public_key_hash
