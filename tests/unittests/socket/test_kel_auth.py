@@ -39,6 +39,19 @@ def _make_config():
     config.serve_port = 8000
     config.proxy_port = 8888
     config.kel_anchor_public_key = None
+    config.inception = MagicMock()
+    config.inception.to_dict = MagicMock(
+        return_value={
+            "id": "inception_txn",
+            "public_key": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "relationship": {
+                "identity": {
+                    "username": "testnode",
+                    "username_signature": "testsig",
+                }
+            },
+        }
+    )
     config.kel_manager = MagicMock()
     config.kel_manager.advance_peer_auth_ratchet = AsyncMock(
         return_value=("default_priv", "default_pub", None, None, "default_tpkh", False)
@@ -109,6 +122,7 @@ def _make_peer(host="127.0.0.2"):
     peer.identity = MagicMock()
     peer.identity.username = "peernode"
     peer.identity.username_signature = "peernode_username_signature"
+    peer.identity_announcement = None
     peer.to_dict = MagicMock(return_value={"host": host})
     return peer
 
@@ -790,7 +804,12 @@ class TestConnected(AsyncTestCase):
             return_value=fake_cipher,
         ):
             await rpc.connected(
-                body={"params": {"ecdh_public_key": _ecdh_pub}},
+                body={
+                    "params": {
+                        "ecdh_public_key": _ecdh_pub,
+                        "identity_announcement": _make_config().inception.to_dict(),
+                    }
+                },
                 stream=stream,
             )
 
@@ -812,7 +831,12 @@ class TestConnected(AsyncTestCase):
             "yadacoin.tcpsocket.base.SessionCipher.derive", return_value=MagicMock()
         ):
             await rpc.connected(
-                body={"params": {"ecdh_public_key": _ecdh_pub}},
+                body={
+                    "params": {
+                        "ecdh_public_key": _ecdh_pub,
+                        "identity_announcement": _make_config().inception.to_dict(),
+                    }
+                },
                 stream=stream,
             )
 
@@ -828,7 +852,12 @@ class TestConnected(AsyncTestCase):
 
         _ecdh_pub = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
         await rpc.connected(
-            body={"params": {"ecdh_public_key": _ecdh_pub}},
+            body={
+                "params": {
+                    "ecdh_public_key": _ecdh_pub,
+                    "identity_announcement": _make_config().inception.to_dict(),
+                }
+            },
             stream=stream,
         )
 
@@ -1122,6 +1151,46 @@ class TestSigResponse(AsyncTestCase):
         # first positional arg after stream is ratchet_chain
         passed_chain = call_kwargs[0][1]
         self.assertEqual(passed_chain, stored_chain)
+
+    async def test_falls_back_to_sig_response_chain_on_first_contact(self):
+        """When stream._connect_ratchet_chain is empty (first contact),
+        sig_response must fall back to the ratchet_chain sent by the client
+        in this very message, so _process_ratchet_auth receives the actual
+        branch entries instead of an empty list."""
+        rpc = _make_rpc()
+        stream = _make_stream()
+        rpc.remove_peer = AsyncMock(return_value=None)
+        rpc.send_block_to_peer = AsyncMock()
+        rpc.get_next_block = AsyncMock()
+
+        _auth_priv, _auth_pub = _real_keys()
+
+        server_ecdh_pub = "serverecdh"
+        nonce = server_ecdh_pub
+        valid_sig = _real_sign(nonce, _auth_priv)
+
+        # First contact: connect sent an empty ratchet_chain
+        stream._server_ecdh_pub = server_ecdh_pub
+        stream._client_kel_tip_pkh_expected = ""
+        stream._connect_ratchet_chain = []
+        stream._connect_latest_ratchet_pkh = ""
+
+        response_chain = [{"id": "first_branch_txn"}]
+        body = self._body(
+            client_signed=valid_sig,
+            ratchet_pub=_auth_pub,
+            ratchet_chain=response_chain,
+        )
+
+        rpc._process_ratchet_auth = AsyncMock(
+            return_value=(_auth_pub, True, "ratchet", 1)
+        )
+
+        await rpc.sig_response(body=body, stream=stream)
+
+        call_kwargs = rpc._process_ratchet_auth.call_args
+        passed_chain = call_kwargs[0][1]
+        self.assertEqual(passed_chain, response_chain)
 
 
 # ─── NodeSocketClient.connect ECDH key storage ────────────────────────────────

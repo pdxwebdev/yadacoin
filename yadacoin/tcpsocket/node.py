@@ -1401,7 +1401,6 @@ class NodeRPC(BaseRPC):
         # configured with one.  This overrides any username-based lookup so the
         # KEL is verified against the authoritative inception transaction.
         _ia_id = getattr(stream.peer, "identity_announcement", None)
-        _onchain_tip = None
         if _ia_id:
             _anchor_doc = await _IApeer.get_by_transaction_id(_ia_id)
             if not _anchor_doc:
@@ -1430,25 +1429,6 @@ class NodeRPC(BaseRPC):
                 )
                 return None
             _peer_k0 = _anchor_pub
-            from yadacoin.core.keyeventlog import KeyEventLog
-
-            _onchain_tip = await KeyEventLog.get_latest(_anchor_pub)
-
-            # The most current KEL entry is the authoritative tip to
-            # authenticate against.  Surface a mismatch as a warning rather than
-            # a hard reject so an unconfirmed (mempool) rotation on either side
-            # does not break an otherwise valid connection.
-            if (
-                _onchain_tip
-                and latest_ratchet_pkh
-                and (latest_ratchet_pkh != _onchain_tip.public_key_hash)
-            ):
-                self.config.app_log.warning(
-                    "ratchet: peer %s claimed tip %s != on-chain KEL tip %s",
-                    getattr(stream.peer, "host", "?"),
-                    latest_ratchet_pkh,
-                    _onchain_tip.public_key_hash,
-                )
 
         for i, txn in enumerate(parsed_ratchet):
             try:
@@ -1494,7 +1474,8 @@ class NodeRPC(BaseRPC):
             _next_counter = 1
 
         for txn in parsed_ratchet:
-            if not txn.prev_public_key_hash:
+            _is_bridge = getattr(txn, "relationship", "") == "peer-kel-branch"
+            if not txn.prev_public_key_hash and not _is_bridge:
                 await self.config.mongo.async_db.miner_transactions.replace_one(
                     {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
                 )
@@ -1519,31 +1500,12 @@ class NodeRPC(BaseRPC):
         _anchor_key_event = None
         _anchor_counter = 0
         if _peer_k0:
-            _docs = (
-                await self.config.mongo.async_db.key_event_log.find(
-                    {"anchor_public_key": _peer_k0}, {"_id": 0}
-                )
-                .sort("counter", 1)
-                .to_list(length=None)
+            _doc = await self.config.mongo.async_db.key_event_log.find_one(
+                {"anchor_public_key": _peer_k0}, {"_id": 0}, sort=[("counter", -1)]
             )
-            for _doc in _docs:
-                if "txn" not in _doc:
-                    continue
-                try:
-                    _ke = _KE(_Txn.from_dict(_doc["txn"]))
-                    _p = (
-                        await _ke.get_onchain_parent() or await _ke.get_mempool_parent()
-                    )
-                    if _p:
-                        _anchor_key_event = _p["key_event"]
-                        _anchor_counter = _doc["counter"]
-                        break
-                except Exception:
-                    pass
-            if _anchor_counter > 0:
-                await self.config.mongo.async_db.key_event_log.delete_many(
-                    {"anchor_public_key": _peer_k0, "counter": {"$lt": _anchor_counter}}
-                )
+            if _doc:
+                _anchor_key_event = _KE(_Txn.from_dict(_doc["txn"]))
+                _anchor_counter = _doc.get("counter", 0)
 
         _has_kel = bool(_anchor_key_event)
         if not _has_kel and _peer_k0:
@@ -1602,16 +1564,6 @@ class NodeRPC(BaseRPC):
             _anchor_key_event is not None
             and getattr(_anchor_key_event.txn, "prerotated_key_hash", "")
             == signing_address
-        ) or bool(
-            await self.config.mongo.async_db.key_event_log.find_one(
-                {"anchor_public_key": _peer_k0, "prerotated_key_hash": signing_address}
-            )
-            or await self.config.mongo.async_db.blocks.find_one(
-                {"transactions.prerotated_key_hash": signing_address}
-            )
-            or await self.config.mongo.async_db.miner_transactions.find_one(
-                {"prerotated_key_hash": signing_address}
-            )
         )
         if not authorized:
             await self.remove_peer(
@@ -1729,7 +1681,7 @@ class NodeRPC(BaseRPC):
         # Advances *this peer's own branch* of our off-chain ratchet — not
         # the global chain — so nothing generated for other peers is ever
         # exposed here, and nothing generated here leaks to other peers.
-        _peer_username_sig = stream.peer.identity.username_signature
+        _peer_identity_announcement = stream.peer.identity_announcement
         (
             _auth_priv,
             _auth_pub,
@@ -1737,13 +1689,15 @@ class NodeRPC(BaseRPC):
             _conf_pub,
             tpkh,
             _is_new_branch,
-        ) = await self.config.kel_manager.advance_peer_auth_ratchet(_peer_username_sig)
+        ) = await self.config.kel_manager.advance_peer_auth_ratchet(
+            _peer_identity_announcement
+        )
 
         # Nonce the server signs: client_ecdh_pub + server_kel_tip_pkh
         # Tells the client: "I received your ECDH key and my KEL position is X"
         # (position within *this peer's branch*, i.e. Kp0-anchored, not global)
         _k0_pub = await self.config.kel_manager.peer_branch_anchor_pub(
-            _peer_username_sig
+            _peer_identity_announcement
         )
         _server_kel_tip_pkh = ""
         if _k0_pub:
@@ -1765,7 +1719,7 @@ class NodeRPC(BaseRPC):
         # Build server's ratchet_chain delta (client told us what they have via latest_ratchet_pkh)
         _srv_ratchet_chain = []
         if _k0_pub:
-            skip_after_counter = 0
+            skip_after_counter = -1
             if latest_ratchet_pkh:
                 _tip = await self.config.mongo.async_db.key_event_log.find_one(
                     {
@@ -1786,6 +1740,13 @@ class NodeRPC(BaseRPC):
             _srv_ratchet_chain = [
                 e["txn"] for e in await _cursor.to_list(length=None) if "txn" in e
             ]
+
+            if _is_new_branch:
+                bridge = await self.config.mongo.async_db.key_event_log.find_one(
+                    {"anchor_public_key": _auth_pub, "counter": 0}
+                )
+                if bridge and "txn" in bridge:
+                    _srv_ratchet_chain.insert(0, bridge["txn"])
 
         # Store state needed by sig_response handler
         stream._peer_ecdh_pub = peer_ecdh_pub
@@ -1934,7 +1895,7 @@ class NodeRPC(BaseRPC):
 
         # Verify server's KEL authorization
         result = await self._process_ratchet_auth(
-            stream, ratchet_chain, ratchet_public_key, latest_ratchet_pkh
+            stream, ratchet_chain, confirming_public_key, latest_ratchet_pkh
         )
         if result is None:
             return  # remove_peer already called
@@ -2083,7 +2044,7 @@ class NodeRPC(BaseRPC):
         result = await self._process_ratchet_auth(
             stream,
             _connect_ratchet_chain,
-            ratchet_public_key,
+            confirming_public_key,
             _connect_latest_ratchet_pkh,
         )
         if result is None:
@@ -2161,43 +2122,17 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
                 # No signatures in phase 1 — auth happens in encrypted request_sig/sig_response
             }
 
-            # Tell the server what we already have of their ratchet chain
-            _peer_username = (
-                getattr(getattr(peer, "identity", None), "username", "") or ""
-            )
-            if _peer_username:
-                from yadacoin.core.identityannouncement import (
-                    IdentityAnnouncement as _IA_conn,
-                )
-
-                _peer_ia_conn = await _IA_conn.get_by_username(
-                    _peer_username, include_mempool=True
-                )
-                _peer_k0_conn = (_peer_ia_conn or {}).get("public_key")
-                if _peer_k0_conn:
-                    _tip_conn = await self.config.mongo.async_db.key_event_log.find_one(
-                        {"anchor_public_key": _peer_k0_conn}, sort=[("counter", -1)]
-                    )
-                    if _tip_conn and _tip_conn.get("public_key_hash"):
-                        connect_payload["latest_ratchet_pkh"] = _tip_conn[
-                            "public_key_hash"
-                        ]
-
             # Our ratchet chain, scoped to *this peer's own branch* (server
             # will use it to determine client KEL tip for the nonce). Since
             # each peer gets an isolated branch rooted at its own bridge
             # entry, this is bounded by how many times we've connected to
             # this specific peer — never the global handshake history shared
             # with every other peer.
-            _peer_username_sig = (
-                getattr(getattr(peer, "identity", None), "username_signature", "") or ""
+
+            _k0_self = await self.config.kel_manager.peer_branch_anchor_pub(
+                peer.identity_announcement
             )
-            _k0_self = (
-                await self.config.kel_manager.peer_branch_anchor_pub(_peer_username_sig)
-                if _peer_username_sig
-                else ""
-            )
-            _is_first_contact = bool(_peer_username_sig) and not _k0_self
+            _is_first_contact = bool(peer.identity_announcement) and not _k0_self
             if _k0_self:
                 _rc = self.config.mongo.async_db.key_event_log.find(
                     {"anchor_public_key": _k0_self}, {"_id": 0, "txn": 1}

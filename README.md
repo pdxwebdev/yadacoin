@@ -394,6 +394,14 @@ export SECOND_FACTOR=your_strong_secret
   - type: bool
   - default: undefined
   - description: Specify duration of what is considered a "slow" task in asyncio.
+- key_log_debug
+  - type: bool
+  - default: undefined
+  - description: Enable verbose debug logging for Key Event Log (KEL) operations including inception lookup, forward walking, tagging, and recovery-successor traversal. Only affects `yadacoin/core/keyeventlog.py`.
+- background_process_debug
+  - type: bool
+  - default: undefined
+  - description: Enable verbose debug logging for background process operations in `yadacoin/app.py`.
 - combined_address
   - type: string
   - default: your node's wallet address

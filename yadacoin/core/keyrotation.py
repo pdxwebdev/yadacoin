@@ -70,6 +70,7 @@ from coincurve._libsecp256k1 import ffi as _ffi
 from coincurve.keys import PrivateKey
 
 from yadacoin.core.config import Config
+from yadacoin.core.keyeventlog import KeyEventLog
 from yadacoin.enums.peertypes import PEER_TYPES
 
 # ---------------------------------------------------------------------------
@@ -732,7 +733,7 @@ class NodeKeyRotationManager:
             )
         return cur, depth
 
-    async def peer_branch_anchor_pub(self, peer_username_signature: str) -> str:
+    async def peer_branch_anchor_pub(self, identity_announcement: str) -> str:
         """Return Kp0's public key (hex) for *peer_username_signature*, if a
         branch has already been established for them — read-only, never
         mints a new bridge.  Checks the in-memory cache first, then falls
@@ -741,17 +742,17 @@ class NodeKeyRotationManager:
         this process, e.g. right after a restart).  Returns "" if this peer
         has no branch yet.
         """
-        cached = self._peer_branches.get(peer_username_signature)
+        cached = self._peer_branches.get(identity_announcement)
         if cached:
             return cached["branch_anchor_pub"]
-        if not peer_username_signature:
+        if not identity_announcement:
             return ""
         bridge = await self.config.mongo.async_db.key_event_log.find_one(
-            {"branch_peer": peer_username_signature, "counter": 0}
+            {"branch_peer": identity_announcement, "counter": 0}
         )
         return (bridge or {}).get("anchor_public_key", "")
 
-    async def _ensure_peer_branch_ready(self, peer_username_signature: str) -> dict:
+    async def _ensure_peer_branch_ready(self, identity_announcement: str) -> dict:
         """Return (initialising/resuming if needed) this peer's branch state.
 
         On first contact with a peer, roots the branch at our *current*
@@ -774,10 +775,10 @@ class NodeKeyRotationManager:
         way to validate the bridge's parent (K_n) since it likely hasn't
         synced our blocks yet.
         """
-        if peer_username_signature in self._peer_branches:
-            return self._peer_branches[peer_username_signature], False
+        if identity_announcement in self._peer_branches:
+            return self._peer_branches[identity_announcement], False
 
-        if not peer_username_signature:
+        if not identity_announcement:
             # Without a peer-specific suffix, peer_factor degrades to the
             # plain SECOND_FACTOR, which would collide with the global chain.
             _fatal(
@@ -789,7 +790,7 @@ class NodeKeyRotationManager:
             )
 
         config = self.config
-        peer_factor = self.peer_branch_factor(peer_username_signature)
+        peer_factor = self.peer_branch_factor(identity_announcement)
         second_factor = self._second_factor or _read_second_factor()
 
         # The bridge entry (counter 0) is the stable, permanent identifier
@@ -797,7 +798,7 @@ class NodeKeyRotationManager:
         # (not by anchor_public_key, which we don't know yet without first
         # knowing which root produced it).
         bridge_doc = await config.mongo.async_db.key_event_log.find_one(
-            {"branch_peer": peer_username_signature, "counter": 0}
+            {"branch_peer": identity_announcement, "counter": 0}
         )
 
         if bridge_doc is None:
@@ -835,6 +836,9 @@ class NodeKeyRotationManager:
             )
             kp1_address = str(P2PKHBitcoinAddress.from_pubkey(kp1_pub_bytes))
 
+            latest_kel = await KeyEventLog.get_latest(
+                self.config.inception.public_key, onchain_only=False
+            )
             bridge_txn = Transaction(
                 txn_time=int(time.time()),
                 public_key=kn_pub_hex,
@@ -846,7 +850,7 @@ class NodeKeyRotationManager:
                 prerotated_key_hash=kp0_address,
                 twice_prerotated_key_hash=kp1_address,
                 public_key_hash=kn_address,
-                prev_public_key_hash="",
+                prev_public_key_hash=latest_kel.public_key_hash,
                 relationship="peer-kel-branch",
                 relationship_hash=hashlib.sha256(b"peer-kel-branch").digest().hex(),
                 rid="",
@@ -863,7 +867,7 @@ class NodeKeyRotationManager:
                     {
                         "counter": 0,
                         "anchor_public_key": kp0_pub_hex,
-                        "branch_peer": peer_username_signature,
+                        "branch_peer": identity_announcement,
                         "root_depth": root_depth,
                         "id": bridge_txn.transaction_signature,
                         "public_key": kn_pub_hex,
@@ -934,10 +938,10 @@ class NodeKeyRotationManager:
             }
 
         is_new_branch = bridge_doc is None
-        self._peer_branches[peer_username_signature] = state
+        self._peer_branches[identity_announcement] = state
         return state, is_new_branch
 
-    async def advance_peer_auth_ratchet(self, peer_username_signature: str):
+    async def advance_peer_auth_ratchet(self, identity_announcement: str):
         """Advance the off-chain signing ratchet by one step *within this
         peer's own branch* and return a 6-tuple:
         ``(current_priv_hex, current_pub_hex, next_priv_hex, next_pub_hex, twice_prerotated_key_hash, is_new_branch)``.
@@ -958,9 +962,9 @@ class NodeKeyRotationManager:
         even started.
         """
         config = self.config
-        peer_factor = self.peer_branch_factor(peer_username_signature)
+        peer_factor = self.peer_branch_factor(identity_announcement)
         state, is_new_branch = await self._ensure_peer_branch_ready(
-            peer_username_signature
+            identity_announcement
         )
 
         prev_key = state["ratchet_key"]
@@ -1021,7 +1025,7 @@ class NodeKeyRotationManager:
                 {
                     "counter": next_counter,
                     "anchor_public_key": branch_anchor_pub,
-                    "branch_peer": peer_username_signature,
+                    "branch_peer": identity_announcement,
                     "id": ratchet_txn.transaction_signature,
                     "public_key": prev_pub_hex,
                     "public_key_hash": prev_address,
@@ -1037,7 +1041,7 @@ class NodeKeyRotationManager:
                 exc,
             )
 
-        self._peer_branches[peer_username_signature] = {
+        self._peer_branches[identity_announcement] = {
             "ratchet_key": next_key,
             "ratchet_pub": next_pub_hex,
             "counter": next_counter,

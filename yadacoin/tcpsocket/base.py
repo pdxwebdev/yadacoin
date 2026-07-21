@@ -711,7 +711,7 @@ class RPCSocketClient(TCPClient):
             except ProtocolVersionTooLowError as e:
                 await self.remove_peer(stream, reason=str(e))
                 break
-            except:
+            except Exception:
                 if hasattr(stream, "peer"):
                     self.config.app_log.warning(
                         "Unhandled exception from {}: {}".format(

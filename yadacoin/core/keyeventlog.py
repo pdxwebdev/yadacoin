@@ -1753,11 +1753,12 @@ class KeyEventLog:
         )
 
         result = KELResult(log)
-        config.app_log.debug(
-            "build_from_public_key done public_key=%s log_len=%d",
-            public_key[:16],
-            len(log),
-        )
+        if hasattr(config, "key_log_debug") and config.key_log_debug:
+            config.app_log.debug(
+                "build_from_public_key done public_key=%s log_len=%d",
+                public_key[:16],
+                len(log),
+            )
 
         return result
 
@@ -1774,17 +1775,13 @@ class KeyEventLog:
             [
                 {
                     "$match": {
-                        "transactions.public_key_hash": latest[
-                            "inception_public_key_hash"
-                        ]
+                        "transactions.public_key_hash": latest.inception_public_key_hash
                     }
                 },
                 {"$unwind": "$transactions"},
                 {
                     "$match": {
-                        "transactions.public_key_hash": latest[
-                            "inception_public_key_hash"
-                        ]
+                        "transactions.public_key_hash": latest.inception_public_key_hash
                     }
                 },
                 {"$sort": {"transactions.counter": -1}},
@@ -1794,7 +1791,7 @@ class KeyEventLog:
         log = [Transaction.from_dict(row["transactions"]) for row in rows]
 
         mempool_cursor = config.mongo.async_db.miner_transactions.find(
-            {"inception_public_key_hash": latest["inception_public_key_hash"]}
+            {"inception_public_key_hash": latest.inception_public_key_hash}
         )
         async for doc in mempool_cursor:
             log.append(Transaction.from_dict(doc))
@@ -1874,14 +1871,15 @@ class KeyEventLog:
             getattr(txn, "inception_public_key_hash", None)
             and getattr(txn, "counter", None) is not None
         ):
-            config.app_log.debug(
-                "get_latest public_key=%s address=%s already tagged "
-                "inception_public_key_hash=%s counter=%s — fast lookup",
-                public_key[:16],
-                address,
-                txn.inception_public_key_hash,
-                txn.counter,
-            )
+            if hasattr(config, "key_log_debug") and config.key_log_debug:
+                config.app_log.debug(
+                    "get_latest public_key=%s address=%s already tagged "
+                    "inception_public_key_hash=%s counter=%s — fast lookup",
+                    public_key[:16],
+                    address,
+                    txn.inception_public_key_hash,
+                    txn.counter,
+                )
             latest = await KeyEventLog._latest_from_inception_tag(
                 txn.inception_public_key_hash, onchain_only=onchain_only
             )
@@ -1893,12 +1891,13 @@ class KeyEventLog:
             # Tag existed but the sorted lookup came up empty (shouldn't
             # normally happen) — fall through to the slow path below.
 
-        config.app_log.debug(
-            "get_latest public_key=%s address=%s untagged — walking back "
-            "via get_inception to orient and tag the KEL",
-            public_key[:16],
-            address,
-        )
+        if hasattr(config, "key_log_debug") and config.key_log_debug:
+            config.app_log.debug(
+                "get_latest public_key=%s address=%s untagged — walking back "
+                "via get_inception to orient and tag the KEL",
+                public_key[:16],
+                address,
+            )
         inception = await KeyEventLog.get_inception(
             public_key,
             onchain_only=onchain_only,
@@ -1908,12 +1907,13 @@ class KeyEventLog:
         if inception is None:
             return txn
 
-        config.app_log.debug(
-            "get_latest public_key=%s inception_tagged=%s — walking forward "
-            "and tagging every entry",
-            public_key[:16],
-            bool(getattr(inception, "inception_public_key_hash", None)),
-        )
+        if hasattr(config, "key_log_debug") and config.key_log_debug:
+            config.app_log.debug(
+                "get_latest public_key=%s inception_tagged=%s — walking forward "
+                "and tagging every entry",
+                public_key[:16],
+                bool(getattr(inception, "inception_public_key_hash", None)),
+            )
         return await KeyEventLog._walk_forward(
             inception,
             public_key,
@@ -1974,36 +1974,39 @@ class KeyEventLog:
                     candidate, "inception_public_key_hash", None
                 )
                 if candidate_inception == inception_pkh:
-                    config.app_log.debug(
-                        "_walk_forward iter=%d address=%s "
-                        "already_tagged counter=%d — stop",
-                        forward_iter,
-                        address,
-                        candidate.counter,
-                    )
+                    if hasattr(config, "key_log_debug") and config.key_log_debug:
+                        config.app_log.debug(
+                            "_walk_forward iter=%d address=%s "
+                            "already_tagged counter=%d — stop",
+                            forward_iter,
+                            address,
+                            candidate.counter,
+                        )
                     break
                 if candidate_inception is not None:
-                    config.app_log.debug(
-                        "_walk_forward iter=%d address=%s "
-                        "different_inception=%s — stop",
-                        forward_iter,
-                        address,
-                        candidate_inception[:16],
-                    )
+                    if hasattr(config, "key_log_debug") and config.key_log_debug:
+                        config.app_log.debug(
+                            "_walk_forward iter=%d address=%s "
+                            "different_inception=%s — stop",
+                            forward_iter,
+                            address,
+                            candidate_inception[:16],
+                        )
                     break
                 else:
                     counter += 1
                     candidate.inception_public_key_hash = inception_pkh
                     candidate.counter = counter
                     await KeyEventLog._tag_kel_entry_in_mongo(candidate)
-                    config.app_log.debug(
-                        "_walk_forward iter=%d address=%s "
-                        "found_onchain txn=%s counter=%d",
-                        forward_iter,
-                        address,
-                        candidate.transaction_signature[:16],
-                        counter,
-                    )
+                    if hasattr(config, "key_log_debug") and config.key_log_debug:
+                        config.app_log.debug(
+                            "_walk_forward iter=%d address=%s "
+                            "found_onchain txn=%s counter=%d",
+                            forward_iter,
+                            address,
+                            candidate.transaction_signature[:16],
+                            counter,
+                        )
                     txn = candidate
                     continue
 
@@ -2020,35 +2023,38 @@ class KeyEventLog:
                         candidate, "inception_public_key_hash", None
                     )
                     if candidate_inception == inception_pkh:
-                        config.app_log.debug(
-                            "_walk_forward iter=%d address=%s "
-                            "mempool already_tagged counter=%d — stop",
-                            forward_iter,
-                            address,
-                            candidate.counter,
-                        )
+                        if hasattr(config, "key_log_debug") and config.key_log_debug:
+                            config.app_log.debug(
+                                "_walk_forward iter=%d address=%s "
+                                "mempool already_tagged counter=%d — stop",
+                                forward_iter,
+                                address,
+                                candidate.counter,
+                            )
                         break
                     if candidate_inception is not None:
-                        config.app_log.debug(
-                            "_walk_forward iter=%d address=%s "
-                            "mempool different_inception=%s — stop",
-                            forward_iter,
-                            address,
-                            candidate_inception[:16],
-                        )
+                        if hasattr(config, "key_log_debug") and config.key_log_debug:
+                            config.app_log.debug(
+                                "_walk_forward iter=%d address=%s "
+                                "mempool different_inception=%s — stop",
+                                forward_iter,
+                                address,
+                                candidate_inception[:16],
+                            )
                         break
                     counter += 1
                     candidate.inception_public_key_hash = inception_pkh
                     candidate.counter = counter
                     await KeyEventLog._tag_kel_entry_in_mongo(candidate)
-                    config.app_log.debug(
-                        "_walk_forward iter=%d address=%s "
-                        "found_mempool txn=%s counter=%d",
-                        forward_iter,
-                        address,
-                        candidate.transaction_signature[:16],
-                        counter,
-                    )
+                    if hasattr(config, "key_log_debug") and config.key_log_debug:
+                        config.app_log.debug(
+                            "_walk_forward iter=%d address=%s "
+                            "found_mempool txn=%s counter=%d",
+                            forward_iter,
+                            address,
+                            candidate.transaction_signature[:16],
+                            counter,
+                        )
                     txn = candidate
                     continue
 
@@ -2061,22 +2067,24 @@ class KeyEventLog:
                     successor.inception_public_key_hash = inception_pkh
                     successor.counter = counter
                     await KeyEventLog._tag_kel_entry_in_mongo(successor)
-                    config.app_log.debug(
-                        "_walk_forward iter=%d address=%s "
-                        "follow_recovery successor=%s counter=%d",
-                        forward_iter,
-                        address,
-                        successor.transaction_signature[:16],
-                        counter,
-                    )
+                    if hasattr(config, "key_log_debug") and config.key_log_debug:
+                        config.app_log.debug(
+                            "_walk_forward iter=%d address=%s "
+                            "follow_recovery successor=%s counter=%d",
+                            forward_iter,
+                            address,
+                            successor.transaction_signature[:16],
+                            counter,
+                        )
                     txn = successor
                     continue
 
-            config.app_log.debug(
-                "_walk_forward iter=%d address=%s chain_exhausted",
-                forward_iter,
-                address,
-            )
+            if hasattr(config, "key_log_debug") and config.key_log_debug:
+                config.app_log.debug(
+                    "_walk_forward iter=%d address=%s chain_exhausted",
+                    forward_iter,
+                    address,
+                )
             break
 
         return txn
@@ -2156,12 +2164,13 @@ class KeyEventLog:
         if not address:
             address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
 
-        config.app_log.debug(
-            "get_inception: public_key=%s address=%s onchain_only=%s",
-            public_key[:16] if public_key else None,
-            address,
-            onchain_only,
-        )
+        if hasattr(config, "key_log_debug") and config.key_log_debug:
+            config.app_log.debug(
+                "get_inception: public_key=%s address=%s onchain_only=%s",
+                public_key[:16] if public_key else None,
+                address,
+                onchain_only,
+            )
 
         tagged = await KeyEventLog._safe_await(
             config.mongo.async_db.blocks.find_one(
@@ -2180,18 +2189,20 @@ class KeyEventLog:
             ]
             inception_pkh = None
             if not tagged_txns:
-                config.app_log.debug(
-                    "get_inception: fast_path block matched but no transaction has inception_public_key_hash"
-                )
+                if hasattr(config, "key_log_debug") and config.key_log_debug:
+                    config.app_log.debug(
+                        "get_inception: fast_path block matched but no transaction has inception_public_key_hash"
+                    )
                 tagged = None
             else:
                 tagged_txn = tagged_txns[0]
                 inception_pkh = tagged_txn.get("inception_public_key_hash")
-                config.app_log.debug(
-                    "get_inception: fast_path tagged_txn=%s inception_pkh=%s",
-                    tagged_txn.get("transaction_signature", "?")[:16],
-                    inception_pkh[:16] if inception_pkh else None,
-                )
+                if hasattr(config, "key_log_debug") and config.key_log_debug:
+                    config.app_log.debug(
+                        "get_inception: fast_path tagged_txn=%s inception_pkh=%s",
+                        tagged_txn.get("transaction_signature", "?")[:16],
+                        inception_pkh[:16] if inception_pkh else None,
+                    )
             if inception_pkh:
                 inception_doc = await KeyEventLog._safe_await(
                     config.mongo.async_db.blocks.find_one(
@@ -2212,18 +2223,22 @@ class KeyEventLog:
                         and t.get("counter") == 0
                     ]
                     if not matching_txns:
-                        config.app_log.debug(
-                            "get_inception: fast_path no matching inception txn found in block"
-                        )
+                        if hasattr(config, "key_log_debug") and config.key_log_debug:
+                            config.app_log.debug(
+                                "get_inception: fast_path no matching inception txn found in block"
+                            )
                         inception = None
                     else:
                         inception = Transaction.from_dict(matching_txns[0])
                         inception.inception_public_key_hash = inception_pkh
-                        config.app_log.debug(
-                            "get_inception: fast_path returning inception txn=%s public_key=%s",
-                            inception.transaction_signature[:16],
-                            inception.public_key[:16] if inception.public_key else None,
-                        )
+                        if hasattr(config, "key_log_debug") and config.key_log_debug:
+                            config.app_log.debug(
+                                "get_inception: fast_path returning inception txn=%s public_key=%s",
+                                inception.transaction_signature[:16],
+                                inception.public_key[:16]
+                                if inception.public_key
+                                else None,
+                            )
                         if inception.public_key != public_key:
                             config.app_log.warning(
                                 "get_inception: fast_path inception public_key=%s does not match requested public_key=%s — discarding",
@@ -2236,7 +2251,8 @@ class KeyEventLog:
                     config.inception = inception
                     return inception
 
-        config.app_log.debug("get_inception: fast_path miss, walking backward")
+        if hasattr(config, "key_log_debug") and config.key_log_debug:
+            config.app_log.debug("get_inception: fast_path miss, walking backward")
 
         while True:
             result = config.mongo.async_db.blocks.aggregate(
@@ -2253,12 +2269,15 @@ class KeyEventLog:
             res = await result.to_list(length=1)
             if res:
                 txn = Transaction.from_dict(res[0]["transactions"])
-                config.app_log.debug(
-                    "get_inception: slow_path onchain txn=%s public_key=%s prev_pkh=%s",
-                    txn.transaction_signature[:16],
-                    txn.public_key[:16] if txn.public_key else None,
-                    txn.prev_public_key_hash[:16] if txn.prev_public_key_hash else None,
-                )
+                if hasattr(config, "key_log_debug") and config.key_log_debug:
+                    config.app_log.debug(
+                        "get_inception: slow_path onchain txn=%s public_key=%s prev_pkh=%s",
+                        txn.transaction_signature[:16],
+                        txn.public_key[:16] if txn.public_key else None,
+                        txn.prev_public_key_hash[:16]
+                        if txn.prev_public_key_hash
+                        else None,
+                    )
                 if not txn.prev_public_key_hash or (
                     segment_only and is_recovers_inception(txn)
                 ):
@@ -2279,15 +2298,19 @@ class KeyEventLog:
                         },
                         array_filters=[{"elem.id": txn.transaction_signature}],
                     )
-                    config.app_log.debug(
-                        "get_inception: slow_path returning inception (onchain, no prev_pkh)"
-                    )
+                    if hasattr(config, "key_log_debug") and config.key_log_debug:
+                        config.app_log.debug(
+                            "get_inception: slow_path returning inception (onchain, no prev_pkh)"
+                        )
                     config.inception = txn
                     return txn
                 address = txn.prev_public_key_hash
             else:
                 if onchain_only:
-                    config.app_log.debug("get_inception: slow_path onchain_only miss")
+                    if hasattr(config, "key_log_debug") and config.key_log_debug:
+                        config.app_log.debug(
+                            "get_inception: slow_path onchain_only miss"
+                        )
                     return None
                 result_mempool = (
                     await config.mongo.async_db.miner_transactions.find_one(
@@ -2295,22 +2318,27 @@ class KeyEventLog:
                     )
                 )
                 if not result_mempool:
-                    config.app_log.debug("get_inception: slow_path mempool miss")
+                    if hasattr(config, "key_log_debug") and config.key_log_debug:
+                        config.app_log.debug("get_inception: slow_path mempool miss")
                     return None
                 txn = Transaction.from_dict(result_mempool)
                 txn.mempool = True
-                config.app_log.debug(
-                    "get_inception: slow_path mempool txn=%s public_key=%s prev_pkh=%s",
-                    txn.transaction_signature[:16],
-                    txn.public_key[:16] if txn.public_key else None,
-                    txn.prev_public_key_hash[:16] if txn.prev_public_key_hash else None,
-                )
+                if hasattr(config, "key_log_debug") and config.key_log_debug:
+                    config.app_log.debug(
+                        "get_inception: slow_path mempool txn=%s public_key=%s prev_pkh=%s",
+                        txn.transaction_signature[:16],
+                        txn.public_key[:16] if txn.public_key else None,
+                        txn.prev_public_key_hash[:16]
+                        if txn.prev_public_key_hash
+                        else None,
+                    )
                 if not txn.prev_public_key_hash or (
                     segment_only and is_recovers_inception(txn)
                 ):
-                    config.app_log.debug(
-                        "get_inception: slow_path returning inception (mempool, no prev_pkh)"
-                    )
+                    if hasattr(config, "key_log_debug") and config.key_log_debug:
+                        config.app_log.debug(
+                            "get_inception: slow_path returning inception (mempool, no prev_pkh)"
+                        )
                     if txn.public_key != public_key:
                         config.app_log.warning(
                             "get_inception: slow_path mempool inception public_key=%s does not match requested public_key=%s — discarding",
