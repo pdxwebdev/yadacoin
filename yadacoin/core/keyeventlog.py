@@ -2128,19 +2128,6 @@ class KeyEventLog:
         return latest
 
     @staticmethod
-    async def _safe_await(result):
-        """Await *result* if it is a coroutine, otherwise return it unchanged.
-
-        Test suites replace the Motor collection helpers with ``MagicMock``
-        instances, which are not awaitable.  This helper lets the same code
-        path work against both real Mongo and the test doubles.
-        """
-        try:
-            return await result
-        except TypeError:
-            return result
-
-    @staticmethod
     async def get_inception(
         public_key=None,
         address=None,
@@ -2172,14 +2159,12 @@ class KeyEventLog:
                 onchain_only,
             )
 
-        tagged = await KeyEventLog._safe_await(
-            config.mongo.async_db.blocks.find_one(
-                {
-                    BlocksQueryFields.PUBLIC_KEY_HASH.value: address,
-                    "transactions.inception_public_key_hash": {"$exists": True},
-                },
-                {"transactions": 1},
-            )
+        tagged = await config.mongo.async_db.blocks.find_one(
+            {
+                BlocksQueryFields.PUBLIC_KEY_HASH.value: address,
+                "transactions.inception_public_key_hash": {"$exists": True},
+            },
+            {"transactions": 1},
         )
         if isinstance(tagged, dict) and tagged.get("transactions"):
             tagged_txns = [
@@ -2204,14 +2189,12 @@ class KeyEventLog:
                         inception_pkh[:16] if inception_pkh else None,
                     )
             if inception_pkh:
-                inception_doc = await KeyEventLog._safe_await(
-                    config.mongo.async_db.blocks.find_one(
-                        {
-                            "transactions.inception_public_key_hash": inception_pkh,
-                            "transactions.counter": 0,
-                        },
-                        {"transactions": 1},
-                    )
+                inception_doc = await config.mongo.async_db.blocks.find_one(
+                    {
+                        "transactions.inception_public_key_hash": inception_pkh,
+                        "transactions.counter": 0,
+                    },
+                    {"transactions": 1},
                 )
                 if isinstance(inception_doc, dict) and inception_doc.get(
                     "transactions"
@@ -2281,13 +2264,6 @@ class KeyEventLog:
                 if not txn.prev_public_key_hash or (
                     segment_only and is_recovers_inception(txn)
                 ):
-                    if txn.public_key != public_key:
-                        config.app_log.warning(
-                            "get_inception: slow_path inception public_key=%s does not match requested public_key=%s — discarding",
-                            txn.public_key[:32] if txn.public_key else None,
-                            public_key[:32] if public_key else None,
-                        )
-                        return None
                     await config.mongo.async_db.blocks.update_one(
                         {"transactions.id": txn.transaction_signature},
                         {
@@ -2340,11 +2316,12 @@ class KeyEventLog:
                             "get_inception: slow_path returning inception (mempool, no prev_pkh)"
                         )
                     if txn.public_key != public_key:
-                        config.app_log.warning(
-                            "get_inception: slow_path mempool inception public_key=%s does not match requested public_key=%s — discarding",
-                            txn.public_key[:32] if txn.public_key else None,
-                            public_key[:32] if public_key else None,
-                        )
+                        if hasattr(config, "key_log_debug") and config.key_log_debug:
+                            config.app_log.debug(
+                                "get_inception: slow_path mempool inception public_key=%s does not match requested public_key=%s — discarding",
+                                txn.public_key[:32] if txn.public_key else None,
+                                public_key[:32] if public_key else None,
+                            )
                         return None
                     await config.mongo.async_db.miner_transactions.update_one(
                         {"id": txn.transaction_signature},

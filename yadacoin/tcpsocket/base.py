@@ -541,7 +541,7 @@ class RPCSocketClient(TCPClient):
             stream.last_activity = int(time.time())
             self.outbound_pending[peer.__class__.__name__][id_attr] = stream
             stream = await super(RPCSocketClient, self).connect(
-                peer.host, peer.port, timeout=timedelta(seconds=1)
+                peer.host, peer.port, timeout=timedelta(seconds=3)
             )
             stream.synced = False
             stream.syncing = False

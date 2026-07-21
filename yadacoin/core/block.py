@@ -633,6 +633,8 @@ class Block(object):
                     and transaction_obj.spent_in_txn in transaction_objs
                 ):
                     transaction_objs.remove(transaction_obj.spent_in_txn)
+                if transaction_obj.spent_in_txn in txns:
+                    txns.remove(transaction_obj.spent_in_txn)
                 continue
             try:
                 if int(index) > CHAIN.CHECK_TIME_FROM and (
