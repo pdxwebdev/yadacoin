@@ -214,7 +214,7 @@ class PoolInfoHandler(BaseWebHandler):
                         "$expr": {"$eq": ["$public_key", "$transactions.public_key"]},
                     }
                 },
-                {"$sort": {"transactions.time": -1}},
+                {"$sort": {"index": -1}},
                 {"$limit": 5},
             ]
         ).to_list(length=5)
