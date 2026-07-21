@@ -2231,7 +2231,6 @@ class KeyEventLog:
                                 public_key[:32] if public_key else None,
                             )
                             inception = None
-                    config.inception = inception
                     return inception
 
         if hasattr(config, "key_log_debug") and config.key_log_debug:
@@ -2278,7 +2277,6 @@ class KeyEventLog:
                         config.app_log.debug(
                             "get_inception: slow_path returning inception (onchain, no prev_pkh)"
                         )
-                    config.inception = txn
                     return txn
                 address = txn.prev_public_key_hash
             else:
@@ -2332,7 +2330,6 @@ class KeyEventLog:
                             }
                         },
                     )
-                    config.inception = txn
                     return txn
                 address = txn.prev_public_key_hash
 
