@@ -488,7 +488,7 @@ class Seed(Peer):
             self.identity
             and self.config.peer.identity.public_key == self.identity.public_key
         ):
-            del self.config.seeds[self.config.username_signature]
+            del self.config.seeds[self.config.inception.transaction_signature]
         return self.config.seeds
 
     async def get_inbound_peers(self):
@@ -496,7 +496,7 @@ class Seed(Peer):
             self.identity
             and self.config.peer.identity.public_key == self.identity.public_key
         ):
-            del self.config.seeds[self.config.username_signature]
+            del self.config.seeds[self.config.peer.identity.username_signature]
         peers = {}
         peers.update(self.config.seeds)
         seed_gateway = _resolve_peer_by_ref(
