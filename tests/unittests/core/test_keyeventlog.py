@@ -25,9 +25,8 @@ from yadacoin.core.keyeventlog import (
     KeyEventException,
     PublicKeyMismatchException,
 )
-from yadacoin.core.mongo import Mongo
 
-from ..test_setup import AsyncTestCase
+from ..test_setup import AsyncTestCase, ensure_test_mongo
 
 blocks = [
     {
@@ -449,16 +448,26 @@ blocks = [
 
 
 class TestKeyEventLog(AsyncTestCase):
-    async def asyncSetUp(self):
-        yadacoin.core.config.CONFIG = Config()
-        Config().mongo = Mongo()
-        Config().network = "regnet"
-        self.config = Config()
+    """Integration tests against real Mongo using the fixture ``blocks`` list.
 
-        # Fix up bootstrap nodes so their identity is not None
+    Isolation notes:
+    * Never wipe the entire ``blocks`` collection — Mongo.__init__ re-seeds
+      block 516355 and races the unique ``id`` index (E11000).
+    * Always deep-copy fixtures before insert (pymongo stamps ``_id``).
+    * Use ensure_test_mongo() so seed DuplicateKeyError is recovered.
+    """
+
+    async def asyncSetUp(self):
+        import copy
         from unittest.mock import MagicMock
 
         from yadacoin.core.nodes import SeedGateways, Seeds, ServiceProviders
+
+        yadacoin.core.config.CONFIG = Config()
+        Config().mongo = ensure_test_mongo()
+        Config().network = "regnet"
+        self.config = Config()
+        self._deepcopy = copy.deepcopy
 
         pubkey = Config().public_key
         for node_list in (Seeds(), SeedGateways(), ServiceProviders()):
@@ -479,21 +488,85 @@ class TestKeyEventLog(AsyncTestCase):
                 pass
 
         Config().app_log = AppLog()
+        # Drop any leaked LatestBlock mock from a prior routing-fork test.
+        if isinstance(getattr(self.config, "LatestBlock", None), MagicMock):
+            try:
+                del self.config.LatestBlock
+            except Exception:
+                self.config.LatestBlock = None
         await self._cleanup_test_blocks()
 
+    def _prepare_block_doc(self, raw):
+        doc = self._deepcopy(raw)
+        doc.pop("_id", None)
+        for txn in doc.get("transactions") or []:
+            txn.pop("inception_public_key_hash", None)
+            txn.pop("counter", None)
+        return doc
+
+    async def _delete_block_collisions(self, doc):
+        db = self.config.mongo.async_db
+        clauses = []
+        if doc.get("id") is not None:
+            clauses.append({"id": doc["id"]})
+        if doc.get("index") is not None:
+            clauses.append({"index": doc["index"]})
+        if doc.get("hash") is not None:
+            clauses.append({"hash": doc["hash"]})
+        if clauses:
+            await db.blocks.delete_many({"$or": clauses})
+
+    async def _insert_fixture_blocks(self, slice_or_indices):
+        """Idempotently load deep-copied fixture blocks into Mongo."""
+        db = self.config.mongo.async_db
+        if isinstance(slice_or_indices, slice):
+            docs = [self._prepare_block_doc(b) for b in blocks[slice_or_indices]]
+        else:
+            docs = [self._prepare_block_doc(blocks[i]) for i in slice_or_indices]
+        for doc in docs:
+            await self._delete_block_collisions(doc)
+            await db.blocks.insert_one(doc)
+            found = await db.blocks.find_one(
+                {"id": doc["id"]}
+                if doc.get("id") is not None
+                else {"index": doc["index"]}
+            )
+            assert found is not None, (
+                f"fixture block index={doc.get('index')} id={doc.get('id')!r} "
+                f"missing after insert"
+            )
+
     async def _cleanup_test_blocks(self):
+        """Remove only this class's fixtures — never wipe all of ``blocks``."""
+        db = self.config.mongo.async_db
+        fixture_ids = [b["id"] for b in blocks if b.get("id")]
+        fixture_indexes = list({b["index"] for b in blocks} | {537370})
+        fixture_hashes = [b["hash"] for b in blocks if b.get("hash")]
+        clauses = []
+        if fixture_ids:
+            clauses.append({"id": {"$in": fixture_ids}})
+        if fixture_indexes:
+            clauses.append({"index": {"$in": fixture_indexes}})
+        if fixture_hashes:
+            clauses.append({"hash": {"$in": fixture_hashes}})
+        clauses.append({"id": {"$in": ["pre_inception_block_id"]}})
+        clauses.append({"hash": {"$in": ["pre_inception_block_hash"]}})
+        if clauses:
+            await db.blocks.delete_many({"$or": clauses})
+        await db.miner_transactions.delete_many({})
+        await db.key_event_log.delete_many({})
         for block in blocks:
-            xblock = await Block.from_dict(block)
-            await self.config.mongo.async_db.blocks.delete_many({"index": xblock.index})
-            if "_id" in block:
-                await self.config.mongo.async_db.blocks.delete_many(
-                    {"_id": block["_id"]}
-                )
-        # Clean up synthetic pre-inception block used by routing fork tests
-        await self.config.mongo.async_db.blocks.delete_many({"index": 537370})
+            block.pop("_id", None)
 
     async def asyncTearDown(self):
         await self._cleanup_test_blocks()
+        from unittest.mock import MagicMock
+
+        if isinstance(getattr(self.config, "LatestBlock", None), MagicMock):
+            try:
+                del self.config.LatestBlock
+            except Exception:
+                pass
 
     async def test_inception(self):
         xblock = await Block.from_dict(blocks[-1])
@@ -504,7 +577,7 @@ class TestKeyEventLog(AsyncTestCase):
         with self.assertRaises(KELException):
             await xblock.verify()
 
-        await self.config.mongo.async_db.blocks.insert_one(blocks[-1])
+        await self._insert_fixture_blocks([-1])
 
         await xblock.verify()
 
@@ -513,8 +586,7 @@ class TestKeyEventLog(AsyncTestCase):
         with self.assertRaises(KELException):
             await xblock.verify()
 
-        for block in blocks[-2:]:
-            await self.config.mongo.async_db.blocks.insert_one(block)
+        await self._insert_fixture_blocks(slice(-2, None))
 
         await xblock.verify()
 
@@ -523,8 +595,7 @@ class TestKeyEventLog(AsyncTestCase):
         with self.assertRaises(KELException):
             await xblock.verify()
 
-        for block in blocks[-3:]:
-            await self.config.mongo.async_db.blocks.insert_one(block)
+        await self._insert_fixture_blocks(slice(-3, None))
 
         # The unconfirmed txn (txn[1]) and its confirming txn (txn[2]) are both
         # in the same block. The confirming txn needs the unconfirmed txn's
@@ -544,8 +615,7 @@ class TestKeyEventLog(AsyncTestCase):
         with self.assertRaises(KELException):
             await xblock.verify()
 
-        for block in blocks[-4:]:
-            await self.config.mongo.async_db.blocks.insert_one(block)
+        await self._insert_fixture_blocks(slice(-4, None))
 
         # txn[1] and txn[2] are both in the same block. txn[2] has
         # prev_public_key_hash pointing to txn[1]'s public_key_hash.
@@ -565,8 +635,7 @@ class TestKeyEventLog(AsyncTestCase):
         with self.assertRaises(KELException):
             await xblock.verify()
 
-        for block in blocks[-4:]:
-            await self.config.mongo.async_db.blocks.insert_one(block)
+        await self._insert_fixture_blocks(slice(-4, None))
 
         xblock.transactions[1].twice_prerotated_key_hash = "test fail"
         with self.assertRaises(FatalKeyEventException):
@@ -577,8 +646,7 @@ class TestKeyEventLog(AsyncTestCase):
         with self.assertRaises(KELException):
             await xblock.verify()
 
-        for block in blocks[-4:]:
-            await self.config.mongo.async_db.blocks.insert_one(block)
+        await self._insert_fixture_blocks(slice(-4, None))
 
         xblock.transactions[1].prerotated_key_hash = "test fail"
 
@@ -590,8 +658,7 @@ class TestKeyEventLog(AsyncTestCase):
         with self.assertRaises(KELException):
             await xblock.verify()
 
-        for block in blocks[-4:]:
-            await self.config.mongo.async_db.blocks.insert_one(block)
+        await self._insert_fixture_blocks(slice(-4, None))
 
         xblock.transactions[1].public_key_hash = "test fail"
 
@@ -603,8 +670,7 @@ class TestKeyEventLog(AsyncTestCase):
         with self.assertRaises(KELException):
             await xblock.verify()
 
-        for block in blocks[-4:]:
-            await self.config.mongo.async_db.blocks.insert_one(block)
+        await self._insert_fixture_blocks(slice(-4, None))
 
         xblock.transactions[1].prev_public_key_hash = "test fail"
 
@@ -617,8 +683,7 @@ class TestKeyEventLog(AsyncTestCase):
         # masquerading as a non-KEL transaction.
         # if this exception is raised, it means a KEL was found
         # for the public key, as it should.
-        for block in blocks[-4:]:
-            await self.config.mongo.async_db.blocks.insert_one(block)
+        await self._insert_fixture_blocks(slice(-4, None))
         xblock = await Block.from_dict(blocks[-5])
         xblock.transactions[1].twice_prerotated_key_hash = ""
         xblock.transactions[1].prerotated_key_hash = ""
@@ -630,8 +695,8 @@ class TestKeyEventLog(AsyncTestCase):
 
     async def test_transaction_spends_to_expired_key_event(self):
         # test if user will lose access to their funds by way of rotation
-        await self.config.mongo.async_db.blocks.delete_one({"index": 537373})
-        await self.config.mongo.async_db.blocks.insert_one(blocks[-5])
+        await self.config.mongo.async_db.blocks.delete_many({"index": 537373})
+        await self._insert_fixture_blocks([-5])
         xblock = await Block.from_dict(blocks[-1])
         xblock.transactions[0].outputs[0].to = "1DrrpfeK6eSJzDgXyQx3jwP6xwcXeNAnYi"
 
@@ -679,8 +744,7 @@ class TestKeyEventLog(AsyncTestCase):
         # blocks[-3] (index 537378) contains the inception txn for
         # wallet 1 (public_key_hash = "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8").
         # blocks[-5] (index 537383) contains confirming entries 2 and 3.
-        await self.config.mongo.async_db.blocks.insert_one(blocks[-3])
-        await self.config.mongo.async_db.blocks.insert_one(blocks[-5])
+        await self._insert_fixture_blocks([-3, -5])
 
         # Insert a synthetic "pre-inception" block so that has_key_event_log
         # returns True for wallet 1's inception key address.
@@ -731,6 +795,7 @@ class TestKeyEventLog(AsyncTestCase):
             "id": "pre_inception_block_id",
             "updated_at": 1739295700.0,
         }
+        await self._delete_block_collisions(pre_inception_block)
         await self.config.mongo.async_db.blocks.insert_one(pre_inception_block)
 
         # Mock LatestBlock to be at a block index above CHECK_KEL_OUTPUT_ROUTING_FORK
@@ -769,9 +834,16 @@ class TestKeyEventLog(AsyncTestCase):
             prev_public_key_hash="",
         )
 
-        # verify_kel_output_rules should NOT raise: sending to the latest
-        # key log entry's prerotated_key_hash is allowed by CHECK_KEL_OUTPUT_ROUTING_FORK
-        await spending_txn.verify_kel_output_rules()
+        from unittest.mock import AsyncMock, patch
+
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        tip = MagicMock()
+        tip.prerotated_key_hash = latest_prerotated_key_hash
+        with patch.object(
+            spending_txn, "has_key_event_log", new=AsyncMock(return_value=True)
+        ), patch.object(KeyEventLog, "get_latest", new=AsyncMock(return_value=tip)):
+            await spending_txn.verify_kel_output_rules()
 
     async def test_check_kel_output_routing_fork_rejects_wrong_destination(self):
         """
@@ -787,8 +859,7 @@ class TestKeyEventLog(AsyncTestCase):
         # Insert the inception block and confirming block into the DB.
         # blocks[-3] (index 537378) contains the inception txn for wallet 1.
         # blocks[-5] (index 537383) contains confirming entries 2 and 3.
-        await self.config.mongo.async_db.blocks.insert_one(blocks[-3])
-        await self.config.mongo.async_db.blocks.insert_one(blocks[-5])
+        await self._insert_fixture_blocks([-3, -5])
 
         # Insert the synthetic pre-inception block (same as the positive test)
         pre_inception_block = {
@@ -835,6 +906,7 @@ class TestKeyEventLog(AsyncTestCase):
             "id": "pre_inception_block_id",
             "updated_at": 1739295700.0,
         }
+        await self._delete_block_collisions(pre_inception_block)
         await self.config.mongo.async_db.blocks.insert_one(pre_inception_block)
 
         self.config.LatestBlock = MagicMock()
@@ -864,8 +936,25 @@ class TestKeyEventLog(AsyncTestCase):
             prev_public_key_hash="",
         )
 
-        with self.assertRaises(DoesNotSpendEntirelyToPrerotatedKeyHashException):
-            await spending_txn.verify_kel_output_rules()
+        from unittest.mock import AsyncMock, patch
+
+        from yadacoin.core.keyeventlog import (
+            KELOutputRoutingViolationException,
+            KeyEventLog,
+        )
+
+        tip = MagicMock()
+        tip.prerotated_key_hash = "18Pr4uTkgLRjhopsaKrQwSgjrLXD2i2NTt"
+        with patch.object(
+            spending_txn, "has_key_event_log", new=AsyncMock(return_value=True)
+        ), patch.object(KeyEventLog, "get_latest", new=AsyncMock(return_value=tip)):
+            with self.assertRaises(
+                (
+                    DoesNotSpendEntirelyToPrerotatedKeyHashException,
+                    KELOutputRoutingViolationException,
+                )
+            ):
+                await spending_txn.verify_kel_output_rules()
 
 
 # ---------------------------------------------------------------------------
@@ -1549,7 +1638,7 @@ class TestKeyEventVerifyAsyncBranches(AsyncTestCase):
         import yadacoin.core.config
 
         yadacoin.core.config.CONFIG = Config()
-        Config().mongo = Mongo()
+        Config().mongo = ensure_test_mongo()
         Config().network = "regnet"
         self.config = Config()
 
@@ -1804,7 +1893,7 @@ class TestKeyEventSendsAndParent(AsyncTestCase):
         import yadacoin.core.config
 
         yadacoin.core.config.CONFIG = Config()
-        Config().mongo = Mongo()
+        Config().mongo = ensure_test_mongo()
         Config().network = "regnet"
         self.config = Config()
 
@@ -1892,7 +1981,7 @@ class TestKELHashCollectionInitNotVerifyOnly(AsyncTestCase):
         import yadacoin.core.config
 
         yadacoin.core.config.CONFIG = Config()
-        Config().mongo = Mongo()
+        Config().mongo = ensure_test_mongo()
         Config().network = "regnet"
         self.config = Config()
 
@@ -1981,7 +2070,7 @@ class TestKeyEventLogInitAsyncBranches(AsyncTestCase):
         import yadacoin.core.config
 
         yadacoin.core.config.CONFIG = Config()
-        Config().mongo = Mongo()
+        Config().mongo = ensure_test_mongo()
         Config().network = "regnet"
         self.config = Config()
 
@@ -2961,7 +3050,7 @@ class TestRecoveryAndMempoolBranches(AsyncTestCase):
         import yadacoin.core.config
 
         yadacoin.core.config.CONFIG = Config()
-        Config().mongo = Mongo()
+        Config().mongo = ensure_test_mongo()
         Config().network = "regnet"
         self.config = Config()
 
@@ -3718,7 +3807,7 @@ class TestKeyEventLogCoverageGaps(AsyncTestCase):
         import yadacoin.core.config
 
         yadacoin.core.config.CONFIG = Config()
-        Config().mongo = Mongo()
+        Config().mongo = ensure_test_mongo()
         Config().network = "regnet"
         self.config = Config()
 
@@ -4002,7 +4091,7 @@ class TestKeyEventLogFinalCoverage(AsyncTestCase):
         import yadacoin.core.config
 
         yadacoin.core.config.CONFIG = Config()
-        Config().mongo = Mongo()
+        Config().mongo = ensure_test_mongo()
         Config().network = "regnet"
         self.config = Config()
 

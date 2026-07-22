@@ -39,10 +39,9 @@ from yadacoin.core.keyeventlog import (
     is_recovery_announcement,
 )
 from yadacoin.core.locationrecovery import CURVE_N
-from yadacoin.core.mongo import Mongo
 from yadacoin.core.transaction import Transaction
 
-from ..test_setup import AsyncTestCase
+from ..test_setup import AsyncTestCase, ensure_test_mongo
 
 # ── Schnorr proof helper (mirrors JS prover) ──────────────────────────────────
 
@@ -570,7 +569,7 @@ _VALID_PREV = "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8"
 class TestFindRecoverySuccessor(AsyncTestCase):
     async def asyncSetUp(self):
         yadacoin.core.config.CONFIG = Config()
-        Config().mongo = Mongo()
+        Config().mongo = ensure_test_mongo()
         Config().network = "regnet"
         self.config = Config()
 
@@ -613,9 +612,13 @@ class TestFindRecoverySuccessor(AsyncTestCase):
             twice_prerotated=_VALID_PKH,
             txn_id="kel-recovery-test-onchain",
         )
-        await self.config.mongo.async_db.blocks.insert_one(
-            _wrap_block(successor_txn, 900001)
+        self.assertTrue(
+            is_recovers_inception(successor_txn),
+            "fixture txn is not a recovers-inception",
         )
+        block_doc = _wrap_block(successor_txn, 900001)
+        await self.config.mongo.async_db.blocks.delete_many({"index": 900001})
+        await self.config.mongo.async_db.blocks.insert_one(block_doc)
 
         result = await KeyEventLog.find_recovery_successor(_VALID_PREV)
         self.assertIsNotNone(result)

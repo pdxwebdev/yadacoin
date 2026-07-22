@@ -33,12 +33,62 @@ from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.mongo import Mongo
 
+# Block id Mongo.__init__ inserts when index 516355 is missing.  The blocks
+# collection has a unique index on ``id``; a full wipe (or an orphan doc that
+# still holds this id at a different height) makes the seed insert raise
+# DuplicateKeyError.  Tests that construct Mongo() must tolerate that race.
+_MONGO_SEED_BLOCK_ID = (
+    "MEUCIQC5J3qKoR6QF5e7h9DmWMB/OU+x+ApASqkykx77FRfdowIgeF+fxe9tudwzZKiJBMTN"
+    "29XdE64Tf95Y4U0pQoNF04o="
+)
+_MONGO_SEED_BLOCK_INDEX = 516355
+
+
+def ensure_test_mongo():
+    """Return a usable ``Mongo`` instance for unit tests.
+
+    Prefer the existing ``Config().mongo`` when it is already a ``Mongo``.
+    Otherwise construct one, recovering from the known block-516355 seed
+    DuplicateKeyError by clearing the colliding seed id/index and retrying.
+    """
+    from pymongo.errors import DuplicateKeyError
+
+    c = Config()
+    existing = getattr(c, "mongo", None)
+    if isinstance(existing, Mongo):
+        return existing
+
+    def _clear_seed_collision():
+        # Use a bare client so we do not recurse through Mongo.__init__.
+        from pymongo import MongoClient
+
+        db_name = getattr(c, "database", None) or "yadacoin"
+        client = MongoClient()
+        try:
+            client[db_name].blocks.delete_many(
+                {
+                    "$or": [
+                        {"id": _MONGO_SEED_BLOCK_ID},
+                        {"index": _MONGO_SEED_BLOCK_INDEX},
+                    ]
+                }
+            )
+        finally:
+            client.close()
+
+    try:
+        c.mongo = Mongo()
+    except DuplicateKeyError:
+        _clear_seed_collision()
+        c.mongo = Mongo()
+    return c.mongo
+
 
 class AsyncTestCase(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         c = Config()
         c.network = "regnet"
-        c.mongo = Mongo()
+        c.mongo = ensure_test_mongo()
         c.mongo_debug = True
         if c.BU is None:
             c.BU = BlockChainUtils()
