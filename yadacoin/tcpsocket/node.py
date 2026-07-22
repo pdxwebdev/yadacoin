@@ -1563,8 +1563,7 @@ class NodeRPC(BaseRPC):
         )
         authorized = (
             _anchor_key_event is not None
-            and getattr(_anchor_key_event.txn, "prerotated_key_hash", "")
-            == signing_address
+            and getattr(_anchor_key_event.txn, "public_key_hash", "") == signing_address
         )
         if not authorized:
             await self.remove_peer(
@@ -1896,7 +1895,7 @@ class NodeRPC(BaseRPC):
 
         # Verify server's KEL authorization
         result = await self._process_ratchet_auth(
-            stream, ratchet_chain, confirming_public_key, latest_ratchet_pkh
+            stream, ratchet_chain, ratchet_public_key, latest_ratchet_pkh
         )
         if result is None:
             return  # remove_peer already called
