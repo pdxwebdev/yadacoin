@@ -727,7 +727,7 @@ class Seeds(Nodes):
                         "port": 8000,
                         "http_protocol": "http",
                         "http_port": 80,
-                        "identity_announcement": "MEUCIQDjtiMuueSJy2QT/SN894AiOcUM0e01RbeP3yq07ywYUgIgEhchD96411tTnSksfwsYBfrKgdpC3mbnIY5diNuPpS4=",
+                        "identity_announcement": "MEQCIEPleW/QK+tSoTsnBvRoh+XI3bI9FxbDovPPTZ9WZKgxAiAijUO6U5QP0Botg3DKEmyQV5cUbRPdqw6qnF1z3em4OQ==",
                         "seed_gateway": "MEQCIGm+m6vE+/6X/w8XvIvbbFzfOGQ0Eoq5rM69PQN+S+WjAiBO04VgcZPm0ZuXxg9Ik5qUlzW8Ms2Hv05rxJNPbX6CdA==",
                     }
                 ),
@@ -1027,7 +1027,7 @@ class SeedGateways(Nodes):
                         "port": 8000,
                         "http_protocol": "http",
                         "http_port": 80,
-                        "identity_announcement": "MEUCIQCL8rpjnYvfjbO2Mbswg9cm8hUIHh1C7oplVUn5zWS17QIgK0FSj5C8dVdTTjz6G0f3LlUHPDkH8I/oXnj44igVCxo=",
+                        "identity_announcement": "MEUCIQCWMY3cH7FSS7/mR+Nthj+mhnFwzSxJzDLI+hANDn1rCQIgUZxd6n+viMPLtABQNuLnGVXM0Fdevw/pQF11GQkcTwY=",
                         "seed": "MEUCIQCRhqjjKwQ2ISW+oTBML3nlm/7YEgeulhYr3XgEKHK6TQIgcrWyMA2ECUfeNE9N6gb8lYRrQhwJXZIf8r+9KiH2e2g=",
                     }
                 ),

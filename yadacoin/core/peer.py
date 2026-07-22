@@ -357,6 +357,27 @@ class Peer:
         for x in outbound_peers:
             if getattr(x, "identity_announcement", None) and x.identity is None:
                 await x.resolve_identity_announcement()
+
+        peers = {}
+        for x in outbound_peers:
+            if x.identity is None:
+                self.config.app_log.info(
+                    "ensure_peers_connected: skipping %s %s — identity is None",
+                    x.__class__.__name__,
+                    getattr(x, x.id_attribute, "?"),
+                )
+                continue
+            if self.config.peer.identity.public_key == x.identity.public_key:
+                self.config.app_log.info(
+                    "ensure_peers_connected: skipping %s %s — same public_key as self (self=%s, peer=%s)",
+                    x.__class__.__name__,
+                    getattr(x, x.id_attribute, "?"),
+                    self.config.peer.identity.public_key[:16],
+                    x.identity.public_key[:16],
+                )
+                continue
+            rid = self.config.peer.identity.generate_rid(x.identity.username_signature)
+            peers[rid] = x
         self.config.app_log.info(
             "ensure_peers_connected: raw outbound_peers=%d [%s]",
             len(outbound_peers),
@@ -391,7 +412,7 @@ class Peer:
         await self.connect(
             stream_collection,
             limit,
-            await self.get_outbound_peers(),
+            peers,
             outbound_ignored,
         )
 
@@ -484,18 +505,12 @@ class Seed(Peer):
         return SeedGateway
 
     async def get_outbound_peers(self):
-        if (
-            self.identity
-            and self.config.peer.identity.public_key == self.identity.public_key
-        ):
-            del self.config.seeds[self.config.inception.transaction_signature]
+        if self.config.peer.identity.username_signature in self.config.seeds:
+            del self.config.seeds[self.config.peer.identity.username_signature]
         return self.config.seeds
 
     async def get_inbound_peers(self):
-        if (
-            self.identity
-            and self.config.peer.identity.public_key == self.identity.public_key
-        ):
+        if self.config.peer.identity.username_signature in self.config.seeds:
             del self.config.seeds[self.config.peer.identity.username_signature]
         peers = {}
         peers.update(self.config.seeds)

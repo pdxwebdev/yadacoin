@@ -1055,18 +1055,8 @@ class NodeRPC(BaseRPC):
         if not params.get("peer"):
             stream.close()
             return {}
-        identity_announcement = params["identity_announcement"]
-        await self.config.mongo.async_db.miner_transactions.replace_one(
-            {"id": identity_announcement["id"]}, identity_announcement, upsert=True
-        )
+
         generic_peer = Peer.from_dict(params.get("peer"))
-        generic_peer.identity = Identity(
-            public_key=identity_announcement["public_key"],
-            username=identity_announcement["relationship"]["identity"]["username"],
-            username_signature=identity_announcement["relationship"]["identity"][
-                "username_signature"
-            ],
-        )
         min_major, min_minor, min_patch = self.config.min_supported_version
         peer_major, peer_minor, peer_patch = generic_peer.node_version
 
@@ -1098,6 +1088,17 @@ class NodeRPC(BaseRPC):
             )
             stream.close()
             return
+        identity_announcement = params["identity_announcement"]
+        await self.config.mongo.async_db.miner_transactions.replace_one(
+            {"id": identity_announcement["id"]}, identity_announcement, upsert=True
+        )
+        generic_peer.identity = Identity(
+            public_key=identity_announcement["public_key"],
+            username=identity_announcement["relationship"]["identity"]["username"],
+            username_signature=identity_announcement["relationship"]["identity"][
+                "username_signature"
+            ],
+        )
 
         peerCls = None
         if isinstance(self.config.peer, Seed):
