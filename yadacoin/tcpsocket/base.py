@@ -342,6 +342,9 @@ class RPCSocketServer(TCPServer, BaseRPC):
             try:
                 data = await stream.read_until(b"\n")
             except StreamClosedError:
+                self.config.app_log.warning(
+                    f"Stream closed: {getattr(getattr(stream, 'peer', None), 'host', 'Unknown')}"
+                )
                 break
             stream.last_activity = int(time.time())
             self.config.health.tcp_server.last_activity = time.time()
