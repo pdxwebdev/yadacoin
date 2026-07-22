@@ -995,35 +995,30 @@ class TestBlockchainUtilsCoverage(AsyncTestCase):
     # ------------------------------------------------------------------
 
     async def test_get_reverse_public_key_via_txn_id_loop(self):
-        """Force fall-through to txn_id loop, then find matching xaddress."""
+        """Match address via unique_public_keys from get_public_key_address_pairs.
+
+        The historical second-pass txn_id aggregate loop was removed; reverse
+        lookup now only iterates unique_public_keys from the pairs query.
+        """
         bu, config = _make_bu()
-        # Use a known pub-key + its derived address.
         from bitcoin.wallet import P2PKHBitcoinAddress
 
         real_pk_hex = (
             "02a9225bc5deb4d66262c34cfe3e40c7ba3ff12768540e9b69729978b850a3cabb"
         )
         real_addr = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(real_pk_hex)))
-        # No cached reversed_public_keys
-        config.mongo.async_db.reversed_public_keys.find_one = mock.AsyncMock(
-            return_value=None
-        )
-        # First loop: only "junk" public_keys whose xaddress != real_addr.
-        # We use a different valid pubkey so derivation succeeds but doesn't match.
         other_pk_hex = (
             "02c786e8be16900051e059476e3fa42697e41dd9110c85a61c5cc17e15dafda90a"
+        )
+        config.mongo.async_db.reversed_public_keys.find_one = mock.AsyncMock(
+            return_value=None
         )
         bu.get_public_key_address_pairs = mock.AsyncMock(
             return_value=[
                 {
-                    "unique_public_keys": [other_pk_hex],
-                    "all_ids": ["txn-id-1"],
+                    "unique_public_keys": [other_pk_hex, real_pk_hex],
                 }
             ]
-        )
-        # Second loop: aggregate yields a block_txn whose pk matches real_addr.
-        config.mongo.async_db.blocks.aggregate = mock.MagicMock(
-            return_value=_AsyncCursor([{"transactions": {"public_key": real_pk_hex}}])
         )
         config.mongo.async_db.reversed_public_keys.update_one = mock.AsyncMock()
         result = await bu.get_reverse_public_key(real_addr)
@@ -1033,6 +1028,27 @@ class TestBlockchainUtilsCoverage(AsyncTestCase):
     # ------------------------------------------------------------------
     # Lines 384-418: get_wallet_unspent_transactions_for_dusting
     # ------------------------------------------------------------------
+
+    async def test_get_reverse_public_key_no_matching_pubkey_returns_none(self):
+        """Line 347: unique_public_keys present but none derive to *address* → None."""
+        bu, config = _make_bu()
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        real_pk_hex = (
+            "02a9225bc5deb4d66262c34cfe3e40c7ba3ff12768540e9b69729978b850a3cabb"
+        )
+        real_addr = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(real_pk_hex)))
+        other_pk_hex = (
+            "02c786e8be16900051e059476e3fa42697e41dd9110c85a61c5cc17e15dafda90a"
+        )
+        config.mongo.async_db.reversed_public_keys.find_one = mock.AsyncMock(
+            return_value=None
+        )
+        bu.get_public_key_address_pairs = mock.AsyncMock(
+            return_value=[{"unique_public_keys": [other_pk_hex]}]
+        )
+        result = await bu.get_reverse_public_key(real_addr)
+        self.assertIsNone(result)
 
     async def test_get_wallet_unspent_transactions_for_dusting(self):
         bu, _ = _make_bu()

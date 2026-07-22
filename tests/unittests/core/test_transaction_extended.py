@@ -1263,10 +1263,11 @@ class TestVerifyCoverageGaps(TransactionTestCase):
         kel_entry.public_key_hash = "1PrevKeyHash"
         kel_entry.public_key = "prevpubkey"
 
+        # Production uses KeyEventLog.get_latest (single tip), not build_from_public_key.
         with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
             with patch(
-                "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-                new=AsyncMock(return_value=[kel_entry]),
+                "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+                new=AsyncMock(return_value=kel_entry),
             ):
                 auth_addrs, auth_pks = await txn.get_kel_cross_key_auth(address)
 
@@ -1290,8 +1291,8 @@ class TestVerifyCoverageGaps(TransactionTestCase):
 
         with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
             with patch(
-                "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-                new=AsyncMock(return_value=[kel_entry]),
+                "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+                new=AsyncMock(return_value=kel_entry),
             ):
                 result = await txn.get_kel_cross_key_auth("1NotMatching")
 

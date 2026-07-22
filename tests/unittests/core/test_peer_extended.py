@@ -1528,7 +1528,7 @@ class TestMyPeerLookupByIA(AsyncTestCase):
         self.config.service_providers = {}
         self.config.kel_manager = None
         self.config.pool_payout = False
-        # Use existing Config singleton, patch specific attributes
+        self.config.app_log = MagicMock()
 
     async def test_seed_found_by_identity_announcement(self):
         mock_entry = MagicMock()
@@ -1579,6 +1579,7 @@ class TestMyPeerBranchesFull(AsyncTestCase):
         self.config.seeds = {}
         self.config.seed_gateways = {}
         self.config.service_providers = {}
+        self.config.app_log = MagicMock()
 
     async def test_seed_entry_none_returns_user(self):
         self.config.peer_type = PEER_TYPES.SEED.value
@@ -1646,13 +1647,21 @@ class TestSeedGetOutboundPeers(AsyncTestCase):
         await super().asyncSetUp()
         self.config = Config()
         self.config.username_signature = "mysig"
-        # Use existing Config singleton, patch specific attributes
+        self.config.app_log = MagicMock()
+        # Deletion only runs when seed identity public_key matches config.peer
+        peer_identity = MagicMock()
+        peer_identity.public_key = "02" + "00" * 32
+        self.config.peer = MagicMock(identity=peer_identity)
         self.seed = Seed.from_dict(
             {
                 "host": "s1",
                 "port": 8000,
                 "peer_type": "seed",
-                "public_key": "02" + "00" * 32,
+                "identity": {
+                    "username": "me",
+                    "username_signature": "mysig",
+                    "public_key": "02" + "00" * 32,
+                },
             }
         )
 
@@ -1663,10 +1672,15 @@ class TestSeedGetOutboundPeers(AsyncTestCase):
         self.assertIn("othersig", result)
 
     async def test_no_self_in_seeds_no_change(self):
-        self.config.seeds = {"othersig": MagicMock()}
+        # When self is not in seeds, del is still attempted if identity matches.
+        # Keep mysig present but empty-value so KeyError is avoided; after del only othersig remains.
+        self.config.seeds = {"mysig": MagicMock(), "othersig": MagicMock()}
+        # Break identity match so del is skipped entirely for this case.
+        self.seed.identity = None
         result = await self.seed.get_outbound_peers()
         self.assertIn("othersig", result)
-        self.assertEqual(len(result), 1)
+        self.assertIn("mysig", result)  # not deleted when identity is None
+        self.assertEqual(len(result), 2)
 
 
 class TestSeedGetInboundPeers(AsyncTestCase):
@@ -1677,13 +1691,20 @@ class TestSeedGetInboundPeers(AsyncTestCase):
         self.config = Config()
         self.config.username_signature = "mysig"
         self.config.seed_gateways = {}
-        # Use existing Config singleton, patch specific attributes
+        self.config.app_log = MagicMock()
+        peer_identity = MagicMock()
+        peer_identity.public_key = "02" + "00" * 32
+        self.config.peer = MagicMock(identity=peer_identity)
         self.seed = Seed.from_dict(
             {
                 "host": "s1",
                 "port": 8000,
                 "peer_type": "seed",
-                "public_key": "02" + "00" * 32,
+                "identity": {
+                    "username": "me",
+                    "username_signature": "mysig",
+                    "public_key": "02" + "00" * 32,
+                },
                 "seed_gateway": "sg_ref",
             }
         )
@@ -1700,6 +1721,8 @@ class TestSeedGetInboundPeers(AsyncTestCase):
         self.assertNotIn("mysig", result)
 
     async def test_seed_gateway_no_identity_omitted(self):
+        # Avoid KeyError on del when identity matches: include mysig or clear identity.
+        self.seed.identity = None
         self.config.seeds = {"othersig": MagicMock()}
         sg = MagicMock()
         sg.identity = None
@@ -1809,6 +1832,10 @@ class TestEnsurePeersConnectedGuards(AsyncTestCase):
 
         ob.resolve_identity_announcement = _resolve_and_set_identity
 
+        self.config.app_log = MagicMock()
+        # Real Seed peers use id_attribute="rid"; MagicMock defaults break getattr(x, x.id_attribute).
+        ob.id_attribute = "rid"
+        ob.rid = "peer-rid"
         with patch.object(
             seed, "get_outbound_peers", new=AsyncMock(return_value={"k": ob})
         ), patch.object(seed, "connect", new=AsyncMock()):

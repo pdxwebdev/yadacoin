@@ -190,3 +190,26 @@ class TestBlock(AsyncTestCase):
 
         self.assertEqual(registry, {"02known_anchor": "seed"})
         Nodes._anchor_registry = None
+
+
+class TestNodesIndexedByAddressCoverage(AsyncTestCase):
+    async def test_indexed_by_address_skips_none_identity(self):
+        """Line 137: KEL-anchored nodes with identity=None are skipped."""
+        from yadacoin.core.nodes import Nodes
+
+        no_ident = MagicMock()
+        no_ident.identity = None
+        with_ident = MagicMock()
+        with_ident.identity = MagicMock(public_key="02" + "ab" * 32)
+
+        with mock.patch.object(
+            Nodes,
+            "get_all_nodes_for_block_height",
+            return_value=[no_ident, with_ident],
+        ), mock.patch(
+            "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",
+            return_value="1Paid",
+        ):
+            indexed = Nodes.get_all_nodes_indexed_by_address_for_block_height(0)
+
+        self.assertEqual(indexed, {"1Paid": with_ident})

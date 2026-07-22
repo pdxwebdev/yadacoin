@@ -1108,8 +1108,8 @@ class TestQueueReanchor(AsyncTestCase):
         mgr._second_factor = "sf"
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-            new=AsyncMock(return_value=[]),
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=None),
         ):
             await mgr._queue_reanchor()
 
@@ -1122,7 +1122,7 @@ class TestQueueReanchor(AsyncTestCase):
         mgr._second_factor = "sf"
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
             new=AsyncMock(side_effect=Exception("db error")),
         ):
             await mgr._queue_reanchor()  # must not raise
@@ -1158,10 +1158,11 @@ class TestQueueReanchor(AsyncTestCase):
         mock_entry = MagicMock()
         mock_entry.public_key_hash = "1SomeAddress"
         mock_entry.prerotated_key_hash = step1_addr
+        mock_entry.counter = 0
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-            new=AsyncMock(return_value=[mock_entry]),
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=mock_entry),
         ):
             await mgr._queue_reanchor()
 
@@ -1216,10 +1217,11 @@ class TestQueueReanchor(AsyncTestCase):
         mock_entry = MagicMock()
         mock_entry.public_key_hash = "1SomeAddress"
         mock_entry.prerotated_key_hash = step1_addr
+        mock_entry.counter = 0
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-            new=AsyncMock(return_value=[mock_entry]),
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=mock_entry),
         ):
             await mgr._queue_reanchor()
 
@@ -1259,10 +1261,11 @@ class TestQueueReanchor(AsyncTestCase):
         mock_entry = MagicMock()
         mock_entry.public_key_hash = "1SomeAddress"
         mock_entry.prerotated_key_hash = step1_addr
+        mock_entry.counter = 0
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-            new=AsyncMock(return_value=[mock_entry]),
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=mock_entry),
         ):
             await mgr._queue_reanchor()
 
@@ -1301,10 +1304,11 @@ class TestQueueReanchor(AsyncTestCase):
         mock_entry = MagicMock()
         mock_entry.public_key_hash = "1SomeAddress"
         mock_entry.prerotated_key_hash = step1_addr
+        mock_entry.counter = 0
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-            new=AsyncMock(return_value=[mock_entry]),
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=mock_entry),
         ):
             result = await mgr._queue_reanchor(
                 block=block,
@@ -1370,7 +1374,7 @@ class TestQueueReanchor(AsyncTestCase):
         block = MagicMock()
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
             new=AsyncMock(side_effect=Exception("db error")),
         ):
             result = await mgr._queue_reanchor(
@@ -1394,8 +1398,8 @@ class TestQueueReanchor(AsyncTestCase):
         block = MagicMock()
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-            new=AsyncMock(return_value=[]),
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=None),
         ):
             result = await mgr._queue_reanchor(
                 block=block,
@@ -1445,10 +1449,11 @@ class TestQueueReanchor(AsyncTestCase):
         # derivation (before the while-loop) won't match, forcing the
         # inner while-loop body to run at least once before it breaks.
         mock_entry.prerotated_key_hash = step2_addr
+        mock_entry.counter = 0
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-            new=AsyncMock(return_value=[mock_entry]),
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=mock_entry),
         ):
             await mgr._queue_reanchor()
 
@@ -1502,6 +1507,7 @@ class TestQueueReanchor(AsyncTestCase):
         # Matches after ONE derivation step so kn == step1 with no inner
         # while-loop iteration needed in the earlier KEL-walk block.
         mock_entry.prerotated_key_hash = step1_addr
+        mock_entry.counter = 0
 
         cfg.mongo.async_db.key_event_log = MagicMock()
         cfg.mongo.async_db.key_event_log.find_one = AsyncMock(
@@ -1517,8 +1523,8 @@ class TestQueueReanchor(AsyncTestCase):
         )
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
-            new=AsyncMock(return_value=[mock_entry]),
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=mock_entry),
         ):
             await mgr._queue_reanchor()
 
@@ -1885,6 +1891,33 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
         self.assertEqual(len(yielded), 100)
         self.assertEqual(mock_sweep.call_args.kwargs["total"], 100.0)
 
+    async def test_pool_peer_type_skips_legacy_sweep(self):
+        """Lines 1660-1664: pool nodes log and return without sweeping."""
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+        from yadacoin.enums.peertypes import PEER_TYPES
+
+        cfg = _make_config(address="1LEGACY")
+        cfg.peer_type = PEER_TYPES.POOL.value
+        cfg.LatestBlock = MagicMock()
+        cfg.LatestBlock.block.index = 100
+        cfg.LatestBlock.block.hash = "abc"
+
+        async def _gen(addr):
+            yield {"id": "u1", "outputs": [{"to": "1LEGACY", "value": 5.0}]}
+
+        cfg.BU = MagicMock()
+        cfg.BU.get_wallet_unspent_transactions_for_spending = _gen
+        mgr = NodeKeyRotationManager(cfg)
+        mock_entry = MagicMock()
+        mock_entry.prerotated_key_hash = "1KEL"
+
+        with patch.object(mgr, "_sweep_legacy_to_kel", new=AsyncMock()) as mock_sweep:
+            await mgr._check_and_sweep_legacy_funds(mock_entry)
+        mock_sweep.assert_not_awaited()
+        cfg.app_log.info.assert_any_call(
+            "NodeKeyRotationManager: skipping legacy sweep for pool node."
+        )
+
 
 # ---------------------------------------------------------------------------
 # _sweep_legacy_to_kel
@@ -2100,6 +2133,9 @@ def _make_branch_config(priv_hex, pub_hex, cc_hex):
         kel_anchor_chain_code=cc_hex,
     )
     cfg.mongo.async_db.key_event_log = _FakeKeyEventLogCollection()
+    # bridge minting calls get_latest(self.config.inception.public_key, ...)
+    cfg.inception = MagicMock()
+    cfg.inception.public_key = pub_hex
     return cfg
 
 
@@ -2138,9 +2174,10 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
     def _patch_kel_depth(self, mgr):
         """Patch KeyEventLog.get_latest so
         _resolve_latest_kel_anchor sees a KEL entry with counter=depth-1.
-        Only its counter is used."""
+        public_key_hash is required when minting the peer bridge entry."""
         fake_entry = MagicMock()
         fake_entry.counter = mgr._test_kel_depth - 1
+        fake_entry.public_key_hash = "1LatestKelTipAddress"
         return patch(
             "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
             new=AsyncMock(return_value=fake_entry),

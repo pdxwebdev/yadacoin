@@ -43,6 +43,7 @@ class TestMyPeerAllBranches(AsyncTestCase):
         self.config.service_providers = {}
         self.config.kel_manager = None
         self.config.pool_payout = False
+        self.config.app_log = MagicMock()
         yadacoin.core.config.CONFIG = self.config
 
     async def test_default_returns_user(self):

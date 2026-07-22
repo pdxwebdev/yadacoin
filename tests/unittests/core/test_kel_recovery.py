@@ -307,28 +307,50 @@ class TestVerifyRecoveryInception(AsyncTestCase):
         ke.config = Config()
         return ke
 
-    def _delegator_log(self, prev_pkh, witness_hash):
+    def _delegator_log(self, prev_pkh, witness_hash, public_key=None):
         """Return a fake delegator KEL whose tip's pkh matches prev_pkh and
-        whose latest entry announces ``witness_hash``."""
+        whose latest entry announces ``witness_hash``.
+
+        ``get_latest`` now returns a tip Transaction; verify_recovery_inception
+        still indexes it as a sequence (``log[-1]``) and iterates it for the
+        recovery announcement, so we return a list-like tip wrapper via a
+        single-element list that also exposes tip attributes when used as the
+        get_latest return value.
+        """
         tip = _make_txn(
-            relationship={"recovery": witness_hash},
+            relationship={"recovery": witness_hash} if witness_hash is not None else "",
             public_key_hash=prev_pkh,
             prerotated="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",
             twice_prerotated="1LoXtHtuu3qabmrkPam1nfET3kcPHok9AR",
+            public_key=public_key or ("02" + "11" * 32),
         )
         return [tip]
 
     def _patch_delegator(self, delegator_log):
-        """Patch the on-chain blocks lookup AND build_from_public_key to
-        return *delegator_log*."""
+        """Patch the on-chain blocks lookup AND get_latest (used to reconstruct
+        the delegator KEL) to return *delegator_log*.
+
+        Production ``verify_recovery_inception`` calls ``KeyEventLog.get_latest``
+        (not ``build_from_public_key``) and then treats the result as a
+        sequence (``delegator_log[-1]``, iteration for announcements).
+        """
+        tip = delegator_log[-1] if delegator_log else None
+        tip_dict = tip.to_dict() if tip is not None else {}
+        # Ensure a real public_key so get_latest's address derivation is not hit
+        # for the tip lookup path — we mock get_latest entirely.
+        if tip is not None and (
+            not tip.public_key or tip.public_key == "02" + "00" * 32
+        ):
+            # leave as-is; get_latest is mocked
+            pass
         cursor = MagicMock()
         cursor.to_list = AsyncMock(
-            return_value=[{"transactions": delegator_log[-1].to_dict()}]
+            return_value=[{"transactions": tip_dict}] if tip is not None else []
         )
         Config().mongo.async_db.blocks.aggregate = MagicMock(return_value=cursor)
         return patch.object(
             KeyEventLog,
-            "build_from_public_key",
+            "get_latest",
             new=AsyncMock(return_value=delegator_log),
         )
 

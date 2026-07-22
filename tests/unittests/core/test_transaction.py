@@ -1770,21 +1770,27 @@ class TestTransactionPureMethods(AsyncTestCase):
                 await txn.verify_kel_output_rules(block=mock_block)
 
     async def test_verify_kel_output_rules_log_unbuildable_raises(self):
-        """Lines 1224-1230: KeyEventLog.build_from_public_key returns empty → raises KELLogUnbuildableException."""
+        """get_latest returning None no longer raises; routing is skipped and
+        block path returns early after the KEL presence check."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from yadacoin.core.keyeventlog import KELLogUnbuildableException, KeyEventLog
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.keyeventlog import KeyEventLog
 
-        txn = Transaction(public_key=yadacoin.core.config.CONFIG.public_key)
+        txn = Transaction(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            public_key_hash="pk_hash",
+            outputs=[Output(to="1OtherAddr", value=1.0)],
+        )
         mock_block = MagicMock()
-        mock_block.index = 10
+        mock_block.index = CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK + 1
 
         with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=True)):
             with patch.object(
-                KeyEventLog, "build_from_public_key", new=AsyncMock(return_value=[])
+                KeyEventLog, "get_latest", new=AsyncMock(return_value=None)
             ):
-                with self.assertRaises(KELLogUnbuildableException):
-                    await txn.verify_kel_output_rules(block=mock_block)
+                # No exception — empty/missing tip means no routing enforcement
+                await txn.verify_kel_output_rules(block=mock_block)
 
     async def test_verify_kel_output_rules_block_returns(self):
         """Lines 1232-1270: block is not None causes early return after routing check."""
@@ -1809,8 +1815,8 @@ class TestTransactionPureMethods(AsyncTestCase):
         with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=True)):
             with patch.object(
                 KeyEventLog,
-                "build_from_public_key",
-                new=AsyncMock(return_value=[mock_entry]),
+                "get_latest",
+                new=AsyncMock(return_value=mock_entry),
             ):
                 await txn.verify_kel_output_rules(block=mock_block)
                 # Should return at line 1270 (block is not None)
@@ -1846,8 +1852,8 @@ class TestTransactionPureMethods(AsyncTestCase):
         with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=True)):
             with patch.object(
                 KeyEventLog,
-                "build_from_public_key",
-                new=AsyncMock(return_value=[mock_entry]),
+                "get_latest",
+                new=AsyncMock(return_value=mock_entry),
             ):
                 with self.assertRaises(KELOutputRoutingViolationException):
                     await txn.verify_kel_output_rules(block=mock_block)
@@ -1877,8 +1883,8 @@ class TestTransactionPureMethods(AsyncTestCase):
         with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=True)):
             with patch.object(
                 KeyEventLog,
-                "build_from_public_key",
-                new=AsyncMock(return_value=[mock_entry]),
+                "get_latest",
+                new=AsyncMock(return_value=mock_entry),
             ):
                 with self.assertRaises(KELSelfSendException):
                     await txn.verify_kel_output_rules(block=mock_block)
@@ -2233,8 +2239,8 @@ class TestTransactionPureMethods(AsyncTestCase):
         with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=True)):
             with patch.object(
                 KeyEventLog,
-                "build_from_public_key",
-                new=AsyncMock(return_value=[mock_entry]),
+                "get_latest",
+                new=AsyncMock(return_value=mock_entry),
             ):
                 # Should return at line 1259 (all outputs match, no routing violation)
                 await txn.verify_kel_output_rules(block=mock_block)
@@ -2288,8 +2294,8 @@ class TestTransactionPureMethods(AsyncTestCase):
             ):
                 with patch.object(
                     KeyEventLog,
-                    "build_from_public_key",
-                    new=AsyncMock(return_value=[mock_entry]),
+                    "get_latest",
+                    new=AsyncMock(return_value=None),
                 ):
                     await txn.verify_kel_output_rules(
                         block=None
@@ -2357,8 +2363,8 @@ class TestTransactionPureMethods(AsyncTestCase):
             ):
                 with patch.object(
                     KeyEventLog,
-                    "build_from_public_key",
-                    new=AsyncMock(return_value=[mock_entry]),
+                    "get_latest",
+                    new=AsyncMock(return_value=None),
                 ):
                     with self.assertRaises(KELDoesNotSpendAllUTXOsException):
                         await txn.verify_kel_output_rules(block=None)
@@ -2409,8 +2415,8 @@ class TestTransactionPureMethods(AsyncTestCase):
             ):
                 with patch.object(
                     KeyEventLog,
-                    "build_from_public_key",
-                    new=AsyncMock(return_value=[mock_entry]),
+                    "get_latest",
+                    new=AsyncMock(return_value=None),
                 ):
                     with self.assertRaises(KELMissingParentUTXOException):
                         await txn.verify_kel_output_rules(block=None)
@@ -2472,8 +2478,8 @@ class TestTransactionPureMethods(AsyncTestCase):
             ):
                 with patch.object(
                     KeyEventLog,
-                    "build_from_public_key",
-                    new=AsyncMock(return_value=[mock_entry]),
+                    "get_latest",
+                    new=AsyncMock(return_value=None),
                 ):
                     # 1 UTXO, 0 spent, 1 input → 1 - 0 == 1 → no exception
                     await txn.verify_kel_output_rules(block=None)
@@ -2538,8 +2544,8 @@ class TestTransactionPureMethods(AsyncTestCase):
             ):
                 with patch.object(
                     KeyEventLog,
-                    "build_from_public_key",
-                    new=AsyncMock(return_value=[mock_entry]),
+                    "get_latest",
+                    new=AsyncMock(return_value=None),
                 ):
                     # 1 UTXO, 1 spent → 1 - 1 = 0 == len([]) → no exception
                     await txn.verify_kel_output_rules(block=None)

@@ -4204,5 +4204,341 @@ class TestBlockPureMethods(unittest.TestCase):
         mock_pyrx.get_rx_hash.assert_called_once()
 
 
+class TestBlockCoverageFinalGaps(AsyncTestCase):
+    """Close remaining block.py coverage gaps."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.config = Config()
+        self.config.app_log = Mock()
+        self.config.app_log.debug = Mock()
+        self.config.app_log.warning = Mock()
+        self.config.app_log.info = Mock()
+
+    async def test_generate_debug_logs_pending_txns(self):
+        """Lines 265-266: Block.generate DEBUG path logs each pending txn JSON."""
+        from yadacoin.core.transaction import Transaction
+
+        Config().log_level = "DEBUG"
+        Config().app_log = Mock()
+        Config().app_log.debug = Mock()
+        Config().app_log.warning = Mock()
+        Config().app_log.info = Mock()
+        Config().kel_manager = Mock()
+        Config().kel_manager.advance_block_ratchet = AsyncMock(return_value=None)
+
+        # LatestBlock is read before the DEBUG loop for the same-block-spend fork.
+        lb = Mock()
+        lb.block = Mock()
+        lb.block.index = 0
+        lb.block.hash = "00"
+        Config().LatestBlock = lb
+
+        mock_txn = Mock(spec=Transaction)
+        mock_txn.transaction_signature = "debugsig"
+        mock_txn.inputs = []
+        mock_txn.outputs = []
+        mock_txn.to_json = Mock(return_value='{"id":"debugsig"}')
+        mock_txn.fee = 0.0
+        mock_txn.masternode_fee = 0.0
+        mock_txn.time = 1
+        mock_txn.relationship = ""
+        mock_txn.coinbase = False
+        mock_txn.hash = "h"
+        mock_txn.public_key = Config().public_key
+
+        with mock.patch(
+            "yadacoin.core.block.Transaction.from_dict", return_value=mock_txn
+        ), mock.patch(
+            "yadacoin.core.block.Block.validate_transactions",
+            new=AsyncMock(return_value=None),
+        ), mock.patch(
+            "yadacoin.core.block.Block.pay_masternodes",
+            new=AsyncMock(return_value=None),
+        ), mock.patch(
+            "yadacoin.core.block.Block.check_xeggex_hack",
+            new=AsyncMock(return_value=None),
+        ), mock.patch(
+            "yadacoin.core.block.Block.get_merkle_root",
+            return_value="0" * 64,
+        ), mock.patch(
+            "yadacoin.core.block.Block.generate_hash_from_header",
+            new=AsyncMock(return_value="0" * 64),
+        ), mock.patch(
+            "yadacoin.core.block.Block.set_merkle_root",
+            return_value=None,
+        ), mock.patch(
+            "yadacoin.core.block.Block.generate_header",
+            return_value="header",
+        ), mock.patch(
+            "yadacoin.core.block.LatestBlock",
+            lb,
+        ):
+            try:
+                await Block.generate(
+                    index=0,  # genesis-style: no prev_hash lookup
+                    transactions=[{"id": "x"}],
+                    force_time=1,
+                )
+            except Exception as exc:
+                self._generate_exc = exc
+
+        debug_calls = [
+            c
+            for c in Config().app_log.debug.call_args_list
+            if c.args and "Pending txn" in str(c.args[0])
+        ]
+        if not debug_calls:
+            self.fail(
+                f"expected Pending txn debug log; generate exc="
+                f"{getattr(self, '_generate_exc', None)!r}; "
+                f"all debug={Config().app_log.debug.call_args_list!r}"
+            )
+
+    async def test_validate_transactions_check_kel_runs_init_async(self):
+        """Lines 545-557: check_kel + prev_public_key_hash calls KeyEventLog.init_async."""
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.transaction import Transaction
+
+        txn = Mock(spec=Transaction)
+        txn.transaction_signature = "sig_kel_ok"
+        txn.spent_in_txn = None
+        txn.inputs = []
+        txn.outputs = [Mock(to="1ValidAddr", value=1.0)]
+        txn.fee = 0.0
+        txn.masternode_fee = 0.0
+        txn.time = 0
+        txn.prev_public_key_hash = "1PrevPKH"
+        txn.public_key_hash = "1PKH"
+        txn.prerotated_key_hash = "1PKR"
+        txn.twice_prerotated_key_hash = "1TPKR"
+        txn.coinbase = False
+        txn.relationship = ""
+        txn.verify = AsyncMock(return_value=None)
+        txn.__class__ = Transaction
+
+        transaction_objs = []
+        with mock.patch(
+            "yadacoin.core.config.Config.address_is_valid", return_value=True
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.init_async",
+            new=AsyncMock(return_value=None),
+        ) as mock_init, mock.patch(
+            "yadacoin.core.keyeventlog.KELHashCollection.add",
+            return_value=None,
+        ):
+            await Block.validate_transactions(
+                None,
+                [txn],
+                transaction_objs,
+                [],
+                {},
+                CHAIN.CHECK_KEL_FORK + 1,
+                int(time_module.time()),
+            )
+        mock_init.assert_awaited()
+        self.assertIn(txn, transaction_objs)
+
+    async def test_validate_transactions_check_kel_hash_collection_exception_swallowed(
+        self,
+    ):
+        """Lines 550-553: KELHashCollection.add raising is swallowed."""
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.keyeventlog import KELHashCollectionException
+        from yadacoin.core.transaction import Transaction
+
+        txn = Mock(spec=Transaction)
+        txn.transaction_signature = "sig_kel_hc"
+        txn.spent_in_txn = None
+        txn.inputs = []
+        txn.outputs = [Mock(to="1ValidAddr", value=1.0)]
+        txn.fee = 0.0
+        txn.masternode_fee = 0.0
+        txn.time = 0
+        txn.prev_public_key_hash = "1PrevPKH"
+        txn.public_key_hash = "1PKH"
+        txn.prerotated_key_hash = "1PKR"
+        txn.twice_prerotated_key_hash = "1TPKR"
+        txn.coinbase = False
+        txn.relationship = ""
+        txn.verify = AsyncMock(return_value=None)
+        txn.__class__ = Transaction
+
+        with mock.patch(
+            "yadacoin.core.config.Config.address_is_valid", return_value=True
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.init_async",
+            new=AsyncMock(return_value=None),
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.KELHashCollection.add",
+            side_effect=KELHashCollectionException("dup"),
+        ):
+            await Block.validate_transactions(
+                None,
+                [txn],
+                [],
+                [],
+                {},
+                CHAIN.CHECK_KEL_FORK + 1,
+                int(time_module.time()),
+            )
+
+    async def test_validate_transactions_kel_prev_removes_linked_from_transaction_objs(
+        self,
+    ):
+        """Lines 578-594: transient KEL skip removes linked siblings."""
+        from yadacoin.core.chain import CHAIN
+
+        def _make(sig, pkr, tpkr, fail=False, coinbase=False):
+            t = Mock()
+            t.transaction_signature = sig
+            t.spent_in_txn = None
+            t.inputs = []
+            t.outputs = []
+            t.fee = 0.0
+            t.masternode_fee = 0.0
+            t.time = 0
+            t.coinbase = coinbase
+            t.prerotated_key_hash = pkr
+            t.twice_prerotated_key_hash = tpkr
+            t.prev_public_key_hash = ""
+            t.relationship = ""
+            if fail:
+                t.verify = AsyncMock(
+                    side_effect=KELExceptionPreviousKeyHashReferenceMissing("prev")
+                )
+            else:
+                t.verify = AsyncMock(return_value=None)
+            return t
+
+        txn_fail = _make("fail", "k0", "k1", fail=True)
+        txn_linked = _make("linked", "k1", "k2")
+        txn_coinbase = _make("cb", "k1", "k9", coinbase=True)
+
+        txns = [txn_linked, txn_coinbase, txn_fail]
+        transaction_objs = []
+
+        Config().app_log = Mock()
+        Config().app_log.warning = Mock()
+        Config().app_log.info = Mock()
+        Config().app_log.debug = Mock()
+
+        group = Block.find_kel_linked_group(txn_fail, txns)
+        self.assertEqual(
+            {t.transaction_signature for t in group}, {"fail", "linked", "cb"}
+        )
+
+        await Block.validate_transactions(
+            None,
+            txns,
+            transaction_objs,
+            [],
+            {},
+            CHAIN.CHECK_KEL_FORK + 1,
+            int(time_module.time()),
+        )
+
+        self.assertNotIn(txn_fail, txns)
+        self.assertNotIn(txn_linked, txns)
+        self.assertNotIn(txn_linked, transaction_objs)
+
+    async def test_kel_prev_self_removal_when_not_in_linked_group(self):
+        """Lines 595-599: trailing self-removal when group omits the failing txn."""
+        from yadacoin.core.chain import CHAIN
+
+        txn_fail = Mock()
+        txn_fail.transaction_signature = "solo_fail"
+        txn_fail.spent_in_txn = None
+        txn_fail.inputs = []
+        txn_fail.outputs = []
+        txn_fail.fee = 0.0
+        txn_fail.masternode_fee = 0.0
+        txn_fail.time = 0
+        txn_fail.coinbase = False
+        txn_fail.prerotated_key_hash = "solo"
+        txn_fail.twice_prerotated_key_hash = "solo2"
+        txn_fail.prev_public_key_hash = ""
+        txn_fail.relationship = ""
+        txn_fail.verify = AsyncMock(
+            side_effect=KELExceptionPreviousKeyHashReferenceMissing("prev")
+        )
+
+        txns = [txn_fail]
+        transaction_objs = [txn_fail]
+
+        Config().app_log = Mock()
+        Config().app_log.warning = Mock()
+        Config().app_log.info = Mock()
+
+        with mock.patch.object(Block, "find_kel_linked_group", return_value=[]):
+            await Block.validate_transactions(
+                None,
+                txns,
+                transaction_objs,
+                [],
+                {},
+                CHAIN.CHECK_KEL_FORK + 1,
+                int(time_module.time()),
+            )
+
+        self.assertNotIn(txn_fail, txns)
+        self.assertNotIn(txn_fail, transaction_objs)
+
+    async def test_validate_transactions_generic_exception_removes_from_transaction_objs(
+        self,
+    ):
+        """Lines 611-621: generic Exception cascade removes linked siblings."""
+        from yadacoin.core.chain import CHAIN
+
+        def _make(sig, pkr, tpkr, fail=False):
+            t = Mock()
+            t.transaction_signature = sig
+            t.spent_in_txn = None
+            t.inputs = []
+            t.outputs = []
+            t.fee = 0.0
+            t.masternode_fee = 0.0
+            t.time = 0
+            t.coinbase = False
+            t.prerotated_key_hash = pkr
+            t.twice_prerotated_key_hash = tpkr
+            t.prev_public_key_hash = ""
+            t.relationship = ""
+            if fail:
+                t.verify = AsyncMock(side_effect=Exception("boom"))
+            else:
+                t.verify = AsyncMock(return_value=None)
+            return t
+
+        txn_fail = _make("fail", "a0", "a1", fail=True)
+        txn_linked = _make("linked", "a1", "a2")
+
+        txns = [txn_linked, txn_fail]
+        transaction_objs = []
+
+        Config().app_log = Mock()
+        Config().app_log.warning = Mock()
+        Config().app_log.info = Mock()
+        Config().mongo.async_db.miner_transactions = Mock()
+        Config().mongo.async_db.miner_transactions.delete_one = AsyncMock()
+
+        with mock.patch(
+            "yadacoin.core.transaction.Transaction.handle_exception",
+            new=AsyncMock(return_value=None),
+        ):
+            await Block.validate_transactions(
+                None,
+                txns,
+                transaction_objs,
+                [],
+                {},
+                CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK,
+                int(time_module.time()),
+            )
+
+        self.assertNotIn(txn_linked, txns)
+        self.assertNotIn(txn_linked, transaction_objs)
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

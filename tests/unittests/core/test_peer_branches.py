@@ -188,17 +188,40 @@ class TestPeerEnsurePeersConnected(AsyncTestCase):
 
     async def test_no_peers_returns(self):
         user = User.from_dict(SAMPLE_PEER_DICT)
+        mock_peer = MagicMock()
+        mock_peer.identity = MagicMock()
+        mock_peer.identity.generate_rid = MagicMock(return_value="rid")
+        mock_peer.identity.username_signature = "usig"
+        nc = make_node_client_mock(
+            outbound_streams={"ServiceProvider": {}},
+            outbound_pending={"ServiceProvider": {}},
+            outbound_ignore={"ServiceProvider": {}},
+        )
+        ns = make_node_server_mock(
+            inbound_streams={"ServiceProvider": {}},
+            inbound_pending={"ServiceProvider": {}},
+        )
         with patch.object(
             self.config, "service_providers", {}, create=True
-        ), patch.object(self.config, "peer", MagicMock(), create=True):
+        ), patch.object(self.config, "peer", mock_peer, create=True), patch.object(
+            self.config, "app_log", MagicMock(), create=True
+        ), patch.object(
+            self.config, "nodeClient", nc, create=True
+        ), patch.object(
+            self.config, "nodeServer", ns, create=True
+        ):
             await user.ensure_peers_connected()
 
     async def test_with_peers(self):
         user = User.from_dict(SAMPLE_PEER_DICT)
         mock_sp = MagicMock()
         mock_sp.identity.username_signature = "sp_sig"
+        mock_sp.id_attribute = "rid"
+        mock_sp.rid = "sp-rid"
+        mock_sp.identity_announcement = None
         mock_peer = MagicMock()
         mock_peer.identity.generate_rid = MagicMock(return_value="generated_rid")
+        mock_peer.identity.username_signature = "usig"
         nc = make_node_client_mock(
             outbound_streams={"ServiceProvider": {}},
             outbound_pending={"ServiceProvider": {}},
@@ -214,6 +237,8 @@ class TestPeerEnsurePeersConnected(AsyncTestCase):
             self.config, "nodeClient", nc, create=True
         ), patch.object(
             self.config, "nodeServer", ns, create=True
+        ), patch.object(
+            self.config, "app_log", MagicMock(), create=True
         ):
             import tornado.ioloop
 
