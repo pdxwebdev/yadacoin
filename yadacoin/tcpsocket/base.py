@@ -339,7 +339,10 @@ class RPCSocketServer(TCPServer, BaseRPC):
         stream.message_queue = {}
         while True:
             peer_label_var.set(peer_label_for(stream))
-            data = await stream.read_until(b"\n")
+            try:
+                data = await stream.read_until(b"\n")
+            except StreamClosedError:
+                break
             stream.last_activity = int(time.time())
             self.config.health.tcp_server.last_activity = time.time()
             try:
