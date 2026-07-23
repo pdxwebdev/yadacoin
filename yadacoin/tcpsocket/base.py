@@ -184,6 +184,8 @@ REQUEST_RESPONSE_MAP = {
     "blockresponse": "getblock",
     "blocksresponse": "getblocks",
     "keepalive": "keepalive",
+    "connect": "connect",
+    "sign_response": "sign_response",
 }
 
 REQUEST_ONLY = [

@@ -2569,6 +2569,207 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         self.assertTrue(next_priv)
         self.assertTrue(is_new_branch)
 
+    async def test_peer_branch_inception_from_mongo_without_cache(self):
+        """Read path returns branch_inception_public_key_hash from bridge doc."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        cfg.mongo.async_db.key_event_log.docs.append(
+            {
+                "branch_peer": "peerX",
+                "counter": 0,
+                "branch_inception_public_key_hash": "1BranchInceptionPKH",
+                "public_key_hash": "1LegacyPKH",
+            }
+        )
+        self.assertEqual(
+            await mgr.peer_branch_inception_public_key_hash("peerX"),
+            "1BranchInceptionPKH",
+        )
+        # fallback to public_key_hash when branch_inception missing
+        cfg.mongo.async_db.key_event_log.docs.clear()
+        cfg.mongo.async_db.key_event_log.docs.append(
+            {
+                "branch_peer": "peerY",
+                "counter": 0,
+                "public_key_hash": "1LegacyOnlyPKH",
+            }
+        )
+        self.assertEqual(
+            await mgr.peer_branch_inception_public_key_hash("peerY"),
+            "1LegacyOnlyPKH",
+        )
+
+    async def test_main_inception_fallback_when_latest_kel_missing_tag(self):
+        """When tip has no inception_public_key_hash, derive from inception pub."""
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        expected = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.PUB_HEX)))
+
+        fake_entry = MagicMock()
+        fake_entry.counter = mgr._test_kel_depth - 1
+        fake_entry.public_key_hash = "1LatestKelTipAddress"
+        fake_entry.inception_public_key_hash = None
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=fake_entry),
+        ), patch("yadacoin.core.transaction.Config", return_value=cfg):
+            await mgr.advance_peer_auth_ratchet("peerFallback_sig")
+
+        bridge = next(
+            d
+            for d in cfg.mongo.async_db.key_event_log.docs
+            if d.get("branch_peer") == "peerFallback_sig" and d.get("counter") == 0
+        )
+        self.assertEqual(bridge["inception_public_key_hash"], expected)
+
+    async def test_main_inception_falls_back_to_kn_address_on_bad_inception(self):
+        """Broken inception public_key uses kn_address as main inception tag."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        cfg.inception.public_key = "not-valid-hex"
+        mgr = self._make_mgr(cfg)
+
+        fake_entry = MagicMock()
+        fake_entry.counter = mgr._test_kel_depth - 1
+        fake_entry.public_key_hash = "1LatestKelTipAddress"
+        fake_entry.inception_public_key_hash = None
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=fake_entry),
+        ), patch("yadacoin.core.transaction.Config", return_value=cfg):
+            await mgr.advance_peer_auth_ratchet("peerBadInception_sig")
+
+        bridge = next(
+            d
+            for d in cfg.mongo.async_db.key_event_log.docs
+            if d.get("branch_peer") == "peerBadInception_sig" and d.get("counter") == 0
+        )
+        # kn_address is a real P2PKH derived from kn at root depth
+        self.assertTrue(bridge["inception_public_key_hash"])
+        self.assertNotEqual(bridge["inception_public_key_hash"], "not-valid-hex")
+
+    async def test_mempool_write_error_is_logged(self):
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock(
+            side_effect=RuntimeError("mempool down")
+        )
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            await mgr.advance_peer_auth_ratchet("peerMempoolErr_sig")
+        self.assertTrue(cfg.app_log.warning.called)
+        self.assertTrue(
+            any(
+                "branch announcement mempool" in str(c)
+                for c in cfg.app_log.warning.call_args_list
+            )
+        )
+
+    async def test_node_mode_broadcasts_branch_announcement(self):
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        cfg.modes = ["node"]
+        cfg.nodeShared = MagicMock()
+        cfg.nodeShared.write_params = AsyncMock()
+
+        async def _peers():
+            yield MagicMock(name="stream1")
+
+        cfg.peer.get_sync_peers = _peers
+        mgr = self._make_mgr(cfg)
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            await mgr.advance_peer_auth_ratchet("peerBroadcast_sig")
+        # unconfirmed + confirming
+        self.assertEqual(cfg.nodeShared.write_params.await_count, 2)
+
+    async def test_node_mode_broadcast_error_is_swallowed(self):
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        cfg.modes = ["node"]
+        cfg.nodeShared = MagicMock()
+        cfg.nodeShared.write_params = AsyncMock(side_effect=RuntimeError("net"))
+
+        async def _peers():
+            yield MagicMock(name="stream1")
+
+        cfg.peer.get_sync_peers = _peers
+        mgr = self._make_mgr(cfg)
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            # should not raise
+            await mgr.advance_peer_auth_ratchet("peerBroadcastErr_sig")
+        self.assertTrue(cfg.app_log.debug.called)
+
+    async def test_resume_legacy_anchor_public_key_and_missing_branch_inception(self):
+        """Resume path: empty branch_inception → kp0_address; legacy tip lookup;
+        tip supplies main_inception_public_key_hash when bridge lacks it."""
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        from yadacoin.core.keyrotation import _CoincurvePrivateKey, derive_secure_path
+
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        second_factor = "mysecret"
+        peer_sig = "legacyPeer_sig"
+        peer_factor = mgr.peer_branch_factor(peer_sig)
+        root_depth = self.KEL_DEPTH
+        cur_root = {
+            "private_key": bytes.fromhex(self.PRIV_HEX),
+            "chain_code": bytes.fromhex(self._cc_hex()),
+        }
+        for _ in range(root_depth):
+            cur_root = derive_secure_path(
+                cur_root["private_key"], cur_root["chain_code"], second_factor
+            )
+        kp0 = derive_secure_path(
+            cur_root["private_key"], cur_root["chain_code"], peer_factor
+        )
+        kp0_pub = (
+            _CoincurvePrivateKey(kp0["private_key"])
+            .public_key.format(compressed=True)
+            .hex()
+        )
+        kp0_address = str(
+            P2PKHBitcoinAddress.from_pubkey(
+                _CoincurvePrivateKey(kp0["private_key"]).public_key.format(
+                    compressed=True
+                )
+            )
+        )
+        tip_main_inception = "1TipMainInceptionXXXXXXXXXXXXXXX"
+        # Bridge without branch_inception / inception tags (legacy shape)
+        cfg.mongo.async_db.key_event_log.docs.append(
+            {
+                "branch_peer": peer_sig,
+                "counter": 0,
+                "root_depth": root_depth,
+                "anchor_public_key": kp0_pub,
+                "public_key": kp0_pub,
+                # deliberately omit branch_inception_public_key_hash, public_key_hash,
+                # branch_commit, inception_public_key_hash
+            }
+        )
+        # Tip only matchable via legacy anchor_public_key
+        cfg.mongo.async_db.key_event_log.docs.append(
+            {
+                "anchor_public_key": kp0_pub,
+                "counter": 2,
+                "public_key_hash": "1TipPKH",
+                "inception_public_key_hash": tip_main_inception,
+            }
+        )
+
+        state, is_new = await mgr._ensure_peer_branch_ready(peer_sig)
+        self.assertFalse(is_new)
+        self.assertEqual(state["branch_inception_public_key_hash"], kp0_address)
+        self.assertEqual(state["inception_public_key_hash"], tip_main_inception)
+        self.assertEqual(state["counter"], 2)
+
 
 # ---------------------------------------------------------------------------
 # _walk_forward

@@ -332,7 +332,11 @@ class Consensus(object):
             return False
 
         async for peer in self.config.peer.get_sync_peers():
-            if peer.synced or peer.message_queue.get("getblocks"):
+            if (
+                not peer.authenticated
+                or peer.synced
+                or peer.message_queue.get("getblocks")
+            ):
                 continue
             try:
                 peer.syncing = True

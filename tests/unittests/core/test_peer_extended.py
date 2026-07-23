@@ -1641,16 +1641,16 @@ class TestMyPeerBranchesFull(AsyncTestCase):
 
 
 class TestSeedGetOutboundPeers(AsyncTestCase):
-    """Lines 471-473: Seed.get_outbound_peers del branch."""
+    """Seed.get_outbound_peers self-removal via config.peer.identity."""
 
     async def asyncSetUp(self):
         await super().asyncSetUp()
         self.config = Config()
         self.config.username_signature = "mysig"
         self.config.app_log = MagicMock()
-        # Deletion only runs when seed identity public_key matches config.peer
         peer_identity = MagicMock()
         peer_identity.public_key = "02" + "00" * 32
+        peer_identity.username_signature = "mysig"
         self.config.peer = MagicMock(identity=peer_identity)
         self.seed = Seed.from_dict(
             {
@@ -1672,19 +1672,17 @@ class TestSeedGetOutboundPeers(AsyncTestCase):
         self.assertIn("othersig", result)
 
     async def test_no_self_in_seeds_no_change(self):
-        # When self is not in seeds, del is still attempted if identity matches.
-        # Keep mysig present but empty-value so KeyError is avoided; after del only othersig remains.
+        # When config.peer.identity.username_signature is not a seeds key, no del.
+        self.config.peer.identity.username_signature = "not_in_seeds"
         self.config.seeds = {"mysig": MagicMock(), "othersig": MagicMock()}
-        # Break identity match so del is skipped entirely for this case.
-        self.seed.identity = None
         result = await self.seed.get_outbound_peers()
         self.assertIn("othersig", result)
-        self.assertIn("mysig", result)  # not deleted when identity is None
+        self.assertIn("mysig", result)
         self.assertEqual(len(result), 2)
 
 
 class TestSeedGetInboundPeers(AsyncTestCase):
-    """Lines 476-485: Seed.get_inbound_peers full path."""
+    """Seed.get_inbound_peers full path."""
 
     async def asyncSetUp(self):
         await super().asyncSetUp()
@@ -1694,6 +1692,7 @@ class TestSeedGetInboundPeers(AsyncTestCase):
         self.config.app_log = MagicMock()
         peer_identity = MagicMock()
         peer_identity.public_key = "02" + "00" * 32
+        peer_identity.username_signature = "mysig"
         self.config.peer = MagicMock(identity=peer_identity)
         self.seed = Seed.from_dict(
             {
@@ -1717,12 +1716,11 @@ class TestSeedGetInboundPeers(AsyncTestCase):
             result = await self.seed.get_inbound_peers()
         self.assertIn("othersig", result)
         self.assertIn("sgsig", result)
-        # mysig was deleted (line 477)
         self.assertNotIn("mysig", result)
 
     async def test_seed_gateway_no_identity_omitted(self):
-        # Avoid KeyError on del when identity matches: include mysig or clear identity.
-        self.seed.identity = None
+        # Self not in seeds map — del branch skipped; gateway without identity omitted.
+        self.config.peer.identity.username_signature = "not_in_seeds"
         self.config.seeds = {"othersig": MagicMock()}
         sg = MagicMock()
         sg.identity = None
@@ -1841,6 +1839,85 @@ class TestEnsurePeersConnectedGuards(AsyncTestCase):
         ), patch.object(seed, "connect", new=AsyncMock()):
             await seed.ensure_peers_connected()
         self.assertEqual(ob.identity.username_signature, "resolved_sig")
+
+
+class TestEnsurePeersConnectedSkips(AsyncTestCase):
+    """ensure_peers_connected identity-None and same-public_key skip paths."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.config = Config()
+        self.config.app_log = MagicMock()
+        self.config.max_peers = 100000
+        mp = MagicMock()
+        mp.identity = MagicMock(
+            username_signature="selfsig", public_key="02" + "aa" * 32
+        )
+        mp.identity.generate_rid = MagicMock(return_value="rid1")
+        self.config.peer = mp
+        self.config.nodeClient = MagicMock()
+        self.config.nodeClient.outbound_streams = {Seed.__name__: {}}
+        self.config.nodeClient.outbound_pending = {Seed.__name__: {}}
+        self.config.nodeClient.outbound_ignore = {Seed.__name__: {}}
+        self.config.nodeServer = MagicMock()
+        self.config.nodeServer.inbound_streams = {Seed.__name__: {}}
+        self.config.nodeServer.inbound_pending = {Seed.__name__: {}}
+
+    def _make_seed(self):
+        seed = Seed.from_dict(
+            {
+                "host": "127.0.0.1",
+                "port": 8000,
+                "peer_type": "seed",
+                "public_key": "02" + "00" * 32,
+            }
+        )
+        seed.config = self.config
+        return seed
+
+    async def test_skips_peer_with_no_identity(self):
+        seed = self._make_seed()
+        ob = MagicMock()
+        ob.identity = None
+        ob.identity_announcement = None
+        ob.id_attribute = "rid"
+        ob.rid = "peer-rid"
+        with patch.object(
+            seed, "get_outbound_peers", new=AsyncMock(return_value={"k": ob})
+        ), patch.object(seed, "connect", new=AsyncMock()) as mock_connect:
+            await seed.ensure_peers_connected()
+        mock_connect.assert_awaited()
+        peers_arg = mock_connect.await_args.args[2]
+        self.assertEqual(peers_arg, {})
+        self.config.app_log.info.assert_any_call(
+            "ensure_peers_connected: skipping %s %s — identity is None",
+            "MagicMock",
+            "peer-rid",
+        )
+
+    async def test_skips_peer_with_same_public_key(self):
+        seed = self._make_seed()
+        ob = MagicMock()
+        ob.identity = MagicMock(
+            username_signature="othersig",
+            public_key=self.config.peer.identity.public_key,
+        )
+        ob.identity_announcement = None
+        ob.id_attribute = "rid"
+        ob.rid = "peer-rid"
+        with patch.object(
+            seed, "get_outbound_peers", new=AsyncMock(return_value={"k": ob})
+        ), patch.object(seed, "connect", new=AsyncMock()) as mock_connect:
+            await seed.ensure_peers_connected()
+        peers_arg = mock_connect.await_args.args[2]
+        self.assertEqual(peers_arg, {})
+        # logged same public_key skip
+        self.assertTrue(
+            any(
+                "same public_key as self" in str(c)
+                for c in self.config.app_log.info.call_args_list
+            )
+        )
 
 
 class TestPeersGetRoutesContinuePaths(AsyncTestCase):

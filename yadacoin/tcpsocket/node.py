@@ -111,16 +111,21 @@ class NodeRPC(BaseRPC):
     config = None
 
     async def _get_pending_kel_chain(self) -> list:
-        """Return all pending (mempool-only) KEL transactions for this node.
+        """Return pending *main-KEL* mempool transactions for this node only.
 
-        Queries miner_transactions directly for entries whose public_key
-        matches K0 — no need to walk the full blockchain chain.
+        Used on reconnect so the peer can learn our unmined main rotations
+        (including BranchAnnouncement pairs).  Must NOT dump every mempool
+        branch announcement or foreign KEL — that path previously ballooned
+        to dozens of txns and stalled handshake under sequential verify.
         """
         manager = getattr(self.config, "kel_manager", None)
         if not manager:
             return []
 
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
         from yadacoin.core.identityannouncement import IdentityAnnouncement
+        from yadacoin.core.keyeventlog import KeyEventLog
 
         username = getattr(self.config, "username", "") or ""
         own_identity = await IdentityAnnouncement.get_by_username(
@@ -132,35 +137,52 @@ class NodeRPC(BaseRPC):
         if not k0_pub:
             return []
 
-        # Mempool KEL entries for our identity: either signed by K0, or
-        # BranchAnnouncement / confirming rotations that carry our
-        # inception_public_key_hash tag once tagged.  Also include any
-        # mempool txn whose relationship is a branch announcement.
-        docs = await self.config.mongo.async_db.miner_transactions.find(
+        try:
+            main_inception_pkh = str(
+                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(k0_pub))
+            )
+        except Exception:
+            main_inception_pkh = ""
+
+        # Prefer tagged main-chain tip inception when available
+        try:
+            latest = await KeyEventLog.get_latest(k0_pub, onchain_only=False)
+            if latest is not None:
+                tagged = getattr(latest, "inception_public_key_hash", None)
+                if tagged:
+                    main_inception_pkh = tagged
+        except Exception:
+            pass
+
+        or_clauses = [
             {
-                "$or": [
-                    {
-                        "public_key": k0_pub,
-                        "public_key_hash": {"$exists": True, "$ne": ""},
-                    },
-                    {"relationship.branch": {"$exists": True}},
-                    {
-                        "inception_public_key_hash": {
-                            "$exists": True,
-                            "$ne": None,
-                        },
-                        "public_key_hash": {"$exists": True, "$ne": ""},
-                    },
-                ]
+                "public_key": k0_pub,
+                "public_key_hash": {"$exists": True, "$ne": ""},
             },
+        ]
+        if main_inception_pkh:
+            # Later main rotations (and BranchAnnouncement) are signed by K_n,
+            # not K0 — select via main inception tag only.
+            or_clauses.append(
+                {
+                    "inception_public_key_hash": main_inception_pkh,
+                    "public_key_hash": {"$exists": True, "$ne": ""},
+                }
+            )
+
+        docs = await self.config.mongo.async_db.miner_transactions.find(
+            {"$or": or_clauses},
             {"_id": 0},
         ).to_list(length=None)
-        # De-dupe by id while preserving order
+
         seen = set()
         out = []
         for d in docs or []:
             tid = d.get("id")
-            if tid in seen:
+            if not tid or tid in seen:
+                continue
+            # Skip entries tagged as non-main branch lineage
+            if d.get("branch_public_key_hash_path"):
                 continue
             seen.add(tid)
             out.append(d)
@@ -199,8 +221,14 @@ class NodeRPC(BaseRPC):
         return [ke.to_dict() for ke in kel]
 
     async def _accept_peer_kel_chain(self, txn_list: list) -> None:
-        """Receive, verify, and store a peer's unconfirmed KEL chain into the
-        local mempool so the KEL lookup in ``authenticate`` can find them.
+        """Receive, lightly verify, and store a peer's KEL bootstrap into mempool.
+
+        Handshake path only — must stay fast.  Full KEL graph enforcement
+        (``check_kel=True``) is intentionally skipped here: parents often
+        arrive in the same batch and sequential has_key_event_log / get_latest
+        walks previously stalled mutual auth for tens of seconds.  Crypto
+        (hash + signature) still runs; structural KEL pairing is validated
+        later when txns are mined or via ``_process_ratchet_auth``.
         """
         if not txn_list or not isinstance(txn_list, list):
             return
@@ -210,7 +238,6 @@ class NodeRPC(BaseRPC):
         check_masternode_fee = (
             self.config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK
         )
-        check_kel = self.config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK
         check_dynamic_nodes = (
             self.config.LatestBlock.block.index >= CHAIN.DYNAMIC_NODES_FORK
         )
@@ -227,26 +254,65 @@ class NodeRPC(BaseRPC):
                 self.config.app_log.debug(
                     "_accept_peer_kel_chain: parse error: %s", exc
                 )
+
+        # Inceptions / no-prev first so later siblings can see parents in batch
+        # and in mempool if any path still does a parent lookup.
+        parsed.sort(key=lambda t: (1 if t.prev_public_key_hash else 0, t.time or 0))
+
+        accepted = []
         for txn in parsed:
             try:
                 await txn.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
-                    check_kel=check_kel,
+                    check_kel=False,  # bootstrap: no sequential KEL graph walk
                     check_dynamic_nodes=check_dynamic_nodes,
                     check_branch_announcement=check_branch_announcement,
                     mempool=True,
                     batch_txns=parsed,
                 )
-                await self.config.mongo.async_db.miner_transactions.replace_one(
-                    {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
-                )
+                accepted.append(txn)
             except Exception as exc:
                 self.config.app_log.debug(
-                    "_accept_peer_kel_chain: verify/store error: %s", exc
+                    "_accept_peer_kel_chain: verify error: %s", exc
                 )
+
+        if accepted:
+            try:
+                from pymongo import ReplaceOne
+
+                ops = [
+                    ReplaceOne(
+                        {"id": t.transaction_signature},
+                        t.to_dict(),
+                        upsert=True,
+                    )
+                    for t in accepted
+                ]
+                await self.config.mongo.async_db.miner_transactions.bulk_write(
+                    ops, ordered=False
+                )
+            except Exception as exc:
+                # Fallback: sequential upserts if bulk_write unavailable
+                self.config.app_log.debug(
+                    "_accept_peer_kel_chain: bulk_write fallback: %s", exc
+                )
+                for t in accepted:
+                    try:
+                        await self.config.mongo.async_db.miner_transactions.replace_one(
+                            {"id": t.transaction_signature},
+                            t.to_dict(),
+                            upsert=True,
+                        )
+                    except Exception as exc2:
+                        self.config.app_log.debug(
+                            "_accept_peer_kel_chain: store error: %s", exc2
+                        )
+
         self.config.app_log.info(
-            "Bootstrap: accepted %d peer KEL txn(s) into mempool.", len(parsed)
+            "Bootstrap: accepted %d/%d peer KEL txn(s) into mempool.",
+            len(accepted),
+            len(parsed),
         )
 
     # ── KEL "start over" resync ────────────────────────────────────────────
@@ -1550,15 +1616,8 @@ class NodeRPC(BaseRPC):
                     sort=[("counter", -1)],
                 )
         if _existing_tip:
-            _next_counter = _existing_tip.get("counter") or (
-                await self.config.mongo.async_db.key_event_log.count_documents(
-                    {
-                        "branch_inception_public_key_hash": _branch_inception_pkh,
-                        "_id": {"$lte": _existing_tip["_id"]},
-                    }
-                )
-            )
-            _next_counter += 1
+            # Trust the stored counter field — avoid count_documents scans.
+            _next_counter = int(_existing_tip.get("counter") or 0) + 1
         else:
             _next_counter = 0 if parsed_ratchet else 1
 

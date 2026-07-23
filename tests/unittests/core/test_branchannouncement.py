@@ -68,6 +68,16 @@ class TestBranchAnnouncementInit(unittest.TestCase):
             },
         )
 
+    def test_to_dict_includes_extra_fields(self):
+        ba = BranchAnnouncement(
+            prerotated_key_hash=_PRE,
+            twice_prerotated_key_hash=_TWICE,
+            note="x",
+        )
+        d = ba.to_dict()
+        self.assertEqual(d["note"], "x")
+        self.assertEqual(d["prerotated_key_hash"], _PRE)
+
     def test_to_string_order(self):
         ba = BranchAnnouncement(
             prerotated_key_hash=_PRE, twice_prerotated_key_hash=_TWICE

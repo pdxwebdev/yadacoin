@@ -6049,6 +6049,103 @@ class TestBranchAnnouncementHelpers(unittest.TestCase):
             mock_cfg.return_value.address_is_valid.return_value = True
             ke.verify_branch_announcement_payload()  # no raise
 
+    def test_verify_branch_payload_missing_commit_raises(self):
+        from yadacoin.core.keyeventlog import KeyEvent, KeyEventException
+
+        txn = MagicMock()
+        txn.relationship = (
+            MagicMock()
+        )  # not BranchAnnouncement → get_branch_commit None
+        # Force isinstance path by patching helpers
+        ke = KeyEvent.__new__(KeyEvent)
+        ke.txn = txn
+        with patch(
+            "yadacoin.core.keyeventlog.get_branch_commit", return_value=None
+        ), patch(
+            "yadacoin.core.keyeventlog.get_branch_commit_next",
+            return_value="1TwiceXXXXXXXXXXXXXXXXXXXXXXXXX",
+        ):
+            with self.assertRaises(KeyEventException) as ctx:
+                ke.verify_branch_announcement_payload()
+            self.assertIn("missing prerotated_key_hash commit", str(ctx.exception))
+
+    def test_verify_branch_payload_missing_commit_next_raises(self):
+        from yadacoin.core.keyeventlog import KeyEvent, KeyEventException
+
+        ke = KeyEvent.__new__(KeyEvent)
+        ke.txn = MagicMock()
+        with patch(
+            "yadacoin.core.keyeventlog.get_branch_commit",
+            return_value="1PreXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        ), patch("yadacoin.core.keyeventlog.get_branch_commit_next", return_value=None):
+            with self.assertRaises(KeyEventException) as ctx:
+                ke.verify_branch_announcement_payload()
+            self.assertIn(
+                "missing twice_prerotated_key_hash commit", str(ctx.exception)
+            )
+
+    def test_verify_branch_payload_invalid_commit_next_address_raises(self):
+        from yadacoin.core.branchannouncement import BranchAnnouncement
+        from yadacoin.core.keyeventlog import KeyEvent, KeyEventException
+
+        txn = MagicMock()
+        txn.relationship = BranchAnnouncement(
+            prerotated_key_hash="1PreValidXXXXXXXXXXXXXXXXXXXXXX",
+            twice_prerotated_key_hash="bad-next",
+        )
+        txn.public_key_hash = "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC"
+        txn.prerotated_key_hash = "1OtherAddressAAAAAAAAAAAAAAAAxxxx"
+        txn.twice_prerotated_key_hash = "1OtherAddressBBBBBBBBBBBBBBBBByyyy"
+        ke = KeyEvent.__new__(KeyEvent)
+        ke.txn = txn
+
+        def _valid(addr):
+            return addr != "bad-next"
+
+        with patch("yadacoin.core.keyeventlog.Config") as mock_cfg:
+            mock_cfg.return_value.address_is_valid.side_effect = _valid
+            with self.assertRaises(KeyEventException) as ctx:
+                ke.verify_branch_announcement_payload()
+            self.assertIn(
+                "twice_prerotated_key_hash is not a valid", str(ctx.exception)
+            )
+
+
+class TestVerifyUnconfirmedBranchAnnouncement(unittest.TestCase):
+    """verify_unconfirmed calls verify_branch_announcement_payload for BA."""
+
+    def test_branch_announcement_invokes_payload_verify(self):
+        from yadacoin.core.branchannouncement import BranchAnnouncement
+        from yadacoin.core.keyeventlog import (
+            KeyEvent,
+            KeyEventChainStatus,
+            KeyEventFlag,
+        )
+
+        pre = "1CommitPreXXXXXXXXXXXXXXXXXXXXX"
+        twice = "1CommitTwiceXXXXXXXXXXXXXXXXXXX"
+        txn = MagicMock()
+        txn.relationship = BranchAnnouncement(
+            prerotated_key_hash=pre, twice_prerotated_key_hash=twice
+        )
+        txn.outputs = [MagicMock(to="1Other")]
+        txn.coinbase = False
+        txn.transaction_signature = "sig"
+        txn.public_key_hash = "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC"
+        txn.prerotated_key_hash = "1OtherAddressAAAAAAAAAAAAAAAAxxxx"
+        txn.twice_prerotated_key_hash = "1OtherAddressBBBBBBBBBBBBBBBBByyyy"
+        txn.prev_public_key_hash = "1PrevAddressXXXXXXXXXXXXXXXXXXX"
+        txn.public_key = "02" + "ab" * 32
+        ke = KeyEvent.__new__(KeyEvent)
+        ke.txn = txn
+        ke.status = KeyEventChainStatus.MEMPOOL
+        ke.flag = KeyEventFlag.UNCONFIRMED
+        with patch.object(ke, "verify_fields"), patch.object(
+            ke, "verify_branch_announcement_payload"
+        ) as mock_payload:
+            ke.verify_unconfirmed()
+        mock_payload.assert_called_once()
+
 
 class TestLatestFromInceptionIgnoresBranchPath(AsyncTestCase):
     """get_latest main tip must ignore entries with non-empty branch path."""

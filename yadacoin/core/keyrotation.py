@@ -899,6 +899,30 @@ class NodeKeyRotationManager:
                 latest_kel.public_key_hash if latest_kel is not None else kn_address
             )
 
+            # Main-chain inception pkh — tag mempool announce/confirm so peers
+            # can select our main KEL via inception_public_key_hash without
+            # dumping every branch announcement in the mempool.
+            main_inception_pkh = None
+            if latest_kel is not None:
+                main_inception_pkh = getattr(
+                    latest_kel, "inception_public_key_hash", None
+                )
+            if not main_inception_pkh:
+                try:
+                    inception_pub = getattr(
+                        getattr(self.config, "inception", None), "public_key", None
+                    )
+                    if inception_pub:
+                        main_inception_pkh = str(
+                            P2PKHBitcoinAddress.from_pubkey(
+                                bytes.fromhex(inception_pub)
+                            )
+                        )
+                except Exception:
+                    main_inception_pkh = None
+            if not main_inception_pkh:
+                main_inception_pkh = kn_address
+
             branch_rel = BranchAnnouncement(
                 prerotated_key_hash=kp0_address,
                 twice_prerotated_key_hash=kp1_address,
@@ -960,9 +984,11 @@ class NodeKeyRotationManager:
             # confirming sibling and drop the on-chain commit from the mempool.
             for txn in (unconfirmed_txn, confirming_txn):
                 try:
+                    doc = txn.to_dict()
+                    doc["inception_public_key_hash"] = main_inception_pkh
                     await config.mongo.async_db.miner_transactions.replace_one(
                         {"id": txn.transaction_signature},
-                        txn.to_dict(),
+                        doc,
                         upsert=True,
                     )
                 except Exception as exc:
@@ -1022,29 +1048,7 @@ class NodeKeyRotationManager:
                 kp0["private_key"].hex(), root_txn.hash
             )
 
-            # Main-chain inception pkh — persisted on every branch log entry so
-            # any branch record can point back at the owning main KEL.
-            main_inception_pkh = None
-            if latest_kel is not None:
-                main_inception_pkh = getattr(
-                    latest_kel, "inception_public_key_hash", None
-                )
-            if not main_inception_pkh:
-                try:
-                    inception_pub = getattr(
-                        getattr(self.config, "inception", None), "public_key", None
-                    )
-                    if inception_pub:
-                        main_inception_pkh = str(
-                            P2PKHBitcoinAddress.from_pubkey(
-                                bytes.fromhex(inception_pub)
-                            )
-                        )
-                except Exception:
-                    main_inception_pkh = None
-            if not main_inception_pkh:
-                main_inception_pkh = kn_address
-
+            # main_inception_pkh already resolved above for mempool tagging.
             try:
                 await config.mongo.async_db.key_event_log.replace_one(
                     {

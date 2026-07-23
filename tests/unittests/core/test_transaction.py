@@ -2774,6 +2774,93 @@ class TestTransactionIdentityAnnouncement(AsyncTestCase):
         self.assertEqual(wrapped["branch"]["prerotated_key_hash"], pre)
         self.assertEqual(wrapped["branch"]["twice_prerotated_key_hash"], twice)
 
+    async def test_verify_branch_announcement_without_flag_raises(self):
+        """BranchAnnouncement with check_branch_announcement=False raises."""
+        import hashlib
+
+        from yadacoin.core.branchannouncement import BranchAnnouncement
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        txn = await Transaction.generate(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            private_key=yadacoin.core.config.CONFIG.private_key,
+        )
+        pre = "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC"
+        twice = "1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"
+        ann = BranchAnnouncement(
+            prerotated_key_hash=pre, twice_prerotated_key_hash=twice
+        )
+        txn.relationship = ann
+        txn.prev_public_key_hash = "1PrevAddressXXXXXXXXXXXXXXXXXXX"
+        txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = NodeKeyRotationManager._sign(
+            yadacoin.core.config.CONFIG.private_key, txn.hash
+        )
+        with self.assertRaises(InvalidTransactionException) as ctx:
+            await txn.verify(check_branch_announcement=False)
+        self.assertIn(
+            "Branch announcement transactions not allowed", str(ctx.exception)
+        )
+
+    async def test_verify_branch_announcement_inception_raises(self):
+        """BranchAnnouncement without prev_public_key_hash is rejected."""
+        import hashlib
+
+        from yadacoin.core.branchannouncement import BranchAnnouncement
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        txn = await Transaction.generate(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            private_key=yadacoin.core.config.CONFIG.private_key,
+        )
+        pre = "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC"
+        twice = "1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"
+        ann = BranchAnnouncement(
+            prerotated_key_hash=pre, twice_prerotated_key_hash=twice
+        )
+        txn.relationship = ann
+        txn.prev_public_key_hash = ""
+        txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = NodeKeyRotationManager._sign(
+            yadacoin.core.config.CONFIG.private_key, txn.hash
+        )
+        with self.assertRaises(InvalidTransactionException) as ctx:
+            await txn.verify(check_branch_announcement=True)
+        self.assertIn("only valid for subsequent rotations", str(ctx.exception))
+
+    async def test_verify_branch_announcement_with_flag_passes_branch_checks(self):
+        """BranchAnnouncement with flag and prev does not raise those branch errors."""
+        import hashlib
+
+        from yadacoin.core.branchannouncement import BranchAnnouncement
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        txn = await Transaction.generate(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            private_key=yadacoin.core.config.CONFIG.private_key,
+        )
+        pre = "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC"
+        twice = "1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"
+        ann = BranchAnnouncement(
+            prerotated_key_hash=pre, twice_prerotated_key_hash=twice
+        )
+        txn.relationship = ann
+        txn.prev_public_key_hash = "1PrevAddressXXXXXXXXXXXXXXXXXXX"
+        txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = NodeKeyRotationManager._sign(
+            yadacoin.core.config.CONFIG.private_key, txn.hash
+        )
+        try:
+            await txn.verify(check_branch_announcement=True)
+        except InvalidTransactionException as e:
+            self.assertNotIn("Branch announcement transactions not allowed", str(e))
+            self.assertNotIn("only valid for subsequent rotations", str(e))
+        except Exception:
+            pass
+
     async def test_init_invalid_identity_falls_through(self):
         """Transaction.__init__ raises when the identity value is not a dict."""
         raw = {

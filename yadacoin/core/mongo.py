@@ -376,6 +376,11 @@ class Mongo(object):
         __prev_public_key_hash = IndexModel(
             [("prev_public_key_hash", ASCENDING)], name="__prev_public_key_hash"
         )
+        __inception_public_key_hash = IndexModel(
+            [("inception_public_key_hash", ASCENDING)],
+            name="__inception_public_key_hash",
+            sparse=True,
+        )
         try:
             self.db.miner_transactions.create_indexes(
                 [
@@ -394,6 +399,7 @@ class Mongo(object):
                     __prerotated_key_hash,
                     __twice_prerotated_key_hash,
                     __prev_public_key_hash,
+                    __inception_public_key_hash,
                 ]
             )
         except:
