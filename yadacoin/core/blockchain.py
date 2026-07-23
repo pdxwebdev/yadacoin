@@ -215,12 +215,16 @@ class Blockchain(object):
                 transaction.extra_blocks = extra_blocks
             config.app_log.info("verifying txn: {} block: {}".format(i, block.index))
             i += 1
+            check_branch_announcement = (
+                block.index >= CHAIN.KEL_BRANCH_ANNOUNCEMENT_FORK
+            )
             try:
                 await transaction.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
                     check_kel=check_kel,
                     check_dynamic_nodes=check_dynamic_nodes,
+                    check_branch_announcement=check_branch_announcement,
                     block=block,
                     batch_txns=block.transactions,
                 )
@@ -388,12 +392,16 @@ class Blockchain(object):
             if block.index >= CHAIN.DYNAMIC_NODES_FORK:
                 check_dynamic_nodes = True
 
+            check_branch_announcement = (
+                block.index >= CHAIN.KEL_BRANCH_ANNOUNCEMENT_FORK
+            )
             for txn in block.transactions:
                 await txn.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
                     check_kel=check_kel,
                     check_dynamic_nodes=check_dynamic_nodes,
+                    check_branch_announcement=check_branch_announcement,
                 )
             if last_block:
                 if int(block.index) - int(last_block.index) > 1:

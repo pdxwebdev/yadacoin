@@ -101,7 +101,22 @@ class PeerLogFormatter(LogFormatter):
 # ---------------------------------------------------------------------------
 
 #: Methods sent before the session cipher is established — always plain.
-PRE_AUTH_METHODS = frozenset({"connect", "challenge"})
+PRE_AUTH_METHODS = frozenset({"connect", "challenge", "login"})
+POST_AUTH_METHODS = frozenset(
+    {
+        "getblock",
+        "getblocks",
+        "keepalive",
+        "newblock",
+        "newtxn",
+        "blockresponse",
+        "blocksresponse",
+        "blockresponse_confirmed",
+        "blocksresponse_confirmed",
+        "newblock_confirmed",
+        "newtxn_confirmed",
+    }
+)
 
 
 class SessionCipher:
@@ -230,7 +245,7 @@ class BaseRPC:
             # negligible ~6-byte zlib header/checksum overhead.
             plain = json.dumps(rpc_data).encode("utf-8")
             compressed = zlib.compress(plain)
-            if cipher and method not in PRE_AUTH_METHODS:
+            if cipher and method in PRE_AUTH_METHODS:
                 ct = cipher.encrypt(compressed)
                 line = (
                     json.dumps({"enc": base64.b64encode(ct).decode()}) + "\n"
@@ -336,6 +351,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
 
         stream.synced = False
         stream.syncing = False
+        stream.authenticated = False
         stream.message_queue = {}
         while True:
             peer_label_var.set(peer_label_for(stream))
@@ -373,6 +389,8 @@ class RPCSocketServer(TCPServer, BaseRPC):
                 )
                 continue
             method = body.get("method")
+            if not stream.authenticated and method in POST_AUTH_METHODS:
+                continue
             if "result" in body:
                 if method in REQUEST_RESPONSE_MAP:
                     if body["id"] in stream.message_queue.get(
@@ -549,6 +567,7 @@ class RPCSocketClient(TCPClient):
             stream = await super(RPCSocketClient, self).connect(
                 peer.host, peer.port, timeout=timedelta(seconds=3)
             )
+            stream.authenticated = False
             stream.synced = False
             stream.syncing = False
             stream.message_queue = {}
@@ -710,7 +729,11 @@ class RPCSocketClient(TCPClient):
                     stream.close()
                 self.config.health.tcp_client.last_activity = time.time()
                 stream.last_activity = int(time.time())
-                await getattr(self, body.get("method"))(body, stream)
+
+                method = body.get("method")
+                if not stream.authenticated and method in POST_AUTH_METHODS:
+                    continue
+                await getattr(self, method)(body, stream)
             except StreamClosedError:
                 await self.remove_peer(stream)
                 break

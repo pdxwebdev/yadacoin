@@ -444,34 +444,59 @@ class Mongo(object):
             pass
 
         # key_event_log indexes
-        # Covers: delta queries (anchor + counter range), latest-entry lookups (anchor + sort by counter)
+        # Global (non-branch) auth ratchet: anchor_public_key = K0 full public key
         __kel_anchor_counter = IndexModel(
             [("anchor_public_key", ASCENDING), ("counter", ASCENDING)],
             name="__kel_anchor_counter",
         )
-        # Covers: exact tip lookup by (anchor, public_key_hash)
         __kel_anchor_pkh = IndexModel(
             [("anchor_public_key", ASCENDING), ("public_key_hash", ASCENDING)],
             name="__kel_anchor_pkh",
         )
-        # Covers: upserts / replace_one by public_key_hash
-        __kel_pkh = IndexModel(
-            [("public_key_hash", ASCENDING)],
-            name="__kel_pkh",
-            unique=True,
-        )
-        # Covers: signing key authorization check (anchor + prerotated_key_hash)
         __kel_anchor_prerotated = IndexModel(
             [("anchor_public_key", ASCENDING), ("prerotated_key_hash", ASCENDING)],
             name="__kel_anchor_prerotated",
+        )
+        # Peer branches: branch_inception_public_key_hash = addr(Kp0)
+        __kel_branch_inception_counter = IndexModel(
+            [
+                ("branch_inception_public_key_hash", ASCENDING),
+                ("counter", ASCENDING),
+            ],
+            name="__kel_branch_inception_counter",
+        )
+        __kel_branch_inception_pkh = IndexModel(
+            [
+                ("branch_inception_public_key_hash", ASCENDING),
+                ("public_key_hash", ASCENDING),
+            ],
+            name="__kel_branch_inception_pkh",
+        )
+        # Main-chain inception back-reference on branch (and tagged main) entries
+        __kel_main_inception_counter = IndexModel(
+            [("inception_public_key_hash", ASCENDING), ("counter", ASCENDING)],
+            name="__kel_main_inception_counter",
+        )
+        # public_key_hash lookups (not unique: branch root + first advance share Kp0)
+        __kel_pkh = IndexModel(
+            [("public_key_hash", ASCENDING)],
+            name="__kel_pkh",
+        )
+        __kel_branch_peer = IndexModel(
+            [("branch_peer", ASCENDING), ("counter", ASCENDING)],
+            name="__kel_branch_peer",
         )
         try:
             self.db.key_event_log.create_indexes(
                 [
                     __kel_anchor_counter,
                     __kel_anchor_pkh,
-                    __kel_pkh,
                     __kel_anchor_prerotated,
+                    __kel_branch_inception_counter,
+                    __kel_branch_inception_pkh,
+                    __kel_main_inception_counter,
+                    __kel_pkh,
+                    __kel_branch_peer,
                 ]
             )
         except:

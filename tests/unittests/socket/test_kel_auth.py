@@ -60,6 +60,9 @@ def _make_config():
     # delta building takes the "no anchor" short-circuit, matching the
     # pre-branching tests' expectation of an empty chain by default.
     config.kel_manager.peer_branch_anchor_pub = AsyncMock(return_value="")
+    config.kel_manager.peer_branch_inception_public_key_hash = AsyncMock(
+        return_value=""
+    )
     config.peer = MagicMock()
     config.peer.to_dict = MagicMock(return_value={"host": "127.0.0.1"})
 
@@ -167,6 +170,25 @@ def _real_sign(message: str, priv_hex: str) -> str:
     msg_hash = hashlib.sha256(message.encode()).digest()
     sig = priv.sign(msg_hash, hasher=None)
     return base64.b64encode(sig).decode()
+
+
+def _auth_transcript(
+    client_ecdh="",
+    server_ecdh="",
+    client_tip="",
+    server_tip="",
+    challenge="",
+):
+    """Match NodeRPC._auth_transcript field order."""
+    return "|".join(
+        [
+            client_ecdh or "",
+            server_ecdh or "",
+            client_tip or "",
+            server_tip or "",
+            challenge or "",
+        ]
+    )
 
 
 # ─── KEL "start over" resync ──────────────────────────────────────────────────
@@ -670,6 +692,11 @@ class TestHandleKelConnect(AsyncTestCase):
         self.assertIn("request_sig", methods)
         # 'connected' must come before 'request_sig'
         self.assertLess(methods.index("connected"), methods.index("request_sig"))
+        req = next(p for m, p in written_calls if m == "request_sig")
+        self.assertTrue(req.get("auth_challenge"))
+        self.assertEqual(len(req["auth_challenge"]), 32)  # secrets.token_hex(16)
+        self.assertIn("server_ecdh_pub", req)
+        self.assertIn("server_kel_tip_pkh", req)
 
     async def test_stores_state_on_stream(self):
         rpc = _make_rpc()
@@ -711,6 +738,9 @@ class TestHandleKelConnect(AsyncTestCase):
 
         self.assertEqual(stream._peer_ecdh_pub, _ecdh_pub)
         self.assertEqual(stream._server_ecdh_pub, _ecdh_pub)
+        self.assertTrue(getattr(stream, "_auth_challenge", ""))
+        self.assertTrue(getattr(stream, "_auth_transcript", ""))
+        self.assertIn(stream._auth_challenge, stream._auth_transcript)
 
     async def test_session_cipher_activated_after_connected(self):
         """Session cipher must be set on stream before request_sig is sent."""
@@ -867,6 +897,18 @@ class TestConnected(AsyncTestCase):
 # ─── request_sig ─────────────────────────────────────────────────────────────
 
 
+class TestAuthTranscript(unittest.TestCase):
+    def test_field_order_stable(self):
+        from yadacoin.tcpsocket.node import NodeRPC
+
+        t = NodeRPC._auth_transcript("c", "s", "ct", "st", "ch")
+        self.assertEqual(t, "c|s|ct|st|ch")
+        self.assertEqual(
+            NodeRPC._auth_transcript("", "", "", "", "ch"),
+            "||||ch",
+        )
+
+
 class TestRequestSig(AsyncTestCase):
     """Client-side request_sig handler."""
 
@@ -875,7 +917,9 @@ class TestRequestSig(AsyncTestCase):
         server_signed,
         ratchet_pub,
         server_kel_tip_pkh="",
-        server_ecdh_pub="",
+        server_ecdh_pub="serverecdh",
+        client_kel_tip_pkh="",
+        auth_challenge="deadbeefcafebabe0123456789abcdef",
         **extras,
     ):
         p = {
@@ -883,9 +927,10 @@ class TestRequestSig(AsyncTestCase):
             "ratchet_public_key": ratchet_pub,
             "server_kel_tip_pkh": server_kel_tip_pkh,
             "server_ecdh_pub": server_ecdh_pub,
+            "client_kel_tip_pkh": client_kel_tip_pkh,
+            "auth_challenge": auth_challenge,
             "ratchet_chain": [],
             "latest_ratchet_pkh": "",
-            "client_kel_tip_pkh": "",
         }
         p.update(extras)
         return {"params": p}
@@ -898,6 +943,23 @@ class TestRequestSig(AsyncTestCase):
         await rpc.request_sig(body={"params": {}}, stream=stream)
 
         rpc.remove_peer.assert_awaited_once()
+
+    async def test_missing_auth_challenge_removes_peer(self):
+        rpc = _make_rpc()
+        stream = _make_stream()
+        rpc.remove_peer = AsyncMock(return_value=None)
+        stream._ecdh_pub_sent = "clientecdh"
+
+        _auth_priv, _auth_pub = _real_keys()
+        body = self._body(
+            server_signed="c2ln",
+            ratchet_pub=_auth_pub,
+            auth_challenge="",
+        )
+        await rpc.request_sig(body=body, stream=stream)
+        rpc.remove_peer.assert_awaited_once()
+        reason = rpc.remove_peer.call_args[1].get("reason", "")
+        self.assertIn("auth challenge", reason)
 
     async def test_invalid_server_sig_removes_peer(self):
         rpc = _make_rpc()
@@ -940,14 +1002,19 @@ class TestRequestSig(AsyncTestCase):
         stream._ecdh_pub_sent = _client_ecdh_pub
 
         server_kel_tip_pkh = ""
-        nonce = _client_ecdh_pub + server_kel_tip_pkh
+        server_ecdh_pub = "serverecdh"
+        challenge = "deadbeefcafebabe0123456789abcdef"
+        nonce = _auth_transcript(
+            _client_ecdh_pub, server_ecdh_pub, "", server_kel_tip_pkh, challenge
+        )
         valid_sig = _real_sign(nonce, _auth_priv)
 
         body = self._body(
             server_signed=valid_sig,
             ratchet_pub=_auth_pub,
             server_kel_tip_pkh=server_kel_tip_pkh,
-            server_ecdh_pub="serverecdh",
+            server_ecdh_pub=server_ecdh_pub,
+            auth_challenge=challenge,
         )
 
         # _process_ratchet_auth returns success tuple
@@ -986,12 +1053,16 @@ class TestRequestSig(AsyncTestCase):
         )
         stream._ecdh_pub_sent = _client_ecdh_pub
 
-        nonce = _client_ecdh_pub
+        server_ecdh_pub = "serverecdh"
+        challenge = "deadbeefcafebabe0123456789abcdef"
+        nonce = _auth_transcript(_client_ecdh_pub, server_ecdh_pub, "", "", challenge)
         valid_sig = _real_sign(nonce, _auth_priv)
 
         body = self._body(
             server_signed=valid_sig,
             ratchet_pub=_auth_pub,
+            server_ecdh_pub=server_ecdh_pub,
+            auth_challenge=challenge,
         )
 
         rpc._process_ratchet_auth = AsyncMock(return_value=None)
@@ -1035,6 +1106,25 @@ class TestSigResponse(AsyncTestCase):
         reason = rpc.remove_peer.call_args[1].get("reason", "")
         self.assertIn("missing auth fields", reason)
 
+    def _prime_stream_auth(
+        self,
+        stream,
+        client_ecdh="clientecdh",
+        server_ecdh="serverecdh",
+        client_tip="",
+        server_tip="",
+        challenge="deadbeefcafebabe0123456789abcdef",
+    ):
+        stream._peer_ecdh_pub = client_ecdh
+        stream._server_ecdh_pub = server_ecdh
+        stream._client_kel_tip_pkh_expected = client_tip
+        stream._server_kel_tip_pkh = server_tip
+        stream._auth_challenge = challenge
+        stream._auth_transcript = _auth_transcript(
+            client_ecdh, server_ecdh, client_tip, server_tip, challenge
+        )
+        return stream._auth_transcript
+
     async def test_invalid_client_sig_removes_peer(self):
         rpc = _make_rpc()
         stream = _make_stream()
@@ -1043,10 +1133,8 @@ class TestSigResponse(AsyncTestCase):
         _auth_priv, _auth_pub = _real_keys()
         _other_priv, _other_pub = _real_keys()
 
-        stream._server_ecdh_pub = "serverecdh"
-        stream._client_kel_tip_pkh_expected = ""
-
-        bad_sig = _real_sign("serverecdh", _other_priv)
+        self._prime_stream_auth(stream)
+        bad_sig = _real_sign("wrong transcript", _other_priv)
         body = self._body(client_signed=bad_sig, ratchet_pub=_auth_pub)
 
         await rpc.sig_response(body=body, stream=stream)
@@ -1064,13 +1152,9 @@ class TestSigResponse(AsyncTestCase):
 
         _auth_priv, _auth_pub = _real_keys()
 
-        server_ecdh_pub = "serverecdh"
-        client_kel_tip_pkh = ""
-        nonce = server_ecdh_pub + client_kel_tip_pkh
-        valid_sig = _real_sign(nonce, _auth_priv)
+        transcript = self._prime_stream_auth(stream)
+        valid_sig = _real_sign(transcript, _auth_priv)
 
-        stream._server_ecdh_pub = server_ecdh_pub
-        stream._client_kel_tip_pkh_expected = client_kel_tip_pkh
         stream._connect_ratchet_chain = []
         stream._connect_latest_ratchet_pkh = ""
 
@@ -1085,6 +1169,8 @@ class TestSigResponse(AsyncTestCase):
         self.assertTrue(stream.peer.authenticated)
         rpc.send_block_to_peer.assert_awaited_once()
         rpc.get_next_block.assert_awaited_once()
+        # Must authorize the key that signed the transcript
+        self.assertEqual(rpc._process_ratchet_auth.call_args[0][2], _auth_pub)
 
     async def test_ratchet_auth_failure_does_not_authenticate(self):
         rpc = _make_rpc()
@@ -1095,12 +1181,9 @@ class TestSigResponse(AsyncTestCase):
 
         _auth_priv, _auth_pub = _real_keys()
 
-        server_ecdh_pub = "serverecdh"
-        nonce = server_ecdh_pub
-        valid_sig = _real_sign(nonce, _auth_priv)
+        transcript = self._prime_stream_auth(stream)
+        valid_sig = _real_sign(transcript, _auth_priv)
 
-        stream._server_ecdh_pub = server_ecdh_pub
-        stream._client_kel_tip_pkh_expected = ""
         stream._connect_ratchet_chain = []
         stream._connect_latest_ratchet_pkh = ""
 
@@ -1125,13 +1208,10 @@ class TestSigResponse(AsyncTestCase):
 
         _auth_priv, _auth_pub = _real_keys()
 
-        server_ecdh_pub = "serverecdh"
-        nonce = server_ecdh_pub
-        valid_sig = _real_sign(nonce, _auth_priv)
+        transcript = self._prime_stream_auth(stream)
+        valid_sig = _real_sign(transcript, _auth_priv)
 
         stored_chain = [{"id": "stored_txn"}]
-        stream._server_ecdh_pub = server_ecdh_pub
-        stream._client_kel_tip_pkh_expected = ""
         stream._connect_ratchet_chain = stored_chain
         stream._connect_latest_ratchet_pkh = "tipkh"
 
@@ -1165,13 +1245,10 @@ class TestSigResponse(AsyncTestCase):
 
         _auth_priv, _auth_pub = _real_keys()
 
-        server_ecdh_pub = "serverecdh"
-        nonce = server_ecdh_pub
-        valid_sig = _real_sign(nonce, _auth_priv)
+        transcript = self._prime_stream_auth(stream)
+        valid_sig = _real_sign(transcript, _auth_priv)
 
         # First contact: connect sent an empty ratchet_chain
-        stream._server_ecdh_pub = server_ecdh_pub
-        stream._client_kel_tip_pkh_expected = ""
         stream._connect_ratchet_chain = []
         stream._connect_latest_ratchet_pkh = ""
 

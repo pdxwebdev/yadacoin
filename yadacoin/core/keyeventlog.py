@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from bitcoin.wallet import P2PKHBitcoinAddress
 
+from yadacoin.core.branchannouncement import BranchAnnouncement
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.locationrecovery import verify_proof as verify_recovery_proof
@@ -100,7 +101,9 @@ class MempoolQueryFields(Enum):
 
 
 class KeyEventLogQueryFields(Enum):
-    ANCHOR_PUBLIC_KEY = "anchor_public_key"
+    ANCHOR_PUBLIC_KEY = "anchor_public_key"  # global (non-branch) auth ratchet
+    BRANCH_INCEPTION_PUBLIC_KEY_HASH = "branch_inception_public_key_hash"
+    INCEPTION_PUBLIC_KEY_HASH = "inception_public_key_hash"  # main-chain KEL
     TWICE_PREROTATED_KEY_HASH = "twice_prerotated_key_hash"
     PREROTATED_KEY_HASH = "prerotated_key_hash"
     PUBLIC_KEY_HASH = "public_key_hash"
@@ -250,6 +253,56 @@ def is_identity_announcement_inception(txn: Transaction) -> bool:
 
     rel = getattr(txn, "relationship", None)
     return isinstance(rel, (IdentityAnnouncement, RotationAnnouncement))
+
+
+def is_branch_announcement(txn: Transaction) -> bool:
+    """True when *txn* carries a BranchAnnouncement relationship, or the
+    legacy off-chain string marker ``peer-kel-branch`` (read-tolerant)."""
+    rel = getattr(txn, "relationship", None)
+    if isinstance(rel, BranchAnnouncement):
+        return True
+    if isinstance(rel, str) and rel == "peer-kel-branch":
+        return True
+    return False
+
+
+def get_branch_commit(txn: Transaction):
+    """Return the first public peer-branch signer address (addr(Kp0)) or None.
+
+    For a BranchAnnouncement this is ``relationship.prerotated_key_hash``.
+    Legacy ``peer-kel-branch`` string bridges have no structured commit.
+    """
+    rel = getattr(txn, "relationship", None)
+    if isinstance(rel, BranchAnnouncement):
+        return rel.prerotated_key_hash
+    return None
+
+
+def get_branch_commit_next(txn: Transaction):
+    """Return the next peer-branch hop (addr(Kp1)) or None.
+
+    For a BranchAnnouncement this is ``relationship.twice_prerotated_key_hash``.
+    """
+    rel = getattr(txn, "relationship", None)
+    if isinstance(rel, BranchAnnouncement):
+        return rel.twice_prerotated_key_hash
+    return None
+
+
+def is_branch_root_entry(txn: Transaction) -> bool:
+    """Forward-looking: first on-chain branch-lineage entry.
+
+    A branch-root entry's public_key_hash equals the announcement's
+    relationship.prerotated_key_hash (addr(Kp0)) and its prev_public_key_hash
+    equals the announcement's confirming public_key_hash.  Detection of the
+    confirming sibling is left to callers; this helper only checks whether
+    the txn looks like a branch-lineage root (non-empty
+    branch_public_key_hash_path with counter semantics deferred).
+    """
+    path = getattr(txn, "branch_public_key_hash_path", None)
+    if path:
+        return True
+    return False
 
 
 def find_active_recovery_witness_hash(log):
@@ -546,9 +599,56 @@ class KeyEvent:
                 f"not a valid unconfirmed key event. invalid relationship, outputs, or prerotated_key_hash. txn={self.txn.transaction_signature}"
             )
 
+        if is_branch_announcement(self.txn) and isinstance(
+            self.txn.relationship, BranchAnnouncement
+        ):
+            self.verify_branch_announcement_payload()
+
         if self.status != KeyEventChainStatus.MEMPOOL:
             raise KeyEventException(
                 "not a valid unconfirmed key event. Invalid status."
+            )
+
+    def verify_branch_announcement_payload(self):
+        """Validate BranchAnnouncement relationship payload on an unconfirmed.
+
+        Does not alter main pre/twice pairing — only checks both peer commit
+        addresses and that neither collides with main-line hashes.
+        """
+        commit = get_branch_commit(self.txn)
+        commit_next = get_branch_commit_next(self.txn)
+        if not commit or not isinstance(commit, str):
+            raise KeyEventException(
+                "branch announcement missing prerotated_key_hash commit"
+            )
+        if not commit_next or not isinstance(commit_next, str):
+            raise KeyEventException(
+                "branch announcement missing twice_prerotated_key_hash commit"
+            )
+        if not Config().address_is_valid(commit):
+            raise KeyEventException(
+                f"branch announcement prerotated_key_hash is not a valid "
+                f"address: {commit!r}"
+            )
+        if not Config().address_is_valid(commit_next):
+            raise KeyEventException(
+                f"branch announcement twice_prerotated_key_hash is not a valid "
+                f"address: {commit_next!r}"
+            )
+        if commit == commit_next:
+            raise KeyEventException(
+                "branch announcement prerotated_key_hash and "
+                "twice_prerotated_key_hash must differ"
+            )
+
+        main_hashes = {
+            self.txn.public_key_hash,
+            self.txn.prerotated_key_hash,
+            self.txn.twice_prerotated_key_hash,
+        }
+        if commit in main_hashes or commit_next in main_hashes:
+            raise KeyEventException(
+                "branch announcement commit collides with a main-line key hash"
             )
 
     def verify_confirming(self, latest_entry, onchain=False):
@@ -948,11 +1048,23 @@ class KELHashCollection:
             self.public_key_hashes[transaction.public_key_hash] = transaction
 
         if transaction.prev_public_key_hash:
-            if transaction.prev_public_key_hash in self.prev_public_key_hashes:
+            # Branch-root entries (forward-looking on-chain first branch txn)
+            # and recovers-inceptions intentionally share a prev_public_key_hash
+            # with main-line structure; exclude them from the blunt uniqueness rule.
+            if (
+                not is_recovers_inception(transaction)
+                and not is_branch_root_entry(transaction)
+                and transaction.prev_public_key_hash in self.prev_public_key_hashes
+            ):
                 raise KELHashCollectionException(
                     "Duplication key event in mempool. Removing. (prev_public_key_hash)"
                 )
-            self.prev_public_key_hashes[transaction.prev_public_key_hash] = transaction
+            if not is_recovers_inception(transaction) and not is_branch_root_entry(
+                transaction
+            ):
+                self.prev_public_key_hashes[
+                    transaction.prev_public_key_hash
+                ] = transaction
 
 
 class KeyEventLog:
@@ -2098,15 +2210,34 @@ class KeyEventLog:
         whichever of the two has the higher counter.  This is the fast path
         ``get_latest`` uses once a KEL has been fully tagged: no walking is
         needed, just one sorted query per collection.
+
+        Entries with a non-empty ``branch_public_key_hash_path`` are ignored so
+        peer-branch lineage cannot steal the main tip via shared inception and
+        counter values.  Legacy missing/empty path means main chain.
         """
         config = Config()
         latest = None
+
+        # Main tip only: empty / missing branch_public_key_hash_path.
+        main_path_or = {
+            "$or": [
+                {"transactions.branch_public_key_hash_path": {"$exists": False}},
+                {"transactions.branch_public_key_hash_path": None},
+                {"transactions.branch_public_key_hash_path": []},
+                {"transactions.branch_public_key_hash_path": ""},
+            ]
+        }
 
         cursor = config.mongo.async_db.blocks.aggregate(
             [
                 {"$match": {"transactions.inception_public_key_hash": inception_pkh}},
                 {"$unwind": "$transactions"},
-                {"$match": {"transactions.inception_public_key_hash": inception_pkh}},
+                {
+                    "$match": {
+                        "transactions.inception_public_key_hash": inception_pkh,
+                        **main_path_or,
+                    }
+                },
                 {"$sort": {"transactions.counter": -1}},
                 {"$limit": 1},
             ]
@@ -2117,7 +2248,16 @@ class KeyEventLog:
 
         if not onchain_only:
             mempool_txn = await config.mongo.async_db.miner_transactions.find_one(
-                {"inception_public_key_hash": inception_pkh}, sort=[("counter", -1)]
+                {
+                    "inception_public_key_hash": inception_pkh,
+                    "$or": [
+                        {"branch_public_key_hash_path": {"$exists": False}},
+                        {"branch_public_key_hash_path": None},
+                        {"branch_public_key_hash_path": []},
+                        {"branch_public_key_hash_path": ""},
+                    ],
+                },
+                sort=[("counter", -1)],
             )
             if mempool_txn:
                 mempool_txn = Transaction.from_dict(mempool_txn)
@@ -2338,34 +2478,34 @@ class KeyEventLog:
         """Persist the node-side KEL bookkeeping fields for *entry* so that
         future ``build_from_public_key`` walks can use them as short-cuts.
 
-        Writes ``inception_public_key_hash`` and ``counter`` to whichever
-        collection holds the canonical copy of the transaction:
-        ``miner_transactions`` for mempool entries, ``blocks`` for confirmed
-        entries.  ``key_event_log`` is intentionally excluded because it can
-        contain inter-anchor rotations whose counters would be out of sequence
-        with the main KEL.
+        Writes ``inception_public_key_hash``, ``counter``, and optional
+        ``branch_public_key_hash_path`` to whichever collection holds the
+        canonical copy of the transaction: ``miner_transactions`` for mempool
+        entries, ``blocks`` for confirmed entries.  ``key_event_log`` is
+        intentionally excluded because it can contain inter-anchor rotations
+        whose counters would be out of sequence with the main KEL.
         """
         config = Config()
         try:
+            set_fields = {
+                "inception_public_key_hash": entry.inception_public_key_hash,
+                "counter": entry.counter,
+            }
+            path = getattr(entry, "branch_public_key_hash_path", None)
+            if path is not None:
+                set_fields["branch_public_key_hash_path"] = path
             if getattr(entry, "mempool", False):
                 await config.mongo.async_db.miner_transactions.update_one(
                     {"id": entry.transaction_signature},
-                    {
-                        "$set": {
-                            "inception_public_key_hash": entry.inception_public_key_hash,
-                            "counter": entry.counter,
-                        }
-                    },
+                    {"$set": set_fields},
                 )
             else:
+                block_set = {
+                    f"transactions.$[elem].{k}": v for k, v in set_fields.items()
+                }
                 await config.mongo.async_db.blocks.update_one(
                     {"transactions.id": entry.transaction_signature},
-                    {
-                        "$set": {
-                            "transactions.$[elem].inception_public_key_hash": entry.inception_public_key_hash,
-                            "transactions.$[elem].counter": entry.counter,
-                        }
-                    },
+                    {"$set": block_set},
                     array_filters=[{"elem.id": entry.transaction_signature}],
                 )
         except Exception:

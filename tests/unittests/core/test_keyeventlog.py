@@ -5905,3 +5905,204 @@ class TestKeyEventLogCoverage100(AsyncTestCase):
                     confirming_ke, hash_collection, use_mempool=True
                 )
         self.assertIn("no on-chain or mempool base", str(ctx.exception))
+
+
+# ---------------------------------------------------------------------------
+# BranchAnnouncement helpers / payload / get_latest isolation
+# ---------------------------------------------------------------------------
+
+
+class TestBranchAnnouncementHelpers(unittest.TestCase):
+    def test_is_branch_announcement_class(self):
+        from yadacoin.core.branchannouncement import BranchAnnouncement
+        from yadacoin.core.keyeventlog import is_branch_announcement
+
+        txn = MagicMock()
+        txn.relationship = BranchAnnouncement(
+            prerotated_key_hash="1PreAddrXXXXXXXXXXXXXXXXXXXXXXX",
+            twice_prerotated_key_hash="1TwiceAddrXXXXXXXXXXXXXXXXXXXXX",
+        )
+        self.assertTrue(is_branch_announcement(txn))
+
+    def test_is_branch_announcement_legacy_string(self):
+        from yadacoin.core.keyeventlog import is_branch_announcement
+
+        txn = MagicMock()
+        txn.relationship = "peer-kel-branch"
+        self.assertTrue(is_branch_announcement(txn))
+
+    def test_is_branch_announcement_false(self):
+        from yadacoin.core.keyeventlog import is_branch_announcement
+
+        txn = MagicMock()
+        txn.relationship = ""
+        self.assertFalse(is_branch_announcement(txn))
+        txn.relationship = {"other": 1}
+        self.assertFalse(is_branch_announcement(txn))
+
+    def test_get_branch_commit_and_next(self):
+        from yadacoin.core.branchannouncement import BranchAnnouncement
+        from yadacoin.core.keyeventlog import get_branch_commit, get_branch_commit_next
+
+        pre = "1PreAddrXXXXXXXXXXXXXXXXXXXXXXX"
+        twice = "1TwiceAddrXXXXXXXXXXXXXXXXXXXXX"
+        txn = MagicMock()
+        txn.relationship = BranchAnnouncement(
+            prerotated_key_hash=pre, twice_prerotated_key_hash=twice
+        )
+        self.assertEqual(get_branch_commit(txn), pre)
+        self.assertEqual(get_branch_commit_next(txn), twice)
+        txn.relationship = "peer-kel-branch"
+        self.assertIsNone(get_branch_commit(txn))
+        self.assertIsNone(get_branch_commit_next(txn))
+
+    def test_is_branch_root_entry(self):
+        from yadacoin.core.keyeventlog import is_branch_root_entry
+
+        txn = MagicMock()
+        txn.branch_public_key_hash_path = ["1MainWhereBranchOccurred"]
+        self.assertTrue(is_branch_root_entry(txn))
+        txn.branch_public_key_hash_path = []
+        self.assertFalse(is_branch_root_entry(txn))
+        del txn.branch_public_key_hash_path
+        self.assertFalse(is_branch_root_entry(txn))
+
+    def test_verify_branch_payload_collision_raises(self):
+        from yadacoin.core.branchannouncement import BranchAnnouncement
+        from yadacoin.core.keyeventlog import KeyEvent, KeyEventException
+
+        addr = "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC"
+        txn = MagicMock()
+        txn.relationship = BranchAnnouncement(
+            prerotated_key_hash=addr,
+            twice_prerotated_key_hash="1OtherCommitXXXXXXXXXXXXXXXXXX",
+        )
+        txn.public_key_hash = addr  # collide with pre
+        txn.prerotated_key_hash = "1OtherAddressAAAAAAAAAAAAAAAAxxxx"
+        txn.twice_prerotated_key_hash = "1OtherAddressBBBBBBBBBBBBBBBBByyyy"
+        txn.transaction_signature = "sig"
+        txn.public_key = "02" + "ab" * 32
+        ke = KeyEvent.__new__(KeyEvent)
+        ke.txn = txn
+        with patch("yadacoin.core.keyeventlog.Config") as mock_cfg:
+            mock_cfg.return_value.address_is_valid.return_value = True
+            with self.assertRaises(KeyEventException) as ctx:
+                ke.verify_branch_announcement_payload()
+            self.assertIn("collides", str(ctx.exception))
+
+    def test_verify_branch_payload_pre_equals_twice_raises(self):
+        from yadacoin.core.branchannouncement import BranchAnnouncement
+        from yadacoin.core.keyeventlog import KeyEvent, KeyEventException
+
+        same = "1SameCommitAddressXXXXXXXXXXXXX"
+        txn = MagicMock()
+        txn.relationship = BranchAnnouncement(
+            prerotated_key_hash=same, twice_prerotated_key_hash=same
+        )
+        txn.public_key_hash = "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC"
+        txn.prerotated_key_hash = "1OtherAddressAAAAAAAAAAAAAAAAxxxx"
+        txn.twice_prerotated_key_hash = "1OtherAddressBBBBBBBBBBBBBBBBByyyy"
+        ke = KeyEvent.__new__(KeyEvent)
+        ke.txn = txn
+        with patch("yadacoin.core.keyeventlog.Config") as mock_cfg:
+            mock_cfg.return_value.address_is_valid.return_value = True
+            with self.assertRaises(KeyEventException) as ctx:
+                ke.verify_branch_announcement_payload()
+            self.assertIn("must differ", str(ctx.exception))
+
+    def test_verify_branch_payload_invalid_address_raises(self):
+        from yadacoin.core.branchannouncement import BranchAnnouncement
+        from yadacoin.core.keyeventlog import KeyEvent, KeyEventException
+
+        txn = MagicMock()
+        txn.relationship = BranchAnnouncement(
+            prerotated_key_hash="not-an-addr",
+            twice_prerotated_key_hash="also-bad",
+        )
+        txn.public_key_hash = "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC"
+        txn.prerotated_key_hash = "1OtherAddressAAAAAAAAAAAAAAAAxxxx"
+        txn.twice_prerotated_key_hash = "1OtherAddressBBBBBBBBBBBBBBBBByyyy"
+        ke = KeyEvent.__new__(KeyEvent)
+        ke.txn = txn
+        with patch("yadacoin.core.keyeventlog.Config") as mock_cfg:
+            mock_cfg.return_value.address_is_valid.return_value = False
+            with self.assertRaises(KeyEventException) as ctx:
+                ke.verify_branch_announcement_payload()
+            self.assertIn("not a valid address", str(ctx.exception))
+
+    def test_verify_branch_payload_ok(self):
+        from yadacoin.core.branchannouncement import BranchAnnouncement
+        from yadacoin.core.keyeventlog import KeyEvent
+
+        pre = "1CommitPreXXXXXXXXXXXXXXXXXXXXX"
+        twice = "1CommitTwiceXXXXXXXXXXXXXXXXXXX"
+        txn = MagicMock()
+        txn.relationship = BranchAnnouncement(
+            prerotated_key_hash=pre, twice_prerotated_key_hash=twice
+        )
+        txn.public_key_hash = "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC"
+        txn.prerotated_key_hash = "1OtherAddressAAAAAAAAAAAAAAAAxxxx"
+        txn.twice_prerotated_key_hash = "1OtherAddressBBBBBBBBBBBBBBBBByyyy"
+        ke = KeyEvent.__new__(KeyEvent)
+        ke.txn = txn
+        with patch("yadacoin.core.keyeventlog.Config") as mock_cfg:
+            mock_cfg.return_value.address_is_valid.return_value = True
+            ke.verify_branch_announcement_payload()  # no raise
+
+
+class TestLatestFromInceptionIgnoresBranchPath(AsyncTestCase):
+    """get_latest main tip must ignore entries with non-empty branch path."""
+
+    @patch("yadacoin.core.keyeventlog.Config")
+    async def test_filters_branch_path_entries(self, mock_cfg_cls):
+        from yadacoin.core.keyeventlog import KeyEventLog
+        from yadacoin.core.transaction import Transaction
+
+        cfg = MagicMock()
+        mock_cfg_cls.return_value = cfg
+
+        main_tip = {
+            "transactions": {
+                "id": "main_tip",
+                "public_key_hash": "1MainTip",
+                "counter": 5,
+                "inception_public_key_hash": "1Inception",
+            }
+        }
+        cfg.mongo.async_db.blocks.aggregate.return_value.to_list = AsyncMock(
+            return_value=[main_tip]
+        )
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+
+        with patch.object(
+            Transaction,
+            "from_dict",
+            side_effect=lambda d: MagicMock(
+                counter=d.get("counter", d.get("transactions", {}).get("counter")),
+                public_key_hash=d.get(
+                    "public_key_hash",
+                    d.get("transactions", {}).get("public_key_hash"),
+                ),
+            ),
+        ):
+            # from_dict receives rows[0]["transactions"]
+            def _from_dict(d):
+                m = MagicMock()
+                m.counter = d.get("counter", 0)
+                m.public_key_hash = d.get("public_key_hash", "")
+                return m
+
+            with patch.object(Transaction, "from_dict", side_effect=_from_dict):
+                latest = await KeyEventLog._latest_from_inception_tag(
+                    "1Inception", onchain_only=True
+                )
+
+        self.assertIsNotNone(latest)
+        self.assertEqual(latest.counter, 5)
+        # Ensure the aggregate pipeline included the main-path filter
+        pipeline = cfg.mongo.async_db.blocks.aggregate.call_args[0][0]
+        match_stages = [s for s in pipeline if "$match" in s]
+        # second match (after unwind) should constrain branch path
+        self.assertTrue(
+            any("branch_public_key_hash_path" in str(s) for s in match_stages)
+        )

@@ -130,6 +130,12 @@ class CHAIN(object):
     # off-chain ratchet chain during P2P authentication.  Connections from peers
     # without a confirmed KEL are rejected at/after this block height.
     KEL_P2P_AUTH_FORK = 605000
+    # On-chain BranchAnnouncement: main unconfirmed+confirming rotation that
+    # commits a peer-branch root (addr(Kp1)) in relationship.branch without
+    # altering linear main-KEL hash pairing.  Below this height, BranchAnnouncement
+    # relationships are rejected during transaction verification.
+    # Placeholder height — set before mainnet activation.
+    KEL_BRANCH_ANNOUNCEMENT_FORK = 605000
 
     CHECK_MASTERNODE_KEL_ADDRESS = 605032
 

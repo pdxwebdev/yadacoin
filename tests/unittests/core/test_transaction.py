@@ -2746,6 +2746,34 @@ class TestTransactionIdentityAnnouncement(AsyncTestCase):
         txn = Transaction.from_dict(raw)
         self.assertIsInstance(txn.relationship, RotationAnnouncement)
 
+    async def test_init_parses_branch_announcement_from_dict(self):
+        """Transaction.__init__ converts relationship dict with 'branch' key to BranchAnnouncement."""
+        from yadacoin.core.branchannouncement import BranchAnnouncement
+
+        pre = "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC"
+        twice = "1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"
+        raw = {
+            "id": "fakeid",
+            "public_key": self._PUB_HEX,
+            "relationship": {
+                "branch": {
+                    "prerotated_key_hash": pre,
+                    "twice_prerotated_key_hash": twice,
+                }
+            },
+            "relationship_hash": "",
+            "branch_public_key_hash_path": ["1MainWhere"],
+        }
+        txn = Transaction.from_dict(raw)
+        self.assertIsInstance(txn.relationship, BranchAnnouncement)
+        self.assertEqual(txn.relationship.prerotated_key_hash, pre)
+        self.assertEqual(txn.relationship.twice_prerotated_key_hash, twice)
+        self.assertEqual(txn.branch_public_key_hash_path, ["1MainWhere"])
+        wrapped = txn.to_dict()["relationship"]
+        self.assertIn("branch", wrapped)
+        self.assertEqual(wrapped["branch"]["prerotated_key_hash"], pre)
+        self.assertEqual(wrapped["branch"]["twice_prerotated_key_hash"], twice)
+
     async def test_init_invalid_identity_falls_through(self):
         """Transaction.__init__ raises when the identity value is not a dict."""
         raw = {

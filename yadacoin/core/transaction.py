@@ -26,6 +26,7 @@ from ecdsa import SECP256k1, VerifyingKey
 from ecdsa.util import sigdecode_der
 
 from yadacoin.core.agentannouncement import AgentAnnouncement
+from yadacoin.core.branchannouncement import BranchAnnouncement
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.config import Config
@@ -123,6 +124,7 @@ class Transaction(object):
         spent_in_txn="",
         counter=None,
         inception_public_key_hash=None,
+        branch_public_key_hash_path=None,
     ):
         self.app_log = getLogger("tornado.application")
         self.config = Config()
@@ -153,6 +155,8 @@ class Transaction(object):
             self.counter = counter
         if inception_public_key_hash is not None:
             self.inception_public_key_hash = inception_public_key_hash
+        if branch_public_key_hash_path is not None:
+            self.branch_public_key_hash_path = branch_public_key_hash_path
 
         if version:
             self.version = version
@@ -193,6 +197,14 @@ class Transaction(object):
             # Rotation-only (subsequent rotations for secp256r1 nodes — no identity)
             self.relationship = RotationAnnouncement.from_dict(
                 self.relationship[RotationAnnouncement.RELATIONSHIP_KEY]
+            )
+        elif (
+            isinstance(self.relationship, dict)
+            and BranchAnnouncement.RELATIONSHIP_KEY in self.relationship
+        ):
+            # Peer-branch root commitment on a main-KEL unconfirmed rotation.
+            self.relationship = BranchAnnouncement.from_dict(
+                self.relationship[BranchAnnouncement.RELATIONSHIP_KEY]
             )
         elif (
             isinstance(self.relationship, dict)
@@ -520,6 +532,7 @@ class Transaction(object):
             spent_in_txn=txn.get("spent_in_txn", ""),
             counter=txn.get("counter", None),
             inception_public_key_hash=txn.get("inception_public_key_hash", None),
+            branch_public_key_hash_path=txn.get("branch_public_key_hash_path", None),
         )
 
     def in_the_future(self):
@@ -646,6 +659,7 @@ class Transaction(object):
         check_dynamic_nodes=False,
         check_agent_registration=False,
         check_content_takedown=False,
+        check_branch_announcement=False,
         block=None,
         mempool=False,
         batch_txns=None,
@@ -818,6 +832,18 @@ class Transaction(object):
                     raise InvalidTransactionException(
                         f"Rotation announcement: invalid P-256 key — {exc}"
                     )
+        elif isinstance(self.relationship, BranchAnnouncement):
+            relationship = self.relationship.to_string()
+            if not check_branch_announcement:
+                raise InvalidTransactionException(
+                    f"Branch announcement transactions not allowed before fork height "
+                    f"{CHAIN.KEL_BRANCH_ANNOUNCEMENT_FORK}"
+                )
+            if not self.prev_public_key_hash:
+                raise InvalidTransactionException(
+                    "Branch announcement is only valid for subsequent rotations, "
+                    "not inception (prev_public_key_hash is empty)"
+                )
         elif isinstance(self.relationship, ContentTakedownAnnouncement):
             relationship = self.relationship.to_string()
             if not check_content_takedown:
@@ -975,6 +1001,8 @@ class Transaction(object):
         elif isinstance(self.relationship, IdentityAnnouncement):
             relationship = self.relationship.to_string()
         elif isinstance(self.relationship, RotationAnnouncement):
+            relationship = self.relationship.to_string()
+        elif isinstance(self.relationship, BranchAnnouncement):
             relationship = self.relationship.to_string()
         elif isinstance(self.relationship, AgentAnnouncement):
             relationship = self.relationship.to_string()
@@ -1477,7 +1505,10 @@ class Transaction(object):
                 # confirmed key log entry's prerotated_key_hash.
                 latest_prerotated_key_hash = latest.prerotated_key_hash
                 for output in self.outputs:
-                    if output.to != latest_prerotated_key_hash:
+                    if (
+                        output.to != latest_prerotated_key_hash
+                        and output.to != self.prerotated_key_hash
+                    ):
                         raise KELOutputRoutingViolationException(
                             f"Non-rotating tx output {output.to!r} does not match latest KEL public_key_hash {latest_prerotated_key_hash!r}."
                         )
@@ -1569,6 +1600,8 @@ class Transaction(object):
                 relationship = {IdentityAnnouncement.RELATIONSHIP_KEY: relationship}
             elif isinstance(self.relationship, RotationAnnouncement):
                 relationship = {RotationAnnouncement.RELATIONSHIP_KEY: relationship}
+            elif isinstance(self.relationship, BranchAnnouncement):
+                relationship = {BranchAnnouncement.RELATIONSHIP_KEY: relationship}
         ret = {
             "time": int(self.time),
             "rid": self.rid,

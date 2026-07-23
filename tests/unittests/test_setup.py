@@ -45,25 +45,29 @@ _MONGO_SEED_BLOCK_INDEX = 516355
 
 
 def ensure_test_mongo():
-    """Return a usable ``Mongo`` instance for unit tests.
+    """Return a fresh ``Mongo`` bound to the *current* asyncio event loop.
 
-    Prefer the existing ``Config().mongo`` when it is already a ``Mongo``.
-    Otherwise construct one, recovering from the known block-516355 seed
-    DuplicateKeyError by clearing the colliding seed id/index and retrying.
+    ``IsolatedAsyncioTestCase`` (and pytest-asyncio) create a new loop per
+    test.  Motor's ``AsyncIOMotorClient`` is loop-affine: reusing a Mongo
+    instance from a previous test makes async inserts/finds silently miss
+    or raise, which surfaces as flaky KEL fixture failures under pre-push
+    (long suite, many loops) but not on a clean CI container.
+
+    Always construct a new ``Mongo()``.  Recover from the known block-516355
+    seed DuplicateKeyError on the unique ``id`` index by clearing the
+    colliding seed id/index and retrying.
     """
     from pymongo.errors import DuplicateKeyError
 
     c = Config()
-    existing = getattr(c, "mongo", None)
-    if isinstance(existing, Mongo):
-        return existing
 
     def _clear_seed_collision():
-        # Use a bare client so we do not recurse through Mongo.__init__.
+        # Bare sync client — do not recurse through Mongo.__init__.
         from pymongo import MongoClient
 
         db_name = getattr(c, "database", None) or "yadacoin"
-        client = MongoClient()
+        host = getattr(c, "mongodb_host", None) or "localhost"
+        client = MongoClient(host)
         try:
             client[db_name].blocks.delete_many(
                 {
@@ -75,6 +79,19 @@ def ensure_test_mongo():
             )
         finally:
             client.close()
+
+    # Drop any previous Motor client so it cannot outlive its closed loop.
+    prev = getattr(c, "mongo", None)
+    if isinstance(prev, Mongo):
+        try:
+            prev.async_client.close()
+        except Exception:
+            pass
+        try:
+            prev.client.close()
+        except Exception:
+            pass
+        c.mongo = None
 
     try:
         c.mongo = Mongo()

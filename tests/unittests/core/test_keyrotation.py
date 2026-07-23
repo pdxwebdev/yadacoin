@@ -2123,7 +2123,19 @@ class _FakeKeyEventLogCollection:
 
     @staticmethod
     def _matches(doc, filt):
+        # Support simple equality and ``$or`` lists used by mempool upserts.
+        if not isinstance(filt, dict):
+            return False
+        if "$or" in filt:
+            return any(
+                all(doc.get(k) == v for k, v in clause.items())
+                for clause in filt["$or"]
+            )
         return all(doc.get(k) == v for k, v in filt.items())
+
+
+class _FakeMinerTransactionsCollection(_FakeKeyEventLogCollection):
+    """In-memory miner_transactions for BranchAnnouncement mempool mint."""
 
 
 def _make_branch_config(priv_hex, pub_hex, cc_hex):
@@ -2133,9 +2145,13 @@ def _make_branch_config(priv_hex, pub_hex, cc_hex):
         kel_anchor_chain_code=cc_hex,
     )
     cfg.mongo.async_db.key_event_log = _FakeKeyEventLogCollection()
+    cfg.mongo.async_db.miner_transactions = _FakeMinerTransactionsCollection()
     # bridge minting calls get_latest(self.config.inception.public_key, ...)
     cfg.inception = MagicMock()
     cfg.inception.public_key = pub_hex
+    # get_latest fake returns counter; inception_public_key_hash optional
+    cfg.modes = []
+    cfg.peer = MagicMock()
     return cfg
 
 
@@ -2178,6 +2194,12 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         fake_entry = MagicMock()
         fake_entry.counter = mgr._test_kel_depth - 1
         fake_entry.public_key_hash = "1LatestKelTipAddress"
+        # Main-chain inception tag when present on tip
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        fake_entry.inception_public_key_hash = str(
+            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.PUB_HEX))
+        )
         return patch(
             "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
             new=AsyncMock(return_value=fake_entry),
@@ -2200,13 +2222,19 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
             await mgr.advance_peer_auth_ratchet("peerA_username_signature")
             await mgr.advance_peer_auth_ratchet("peerB_username_signature")
 
-        anchor_a = await mgr.peer_branch_anchor_pub("peerA_username_signature")
-        anchor_b = await mgr.peer_branch_anchor_pub("peerB_username_signature")
+        anchor_a = await mgr.peer_branch_inception_public_key_hash(
+            "peerA_username_signature"
+        )
+        anchor_b = await mgr.peer_branch_inception_public_key_hash(
+            "peerB_username_signature"
+        )
 
         self.assertTrue(anchor_a)
         self.assertTrue(anchor_b)
         self.assertNotEqual(anchor_a, anchor_b)
+        # Returns address (pkh), not full public key
         self.assertNotEqual(anchor_a, self.PUB_HEX)
+        self.assertFalse(anchor_a.startswith("02") or anchor_a.startswith("03"))
 
     async def test_peer_branch_anchor_no_branch_returns_empty(self):
         cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
@@ -2215,10 +2243,13 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         self.assertEqual(await mgr.peer_branch_anchor_pub(""), "")
 
     async def test_first_contact_creates_signed_bridge_entry(self):
-        """First advance for a new peer must persist a K_n → Kp0 bridge entry
-        signed by K_n (the current on-chain/mempool anchor, not raw K0),
-        with counter=0 and root_depth recorded, before returning Kp0 as the
-        signing key."""
+        """First advance for a new peer must:
+        - submit BranchAnnouncement unconfirmed + confirming to mempool
+          with dual peer commits (pre=Kp0, twice=Kp1)
+        - persist a Kp0-rooted off-chain branch entry (counter=0)
+        - return Kp0 as the first public branch signing key
+        """
+        from yadacoin.core.branchannouncement import BranchAnnouncement
         from yadacoin.core.transaction import Transaction
 
         cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
@@ -2236,32 +2267,91 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
                 is_new_branch,
             ) = await mgr.advance_peer_auth_ratchet("peerA_username_signature")
 
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
         # First call signs with Kp0 itself (counter 0 → position 0 → position 1)
         self.assertTrue(is_new_branch)
+        cur_pkh = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(cur_pub)))
         self.assertEqual(
-            cur_pub, await mgr.peer_branch_anchor_pub("peerA_username_signature")
+            cur_pkh,
+            await mgr.peer_branch_inception_public_key_hash("peerA_username_signature"),
+        )
+        # alias still works and returns the same pkh
+        self.assertEqual(
+            cur_pkh, await mgr.peer_branch_anchor_pub("peerA_username_signature")
         )
         self.assertNotEqual(cur_pub, self.PUB_HEX)
         self.assertNotEqual(next_pub, cur_pub)
 
         docs = cfg.mongo.async_db.key_event_log.docs
-        self.assertEqual(len(docs), 2)  # bridge (counter 0) + first advance (counter 1)
+        # root (counter 0 at Kp0) + first advance (counter 1)
+        self.assertEqual(len(docs), 2)
 
         bridge = next(d for d in docs if d["counter"] == 0)
-        # public_key is K_n (K0 advanced KEL_DEPTH steps), NOT raw K0.
-        self.assertNotEqual(bridge["public_key"], self.PUB_HEX)
+        # branch inception is Kp0 address, not full pub / not raw K0
+        self.assertEqual(bridge["branch_inception_public_key_hash"], cur_pkh)
+        self.assertEqual(bridge["public_key"], cur_pub)
+        self.assertEqual(bridge["public_key_hash"], cur_pkh)
         self.assertEqual(bridge["branch_peer"], "peerA_username_signature")
         self.assertEqual(bridge["root_depth"], self.KEL_DEPTH)
-        self.assertEqual(bridge["prerotated_key_hash"], docs[0]["prerotated_key_hash"])
+        self.assertTrue(bridge.get("branch_commit"))
+        self.assertTrue(bridge.get("branch_commit_next"))
+        # main-chain inception pkh is persisted for back-reference
+        self.assertTrue(bridge.get("inception_public_key_hash"))
+        # first off-chain entry prev = confirming main pkh
+        root_txn = Transaction.from_dict(bridge["txn"])
+        self.assertEqual(root_txn.public_key, cur_pub)
+        self.assertEqual(root_txn.public_key_hash, bridge["branch_commit"])
+        self.assertEqual(root_txn.prerotated_key_hash, bridge["branch_commit_next"])
+        self.assertTrue(root_txn.prev_public_key_hash)
+        self.assertEqual(
+            root_txn.prev_public_key_hash, bridge["confirming_public_key_hash"]
+        )
+        self.assertTrue(root_txn.transaction_signature)
+        self.assertTrue(root_txn.hash)
+        recomputed_hash = await root_txn.generate_hash()
+        self.assertEqual(recomputed_hash, root_txn.hash)
 
-        # The bridge txn must carry a real signature verifiable against K_n,
-        # and a hash matching a fresh recompute (the bug this fixes: a blank
-        # signature/hash would make every peer reject the branch).
-        bridge_txn = Transaction.from_dict(bridge["txn"])
-        self.assertTrue(bridge_txn.transaction_signature)
-        self.assertTrue(bridge_txn.hash)
-        recomputed_hash = await bridge_txn.generate_hash()
-        self.assertEqual(recomputed_hash, bridge_txn.hash)
+        # Mempool must retain BOTH announce and confirming (not collapse via
+        # pkh/pre $or upsert). BranchAnnouncement is the on-chain commit.
+        mempool = cfg.mongo.async_db.miner_transactions.docs
+        self.assertEqual(len(mempool), 2)
+        announce = next(
+            t
+            for t in mempool
+            if isinstance(t.get("relationship"), dict)
+            and "branch" in t.get("relationship", {})
+        )
+        confirming = next(
+            t
+            for t in mempool
+            if t.get("id") != announce.get("id")
+            and (not t.get("relationship") or t.get("relationship") == "")
+        )
+        self.assertNotEqual(announce.get("id"), confirming.get("id"))
+        self.assertTrue(announce.get("id"))
+        self.assertTrue(confirming.get("id"))
+        announce_txn = Transaction.from_dict(announce)
+        confirming_txn = Transaction.from_dict(confirming)
+        self.assertIsInstance(announce_txn.relationship, BranchAnnouncement)
+        # Dual commit continuity
+        self.assertEqual(
+            announce_txn.relationship.prerotated_key_hash,
+            root_txn.public_key_hash,
+        )
+        self.assertEqual(
+            announce_txn.relationship.twice_prerotated_key_hash,
+            root_txn.prerotated_key_hash,
+        )
+        self.assertEqual(
+            announce_txn.relationship.prerotated_key_hash,
+            bridge["branch_commit"],
+        )
+        self.assertEqual(
+            announce_txn.relationship.twice_prerotated_key_hash,
+            bridge["branch_commit_next"],
+        )
+        self.assertEqual(root_txn.prev_public_key_hash, confirming_txn.public_key_hash)
 
     async def test_advance_signs_ratchet_txn(self):
         """Regression test for the missing-signature bug: every entry written
@@ -2278,11 +2368,18 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
             await mgr.advance_peer_auth_ratchet("peerA_username_signature")
 
         docs = cfg.mongo.async_db.key_event_log.docs
-        self.assertEqual(len(docs), 3)  # bridge + 2 advances
+        self.assertEqual(len(docs), 3)  # Kp0 root + 2 advances
+        root = next(d for d in docs if d["counter"] == 0)
+        main_inception = root["inception_public_key_hash"]
+        branch_inception = root["branch_inception_public_key_hash"]
         for doc in docs:
+            self.assertEqual(doc.get("inception_public_key_hash"), main_inception)
+            self.assertEqual(
+                doc.get("branch_inception_public_key_hash"), branch_inception
+            )
             txn = Transaction.from_dict(doc["txn"])
             if doc["counter"] == 0:
-                continue  # bridge already checked above
+                continue  # root already checked above
             self.assertTrue(txn.transaction_signature, "entry missing signature")
             self.assertTrue(txn.hash, "entry missing hash")
             recomputed = await txn.generate_hash()
@@ -2324,15 +2421,19 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
                 await mgr.advance_peer_auth_ratchet("peerA_sig")
             await mgr.advance_peer_auth_ratchet("peerB_sig")
 
-        anchor_a = await mgr.peer_branch_anchor_pub("peerA_sig")
-        anchor_b = await mgr.peer_branch_anchor_pub("peerB_sig")
+        anchor_a = await mgr.peer_branch_inception_public_key_hash("peerA_sig")
+        anchor_b = await mgr.peer_branch_inception_public_key_hash("peerB_sig")
         docs = cfg.mongo.async_db.key_event_log.docs
 
-        a_docs = [d for d in docs if d["anchor_public_key"] == anchor_a]
-        b_docs = [d for d in docs if d["anchor_public_key"] == anchor_b]
+        a_docs = [
+            d for d in docs if d.get("branch_inception_public_key_hash") == anchor_a
+        ]
+        b_docs = [
+            d for d in docs if d.get("branch_inception_public_key_hash") == anchor_b
+        ]
 
-        self.assertEqual(len(a_docs), 4)  # bridge + 3 advances
-        self.assertEqual(len(b_docs), 2)  # bridge + 1 advance
+        self.assertEqual(len(a_docs), 4)  # Kp0 root + 3 advances
+        self.assertEqual(len(b_docs), 2)  # Kp0 root + 1 advance
         # No overlap between the two peers' entries at all.
         a_ids = {d["id"] for d in a_docs}
         b_ids = {d["id"] for d in b_docs}
@@ -2375,12 +2476,14 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         self.assertEqual(cur_pub, expected_next_pub)
 
         docs = cfg.mongo.async_db.key_event_log.docs
-        anchor = await mgr2.peer_branch_anchor_pub("peerA_sig")
-        branch_docs = [d for d in docs if d["anchor_public_key"] == anchor]
-        # bridge(0) + mgr1's 2 advances(1,2) + mgr2's 1 advance(3) = 4 entries
+        anchor = await mgr2.peer_branch_inception_public_key_hash("peerA_sig")
+        branch_docs = [
+            d for d in docs if d.get("branch_inception_public_key_hash") == anchor
+        ]
+        # root(0) + mgr1's 2 advances(1,2) + mgr2's 1 advance(3) = 4 entries
         self.assertEqual(len(branch_docs), 4)
         self.assertEqual(max(d["counter"] for d in branch_docs), 3)
-        # Still exactly one bridge entry for this peer — no re-minting.
+        # Still exactly one Kp0 root entry for this peer — no re-minting.
         self.assertEqual(len([d for d in branch_docs if d["counter"] == 0]), 1)
 
     async def test_missing_peer_username_signature_is_fatal(self):
