@@ -1767,7 +1767,6 @@ class NodeRPC(BaseRPC):
                 stream, reason="ratchet: signing key not authorized by KEL"
             )
             return None
-        stream.authenticated = authenticated
 
         _anchor_source = "ratchet" if _anchor_key_event else "inception"
         self.config.app_log.info(
@@ -2030,6 +2029,7 @@ class NodeRPC(BaseRPC):
         Derives session cipher from server's ECDH pub.  All subsequent messages
         are encrypted.  Waits for 'request_sig' to complete mutual auth.
         """
+        stream.message_queue.pop("connect", None)
         self.ensure_protocol_version(body, stream)
         params = body.get("params", {})
 
@@ -2319,16 +2319,21 @@ class NodeRPC(BaseRPC):
         if result is None:
             return  # remove_peer already called
 
+        stream.authenticated = True
         stream.peer.authenticated = True
         self.config.app_log.info(
             "  [OK]   %s mutually authenticated via cross-signing\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
             peer_username,
         )
+        await self.write_params(stream, "authenticated", {})
         await self.send_block_to_peer(self.config.LatestBlock.block, stream)
         await self.get_next_block(self.config.LatestBlock.block, stream)
 
     # ── end KEL cross-signing helpers ─────────────────────────────────────────
+
+    async def authenticated(self, body, stream):
+        stream.authenticated = True
 
     async def get_ws_stream(self, route):
         if MODES.WEB.value not in self.config.modes:

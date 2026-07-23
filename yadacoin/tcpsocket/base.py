@@ -185,7 +185,11 @@ REQUEST_RESPONSE_MAP = {
     "blocksresponse": "getblocks",
     "keepalive": "keepalive",
     "connect": "connect",
-    "sign_response": "sign_response",
+    "newtxn_confirmed": "newtxn",
+    "newblock_confirmed": "newblock",
+    "blockresponse_confirmed": "blockresponse",
+    "blocksresponse_confirmed": "blocksresponse",
+    "sig_response": "request_sig",
 }
 
 REQUEST_ONLY = [
@@ -198,6 +202,7 @@ REQUEST_ONLY = [
     "newblock_confirmed",
     "newtxn_confirmed",
     "disconnect",
+    "authenticated",
 ]
 
 
@@ -401,6 +406,13 @@ class RPCSocketServer(TCPServer, BaseRPC):
                         del stream.message_queue[REQUEST_RESPONSE_MAP[method]][
                             body["id"]
                         ]
+            elif method in {"connected", "sig_response"}:
+                stream.message_queue.pop(
+                    {"connected": "connect", "sig_response": "request_sig"}.get(
+                        method, method
+                    ),
+                    None,
+                )
             if not hasattr(self, method):
                 continue
             if (
@@ -719,6 +731,9 @@ class RPCSocketClient(TCPClient):
                             del stream.message_queue[
                                 REQUEST_RESPONSE_MAP[body["method"]]
                             ][body["id"]]
+                _param_resp = {"connected": "connect", "sig_response": "request_sig"}
+                if "result" not in body and body.get("method") in _param_resp:
+                    stream.message_queue.pop(_param_resp[body["method"]], None)
                 if hasattr(stream, "peer"):
                     if (
                         hasattr(self.config, "tcp_traffic_debug")
