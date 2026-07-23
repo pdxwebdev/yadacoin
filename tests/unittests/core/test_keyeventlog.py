@@ -5516,6 +5516,54 @@ class TestKeyEventLogCoverage100(AsyncTestCase):
             )
         self.assertIs(latest, onchain)
 
+    async def test_latest_from_inception_tag_skips_untagged_counter(self):
+        """Docs with inception tag but no counter must not AttributeError."""
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        # Real Transaction-like objects without .counter set
+        onchain = object.__new__(type("T", (), {}))
+        mem = object.__new__(type("T", (), {}))
+
+        cursor = MagicMock()
+        cursor.to_list = AsyncMock(return_value=[{"transactions": {"id": "a"}}])
+        Config().mongo.async_db.blocks.aggregate = MagicMock(return_value=cursor)
+        Config().mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value={"id": "b", "inception_public_key_hash": "INC"}
+        )
+
+        with patch(
+            "yadacoin.core.transaction.Transaction.from_dict",
+            side_effect=[onchain, mem],
+        ):
+            latest = await KeyEventLog._latest_from_inception_tag(
+                "INC", onchain_only=False
+            )
+        self.assertIsNone(latest)
+
+    async def test_latest_from_inception_tag_mempool_without_counter_ignored(self):
+        """Mempool result missing counter loses to tagged on-chain tip."""
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        onchain = MagicMock()
+        onchain.counter = 3
+        mem = object.__new__(type("T", (), {}))  # no counter attr
+
+        cursor = MagicMock()
+        cursor.to_list = AsyncMock(return_value=[{"transactions": {"counter": 3}}])
+        Config().mongo.async_db.blocks.aggregate = MagicMock(return_value=cursor)
+        Config().mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value={"id": "branch_ann", "inception_public_key_hash": "INC"}
+        )
+
+        with patch(
+            "yadacoin.core.transaction.Transaction.from_dict",
+            side_effect=[onchain, mem],
+        ):
+            latest = await KeyEventLog._latest_from_inception_tag(
+                "INC", onchain_only=False
+            )
+        self.assertIs(latest, onchain)
+
     # ---- get_inception ----
 
     async def test_get_inception_requires_key_or_address(self):

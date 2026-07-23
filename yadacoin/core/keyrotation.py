@@ -977,6 +977,17 @@ class NodeKeyRotationManager:
                 kn1["private_key"].hex(), confirming_txn.hash
             )
 
+            # Bookkeeping tags so get_latest / _latest_from_inception_tag can
+            # order these mempool entries.  Match _walk_forward numbering:
+            # next unconfirmed is tip.counter+1, confirming is +2.
+            tip_counter = getattr(latest_kel, "counter", None)
+            unconfirmed_counter = (tip_counter + 1) if tip_counter is not None else 0
+            confirming_counter = unconfirmed_counter + 1
+            unconfirmed_txn.counter = unconfirmed_counter
+            unconfirmed_txn.inception_public_key_hash = main_inception_pkh
+            confirming_txn.counter = confirming_counter
+            confirming_txn.inception_public_key_hash = main_inception_pkh
+
             # Submit announce+confirm to mempool (on-chain source of truth).
             # Upsert by transaction id only — NOT by pkh/pre/twice $or.
             # Confirming.public_key_hash == unconfirmed.prerotated_key_hash, so
@@ -986,6 +997,7 @@ class NodeKeyRotationManager:
                 try:
                     doc = txn.to_dict()
                     doc["inception_public_key_hash"] = main_inception_pkh
+                    doc["counter"] = txn.counter
                     await config.mongo.async_db.miner_transactions.replace_one(
                         {"id": txn.transaction_signature},
                         doc,

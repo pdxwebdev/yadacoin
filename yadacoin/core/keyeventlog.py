@@ -2244,12 +2244,16 @@ class KeyEventLog:
         )
         rows = await cursor.to_list(length=1)
         if rows:
-            latest = Transaction.from_dict(rows[0]["transactions"])
+            candidate = Transaction.from_dict(rows[0]["transactions"])
+            # Tagged tips must carry a counter; incomplete tags are ignored.
+            if getattr(candidate, "counter", None) is not None:
+                latest = candidate
 
         if not onchain_only:
             mempool_txn = await config.mongo.async_db.miner_transactions.find_one(
                 {
                     "inception_public_key_hash": inception_pkh,
+                    "counter": {"$exists": True, "$ne": None},
                     "$or": [
                         {"branch_public_key_hash_path": {"$exists": False}},
                         {"branch_public_key_hash_path": None},
@@ -2262,7 +2266,9 @@ class KeyEventLog:
             if mempool_txn:
                 mempool_txn = Transaction.from_dict(mempool_txn)
                 mempool_txn.mempool = True
-                if latest is None or mempool_txn.counter > latest.counter:
+                mc = getattr(mempool_txn, "counter", None)
+                lc = getattr(latest, "counter", None) if latest is not None else None
+                if mc is not None and (latest is None or lc is None or mc > lc):
                     latest = mempool_txn
 
         return latest

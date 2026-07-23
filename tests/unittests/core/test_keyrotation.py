@@ -2331,6 +2331,20 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         self.assertNotEqual(announce.get("id"), confirming.get("id"))
         self.assertTrue(announce.get("id"))
         self.assertTrue(confirming.get("id"))
+        # KEL bookkeeping tags required for get_latest tip selection
+        self.assertEqual(
+            announce.get("inception_public_key_hash"),
+            bridge.get("inception_public_key_hash"),
+        )
+        self.assertEqual(
+            confirming.get("inception_public_key_hash"),
+            bridge.get("inception_public_key_hash"),
+        )
+        self.assertIsInstance(announce.get("counter"), int)
+        self.assertIsInstance(confirming.get("counter"), int)
+        self.assertEqual(confirming["counter"], announce["counter"] + 1)
+        # tip was counter=KEL_DEPTH-1 → unconfirmed = KEL_DEPTH
+        self.assertEqual(announce["counter"], self.KEL_DEPTH)
         announce_txn = Transaction.from_dict(announce)
         confirming_txn = Transaction.from_dict(confirming)
         self.assertIsInstance(announce_txn.relationship, BranchAnnouncement)
