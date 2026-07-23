@@ -157,7 +157,13 @@ class IdentityAnnouncement:
         except Exception:
             return False
 
-    async def verify(self, public_key: str, exclude_txn_sig: str = "") -> None:
+    async def verify(
+        self,
+        public_key: str,
+        exclude_txn_sig: str = "",
+        extra_blocks=None,
+        use_mempool: bool = True,
+    ) -> None:
         """Validate this identity announcement during transaction verification.
 
         Performs, in order: username-signature check against ``public_key``,
@@ -185,6 +191,8 @@ class IdentityAnnouncement:
         already_claimed = await IdentityAnnouncement.exists_username(
             self.username,
             exclude_txn_sig=exclude_txn_sig,
+            use_mempool=use_mempool,
+            extra_blocks=extra_blocks,
         )
         if already_claimed:
             raise InvalidTransactionException(
@@ -307,6 +315,8 @@ class IdentityAnnouncement:
         username: str,
         exclude_txn_sig: str = "",
         config=None,
+        use_mempool: bool = True,
+        extra_blocks=None,
     ) -> bool:
         """Return True if ``username`` is already claimed on-chain or in the
         mempool (optionally excluding the transaction with
@@ -316,7 +326,8 @@ class IdentityAnnouncement:
 
         if config is None:
             config = Config()
-
+        if extra_blocks is None:
+            extra_blocks = []
         base_query = {"relationship.identity.username": username}
 
         # Check blockchain
@@ -326,10 +337,25 @@ class IdentityAnnouncement:
         result = await config.mongo.async_db.blocks.find_one(chain_query)
         if result:
             return True
-
-        # Check mempool
-        mempool_query = dict(base_query)
-        if exclude_txn_sig:
-            mempool_query["id"] = {"$ne": exclude_txn_sig}
-        result = await config.mongo.async_db.miner_transactions.find_one(mempool_query)
+        if extra_blocks:
+            for block in extra_blocks:
+                for txn in block.transactions:
+                    if (
+                        isinstance(txn.relationship, IdentityAnnouncement)
+                        and txn.relationship.username == username
+                    ):
+                        if (
+                            exclude_txn_sig
+                            and txn.transaction_signature == exclude_txn_sig
+                        ):
+                            continue
+                        return True
+        if use_mempool:
+            # Check mempool
+            mempool_query = dict(base_query)
+            if exclude_txn_sig:
+                mempool_query["id"] = {"$ne": exclude_txn_sig}
+            result = await config.mongo.async_db.miner_transactions.find_one(
+                mempool_query
+            )
         return bool(result)

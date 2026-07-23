@@ -681,7 +681,10 @@ class KeyEvent:
         block_index=None,
         use_mempool=False,
         allow_offchain_parent=None,
+        extra_blocks=None,
     ):
+        if extra_blocks is None:
+            extra_blocks = []
         # When verifying historical block data the predecessor must exist
         # on-chain; off-chain key_event_log entries are not a valid parent.
         # Default: allow when use_mempool is True (P2P / mempool path),
@@ -739,18 +742,21 @@ class KeyEvent:
                     and self.txn.outputs[0].to == self.txn.prerotated_key_hash
                 )
 
-            onchain_parent = await self.get_onchain_parent()
-            if not onchain_parent:
+            parent = await self.get_onchain_parent()
+            if not parent:
                 if is_confirming:
-                    # Confirming entries may chain off an unconfirmed mempool parent.
-                    mempool_parent = await self.config.mongo.async_db.miner_transactions.find_one(
-                        {
-                            MempoolQueryFields.PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash
-                        }
-                    )
-                    if not mempool_parent:
+                    if use_mempool:
+                        # Confirming entries may chain off an unconfirmed mempool parent.
+                        parent = await self.config.mongo.async_db.miner_transactions.find_one(
+                            {
+                                MempoolQueryFields.PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash
+                            }
+                        )
+                        if parent:
+                            return
+                    if not parent:
                         if batch_txns:
-                            batch_parent = next(
+                            parent = next(
                                 (
                                     t
                                     for t in batch_txns
@@ -759,44 +765,17 @@ class KeyEvent:
                                 ),
                                 None,
                             )
-                            if batch_parent:
+                            if parent:
                                 return
-                        # Also accept a parent already stored in key_event_log
-                        # (sent in a previous delta gossip round).
-                        if allow_offchain_parent:
-                            kel_parent = (
-                                await self.config.mongo.async_db.key_event_log.find_one(
-                                    {"public_key_hash": self.txn.prev_public_key_hash}
-                                )
-                            )
-                            if kel_parent:
-                                return
-                        raise KELExceptionPredecessorNotYetInMempool(
-                            "Confirming key event rejected: predecessor key event not found "
-                            "on-chain or in the mempool.",
-                            txn=self.txn,
-                        )
-                else:
-                    if batch_txns:
-                        batch_parent = next(
-                            (
-                                t
-                                for t in batch_txns
-                                if t.public_key_hash == self.txn.prev_public_key_hash
-                            ),
-                            None,
-                        )
-                        if batch_parent:
-                            return
-                    # Also allow parent already in the mempool (e.g. inception
-                    # not yet mined — practical for long block times).
-                    mempool_parent = await self.config.mongo.async_db.miner_transactions.find_one(
-                        {
-                            MempoolQueryFields.PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash
-                        }
-                    )
-                    if mempool_parent:
-                        return
+                    if not parent:
+                        if extra_blocks:
+                            for block in extra_blocks:
+                                for t in block.transactions:
+                                    if (
+                                        t.public_key_hash
+                                        == self.txn.prev_public_key_hash
+                                    ):
+                                        return
                     # Also accept a parent already stored in key_event_log
                     # (sent in a previous delta gossip round).
                     if allow_offchain_parent:
@@ -807,6 +786,49 @@ class KeyEvent:
                         )
                         if kel_parent:
                             return
+                    if not parent:
+                        raise KELExceptionPredecessorNotYetInMempool(
+                            "Confirming key event rejected: predecessor key event not found "
+                            "on-chain or in the mempool.",
+                            txn=self.txn,
+                        )
+                else:
+                    if batch_txns:
+                        parent = next(
+                            (
+                                t
+                                for t in batch_txns
+                                if t.public_key_hash == self.txn.prev_public_key_hash
+                            ),
+                            None,
+                        )
+                        if parent:
+                            return
+                    if use_mempool:
+                        # Also allow parent already in the mempool (e.g. inception
+                        # not yet mined — practical for long block times).
+                        parent = await self.config.mongo.async_db.miner_transactions.find_one(
+                            {
+                                MempoolQueryFields.PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash
+                            }
+                        )
+                        if parent:
+                            return
+                    # Also accept a parent already stored in key_event_log
+                    # (sent in a previous delta gossip round).
+                    if allow_offchain_parent:
+                        kel_parent = (
+                            await self.config.mongo.async_db.key_event_log.find_one(
+                                {"public_key_hash": self.txn.prev_public_key_hash}
+                            )
+                        )
+                        if kel_parent:
+                            return
+                    if extra_blocks:
+                        for block in extra_blocks:
+                            for t in block.transactions:
+                                if t.public_key_hash == self.txn.prev_public_key_hash:
+                                    return
                     raise KELException(
                         "Unconfirmed key event rejected: predecessor key event is not yet "
                         "confirmed on-chain or present in the mempool.",
@@ -1080,9 +1102,13 @@ class KeyEventLog:
         block_index: int = None,
         batch_txns=None,
         use_mempool=False,
+        extra_blocks=None,
     ):
         self = KeyEventLog()
         self.config = Config()
+
+        if extra_blocks is None:
+            extra_blocks = []
 
         # Recovery short-circuit: a {"recovers": ...} inception is a brand new
         # KEL whose only structural link to the prior KEL is via
@@ -1433,6 +1459,30 @@ class KeyEventLog:
                                 "No on-chain or mempool key event found for unconfirmed key event.",
                                 txn=key_event.txn,
                             )
+                    elif extra_blocks:
+                        parent_in_extra_blocks = None
+                        for block in extra_blocks:
+                            for t in block.transactions:
+                                if (
+                                    t.public_key_hash
+                                    == unconfirmed_key_event.txn.prev_public_key_hash
+                                ):
+                                    parent_in_extra_blocks = t
+                                    break
+                            if parent_in_extra_blocks:
+                                break
+                        if parent_in_extra_blocks:
+                            self.base_key_event = KeyEvent(
+                                parent_in_extra_blocks,
+                                flag=(
+                                    KeyEventFlag.INCEPTION
+                                    if not parent_in_extra_blocks.prev_public_key_hash
+                                    or is_recovers_inception(parent_in_extra_blocks)
+                                    else KeyEventFlag.CONFIRMING
+                                ),
+                                status=KeyEventChainStatus.MEMPOOL,
+                                path="2.2",
+                            )
                     else:
                         raise KELException(
                             "No on-chain key event found for unconfirmed key event.",
@@ -1512,6 +1562,30 @@ class KeyEventLog:
                             raise KELException(
                                 "No on-chain or mempool key event found for unconfirmed key event.",
                                 txn=key_event.txn,
+                            )
+                    elif extra_blocks:
+                        parent_in_extra_blocks = None
+                        for block in extra_blocks:
+                            for t in block.transactions:
+                                if (
+                                    t.public_key_hash
+                                    == key_event.txn.prev_public_key_hash
+                                ):
+                                    parent_in_extra_blocks = t
+                                    break
+                            if parent_in_extra_blocks:
+                                break
+                        if parent_in_extra_blocks:
+                            self.base_key_event = KeyEvent(
+                                parent_in_extra_blocks,
+                                flag=(
+                                    KeyEventFlag.INCEPTION
+                                    if not parent_in_extra_blocks.prev_public_key_hash
+                                    or is_recovers_inception(parent_in_extra_blocks)
+                                    else KeyEventFlag.CONFIRMING
+                                ),
+                                status=KeyEventChainStatus.MEMPOOL,
+                                path="2.5",
                             )
                     else:
                         raise KELException(
@@ -2307,7 +2381,14 @@ class KeyEventLog:
 
         tagged = await config.mongo.async_db.blocks.find_one(
             {
-                BlocksQueryFields.PUBLIC_KEY_HASH.value: address,
+                "$or": [
+                    {
+                        BlocksQueryFields.PUBLIC_KEY_HASH.value: address,
+                    },
+                    {
+                        BlocksQueryFields.PREROTATED_KEY_HASH.value: address,
+                    },
+                ],
                 "transactions.inception_public_key_hash": {"$exists": True},
             },
             {"transactions": 1},
@@ -2316,7 +2397,11 @@ class KeyEventLog:
             tagged_txns = [
                 t
                 for t in tagged["transactions"]
-                if t.get("inception_public_key_hash") == address
+                if (
+                    t.get("public_key_hash") == address
+                    or t.get("prerotated_key_hash") == address
+                )
+                and t.get("inception_public_key_hash")
             ]
             inception_pkh = None
             if not tagged_txns:
@@ -2368,15 +2453,6 @@ class KeyEventLog:
                                 if inception.public_key
                                 else None,
                             )
-                        if inception.public_key != public_key:
-                            config.app_log.warning(
-                                "get_inception: fast_path inception public_key=%s does not match requested public_key=%s — discarding",
-                                inception.public_key[:32]
-                                if inception.public_key
-                                else None,
-                                public_key[:32] if public_key else None,
-                            )
-                            inception = None
                     return inception
 
         if hasattr(config, "key_log_debug") and config.key_log_debug:

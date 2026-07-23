@@ -813,7 +813,9 @@ class Block(object):
                 .hex()
             )
 
-    async def verify(self):
+    async def verify(self, extra_blocks=None):
+        if extra_blocks is None:
+            extra_blocks = []
         getcontext().prec = 8
         if int(self.version) != int(CHAIN.get_version_for_height(self.index)):
             raise Exception(
@@ -937,36 +939,23 @@ class Block(object):
                         ):
                             has_kel = True
                             break
-                if not has_kel and txn.prev_public_key_hash:
-                    # The parent may also live in the mempool (not yet mined
-                    # and not included in this block) or in the off-chain
-                    # key_event_log collection (peer-branch bridge/advance
-                    # entries).  has_key_event_log(block=self) only checks
-                    # on-chain blocks, so check those two sources here before
-                    # falling through to the hard reject below.
-                    mempool_parent = (
-                        await self.config.mongo.async_db.miner_transactions.find_one(
-                            {
-                                "$or": [
-                                    {"prerotated_key_hash": txn.public_key_hash},
-                                    {"twice_prerotated_key_hash": txn.public_key_hash},
-                                ]
-                            }
-                        )
-                    )
-                    if mempool_parent:
-                        has_kel = True
-                    else:
-                        offchain_parent = await self.config.mongo.async_db.key_event_log.find_one(
-                            {
-                                "$or": [
-                                    {"prerotated_key_hash": txn.public_key_hash},
-                                    {"twice_prerotated_key_hash": txn.public_key_hash},
-                                ]
-                            }
-                        )
-                        if offchain_parent:
-                            has_kel = True
+                    if extra_blocks and not has_kel:
+                        for extra_block in extra_blocks:
+                            for sibling in extra_block.transactions:
+                                if (
+                                    sibling.transaction_signature
+                                    == txn.transaction_signature
+                                ):
+                                    continue
+                                if (
+                                    sibling.prerotated_key_hash == txn.public_key_hash
+                                    or sibling.twice_prerotated_key_hash
+                                    == txn.public_key_hash
+                                ):
+                                    has_kel = True
+                                    break
+                            if has_kel:
+                                break
 
                 if has_kel:
                     kel_hash_collection = await KELHashCollection.init_async(
@@ -974,7 +963,9 @@ class Block(object):
                     )
                     txn_key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
                     await txn_key_event.verify(
-                        batch_txns=self.transactions, block_index=self.index
+                        batch_txns=self.transactions,
+                        block_index=self.index,
+                        extra_blocks=extra_blocks,
                     )
                     await KeyEventLog.init_async(
                         txn_key_event,
@@ -982,6 +973,7 @@ class Block(object):
                         block_index=self.index,
                         batch_txns=self.transactions,
                         use_mempool=False,
+                        extra_blocks=extra_blocks,
                     )
                 elif isinstance(txn.relationship, (RecoveryProof, RecoveryTransition)):
                     # A recovers-inception is signed by a brand-new K_0 whose signing
@@ -1004,6 +996,7 @@ class Block(object):
                         block_index=self.index,
                         batch_txns=self.transactions,
                         use_mempool=False,
+                        extra_blocks=extra_blocks,
                     )
                 elif txn.prev_public_key_hash:
                     raise KELExceptionPreviousKeyHashReferenceMissing(

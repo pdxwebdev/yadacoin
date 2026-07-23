@@ -2333,7 +2333,15 @@ class NodeRPC(BaseRPC):
     # ── end KEL cross-signing helpers ─────────────────────────────────────────
 
     async def authenticated(self, body, stream):
+        stream.message_queue.pop("sig_response", None)
         stream.authenticated = True
+        peer_host = stream.peer.host
+        peer_username = getattr(stream.peer.identity, "username", peer_host)
+        self.config.app_log.info(
+            "  [OK]   %s mutually authenticated via cross-signing\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            peer_username,
+        )
 
     async def get_ws_stream(self, route):
         if MODES.WEB.value not in self.config.modes:

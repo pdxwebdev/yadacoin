@@ -189,7 +189,7 @@ REQUEST_RESPONSE_MAP = {
     "newblock_confirmed": "newblock",
     "blockresponse_confirmed": "blockresponse",
     "blocksresponse_confirmed": "blocksresponse",
-    "sig_response": "request_sig",
+    "authenticated": "sig_response",
 }
 
 REQUEST_ONLY = [

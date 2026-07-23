@@ -663,6 +663,7 @@ class Transaction(object):
         block=None,
         mempool=False,
         batch_txns=None,
+        extra_blocks=None,
     ):
         from yadacoin.contracts.base import Contract
         from yadacoin.core.keyeventlog import (
@@ -726,6 +727,7 @@ class Transaction(object):
                     batch_txns=batch_txns,
                     block_index=block.index if block is not None else None,
                     use_mempool=mempool,
+                    extra_blocks=extra_blocks,
                 )
             elif isinstance(self.relationship, (RecoveryProof, RecoveryTransition)):
                 # A recovers-inception is signed by a brand-new K_0, so the
@@ -742,6 +744,7 @@ class Transaction(object):
                     batch_txns=batch_txns,
                     block_index=block.index if block is not None else None,
                     use_mempool=mempool,
+                    extra_blocks=extra_blocks,
                 )
             elif self.prev_public_key_hash and (
                 block is None or block.index >= CHAIN.CHECK_KEL_PREV_HASH_FORK
@@ -814,7 +817,9 @@ class Transaction(object):
         elif isinstance(self.relationship, IdentityAnnouncement):
             relationship = self.relationship.to_string()
             await self.relationship.verify(
-                self.public_key, exclude_txn_sig=self.transaction_signature
+                self.public_key,
+                exclude_txn_sig=self.transaction_signature,
+                extra_blocks=extra_blocks,
             )
         elif isinstance(self.relationship, RotationAnnouncement):
             relationship = self.relationship.to_string()

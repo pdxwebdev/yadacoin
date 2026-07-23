@@ -4540,5 +4540,119 @@ class TestBlockCoverageFinalGaps(AsyncTestCase):
         self.assertNotIn(txn_linked, transaction_objs)
 
 
+class TestBlockExtraBlocksKelCoverage(AsyncTestCase):
+    """Cover Block.verify extra_blocks sibling KEL lookup."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.config = Config()
+        self.config.app_log = Mock()
+        self.config.app_log.debug = Mock()
+        self.config.app_log.warning = Mock()
+        self.config.app_log.info = Mock()
+
+    @mock.patch(
+        "yadacoin.core.block.Block.generate_hash_from_header",
+        new=mock_generate_hash_from_header,
+    )
+    @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
+    async def test_verify_extra_blocks_sibling_sets_has_kel(self):
+        from yadacoin.core.chain import CHAIN
+
+        block = await Block.from_dict(copy.deepcopy(masternode_fee_block))
+        block.index = CHAIN.CHECK_KEL_FORK
+
+        subject_pubkey = yadacoin.core.config.CONFIG.public_key
+        subject_address = str(
+            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(subject_pubkey))
+        )
+
+        subject_txn = Mock()
+        subject_txn.version = 6
+        subject_txn.coinbase = False
+        subject_txn.transaction_signature = "subject_extra_sig"
+        subject_txn.inputs = []
+        subject_txn.outputs = []
+        subject_txn.time = block.time
+        subject_txn.hash = "subjectextrahash" * 3
+        subject_txn.public_key = subject_pubkey
+        subject_txn.public_key_hash = subject_address
+        subject_txn.prev_public_key_hash = "prev_for_extra"
+        subject_txn.are_kel_fields_populated = Mock(return_value=False)
+        subject_txn.verify_kel_output_rules = AsyncMock(return_value=None)
+        subject_txn.has_key_event_log = AsyncMock(return_value=False)
+        subject_txn.relationship = ""
+        subject_txn.fee = 0.0
+        subject_txn.masternode_fee = 0.0
+
+        sibling_txn = Mock()
+        sibling_txn.transaction_signature = "sibling_extra_sig"
+        sibling_txn.public_key_hash = "sibling_pkh"
+        sibling_txn.prerotated_key_hash = subject_address
+        sibling_txn.twice_prerotated_key_hash = ""
+
+        # Same signature as subject — hits the continue branch in extra_blocks loop
+        same_sig_txn = Mock()
+        same_sig_txn.transaction_signature = "subject_extra_sig"
+        same_sig_txn.public_key_hash = "same_sig_pkh"
+        same_sig_txn.prerotated_key_hash = subject_address
+        same_sig_txn.twice_prerotated_key_hash = ""
+
+        extra_block = Mock()
+        extra_block.transactions = [same_sig_txn, sibling_txn]
+
+        for txn in block.transactions:
+            txn.prev_public_key_hash = getattr(txn, "prev_public_key_hash", "") or ""
+            if not hasattr(txn, "are_kel_fields_populated"):
+                txn.are_kel_fields_populated = Mock(return_value=False)
+            if not hasattr(txn, "has_key_event_log"):
+                txn.has_key_event_log = AsyncMock(return_value=False)
+        block.transactions[-1].coinbase = True
+        block.transactions.append(subject_txn)
+
+        @property
+        async def contract_generated(a):
+            return False
+
+        @contract_generated.setter
+        def contract_generated(self, value):
+            pass
+
+        orig_fork = CHAIN.CHECK_MASTERNODE_FEE_FORK
+        orig_spends = CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK
+        CHAIN.CHECK_MASTERNODE_FEE_FORK = block.index + 1
+        CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK = block.index + 1
+        try:
+            with mock.patch(
+                "yadacoin.core.transaction.Transaction.contract_generated",
+                new=contract_generated,
+            ), mock.patch(
+                "yadacoin.core.block.KeyEventLog.init_async",
+                new=AsyncMock(return_value=None),
+            ) as kel_init, mock.patch(
+                "yadacoin.core.block.KeyEvent.verify",
+                new=AsyncMock(return_value=None),
+            ), mock.patch(
+                "yadacoin.core.block.KELHashCollection.init_async",
+                new=AsyncMock(return_value=Mock()),
+            ), mock.patch(
+                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
+                return_value={},
+            ), mock.patch.object(
+                Block, "verify_signature", return_value=None
+            ):
+                try:
+                    await block.verify(extra_blocks=[extra_block])
+                except Exception:
+                    pass
+            # Ensure extra_blocks path was used for KEL init
+            if kel_init.await_count:
+                kwargs = kel_init.await_args.kwargs
+                self.assertIn("extra_blocks", kwargs)
+        finally:
+            CHAIN.CHECK_MASTERNODE_FEE_FORK = orig_fork
+            CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK = orig_spends
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

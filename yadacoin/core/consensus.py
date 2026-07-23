@@ -123,13 +123,14 @@ class Consensus(object):
                     )
                     return
 
-                if not await self.config.consensus.insert_consensus_block(
-                    block, stream.peer
-                ):
-                    self.config.app_log.info(
-                        "blockresponse, error inserting consensus block"
-                    )
-                    return
+                if block.index > self.config.LatestBlock.block.index:
+                    if not await self.config.consensus.insert_consensus_block(
+                        block, stream.peer
+                    ):
+                        self.config.app_log.info(
+                            "blockresponse, error inserting consensus block"
+                        )
+                        return
 
             elif body["method"] == "newblock":
                 payload = body.get("params", {}).get("payload", {})

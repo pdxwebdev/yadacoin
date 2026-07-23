@@ -146,7 +146,7 @@ class Blockchain(object):
             extra_blocks = []
         config = Config()
         try:
-            await block.verify()
+            await block.verify(extra_blocks=extra_blocks)
         except Exception as e:
             config.app_log.warning("Integrate block error 1: {}".format(e))
             return False
@@ -227,6 +227,7 @@ class Blockchain(object):
                     check_branch_announcement=check_branch_announcement,
                     block=block,
                     batch_txns=block.transactions,
+                    extra_blocks=extra_blocks,
                 )
             except InvalidTransactionException as e:
                 config.app_log.warning(e)
@@ -283,12 +284,6 @@ class Blockchain(object):
                 elif failed and block.index < CHAIN.CHECK_DOUBLE_SPEND_FROM:
                     continue
 
-        if block.index >= 35200 and delta_t < 600 and block.special_min:
-            config.app_log.warning(
-                f"Failed: {block.index} >= {35200} and {delta_t} < {600} and {block.special_min}"
-            )
-            return False
-
         if int(block.index) > CHAIN.CHECK_TIME_FROM and int(block.time) < int(
             last_block.time
         ):
@@ -319,16 +314,16 @@ class Blockchain(object):
         if (block.index >= CHAIN.BLOCK_V5_FORK) and int(
             Blockchain.little_hash(block.hash), 16
         ) < target:
-            config.app_log.debug("5")
+            config.app_log.debug("block v5 fork verification passed")
             checks_passed = True
         elif int(block.hash, 16) < target:
-            config.app_log.debug("6")
+            config.app_log.debug("block hash verification passed")
             checks_passed = True
         elif block.special_min and int(block.hash, 16) < special_target:
-            config.app_log.debug("7")
+            config.app_log.debug("special min verification passed")
             checks_passed = True
         elif block.special_min and block.index < 35200:
-            config.app_log.debug("8")
+            config.app_log.debug("special min early block verification passed")
             checks_passed = True
         elif (
             block.index >= 35200
@@ -336,7 +331,7 @@ class Blockchain(object):
             and block.special_min
             and (int(block.time) - int(last_block.time)) > target_block_time
         ):
-            config.app_log.debug("9")
+            config.app_log.debug("special min late block verification passed")
             checks_passed = True
         elif config.network == "regnet":
             checks_passed = True

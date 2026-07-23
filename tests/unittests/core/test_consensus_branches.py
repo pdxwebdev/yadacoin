@@ -309,9 +309,9 @@ class TestProcessBlockQueueItem(ConsensusBase):
 
     async def test_blockresponse_insert_fails(self):
         item, _ = self._mk_item(
-            body={"method": "blockresponse", "result": {"block": {"index": 50}}}
+            body={"method": "blockresponse", "result": {"block": {"index": 105}}}
         )
-        block = _mk_block(index=50)
+        block = _mk_block(index=105)
         self.consensus.config.consensus.insert_consensus_block = AsyncMock(
             return_value=False
         )
@@ -320,6 +320,37 @@ class TestProcessBlockQueueItem(ConsensusBase):
             new=AsyncMock(return_value=block),
         ):
             await self.consensus.process_block_queue_item(item)
+        self.consensus.config.consensus.insert_consensus_block.assert_awaited()
+
+    async def test_blockresponse_insert_succeeds(self):
+        item, _ = self._mk_item(
+            body={"method": "blockresponse", "result": {"block": {"index": 105}}}
+        )
+        block = _mk_block(index=105)
+        self.consensus.config.consensus.insert_consensus_block = AsyncMock(
+            return_value=True
+        )
+        with patch(
+            "yadacoin.core.consensus.Block.from_dict",
+            new=AsyncMock(return_value=block),
+        ):
+            await self.consensus.process_block_queue_item(item)
+        self.consensus.config.consensus.insert_consensus_block.assert_awaited()
+
+    async def test_blockresponse_index_not_greater_skips_insert(self):
+        item, _ = self._mk_item(
+            body={"method": "blockresponse", "result": {"block": {"index": 50}}}
+        )
+        block = _mk_block(index=50)
+        self.consensus.config.consensus.insert_consensus_block = AsyncMock(
+            return_value=True
+        )
+        with patch(
+            "yadacoin.core.consensus.Block.from_dict",
+            new=AsyncMock(return_value=block),
+        ):
+            await self.consensus.process_block_queue_item(item)
+        self.consensus.config.consensus.insert_consensus_block.assert_not_awaited()
 
     async def test_newblock_no_block(self):
         item, _ = self._mk_item(

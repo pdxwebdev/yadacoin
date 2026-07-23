@@ -381,8 +381,75 @@ class TestIdentityAnnouncementChainLookup(AsyncTestCase):
             return_value={"found": True}
         )
 
-        result = await IdentityAnnouncement.exists_username("taken", config=cfg)
+        result = await IdentityAnnouncement.exists_username(
+            "taken", config=cfg, use_mempool=True
+        )
         self.assertTrue(result)
+
+    async def test_exists_username_extra_blocks_true(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        cfg = MagicMock()
+        cfg.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+
+        ann = IdentityAnnouncement(
+            username="taken.example",
+            username_signature=_make_valid_sig("taken.example", _PRIV_HEX),
+        )
+        txn = MagicMock()
+        txn.relationship = ann
+        txn.transaction_signature = "other_sig"
+        block = MagicMock()
+        block.transactions = [txn]
+
+        result = await IdentityAnnouncement.exists_username(
+            "taken.example", config=cfg, use_mempool=False, extra_blocks=[block]
+        )
+        self.assertTrue(result)
+
+    async def test_exists_username_extra_blocks_exclude_sig(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        cfg = MagicMock()
+        cfg.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+
+        ann = IdentityAnnouncement(
+            username="taken.example",
+            username_signature=_make_valid_sig("taken.example", _PRIV_HEX),
+        )
+        txn = MagicMock()
+        txn.relationship = ann
+        txn.transaction_signature = "skip_me"
+        block = MagicMock()
+        block.transactions = [txn]
+
+        result = await IdentityAnnouncement.exists_username(
+            "taken.example",
+            exclude_txn_sig="skip_me",
+            config=cfg,
+            use_mempool=False,
+            extra_blocks=[block],
+        )
+        self.assertFalse(result)
+
+    async def test_exists_username_mempool_with_exclude(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        cfg = MagicMock()
+        cfg.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+
+        result = await IdentityAnnouncement.exists_username(
+            "taken",
+            exclude_txn_sig="txn_to_skip",
+            config=cfg,
+            use_mempool=True,
+        )
+        self.assertFalse(result)
+        call_args = cfg.mongo.async_db.miner_transactions.find_one.await_args
+        self.assertIn("$ne", str(call_args))
 
     async def test_get_by_username_no_mempool(self):
         import yadacoin.core.config
