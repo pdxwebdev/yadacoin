@@ -232,6 +232,14 @@ class Block(object):
 
         triplet = await config.kel_manager.advance_block_ratchet(block=block)
 
+        # Template-only coinbase confirming KEL step (no preceding block-reanchor
+        # U/C pair). Validated via batch_txns against mempool/on-chain tip.
+        if (
+            triplet is not None
+            and getattr(triplet, "coinbase_confirming", None) is not None
+        ):
+            pending_txns.append(triplet.coinbase_confirming)
+
         if transactions is not None:
             transactions = [Transaction.from_dict(txn) for txn in transactions]
         else:
@@ -614,7 +622,7 @@ class Block(object):
                 for linked_txn in linked_group:
                     if linked_txn.coinbase:
                         config.app_log.warning(
-                            f"validate_transactions transient KEL skip: linked coinbase txn removed from block: {linked_txn.transaction_signature}"
+                            f"validate_transactions permanent KEL skip: linked coinbase txn removed from block: {linked_txn.transaction_signature}"
                         )
                     if linked_txn in txns:
                         txns.remove(linked_txn)
@@ -637,6 +645,9 @@ class Block(object):
                     transaction_objs.remove(transaction_obj.spent_in_txn)
                 if transaction_obj.spent_in_txn in txns:
                     txns.remove(transaction_obj.spent_in_txn)
+                await config.mongo.async_db.miner_transactions.delete_one(
+                    {"id": transaction_obj.transaction_signature}
+                )
                 continue
             try:
                 if int(index) > CHAIN.CHECK_TIME_FROM and (

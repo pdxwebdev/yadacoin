@@ -50,9 +50,10 @@ anchor key K_n.  Each auth event:
 Verifiers fetch GET /kel-offchain-log to walk the chain from the on-chain
 anchor to the current signing key without knowing SECOND_FACTOR.
 
-Every OFFCHAIN_ANCHOR_INTERVAL auth events the manager automatically queues a
-new on-chain UNCONFIRMED+CONFIRMING re-anchor pair that jumps the on-chain
-KEL forward by OFFCHAIN_ANCHOR_INTERVAL steps.
+Off-chain auth tips live in ``key_event_log``.  Branch announcements place
+their own mempool KEL entries.  Block generation parents coinbase off the
+live tip (on-chain + mempool + ``key_event_log``) without a separate
+auth-interval re-anchor package.
 """
 
 import base64
@@ -83,12 +84,17 @@ from yadacoin.enums.peertypes import PEER_TYPES
 
 @dataclass
 class ReanchorTriplet:
-    """On-chain KEL re-anchor package built by ``_queue_reanchor`` when mining."""
+    """Coinbase KEL package for block generation.
 
-    unconfirmed: object  # Transaction
-    confirming: object  # Transaction
-    signer_private_key: str  # hex — key that signs the coinbase (== kn private)
-    signer_public_key: str  # hex — block public key (== kn public)
+    ``coinbase_confirming`` is template-only (injected into the candidate
+    block with the coinbase).  Tip is resolved from on-chain + mempool KEL
+    plus ``key_event_log`` (auth/branch rotations during the mine window).
+    No preceding block-reanchor or auth-interval U/C pair is minted here.
+    """
+
+    coinbase_confirming: object  # Transaction — confirming KEL step after coinbase
+    signer_private_key: str  # hex — key that signs the coinbase
+    signer_public_key: str  # hex — block / coinbase public key
     coinbase_prerotated: str  # address — coinbase's prerotated_key_hash
     coinbase_twice_prerotated: str  # address — coinbase's twice_prerotated_key_hash
     coinbase_public_key_hash: str  # address — coinbase's public_key_hash
@@ -577,10 +583,10 @@ class NodeKeyRotationManager:
         Each step:
         1. Derives K_{n+i+1} from K_{n+i} via ``derive_secure_path``
         2. Creates a zero-value KEL rotation transaction, stores it in
-           ``key_event_log`` (off-chain record) and broadcasts to sync peers.
-           These are NOT mined — only the periodic re-anchor transactions
-           (every OFFCHAIN_ANCHOR_INTERVAL steps) go into ``miner_transactions``.
-        3. Increments the counter; triggers re-anchor at interval boundaries.
+           ``key_event_log`` (off-chain record).  These are NOT mined;
+           branch announcements place their own mempool KEL entries, and
+           block generation parents coinbase off the live tip.
+        3. Increments the counter.
         """
         config = self.config
         (
@@ -669,8 +675,6 @@ class NodeKeyRotationManager:
         self._auth_ratchet_key = next_key
         self._auth_ratchet_pub = next_pub_hex
         self._auth_ratchet_prev_pkh = prev_address
-
-        await self._maybe_reanchor()
 
         return (
             prev_key["private_key"].hex(),
@@ -1297,13 +1301,12 @@ class NodeKeyRotationManager:
         )
 
     async def advance_block_ratchet(self, block):
-        """Advance the ratchet for block generation.
+        """Build coinbase KEL material for block generation.
 
-        Sets ``block.public_key`` / ``block.private_key`` to the current
-        ratchet key, queues a re-anchor tx pair (which goes into
-        ``miner_transactions`` so the miner includes the on-chain anchor),
-        and returns a :class:`ReanchorTriplet` with key material and the
-        anchor transactions.
+        Resolves the current main-KEL tip from on-chain/mempool plus
+        ``key_event_log`` (rotations during the mine window), sets
+        ``block.public_key`` / ``block.private_key``, and returns a
+        :class:`ReanchorTriplet` with template-only ``coinbase_confirming``.
         """
         (
             second_factor,
@@ -1314,83 +1317,43 @@ class NodeKeyRotationManager:
 
         _CoincurvePrivateKey(prev_key["private_key"])
 
-        triplet = await self._queue_reanchor(
-            block=block,
-            signer_private_key=prev_key["private_key"].hex(),
-            signer_public_key=prev_pub_hex,
-            relationship="block reanchor",
-        )
+        return await self._queue_reanchor(block=block)
 
-        self._auth_counter += 1
+    async def _queue_reanchor(self, block=None):
+        """Build the coinbase KEL package for a mining template.
 
-        return triplet
-
-    async def _maybe_reanchor(self):
-        """Trigger a re-anchor if the off-chain counter has reached the interval."""
-        if self._auth_counter % self.OFFCHAIN_ANCHOR_INTERVAL == 0:
-            try:
-                await self._queue_reanchor(
-                    block=None, relationship="reanchor 100 interval"
-                )
-            except Exception as exc:
-                self.config.app_log.warning(
-                    "NodeKeyRotationManager: re-anchor error: %s", exc
-                )
-
-    async def _queue_reanchor(
-        self,
-        block=None,
-        signer_private_key=None,
-        signer_public_key=None,
-        relationship=None,
-        coinbase_prerotated=None,
-        coinbase_twice_prerotated=None,
-        coinbase_public_key_hash=None,
-        coinbase_prev_public_key_hash=None,
-    ):
-        """Queue an on-chain UNCONFIRMED+CONFIRMING re-anchor pair.
-
-        When ``block`` is passed (mining path), returns a
-        :class:`ReanchorTriplet`.  Otherwise (auth-triggered re-anchor)
-        writes into ``miner_transactions`` and broadcasts.
-
-        The caller (``advance_block_ratchet``) derives the coinbase KEL
-        fields once and passes them here so no derivation is duplicated.
+        Requires ``block``.  Does not write to ``miner_transactions``.
+        Branch announcements and auth rotations update ``key_event_log``
+        (and their own mempool entries) independently; this path only
+        parents coinbase off the live tip.
         """
+        if block is None:
+            return None
+
         config = self.config
         k0 = self._k0
         second_factor = self._second_factor or _read_second_factor()
+
+        def _empty_triplet(signer_private_key=None, signer_public_key=None):
+            return ReanchorTriplet(
+                coinbase_confirming=None,
+                signer_private_key=signer_private_key,
+                signer_public_key=signer_public_key,
+                coinbase_prerotated=None,
+                coinbase_twice_prerotated=None,
+                coinbase_public_key_hash=None,
+                coinbase_prev_public_key_hash=None,
+            )
+
         if not k0 or not second_factor:
-            if block:
-                return ReanchorTriplet(
-                    unconfirmed=None,
-                    confirming=None,
-                    signer_private_key=signer_private_key,
-                    signer_public_key=signer_public_key,
-                    coinbase_prerotated=coinbase_prerotated,
-                    coinbase_twice_prerotated=coinbase_twice_prerotated,
-                    coinbase_public_key_hash=coinbase_public_key_hash,
-                    coinbase_prev_public_key_hash=coinbase_prev_public_key_hash,
-                )
-            return
+            return _empty_triplet()
 
         from yadacoin.core.keyeventlog import KeyEventLog
         from yadacoin.core.transaction import Transaction
 
         kel_pub = getattr(config, "kel_anchor_public_key", None)
         if not kel_pub:
-            if block:
-                return ReanchorTriplet(
-                    unconfirmed=None,
-                    confirming=None,
-                    signer_private_key=signer_private_key,
-                    signer_public_key=signer_public_key,
-                    coinbase_prerotated=coinbase_prerotated,
-                    coinbase_twice_prerotated=coinbase_twice_prerotated,
-                    coinbase_public_key_hash=coinbase_public_key_hash,
-                    coinbase_prev_public_key_hash=coinbase_prev_public_key_hash,
-                )
-            return
+            return _empty_triplet()
 
         k0_pub_hex = (
             _CoincurvePrivateKey(k0["private_key"])
@@ -1400,36 +1363,12 @@ class NodeKeyRotationManager:
         try:
             latest = await KeyEventLog.get_latest(k0_pub_hex, onchain_only=False)
         except Exception:
-            if block:
-                return ReanchorTriplet(
-                    unconfirmed=None,
-                    confirming=None,
-                    signer_private_key=signer_private_key,
-                    signer_public_key=signer_public_key,
-                    coinbase_prerotated=coinbase_prerotated,
-                    coinbase_twice_prerotated=coinbase_twice_prerotated,
-                    coinbase_public_key_hash=coinbase_public_key_hash,
-                    coinbase_prev_public_key_hash=coinbase_prev_public_key_hash,
-                )
-            return
+            return _empty_triplet()
         if not latest:
-            if block:
-                return ReanchorTriplet(
-                    unconfirmed=None,
-                    confirming=None,
-                    signer_private_key=signer_private_key,
-                    signer_public_key=signer_public_key,
-                    coinbase_prerotated=coinbase_prerotated,
-                    coinbase_twice_prerotated=coinbase_twice_prerotated,
-                    coinbase_public_key_hash=coinbase_public_key_hash,
-                    coinbase_prev_public_key_hash=coinbase_prev_public_key_hash,
-                )
-            return
+            return _empty_triplet()
 
-        # Walk the on-chain KEL to find the current anchor tip (K_n).
-        # This determines where the UNCONFIRMED entry signs from.
+        # Walk derivation to latest.prerotated_key_hash (next unused signer).
         cur = k0
-
         cur = derive_secure_path(cur["private_key"], cur["chain_code"], second_factor)
         cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
         cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
@@ -1443,114 +1382,77 @@ class NodeKeyRotationManager:
             cur_address = str(P2PKHBitcoinAddress.from_pubkey(cur_pub_bytes))
             if latest.prerotated_key_hash == cur_address:
                 break
+
         kn = cur
+        kn_address = cur_address
+        kn_pub_hex = (
+            _CoincurvePrivateKey(kn["private_key"])
+            .public_key.format(compressed=True)
+            .hex()
+        )
+        tip_prev_pkh = latest.public_key_hash
+        tip_counter = getattr(latest, "counter", 0) or 0
+
+        # Catch up past auth/branch tips in key_event_log during the mine window.
+        kel_tip = await config.mongo.async_db.key_event_log.find_one(
+            {"anchor_public_key": k0_pub_hex},
+            sort=[("counter", -1)],
+        )
+        if kel_tip and kel_tip.get("counter", 0) > tip_counter:
+            target_prerotated = kel_tip.get("prerotated_key_hash") or ""
+            guard = 0
+            while kn_address != target_prerotated and guard < 10000:
+                kn = derive_secure_path(
+                    kn["private_key"], kn["chain_code"], second_factor
+                )
+                kn_pub = _CoincurvePrivateKey(kn["private_key"]).public_key.format(
+                    compressed=True
+                )
+                kn_address = str(P2PKHBitcoinAddress.from_pubkey(kn_pub))
+                guard += 1
+            tip_prev_pkh = kel_tip.get("public_key_hash") or tip_prev_pkh
+            kn_pub_hex = (
+                _CoincurvePrivateKey(kn["private_key"])
+                .public_key.format(compressed=True)
+                .hex()
+            )
 
         kn1 = derive_secure_path(kn["private_key"], kn["chain_code"], second_factor)
-        kn1_priv_obj = _CoincurvePrivateKey(kn1["private_key"])
-        kn1_pub_bytes = kn1_priv_obj.public_key.format(compressed=True)
+        kn1_pub_bytes = _CoincurvePrivateKey(kn1["private_key"]).public_key.format(
+            compressed=True
+        )
         kn1_pub_hex = kn1_pub_bytes.hex()
         kn1_address = str(P2PKHBitcoinAddress.from_pubkey(kn1_pub_bytes))
 
-        kn_priv_obj = _CoincurvePrivateKey(kn["private_key"])
-        kn_pub_bytes = kn_priv_obj.public_key.format(compressed=True)
-        kn_pub_hex = kn_pub_bytes.hex()
-        kn_address = str(P2PKHBitcoinAddress.from_pubkey(kn_pub_bytes))
-
-        search_address = kn_address
-        jump_cur = kn1
-        curr_priv_obj = _CoincurvePrivateKey(jump_cur["private_key"])
-        curr_pub_bytes = curr_priv_obj.public_key.format(compressed=True)
-        curr_address = str(P2PKHBitcoinAddress.from_pubkey(curr_pub_bytes))
-
-        txn_doc = await self.config.mongo.async_db.key_event_log.find_one(
-            {"txn.prev_public_key_hash": search_address}
-        )
-        if txn_doc:
-            txn_doc = await self.config.mongo.async_db.key_event_log.find_one(
-                {"anchor_public_key": txn_doc["anchor_public_key"]},
-                sort=[("counter", -1)],
-            )
-            i = latest.counter - 1
-            while (
-                curr_address != txn_doc["prerotated_key_hash"]
-                and curr_address != latest.prerotated_key_hash
-                and i < txn_doc["counter"]
-            ):
-                jump_cur = derive_secure_path(
-                    jump_cur["private_key"], jump_cur["chain_code"], second_factor
+        kn2 = derive_secure_path(kn1["private_key"], kn1["chain_code"], second_factor)
+        kn2_address = str(
+            P2PKHBitcoinAddress.from_pubkey(
+                _CoincurvePrivateKey(kn2["private_key"]).public_key.format(
+                    compressed=True
                 )
-                curr_priv_obj = _CoincurvePrivateKey(jump_cur["private_key"])
-                curr_pub_bytes = curr_priv_obj.public_key.format(compressed=True)
-                curr_address = str(P2PKHBitcoinAddress.from_pubkey(curr_pub_bytes))
-                i += 1
-        else:
-            jump_cur = derive_secure_path(
-                jump_cur["private_key"], jump_cur["chain_code"], second_factor
             )
-
-        jump_priv_obj = _CoincurvePrivateKey(jump_cur["private_key"])
-        jump_pub_bytes = jump_priv_obj.public_key.format(compressed=True)
-        jump_address = str(P2PKHBitcoinAddress.from_pubkey(jump_pub_bytes))
-
-        jump2 = derive_secure_path(
-            jump_cur["private_key"], jump_cur["chain_code"], second_factor
         )
-        jump2_priv_obj = _CoincurvePrivateKey(jump2["private_key"])
-        jump2_pub_bytes = jump2_priv_obj.public_key.format(compressed=True)
-        jump2_address = str(P2PKHBitcoinAddress.from_pubkey(jump2_pub_bytes))
-
-        jump3 = derive_secure_path(
-            jump2["private_key"], jump2["chain_code"], second_factor
-        )
-        jump3_priv_obj = _CoincurvePrivateKey(jump3["private_key"])
-        jump3_pub_bytes = jump3_priv_obj.public_key.format(compressed=True)
-        jump3_address = str(P2PKHBitcoinAddress.from_pubkey(jump3_pub_bytes))
-
-        jump4 = derive_secure_path(
-            jump3["private_key"], jump3["chain_code"], second_factor
-        )
-        jump4_priv_obj = _CoincurvePrivateKey(jump4["private_key"])
-        jump4_pub_bytes = jump4_priv_obj.public_key.format(compressed=True)
-        jump4_address = str(P2PKHBitcoinAddress.from_pubkey(jump4_pub_bytes))
-
-        prev_pkh = latest.public_key_hash
-
-        # --- UNCONFIRMED ---
-        unconfirmed_txn = Transaction(
-            txn_time=int(time.time()),
-            public_key=kn_pub_hex,
-            outputs=[{"to": kn1_address, "value": 0.0}],
-            inputs=[],
-            fee=0.0,
-            masternode_fee=0.0,
-            version=7,
-            prerotated_key_hash=kn1_address,
-            twice_prerotated_key_hash=jump_address,
-            public_key_hash=kn_address,
-            prev_public_key_hash=prev_pkh,
-            relationship=relationship or "",
-            relationship_hash=hashlib.sha256((relationship or "").encode("utf-8"))
-            .digest()
-            .hex(),
-            rid="",
-            dh_public_key="",
-        )
-        unconfirmed_txn.hash = await unconfirmed_txn.generate_hash()
-        unconfirmed_txn.transaction_signature = NodeKeyRotationManager._sign(
-            kn["private_key"].hex(), unconfirmed_txn.hash
+        kn3 = derive_secure_path(kn2["private_key"], kn2["chain_code"], second_factor)
+        kn3_address = str(
+            P2PKHBitcoinAddress.from_pubkey(
+                _CoincurvePrivateKey(kn3["private_key"]).public_key.format(
+                    compressed=True
+                )
+            )
         )
 
-        # --- CONFIRMING ---
-        confirming_txn = Transaction(
+        # Coinbase = unconfirmed KEL step from live tip; coinbase_confirming
+        # = its confirming sibling (template-only).
+        coinbase_confirming_txn = Transaction(
             txn_time=int(time.time()),
             public_key=kn1_pub_hex,
-            outputs=[{"to": jump_address, "value": 0.0}],
+            outputs=[{"to": kn2_address, "value": 0.0}],
             inputs=[],
             fee=0.0,
             masternode_fee=0.0,
             version=7,
-            prerotated_key_hash=jump_address,
-            twice_prerotated_key_hash=jump2_address,
+            prerotated_key_hash=kn2_address,
+            twice_prerotated_key_hash=kn3_address,
             public_key_hash=kn1_address,
             prev_public_key_hash=kn_address,
             relationship="",
@@ -1558,96 +1460,22 @@ class NodeKeyRotationManager:
             rid="",
             dh_public_key="",
         )
-
-        mempool_txns = [unconfirmed_txn, confirming_txn]
-        confirming_txn.hash = await confirming_txn.generate_hash()
-        confirming_txn.transaction_signature = NodeKeyRotationManager._sign(
-            kn1["private_key"].hex(), confirming_txn.hash
-        )
-        if block:
-            # --- CONFIRMING ---
-            coinbase_confirming_txn = Transaction(
-                txn_time=int(time.time()),
-                public_key=jump2_pub_bytes.hex(),
-                outputs=[{"to": jump3_address, "value": 0.0}],
-                inputs=[],
-                fee=0.0,
-                masternode_fee=0.0,
-                version=7,
-                prerotated_key_hash=jump3_address,
-                twice_prerotated_key_hash=jump4_address,
-                public_key_hash=jump2_address,
-                prev_public_key_hash=jump_address,
-                relationship="",
-                relationship_hash="",
-                rid="",
-                dh_public_key="",
-            )
-            coinbase_confirming_txn.hash = await coinbase_confirming_txn.generate_hash()
-            coinbase_confirming_txn.transaction_signature = (
-                NodeKeyRotationManager._sign(
-                    jump2["private_key"].hex(), coinbase_confirming_txn.hash
-                )
-            )
-            mempool_txns.append(coinbase_confirming_txn)
-
-        for txn in mempool_txns:
-            await config.mongo.async_db.miner_transactions.replace_one(
-                {
-                    "$or": [
-                        {"public_key_hash": txn.public_key_hash},
-                        {"prerotated_key_hash": txn.prerotated_key_hash},
-                        {"twice_prerotated_key_hash": txn.twice_prerotated_key_hash},
-                    ],
-                },
-                txn.to_dict(),
-                upsert=True,
-            )
-
-        if block:
-            block.private_key = jump_cur["private_key"].hex()
-            block.public_key = jump_pub_bytes.hex()
-            signer_pub = jump_pub_bytes.hex()
-            signer_pub_bytes = bytes.fromhex(signer_pub)
-            signer_address = str(P2PKHBitcoinAddress.from_pubkey(signer_pub_bytes))
-            return ReanchorTriplet(
-                unconfirmed=unconfirmed_txn,
-                confirming=confirming_txn,
-                signer_private_key=jump_cur["private_key"].hex(),
-                signer_public_key=signer_pub,
-                coinbase_prerotated=jump2_address,
-                coinbase_twice_prerotated=jump3_address,
-                coinbase_public_key_hash=signer_address,
-                coinbase_prev_public_key_hash=confirming_txn.public_key_hash,
-            )
-
-        config.app_log.info(
-            "NodeKeyRotationManager: re-anchor queued (unconfirmed=%s, confirming=%s, "
-            "jump_target=%s)",
-            unconfirmed_txn.transaction_signature,
-            confirming_txn.transaction_signature,
-            jump_address,
+        coinbase_confirming_txn.hash = await coinbase_confirming_txn.generate_hash()
+        coinbase_confirming_txn.transaction_signature = NodeKeyRotationManager._sign(
+            kn1["private_key"].hex(), coinbase_confirming_txn.hash
         )
 
-        if "node" in config.modes:
-            try:
-                async for peer_stream in config.peer.get_sync_peers():
-                    for txn in (unconfirmed_txn, confirming_txn):
-                        await config.nodeShared.write_params(
-                            peer_stream, "newtxn", {"transaction": txn.to_dict()}
-                        )
-                        if peer_stream.peer.protocol_version > 1:
-                            config.nodeClient.retry_messages[
-                                (
-                                    peer_stream.peer.rid,
-                                    "newtxn",
-                                    txn.transaction_signature,
-                                )
-                            ] = {"transaction": txn.to_dict()}
-            except Exception as exc:
-                config.app_log.warning(
-                    "NodeKeyRotationManager: re-anchor broadcast error: %s", exc
-                )
+        block.private_key = kn["private_key"].hex()
+        block.public_key = kn_pub_hex
+        return ReanchorTriplet(
+            coinbase_confirming=coinbase_confirming_txn,
+            signer_private_key=kn["private_key"].hex(),
+            signer_public_key=kn_pub_hex,
+            coinbase_prerotated=kn1_address,
+            coinbase_twice_prerotated=kn2_address,
+            coinbase_public_key_hash=kn_address,
+            coinbase_prev_public_key_hash=tip_prev_pkh,
+        )
 
     async def _create_inception(self, k0: dict, second_factor: str, k0_pub_hex: str):
         """Build and broadcast a zero-fee KEL inception transaction for K0.

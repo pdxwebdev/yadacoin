@@ -82,38 +82,31 @@ def _make_mock_kel_manager():
     privkey = config.private_key
     address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pubkey)))
 
-    unconfirmed = Mock(
+    coinbase_confirming = Mock(
         coinbase=False,
-        transaction_signature="unconfirmed_sig",
+        transaction_signature="coinbase_confirming_sig",
         inputs=[],
         outputs=[],
         hash="0" * 64,
         fee=0.0,
         masternode_fee=0.0,
+        time=0,
     )
-    confirming = Mock(
-        coinbase=False,
-        transaction_signature="confirming_sig",
-        inputs=[],
-        outputs=[],
-        hash="0" * 64,
-        fee=0.0,
-        masternode_fee=0.0,
-    )
-    for m in (unconfirmed, confirming):
+    for m in (coinbase_confirming,):
         m.verify_kel_output_rules = AsyncMock(return_value=None)
         m.are_kel_fields_populated = Mock(return_value=False)
         m.has_key_event_log = AsyncMock(return_value=False)
         m.is_already_onchain = AsyncMock(return_value=False)
         m.prev_public_key_hash = None
+        m.spent_in_txn = None
         m.to_dict = Mock(return_value={})
+        m.to_json = Mock(return_value="{}")
         m.verify = AsyncMock(return_value=None)
         m.generate_hash = AsyncMock(return_value="0" * 64)
         m.contract_generated = AsyncMock(return_value=False)
 
     triplet = ReanchorTriplet(
-        unconfirmed=unconfirmed,
-        confirming=confirming,
+        coinbase_confirming=coinbase_confirming,
         signer_private_key=privkey,
         signer_public_key=pubkey,
         coinbase_prerotated=address,
@@ -1459,6 +1452,7 @@ class TestBlock(AsyncTestCase):
             t.prerotated_key_hash = prerotated
             t.twice_prerotated_key_hash = twice_prerotated
             t.spent_in_txn = None
+            t.coinbase = False
             t.inputs = []
             t.outputs = []
             t.fee = 0.0
@@ -1502,14 +1496,12 @@ class TestBlock(AsyncTestCase):
         self.assertNotIn(txn_linked1, txns)
         self.assertNotIn(txn_linked2, txns)
         self.assertIn(txn_unrelated, txns)
-        # The two cascaded siblings (not txn_fail itself, which
-        # Transaction.handle_exception is responsible for) are explicitly
-        # deleted from the mempool by the cascade.
-        self.assertEqual(miner_txns.delete_one.await_count, 2)
+        # Cascaded siblings are deleted from the mempool; the failing txn is
+        # also removed explicitly after the cascade loop.
         deleted_ids = {
             call.args[0]["id"] for call in miner_txns.delete_one.await_args_list
         }
-        self.assertEqual(deleted_ids, {"linked1", "linked2"})
+        self.assertEqual(deleted_ids, {"fail", "linked1", "linked2"})
 
     async def test_validate_transactions_check_dynamic_nodes_flag(self):
         """Line 614: check_dynamic_nodes set to True at DYNAMIC_NODES_FORK."""

@@ -847,7 +847,8 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
             priv_out, pub_out, *_ = await mgr.advance_auth_ratchet()
         self.assertIsNotNone(priv_out)
 
-    async def test_interval_triggers_reanchor(self):
+    async def test_auth_ratchet_does_not_queue_reanchor(self):
+        """Auth advances key_event_log only; no mempool re-anchor package."""
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
@@ -858,9 +859,7 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
         cfg.mongo.async_db.key_event_log.replace_one = AsyncMock()
         mgr = NodeKeyRotationManager(cfg)
         mgr._second_factor = "mysecret"
-        # Seed counter so the NEXT call hits the interval
         mgr._auth_counter = mgr.OFFCHAIN_ANCHOR_INTERVAL - 1
-        # Pre-set ratchet state to avoid re-init branch
         mgr._auth_ratchet_key = {
             "private_key": bytes.fromhex(priv_hex),
             "chain_code": bytes.fromhex(priv_hex),
@@ -871,32 +870,7 @@ class TestAdvanceAuthRatchet(AsyncTestCase):
             with patch.object(mgr, "_queue_reanchor", new=AsyncMock()) as mock_anchor:
                 await mgr.advance_auth_ratchet()
 
-        mock_anchor.assert_awaited_once()
-
-    async def test_reanchor_error_does_not_raise(self):
-        from yadacoin.core.keyrotation import NodeKeyRotationManager
-
-        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
-        pub_hex = "02610faeab27d8a467c637848a6d581b9d9df9d6e7266096467e15427db698cc29"
-        cfg = _make_config(
-            kel_anchor_private_key=priv_hex, kel_anchor_public_key=pub_hex
-        )
-        cfg.mongo.async_db.key_event_log.replace_one = AsyncMock()
-        mgr = NodeKeyRotationManager(cfg)
-        mgr._second_factor = "mysecret"
-        mgr._auth_counter = mgr.OFFCHAIN_ANCHOR_INTERVAL - 1
-        mgr._auth_ratchet_key = {
-            "private_key": bytes.fromhex(priv_hex),
-            "chain_code": bytes.fromhex(priv_hex),
-        }
-        mgr._auth_ratchet_pub = pub_hex
-
-        with patch("yadacoin.core.transaction.Config", return_value=cfg):
-            with patch.object(
-                mgr, "_queue_reanchor", new=AsyncMock(side_effect=Exception("boom"))
-            ):
-                priv_out, pub_out, *_ = await mgr.advance_auth_ratchet()
-        self.assertIsNotNone(priv_out)
+        mock_anchor.assert_not_awaited()
 
     async def test_init_restores_from_tip(self):
         """When key_event_log has a prior tip, ratchet is fast-forwarded to it."""
@@ -1022,11 +996,9 @@ class TestAdvanceBlockRatchet(AsyncTestCase):
         mgr._second_factor = "mysecret"
 
         block = MagicMock()
-        fake_unconfirmed = MagicMock()
-        fake_confirming = MagicMock()
+        fake_cc = MagicMock()
         fake_triplet = ReanchorTriplet(
-            unconfirmed=fake_unconfirmed,
-            confirming=fake_confirming,
+            coinbase_confirming=fake_cc,
             signer_private_key=priv_hex,
             signer_public_key=pub_hex,
             coinbase_prerotated="1next",
@@ -1040,8 +1012,7 @@ class TestAdvanceBlockRatchet(AsyncTestCase):
             result = await mgr.advance_block_ratchet(block=block)
 
         self.assertIsInstance(result, ReanchorTriplet)
-        self.assertEqual(result.unconfirmed, fake_unconfirmed)
-        self.assertEqual(result.confirming, fake_confirming)
+        self.assertEqual(result.coinbase_confirming, fake_cc)
         self.assertEqual(result.signer_private_key, priv_hex)
         self.assertEqual(result.signer_public_key, pub_hex)
         self.assertEqual(result.coinbase_prerotated, "1next")
@@ -1082,25 +1053,37 @@ class TestAdvanceBlockRatchet(AsyncTestCase):
 
 
 class TestQueueReanchor(AsyncTestCase):
-    async def test_no_k0_returns_early(self):
+    async def test_no_block_returns_none(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
         cfg = _make_config()
         mgr = NodeKeyRotationManager(cfg)
-        # _k0 is None — should exit silently
-        await mgr._queue_reanchor()  # must not raise
+        self.assertIsNone(await mgr._queue_reanchor())
+        self.assertIsNone(await mgr._queue_reanchor(block=None))
 
-    async def test_no_kel_pub_returns_early(self):
-        from yadacoin.core.keyrotation import NodeKeyRotationManager
+    async def test_no_k0_returns_empty_triplet(self):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
+
+        cfg = _make_config()
+        mgr = NodeKeyRotationManager(cfg)
+        block = MagicMock()
+        result = await mgr._queue_reanchor(block=block)
+        self.assertIsInstance(result, ReanchorTriplet)
+        self.assertIsNone(result.coinbase_confirming)
+
+    async def test_no_kel_pub_returns_empty_triplet(self):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
 
         cfg = _make_config()  # kel_anchor_public_key is None
         mgr = NodeKeyRotationManager(cfg)
         mgr._k0 = {"private_key": bytes(32), "chain_code": bytes(32)}
         mgr._second_factor = "sf"
-        await mgr._queue_reanchor()
+        result = await mgr._queue_reanchor(block=MagicMock())
+        self.assertIsInstance(result, ReanchorTriplet)
+        self.assertIsNone(result.coinbase_confirming)
 
-    async def test_no_onchain_kel_returns_early(self):
-        from yadacoin.core.keyrotation import NodeKeyRotationManager
+    async def test_no_onchain_kel_returns_empty_triplet(self):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
 
         cfg = _make_config(kel_anchor_public_key="02pub")
         mgr = NodeKeyRotationManager(cfg)
@@ -1111,10 +1094,12 @@ class TestQueueReanchor(AsyncTestCase):
             "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
             new=AsyncMock(return_value=None),
         ):
-            await mgr._queue_reanchor()
+            result = await mgr._queue_reanchor(block=MagicMock())
+        self.assertIsInstance(result, ReanchorTriplet)
+        self.assertIsNone(result.coinbase_confirming)
 
-    async def test_kel_build_exception_returns_early(self):
-        from yadacoin.core.keyrotation import NodeKeyRotationManager
+    async def test_kel_build_exception_returns_empty_triplet(self):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
 
         cfg = _make_config(kel_anchor_public_key="02pub")
         mgr = NodeKeyRotationManager(cfg)
@@ -1125,10 +1110,12 @@ class TestQueueReanchor(AsyncTestCase):
             "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
             new=AsyncMock(side_effect=Exception("db error")),
         ):
-            await mgr._queue_reanchor()  # must not raise
+            result = await mgr._queue_reanchor(block=MagicMock())
+        self.assertIsInstance(result, ReanchorTriplet)
+        self.assertIsNone(result.coinbase_confirming)
 
-    async def test_success_submits_two_txns(self):
-        from yadacoin.core.keyrotation import NodeKeyRotationManager
+    async def test_block_path_returns_coinbase_confirming_only(self):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
 
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
         cfg = _make_config(kel_anchor_public_key="02pub")
@@ -1142,6 +1129,7 @@ class TestQueueReanchor(AsyncTestCase):
         }
         mgr._second_factor = "mysecret"
 
+        block = MagicMock()
         from bitcoin.wallet import P2PKHBitcoinAddress
         from coincurve import PrivateKey as CK
 
@@ -1164,262 +1152,21 @@ class TestQueueReanchor(AsyncTestCase):
             "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
             new=AsyncMock(return_value=mock_entry),
         ):
-            await mgr._queue_reanchor()
+            result = await mgr._queue_reanchor(block=block)
 
-        # Both transactions should have been upserted
-        self.assertEqual(
-            cfg.mongo.async_db.miner_transactions.replace_one.await_count, 2
-        )
+        self.assertIsInstance(result, ReanchorTriplet)
+        self.assertIsNotNone(result.coinbase_confirming)
+        self.assertEqual(result.coinbase_public_key_hash, step1_addr)
+        cfg.mongo.async_db.miner_transactions.replace_one.assert_not_called()
 
-    async def test_broadcasts_in_node_mode(self):
-        from yadacoin.core.keyrotation import NodeKeyRotationManager
-
-        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
-        cfg = _make_config(kel_anchor_public_key="02pub", modes=["node"])
-        cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock()
-        cfg.mongo.async_db.key_event_log = MagicMock()
-        cfg.mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
-
-        peer_stream = MagicMock()
-        peer_stream.peer.protocol_version = 2
-        peer_stream.peer.rid = "rid1"
-
-        async def _get_peers():
-            yield peer_stream
-
-        cfg.peer = MagicMock()
-        cfg.peer.get_sync_peers = _get_peers
-        cfg.nodeShared = MagicMock()
-        cfg.nodeShared.write_params = AsyncMock()
-        cfg.nodeClient = MagicMock()
-        cfg.nodeClient.retry_messages = {}
-
-        mgr = NodeKeyRotationManager(cfg)
-        mgr._k0 = {
-            "private_key": bytes.fromhex(priv_hex),
-            "chain_code": bytes.fromhex(priv_hex),
-        }
-        mgr._second_factor = "mysecret"
-
-        from bitcoin.wallet import P2PKHBitcoinAddress
-        from coincurve import PrivateKey as CK
-
-        from yadacoin.core.keyrotation import derive_secure_path
-
-        _k0 = {
-            "private_key": bytes.fromhex(priv_hex),
-            "chain_code": bytes.fromhex(priv_hex),
-        }
-        step1 = derive_secure_path(_k0["private_key"], _k0["chain_code"], "mysecret")
-        step1_pub = CK(step1["private_key"]).public_key.format(compressed=True)
-        step1_addr = str(P2PKHBitcoinAddress.from_pubkey(step1_pub))
-
-        mock_entry = MagicMock()
-        mock_entry.public_key_hash = "1SomeAddress"
-        mock_entry.prerotated_key_hash = step1_addr
-        mock_entry.counter = 0
-
-        with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
-            new=AsyncMock(return_value=mock_entry),
-        ):
-            await mgr._queue_reanchor()
-
-        cfg.nodeShared.write_params.assert_awaited()
-
-    async def test_broadcast_exception_logged(self):
-        from yadacoin.core.keyrotation import NodeKeyRotationManager
-
-        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
-        cfg = _make_config(kel_anchor_public_key="02pub", modes=["node"])
-        cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock()
-        cfg.mongo.async_db.key_event_log = MagicMock()
-        cfg.mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
-        cfg.peer = MagicMock()
-        cfg.peer.get_sync_peers = MagicMock(side_effect=Exception("peer err"))
-
-        mgr = NodeKeyRotationManager(cfg)
-        mgr._k0 = {
-            "private_key": bytes.fromhex(priv_hex),
-            "chain_code": bytes.fromhex(priv_hex),
-        }
-        mgr._second_factor = "mysecret"
-
-        from bitcoin.wallet import P2PKHBitcoinAddress
-        from coincurve import PrivateKey as CK
-
-        from yadacoin.core.keyrotation import derive_secure_path
-
-        _k0 = {
-            "private_key": bytes.fromhex(priv_hex),
-            "chain_code": bytes.fromhex(priv_hex),
-        }
-        step1 = derive_secure_path(_k0["private_key"], _k0["chain_code"], "mysecret")
-        step1_pub = CK(step1["private_key"]).public_key.format(compressed=True)
-        step1_addr = str(P2PKHBitcoinAddress.from_pubkey(step1_pub))
-
-        mock_entry = MagicMock()
-        mock_entry.public_key_hash = "1SomeAddress"
-        mock_entry.prerotated_key_hash = step1_addr
-        mock_entry.counter = 0
-
-        with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
-            new=AsyncMock(return_value=mock_entry),
-        ):
-            await mgr._queue_reanchor()
-
-        cfg.app_log.warning.assert_called()
-
-    async def test_block_path_returns_reanchor_triplet(self):
+    async def test_block_path_catches_up_key_event_log_tip(self):
+        """Mining path walks key_event_log when its counter is ahead of the
+        on-chain/mempool tip so coinbase parents the live auth tip."""
         from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
 
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
         cfg = _make_config(kel_anchor_public_key="02pub")
         cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock()
-        cfg.mongo.async_db.key_event_log = MagicMock()
-        cfg.mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
-        mgr = NodeKeyRotationManager(cfg)
-        mgr._k0 = {
-            "private_key": bytes.fromhex(priv_hex),
-            "chain_code": bytes.fromhex(priv_hex),
-        }
-        mgr._second_factor = "mysecret"
-
-        block = MagicMock()
-        # Derive the first key so the while loop finds a match
-        from bitcoin.wallet import P2PKHBitcoinAddress
-        from coincurve import PrivateKey as CK
-
-        from yadacoin.core.keyrotation import derive_secure_path
-
-        _k0 = {
-            "private_key": bytes.fromhex(priv_hex),
-            "chain_code": bytes.fromhex(priv_hex),
-        }
-        step1 = derive_secure_path(_k0["private_key"], _k0["chain_code"], "mysecret")
-        step1_pub = CK(step1["private_key"]).public_key.format(compressed=True)
-        step1_addr = str(P2PKHBitcoinAddress.from_pubkey(step1_pub))
-
-        mock_entry = MagicMock()
-        mock_entry.public_key_hash = "1SomeAddress"
-        mock_entry.prerotated_key_hash = step1_addr
-        mock_entry.counter = 0
-
-        with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
-            new=AsyncMock(return_value=mock_entry),
-        ):
-            result = await mgr._queue_reanchor(
-                block=block,
-                signer_private_key=priv_hex,
-                signer_public_key="02signer",
-                relationship="block reanchor",
-                coinbase_prerotated="1prerot",
-                coinbase_twice_prerotated="1twice",
-                coinbase_public_key_hash="1pkh",
-                coinbase_prev_public_key_hash="1prevpkh",
-            )
-
-        self.assertIsInstance(result, ReanchorTriplet)
-        self.assertIsNotNone(result.unconfirmed)
-        self.assertIsNotNone(result.confirming)
-
-    async def test_block_path_no_kel_returns_triplet_with_none(self):
-        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
-
-        cfg = _make_config()
-        mgr = NodeKeyRotationManager(cfg)
-        block = MagicMock()
-
-        result = await mgr._queue_reanchor(
-            block=block,
-            signer_private_key="priv",
-            signer_public_key="pub",
-        )
-        self.assertIsInstance(result, ReanchorTriplet)
-        self.assertIsNone(result.unconfirmed)
-
-    async def test_block_path_no_kel_pub_returns_triplet_with_none(self):
-        """When k0/second_factor are set but kel_anchor_public_key is missing,
-        the block-path early return (line ~720) must still build a
-        ReanchorTriplet with None fields instead of returning bare None."""
-        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
-
-        cfg = _make_config()  # kel_anchor_public_key is None
-        mgr = NodeKeyRotationManager(cfg)
-        mgr._k0 = {"private_key": _VALID_PRIV, "chain_code": _VALID_PRIV}
-        mgr._second_factor = "sf"
-        block = MagicMock()
-
-        result = await mgr._queue_reanchor(
-            block=block,
-            signer_private_key="priv",
-            signer_public_key="pub",
-        )
-        self.assertIsInstance(result, ReanchorTriplet)
-        self.assertIsNone(result.unconfirmed)
-        self.assertIsNone(result.confirming)
-
-    async def test_block_path_kel_build_exception_returns_triplet_with_none(self):
-        """When KeyEventLog.build_from_public_key raises, the block-path
-        exception handler (line ~743) must build a ReanchorTriplet with
-        None fields instead of returning bare None."""
-        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
-
-        cfg = _make_config(kel_anchor_public_key="02pub")
-        mgr = NodeKeyRotationManager(cfg)
-        mgr._k0 = {"private_key": _VALID_PRIV, "chain_code": _VALID_PRIV}
-        mgr._second_factor = "sf"
-        block = MagicMock()
-
-        with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
-            new=AsyncMock(side_effect=Exception("db error")),
-        ):
-            result = await mgr._queue_reanchor(
-                block=block,
-                signer_private_key="priv",
-                signer_public_key="pub",
-            )
-        self.assertIsInstance(result, ReanchorTriplet)
-        self.assertIsNone(result.unconfirmed)
-
-    async def test_block_path_empty_kel_returns_triplet_with_none(self):
-        """When the on-chain KEL is empty, the block-path early return
-        (line ~756) must build a ReanchorTriplet with None fields instead
-        of returning bare None."""
-        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
-
-        cfg = _make_config(kel_anchor_public_key="02pub")
-        mgr = NodeKeyRotationManager(cfg)
-        mgr._k0 = {"private_key": _VALID_PRIV, "chain_code": _VALID_PRIV}
-        mgr._second_factor = "sf"
-        block = MagicMock()
-
-        with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
-            new=AsyncMock(return_value=None),
-        ):
-            result = await mgr._queue_reanchor(
-                block=block,
-                signer_private_key="priv",
-                signer_public_key="pub",
-            )
-        self.assertIsInstance(result, ReanchorTriplet)
-        self.assertIsNone(result.unconfirmed)
-
-    async def test_walks_kel_with_multiple_derivation_steps(self):
-        """When the on-chain KEL entry's prerotated_key_hash only matches
-        after more than one derivation step from K0, the inner while-loop
-        that walks forward to find K_n (lines ~779-786) must iterate."""
-        from yadacoin.core.keyrotation import NodeKeyRotationManager
-
-        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
-        cfg = _make_config(kel_anchor_public_key="02pub")
-        cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock()
-        cfg.mongo.async_db.key_event_log = MagicMock()
-        cfg.mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
         mgr = NodeKeyRotationManager(cfg)
         mgr._k0 = {
             "private_key": bytes.fromhex(priv_hex),
@@ -1440,98 +1187,45 @@ class TestQueueReanchor(AsyncTestCase):
         step2 = derive_secure_path(
             step1["private_key"], step1["chain_code"], "mysecret"
         )
-        step2_pub = CK(step2["private_key"]).public_key.format(compressed=True)
-        step2_addr = str(P2PKHBitcoinAddress.from_pubkey(step2_pub))
-
-        mock_entry = MagicMock()
-        mock_entry.public_key_hash = "1SomeAddress"
-        # Requires TWO derivation steps from K0 to match — the first
-        # derivation (before the while-loop) won't match, forcing the
-        # inner while-loop body to run at least once before it breaks.
-        mock_entry.prerotated_key_hash = step2_addr
-        mock_entry.counter = 0
-
-        with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
-            new=AsyncMock(return_value=mock_entry),
-        ):
-            await mgr._queue_reanchor()
-
-        self.assertEqual(
-            cfg.mongo.async_db.miner_transactions.replace_one.await_count, 2
-        )
-
-    async def test_jump_search_finds_txn_doc_and_iterates(self):
-        """When the forward-search find_one lookup returns a real anchor
-        document, the code must re-query for that anchor's tip and walk
-        ``jump_cur`` forward until it matches the tip's
-        prerotated_key_hash (lines ~810-820)."""
-        from yadacoin.core.keyrotation import NodeKeyRotationManager
-
-        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
-        cfg = _make_config(kel_anchor_public_key="02pub")
-        cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock()
-        mgr = NodeKeyRotationManager(cfg)
-        mgr._k0 = {
-            "private_key": bytes.fromhex(priv_hex),
-            "chain_code": bytes.fromhex(priv_hex),
-        }
-        mgr._second_factor = "mysecret"
-
-        from bitcoin.wallet import P2PKHBitcoinAddress
-        from coincurve import PrivateKey as CK
-
-        from yadacoin.core.keyrotation import derive_secure_path
-
-        _k0 = {
-            "private_key": bytes.fromhex(priv_hex),
-            "chain_code": bytes.fromhex(priv_hex),
-        }
-        step1 = derive_secure_path(
-            _k0["private_key"], _k0["chain_code"], "mysecret"
-        )  # this becomes kn
-        step2 = derive_secure_path(
-            step1["private_key"], step1["chain_code"], "mysecret"
-        )  # this becomes kn1 / jump_cur start
         step3 = derive_secure_path(
             step2["private_key"], step2["chain_code"], "mysecret"
-        )  # one derivation past jump_cur's start — forces the while-loop
+        )
 
         step1_pub = CK(step1["private_key"]).public_key.format(compressed=True)
         step1_addr = str(P2PKHBitcoinAddress.from_pubkey(step1_pub))
+        step2_pub = CK(step2["private_key"]).public_key.format(compressed=True)
+        step2_addr = str(P2PKHBitcoinAddress.from_pubkey(step2_pub))
         step3_pub = CK(step3["private_key"]).public_key.format(compressed=True)
         step3_addr = str(P2PKHBitcoinAddress.from_pubkey(step3_pub))
 
         mock_entry = MagicMock()
         mock_entry.public_key_hash = "1SomeAddress"
-        # Matches after ONE derivation step so kn == step1 with no inner
-        # while-loop iteration needed in the earlier KEL-walk block.
         mock_entry.prerotated_key_hash = step1_addr
         mock_entry.counter = 0
 
         cfg.mongo.async_db.key_event_log = MagicMock()
         cfg.mongo.async_db.key_event_log.find_one = AsyncMock(
-            side_effect=[
-                # First call: forward search by prev_public_key_hash — truthy
-                # result triggers the "found an anchor" branch.
-                {"anchor_public_key": "02anchor"},
-                # Second call: fetch that anchor's current tip. Its
-                # prerotated_key_hash is one derivation past jump_cur's
-                # current address, forcing the while-loop to iterate once.
-                {"prerotated_key_hash": step3_addr, "counter": 5},
-            ]
+            return_value={
+                "prerotated_key_hash": step3_addr,
+                "public_key_hash": step2_addr,
+                "counter": 5,
+                "anchor_public_key": "02pub",
+            }
         )
 
+        block = MagicMock()
         with patch(
             "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
             new=AsyncMock(return_value=mock_entry),
         ):
-            await mgr._queue_reanchor()
+            result = await mgr._queue_reanchor(block=block)
 
-        self.assertEqual(cfg.mongo.async_db.key_event_log.find_one.await_count, 2)
-        self.assertEqual(
-            cfg.mongo.async_db.miner_transactions.replace_one.await_count, 2
-        )
+        self.assertIsInstance(result, ReanchorTriplet)
+        self.assertIsNotNone(result.coinbase_confirming)
+        self.assertEqual(result.coinbase_public_key_hash, step3_addr)
+        self.assertEqual(result.coinbase_prev_public_key_hash, step2_addr)
+        cfg.mongo.async_db.miner_transactions.replace_one.assert_not_called()
+        cfg.mongo.async_db.key_event_log.find_one.assert_awaited()
 
 
 # ---------------------------------------------------------------------------
