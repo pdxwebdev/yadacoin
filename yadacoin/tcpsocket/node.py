@@ -844,6 +844,17 @@ class NodeRPC(BaseRPC):
         block_index = payload["block"].get("index")
         block_hash = payload["block"].get("hash")
 
+        try:
+            if block_index is not None:
+                if not getattr(stream.peer, "block", None) or int(block_index) >= int(
+                    getattr(stream.peer.block, "index", 0)
+                ):
+                    stream.peer.block = await Block.from_dict(payload["block"])
+                if int(block_index) > int(self.config.LatestBlock.block.index):
+                    stream.synced = False
+        except Exception:
+            pass
+
         if stream.peer.protocol_version > 3:
             confirm_message = {"block_hash": block_hash, "block_index": block_index}
         elif stream.peer.protocol_version > 1:
@@ -1065,12 +1076,21 @@ class NodeRPC(BaseRPC):
         if not blocks:
             self.config.app_log.info(f"blocksresponse, no blocks, {stream.peer.host}")
             self.config.consensus.syncing = False
-            stream.synced = True
+            peer_block = getattr(stream.peer, "block", None)
+            peer_index = getattr(peer_block, "index", None) if peer_block else None
+            our_index = self.config.LatestBlock.block.index
+            try:
+                peer_ahead = peer_index is not None and int(peer_index) > int(our_index)
+            except (TypeError, ValueError):
+                peer_ahead = False
+            stream.synced = not peer_ahead
             return
 
         self.config.consensus.syncing = True
         blocks = [await Block.from_dict(x) for x in blocks]
         first_inbound_block = blocks[0]
+        stream.peer.block = blocks[-1]
+        stream.synced = False
         forward_blocks_chain = await self.config.consensus.build_remote_chain(
             blocks[-1]
         )

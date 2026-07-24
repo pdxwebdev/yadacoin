@@ -773,8 +773,14 @@ class TestSyncBottomUp(ConsensusBase):
             "peer": {"rid": "r1"},
             "index": 101,
         }
+
+        async def _find_one(query, *args, **kwargs):
+            if query.get("index") == 101:
+                return consensus_record
+            return None
+
         self.consensus.config.mongo.async_db.consensus.find_one = AsyncMock(
-            return_value=consensus_record
+            side_effect=_find_one
         )
 
         # Async cursor mock for find().to_list
@@ -807,8 +813,14 @@ class TestSyncBottomUp(ConsensusBase):
             "block": {"index": 101, "transactions": [], "target": "01"},
             "peer": {"rid": "r1"},
         }
+
+        async def _find_one(query, *args, **kwargs):
+            if query.get("index") == 101:
+                return consensus_record
+            return None
+
         self.consensus.config.mongo.async_db.consensus.find_one = AsyncMock(
-            return_value=consensus_record
+            side_effect=_find_one
         )
         cursor = MagicMock()
         cursor.to_list = AsyncMock(return_value=[consensus_record])
@@ -845,8 +857,14 @@ class TestSyncBottomUp(ConsensusBase):
             "peer": {"rid": "r1"},
             "index": 100,
         }
+
+        async def _find_one(query, *args, **kwargs):
+            if query.get("index") == 100:
+                return consensus_record
+            return None
+
         self.consensus.config.mongo.async_db.consensus.find_one = AsyncMock(
-            return_value=consensus_record
+            side_effect=_find_one
         )
         cursor = MagicMock()
         cursor.to_list = AsyncMock(return_value=[consensus_record])
@@ -857,6 +875,7 @@ class TestSyncBottomUp(ConsensusBase):
         stream.peer.authenticated = True
         self.consensus.config.peer.get_peer_by_id = AsyncMock(return_value=stream)
         self.consensus.remove_pending_transactions_now_in_chain = AsyncMock()
+        self.consensus.search_network_for_new = AsyncMock(return_value=True)
         with patch(
             "yadacoin.core.consensus.Block.from_dict",
             new=AsyncMock(return_value=_mk_block(index=100)),
@@ -874,8 +893,14 @@ class TestSyncBottomUp(ConsensusBase):
             "peer": {"rid": "r1"},
             "index": 101,
         }
+
+        async def _find_one(query, *args, **kwargs):
+            if query.get("index") == 101:
+                return consensus_record
+            return None
+
         self.consensus.config.mongo.async_db.consensus.find_one = AsyncMock(
-            return_value=consensus_record
+            side_effect=_find_one
         )
         cursor = MagicMock()
         cursor.to_list = AsyncMock(return_value=[consensus_record])
@@ -911,11 +936,13 @@ class TestSearchNetwork(ConsensusBase):
         self.assertFalse(r)
 
     async def test_iterates_peers_with_skips_and_exception(self):
-        peer_synced = MagicMock(synced=True, message_queue={})
-        peer_queued = MagicMock(synced=False, message_queue={"getblocks": True})
-        peer_ok = MagicMock(synced=False, message_queue={})
-        peer_closed = MagicMock(synced=False, message_queue={})
-        peer_error = MagicMock(synced=False, message_queue={})
+        peer_synced = MagicMock(synced=True, message_queue={}, block=None)
+        peer_queued = MagicMock(
+            synced=False, message_queue={"getblocks": True}, block=None
+        )
+        peer_ok = MagicMock(synced=False, message_queue={}, block=None)
+        peer_closed = MagicMock(synced=False, message_queue={}, block=None)
+        peer_error = MagicMock(synced=False, message_queue={}, block=None)
 
         async def _peers():
             for p in [peer_synced, peer_queued, peer_ok, peer_closed, peer_error]:

@@ -201,11 +201,13 @@ class TestBlocksResponseForkAssembly(AsyncTestCase):
         server.config.app_log = MagicMock()
         server.config.consensus = MagicMock()
         server.config.consensus.syncing = True
+        server.config.LatestBlock.block.index = 100
         server.write_result = AsyncMock()
 
         stream = MagicMock()
         stream.peer.protocol_version = 1
         stream.peer.host = "127.0.0.1"
+        stream.peer.block = None
         stream.synced = False
 
         body = {"id": "req3", "result": {"blocks": []}}
@@ -213,6 +215,31 @@ class TestBlocksResponseForkAssembly(AsyncTestCase):
 
         self.assertFalse(server.config.consensus.syncing)
         self.assertTrue(stream.synced)
+
+    async def test_blocksresponse_no_blocks_keeps_unsynced_when_peer_ahead(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from yadacoin.tcpsocket.node import NodeSocketServer
+
+        server = NodeSocketServer.__new__(NodeSocketServer)
+        server.config = MagicMock()
+        server.config.app_log = MagicMock()
+        server.config.consensus = MagicMock()
+        server.config.consensus.syncing = True
+        server.config.LatestBlock.block.index = 100
+        server.write_result = AsyncMock()
+
+        stream = MagicMock()
+        stream.peer.protocol_version = 1
+        stream.peer.host = "127.0.0.1"
+        stream.peer.block = MagicMock()
+        stream.peer.block.index = 250
+        stream.synced = True
+
+        body = {"id": "req3", "result": {"blocks": []}}
+        await server.blocksresponse(body, stream)
+
+        self.assertFalse(stream.synced)
 
     async def test_blocksresponse_protocol_v2_confirms(self):
         from unittest.mock import AsyncMock, MagicMock, patch

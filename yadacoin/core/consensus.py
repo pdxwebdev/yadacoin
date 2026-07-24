@@ -311,27 +311,40 @@ class Consensus(object):
         self.config.health.consensus.last_activity = time()
 
         tip_index = self.latest_block.index
-        has_candidate = await self.mongo.async_db.consensus.find_one(
+        has_next = await self.mongo.async_db.consensus.find_one(
             {
-                "index": {"$in": [tip_index + 1, tip_index]},
+                "index": tip_index + 1,
                 "ignore": {"$ne": True},
             }
         )
-        if has_candidate:
-            if has_candidate.get("index") == tip_index + 1:
-                await self.remove_pending_transactions_now_in_chain(has_candidate)
+        has_tip = await self.mongo.async_db.consensus.find_one(
+            {
+                "index": tip_index,
+                "ignore": {"$ne": True},
+            }
+        )
+        if has_next or has_tip:
+            if has_next:
+                await self.remove_pending_transactions_now_in_chain(has_next)
             if self.debug:
-                candidate_block = await Block.from_dict(has_candidate["block"])
+                candidate = has_next or has_tip
+                candidate_block = await Block.from_dict(candidate["block"])
                 self.app_log.info(
                     "Latest consensus_block {}".format(candidate_block.index)
                 )
 
             stream_found = await self.queue_consensus_tips()
+            if has_next and stream_found:
+                return True
+            if stream_found and has_tip and not has_next:
+                if (time() - self.last_network_search) > 30 or not synced:
+                    self.last_network_search = time()
+                    await self.search_network_for_new()
+                return True
             if not stream_found:
                 if (time() - self.last_network_search) > 30 or not synced:
                     self.last_network_search = time()
                     return await self.search_network_for_new()
-
             return True
         else:
             #  this path is for syncing only.
@@ -353,6 +366,15 @@ class Consensus(object):
             return False
 
         async for peer in self.config.peer.get_sync_peers():
+            peer_block = getattr(peer, "block", None)
+            peer_index = getattr(peer_block, "index", None) if peer_block else None
+            our_index = self.config.LatestBlock.block.index
+            try:
+                peer_ahead = peer_index is not None and int(peer_index) > int(our_index)
+            except (TypeError, ValueError):
+                peer_ahead = False
+            if peer.synced and peer_ahead:
+                peer.synced = False
             if (
                 not peer.authenticated
                 or peer.synced
@@ -556,6 +578,11 @@ class Consensus(object):
 
         if stream:
             stream.syncing = False
+            stream.synced = False
+            try:
+                await self.request_blocks(stream)
+            except Exception:
+                pass
 
     async def insert_block(self, block, stream):
         self.app_log.debug("insert_block")
