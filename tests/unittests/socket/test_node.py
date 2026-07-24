@@ -190,3 +190,74 @@ class TestBlocksResponseForkAssembly(AsyncTestCase):
         self.assertFalse(result)
         server.fill_gap.assert_awaited_once_with(20, stream)
         server.config.processing_queues.block_queue.add.assert_not_called()
+
+    async def test_blocksresponse_no_blocks(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from yadacoin.tcpsocket.node import NodeSocketServer
+
+        server = NodeSocketServer.__new__(NodeSocketServer)
+        server.config = MagicMock()
+        server.config.app_log = MagicMock()
+        server.config.consensus = MagicMock()
+        server.config.consensus.syncing = True
+        server.write_result = AsyncMock()
+
+        stream = MagicMock()
+        stream.peer.protocol_version = 1
+        stream.peer.host = "127.0.0.1"
+        stream.synced = False
+
+        body = {"id": "req3", "result": {"blocks": []}}
+        await server.blocksresponse(body, stream)
+
+        self.assertFalse(server.config.consensus.syncing)
+        self.assertTrue(stream.synced)
+
+    async def test_blocksresponse_protocol_v2_confirms(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.blockchain import Blockchain
+        from yadacoin.tcpsocket.node import NodeSocketServer
+
+        tip = MagicMock()
+        tip.index = 11
+        tip.prev_hash = "h10"
+        tip.hash = "h11"
+        tip.to_dict.return_value = {"index": 11, "prevHash": "h10", "hash": "h11"}
+
+        server = NodeSocketServer.__new__(NodeSocketServer)
+        server.config = MagicMock()
+        server.config.app_log = MagicMock()
+        server.config.consensus = MagicMock()
+        server.config.consensus.syncing = False
+        server.config.consensus.build_remote_chain = AsyncMock(
+            return_value=Blockchain([], partial=True)
+        )
+        server.config.consensus.build_backward_from_block_to_fork = AsyncMock(
+            return_value=([], True)
+        )
+        server.config.processing_queues = MagicMock()
+        server.config.processing_queues.block_queue = MagicMock()
+        server.fill_gap = AsyncMock()
+        server.write_result = AsyncMock()
+
+        stream = MagicMock()
+        stream.peer.protocol_version = 2
+        stream.peer.host = "127.0.0.1"
+
+        body = {
+            "id": "req4",
+            "result": {"start_index": 11, "blocks": [tip.to_dict()]},
+        }
+
+        with patch(
+            "yadacoin.tcpsocket.node.Block.from_dict",
+            AsyncMock(return_value=tip),
+        ):
+            await server.blocksresponse(body, stream)
+
+        server.write_result.assert_awaited()
+        args = server.write_result.await_args[0]
+        self.assertEqual(args[1], "blocksresponse_confirmed")
+        server.config.processing_queues.block_queue.add.assert_called_once()

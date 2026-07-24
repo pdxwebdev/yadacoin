@@ -322,6 +322,41 @@ def find_active_recovery_witness_hash(log):
     return latest
 
 
+def _output_value(output) -> float:
+    try:
+        return float(getattr(output, "value", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def looks_like_confirming_key_event(txn: Transaction) -> bool:
+    """True when *txn* has the structural shape of a CONFIRMING key event.
+
+    Coinbases are unconfirmed KEL tips even when they have a single output to
+    prerotated_key_hash (reward value, optional masternode shares).
+    Transaction.from_dict never sets coinbase; value/output-count cover that.
+    """
+    if getattr(txn, "coinbase", False):
+        return False
+    if txn.relationship:
+        return False
+    if len(txn.outputs) != 1:
+        return False
+    if txn.outputs[0].to != txn.prerotated_key_hash:
+        return False
+    if _output_value(txn.outputs[0]) > 0:
+        return False
+    return True
+
+
+def classify_key_event_flag(txn: Transaction) -> KeyEventFlag:
+    if not txn.prev_public_key_hash or is_recovers_inception(txn):
+        return KeyEventFlag.INCEPTION
+    if looks_like_confirming_key_event(txn):
+        return KeyEventFlag.CONFIRMING
+    return KeyEventFlag.UNCONFIRMED
+
+
 class KeyEvent:
     def __init__(
         self,
@@ -736,11 +771,7 @@ class KeyEvent:
             if self.flag is not None:
                 is_confirming = self.flag == KeyEventFlag.CONFIRMING
             else:
-                is_confirming = (
-                    not self.txn.relationship
-                    and len(self.txn.outputs) == 1
-                    and self.txn.outputs[0].to == self.txn.prerotated_key_hash
-                )
+                is_confirming = looks_like_confirming_key_event(self.txn)
 
             parent = await self.get_onchain_parent()
             if not parent:
@@ -892,13 +923,7 @@ class KeyEvent:
             txn = Transaction.from_dict(result[0]["transactions"])
             key_event = KeyEvent(
                 txn,
-                flag=(
-                    KeyEventFlag.INCEPTION
-                    if not txn.prev_public_key_hash or is_recovers_inception(txn)
-                    else KeyEventFlag.UNCONFIRMED
-                    if txn.relationship
-                    else KeyEventFlag.CONFIRMING
-                ),
+                flag=classify_key_event_flag(txn),
                 status=KeyEventChainStatus.ONCHAIN,
             )
 
@@ -931,13 +956,7 @@ class KeyEvent:
             txn = Transaction.from_dict(doc)
             key_event = KeyEvent(
                 txn,
-                flag=(
-                    KeyEventFlag.INCEPTION
-                    if not txn.prev_public_key_hash or is_recovers_inception(txn)
-                    else KeyEventFlag.UNCONFIRMED
-                    if txn.relationship
-                    else KeyEventFlag.CONFIRMING
-                ),
+                flag=classify_key_event_flag(txn),
                 status=KeyEventChainStatus.MEMPOOL,
             )
             return {"key_event": key_event}
@@ -966,11 +985,7 @@ class KeyEvent:
             txn = Transaction.from_dict(result[0]["transactions"])
             return KeyEvent(
                 txn,
-                flag=(
-                    KeyEventFlag.CONFIRMING
-                    if self.txn.prev_public_key_hash
-                    else KeyEventFlag.INCEPTION
-                ),
+                flag=classify_key_event_flag(txn),
                 status=KeyEventChainStatus.ONCHAIN,
             )
 
@@ -1174,14 +1189,16 @@ class KeyEventLog:
             # step 1.2: if not onchain child is found then check if it's confirming or unconfirmed
 
             # assign confirming key event and flag
-            if (
-                not key_event.txn.relationship
-                and len(key_event.txn.outputs) == 1
-                and (
-                    key_event.txn.outputs[0].to == key_event.txn.prerotated_key_hash
-                    or key_event.txn.outputs[0].to == latest_entry.prerotated_key_hash
+            if key_event.txn.prev_public_key_hash and (
+                looks_like_confirming_key_event(key_event.txn)
+                or (
+                    not key_event.txn.relationship
+                    and not getattr(key_event.txn, "coinbase", False)
+                    and len(key_event.txn.outputs) == 1
+                    and _output_value(key_event.txn.outputs[0]) == 0
+                    and latest_entry
+                    and key_event.txn.outputs[0].to == latest_entry.prerotated_key_hash
                 )
-                and key_event.txn.prev_public_key_hash
             ):
                 key_event.flag = KeyEventFlag.CONFIRMING
                 key_event.path = "1"
@@ -1259,18 +1276,16 @@ class KeyEventLog:
                     ),
                 )
 
-            if (
-                not key_event.txn.relationship
-                and len(key_event.txn.outputs) == 1
-                and (
-                    key_event.txn.outputs[0].to == key_event.txn.prerotated_key_hash
-                    or (
-                        latest_entry
-                        and key_event.txn.outputs[0].to
-                        == latest_entry.prerotated_key_hash
-                    )
+            if key_event.txn.prev_public_key_hash and (
+                looks_like_confirming_key_event(key_event.txn)
+                or (
+                    not key_event.txn.relationship
+                    and not getattr(key_event.txn, "coinbase", False)
+                    and len(key_event.txn.outputs) == 1
+                    and _output_value(key_event.txn.outputs[0]) == 0
+                    and latest_entry
+                    and key_event.txn.outputs[0].to == latest_entry.prerotated_key_hash
                 )
-                and key_event.txn.prev_public_key_hash
             ):
                 # If the mempool parent is itself an UNCONFIRMED key event
                 # (it carries a relationship), then key_event is the confirming
@@ -1393,12 +1408,7 @@ class KeyEventLog:
             # prerotated_key_hash.  Hash-collection cross-links can be
             # ambiguous in long chains (a txn can appear on both sides
             # simultaneously), so we use txn-properties to choose the role.
-            looks_confirming = (
-                not key_event.txn.relationship
-                and len(key_event.txn.outputs) == 1
-                and key_event.txn.outputs[0].to == key_event.txn.prerotated_key_hash
-                and not getattr(key_event.txn, "coinbase", False)
-            )
+            looks_confirming = looks_like_confirming_key_event(key_event.txn)
 
             if looks_confirming and (
                 key_event.txn.prerotated_key_hash
@@ -1440,12 +1450,7 @@ class KeyEventLog:
                     if parent_in_batch:
                         self.base_key_event = KeyEvent(
                             parent_in_batch,
-                            flag=(
-                                KeyEventFlag.INCEPTION
-                                if not parent_in_batch.prev_public_key_hash
-                                or is_recovers_inception(parent_in_batch)
-                                else KeyEventFlag.CONFIRMING
-                            ),
+                            flag=classify_key_event_flag(parent_in_batch),
                             status=KeyEventChainStatus.MEMPOOL,
                             path="2.2",
                         )
@@ -1474,12 +1479,7 @@ class KeyEventLog:
                         if parent_in_extra_blocks:
                             self.base_key_event = KeyEvent(
                                 parent_in_extra_blocks,
-                                flag=(
-                                    KeyEventFlag.INCEPTION
-                                    if not parent_in_extra_blocks.prev_public_key_hash
-                                    or is_recovers_inception(parent_in_extra_blocks)
-                                    else KeyEventFlag.CONFIRMING
-                                ),
+                                flag=classify_key_event_flag(parent_in_extra_blocks),
                                 status=KeyEventChainStatus.MEMPOOL,
                                 path="2.2",
                             )
@@ -1519,11 +1519,7 @@ class KeyEventLog:
                     ]
                     self.base_key_event = KeyEvent(
                         parent_txn,
-                        flag=(
-                            KeyEventFlag.INCEPTION
-                            if not parent_txn.prev_public_key_hash
-                            else KeyEventFlag.CONFIRMING
-                        ),
+                        flag=classify_key_event_flag(parent_txn),
                         status=KeyEventChainStatus.MEMPOOL,
                         path="2.5",
                     )
@@ -1544,12 +1540,7 @@ class KeyEventLog:
                     if parent_in_batch:
                         self.base_key_event = KeyEvent(
                             parent_in_batch,
-                            flag=(
-                                KeyEventFlag.INCEPTION
-                                if not parent_in_batch.prev_public_key_hash
-                                or is_recovers_inception(parent_in_batch)
-                                else KeyEventFlag.CONFIRMING
-                            ),
+                            flag=classify_key_event_flag(parent_in_batch),
                             status=KeyEventChainStatus.MEMPOOL,
                             path="2.5",
                         )
@@ -1578,12 +1569,7 @@ class KeyEventLog:
                         if parent_in_extra_blocks:
                             self.base_key_event = KeyEvent(
                                 parent_in_extra_blocks,
-                                flag=(
-                                    KeyEventFlag.INCEPTION
-                                    if not parent_in_extra_blocks.prev_public_key_hash
-                                    or is_recovers_inception(parent_in_extra_blocks)
-                                    else KeyEventFlag.CONFIRMING
-                                ),
+                                flag=classify_key_event_flag(parent_in_extra_blocks),
                                 status=KeyEventChainStatus.MEMPOOL,
                                 path="2.5",
                             )

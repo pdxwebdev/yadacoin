@@ -1845,7 +1845,9 @@ def _make_mock_ke(
     txn.twice_prerotated_key_hash = twice_prerotated_key_hash
     out = MagicMock()
     out.to = outputs_to
+    out.value = 0.0
     txn.outputs = [out]
+    txn.coinbase = False
 
     ke = KeyEvent.__new__(KeyEvent)
     ke.txn = txn
@@ -2181,6 +2183,77 @@ class TestKeyEventSendsAndParent(AsyncTestCase):
         self.assertIsNotNone(result)
         self.assertIn("key_event", result)
         self.assertIsInstance(result["key_event"], KeyEvent)
+
+    async def test_get_onchain_parent_coinbase_classified_unconfirmed(self):
+        """Coinbase KEL tips must be UNCONFIRMED, never CONFIRMING.
+
+        from_dict clears coinbase; multi-output / value-bearing outputs are the
+        durable signal used by classify_key_event_flag.
+        """
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyeventlog import KeyEventFlag
+
+        coinbase_doc = {
+            "transactions": {
+                **dict(_INCEPTION_TXN_DICT),
+                "prev_public_key_hash": _VALID_ADDR_PKR2,
+                "relationship": "",
+                "relationship_hash": "",
+                "outputs": [
+                    {"to": _VALID_ADDR_PKR2, "value": 12.5},
+                    {"to": _VALID_ADDR_TPKR2, "value": 1.0},
+                ],
+            }
+        }
+
+        ke = _make_mock_ke(
+            public_key_hash=_VALID_ADDR_PKR2,
+            prerotated_key_hash=_VALID_ADDR_TPKR2,
+        )
+
+        mock_cursor = MagicMock()
+        mock_cursor.to_list = AsyncMock(return_value=[coinbase_doc])
+
+        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
+            mock_cfg = MagicMock()
+            mock_config_cls.return_value = mock_cfg
+            mock_cfg.mongo.async_db.blocks.aggregate.return_value = mock_cursor
+            result = await ke.get_onchain_parent()
+
+        self.assertEqual(result["key_event"].flag, KeyEventFlag.UNCONFIRMED)
+
+    async def test_get_onchain_parent_value_bearing_single_output_unconfirmed(self):
+        """Single-output coinbase reward (no masternode split) is still unconfirmed."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyeventlog import KeyEventFlag
+
+        coinbase_doc = {
+            "transactions": {
+                **dict(_INCEPTION_TXN_DICT),
+                "prev_public_key_hash": _VALID_ADDR_PKR2,
+                "relationship": "",
+                "relationship_hash": "",
+                "outputs": [{"to": _VALID_ADDR_PKR2, "value": 12.5}],
+            }
+        }
+
+        ke = _make_mock_ke(
+            public_key_hash=_VALID_ADDR_PKR2,
+            prerotated_key_hash=_VALID_ADDR_TPKR2,
+        )
+
+        mock_cursor = MagicMock()
+        mock_cursor.to_list = AsyncMock(return_value=[coinbase_doc])
+
+        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
+            mock_cfg = MagicMock()
+            mock_config_cls.return_value = mock_cfg
+            mock_cfg.mongo.async_db.blocks.aggregate.return_value = mock_cursor
+            result = await ke.get_onchain_parent()
+
+        self.assertEqual(result["key_event"].flag, KeyEventFlag.UNCONFIRMED)
 
     async def test_get_onchain_child_returns_key_event(self):
         """Lines 412-413: get_onchain_child aggregate returns a block txn → returns KeyEvent."""
@@ -6493,3 +6566,89 @@ class TestLatestFromInceptionIgnoresBranchPath(AsyncTestCase):
         self.assertTrue(
             any("branch_public_key_hash_path" in str(s) for s in match_stages)
         )
+
+
+class TestClassifyKeyEventFlag(unittest.TestCase):
+    def _txn(self, **kwargs):
+        from unittest.mock import MagicMock
+
+        from yadacoin.core.transaction import Output
+
+        t = MagicMock()
+        t.prev_public_key_hash = kwargs.get("prev_public_key_hash", "PREV")
+        t.relationship = kwargs.get("relationship", "")
+        t.coinbase = kwargs.get("coinbase", False)
+        t.prerotated_key_hash = kwargs.get("prerotated_key_hash", "PRE")
+        outputs = kwargs.get("outputs")
+        if outputs is None:
+            outputs = [Output(to="PRE", value=0.0)]
+        t.outputs = outputs
+        return t
+
+    def test_confirming_zero_value_single_output(self):
+        from yadacoin.core.keyeventlog import (
+            KeyEventFlag,
+            classify_key_event_flag,
+            looks_like_confirming_key_event,
+        )
+
+        t = self._txn()
+        self.assertTrue(looks_like_confirming_key_event(t))
+        self.assertEqual(classify_key_event_flag(t), KeyEventFlag.CONFIRMING)
+
+    def test_coinbase_flag_unconfirmed(self):
+        from yadacoin.core.keyeventlog import (
+            KeyEventFlag,
+            classify_key_event_flag,
+            looks_like_confirming_key_event,
+        )
+
+        t = self._txn(coinbase=True)
+        self.assertFalse(looks_like_confirming_key_event(t))
+        self.assertEqual(classify_key_event_flag(t), KeyEventFlag.UNCONFIRMED)
+
+    def test_value_bearing_unconfirmed(self):
+        from yadacoin.core.keyeventlog import (
+            KeyEventFlag,
+            classify_key_event_flag,
+            looks_like_confirming_key_event,
+        )
+        from yadacoin.core.transaction import Output
+
+        t = self._txn(outputs=[Output(to="PRE", value=12.5)])
+        self.assertFalse(looks_like_confirming_key_event(t))
+        self.assertEqual(classify_key_event_flag(t), KeyEventFlag.UNCONFIRMED)
+
+    def test_multi_output_unconfirmed(self):
+        from yadacoin.core.keyeventlog import (
+            KeyEventFlag,
+            classify_key_event_flag,
+            looks_like_confirming_key_event,
+        )
+        from yadacoin.core.transaction import Output
+
+        t = self._txn(
+            outputs=[
+                Output(to="PRE", value=11.0),
+                Output(to="MN", value=1.5),
+            ]
+        )
+        self.assertFalse(looks_like_confirming_key_event(t))
+        self.assertEqual(classify_key_event_flag(t), KeyEventFlag.UNCONFIRMED)
+
+    def test_relationship_unconfirmed(self):
+        from yadacoin.core.keyeventlog import (
+            KeyEventFlag,
+            classify_key_event_flag,
+            looks_like_confirming_key_event,
+        )
+
+        t = self._txn(relationship="block reanchor")
+        self.assertFalse(looks_like_confirming_key_event(t))
+        self.assertEqual(classify_key_event_flag(t), KeyEventFlag.UNCONFIRMED)
+
+    def test_inception_no_prev(self):
+        from yadacoin.core.keyeventlog import KeyEventFlag, classify_key_event_flag
+
+        t = self._txn(prev_public_key_hash="")
+        self.assertEqual(classify_key_event_flag(t), KeyEventFlag.INCEPTION)
