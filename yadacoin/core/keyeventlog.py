@@ -322,19 +322,12 @@ def find_active_recovery_witness_hash(log):
     return latest
 
 
-def _output_value(output) -> float:
-    try:
-        return float(getattr(output, "value", 0) or 0)
-    except (TypeError, ValueError):
-        return 0.0
-
-
 def looks_like_confirming_key_event(txn: Transaction) -> bool:
     """True when *txn* has the structural shape of a CONFIRMING key event.
 
-    Coinbases are unconfirmed KEL tips even when they have a single output to
-    prerotated_key_hash (reward value, optional masternode shares).
-    Transaction.from_dict never sets coinbase; value/output-count cover that.
+    Coinbases are unconfirmed KEL tips (reward + optional masternode shares).
+    Transaction.from_dict clears coinbase; callers that load from blocks must
+    set it via Block.is_coinbase before classify_key_event_flag.
     """
     if getattr(txn, "coinbase", False):
         return False
@@ -343,8 +336,6 @@ def looks_like_confirming_key_event(txn: Transaction) -> bool:
     if len(txn.outputs) != 1:
         return False
     if txn.outputs[0].to != txn.prerotated_key_hash:
-        return False
-    if _output_value(txn.outputs[0]) > 0:
         return False
     return True
 
@@ -920,7 +911,19 @@ class KeyEvent:
         )
         result = await res.to_list(length=None)
         if result:
+            from yadacoin.core.block import Block
+
             txn = Transaction.from_dict(result[0]["transactions"])
+            # from_dict always sets coinbase=False; restore for KEL classification.
+            try:
+                block_proxy = type(
+                    "BlockProxy",
+                    (),
+                    {"public_key": result[0].get("public_key", "")},
+                )()
+                txn.coinbase = Block.is_coinbase(block_proxy, txn)
+            except Exception:
+                txn.coinbase = False
             key_event = KeyEvent(
                 txn,
                 flag=classify_key_event_flag(txn),
@@ -982,7 +985,18 @@ class KeyEvent:
         )
         result = await res.to_list(length=None)
         if result:
+            from yadacoin.core.block import Block
+
             txn = Transaction.from_dict(result[0]["transactions"])
+            try:
+                block_proxy = type(
+                    "BlockProxy",
+                    (),
+                    {"public_key": result[0].get("public_key", "")},
+                )()
+                txn.coinbase = Block.is_coinbase(block_proxy, txn)
+            except Exception:
+                txn.coinbase = False
             return KeyEvent(
                 txn,
                 flag=classify_key_event_flag(txn),
@@ -1195,7 +1209,6 @@ class KeyEventLog:
                     not key_event.txn.relationship
                     and not getattr(key_event.txn, "coinbase", False)
                     and len(key_event.txn.outputs) == 1
-                    and _output_value(key_event.txn.outputs[0]) == 0
                     and latest_entry
                     and key_event.txn.outputs[0].to == latest_entry.prerotated_key_hash
                 )
@@ -1282,7 +1295,6 @@ class KeyEventLog:
                     not key_event.txn.relationship
                     and not getattr(key_event.txn, "coinbase", False)
                     and len(key_event.txn.outputs) == 1
-                    and _output_value(key_event.txn.outputs[0]) == 0
                     and latest_entry
                     and key_event.txn.outputs[0].to == latest_entry.prerotated_key_hash
                 )
