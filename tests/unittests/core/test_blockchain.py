@@ -1283,7 +1283,10 @@ class TestBlockchainDebugLogBranches(AsyncTestCase):
         )
 
     async def test_special_min_verification_debug(self):
-        """special_min and hash < special_target hits special min verification debug."""
+        """special_min and hash < special_target hits special min verification debug.
+
+        Index 40001 is below FORK_10_MIN_BLOCK — patch get_target, not get_target_10min.
+        """
         from time import time as _time
 
         last = _make_test_block(index=40000, block_time=int(_time()) - 1000)
@@ -1296,9 +1299,7 @@ class TestBlockchainDebugLogBranches(AsyncTestCase):
         )
         block.hash = "f" * 64  # high hash fails normal target
         # Make little_hash also fail v5 if applicable by high target requirement
-        with mock.patch.object(
-            CHAIN, "get_target_10min", new=AsyncMock(return_value=(1, 2**256 - 1))
-        ):
+        with mock.patch.object(CHAIN, "get_target", new=AsyncMock(return_value=1)):
             with mock.patch.object(CHAIN, "target_block_time", return_value=600):
                 # Patch little_hash path: if v5 fork, make little_hash fail
                 with mock.patch.object(
@@ -1351,7 +1352,12 @@ class TestBlockchainDebugLogBranches(AsyncTestCase):
         )
 
     async def test_special_min_late_block_debug(self):
-        """special_min index in [35200,38600) with long delta hits late block debug."""
+        """special_min index in [35200,38600) with long delta hits late block debug.
+
+        Index 36001 is below FORK_10_MIN_BLOCK, so test_block uses
+        CHAIN.get_target (not get_target_10min). Patch get_target to avoid
+        the real retarget path scanning Mongo for thousands of blocks.
+        """
         from time import time as _time
 
         last = _make_test_block(index=36000, block_time=int(_time()) - 5000)
@@ -1363,9 +1369,9 @@ class TestBlockchainDebugLogBranches(AsyncTestCase):
             special_min=True,
         )
         block.hash = "f" * 64
-        with mock.patch.object(
-            CHAIN, "get_target_10min", new=AsyncMock(return_value=(1, 1))
-        ):
+        # Hard enough that hash-based special_target branch does not win;
+        # the late-block branch only needs (block.time - last.time) > target_block_time.
+        with mock.patch.object(CHAIN, "get_target", new=AsyncMock(return_value=1)):
             with mock.patch.object(CHAIN, "target_block_time", return_value=600):
                 with mock.patch.object(
                     Blockchain, "little_hash", return_value="f" * 64

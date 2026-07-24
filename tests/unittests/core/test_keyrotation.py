@@ -1159,6 +1159,58 @@ class TestQueueReanchor(AsyncTestCase):
         self.assertEqual(result.coinbase_public_key_hash, step1_addr)
         cfg.mongo.async_db.miner_transactions.replace_one.assert_not_called()
 
+    async def test_block_path_walks_multiple_derivation_steps(self):
+        """When latest.prerotated is past the first derivation from K0, the
+        while-loop body that walks forward must run (coverage 1377-1384)."""
+        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
+
+        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        cfg = _make_config(kel_anchor_public_key="02pub")
+        cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock()
+        cfg.mongo.async_db.key_event_log = MagicMock()
+        cfg.mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
+        mgr = NodeKeyRotationManager(cfg)
+        mgr._k0 = {
+            "private_key": bytes.fromhex(priv_hex),
+            "chain_code": bytes.fromhex(priv_hex),
+        }
+        mgr._second_factor = "mysecret"
+
+        from bitcoin.wallet import P2PKHBitcoinAddress
+        from coincurve import PrivateKey as CK
+
+        from yadacoin.core.keyrotation import derive_secure_path
+
+        _k0 = {
+            "private_key": bytes.fromhex(priv_hex),
+            "chain_code": bytes.fromhex(priv_hex),
+        }
+        step1 = derive_secure_path(_k0["private_key"], _k0["chain_code"], "mysecret")
+        step2 = derive_secure_path(
+            step1["private_key"], step1["chain_code"], "mysecret"
+        )
+        step2_pub = CK(step2["private_key"]).public_key.format(compressed=True)
+        step2_addr = str(P2PKHBitcoinAddress.from_pubkey(step2_pub))
+
+        mock_entry = MagicMock()
+        mock_entry.public_key_hash = "1SomeAddress"
+        # Requires TWO derivation steps from K0 — first step before the while
+        # loop won't match, so the loop body must iterate.
+        mock_entry.prerotated_key_hash = step2_addr
+        mock_entry.counter = 1
+
+        block = MagicMock()
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=mock_entry),
+        ):
+            result = await mgr._queue_reanchor(block=block)
+
+        self.assertIsInstance(result, ReanchorTriplet)
+        self.assertIsNotNone(result.coinbase_confirming)
+        self.assertEqual(result.coinbase_public_key_hash, step2_addr)
+        cfg.mongo.async_db.miner_transactions.replace_one.assert_not_called()
+
     async def test_block_path_catches_up_key_event_log_tip(self):
         """Mining path walks key_event_log when its counter is ahead of the
         on-chain/mempool tip so coinbase parents the live auth tip."""

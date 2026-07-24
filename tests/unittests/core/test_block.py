@@ -74,6 +74,24 @@ def _make_find_one_side_effect():
     return _side_effect
 
 
+class _AwaitableValue:
+    """Await every time: ``await obj`` / used as async property stand-in."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def __await__(self):
+        async def _coro():
+            return self._value
+
+        return _coro().__await__()
+
+
+def _awaitable(value):
+    """Return an object that is awaitable and always yields *value*."""
+    return _AwaitableValue(value)
+
+
 def _make_mock_kel_manager():
     from yadacoin.core.keyrotation import ReanchorTriplet
 
@@ -84,6 +102,7 @@ def _make_mock_kel_manager():
 
     coinbase_confirming = Mock(
         coinbase=False,
+        version=7,
         transaction_signature="coinbase_confirming_sig",
         inputs=[],
         outputs=[],
@@ -91,6 +110,14 @@ def _make_mock_kel_manager():
         fee=0.0,
         masternode_fee=0.0,
         time=0,
+        public_key=pubkey,
+        relationship="",
+        relationship_hash="",
+        prerotated_key_hash="",
+        twice_prerotated_key_hash="",
+        public_key_hash="",
+        prev_public_key_hash=None,
+        miner_signature="",
     )
     for m in (coinbase_confirming,):
         m.verify_kel_output_rules = AsyncMock(return_value=None)
@@ -444,10 +471,9 @@ class TestBlock(AsyncTestCase):
             del Block.pyrx
         block.hash = await block.generate_hash_from_header(0, block.header, "0")
         block.set_merkle_root(block.get_transaction_hashes())
-        import asyncio as _asyncio
 
         for t in block.transactions:
-            t.contract_generated = _asyncio.coroutine(lambda: False)()
+            t.contract_generated = _awaitable(False)
         with mock.patch.object(
             Block, "generate_hash_from_header", new=AsyncMock(return_value=block.hash)
         ), mock.patch.object(
@@ -724,12 +750,14 @@ class TestBlock(AsyncTestCase):
                 # pyrx which OOMs.
                 block.hash = "0" * 64
                 self.assertIsInstance(block, Block)
-                # 2 input txns + coinbase (only if >= PAY_MASTER_NODES_FORK)
-                expected = 3 if index >= CHAIN.PAY_MASTER_NODES_FORK else 2
+                # 2 input txns + template coinbase_confirming KEL step
+                # + coinbase (only if >= PAY_MASTER_NODES_FORK)
+                expected = 4 if index >= CHAIN.PAY_MASTER_NODES_FORK else 3
                 self.assertEqual(
                     len(block.transactions),
                     expected,
-                    f"At index {index}: 2 input + {'coinbase' if index >= CHAIN.PAY_MASTER_NODES_FORK else 'no coinbase'}",
+                    f"At index {index}: 2 input + coinbase_confirming"
+                    f"{' + coinbase' if index >= CHAIN.PAY_MASTER_NODES_FORK else ''}",
                 )
                 prev_block.index = index - 1
                 prev_block.hash = (
@@ -2199,7 +2227,6 @@ class TestBlock(AsyncTestCase):
     @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
     async def test_verify_allow_same_block_spending_inner_assignment(self):
         """Lines 883-884: verify() assigns input_txn and spent_in_txn for cross-txn inputs."""
-        import asyncio as _asyncio
 
         from yadacoin.core.chain import CHAIN
 
@@ -2227,7 +2254,7 @@ class TestBlock(AsyncTestCase):
         txn_a.are_kel_fields_populated = Mock(return_value=False)
         txn_a.has_key_event_log = AsyncMock(return_value=False)
         txn_a.verify_kel_output_rules = AsyncMock(return_value=None)
-        txn_a.contract_generated = _asyncio.coroutine(lambda: False)()
+        txn_a.contract_generated = _awaitable(False)
         txn_a.time = block.time
         txn_a.hash = "aaa" * 21
 
@@ -2247,7 +2274,7 @@ class TestBlock(AsyncTestCase):
         spending_txn.are_kel_fields_populated = Mock(return_value=False)
         spending_txn.has_key_event_log = AsyncMock(return_value=False)
         spending_txn.verify_kel_output_rules = AsyncMock(return_value=None)
-        spending_txn.contract_generated = _asyncio.coroutine(lambda: False)()
+        spending_txn.contract_generated = _awaitable(False)
         spending_txn.time = block.time
         spending_txn.hash = "bbb" * 21
 
@@ -2748,7 +2775,6 @@ class TestBlock(AsyncTestCase):
     @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
     async def test_verify_contract_generated_with_miner_sig_check(self):
         """Lines 949-959: verify() runs miner-sig check and verify_generation for contract txn."""
-        import asyncio as _asyncio
         import base64
 
         import yadacoin.core.block as block_module
@@ -2778,7 +2804,7 @@ class TestBlock(AsyncTestCase):
         contract_txn.miner_signature = base64.b64encode(b"fakeminer" * 8).decode()
         contract_txn.get_generating_contract = AsyncMock(return_value=contract_txn_mock)
         # Make contract_generated awaitable and return True
-        contract_txn.contract_generated = _asyncio.coroutine(lambda: True)()
+        contract_txn.contract_generated = _awaitable(True)
 
         contract_txn.time = block.time
         contract_txn.hash = "cccccc" * 10
@@ -2823,7 +2849,6 @@ class TestBlock(AsyncTestCase):
     @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
     async def test_verify_contract_generated_miner_sig_invalid_raises(self):
         """Line 957: verify() raises when verify_signature returns False for contract txn miner sig."""
-        import asyncio as _asyncio
         import base64
 
         import yadacoin.core.block as block_module
@@ -2845,7 +2870,7 @@ class TestBlock(AsyncTestCase):
         contract_txn.verify_kel_output_rules = AsyncMock(return_value=None)
         contract_txn.miner_signature = base64.b64encode(b"fakeminer" * 8).decode()
         contract_txn.get_generating_contract = AsyncMock(return_value=Mock())
-        contract_txn.contract_generated = _asyncio.coroutine(lambda: True)()
+        contract_txn.contract_generated = _awaitable(True)
 
         contract_txn.time = block.time
         contract_txn.hash = "cccccc" * 10
@@ -2923,11 +2948,8 @@ class TestBlock(AsyncTestCase):
         bad_txn.has_key_event_log = AsyncMock(return_value=False)
         bad_txn.verify_kel_output_rules = AsyncMock(return_value=None)
         # contract_generated is an async property - needs to be awaitable
-        import asyncio
 
-        bad_txn.contract_generated = asyncio.coroutine(
-            lambda: False
-        )()  # noqa: deprecated
+        bad_txn.contract_generated = _awaitable(False)  # noqa: deprecated
         bad_txn.time = block.time
         bad_txn.hash = "bbb" * 21
 
@@ -2989,9 +3011,8 @@ class TestBlock(AsyncTestCase):
         frozen_txn.are_kel_fields_populated = Mock(return_value=False)
         frozen_txn.has_key_event_log = AsyncMock(return_value=False)
         frozen_txn.verify_kel_output_rules = AsyncMock(return_value=None)
-        import asyncio as _asyncio
 
-        frozen_txn.contract_generated = _asyncio.coroutine(lambda: False)()
+        frozen_txn.contract_generated = _awaitable(False)
         frozen_txn.time = block.time
         frozen_txn.hash = "aaa" * 21
 
@@ -3049,9 +3070,8 @@ class TestBlock(AsyncTestCase):
         frozen_txn.are_kel_fields_populated = Mock(return_value=False)
         frozen_txn.has_key_event_log = AsyncMock(return_value=False)
         frozen_txn.verify_kel_output_rules = AsyncMock(return_value=None)
-        import asyncio as _asyncio
 
-        frozen_txn.contract_generated = _asyncio.coroutine(lambda: False)()
+        frozen_txn.contract_generated = _awaitable(False)
         frozen_txn.time = block.time
         frozen_txn.hash = "bbb" * 21
 
@@ -3408,7 +3428,6 @@ class TestBlock(AsyncTestCase):
     @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
     async def test_verify_smart_contract_relationship_rejected_post_fork(self):
         """SMART_CONTRACT_REMOVAL_FORK: txn with relationship.smart_contract is rejected."""
-        import asyncio as _asyncio
 
         from yadacoin.core.chain import CHAIN
 
@@ -3423,7 +3442,7 @@ class TestBlock(AsyncTestCase):
         sc_txn.fee = 0.0
         sc_txn.masternode_fee = 0.0
         sc_txn.relationship = {"smart_contract": {"foo": "bar"}}
-        sc_txn.contract_generated = _asyncio.coroutine(lambda: False)()
+        sc_txn.contract_generated = _awaitable(False)
         sc_txn.time = block.time
         sc_txn.hash = "scc" * 21
 
@@ -3452,7 +3471,6 @@ class TestBlock(AsyncTestCase):
     @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
     async def test_verify_contract_generated_rejected_post_fork(self):
         """SMART_CONTRACT_REMOVAL_FORK: contract_generated=True txn is rejected."""
-        import asyncio as _asyncio
 
         from yadacoin.core.chain import CHAIN
 
@@ -3467,7 +3485,7 @@ class TestBlock(AsyncTestCase):
         cg_txn.fee = 0.0
         cg_txn.masternode_fee = 0.0
         cg_txn.relationship = "x"
-        cg_txn.contract_generated = _asyncio.coroutine(lambda: True)()
+        cg_txn.contract_generated = _awaitable(True)
         cg_txn.time = block.time
         cg_txn.hash = "cgc" * 21
 
