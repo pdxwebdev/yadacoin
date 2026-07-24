@@ -1169,11 +1169,6 @@ class Mongo(object):
             self.config.app_log.warning(
                 "Rollback complete. Node will resync from block 591762 on next consensus run."
             )
-        self.db.blocks.delete_one(
-            {
-                "id": "MEUCIQCsJdJZGruDdET03yDaaO/L/ITuvIAK85GxOC2WPjxeWgIgSENpTcPatdPaeZdD+3x//BfK7GeKIq/Uhv58dGmDIJs="
-            }
-        )
 
 
 class DeuggingListener(CommandListener):

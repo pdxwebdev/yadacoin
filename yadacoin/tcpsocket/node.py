@@ -1074,8 +1074,6 @@ class NodeRPC(BaseRPC):
         forward_blocks_chain = await self.config.consensus.build_remote_chain(
             blocks[-1]
         )
-        inbound_blocks = blocks + forward_blocks_chain.init_blocks[1:]
-        inbound_blockchain = Blockchain(inbound_blocks, partial=True)
         (
             backward_blocks,
             status,
@@ -1087,6 +1085,15 @@ class NodeRPC(BaseRPC):
             await self.fill_gap(first_inbound_block.index, stream)
             self.config.consensus.syncing = False
             return False
+
+        forward_blocks = blocks + forward_blocks_chain.init_blocks[1:]
+        inbound_blockchain = Blockchain(
+            sorted(
+                list(backward_blocks) + list(forward_blocks),
+                key=lambda x: x.index,
+            ),
+            partial=True,
+        )
 
         self.config.processing_queues.block_queue.add(
             BlockProcessingQueueItem(inbound_blockchain, stream, body)
