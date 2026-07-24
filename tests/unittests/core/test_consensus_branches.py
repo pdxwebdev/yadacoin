@@ -109,7 +109,9 @@ class ConsensusBase(AsyncTestCase):
         cfg.mongo.async_db.consensus.find_one = AsyncMock(return_value=None)
         cfg.mongo.async_db.consensus.delete_many = AsyncMock()
         cfg.mongo.async_db.consensus.insert_one = AsyncMock()
-        cfg.mongo.async_db.consensus.find = MagicMock()
+        _consensus_cursor = MagicMock()
+        _consensus_cursor.to_list = AsyncMock(return_value=[])
+        cfg.mongo.async_db.consensus.find = MagicMock(return_value=_consensus_cursor)
 
         cfg.mongo.async_db.miner_transactions.delete_many = AsyncMock()
 
@@ -337,13 +339,32 @@ class TestProcessBlockQueueItem(ConsensusBase):
             await self.consensus.process_block_queue_item(item)
         self.consensus.config.consensus.insert_consensus_block.assert_awaited()
 
-    async def test_blockresponse_index_not_greater_skips_insert(self):
+    async def test_blockresponse_index_not_greater_still_inserts_off_chain(self):
         item, _ = self._mk_item(
             body={"method": "blockresponse", "result": {"block": {"index": 50}}}
         )
         block = _mk_block(index=50)
         self.consensus.config.consensus.insert_consensus_block = AsyncMock(
             return_value=True
+        )
+        self.consensus.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        with patch(
+            "yadacoin.core.consensus.Block.from_dict",
+            new=AsyncMock(return_value=block),
+        ):
+            await self.consensus.process_block_queue_item(item)
+        self.consensus.config.consensus.insert_consensus_block.assert_awaited()
+
+    async def test_blockresponse_skips_insert_when_already_on_chain(self):
+        item, _ = self._mk_item(
+            body={"method": "blockresponse", "result": {"block": {"index": 50}}}
+        )
+        block = _mk_block(index=50)
+        self.consensus.config.consensus.insert_consensus_block = AsyncMock(
+            return_value=True
+        )
+        self.consensus.mongo.async_db.blocks.find_one = AsyncMock(
+            return_value={"hash": block.hash}
         )
         with patch(
             "yadacoin.core.consensus.Block.from_dict",
@@ -584,6 +605,55 @@ class TestInsertConsensusBlock(ConsensusBase):
 
 
 # ---------------------------------------------------------------------------
+# queue_consensus_tips
+# ---------------------------------------------------------------------------
+
+
+class TestQueueConsensusTips(ConsensusBase):
+    async def test_queues_tip_and_next(self):
+        tip_rec = {
+            "block": {"index": 100, "transactions": [], "target": "02"},
+            "peer": {"rid": "r1"},
+        }
+        next_rec = {
+            "block": {"index": 101, "transactions": [], "target": "01"},
+            "peer": {"rid": "r1"},
+        }
+        cursor_next = MagicMock()
+        cursor_next.to_list = AsyncMock(return_value=[next_rec])
+        cursor_tip = MagicMock()
+        cursor_tip.to_list = AsyncMock(return_value=[tip_rec])
+        self.consensus.mongo.async_db.consensus.find = MagicMock(
+            side_effect=[cursor_next, cursor_tip]
+        )
+        stream = MagicMock()
+        stream.peer.authenticated = True
+        self.consensus.config.peer.get_peer_by_id = AsyncMock(return_value=stream)
+        with patch("yadacoin.core.consensus.Blockchain"):
+            queued = await self.consensus.queue_consensus_tips()
+        self.assertTrue(queued)
+        self.assertEqual(
+            self.consensus.config.processing_queues.block_queue.add.call_count, 2
+        )
+
+    async def test_no_authenticated_stream_returns_false(self):
+        cursor = MagicMock()
+        cursor.to_list = AsyncMock(
+            return_value=[
+                {
+                    "block": {"index": 101, "transactions": [], "target": "01"},
+                    "peer": {"rid": "r1"},
+                }
+            ]
+        )
+        self.consensus.mongo.async_db.consensus.find = MagicMock(return_value=cursor)
+        self.consensus.config.peer.get_peer_by_id = AsyncMock(return_value=None)
+        queued = await self.consensus.queue_consensus_tips()
+        self.assertFalse(queued)
+        self.consensus.config.processing_queues.block_queue.add.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # sync_bottom_up (lines 260-325)
 # ---------------------------------------------------------------------------
 
@@ -676,6 +746,35 @@ class TestSyncBottomUp(ConsensusBase):
         )
         self.consensus.search_network_for_new = AsyncMock(return_value=True)
         await self.consensus.sync_bottom_up(synced=False)
+
+    async def test_same_height_candidate_is_queued(self):
+        consensus_record = {
+            "block": {
+                "index": 100,
+                "transactions": [],
+                "target": "01",
+            },
+            "peer": {"rid": "r1"},
+            "index": 100,
+        }
+        self.consensus.config.mongo.async_db.consensus.find_one = AsyncMock(
+            return_value=consensus_record
+        )
+        cursor = MagicMock()
+        cursor.to_list = AsyncMock(return_value=[consensus_record])
+        self.consensus.config.mongo.async_db.consensus.find = MagicMock(
+            return_value=cursor
+        )
+        stream = MagicMock()
+        stream.peer.authenticated = True
+        self.consensus.config.peer.get_peer_by_id = AsyncMock(return_value=stream)
+        with patch(
+            "yadacoin.core.consensus.Block.from_dict",
+            new=AsyncMock(return_value=_mk_block(index=100)),
+        ), patch("yadacoin.core.consensus.Blockchain"):
+            r = await self.consensus.sync_bottom_up(synced=True)
+        self.assertTrue(r)
+        self.consensus.config.processing_queues.block_queue.add.assert_called()
 
 
 # ---------------------------------------------------------------------------

@@ -123,7 +123,10 @@ class Consensus(object):
                     )
                     return
 
-                if block.index > self.config.LatestBlock.block.index:
+                on_chain = await self.mongo.async_db.blocks.find_one(
+                    {"hash": block.hash}, {"_id": 1}
+                )
+                if not on_chain:
                     if not await self.config.consensus.insert_consensus_block(
                         block, stream.peer
                     ):
@@ -131,6 +134,7 @@ class Consensus(object):
                             "blockresponse, error inserting consensus block"
                         )
                         return
+                    await self.queue_consensus_tips(stream)
 
             elif body["method"] == "newblock":
                 payload = body.get("params", {}).get("payload", {})
@@ -258,6 +262,38 @@ class Consensus(object):
 
         return True
 
+    async def queue_consensus_tips(self, stream=None):
+        tip_index = self.config.LatestBlock.block.index
+        queued = False
+        for index in (tip_index + 1, tip_index):
+            version = CHAIN.get_version_for_height(index)
+            records = await self.mongo.async_db.consensus.find(
+                {
+                    "index": index,
+                    "block.version": version,
+                    "ignore": {"$ne": True},
+                }
+            ).to_list(length=100)
+            for record in sorted(records, key=lambda x: int(x["block"]["target"], 16)):
+                peer_stream = stream
+                if peer_stream is None or not (
+                    hasattr(peer_stream, "peer") and peer_stream.peer.authenticated
+                ):
+                    peer_stream = await self.config.peer.get_peer_by_id(
+                        record["peer"]["rid"]
+                    )
+                if not (
+                    peer_stream
+                    and hasattr(peer_stream, "peer")
+                    and peer_stream.peer.authenticated
+                ):
+                    continue
+                self.config.processing_queues.block_queue.add(
+                    BlockProcessingQueueItem(Blockchain(record["block"]), peer_stream)
+                )
+                queued = True
+        return queued
+
     async def sync_bottom_up(self, synced):
         # bottom up syncing
 
@@ -273,40 +309,24 @@ class Consensus(object):
                     )
                 )
         self.config.health.consensus.last_activity = time()
-        latest_consensus = await self.mongo.async_db.consensus.find_one(
+
+        tip_index = self.latest_block.index
+        has_candidate = await self.mongo.async_db.consensus.find_one(
             {
-                "index": self.latest_block.index + 1,
-                "block.version": CHAIN.get_version_for_height(
-                    self.latest_block.index + 1
-                ),
+                "index": {"$in": [tip_index + 1, tip_index]},
                 "ignore": {"$ne": True},
             }
         )
-        if latest_consensus:
-            await self.remove_pending_transactions_now_in_chain(latest_consensus)
-            latest_consensus = await Block.from_dict(latest_consensus["block"])
+        if has_candidate:
+            if has_candidate.get("index") == tip_index + 1:
+                await self.remove_pending_transactions_now_in_chain(has_candidate)
             if self.debug:
+                candidate_block = await Block.from_dict(has_candidate["block"])
                 self.app_log.info(
-                    "Latest consensus_block {}".format(latest_consensus.index)
+                    "Latest consensus_block {}".format(candidate_block.index)
                 )
 
-            records = await self.mongo.async_db.consensus.find(
-                {
-                    "index": self.latest_block.index + 1,
-                    "block.version": CHAIN.get_version_for_height(
-                        self.latest_block.index + 1
-                    ),
-                    "ignore": {"$ne": True},
-                }
-            ).to_list(length=100)
-            stream_found = False
-            for record in sorted(records, key=lambda x: int(x["block"]["target"], 16)):
-                stream = await self.config.peer.get_peer_by_id(record["peer"]["rid"])
-                if stream and hasattr(stream, "peer") and stream.peer.authenticated:
-                    stream_found = True
-                    self.config.processing_queues.block_queue.add(
-                        BlockProcessingQueueItem(Blockchain(record["block"]), stream)
-                    )
+            stream_found = await self.queue_consensus_tips()
             if not stream_found:
                 if (time() - self.last_network_search) > 30 or not synced:
                     self.last_network_search = time()
