@@ -288,3 +288,87 @@ class TestBlocksResponseForkAssembly(AsyncTestCase):
         args = server.write_result.await_args[0]
         self.assertEqual(args[1], "blocksresponse_confirmed")
         server.config.processing_queues.block_queue.add.assert_called_once()
+
+
+class TestNewBlockPeerTracking(AsyncTestCase):
+    async def test_newblock_tracks_peer_height_and_clears_synced(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.tcpsocket.node import NodeSocketServer
+
+        block = MagicMock()
+        block.index = 200
+        block.hash = "h200"
+
+        server = NodeSocketServer.__new__(NodeSocketServer)
+        server.config = MagicMock()
+        server.config.app_log = MagicMock()
+        server.config.LatestBlock.block.index = 100
+        server.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        server.config.nodeShared.write_result = AsyncMock()
+        server.config.processing_queues = MagicMock()
+        server.config.processing_queues.block_queue = MagicMock()
+
+        stream = MagicMock()
+        stream.peer.protocol_version = 2
+        stream.peer.block = None
+        stream.synced = True
+
+        body = {
+            "id": "nb1",
+            "params": {
+                "payload": {
+                    "block": {"index": 200, "hash": "h200"},
+                }
+            },
+        }
+
+        with patch(
+            "yadacoin.tcpsocket.node.Block.from_dict",
+            AsyncMock(return_value=block),
+        ):
+            await server.newblock(body, stream)
+
+        self.assertIs(stream.peer.block, block)
+        self.assertFalse(stream.synced)
+        server.config.processing_queues.block_queue.add.assert_called_once()
+
+    async def test_newblock_no_payload(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from yadacoin.tcpsocket.node import NodeSocketServer
+
+        server = NodeSocketServer.__new__(NodeSocketServer)
+        server.config = MagicMock()
+        server.config.app_log = MagicMock()
+        server.config.nodeShared.write_result = AsyncMock()
+
+        stream = MagicMock()
+        stream.peer.protocol_version = 1
+        body = {"id": "nb2", "params": {"payload": {}}}
+        await server.newblock(body, stream)
+        server.config.nodeShared.write_result.assert_not_awaited()
+
+    async def test_blocksresponse_no_blocks_bad_peer_index(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from yadacoin.tcpsocket.node import NodeSocketServer
+
+        server = NodeSocketServer.__new__(NodeSocketServer)
+        server.config = MagicMock()
+        server.config.app_log = MagicMock()
+        server.config.consensus = MagicMock()
+        server.config.consensus.syncing = True
+        server.config.LatestBlock.block.index = 100
+        server.write_result = AsyncMock()
+
+        stream = MagicMock()
+        stream.peer.protocol_version = 1
+        stream.peer.host = "127.0.0.1"
+        stream.peer.block = MagicMock()
+        stream.peer.block.index = object()  # int() fails
+        stream.synced = False
+
+        body = {"id": "req5", "result": {"blocks": []}}
+        await server.blocksresponse(body, stream)
+        self.assertTrue(stream.synced)

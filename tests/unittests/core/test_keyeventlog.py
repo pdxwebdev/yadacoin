@@ -6652,3 +6652,52 @@ class TestClassifyKeyEventFlag(unittest.TestCase):
 
         t = self._txn(prev_public_key_hash="")
         self.assertEqual(classify_key_event_flag(t), KeyEventFlag.INCEPTION)
+
+
+class TestOutputValueHelper(unittest.TestCase):
+    def test_output_value_invalid_type(self):
+        from yadacoin.core.keyeventlog import _output_value
+
+        out = MagicMock()
+        out.value = object()
+        self.assertEqual(_output_value(out), 0.0)
+
+    def test_output_value_none(self):
+        from yadacoin.core.keyeventlog import _output_value
+
+        out = MagicMock()
+        out.value = None
+        self.assertEqual(_output_value(out), 0.0)
+
+    def test_get_recovery_announcement_transition(self):
+        from yadacoin.core.keyeventlog import get_recovery_announcement_witness_hash
+        from yadacoin.core.recoveryannouncement import (
+            RecoveryAnnouncement,
+            RecoveryTransition,
+        )
+
+        ann = MagicMock(spec=RecoveryAnnouncement)
+        ann.witness_hash = "abc123"
+        proof = MagicMock()
+        transition = MagicMock(spec=RecoveryTransition)
+        transition.announcement = ann
+        transition.proof = proof
+        txn = MagicMock()
+        txn.relationship = transition
+        self.assertEqual(get_recovery_announcement_witness_hash(txn), "abc123")
+
+    def test_get_recovers_proof_transition(self):
+        from yadacoin.core.keyeventlog import get_recovers_proof
+        from yadacoin.core.recoveryannouncement import RecoveryProof, RecoveryTransition
+
+        proof = MagicMock(spec=RecoveryProof)
+        proof.commitment = "c"
+        proof.R = "r"
+        proof.s = "s"
+        transition = MagicMock(spec=RecoveryTransition)
+        transition.proof = proof
+        txn = MagicMock()
+        txn.relationship = transition
+        self.assertEqual(
+            get_recovers_proof(txn), {"commitment": "c", "R": "r", "s": "s"}
+        )

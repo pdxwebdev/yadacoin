@@ -584,6 +584,35 @@ class TestIdentityAnnouncementChainLookup(AsyncTestCase):
             result = await IdentityAnnouncement.exists_username("nobody")
         self.assertFalse(result)
 
+    async def test_txn_claims_username_dict_relationship(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        txn = MagicMock()
+        txn.transaction_signature = "x"
+        txn.relationship = {"identity": {"username": "alice.example"}}
+        self.assertTrue(IdentityAnnouncement._txn_claims_username(txn, "alice.example"))
+        self.assertFalse(IdentityAnnouncement._txn_claims_username(txn, "bob.example"))
+
+    async def test_txn_claims_username_dict_with_relationship_key(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        txn = MagicMock()
+        txn.transaction_signature = "x"
+        txn.relationship = {
+            IdentityAnnouncement.RELATIONSHIP_KEY: {"username": "alice.example"}
+        }
+        self.assertTrue(IdentityAnnouncement._txn_claims_username(txn, "alice.example"))
+
+    async def test_txn_claims_username_non_identity_false(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        txn = MagicMock()
+        txn.transaction_signature = "x"
+        txn.relationship = "not-an-identity"
+        self.assertFalse(
+            IdentityAnnouncement._txn_claims_username(txn, "alice.example")
+        )
+
     async def test_get_by_transaction_id_blockchain_hit(self):
         import yadacoin.core.config
         from yadacoin.core.identityannouncement import IdentityAnnouncement
@@ -615,3 +644,82 @@ class TestIdentityAnnouncementChainLookup(AsyncTestCase):
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
+
+
+class TestIdentityAnnouncementVerifyAsync(AsyncTestCase):
+    async def test_verify_success(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        ann = IdentityAnnouncement(
+            username="ok.example",
+            username_signature=_make_valid_sig("ok.example", _PRIV_HEX),
+        )
+        cfg = MagicMock()
+        cfg.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.exists_username",
+            new=AsyncMock(return_value=False),
+        ) as exists:
+            await ann.verify(_PUB_HEX, below_index=10, batch_txns=[], use_mempool=False)
+            exists.assert_awaited()
+            kwargs = exists.await_args.kwargs
+            self.assertEqual(kwargs["below_index"], 10)
+            self.assertEqual(kwargs["batch_txns"], [])
+            self.assertFalse(kwargs["use_mempool"])
+
+    async def test_verify_bad_signature(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+        from yadacoin.core.transaction import InvalidTransactionException
+
+        ann = IdentityAnnouncement(
+            username="ok.example",
+            username_signature=_make_valid_sig("ok.example", _PRIV_HEX),
+        )
+        with self.assertRaises(InvalidTransactionException):
+            await ann.verify("00" * 33)
+
+    async def test_verify_blank_username(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+        from yadacoin.core.transaction import InvalidTransactionException
+
+        ann = IdentityAnnouncement(
+            username="ok.example",
+            username_signature=_make_valid_sig("ok.example", _PRIV_HEX),
+        )
+        ann.username = ""
+        with patch.object(ann, "verify_username_signature", return_value=True):
+            with self.assertRaises(InvalidTransactionException) as ctx:
+                await ann.verify(_PUB_HEX)
+        self.assertIn("blank", str(ctx.exception).lower())
+
+    async def test_verify_invalid_dns_username(self):
+        from yadacoin.core.identityannouncement import (
+            IdentityAnnouncement,
+            IdentityType,
+        )
+        from yadacoin.core.transaction import InvalidTransactionException
+
+        ann = IdentityAnnouncement(
+            username="not a domain",
+            username_signature=_make_valid_sig("not a domain", _PRIV_HEX),
+            identity_type=IdentityType.SOCIAL.value,
+        )
+        ann.identity_type = IdentityType.DNS.value
+        with self.assertRaises(InvalidTransactionException):
+            await ann.verify(_PUB_HEX)
+
+    async def test_verify_username_already_claimed(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+        from yadacoin.core.transaction import InvalidTransactionException
+
+        ann = IdentityAnnouncement(
+            username="ok.example",
+            username_signature=_make_valid_sig("ok.example", _PRIV_HEX),
+        )
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.exists_username",
+            new=AsyncMock(return_value=True),
+        ):
+            with self.assertRaises(InvalidTransactionException):
+                await ann.verify(_PUB_HEX)

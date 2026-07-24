@@ -960,6 +960,46 @@ class TestSearchNetwork(ConsensusBase):
         await self.consensus.search_network_for_new()
         peer_closed.close.assert_called()
 
+    async def test_clears_synced_when_peer_ahead(self):
+        peer_block = MagicMock()
+        peer_block.index = 250
+        peer = MagicMock(
+            authenticated=True,
+            synced=True,
+            message_queue={},
+            block=peer_block,
+        )
+
+        async def _peers():
+            yield peer
+
+        self.consensus.config.peer.get_sync_peers = MagicMock(return_value=_peers())
+        self.consensus.config.LatestBlock.block.index = 100
+        self.consensus.request_blocks = AsyncMock()
+        await self.consensus.search_network_for_new()
+        self.assertFalse(peer.synced)
+        self.consensus.request_blocks.assert_awaited_once_with(peer)
+
+    async def test_peer_ahead_bad_index_type_ignored(self):
+        peer_block = MagicMock()
+        peer_block.index = "not-an-int"
+        peer = MagicMock(
+            authenticated=True,
+            synced=True,
+            message_queue={},
+            block=peer_block,
+        )
+
+        async def _peers():
+            yield peer
+
+        self.consensus.config.peer.get_sync_peers = MagicMock(return_value=_peers())
+        self.consensus.config.LatestBlock.block.index = 100
+        self.consensus.request_blocks = AsyncMock()
+        await self.consensus.search_network_for_new()
+        self.assertTrue(peer.synced)
+        self.consensus.request_blocks.assert_not_awaited()
+
 
 # ---------------------------------------------------------------------------
 # request_blocks (line 347)
@@ -1378,15 +1418,35 @@ class TestIntegrateBlocksWithExisting(ConsensusBase):
         existing_bc = MagicMock()
         existing_bc.test_inbound_blockchain = AsyncMock(return_value=True)
         stream = MagicMock()
+        stream.synced = True
         MockBC = self._mk_mock_bc_class(existing_bc, test_block_returns=True)
         with patch(
             "yadacoin.core.consensus.Block.from_dict",
             new=AsyncMock(return_value=_mk_block()),
         ), patch("yadacoin.core.consensus.Blockchain", new=MockBC):
             self.consensus.insert_block = AsyncMock()
+            self.consensus.request_blocks = AsyncMock()
             await self.consensus.integrate_blocks_with_existing_chain(bc, stream)
         self.consensus.insert_block.assert_awaited()
         self.assertFalse(stream.syncing)
+        self.assertFalse(stream.synced)
+        self.consensus.request_blocks.assert_awaited_once_with(stream)
+
+    async def test_full_path_request_blocks_exception_swallowed(self):
+        bc = self._mk_blockchain([_mk_block(index=1)])
+        existing_bc = MagicMock()
+        existing_bc.test_inbound_blockchain = AsyncMock(return_value=True)
+        stream = MagicMock()
+        MockBC = self._mk_mock_bc_class(existing_bc, test_block_returns=True)
+        with patch(
+            "yadacoin.core.consensus.Block.from_dict",
+            new=AsyncMock(return_value=_mk_block()),
+        ), patch("yadacoin.core.consensus.Blockchain", new=MockBC):
+            self.consensus.insert_block = AsyncMock()
+            self.consensus.request_blocks = AsyncMock(side_effect=RuntimeError("boom"))
+            await self.consensus.integrate_blocks_with_existing_chain(bc, stream)
+        self.consensus.insert_block.assert_awaited()
+        self.assertFalse(stream.synced)
 
 
 # ---------------------------------------------------------------------------
