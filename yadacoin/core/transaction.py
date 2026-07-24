@@ -1505,6 +1505,13 @@ class Transaction(object):
             return
 
         if effective_index >= CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK:
+            # Coinbase is a KEL rotation for the miner's own tip, but it also
+            # pays masternodes.  Those outputs may target any address the node
+            # advertised (including older KEL entries).  Do not force every
+            # coinbase output onto the miner's latest prerotated_key_hash.
+            if self.coinbase:
+                return
+
             latest = await KeyEventLog.get_latest(
                 self.public_key, onchain_only=(block is not None)
             )

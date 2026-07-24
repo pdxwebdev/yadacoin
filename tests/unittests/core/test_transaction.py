@@ -1821,6 +1821,44 @@ class TestTransactionPureMethods(AsyncTestCase):
                 await txn.verify_kel_output_rules(block=mock_block)
                 # Should return at line 1270 (block is not None)
 
+    async def test_verify_kel_output_rules_coinbase_allows_masternode_outputs(self):
+        """Coinbase may pay masternodes at non-tip addresses; routing must not reject it."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        txn = Transaction(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            public_key_hash="miner_pkh",
+            prerotated_key_hash="1MinerTip",
+            outputs=[
+                Output(to="1MasternodeOldKel", value=0.3),
+                Output(to="1MinerTip", value=11.25),
+            ],
+            coinbase=True,
+        )
+        txn.transaction_signature = "coinbase_sig"
+
+        mock_block = MagicMock()
+        mock_block.index = CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK + 1
+
+        mock_entry = MagicMock()
+        mock_entry.mempool = False
+        mock_entry.public_key_hash = "miner_pkh"
+        mock_entry.transaction_signature = "other_sig"
+        mock_entry.prerotated_key_hash = "1MinerTip"
+
+        with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=True)):
+            with patch.object(
+                KeyEventLog,
+                "get_latest",
+                new=AsyncMock(return_value=mock_entry),
+            ) as get_latest:
+                await txn.verify_kel_output_rules(block=mock_block)
+                # Coinbase short-circuits before tip lookup.
+                get_latest.assert_not_awaited()
+
     async def test_verify_kel_output_rules_routing_violation_raises(self):
         """Lines 1237-1259: routing fork check, not new entry, output to wrong addr → raises."""
         from unittest.mock import AsyncMock, MagicMock, patch
