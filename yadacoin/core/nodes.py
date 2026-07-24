@@ -1333,7 +1333,7 @@ class ServiceProviders(Nodes):
                         "port": 8000,
                         "http_protocol": "http",
                         "http_port": 80,
-                        "identity_announcement": "MEQCIBIYT9P285J+u9R5zS1nJ1q5AQ/vuXaoMPULkIwQcjq5AiBvAfmstFw12gZCVfNnTRI5oLQi8MUInP1Dzz9rgVZ7Qw==",
+                        "identity_announcement": "MEUCIQCkrV6E6O0E7V+c8NAiqEjTfW1IRUkjRmSuTfC3qsOgfwIga1/nZAN/Ujr2r4zsdtt4tzkmJbag9swz199c2UYNjFk=",
                         "seed_gateway": "MEQCIGm+m6vE+/6X/w8XvIvbbFzfOGQ0Eoq5rM69PQN+S+WjAiBO04VgcZPm0ZuXxg9Ik5qUlzW8Ms2Hv05rxJNPbX6CdA==",
                         "seed": "MEUCIQCRhqjjKwQ2ISW+oTBML3nlm/7YEgeulhYr3XgEKHK6TQIgcrWyMA2ECUfeNE9N6gb8lYRrQhwJXZIf8r+9KiH2e2g=",
                     }
