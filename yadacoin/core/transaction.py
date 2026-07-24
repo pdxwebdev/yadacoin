@@ -820,6 +820,9 @@ class Transaction(object):
                 self.public_key,
                 exclude_txn_sig=self.transaction_signature,
                 extra_blocks=extra_blocks,
+                use_mempool=mempool,
+                below_index=block.index if block is not None else None,
+                batch_txns=batch_txns,
             )
         elif isinstance(self.relationship, RotationAnnouncement):
             relationship = self.relationship.to_string()

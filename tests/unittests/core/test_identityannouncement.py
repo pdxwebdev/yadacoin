@@ -371,6 +371,91 @@ class TestIdentityAnnouncementChainLookup(AsyncTestCase):
 
         result = await IdentityAnnouncement.exists_username("taken", config=cfg)
         self.assertTrue(result)
+        query = cfg.mongo.async_db.blocks.find_one.await_args[0][0]
+        self.assertNotIn("index", query)
+
+    async def test_exists_username_below_index_scopes_chain_query(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        cfg = MagicMock()
+        cfg.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+
+        result = await IdentityAnnouncement.exists_username(
+            "taken", config=cfg, use_mempool=False, below_index=605133
+        )
+        self.assertFalse(result)
+        query = cfg.mongo.async_db.blocks.find_one.await_args[0][0]
+        self.assertEqual(query["index"], {"$lt": 605133})
+
+    async def test_exists_username_batch_txns_true(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        cfg = MagicMock()
+        cfg.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+
+        ann = IdentityAnnouncement(
+            username="taken.example",
+            username_signature=_make_valid_sig("taken.example", _PRIV_HEX),
+        )
+        sibling = MagicMock()
+        sibling.relationship = ann
+        sibling.transaction_signature = "other_sig"
+
+        result = await IdentityAnnouncement.exists_username(
+            "taken.example",
+            config=cfg,
+            use_mempool=False,
+            below_index=100,
+            batch_txns=[sibling],
+        )
+        self.assertTrue(result)
+
+    async def test_exists_username_batch_txns_exclude_self(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        cfg = MagicMock()
+        cfg.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+
+        ann = IdentityAnnouncement(
+            username="taken.example",
+            username_signature=_make_valid_sig("taken.example", _PRIV_HEX),
+        )
+        self_txn = MagicMock()
+        self_txn.relationship = ann
+        self_txn.transaction_signature = "self_sig"
+
+        result = await IdentityAnnouncement.exists_username(
+            "taken.example",
+            exclude_txn_sig="self_sig",
+            config=cfg,
+            use_mempool=False,
+            below_index=100,
+            batch_txns=[self_txn],
+        )
+        self.assertFalse(result)
+
+    async def test_exists_username_below_index_ignores_same_or_higher_chain_hit(self):
+        """Chain docs at/above below_index must not count (query uses $lt)."""
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        cfg = MagicMock()
+
+        # Simulate mongo honoring $lt by returning None when index filter present
+        async def _find_one(query, *args, **kwargs):
+            if "index" in query and query["index"].get("$lt") == 200:
+                return None
+            return {"found": True}
+
+        cfg.mongo.async_db.blocks.find_one = AsyncMock(side_effect=_find_one)
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+
+        result = await IdentityAnnouncement.exists_username(
+            "taken", config=cfg, use_mempool=False, below_index=200
+        )
+        self.assertFalse(result)
 
     async def test_exists_username_mempool_true(self):
         from yadacoin.core.identityannouncement import IdentityAnnouncement

@@ -163,6 +163,8 @@ class IdentityAnnouncement:
         exclude_txn_sig: str = "",
         extra_blocks=None,
         use_mempool: bool = True,
+        below_index=None,
+        batch_txns=None,
     ) -> None:
         """Validate this identity announcement during transaction verification.
 
@@ -193,6 +195,8 @@ class IdentityAnnouncement:
             exclude_txn_sig=exclude_txn_sig,
             use_mempool=use_mempool,
             extra_blocks=extra_blocks,
+            below_index=below_index,
+            batch_txns=batch_txns,
         )
         if already_claimed:
             raise InvalidTransactionException(
@@ -311,16 +315,38 @@ class IdentityAnnouncement:
         return None
 
     @staticmethod
+    def _txn_claims_username(txn, username: str, exclude_txn_sig: str = "") -> bool:
+        if (
+            exclude_txn_sig
+            and getattr(txn, "transaction_signature", None) == exclude_txn_sig
+        ):
+            return False
+        rel = getattr(txn, "relationship", None)
+        if isinstance(rel, IdentityAnnouncement):
+            return rel.username == username
+        if isinstance(rel, dict):
+            identity = rel.get(IdentityAnnouncement.RELATIONSHIP_KEY) or rel.get(
+                "identity"
+            )
+            if isinstance(identity, dict):
+                return identity.get("username") == username
+        return False
+
+    @staticmethod
     async def exists_username(
         username: str,
         exclude_txn_sig: str = "",
         config=None,
         use_mempool: bool = True,
         extra_blocks=None,
+        below_index=None,
+        batch_txns=None,
     ) -> bool:
-        """Return True if ``username`` is already claimed on-chain or in the
-        mempool (optionally excluding the transaction with
-        ``exclude_txn_sig``).
+        """Return True if ``username`` is already claimed.
+
+        During block verification / reorg, pass ``below_index`` (current block
+        height) so only confirmed blocks strictly below that height count, and
+        pass ``batch_txns`` / ``extra_blocks`` for the candidate chain.
         """
         from yadacoin.core.config import Config
 
@@ -328,34 +354,38 @@ class IdentityAnnouncement:
             config = Config()
         if extra_blocks is None:
             extra_blocks = []
+        if batch_txns is None:
+            batch_txns = []
         base_query = {"relationship.identity.username": username}
 
-        # Check blockchain
         chain_query = {"transactions.relationship.identity.username": username}
+        if below_index is not None:
+            chain_query["index"] = {"$lt": int(below_index)}
         if exclude_txn_sig:
             chain_query["transactions.id"] = {"$ne": exclude_txn_sig}
         result = await config.mongo.async_db.blocks.find_one(chain_query)
         if result:
             return True
-        if extra_blocks:
-            for block in extra_blocks:
-                for txn in block.transactions:
-                    if (
-                        isinstance(txn.relationship, IdentityAnnouncement)
-                        and txn.relationship.username == username
-                    ):
-                        if (
-                            exclude_txn_sig
-                            and txn.transaction_signature == exclude_txn_sig
-                        ):
-                            continue
-                        return True
+
+        for txn in batch_txns:
+            if IdentityAnnouncement._txn_claims_username(
+                txn, username, exclude_txn_sig
+            ):
+                return True
+
+        for block in extra_blocks:
+            for txn in getattr(block, "transactions", []) or []:
+                if IdentityAnnouncement._txn_claims_username(
+                    txn, username, exclude_txn_sig
+                ):
+                    return True
+
         if use_mempool:
-            # Check mempool
             mempool_query = dict(base_query)
             if exclude_txn_sig:
                 mempool_query["id"] = {"$ne": exclude_txn_sig}
             result = await config.mongo.async_db.miner_transactions.find_one(
                 mempool_query
             )
-        return bool(result)
+            return bool(result)
+        return False
