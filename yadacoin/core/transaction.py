@@ -720,6 +720,25 @@ class Transaction(object):
                         if t.transaction_signature != self.transaction_signature
                     }
                     has_kel = address in _batch_prerotated or address in _batch_twice
+                if not has_kel and extra_blocks:
+                    for extra_block in extra_blocks:
+                        _batch_prerotated = {
+                            t.prerotated_key_hash
+                            for t in extra_block.transactions
+                            if t.transaction_signature != self.transaction_signature
+                        }
+                        _batch_twice = {
+                            t.twice_prerotated_key_hash
+                            for t in extra_block.transactions
+                            if t.transaction_signature != self.transaction_signature
+                        }
+                        has_kel = (
+                            has_kel
+                            or address in _batch_prerotated
+                            or address in _batch_twice
+                        )
+                        if has_kel:
+                            break
 
             if has_kel:
                 txn_key_event = KeyEvent(self)

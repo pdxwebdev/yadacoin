@@ -1475,6 +1475,143 @@ class TestVerifyCheckKelBatchAndPrevHash(TransactionTestCase):
                     with self.assertRaises(KELExceptionPreviousKeyHashReferenceMissing):
                         await txn.verify(check_kel=True, batch_txns=[sibling])
 
+    async def test_verify_check_kel_extra_blocks_prerotated_match(self):
+        """Lines 723-737: extra_blocks fallback matches prerotated_key_hash."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH
+
+        from yadacoin.core.keyeventlog import KeyEvent
+        from yadacoin.core.recoveryannouncement import RecoveryAnnouncement
+
+        address = str(_P2PKH.from_pubkey(bytes.fromhex(self.public_key)))
+        ann = RecoveryAnnouncement("aabbccdd")
+        txn = self._make_txn_with_relationship(ann)
+        txn.transaction_signature = "self_sig"
+
+        sibling = MagicMock()
+        sibling.transaction_signature = "sibling_sig"
+        sibling.prerotated_key_hash = address
+        sibling.twice_prerotated_key_hash = "unrelated"
+
+        extra_block = MagicMock()
+        extra_block.transactions = [sibling]
+
+        mock_lb = MagicMock()
+        mock_lb.block.index = 0
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch.object(
+                Transaction, "generate_hash", new=AsyncMock(return_value=txn.hash)
+            ):
+                with patch.object(Transaction, "verify_signature", return_value=None):
+                    with patch.object(
+                        Transaction,
+                        "has_key_event_log",
+                        new=AsyncMock(return_value=False),
+                    ):
+                        with patch.object(
+                            KeyEvent, "verify", new=AsyncMock(return_value=None)
+                        ) as mock_verify:
+                            await txn.verify(check_kel=True, extra_blocks=[extra_block])
+                            mock_verify.assert_called_once()
+
+    async def test_verify_check_kel_extra_blocks_twice_prerotated_match(self):
+        """Lines 723-737: extra_blocks fallback matches twice_prerotated_key_hash."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH
+
+        from yadacoin.core.keyeventlog import KeyEvent
+        from yadacoin.core.recoveryannouncement import RecoveryAnnouncement
+
+        address = str(_P2PKH.from_pubkey(bytes.fromhex(self.public_key)))
+        ann = RecoveryAnnouncement("aabbccdd")
+        txn = self._make_txn_with_relationship(ann)
+        txn.transaction_signature = "self_sig"
+
+        sibling = MagicMock()
+        sibling.transaction_signature = "sibling_sig"
+        sibling.prerotated_key_hash = "unrelated"
+        sibling.twice_prerotated_key_hash = address
+
+        extra_block = MagicMock()
+        extra_block.transactions = [sibling]
+
+        mock_lb = MagicMock()
+        mock_lb.block.index = 0
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch.object(
+                Transaction, "generate_hash", new=AsyncMock(return_value=txn.hash)
+            ):
+                with patch.object(Transaction, "verify_signature", return_value=None):
+                    with patch.object(
+                        Transaction,
+                        "has_key_event_log",
+                        new=AsyncMock(return_value=False),
+                    ):
+                        with patch.object(
+                            KeyEvent, "verify", new=AsyncMock(return_value=None)
+                        ) as mock_verify:
+                            await txn.verify(check_kel=True, extra_blocks=[extra_block])
+                            mock_verify.assert_called_once()
+
+    async def test_verify_check_kel_extra_blocks_skips_self_and_breaks(self):
+        """Lines 723-737: skips self signature, matches later extra block, breaks."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH
+
+        from yadacoin.core.keyeventlog import KeyEvent
+        from yadacoin.core.recoveryannouncement import RecoveryAnnouncement
+
+        address = str(_P2PKH.from_pubkey(bytes.fromhex(self.public_key)))
+        ann = RecoveryAnnouncement("aabbccdd")
+        txn = self._make_txn_with_relationship(ann)
+        txn.transaction_signature = "self_sig"
+
+        self_txn = MagicMock()
+        self_txn.transaction_signature = "self_sig"
+        self_txn.prerotated_key_hash = address
+        self_txn.twice_prerotated_key_hash = address
+
+        miss = MagicMock()
+        miss.transaction_signature = "miss_sig"
+        miss.prerotated_key_hash = "nope"
+        miss.twice_prerotated_key_hash = "nope"
+
+        hit = MagicMock()
+        hit.transaction_signature = "hit_sig"
+        hit.prerotated_key_hash = address
+        hit.twice_prerotated_key_hash = "unrelated"
+
+        first_block = MagicMock()
+        first_block.transactions = [self_txn, miss]
+        second_block = MagicMock()
+        second_block.transactions = [hit]
+        third_block = MagicMock()
+        third_block.transactions = [miss]
+
+        mock_lb = MagicMock()
+        mock_lb.block.index = 0
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch.object(
+                Transaction, "generate_hash", new=AsyncMock(return_value=txn.hash)
+            ):
+                with patch.object(Transaction, "verify_signature", return_value=None):
+                    with patch.object(
+                        Transaction,
+                        "has_key_event_log",
+                        new=AsyncMock(return_value=False),
+                    ):
+                        with patch.object(
+                            KeyEvent, "verify", new=AsyncMock(return_value=None)
+                        ) as mock_verify:
+                            await txn.verify(
+                                check_kel=True,
+                                extra_blocks=[first_block, second_block, third_block],
+                            )
+                            mock_verify.assert_called_once()
+
     async def test_verify_check_kel_has_kel_block_index_used(self):
         """Line 726: has_kel=True + block is not None → _kel_index = block.index."""
         from unittest.mock import AsyncMock, MagicMock, patch
