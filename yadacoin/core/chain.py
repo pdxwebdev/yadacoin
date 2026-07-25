@@ -137,8 +137,6 @@ class CHAIN(object):
     # Placeholder height — set before mainnet activation.
     KEL_BRANCH_ANNOUNCEMENT_FORK = 605000
 
-    CHECK_MASTERNODE_KEL_ADDRESS = 605032
-
     @classmethod
     def target_block_time(cls, network: str):
         """What is the target block time for a specific network?"""

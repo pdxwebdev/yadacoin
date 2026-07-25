@@ -332,7 +332,9 @@ class TestDynamicNodes(AsyncTestCase):
             if isinstance(query, dict):
                 elem_match = query.get("transactions", {}).get("$elemMatch", {})
             if "inputs.id" in elem_match:
-                return empty_collateral_iter
+                cursor = MagicMock()
+                cursor.sort.return_value = empty_collateral_iter
+                return cursor
             cursor = MagicMock()
             cursor.sort.return_value = async_iter
             return cursor
@@ -416,7 +418,7 @@ class TestDynamicNodes(AsyncTestCase):
                                 )
 
     async def test_load_dynamic_nodes_spent_collateral_rejected(self):
-        """Test that a node whose collateral UTXO has been spent is not registered."""
+        """Spent at/before announcement height: node is never registered."""
         valid_node_def = {
             "identity": {
                 "public_key": "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3a",
@@ -447,12 +449,13 @@ class TestDynamicNodes(AsyncTestCase):
         spending_iter.__aiter__.return_value = iter(
             [
                 {
+                    "index": CHAIN.DYNAMIC_NODES_FORK,  # spent in same block
                     "transactions": [
                         {
                             "inputs": [{"id": "spent_collateral_txn_id"}],
                             "public_key": valid_node_def["identity"]["public_key"],
                         }
-                    ]
+                    ],
                 }
             ]
         )
@@ -462,7 +465,9 @@ class TestDynamicNodes(AsyncTestCase):
             if isinstance(query, dict):
                 elem_match = query.get("transactions", {}).get("$elemMatch", {})
             if "inputs.id" in elem_match:
-                return spending_iter
+                cursor = MagicMock()
+                cursor.sort.return_value = spending_iter
+                return cursor
             cursor = MagicMock()
             cursor.sort.return_value = async_iter
             return cursor
@@ -483,14 +488,169 @@ class TestDynamicNodes(AsyncTestCase):
                         activation_height=CHAIN.DYNAMIC_NODES_FORK
                     )
 
-        # Node must NOT have been added because collateral is spent
+        # Node must NOT have been added because collateral was already spent
         self.assertEqual(len(self.seeds_instance._NODES), initial_count)
         self.assertNotIn(
             valid_node_def["identity"]["public_key"],
             Nodes.dynamic_node_collateral_txns,
         )
-        # Verify eligible_nodes_by_address was NOT populated for a rejected node
         self.assertEqual(len(Nodes.eligible_nodes_by_address), 0)
+
+    async def test_load_dynamic_nodes_spent_later_keeps_closed_range(self):
+        """Collateral spent after announcement: keep node with closed height range."""
+        valid_node_def = {
+            "identity": {
+                "public_key": "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3a",
+                "username": "valid_test_node",
+                "username_signature": base64.b64encode(b"valid_signature").decode(),
+            },
+            "host": "192.168.1.50",
+            "port": 8000,
+            "collateral_address": "1TestCollateralAddress",
+        }
+        announce_h = CHAIN.DYNAMIC_NODES_FORK
+        spend_h = announce_h + 50
+
+        block = {
+            "index": announce_h,
+            "transactions": [
+                {
+                    "id": "later_spent_txn_id",
+                    "public_key": valid_node_def["identity"]["public_key"],
+                    "relationship": {"node": valid_node_def},
+                    "fee": 200,
+                }
+            ],
+        }
+
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+
+        spending_iter = AsyncMock()
+        spending_iter.__aiter__.return_value = iter(
+            [
+                {
+                    "index": spend_h,
+                    "transactions": [
+                        {
+                            "inputs": [{"id": "later_spent_txn_id"}],
+                            "public_key": valid_node_def["identity"]["public_key"],
+                        }
+                    ],
+                }
+            ]
+        )
+
+        def find_side_effect(query, *args, **kwargs):
+            elem_match = {}
+            if isinstance(query, dict):
+                elem_match = query.get("transactions", {}).get("$elemMatch", {})
+            if "inputs.id" in elem_match:
+                cursor = MagicMock()
+                cursor.sort.return_value = spending_iter
+                return cursor
+            cursor = MagicMock()
+            cursor.sort.return_value = async_iter
+            return cursor
+
+        self.config.mongo.async_db.blocks.find.side_effect = find_side_effect
+        initial_count = len(self.seeds_instance._NODES)
+
+        mock_node = Mock()
+        mock_node.identity = Mock()
+        mock_node.identity.public_key = valid_node_def["identity"]["public_key"]
+        mock_node.host = valid_node_def["host"]
+
+        # from_pubkey is used both for spend-address matching (must equal
+        # collateral_address) and for payment-address indexing.
+        with mock.patch(
+            "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",
+            return_value="1TestCollateralAddress",
+        ):
+            with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+                with mock.patch.object(
+                    self.config, "address_is_valid", return_value=True
+                ):
+                    with mock.patch.object(Seed, "from_dict", return_value=mock_node):
+                        with mock.patch.object(
+                            Nodes, "_assign_node_type", return_value="seed"
+                        ):
+                            await Nodes.load_dynamic_nodes_from_chain(
+                                activation_height=CHAIN.DYNAMIC_NODES_FORK
+                            )
+
+        self.assertEqual(len(self.seeds_instance._NODES), initial_count + 1)
+        added = self.seeds_instance._NODES[-1]
+        self.assertEqual(added["ranges"], [(announce_h, spend_h)])
+        # Not tip-eligible once collateral is spent
+        self.assertNotIn("1TestCollateralAddress", Nodes.eligible_nodes_by_address)
+
+    async def test_load_dynamic_nodes_legacy_inline_identity(self):
+        """Legacy dynamic announcements with only inline identity must load."""
+        valid_node_def = {
+            "identity": {
+                "public_key": "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3a",
+                "username": "legacy_node",
+                "username_signature": base64.b64encode(b"sig").decode(),
+            },
+            "host": "10.0.0.9",
+            "port": 8000,
+            "collateral_address": "1LegacyCollateral",
+            # no identity_announcement
+        }
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK + 5,
+            "transactions": [
+                {
+                    "id": "legacy_announcement_txn",
+                    "public_key": valid_node_def["identity"]["public_key"],
+                    "relationship": {"node": valid_node_def},
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        empty_iter = AsyncMock()
+        empty_iter.__aiter__.return_value = iter([])
+
+        def find_side_effect(query, *args, **kwargs):
+            elem_match = {}
+            if isinstance(query, dict):
+                elem_match = query.get("transactions", {}).get("$elemMatch", {})
+            if "inputs.id" in elem_match:
+                cursor = MagicMock()
+                cursor.sort.return_value = empty_iter
+                return cursor
+            cursor = MagicMock()
+            cursor.sort.return_value = async_iter
+            return cursor
+
+        self.config.mongo.async_db.blocks.find.side_effect = find_side_effect
+        mock_node = Mock()
+        mock_node.identity = None  # from_dict leaves identity unset; loader fills it
+        mock_node.host = valid_node_def["host"]
+        initial = len(self.seeds_instance._NODES)
+
+        with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+            with mock.patch.object(self.config, "address_is_valid", return_value=True):
+                with mock.patch(
+                    "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",
+                    return_value="1LegacyPay",
+                ):
+                    with mock.patch.object(Seed, "from_dict", return_value=mock_node):
+                        with mock.patch.object(
+                            Nodes, "_assign_node_type", return_value="seed"
+                        ):
+                            await Nodes.load_dynamic_nodes_from_chain(
+                                activation_height=CHAIN.DYNAMIC_NODES_FORK
+                            )
+
+        self.assertEqual(len(self.seeds_instance._NODES), initial + 1)
+        self.assertEqual(
+            self.seeds_instance._NODES[-1]["ranges"],
+            [(CHAIN.DYNAMIC_NODES_FORK + 5, None)],
+        )
+        self.assertIn("1LegacyPay", Nodes.eligible_nodes_by_address)
 
     async def test_evict_all_dynamic_nodes(self):
         """Test that _evict_all_dynamic_nodes removes tracked dynamic nodes."""
@@ -517,13 +677,13 @@ class TestDynamicNodes(AsyncTestCase):
         self.assertEqual(len(Nodes.eligible_nodes_by_address), 0)
 
     async def test_evict_spent_dynamic_nodes_clears_eligible_nodes(self):
-        """Test that _evict_spent_dynamic_nodes removes the entry from eligible_nodes_by_address."""
+        """Spent collateral closes the range and drops tip eligibility, keeps history."""
         pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3a"
         mock_node = Mock()
         mock_node.identity = Mock()
         mock_node.identity.public_key = pub
+        spend_h = CHAIN.DYNAMIC_NODES_FORK + 25
 
-        # Register the node as a tracked dynamic node
         self.seeds_instance._NODES.append(
             {"ranges": [(CHAIN.DYNAMIC_NODES_FORK, None)], "node": mock_node}
         )
@@ -532,11 +692,10 @@ class TestDynamicNodes(AsyncTestCase):
         Nodes.dynamic_node_collateral_addresses[pub] = "1SpentCollateralAddress"
         Nodes.eligible_nodes_by_address["1SpentCollateralAddress"] = mock_node
 
-        # Simulate the collateral UTXO being spent
         with mock.patch.object(
             Nodes,
-            "_collateral_utxo_is_unspent",
-            new=AsyncMock(return_value=False),
+            "_collateral_spend_height",
+            new=AsyncMock(return_value=spend_h),
         ):
             with mock.patch(
                 "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",
@@ -544,8 +703,11 @@ class TestDynamicNodes(AsyncTestCase):
             ):
                 await Nodes._evict_spent_dynamic_nodes(self.config)
 
-        self.assertNotIn(pub, Nodes.dynamic_node_public_keys)
-        self.assertNotIn(pub, Nodes.dynamic_node_collateral_txns)
+        # Still tracked historically with a closed range
+        self.assertIn(pub, Nodes.dynamic_node_public_keys)
+        self.assertIn(pub, Nodes.dynamic_node_collateral_txns)
+        entry = next(e for e in self.seeds_instance._NODES if e["node"] is mock_node)
+        self.assertEqual(entry["ranges"], [(CHAIN.DYNAMIC_NODES_FORK, spend_h)])
         self.assertNotIn("1SpentCollateralAddress", Nodes.eligible_nodes_by_address)
 
     async def test_count_nodes_by_type(self):
@@ -610,10 +772,12 @@ class TestDynamicNodes(AsyncTestCase):
     async def test_set_nodes(self):
         """Test node mapping by fork point."""
         node1 = Mock()
+        node1.identity_announcement = None
         node1.identity = Mock()
         node1.identity.public_key = "key1"
 
         node2 = Mock()
+        node2.identity_announcement = None
         node2.identity = Mock()
         node2.identity.public_key = "key2"
 
@@ -1054,7 +1218,9 @@ class TestNodeTypeSelfDetermination(AsyncTestCase):
 
         def find_side_effect(query, *args, **kwargs):
             if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
-                return empty_collateral_iter
+                cursor = MagicMock()
+                cursor.sort.return_value = empty_collateral_iter
+                return cursor
             cursor = MagicMock()
             cursor.sort.return_value = async_iter
             return cursor
@@ -1126,7 +1292,9 @@ class TestNodeTypeSelfDetermination(AsyncTestCase):
 
         def find_side_effect(query, *args, **kwargs):
             if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
-                return empty_collateral_iter
+                cursor = MagicMock()
+                cursor.sort.return_value = empty_collateral_iter
+                return cursor
             cursor = MagicMock()
             cursor.sort.return_value = async_iter
             return cursor
@@ -1177,7 +1345,9 @@ class TestNodeTypeSelfDetermination(AsyncTestCase):
 
         def find_side_effect(query, *args, **kwargs):
             if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
-                return empty_collateral_iter
+                cursor = MagicMock()
+                cursor.sort.return_value = empty_collateral_iter
+                return cursor
             cursor = MagicMock()
             cursor.sort.return_value = async_iter
             return cursor
@@ -1469,8 +1639,8 @@ class TestNodeTypeSelfDetermination(AsyncTestCase):
             with mock.patch.object(self.config, "address_is_valid", return_value=True):
                 with mock.patch.object(
                     Nodes,
-                    "_collateral_utxo_is_unspent",
-                    new=AsyncMock(return_value=False),
+                    "_collateral_spend_height",
+                    new=AsyncMock(return_value=CHAIN.DYNAMIC_NODES_FORK),
                 ):
                     initial = len(self.seeds_instance._NODES)
                     await Nodes.load_dynamic_nodes_from_chain()
@@ -1512,7 +1682,7 @@ class TestNodeTypeSelfDetermination(AsyncTestCase):
             with mock.patch.object(self.config, "address_is_valid", return_value=True):
                 with mock.patch.object(
                     Nodes,
-                    "_collateral_utxo_is_unspent",
+                    "_collateral_spend_height",
                     new=AsyncMock(side_effect=RuntimeError("DB error")),
                 ):
                     initial = len(self.seeds_instance._NODES)
@@ -1554,7 +1724,9 @@ class TestNodeTypeSelfDetermination(AsyncTestCase):
 
         def find_side_effect(query, *args, **kwargs):
             if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
-                return empty_collateral_iter
+                cursor = MagicMock()
+                cursor.sort.return_value = empty_collateral_iter
+                return cursor
             cursor = MagicMock()
             cursor.sort.return_value = async_iter
             return cursor
@@ -1634,7 +1806,9 @@ class TestNodeTypeSelfDetermination(AsyncTestCase):
 
         def find_side_effect(query, *args, **kwargs):
             if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
-                return empty_collateral_iter
+                cursor = MagicMock()
+                cursor.sort.return_value = empty_collateral_iter
+                return cursor
             cursor = MagicMock()
             cursor.sort.return_value = async_iter
             return cursor
@@ -1759,7 +1933,9 @@ class TestNodesExceptionPaths(AsyncTestCase):
         async def aiter_blocks():
             yield block
 
-        self.mock_cfg.mongo.async_db.blocks.find.return_value = aiter_blocks()
+        cursor = MagicMock()
+        cursor.sort.return_value = aiter_blocks()
+        self.mock_cfg.mongo.async_db.blocks.find.return_value = cursor
 
         result = await Nodes._collateral_utxo_is_unspent(
             self.mock_cfg, "TARGET_TXN_ID", "1SomeAddress"
@@ -1780,7 +1956,9 @@ class TestNodesExceptionPaths(AsyncTestCase):
         async def aiter_blocks():
             yield block
 
-        self.mock_cfg.mongo.async_db.blocks.find.return_value = aiter_blocks()
+        cursor = MagicMock()
+        cursor.sort.return_value = aiter_blocks()
+        self.mock_cfg.mongo.async_db.blocks.find.return_value = cursor
 
         result = await Nodes._collateral_utxo_is_unspent(
             self.mock_cfg, "TARGET_TXN_ID", "1SomeAddress"
@@ -1843,7 +2021,7 @@ class TestNodesExceptionPaths(AsyncTestCase):
 
         with mock.patch.object(
             Nodes,
-            "_collateral_utxo_is_unspent",
+            "_collateral_spend_height",
             new=AsyncMock(side_effect=Exception("db error")),
         ):
             await Nodes._evict_spent_dynamic_nodes(self.mock_cfg)
@@ -1856,7 +2034,7 @@ class TestNodesExceptionPaths(AsyncTestCase):
     # ------------------------------------------------------------------
 
     async def test_evict_spent_nodes_early_return_when_none_spent(self):
-        """Line 193: returns early when all nodes are unspent."""
+        """Returns early when all nodes are unspent (spend height None)."""
         pub = "03ccddeeff00112233445566778899aabbccddeeff00112233445566778899aabb"
         Nodes.dynamic_node_collateral_txns[pub] = "unspent_txn"
         Nodes.dynamic_node_collateral_addresses[pub] = "1UnspentAddr"
@@ -1865,8 +2043,8 @@ class TestNodesExceptionPaths(AsyncTestCase):
 
         with mock.patch.object(
             Nodes,
-            "_collateral_utxo_is_unspent",
-            new=AsyncMock(return_value=True),
+            "_collateral_spend_height",
+            new=AsyncMock(return_value=None),
         ):
             await Nodes._evict_spent_dynamic_nodes(self.mock_cfg)
 
@@ -1879,20 +2057,27 @@ class TestNodesExceptionPaths(AsyncTestCase):
     # ------------------------------------------------------------------
 
     async def test_evict_spent_nodes_broken_entry_in_eviction_loop(self):
-        """Lines 200-201: catches exception accessing node pk during eviction loop."""
+        """Broken _NODES entries are skipped while matching nodes get ranges closed."""
         pub = "03ddeeff00112233445566778899aabbccddeeff00112233445566778899aabbcc"
         Nodes.dynamic_node_collateral_txns[pub] = "spent_txn"
         Nodes.dynamic_node_collateral_addresses[pub] = "1SpentAddr"
         Nodes.dynamic_node_public_keys.add(pub)
+        spend_h = CHAIN.DYNAMIC_NODES_FORK + 10
 
+        mock_node = Mock()
+        mock_node.identity = Mock()
+        mock_node.identity.public_key = pub
+        self.seeds_instance._NODES.append(
+            {"ranges": [(CHAIN.DYNAMIC_NODES_FORK, None)], "node": mock_node}
+        )
         # Add a broken entry alongside a valid one
         broken_entry = {"node": object()}  # accessing .identity.public_key raises
         self.seeds_instance._NODES.append(broken_entry)
 
         with mock.patch.object(
             Nodes,
-            "_collateral_utxo_is_unspent",
-            new=AsyncMock(return_value=False),
+            "_collateral_spend_height",
+            new=AsyncMock(return_value=spend_h),
         ):
             with mock.patch(
                 "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",
@@ -1900,10 +2085,17 @@ class TestNodesExceptionPaths(AsyncTestCase):
             ):
                 await Nodes._evict_spent_dynamic_nodes(self.mock_cfg)
 
-        self.assertNotIn(pub, Nodes.dynamic_node_collateral_txns)
-        # Clean up broken entry
+        # Still tracked with closed range
+        self.assertIn(pub, Nodes.dynamic_node_collateral_txns)
+        entry = next(
+            e for e in self.seeds_instance._NODES if e.get("node") is mock_node
+        )
+        self.assertEqual(entry["ranges"], [(CHAIN.DYNAMIC_NODES_FORK, spend_h)])
+        # Clean up
         self.seeds_instance._NODES = [
-            e for e in self.seeds_instance._NODES if e is not broken_entry
+            e
+            for e in self.seeds_instance._NODES
+            if e is not broken_entry and e.get("node") is not mock_node
         ]
 
     # ------------------------------------------------------------------
@@ -1911,21 +2103,23 @@ class TestNodesExceptionPaths(AsyncTestCase):
     # ------------------------------------------------------------------
 
     async def test_evict_spent_nodes_invalid_hex_pub_key(self):
-        """Lines 213-214: catches exception when pub is not valid hex for address computation."""
+        """Invalid hex pub keys are handled when clearing eligible_nodes_by_address."""
         pub = "NOT_VALID_HEX"
         Nodes.dynamic_node_collateral_txns[pub] = "spent_txn2"
         Nodes.dynamic_node_collateral_addresses[pub] = "1AnotherAddr"
         Nodes.dynamic_node_public_keys.add(pub)
+        spend_h = CHAIN.DYNAMIC_NODES_FORK + 3
 
         with mock.patch.object(
             Nodes,
-            "_collateral_utxo_is_unspent",
-            new=AsyncMock(return_value=False),
+            "_collateral_spend_height",
+            new=AsyncMock(return_value=spend_h),
         ):
             # Should not raise despite bad hex pub key
             await Nodes._evict_spent_dynamic_nodes(self.mock_cfg)
 
-        self.assertNotIn(pub, Nodes.dynamic_node_collateral_txns)
+        # Still tracked (range close only); address pop failed silently
+        self.assertIn(pub, Nodes.dynamic_node_collateral_txns)
 
     # ------------------------------------------------------------------
     # Line 378: load_dynamic_nodes_from_chain - unknown node type skipped
@@ -1961,7 +2155,9 @@ class TestNodesExceptionPaths(AsyncTestCase):
 
         def find_side_effect(query, *args, **kwargs):
             if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
-                return empty_iter
+                cursor = MagicMock()
+                cursor.sort.return_value = empty_iter
+                return cursor
             cursor = MagicMock()
             cursor.sort.return_value = async_iter
             return cursor
@@ -2015,7 +2211,9 @@ class TestNodesExceptionPaths(AsyncTestCase):
 
         def find_side_effect(query, *args, **kwargs):
             if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
-                return empty_iter
+                cursor = MagicMock()
+                cursor.sort.return_value = empty_iter
+                return cursor
             cursor = MagicMock()
             cursor.sort.return_value = async_iter
             return cursor
@@ -2070,7 +2268,9 @@ class TestNodesExceptionPaths(AsyncTestCase):
 
         def find_side_effect(query, *args, **kwargs):
             if "inputs.id" in query.get("transactions", {}).get("$elemMatch", {}):
-                return empty_iter
+                cursor = MagicMock()
+                cursor.sort.return_value = empty_iter
+                return cursor
             cursor = MagicMock()
             cursor.sort.return_value = async_iter
             return cursor
@@ -2203,6 +2403,74 @@ class TestKnownAnchorRegistry(AsyncTestCase):
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
+
+
+class TestEvictSpentRangeBranches(AsyncTestCase):
+    """Cover _evict_spent_dynamic_nodes range-close edge branches."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.seeds_instance = Seeds()
+        self.original_seeds = self.seeds_instance._NODES.copy()
+        Nodes.dynamic_node_public_keys.clear()
+        Nodes.dynamic_node_collateral_txns.clear()
+        Nodes.dynamic_node_collateral_addresses.clear()
+        Nodes.eligible_nodes_by_address.clear()
+
+    async def asyncTearDown(self):
+        self.seeds_instance._NODES = self.original_seeds
+        Nodes.dynamic_node_public_keys.clear()
+        Nodes.dynamic_node_collateral_txns.clear()
+        Nodes.dynamic_node_collateral_addresses.clear()
+        Nodes.eligible_nodes_by_address.clear()
+        await super().asyncTearDown()
+
+    async def test_evict_missing_collateral_address_drops_open_range(self):
+        """spend_height is None (no collateral addr): open ranges are dropped."""
+        pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b99"
+        mock_node = Mock()
+        mock_node.identity = Mock()
+        mock_node.identity.public_key = pub
+        entry = {"ranges": [(CHAIN.DYNAMIC_NODES_FORK, None)], "node": mock_node}
+        self.seeds_instance._NODES.append(entry)
+        Nodes.dynamic_node_public_keys.add(pub)
+        Nodes.dynamic_node_collateral_txns[pub] = "txn_missing_col"
+        # no collateral_addresses[pub] → spent[pub] = None
+
+        with mock.patch(
+            "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",
+            return_value="1DropMe",
+        ):
+            await Nodes._evict_spent_dynamic_nodes(MagicMock())
+
+        self.assertEqual(entry["ranges"], [])
+        self.assertNotIn(pub, Nodes.dynamic_node_public_keys)
+
+    async def test_evict_keeps_already_closed_range(self):
+        """Already-closed ranges are preserved when collateral is spent later."""
+        pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b98"
+        mock_node = Mock()
+        mock_node.identity = Mock()
+        mock_node.identity.public_key = pub
+        closed = (CHAIN.DYNAMIC_NODES_FORK, CHAIN.DYNAMIC_NODES_FORK + 5)
+        entry = {"ranges": [closed], "node": mock_node}
+        self.seeds_instance._NODES.append(entry)
+        Nodes.dynamic_node_public_keys.add(pub)
+        Nodes.dynamic_node_collateral_txns[pub] = "txn_closed"
+        Nodes.dynamic_node_collateral_addresses[pub] = "1Closed"
+        spend_h = CHAIN.DYNAMIC_NODES_FORK + 50
+
+        with mock.patch.object(
+            Nodes, "_collateral_spend_height", new=AsyncMock(return_value=spend_h)
+        ):
+            with mock.patch(
+                "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",
+                return_value="1Closed",
+            ):
+                await Nodes._evict_spent_dynamic_nodes(MagicMock())
+
+        self.assertEqual(entry["ranges"], [closed])
+
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

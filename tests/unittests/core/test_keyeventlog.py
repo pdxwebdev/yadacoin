@@ -1580,6 +1580,7 @@ class TestKeyEventExtraBlocksAndMempoolCoverage(AsyncTestCase):
         parent_txn = MagicMock()
         parent_txn.public_key_hash = "PREV_ADDR"
         extra = MagicMock()
+        extra.index = 1
         extra.transactions = [parent_txn]
         with patch("yadacoin.core.keyeventlog.P2PKHBitcoinAddress") as mock_btc:
             mock_btc.from_pubkey.return_value = _VALID_ADDR_A
@@ -1604,6 +1605,7 @@ class TestKeyEventExtraBlocksAndMempoolCoverage(AsyncTestCase):
         parent_txn = MagicMock()
         parent_txn.public_key_hash = "PREV_ADDR"
         extra = MagicMock()
+        extra.index = 1
         extra.transactions = [parent_txn]
         with patch("yadacoin.core.keyeventlog.P2PKHBitcoinAddress") as mock_btc:
             mock_btc.from_pubkey.return_value = _VALID_ADDR_A
@@ -1615,6 +1617,224 @@ class TestKeyEventExtraBlocksAndMempoolCoverage(AsyncTestCase):
             )
             ke.config.mongo = mock_mongo
             await ke.verify(extra_blocks=[extra])
+
+    async def test_verify_confirming_extra_blocks_skips_future_height(self):
+        """block.index > block_index continues without accepting the parent."""
+        from yadacoin.core.keyeventlog import KELException, KeyEventFlag
+
+        ke = _make_mock_ke(
+            flag=KeyEventFlag.CONFIRMING, prev_public_key_hash="PREV_ADDR"
+        )
+        parent_txn = MagicMock()
+        parent_txn.public_key_hash = "PREV_ADDR"
+        future = MagicMock()
+        future.index = 999
+        future.transactions = [parent_txn]
+        with patch("yadacoin.core.keyeventlog.P2PKHBitcoinAddress") as mock_btc:
+            mock_btc.from_pubkey.return_value = _VALID_ADDR_A
+            ke.sends_to_past_kel_entry = AsyncMock(return_value=False)
+            ke.get_onchain_parent = AsyncMock(return_value=None)
+            mock_mongo = MagicMock()
+            mock_mongo.async_db.miner_transactions.find_one = AsyncMock(
+                return_value=None
+            )
+            mock_mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
+            ke.config.mongo = mock_mongo
+            # Future parent is skipped; no on-chain/mempool parent → may raise or pass
+            try:
+                await ke.verify(extra_blocks=[future], block_index=10)
+            except KELException:
+                pass
+
+    async def test_verify_unconfirmed_extra_blocks_skips_future_height(self):
+        """Unconfirmed path skips future-height extra blocks then raises."""
+        from yadacoin.core.keyeventlog import KELException, KeyEventFlag
+
+        ke = _make_mock_ke(
+            flag=KeyEventFlag.UNCONFIRMED,
+            prev_public_key_hash="PREV_ADDR",
+            relationship="some_data",
+            outputs_to="SOME_ADDR",
+        )
+        parent_txn = MagicMock()
+        parent_txn.public_key_hash = "PREV_ADDR"
+        future = MagicMock()
+        future.index = 999
+        future.transactions = [parent_txn]
+        with patch("yadacoin.core.keyeventlog.P2PKHBitcoinAddress") as mock_btc:
+            mock_btc.from_pubkey.return_value = _VALID_ADDR_A
+            ke.sends_to_past_kel_entry = AsyncMock(return_value=False)
+            ke.get_onchain_parent = AsyncMock(return_value=None)
+            mock_mongo = MagicMock()
+            mock_mongo.async_db.miner_transactions.find_one = AsyncMock(
+                return_value=None
+            )
+            mock_mongo.async_db.key_event_log.find_one = AsyncMock(return_value=None)
+            ke.config.mongo = mock_mongo
+            with self.assertRaises(KELException):
+                await ke.verify(extra_blocks=[future], block_index=10)
+
+    async def test_init_async_step2_2_extra_blocks_skips_future_height(self):
+        """init_async path 2.2 skips future-height extra blocks (continue at 1485)."""
+        from yadacoin.core.keyeventlog import (
+            KeyEvent,
+            KeyEventChainStatus,
+            KeyEventFlag,
+            KeyEventLog,
+        )
+
+        # Same setup as test_init_async_step2_2_extra_blocks_parent, but
+        # extra_block.index > block_index so the parent is skipped.
+        ke = _make_mock_ke(
+            public_key_hash="ADDR_PKH",
+            prerotated_key_hash="ADDR_PKR",
+            twice_prerotated_key_hash="ADDR_TPKR",
+            prev_public_key_hash="",
+            relationship="",
+            outputs_to="ADDR_PKR",
+        )
+        ke.get_onchain_parent = AsyncMock(return_value=None)
+
+        unconf_txn = MagicMock()
+        unconf_txn.twice_prerotated_key_hash = "UNCONF_TWICE"
+        unconf_txn.prerotated_key_hash = "ADDR_PKR"
+        unconf_txn.public_key_hash = "ADDR_PKH"
+        unconf_txn.prev_public_key_hash = "SOME_PREV"
+        unconf_txn.relationship = "some_rel"
+        unconf_txn.transaction_signature = "unconf_sig"
+        out = MagicMock()
+        out.to = "SOME_OTHER"
+        unconf_txn.outputs = [out]
+
+        hash_collection = _make_hash_collection(
+            prerotated={"ADDR_PKH": MagicMock()},
+            twice_prerotated={"ADDR_PKR": unconf_txn},
+        )
+
+        parent_txn = MagicMock()
+        parent_txn.public_key_hash = "SOME_PREV"
+        parent_txn.prev_public_key_hash = ""
+        parent_txn.transaction_signature = "parent_sig"
+
+        unconf_ke = KeyEvent.__new__(KeyEvent)
+        unconf_ke.txn = unconf_txn
+        unconf_ke.flag = KeyEventFlag.UNCONFIRMED
+        unconf_ke.status = KeyEventChainStatus.MEMPOOL
+        unconf_ke.config = Config()
+        unconf_ke.get_onchain_parent = AsyncMock(return_value=None)
+        unconf_ke.get_mempool_parent = AsyncMock(return_value=None)
+
+        paths = []
+
+        def _ke_factory(txn, flag=None, status=None, path=None):
+            if txn is unconf_txn:
+                return unconf_ke
+            if txn is parent_txn:
+                paths.append(path)
+                return MagicMock()
+            return MagicMock()
+
+        future = MagicMock()
+        future.index = 999
+        future.transactions = [parent_txn]
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEvent",
+            side_effect=_ke_factory,
+        ):
+            with patch.object(
+                KeyEventLog,
+                "build_from_public_key",
+                new=AsyncMock(return_value=[MagicMock()]),
+            ):
+                try:
+                    await KeyEventLog.init_async(
+                        ke, hash_collection, extra_blocks=[future], block_index=10
+                    )
+                except Exception:
+                    pass
+        # Future parent skipped → parent KeyEvent factory never called with path 2.2
+        self.assertNotIn("2.2", paths)
+
+    async def test_init_async_step2_5_extra_blocks_skips_future_height(self):
+        """init_async path 2.5 skips future-height extra blocks (continue branch)."""
+        from yadacoin.core.keyeventlog import (
+            KeyEvent,
+            KeyEventChainStatus,
+            KeyEventFlag,
+            KeyEventLog,
+        )
+
+        key_event = _make_mock_ke(
+            public_key_hash="ADDR_PKH",
+            prerotated_key_hash="ADDR_PKR",
+            twice_prerotated_key_hash="ADDR_TPKR",
+            prev_public_key_hash="SOME_PREV",
+            relationship="some_data",
+            outputs_to="SOMEWHERE_ELSE",
+        )
+        key_event.get_onchain_parent = AsyncMock(return_value=None)
+        key_event.get_mempool_parent = AsyncMock(return_value=None)
+
+        confirming_txn = MagicMock()
+        confirming_txn.public_key_hash = "ADDR_TPKR"
+        confirming_txn.prerotated_key_hash = "ADDR_PKR"
+        confirming_txn.prev_public_key_hash = "ADDR_PKH"
+        confirming_txn.transaction_signature = "confirming_sig"
+        confirming_txn.relationship = ""
+        out = MagicMock()
+        out.to = "ADDR_PKR"
+        confirming_txn.outputs = [out]
+
+        hash_collection = _make_hash_collection(
+            prerotated={"ADDR_TPKR": confirming_txn},
+            twice_prerotated={},
+        )
+
+        parent_txn = MagicMock()
+        parent_txn.public_key_hash = "SOME_PREV"
+        parent_txn.prev_public_key_hash = ""
+        parent_txn.transaction_signature = "parent_sig"
+
+        confirming_ke = KeyEvent.__new__(KeyEvent)
+        confirming_ke.txn = confirming_txn
+        confirming_ke.flag = KeyEventFlag.CONFIRMING
+        confirming_ke.status = KeyEventChainStatus.MEMPOOL
+        confirming_ke.config = Config()
+
+        paths = []
+
+        def _ke_factory(txn, flag=None, status=None, path=None):
+            if txn is confirming_txn:
+                return confirming_ke
+            if txn is parent_txn:
+                paths.append(path)
+                return MagicMock()
+            return MagicMock()
+
+        future = MagicMock()
+        future.index = 999
+        future.transactions = [parent_txn]
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEvent",
+            side_effect=_ke_factory,
+        ):
+            with patch.object(
+                KeyEventLog,
+                "build_from_public_key",
+                new=AsyncMock(return_value=[MagicMock()]),
+            ):
+                try:
+                    await KeyEventLog.init_async(
+                        key_event,
+                        hash_collection,
+                        extra_blocks=[future],
+                        block_index=10,
+                    )
+                except Exception:
+                    pass
+        self.assertNotIn("2.5", paths)
 
     async def test_init_async_step2_2_extra_blocks_parent(self):
         from yadacoin.core.keyeventlog import (
@@ -1676,6 +1896,7 @@ class TestKeyEventExtraBlocksAndMempoolCoverage(AsyncTestCase):
             return MagicMock()
 
         extra = MagicMock()
+        extra.index = 1
         extra.transactions = [parent_txn]
 
         with patch(
@@ -1689,7 +1910,7 @@ class TestKeyEventExtraBlocksAndMempoolCoverage(AsyncTestCase):
             ):
                 try:
                     await KeyEventLog.init_async(
-                        ke, hash_collection, extra_blocks=[extra]
+                        ke, hash_collection, extra_blocks=[extra], block_index=10
                     )
                 except Exception:
                     pass
@@ -1751,6 +1972,7 @@ class TestKeyEventExtraBlocksAndMempoolCoverage(AsyncTestCase):
             return MagicMock()
 
         extra = MagicMock()
+        extra.index = 1
         extra.transactions = [parent_txn]
 
         with patch(
@@ -1764,7 +1986,7 @@ class TestKeyEventExtraBlocksAndMempoolCoverage(AsyncTestCase):
             ):
                 try:
                     await KeyEventLog.init_async(
-                        key_event, hash_collection, extra_blocks=[extra]
+                        key_event, hash_collection, extra_blocks=[extra], block_index=10
                     )
                 except Exception:
                     pass

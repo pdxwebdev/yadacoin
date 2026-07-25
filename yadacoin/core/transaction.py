@@ -722,6 +722,12 @@ class Transaction(object):
                     has_kel = address in _batch_prerotated or address in _batch_twice
                 if not has_kel and extra_blocks:
                     for extra_block in extra_blocks:
+                        if (
+                            block is not None
+                            and getattr(extra_block, "index", None) is not None
+                            and extra_block.index > block.index
+                        ):
+                            continue
                         _batch_prerotated = {
                             t.prerotated_key_hash
                             for t in extra_block.transactions

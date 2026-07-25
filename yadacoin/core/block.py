@@ -38,7 +38,6 @@ from yadacoin.core.keyeventlog import (
 )
 from yadacoin.core.keyrotation import NodeKeyRotationManager
 from yadacoin.core.latestblock import LatestBlock
-from yadacoin.core.nodes import Nodes
 from yadacoin.core.nodestester import NodesTester
 from yadacoin.core.recoveryannouncement import RecoveryProof, RecoveryTransition
 from yadacoin.core.transaction import (
@@ -92,10 +91,6 @@ class FastGraphRule1(Exception):
 
 
 class FastGraphRule2(Exception):
-    pass
-
-
-class UnknownOutputAddressException(Exception):
     pass
 
 
@@ -866,21 +861,6 @@ class Block(object):
 
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         self.verify_signature(address)
-        if self.index >= CHAIN.PAY_MASTER_NODES_FORK:
-            masernodes_by_address = (
-                Nodes.get_all_nodes_indexed_by_address_for_block_height(self.index)
-            )
-            # Merge in all on-chain registered eligible nodes so validation accepts
-            # coinbase payments to any node with valid collateral, not just those that
-            # happened to pass the connectivity test on this particular peer.
-            if (
-                self.index >= CHAIN.DYNAMIC_NODES_FORK
-                and Nodes.eligible_nodes_by_address
-            ):
-                masernodes_by_address = {
-                    **masernodes_by_address,
-                    **Nodes.eligible_nodes_by_address,
-                }
 
         if self.index >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK:
             items_indexed = {x.transaction_signature: x for x in self.transactions}
@@ -952,6 +932,11 @@ class Block(object):
                             break
                     if extra_blocks and not has_kel:
                         for extra_block in extra_blocks:
+                            if (
+                                getattr(extra_block, "index", None) is not None
+                                and extra_block.index > self.index
+                            ):
+                                continue
                             for sibling in extra_block.transactions:
                                 if (
                                     sibling.transaction_signature
@@ -1016,26 +1001,22 @@ class Block(object):
 
             if txn.coinbase:
                 if self.index >= CHAIN.PAY_MASTER_NODES_FORK:
-                    block_creator_address = address
-                    miner_target = (
-                        txn.prerotated_key_hash
-                        if self.index >= CHAIN.CHECK_MASTERNODE_KEL_ADDRESS
-                        else block_creator_address
-                    )
+                    # Miner share may be paid to the block public_key address or,
+                    # when KEL coinbase rotation is used, to prerotated_key_hash.
+                    # All other coinbase outputs count as masternode payments;
+                    # fee/reward totals are still enforced below.  Do not rebuild
+                    # a live MN allowlist — historical node sets cannot be
+                    # reconstructed reliably during bootstrap/sync.
+                    miner_target = txn.prerotated_key_hash or address
                     for output in txn.outputs:
                         if float(output.value) < 0:
                             raise Exception("Coinbase output value cannot be negative")
                         if output.to == miner_target:
                             coinbase_sum += float(output.value)
-                        elif output.to in masernodes_by_address:
+                        else:
                             if output.to not in masternode_sums:
                                 masternode_sums[output.to] = 0
                             masternode_sums[output.to] += output.value
-                        else:
-                            if self.index >= CHAIN.CHECK_MASTERNODE_KEL_ADDRESS:
-                                raise UnknownOutputAddressException(
-                                    f"Coinbase output to unknown address: {output.to}"
-                                )
                 else:
                     for output in txn.outputs:
                         if float(output.value) < 0:

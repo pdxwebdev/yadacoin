@@ -1495,7 +1495,10 @@ class TestVerifyCheckKelBatchAndPrevHash(TransactionTestCase):
         sibling.twice_prerotated_key_hash = "unrelated"
 
         extra_block = MagicMock()
+        extra_block.index = 5
         extra_block.transactions = [sibling]
+        block = MagicMock()
+        block.index = 10
 
         mock_lb = MagicMock()
         mock_lb.block.index = 0
@@ -1512,7 +1515,11 @@ class TestVerifyCheckKelBatchAndPrevHash(TransactionTestCase):
                         with patch.object(
                             KeyEvent, "verify", new=AsyncMock(return_value=None)
                         ) as mock_verify:
-                            await txn.verify(check_kel=True, extra_blocks=[extra_block])
+                            await txn.verify(
+                                check_kel=True,
+                                block=block,
+                                extra_blocks=[extra_block],
+                            )
                             mock_verify.assert_called_once()
 
     async def test_verify_check_kel_extra_blocks_twice_prerotated_match(self):
@@ -1535,7 +1542,10 @@ class TestVerifyCheckKelBatchAndPrevHash(TransactionTestCase):
         sibling.twice_prerotated_key_hash = address
 
         extra_block = MagicMock()
+        extra_block.index = 5
         extra_block.transactions = [sibling]
+        block = MagicMock()
+        block.index = 10
 
         mock_lb = MagicMock()
         mock_lb.block.index = 0
@@ -1552,7 +1562,11 @@ class TestVerifyCheckKelBatchAndPrevHash(TransactionTestCase):
                         with patch.object(
                             KeyEvent, "verify", new=AsyncMock(return_value=None)
                         ) as mock_verify:
-                            await txn.verify(check_kel=True, extra_blocks=[extra_block])
+                            await txn.verify(
+                                check_kel=True,
+                                block=block,
+                                extra_blocks=[extra_block],
+                            )
                             mock_verify.assert_called_once()
 
     async def test_verify_check_kel_extra_blocks_skips_self_and_breaks(self):
@@ -1585,11 +1599,16 @@ class TestVerifyCheckKelBatchAndPrevHash(TransactionTestCase):
         hit.twice_prerotated_key_hash = "unrelated"
 
         first_block = MagicMock()
+        first_block.index = 5
         first_block.transactions = [self_txn, miss]
         second_block = MagicMock()
+        second_block.index = 6
         second_block.transactions = [hit]
         third_block = MagicMock()
+        third_block.index = 20
         third_block.transactions = [miss]
+        block = MagicMock()
+        block.index = 10
 
         mock_lb = MagicMock()
         mock_lb.block.index = 0
@@ -1608,9 +1627,61 @@ class TestVerifyCheckKelBatchAndPrevHash(TransactionTestCase):
                         ) as mock_verify:
                             await txn.verify(
                                 check_kel=True,
+                                block=block,
                                 extra_blocks=[first_block, second_block, third_block],
                             )
                             mock_verify.assert_called_once()
+
+    async def test_verify_check_kel_extra_blocks_skips_future_height_only(self):
+        """Only future-height extra_blocks are skipped; no match → no KeyEvent.verify."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH
+
+        from yadacoin.core.keyeventlog import KeyEvent
+        from yadacoin.core.recoveryannouncement import RecoveryAnnouncement
+
+        address = str(_P2PKH.from_pubkey(bytes.fromhex(self.public_key)))
+        ann = RecoveryAnnouncement("aabbccdd")
+        txn = self._make_txn_with_relationship(ann)
+        txn.transaction_signature = "self_sig"
+
+        sibling = MagicMock()
+        sibling.transaction_signature = "sibling_sig"
+        sibling.prerotated_key_hash = address
+        sibling.twice_prerotated_key_hash = "unrelated"
+
+        future = MagicMock()
+        future.index = 99
+        future.transactions = [sibling]
+        block = MagicMock()
+        block.index = 10
+
+        mock_lb = MagicMock()
+        mock_lb.block.index = 0
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch.object(
+                Transaction, "generate_hash", new=AsyncMock(return_value=txn.hash)
+            ):
+                with patch.object(Transaction, "verify_signature", return_value=None):
+                    with patch.object(
+                        Transaction,
+                        "has_key_event_log",
+                        new=AsyncMock(return_value=False),
+                    ):
+                        with patch.object(
+                            KeyEvent, "verify", new=AsyncMock(return_value=None)
+                        ) as mock_verify:
+                            # Future sibling skipped → has_kel stays False → no KeyEvent
+                            try:
+                                await txn.verify(
+                                    check_kel=True,
+                                    block=block,
+                                    extra_blocks=[future],
+                                )
+                            except Exception:
+                                pass
+                            mock_verify.assert_not_called()
 
     async def test_verify_check_kel_has_kel_block_index_used(self):
         """Line 726: has_kel=True + block is not None → _kel_index = block.index."""

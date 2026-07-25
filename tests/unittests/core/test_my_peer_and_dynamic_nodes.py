@@ -221,7 +221,7 @@ class TestLoadDynamicNodesCoverage(AsyncTestCase):
         ), patch.object(
             self.config, "address_is_valid", return_value=True
         ), patch.object(
-            Nodes, "_collateral_utxo_is_unspent", new=AsyncMock(return_value=True)
+            Nodes, "_collateral_spend_height", new=AsyncMock(return_value=None)
         ), patch.object(
             Nodes, "_assign_node_type", return_value="seed"
         ), patch(
@@ -538,7 +538,7 @@ class TestLoadDynamicNodesCoverage(AsyncTestCase):
         self.assertEqual(len(Nodes.dynamic_node_public_keys), 0)
 
     async def test_collateral_spent_skipped(self):
-        """Cover line 485: continue when _collateral_utxo_is_unspent returns False."""
+        """Spend height <= announce height: node is never registered."""
         pub = "02" + "00" * 32
         block = {
             "index": CHAIN.DYNAMIC_NODES_FORK,
@@ -575,13 +575,15 @@ class TestLoadDynamicNodesCoverage(AsyncTestCase):
         ), patch.object(
             self.config, "address_is_valid", return_value=True
         ), patch.object(
-            Nodes, "_collateral_utxo_is_unspent", new=AsyncMock(return_value=False)
+            Nodes,
+            "_collateral_spend_height",
+            new=AsyncMock(return_value=CHAIN.DYNAMIC_NODES_FORK),
         ):
             await Nodes.load_dynamic_nodes_from_chain()
         self.assertEqual(len(Nodes.dynamic_node_public_keys), 0)
 
     async def test_collateral_exception_skipped(self):
-        """Cover line 487: continue when _collateral_utxo_is_unspent raises."""
+        """Collateral spend-height lookup raises: node is skipped."""
         pub = "02" + "00" * 32
         block = {
             "index": CHAIN.DYNAMIC_NODES_FORK,
@@ -619,7 +621,7 @@ class TestLoadDynamicNodesCoverage(AsyncTestCase):
             self.config, "address_is_valid", return_value=True
         ), patch.object(
             Nodes,
-            "_collateral_utxo_is_unspent",
+            "_collateral_spend_height",
             new=AsyncMock(side_effect=Exception("db error")),
         ):
             await Nodes.load_dynamic_nodes_from_chain()
@@ -664,7 +666,7 @@ class TestLoadDynamicNodesCoverage(AsyncTestCase):
         ), patch.object(
             self.config, "address_is_valid", return_value=True
         ), patch.object(
-            Nodes, "_collateral_utxo_is_unspent", new=AsyncMock(return_value=True)
+            Nodes, "_collateral_spend_height", new=AsyncMock(return_value=None)
         ):
             await Nodes.load_dynamic_nodes_from_chain()
         self.assertEqual(len(Nodes.dynamic_node_public_keys), 1)  # still 1
@@ -707,7 +709,7 @@ class TestLoadDynamicNodesCoverage(AsyncTestCase):
         ), patch.object(
             self.config, "address_is_valid", return_value=True
         ), patch.object(
-            Nodes, "_collateral_utxo_is_unspent", new=AsyncMock(return_value=True)
+            Nodes, "_collateral_spend_height", new=AsyncMock(return_value=None)
         ), patch.object(
             Nodes, "_assign_node_type", return_value="invalid_type"
         ):
@@ -752,13 +754,41 @@ class TestLoadDynamicNodesCoverage(AsyncTestCase):
         ), patch.object(
             self.config, "address_is_valid", return_value=True
         ), patch.object(
-            Nodes, "_collateral_utxo_is_unspent", new=AsyncMock(return_value=True)
+            Nodes, "_collateral_spend_height", new=AsyncMock(return_value=None)
         ), patch.object(
             Nodes, "_assign_node_type", return_value="seed"
         ), patch(
             "yadacoin.core.nodes.Seed.from_dict", side_effect=ValueError("bad node_def")
         ):
             await Nodes.load_dynamic_nodes_from_chain()
+        self.assertEqual(len(Nodes.dynamic_node_public_keys), 0)
+
+    async def test_inline_identity_without_public_key_skipped(self):
+        """Neither identity_announcement nor identity.public_key → skip."""
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "id": "txn_no_pub",
+                    "public_key": "02" + "11" * 32,
+                    "relationship": {
+                        "node": {
+                            "host": "10.0.0.99",
+                            "port": 8000,
+                            "collateral_address": "1" + "C" * 33,
+                            "identity": {"username": "x", "username_signature": "sig"},
+                            # no public_key, no identity_announcement
+                        }
+                    },
+                }
+            ],
+        }
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        self.config.mongo.async_db.blocks.find.return_value.sort.return_value = (
+            async_iter
+        )
+        await Nodes.load_dynamic_nodes_from_chain()
         self.assertEqual(len(Nodes.dynamic_node_public_keys), 0)
 
 

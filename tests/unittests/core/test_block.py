@@ -21,12 +21,7 @@ from bitcoin.wallet import P2PKHBitcoinAddress
 from mongomock import MongoClient
 
 import yadacoin.core.config
-from yadacoin.core.block import (
-    Block,
-    UnknownOutputAddressException,
-    XeggexAccountFrozenException,
-    quantize_eight,
-)
+from yadacoin.core.block import Block, XeggexAccountFrozenException, quantize_eight
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.config import Config
 from yadacoin.core.keyeventlog import (
@@ -393,9 +388,6 @@ class TestBlock(AsyncTestCase):
             new=handle_exception,
         ), mock.patch(
             "yadacoin.core.nodestester.NodesTester.test_all_nodes", new=test_all_nodes
-        ), mock.patch(
-            "yadacoin.core.nodes.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-            return_value=node_addrs,
         ):
             block.index = CHAIN.CHECK_MASTERNODE_FEE_FORK
             Config().LatestBlock.block = block
@@ -564,11 +556,6 @@ class TestBlock(AsyncTestCase):
         ), mock.patch(
             "yadacoin.core.blockchainutils.BlockChainUtils.get_transaction_by_id",
             new=get_transaction_by_id,
-        ), mock.patch(
-            "yadacoin.core.nodes.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-            return_value={
-                "13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK": Mock(),
-            },
         ):
             block = await Block.from_dict(masternode_fee_block)
             Config().LatestBlock = Mock()
@@ -869,57 +856,6 @@ class TestBlock(AsyncTestCase):
         self.assertIsInstance(block, Block)
 
     @mock.patch("yadacoin.core.config.CONFIG.mongo.async_db.blocks")
-    async def test_generate_apply_dynamic_nodes_on_empty(self, mock_blocks):
-        """Line 263: generate() calls apply_dynamic_nodes when all_nodes is empty at DYNAMIC_NODES_FORK."""
-        from yadacoin.core.blockchainutils import BlockChainUtils
-        from yadacoin.core.chain import CHAIN
-        from yadacoin.core.latestblock import LatestBlock
-
-        mock_blocks.find_one = AsyncMock(side_effect=_make_find_one_side_effect())
-        Config().BU = BlockChainUtils()
-
-        apply_dynamic_nodes = AsyncMock(return_value=None)
-        nodes = Nodes.get_all_nodes_for_block_height(CHAIN.CHECK_MASTERNODE_FEE_FORK)
-
-        async def test_all_nodes(a):
-            return nodes
-
-        # Save and clear all_nodes to trigger apply_dynamic_nodes
-        saved_all_nodes = NodesTester.all_nodes
-        NodesTester.all_nodes = []
-
-        try:
-            Config().LatestBlock = LatestBlock()
-            latest = await Block.init_async(
-                version=5,
-                block_index=CHAIN.DYNAMIC_NODES_FORK,
-                target=1,
-            )
-            Config().LatestBlock.block = latest
-
-            with mock.patch(
-                "yadacoin.core.block.Nodes.apply_dynamic_nodes", new=apply_dynamic_nodes
-            ), mock.patch(
-                "yadacoin.core.nodestester.NodesTester.test_all_nodes",
-                new=test_all_nodes,
-            ), mock.patch(
-                "yadacoin.core.transaction.Transaction.verify_kel_output_rules",
-                new=AsyncMock(return_value=None),
-            ), mock.patch(
-                "yadacoin.core.transaction.Transaction.has_key_event_log",
-                new=AsyncMock(return_value=False),
-            ):
-                NodesTester.successful_nodes = nodes
-                block = await Block.generate(
-                    index=CHAIN.DYNAMIC_NODES_FORK,
-                    prev_hash="prev",
-                )
-        finally:
-            NodesTester.all_nodes = saved_all_nodes
-
-        self.assertIsInstance(block, Block)
-
-    @mock.patch("yadacoin.core.config.CONFIG.mongo.async_db.blocks")
     async def test_generate_no_masternodes(self, mock_blocks):
         """Line 326: generate() creates coinbase with full reward when no masternodes."""
         from yadacoin.core.blockchainutils import BlockChainUtils
@@ -948,9 +884,6 @@ class TestBlock(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.nodestester.NodesTester.test_all_nodes",
                 new=test_all_nodes,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_for_block_height",
-                return_value=[],
             ):
                 block = await Block.generate(
                     index=CHAIN.PAY_MASTER_NODES_FORK,
@@ -1269,9 +1202,6 @@ class TestBlock(AsyncTestCase):
             ), mock.patch(
                 "yadacoin.core.blockchainutils.BlockChainUtils.is_input_spent",
                 new=is_input_spent,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_for_block_height",
-                return_value=[],
             ):
                 block = await Block.generate(
                     index=CHAIN.PAY_MASTER_NODES_FORK,
@@ -2144,49 +2074,6 @@ class TestBlock(AsyncTestCase):
         new=mock_generate_hash_from_header,
     )
     @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
-    async def test_verify_dynamic_nodes_eligible_merge(self):
-        """Line 883: verify() merges eligible_nodes_by_address at DYNAMIC_NODES_FORK."""
-        from yadacoin.core.chain import CHAIN
-
-        block = await Block.from_dict(copy.deepcopy(masternode_fee_block))
-        block.index = CHAIN.DYNAMIC_NODES_FORK
-
-        @property
-        async def contract_generated(a):
-            return False
-
-        @contract_generated.setter
-        def contract_generated(self, value):
-            pass
-
-        # Set up eligible_nodes_by_address to trigger the merge at line 883
-        saved_eligible = Nodes.eligible_nodes_by_address
-        try:
-            Nodes.eligible_nodes_by_address = {"1FakeNodeAddress": Mock()}
-            orig_fork = CHAIN.CHECK_MASTERNODE_FEE_FORK
-            CHAIN.CHECK_MASTERNODE_FEE_FORK = 0
-            try:
-                with mock.patch(
-                    "yadacoin.core.transaction.Transaction.contract_generated",
-                    new=contract_generated,
-                ), mock.patch(
-                    "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                    return_value={},
-                ):
-                    block.transactions[0].masternode_fee = 0.1
-                    await block.verify()
-            except Exception:
-                pass  # May fail for other reasons, we just need line 883 covered
-            finally:
-                CHAIN.CHECK_MASTERNODE_FEE_FORK = orig_fork
-        finally:
-            Nodes.eligible_nodes_by_address = saved_eligible
-
-    @mock.patch(
-        "yadacoin.core.block.Block.generate_hash_from_header",
-        new=mock_generate_hash_from_header,
-    )
-    @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
     async def test_verify_allow_same_block_spending_fork(self):
         """Lines 889-894: verify() indexes txns by signature at ALLOW_SAME_BLOCK_SPENDING_FORK."""
         from yadacoin.core.chain import CHAIN
@@ -2208,9 +2095,6 @@ class TestBlock(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=contract_generated,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ):
                 block.transactions[0].masternode_fee = 0.1
                 try:
@@ -2288,9 +2172,6 @@ class TestBlock(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=contract_generated,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ):
                 try:
                     await block.verify()
@@ -2379,9 +2260,6 @@ class TestBlock(AsyncTestCase):
             ), mock.patch(
                 "yadacoin.core.transaction.Transaction.verify_kel_output_rules",
                 new=verify_kel,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ):
                 block.transactions[0].masternode_fee = 0.1
                 try:
@@ -2495,9 +2373,6 @@ class TestBlock(AsyncTestCase):
             ), mock.patch(
                 "yadacoin.core.block.KeyEventLog.init_async",
                 new=kel_init,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ):
                 block.transactions[0].masternode_fee = 0.1
                 try:
@@ -2571,9 +2446,6 @@ class TestBlock(AsyncTestCase):
             ), mock.patch(
                 "yadacoin.core.transaction.Transaction.verify_kel_output_rules",
                 new=verify_kel_output_rules,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ):
                 with self.assertRaises(KELExceptionPreviousKeyHashReferenceMissing):
                     await block.verify()
@@ -2610,9 +2482,6 @@ class TestBlock(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=contract_generated,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ):
                 with self.assertRaises(Exception) as ctx:
                     await block.verify()
@@ -2620,48 +2489,6 @@ class TestBlock(AsyncTestCase):
             CHAIN.CHECK_MASTERNODE_FEE_FORK = orig_fork
 
         self.assertIn("negative", str(ctx.exception.args[0]).lower())
-
-    @mock.patch(
-        "yadacoin.core.block.Block.generate_hash_from_header",
-        new=mock_generate_hash_from_header,
-    )
-    @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
-    async def test_verify_coinbase_unknown_address_raises(self):
-        """Line 949: verify() raises when coinbase output goes to unknown address."""
-        from yadacoin.core.chain import CHAIN
-
-        block = await Block.from_dict(copy.deepcopy(masternode_fee_block))
-
-        @property
-        async def contract_generated(a):
-            return False
-
-        @contract_generated.setter
-        def contract_generated(self, value):
-            pass
-
-        # Change coinbase output to an unknown address
-        coinbase_txn = block.transactions[1]
-        coinbase_txn.outputs[0].to = "1UnknownAddress9999999999999"
-        coinbase_txn.outputs[0].value = 10.0
-
-        orig_fork = CHAIN.CHECK_MASTERNODE_FEE_FORK
-        orig_kel_addr = CHAIN.CHECK_MASTERNODE_KEL_ADDRESS
-        CHAIN.CHECK_MASTERNODE_FEE_FORK = block.index + 1
-        CHAIN.CHECK_MASTERNODE_KEL_ADDRESS = 0  # enable unknown address check
-        try:
-            with mock.patch(
-                "yadacoin.core.transaction.Transaction.contract_generated",
-                new=contract_generated,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
-            ):
-                with self.assertRaises(UnknownOutputAddressException):
-                    await block.verify()
-        finally:
-            CHAIN.CHECK_MASTERNODE_FEE_FORK = orig_fork
-            CHAIN.CHECK_MASTERNODE_KEL_ADDRESS = orig_kel_addr
 
     @mock.patch(
         "yadacoin.core.block.Block.generate_hash_from_header",
@@ -2754,9 +2581,6 @@ class TestBlock(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=maybe_contract_generated,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ):
                 block.transactions[0].fee = 0.01
                 block.transactions[0].masternode_fee = 0.1
@@ -2826,12 +2650,7 @@ class TestBlock(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=contract_generated_false,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
-            ), mock.patch.object(
-                block_module, "verify_signature", return_value=True
-            ):
+            ), mock.patch.object(block_module, "verify_signature", return_value=True):
                 try:
                     await block.verify()
                 except Exception:
@@ -2901,9 +2720,6 @@ class TestBlock(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=contract_generated_false,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ), mock.patch.object(
                 block_module, "verify_signature", side_effect=fake_verify_sig
             ):
@@ -2962,9 +2778,6 @@ class TestBlock(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=contract_generated,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ):
                 with self.assertRaises(Exception) as ctx:
                     await block.verify()
@@ -3022,9 +2835,6 @@ class TestBlock(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=contract_generated,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ):
                 with self.assertRaises(XeggexAccountFrozenException):
                     await block.verify()
@@ -3081,9 +2891,6 @@ class TestBlock(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=contract_generated,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ):
                 with self.assertRaises(XeggexAccountFrozenException):
                     await block.verify()
@@ -3116,9 +2923,6 @@ class TestBlock(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=contract_generated,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ):
                 block.transactions[0].masternode_fee = 0.1
                 try:
@@ -3153,9 +2957,6 @@ class TestBlock(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=contract_generated,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ):
                 # Set up block so coinbase only goes to miner (no masternodes)
                 # but fee_sum and masternode_fee_sum don't match - triggers the old bug path
@@ -3208,11 +3009,6 @@ class TestBlock(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=contract_generated,
-            ), mock.patch(
-                "yadacoin.core.nodes.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={
-                    "13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK": Mock(),
-                },
             ):
                 with self.assertRaises(TotalValueMismatchException):
                     await block.verify()
@@ -3452,10 +3248,7 @@ class TestBlock(AsyncTestCase):
         orig_fork = CHAIN.SMART_CONTRACT_REMOVAL_FORK
         CHAIN.SMART_CONTRACT_REMOVAL_FORK = 0
         try:
-            with mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
-            ):
+            if True:
                 with self.assertRaises(Exception) as ctx:
                     await block.verify()
         finally:
@@ -3495,10 +3288,7 @@ class TestBlock(AsyncTestCase):
         orig_fork = CHAIN.SMART_CONTRACT_REMOVAL_FORK
         CHAIN.SMART_CONTRACT_REMOVAL_FORK = 0
         try:
-            with mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
-            ):
+            if True:
                 with self.assertRaises(Exception) as ctx:
                     await block.verify()
         finally:
@@ -3594,7 +3384,7 @@ class TestBlockCoverageGaps(AsyncTestCase):
         block.index = CHAIN.CHECK_KEL_FORK
 
         # Use a real public key so P2PKHBitcoinAddress.from_pubkey() succeeds
-        subject_pubkey = yadacoin.core.config.CONFIG.public_key
+        subject_pubkey = Config().public_key
         subject_address = str(_P2PKH.from_pubkey(bytes.fromhex(subject_pubkey)))
 
         # Create subject txn (non-coinbase) with prev_public_key_hash set
@@ -3670,9 +3460,6 @@ class TestBlockCoverageGaps(AsyncTestCase):
             ), mock.patch(
                 "yadacoin.core.block.KELHashCollection.init_async",
                 new=AsyncMock(return_value=Mock()),
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={"13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK": Mock()},
             ), mock.patch.object(
                 Block, "verify_signature", return_value=None
             ):
@@ -3746,9 +3533,6 @@ class TestBlockCoverageGaps(AsyncTestCase):
             ), mock.patch(
                 "yadacoin.core.block.KELHashCollection.init_async",
                 new=AsyncMock(return_value=Mock()),
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={"13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK": Mock()},
             ), mock.patch.object(
                 Block, "verify_signature", return_value=None
             ):
@@ -3935,9 +3719,6 @@ class TestBlockCoverageGaps(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=contract_generated,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ), mock.patch.object(
                 Block, "verify_signature", return_value=None
             ), mock.patch(
@@ -4018,9 +3799,6 @@ class TestBlockCoverageGaps(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=contract_generated,
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ), mock.patch.object(
                 Block, "verify_signature", return_value=None
             ), mock.patch(
@@ -4572,7 +4350,10 @@ class TestBlockExtraBlocksKelCoverage(AsyncTestCase):
         block = await Block.from_dict(copy.deepcopy(masternode_fee_block))
         block.index = CHAIN.CHECK_KEL_FORK
 
-        subject_pubkey = yadacoin.core.config.CONFIG.public_key
+        subject_pubkey = (
+            getattr(Config(), "public_key", None)
+            or "02cd94b54fa5ec2431013e047e3d609d385e40c73538639acb77f6d1b0f2b46c4a"
+        )
         subject_address = str(
             P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(subject_pubkey))
         )
@@ -4609,6 +4390,7 @@ class TestBlockExtraBlocksKelCoverage(AsyncTestCase):
         same_sig_txn.twice_prerotated_key_hash = ""
 
         extra_block = Mock()
+        extra_block.index = 0  # below block.index so siblings are considered
         extra_block.transactions = [same_sig_txn, sibling_txn]
 
         for txn in block.transactions:
@@ -4645,9 +4427,6 @@ class TestBlockExtraBlocksKelCoverage(AsyncTestCase):
             ), mock.patch(
                 "yadacoin.core.block.KELHashCollection.init_async",
                 new=AsyncMock(return_value=Mock()),
-            ), mock.patch(
-                "yadacoin.core.block.Nodes.get_all_nodes_indexed_by_address_for_block_height",
-                return_value={},
             ), mock.patch.object(
                 Block, "verify_signature", return_value=None
             ):
@@ -4659,6 +4438,99 @@ class TestBlockExtraBlocksKelCoverage(AsyncTestCase):
             if kel_init.await_count:
                 kwargs = kel_init.await_args.kwargs
                 self.assertIn("extra_blocks", kwargs)
+        finally:
+            CHAIN.CHECK_MASTERNODE_FEE_FORK = orig_fork
+            CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK = orig_spends
+
+    @mock.patch(
+        "yadacoin.core.block.Block.generate_hash_from_header",
+        new=mock_generate_hash_from_header,
+    )
+    @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
+    async def test_verify_extra_blocks_skips_future_height(self):
+        """extra_block.index > self.index is skipped by the height guard."""
+        from yadacoin.core.chain import CHAIN
+
+        block = await Block.from_dict(copy.deepcopy(masternode_fee_block))
+        block.index = CHAIN.CHECK_KEL_FORK
+
+        subject_pubkey = (
+            getattr(Config(), "public_key", None)
+            or "02cd94b54fa5ec2431013e047e3d609d385e40c73538639acb77f6d1b0f2b46c4a"
+        )
+        subject_address = str(
+            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(subject_pubkey))
+        )
+
+        subject_txn = Mock()
+        subject_txn.version = 6
+        subject_txn.coinbase = False
+        subject_txn.transaction_signature = "subject_future_sig"
+        subject_txn.inputs = []
+        subject_txn.outputs = []
+        subject_txn.time = block.time
+        subject_txn.hash = "subjectfuturehash" * 3
+        subject_txn.public_key = subject_pubkey
+        subject_txn.public_key_hash = subject_address
+        subject_txn.prev_public_key_hash = "prev_for_future"
+        subject_txn.are_kel_fields_populated = Mock(return_value=False)
+        subject_txn.verify_kel_output_rules = AsyncMock(return_value=None)
+        subject_txn.has_key_event_log = AsyncMock(return_value=False)
+        subject_txn.relationship = ""
+        subject_txn.fee = 0.0
+        subject_txn.masternode_fee = 0.0
+
+        sibling_txn = Mock()
+        sibling_txn.transaction_signature = "sibling_future_sig"
+        sibling_txn.public_key_hash = "sibling_pkh"
+        sibling_txn.prerotated_key_hash = subject_address
+        sibling_txn.twice_prerotated_key_hash = ""
+
+        future_block = Mock()
+        future_block.index = block.index + 100
+        future_block.transactions = [sibling_txn]
+
+        for txn in block.transactions:
+            txn.prev_public_key_hash = getattr(txn, "prev_public_key_hash", "") or ""
+            if not hasattr(txn, "are_kel_fields_populated"):
+                txn.are_kel_fields_populated = Mock(return_value=False)
+            if not hasattr(txn, "has_key_event_log"):
+                txn.has_key_event_log = AsyncMock(return_value=False)
+        block.transactions[-1].coinbase = True
+        block.transactions.append(subject_txn)
+
+        @property
+        async def contract_generated(a):
+            return False
+
+        @contract_generated.setter
+        def contract_generated(self, value):
+            pass
+
+        orig_fork = CHAIN.CHECK_MASTERNODE_FEE_FORK
+        orig_spends = CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK
+        CHAIN.CHECK_MASTERNODE_FEE_FORK = block.index + 1
+        CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK = block.index + 1
+        try:
+            with mock.patch(
+                "yadacoin.core.transaction.Transaction.contract_generated",
+                new=contract_generated,
+            ), mock.patch(
+                "yadacoin.core.block.KeyEventLog.init_async",
+                new=AsyncMock(return_value=None),
+            ), mock.patch(
+                "yadacoin.core.block.KeyEvent.verify",
+                new=AsyncMock(return_value=None),
+            ), mock.patch(
+                "yadacoin.core.block.KELHashCollection.init_async",
+                new=AsyncMock(return_value=Mock()),
+            ), mock.patch.object(
+                Block, "verify_signature", return_value=None
+            ):
+                try:
+                    await block.verify(extra_blocks=[future_block])
+                except Exception:
+                    pass
         finally:
             CHAIN.CHECK_MASTERNODE_FEE_FORK = orig_fork
             CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK = orig_spends

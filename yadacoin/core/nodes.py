@@ -39,11 +39,19 @@ class Nodes:
         cls().NODES = defaultdict(list)
         for fork_point in cls().fork_points:
             for NODE in cls()._NODES:
-                # Only nodes that reference an on-chain identity_announcement
-                # qualify.  Legacy nodes carrying only an inline identity are
-                # skipped (same rule as dynamic node announcements).
+                # Include bootstrap nodes that either:
+                #   1. reference an on-chain identity_announcement (KEL-anchored), or
+                #   2. carry a legacy inline identity.
+                # Dynamic node *announcements* still require identity_announcement
+                # (enforced in load_dynamic_nodes_from_chain).  Skipping legacy
+                # inline-identity bootstrap nodes here broke historical block
+                # verify: coinbase masternode outputs at PAY_MASTER_NODES_FORK+
+                # could no longer be matched once those nodes were dropped from
+                # get_all_nodes_indexed_by_address_for_block_height.
                 node = NODE.get("node")
-                if not getattr(node, "identity_announcement", None):
+                has_ia = getattr(node, "identity_announcement", None)
+                has_identity = getattr(node, "identity", None) is not None
+                if not has_ia and not has_identity:
                     continue
                 for rng in NODE["ranges"]:
                     if rng[1] and rng[1] <= fork_point:
@@ -161,17 +169,18 @@ class Nodes:
         return providers_count // gateways_count
 
     @classmethod
-    async def _collateral_utxo_is_unspent(
+    async def _collateral_spend_height(
         cls, config, txn_id: str, collateral_address: str
-    ) -> bool:
-        """Return True if the collateral UTXO from the announcement transaction is still
-        unspent. Only a spending transaction signed by the owner of collateral_address
+    ):
+        """Return the block height where collateral was spent, or None if unspent.
+
+        Only a spending transaction signed by the owner of collateral_address
         counts; change-output spends by other keys are ignored.
         """
         cursor = config.mongo.async_db.blocks.find(
             {"transactions": {"$elemMatch": {"inputs.id": txn_id}}},
-            {"transactions": 1},
-        )
+            {"transactions": 1, "index": 1},
+        ).sort("index", 1)
         async for block in cursor:
             for txn in block.get("transactions", []):
                 if not any(inp.get("id") == txn_id for inp in txn.get("inputs", [])):
@@ -185,8 +194,21 @@ class Nodes:
                 except Exception:
                     continue
                 if spending_address == collateral_address:
-                    return False
-        return True
+                    return block.get("index")
+        return None
+
+    @classmethod
+    async def _collateral_utxo_is_unspent(
+        cls, config, txn_id: str, collateral_address: str
+    ) -> bool:
+        """Return True if the collateral UTXO from the announcement transaction is still
+        unspent. Only a spending transaction signed by the owner of collateral_address
+        counts; change-output spends by other keys are ignored.
+        """
+        return (
+            await cls._collateral_spend_height(config, txn_id, collateral_address)
+            is None
+        )
 
     @classmethod
     def _evict_all_dynamic_nodes(cls):
@@ -217,51 +239,63 @@ class Nodes:
 
     @classmethod
     async def _evict_spent_dynamic_nodes(cls, config):
-        """Evict only those dynamic nodes whose collateral UTXO has been spent.
+        """Close the active range for dynamic nodes whose collateral UTXO was spent.
 
-        Called each refresh cycle instead of a full evict+rescan so that nodes
-        with intact collateral stay registered without re-scanning the entire
-        post-fork chain history.
+        Nodes stay registered with ``ranges=[(announce_height, spend_height)]`` so
+        historical ``block.verify()`` at heights before the spend still accepts
+        coinbase payments to them.  They are removed from
+        ``eligible_nodes_by_address`` (current tip eligibility only).
         """
         if not cls.dynamic_node_collateral_txns:
             return
-        spent_keys = []
+        spent = {}  # pub -> spend_height
         for pub, txn_id in list(cls.dynamic_node_collateral_txns.items()):
             collateral_address = cls.dynamic_node_collateral_addresses.get(pub)
             if not collateral_address:
-                spent_keys.append(pub)
+                spent[pub] = None
                 continue
             try:
-                is_unspent = await cls._collateral_utxo_is_unspent(
+                spend_height = await cls._collateral_spend_height(
                     config, txn_id, collateral_address
                 )
             except Exception:
                 continue
-            if not is_unspent:
-                spent_keys.append(pub)
-        if not spent_keys:
+            if spend_height is not None:
+                spent[pub] = spend_height
+        if not spent:
             return
-        spent_set = set(spent_keys)
         for owner_class in (Seeds, SeedGateways, ServiceProviders):
-            retained = []
             for entry in owner_class()._NODES:
                 try:
                     pk = entry["node"].identity.public_key
                 except Exception:
                     pk = None
-                if pk in spent_set:
+                if pk not in spent:
                     continue
-                retained.append(entry)
-            owner_class()._NODES = retained
-        for pub in spent_keys:
-            cls.dynamic_node_public_keys.discard(pub)
-            cls.dynamic_node_collateral_txns.pop(pub, None)
-            cls.dynamic_node_collateral_addresses.pop(pub, None)
+                spend_height = spent[pk]
+                # Close open-ended ranges; keep historical start bound.
+                new_ranges = []
+                for rng in entry.get("ranges", []):
+                    start, end = rng[0], rng[1]
+                    if end is None and spend_height is not None:
+                        new_ranges.append((start, spend_height))
+                    elif end is None and spend_height is None:
+                        # Missing collateral metadata — drop from current set.
+                        continue
+                    else:
+                        new_ranges.append(rng)
+                entry["ranges"] = new_ranges
+        for pub, spend_height in spent.items():
             try:
                 addr = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub)))
                 cls.eligible_nodes_by_address.pop(addr, None)
             except Exception:
                 pass
+            # Fully drop only when we cannot bound a historical range.
+            if spend_height is None:
+                cls.dynamic_node_public_keys.discard(pub)
+                cls.dynamic_node_collateral_txns.pop(pub, None)
+                cls.dynamic_node_collateral_addresses.pop(pub, None)
 
     @classmethod
     async def _known_anchor_registry(cls):
@@ -422,34 +456,47 @@ class Nodes:
                     else node_blob
                 )
 
-                # Validate identity.  Only node announcements that reference an
-                # on-chain identity_announcement qualify; legacy announcements
-                # carrying only an inline ``identity`` are disqualified during
-                # node testing.  The ``identity`` field is still parsed by
-                # NodeAnnouncement (for legacy/backward-compat), but it no
-                # longer qualifies a node here.
+                # Accept either an on-chain identity_announcement (KEL-anchored)
+                # or a legacy inline identity.  Early dynamic MN registrations used
+                # inline identity only; dropping them broke historical coinbase
+                # verify for payments to those addresses.
                 identity_announcement = (
                     node_def.get("identity_announcement")
                     if isinstance(node_def, dict)
                     else None
                 )
-                if not identity_announcement:
+                inline_identity = (
+                    node_def.get("identity") if isinstance(node_def, dict) else None
+                )
+                if not identity_announcement and not (
+                    isinstance(inline_identity, dict)
+                    and inline_identity.get("public_key")
+                ):
                     continue
 
                 pub = None
                 username_sig = None
                 username = ""
+                ia_doc = None
                 from yadacoin.core.identityannouncement import IdentityAnnouncement
 
-                ia_doc = await IdentityAnnouncement.get_by_transaction_id(
-                    identity_announcement
-                )
-                if not ia_doc:
+                if identity_announcement:
+                    ia_doc = await IdentityAnnouncement.get_by_transaction_id(
+                        identity_announcement
+                    )
+                    if ia_doc:
+                        pub = ia_doc.get("public_key")
+                        _ia_identity = ia_doc.get("identity") or {}
+                        username_sig = _ia_identity.get("username_signature")
+                        username = _ia_identity.get("username", "")
+
+                if pub is None and isinstance(inline_identity, dict):
+                    pub = inline_identity.get("public_key")
+                    username_sig = inline_identity.get("username_signature")
+                    username = inline_identity.get("username", "") or ""
+
+                if not pub or not username_sig:
                     continue
-                pub = ia_doc.get("public_key")
-                _ia_identity = ia_doc.get("identity") or {}
-                username_sig = _ia_identity.get("username_signature")
-                username = _ia_identity.get("username", "")
 
                 # Verify username_signature against the username using the public key
                 try:
@@ -467,10 +514,6 @@ class Nodes:
                 if txn_pub and txn_pub != pub:
                     continue
 
-                # identity_announcement nodes rely on the connect-path resolution
-                # (same as bootstrap nodes in nodes.py); no inline identity is
-                # carried.  The anchoring/verification happens in tcpsocket/node.py.
-
                 # collateral_address is required and must be a valid address
                 collateral_address = node_def.get("collateral_address")
                 collateral_address_valid = (
@@ -479,20 +522,23 @@ class Nodes:
                 if not collateral_address_valid:
                     continue
 
-                # Verify the announcement transaction's collateral output is still unspent.
-                # This binds registration to the specific on-chain UTXO rather than an
-                # account balance, preventing temporary-fund attacks and false positives
-                # caused by unrelated deposits to the collateral address.
+                # Bind registration to the announcement UTXO.  If collateral was
+                # later spent, keep the node with a closed range so historical
+                # verify still accepts payments made while it was active.
                 txn_id = txn.get("id")
                 if not txn_id:
                     continue
+                announce_height = block.get("index", activation_height)
                 try:
-                    if not await cls._collateral_utxo_is_unspent(
+                    spend_height = await cls._collateral_spend_height(
                         config, txn_id, collateral_address
-                    ):
-                        continue
+                    )
                 except Exception:
                     continue
+                # Spent in/before the announcement block — never a valid MN.
+                if spend_height is not None and spend_height <= announce_height:
+                    continue
+                range_end = spend_height  # None if still unspent
 
                 # Prevent the same public key from being registered under a different
                 # class if topology counts shift between iterations in this refresh
@@ -531,15 +577,25 @@ class Nodes:
                 # get_all_nodes_indexed_by_address_for_block_height() crashes on
                 # node.identity.public_key during block.verify() for blocks at/after
                 # PAY_MASTER_NODES_FORK.
-                if node_obj.identity is None and ia_doc:
-                    identity_data = ia_doc.get("identity") or {}
-                    node_obj.identity = Identity(
-                        public_key=ia_doc.get("public_key", ""),
-                        username=identity_data.get("username", "") or "",
-                        username_signature=identity_data.get("username_signature", "")
-                        or "",
-                    )
-                    node_obj.anchor_public_key = ia_doc.get("public_key") or None
+                if node_obj.identity is None:
+                    if ia_doc:
+                        identity_data = ia_doc.get("identity") or {}
+                        node_obj.identity = Identity(
+                            public_key=ia_doc.get("public_key", "") or pub,
+                            username=identity_data.get("username", "") or "",
+                            username_signature=identity_data.get(
+                                "username_signature", ""
+                            )
+                            or "",
+                        )
+                        node_obj.anchor_public_key = ia_doc.get("public_key") or pub
+                    elif isinstance(inline_identity, dict):
+                        node_obj.identity = Identity(
+                            public_key=pub,
+                            username=username or "",
+                            username_signature=username_sig or "",
+                        )
+                        node_obj.anchor_public_key = pub
 
                 # pub is already validated above.  Avoid duplicates across ALL
                 # three node classes so a key that exists as a hardcoded node in
@@ -569,7 +625,10 @@ class Nodes:
 
                 if not exists:
                     owner_class()._NODES.append(
-                        {"ranges": [(activation_height, None)], "node": node_obj}
+                        {
+                            "ranges": [(announce_height, range_end)],
+                            "node": node_obj,
+                        }
                     )
                     Nodes.dynamic_node_public_keys.add(pub)
                     Nodes.dynamic_node_collateral_txns[pub] = txn_id
@@ -577,7 +636,10 @@ class Nodes:
                     payment_address = str(
                         P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub))
                     )
-                    Nodes.eligible_nodes_by_address[payment_address] = node_obj
+                    # Tip eligibility only — spent-collateral nodes remain in
+                    # height-bounded NODES for historical verify.
+                    if range_end is None:
+                        Nodes.eligible_nodes_by_address[payment_address] = node_obj
 
         Nodes._last_scanned_height = current_height
 
@@ -635,7 +697,7 @@ class Seeds(Nodes):
                 ),
             },
             {
-                "ranges": [(0, 597000)],
+                "ranges": [(0, None)],
                 "node": Seed.from_dict(
                     {
                         "host": "seed.hashyada.com",
@@ -669,7 +731,7 @@ class Seeds(Nodes):
                 ),
             },
             {
-                "ranges": [(443600, 597000)],
+                "ranges": [(443600, None)],
                 "node": Seed.from_dict(
                     {
                         "host": "seed.crbrain.online",
@@ -686,7 +748,7 @@ class Seeds(Nodes):
                 ),
             },
             {
-                "ranges": [(443700, 597000)],
+                "ranges": [(443700, None)],
                 "node": Seed.from_dict(
                     {
                         "host": "yada-alpha.mynodes.live",
@@ -703,7 +765,7 @@ class Seeds(Nodes):
                 ),
             },
             {
-                "ranges": [(446400, 597000)],
+                "ranges": [(446400, None)],
                 "node": Seed.from_dict(
                     {
                         "host": "seed.yada.toksyk.pl",
@@ -733,7 +795,7 @@ class Seeds(Nodes):
                 ),
             },
             {
-                "ranges": [(449000, 597000)],
+                "ranges": [(449000, None)],
                 "node": Seed.from_dict(
                     {
                         "host": "seedno.hashyada.com",
@@ -750,7 +812,7 @@ class Seeds(Nodes):
                 ),
             },
             {
-                "ranges": [(452000, 597000)],
+                "ranges": [(452000, None)],
                 "node": Seed.from_dict(
                     {
                         "host": "seed.friendspool.club",
@@ -767,7 +829,7 @@ class Seeds(Nodes):
                 ),
             },
             {
-                "ranges": [(467200, 597000)],
+                "ranges": [(467200, None)],
                 "node": Seed.from_dict(
                     {
                         "host": "seed.berkinyada.xyz",
@@ -801,7 +863,7 @@ class Seeds(Nodes):
                 ),
             },
             {
-                "ranges": [(472000, 597000)],  # UPDATED IDENTITY INFORMATION
+                "ranges": [(472000, None)],  # UPDATED IDENTITY INFORMATION
                 "node": Seed.from_dict(
                     {
                         "host": "seed.funckyman.xyz",
@@ -818,7 +880,7 @@ class Seeds(Nodes):
                 ),
             },
             {
-                "ranges": [(477000, 597000)],
+                "ranges": [(477000, None)],
                 "node": Seed.from_dict(
                     {
                         "host": "yadaseed1.hashrank.top",
@@ -835,7 +897,7 @@ class Seeds(Nodes):
                 ),
             },
             {
-                "ranges": [(479700, 597000)],
+                "ranges": [(479700, None)],
                 "node": Seed.from_dict(
                     {
                         "host": "seed.supahash.com",
@@ -852,7 +914,7 @@ class Seeds(Nodes):
                 ),
             },
             {
-                "ranges": [(480100, 597000)],
+                "ranges": [(480100, None)],
                 "node": Seed.from_dict(
                     {
                         "host": "seed.nephotim.co",
@@ -869,7 +931,7 @@ class Seeds(Nodes):
                 ),
             },
             {
-                "ranges": [(505600, 597000)],
+                "ranges": [(505600, None)],
                 "node": Seed.from_dict(
                     {
                         "host": "seed.rogue-miner.com",
@@ -886,7 +948,7 @@ class Seeds(Nodes):
                 ),
             },
             {
-                "ranges": [(530500, 597000)],
+                "ranges": [(530500, None)],
                 "node": Seed.from_dict(
                     {
                         "host": "seed.yadaid.au",
@@ -969,7 +1031,7 @@ class SeedGateways(Nodes):
                 ),
             },
             {
-                "ranges": [(443600, 597000)],
+                "ranges": [(443600, None)],
                 "node": SeedGateway.from_dict(
                     {
                         "host": "seedgateway.crbrain.online",
@@ -986,7 +1048,7 @@ class SeedGateways(Nodes):
                 ),
             },
             {
-                "ranges": [(443700, 597000)],
+                "ranges": [(443700, None)],
                 "node": SeedGateway.from_dict(
                     {
                         "host": "yada-bravo.mynodes.live",
@@ -1003,7 +1065,7 @@ class SeedGateways(Nodes):
                 ),
             },
             {
-                "ranges": [(446400, 597000)],
+                "ranges": [(446400, None)],
                 "node": SeedGateway.from_dict(
                     {
                         "host": "seedgateway.yada.toksyk.pl",
@@ -1033,7 +1095,7 @@ class SeedGateways(Nodes):
                 ),
             },
             {
-                "ranges": [(449000, 597000)],
+                "ranges": [(449000, None)],
                 "node": SeedGateway.from_dict(
                     {
                         "host": "seedgatewayno.hashyada.com",
@@ -1050,7 +1112,7 @@ class SeedGateways(Nodes):
                 ),
             },
             {
-                "ranges": [(452000, 597000)],
+                "ranges": [(452000, None)],
                 "node": SeedGateway.from_dict(
                     {
                         "host": "seedgateway.friendspool.club",
@@ -1067,7 +1129,7 @@ class SeedGateways(Nodes):
                 ),
             },
             {
-                "ranges": [(467200, 597000)],
+                "ranges": [(467200, None)],
                 "node": SeedGateway.from_dict(
                     {
                         "host": "seedgat.berkinyada.xyz",
@@ -1101,7 +1163,7 @@ class SeedGateways(Nodes):
                 ),
             },
             {
-                "ranges": [(472000, 597000)],  # UPDATED IDENTITY INFORMATION
+                "ranges": [(472000, None)],  # UPDATED IDENTITY INFORMATION
                 "node": SeedGateway.from_dict(
                     {
                         "host": "seedgateway.funckyman.xyz",
@@ -1118,7 +1180,7 @@ class SeedGateways(Nodes):
                 ),
             },
             {
-                "ranges": [(477000, 597000)],
+                "ranges": [(477000, None)],
                 "node": SeedGateway.from_dict(
                     {
                         "host": "yadaseed2.hashrank.top",
@@ -1135,7 +1197,7 @@ class SeedGateways(Nodes):
                 ),
             },
             {
-                "ranges": [(479700, 597000)],
+                "ranges": [(479700, None)],
                 "node": SeedGateway.from_dict(
                     {
                         "host": "seedgateway.supahash.com",
@@ -1152,7 +1214,7 @@ class SeedGateways(Nodes):
                 ),
             },
             {
-                "ranges": [(480100, 597000)],
+                "ranges": [(480100, None)],
                 "node": SeedGateway.from_dict(
                     {
                         "host": "gateway.nephotim.co",
@@ -1169,7 +1231,7 @@ class SeedGateways(Nodes):
                 ),
             },
             {
-                "ranges": [(505600, 597000)],
+                "ranges": [(505600, None)],
                 "node": SeedGateway.from_dict(
                     {
                         "host": "seedgateway.rogue-miner.com",
@@ -1186,7 +1248,7 @@ class SeedGateways(Nodes):
                 ),
             },
             {
-                "ranges": [(530500, 597000)],
+                "ranges": [(530500, None)],
                 "node": SeedGateway.from_dict(
                     {
                         "host": "seedgateway.yadaid.au",
@@ -1272,7 +1334,7 @@ class ServiceProviders(Nodes):
                 ),
             },
             {
-                "ranges": [(443600, 597000)],
+                "ranges": [(443600, None)],
                 "node": ServiceProvider.from_dict(
                     {
                         "host": "serviceprovider.crbrain.online",
@@ -1290,7 +1352,7 @@ class ServiceProviders(Nodes):
                 ),
             },
             {
-                "ranges": [(443700, 597000)],
+                "ranges": [(443700, None)],
                 "node": ServiceProvider.from_dict(
                     {
                         "host": "yada-charlie.mynodes.live",
@@ -1340,7 +1402,7 @@ class ServiceProviders(Nodes):
                 ),
             },
             {
-                "ranges": [(449000, 597000)],
+                "ranges": [(449000, None)],
                 "node": ServiceProvider.from_dict(
                     {
                         "host": "serviceproviderno.hashyada.com",
@@ -1358,7 +1420,7 @@ class ServiceProviders(Nodes):
                 ),
             },
             {
-                "ranges": [(452000, 597000)],
+                "ranges": [(452000, None)],
                 "node": ServiceProvider.from_dict(
                     {
                         "host": "serviceprovider.friendspool.club",
@@ -1376,7 +1438,7 @@ class ServiceProviders(Nodes):
                 ),
             },
             {
-                "ranges": [(467200, 597000)],
+                "ranges": [(467200, None)],
                 "node": ServiceProvider.from_dict(
                     {
                         "host": "servic.berkinyada.xyz",
@@ -1412,7 +1474,7 @@ class ServiceProviders(Nodes):
                 ),
             },
             {
-                "ranges": [(472000, 597000)],  # UPDATED IDENTITY INFORMATION
+                "ranges": [(472000, None)],  # UPDATED IDENTITY INFORMATION
                 "node": ServiceProvider.from_dict(
                     {
                         "host": "serviceprovider.funckyman.xyz",
@@ -1430,7 +1492,7 @@ class ServiceProviders(Nodes):
                 ),
             },
             {
-                "ranges": [(477000, 597000)],
+                "ranges": [(477000, None)],
                 "node": ServiceProvider.from_dict(
                     {
                         "host": "yadaseed3.hashrank.top",
@@ -1448,7 +1510,7 @@ class ServiceProviders(Nodes):
                 ),
             },
             {
-                "ranges": [(479700, 597000)],
+                "ranges": [(479700, None)],
                 "node": ServiceProvider.from_dict(
                     {
                         "host": "serviceprovider.supahash.com",
@@ -1466,7 +1528,7 @@ class ServiceProviders(Nodes):
                 ),
             },
             {
-                "ranges": [(480100, 597000)],
+                "ranges": [(480100, None)],
                 "node": ServiceProvider.from_dict(
                     {
                         "host": "serviceprovider.nephotim.co",
@@ -1484,7 +1546,7 @@ class ServiceProviders(Nodes):
                 ),
             },
             {
-                "ranges": [(505600, 597000)],
+                "ranges": [(505600, None)],
                 "node": ServiceProvider.from_dict(
                     {
                         "host": "serviceprovider.rogue-miner.com",
@@ -1502,7 +1564,7 @@ class ServiceProviders(Nodes):
                 ),
             },
             {
-                "ranges": [(530500, 597000)],
+                "ranges": [(530500, None)],
                 "node": ServiceProvider.from_dict(
                     {
                         "host": "serviceprovider.yadaid.au",

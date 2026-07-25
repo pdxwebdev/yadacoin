@@ -65,24 +65,30 @@ class TestBlock(AsyncTestCase):
         assert len(Seeds().NODES[472000]) >= 1
         assert len(Seeds().NODES[477000]) >= 1
 
+        def _node(n):
+            m = Mock()
+            m.identity_announcement = f"ia_{n}"
+            m.identity = None
+            return m
+
         Seeds()._NODES = [
-            {"ranges": [(0, 1)], "node": 1},
-            {"ranges": [(1, 3)], "node": 2},
-            {"ranges": [(0, None)], "node": 3},
-            {"ranges": [(3, None)], "node": 4},
+            {"ranges": [(0, 1)], "node": _node(1)},
+            {"ranges": [(1, 3)], "node": _node(2)},
+            {"ranges": [(0, None)], "node": _node(3)},
+            {"ranges": [(3, None)], "node": _node(4)},
         ]
         Seeds().set_fork_points()
         Seeds().set_nodes()
-        # Note: set_nodes() behavior changed; previous indices may be empty
-        # Just verify the structure exists
         self.assertTrue(isinstance(Seeds().NODES, dict))
+        self.assertTrue(len(Seeds().NODES.get(0, [])) >= 1)
 
     async def test_set_nodes_skips_range_ended_before_fork_point(self):
-        """Covers nodes.py line 50: a node's range end that is <= the fork
+        """Covers nodes.py: a node's range end that is <= the fork
         point being processed must be skipped, even though the node carries
         an identity_announcement (and therefore otherwise qualifies)."""
         node = Mock()
         node.identity_announcement = "ia_fork_skip"
+        node.identity = None
 
         Seeds()._NODES = [
             {"ranges": [(0, 100)], "node": node},
@@ -95,6 +101,33 @@ class TestBlock(AsyncTestCase):
         # At fork_point 100 and 200, rng[1]=100 <= fork_point -> skipped.
         self.assertNotIn(node, Seeds().NODES.get(100, []))
         self.assertNotIn(node, Seeds().NODES.get(200, []))
+
+    async def test_set_nodes_includes_legacy_inline_identity(self):
+        """Legacy bootstrap nodes with only inline identity must remain in
+        NODES so historical coinbase masternode payments still verify."""
+        legacy = Mock()
+        legacy.identity_announcement = None
+        legacy.identity = Mock(public_key="02" + "ab" * 32)
+
+        ia_only = Mock()
+        ia_only.identity_announcement = "ia_txn"
+        ia_only.identity = None
+
+        empty = Mock()
+        empty.identity_announcement = None
+        empty.identity = None
+
+        Seeds()._NODES = [
+            {"ranges": [(0, None)], "node": legacy},
+            {"ranges": [(0, None)], "node": ia_only},
+            {"ranges": [(0, None)], "node": empty},
+        ]
+        Seeds().fork_points = [0]
+        Seeds.set_nodes()
+
+        self.assertIn(legacy, Seeds().NODES.get(0, []))
+        self.assertIn(ia_only, Seeds().NODES.get(0, []))
+        self.assertNotIn(empty, Seeds().NODES.get(0, []))
 
     async def test_resolve_bootstrap_identities_branches(self):
         """Covers nodes.py lines 67-77: resolve_bootstrap_identities iterates
@@ -126,21 +159,24 @@ class TestBlock(AsyncTestCase):
         node_with_identity.resolve_identity_announcement.assert_not_called()
 
     async def test_collateral_utxo_is_unspent_matching_address_returns_false(self):
-        """Covers nodes.py lines 177-178: a spending transaction signed by
-        the collateral address owner marks the referenced UTXO as spent."""
+        """A spending transaction signed by the collateral address owner marks
+        the referenced UTXO as spent."""
         config = MagicMock()
 
         async def fake_cursor():
             yield {
+                "index": 100,
                 "transactions": [
                     {
                         "inputs": [{"id": "txn_target"}],
                         "public_key": "02" + "00" * 32,
                     }
-                ]
+                ],
             }
 
-        config.mongo.async_db.blocks.find.return_value = fake_cursor()
+        cursor = MagicMock()
+        cursor.sort.return_value = fake_cursor()
+        config.mongo.async_db.blocks.find.return_value = cursor
 
         with mock.patch(
             "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",

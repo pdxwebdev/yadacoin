@@ -792,6 +792,12 @@ class KeyEvent:
                     if not parent:
                         if extra_blocks:
                             for block in extra_blocks:
+                                if (
+                                    block_index is not None
+                                    and getattr(block, "index", None) is not None
+                                    and block.index > block_index
+                                ):
+                                    continue
                                 for t in block.transactions:
                                     if (
                                         t.public_key_hash
@@ -848,6 +854,12 @@ class KeyEvent:
                             return
                     if extra_blocks:
                         for block in extra_blocks:
+                            if (
+                                block_index is not None
+                                and getattr(block, "index", None) is not None
+                                and block.index > block_index
+                            ):
+                                continue
                             for t in block.transactions:
                                 if t.public_key_hash == self.txn.prev_public_key_hash:
                                     return
@@ -858,21 +870,7 @@ class KeyEvent:
                     )
 
         if await self.txn.is_already_onchain(block_index=block_index):
-            # The txn is already on-chain, so re-accepting it as a new key event
-            # is an error.  We only require that the txn spends its balance to a
-            # single output whose destination belongs to the same KEL as the
-            # sender — not that it sends to the final KEL entry specifically.
-            # key_log.addresses is the set of every address that has ever
-            # appeared in this KEL (built during the walk), so the membership
-            # test is O(1) without re-scanning the log.
-            for output in self.txn.outputs:
-                same_kel = await KeyEventLog.is_same_kel(
-                    public_key_hash_a=self.txn.public_key_hash,
-                    public_key_hash_b=output.to,
-                    onchain_only=False,
-                )
-                if not same_kel:
-                    raise KELException("Key event is already onchain", txn=self.txn)
+            raise KELException("Key event is already onchain", txn=self.txn)
 
     async def sends_to_past_kel_entry(self, block_index=None):
         return False  # we're no longer checking past KEL entries
@@ -1479,6 +1477,12 @@ class KeyEventLog:
                     elif extra_blocks:
                         parent_in_extra_blocks = None
                         for block in extra_blocks:
+                            if (
+                                block_index is not None
+                                and getattr(block, "index", None) is not None
+                                and block.index > block_index
+                            ):
+                                continue
                             for t in block.transactions:
                                 if (
                                     t.public_key_hash
@@ -1569,6 +1573,12 @@ class KeyEventLog:
                     elif extra_blocks:
                         parent_in_extra_blocks = None
                         for block in extra_blocks:
+                            if (
+                                block_index is not None
+                                and getattr(block, "index", None) is not None
+                                and block.index > block_index
+                            ):
+                                continue
                             for t in block.transactions:
                                 if (
                                     t.public_key_hash
@@ -2004,7 +2014,11 @@ class KeyEventLog:
 
     @staticmethod
     async def get_latest(
-        public_key, onchain_only=False, follow_recovery=True, segment_only=False
+        public_key=None,
+        address=None,
+        onchain_only=False,
+        follow_recovery=True,
+        segment_only=False,
     ):
         """Return the latest (tip) KEL entry for *public_key* — the mirror
         image of ``get_inception``.
@@ -2024,7 +2038,8 @@ class KeyEventLog:
         any key in that KEL hits the fast path above.
         """
         config = Config()
-        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+        if address is None:
+            address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
 
         result = config.mongo.async_db.blocks.aggregate(
             [
