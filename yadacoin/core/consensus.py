@@ -570,7 +570,7 @@ class Consensus(object):
 
         async for block in blockchain.blocks:
             if (
-                not await Blockchain.test_block(block)
+                not await Blockchain.test_block(block, extra_blocks=extra_blocks)
                 and self.config.network == "mainnet"
             ):
                 return
