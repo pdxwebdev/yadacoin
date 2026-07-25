@@ -144,12 +144,6 @@ class KELLogUnbuildableException(DoesNotSpendEntirelyToPrerotatedKeyHashExceptio
     """Key event log exists on-chain but could not be reconstructed."""
 
 
-class KELOutputRoutingViolationException(
-    DoesNotSpendEntirelyToPrerotatedKeyHashException
-):
-    """Non-rotating tx sends to an address other than the latest KEL public_key_hash."""
-
-
 class KELDoesNotSpendAllUTXOsException(
     DoesNotSpendEntirelyToPrerotatedKeyHashException
 ):

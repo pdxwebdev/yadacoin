@@ -100,7 +100,6 @@ class CHAIN(object):
     AGENT_REGISTRY_FORK = (
         596000  # Agent registration enabled at same height as dynamic nodes
     )
-    CHECK_KEL_OUTPUT_ROUTING_FORK = 591000
     SMART_CONTRACT_REMOVAL_FORK = 593600
     # Enables location-recovery key event log delegation: a new KEL inception
     # may carry {"recovers": {commitment, R, s}} in its relationship field and a

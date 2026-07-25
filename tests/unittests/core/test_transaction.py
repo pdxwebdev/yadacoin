@@ -1769,35 +1769,9 @@ class TestTransactionPureMethods(AsyncTestCase):
             with self.assertRaises(KELSelfSendException):
                 await txn.verify_kel_output_rules(block=mock_block)
 
-    async def test_verify_kel_output_rules_log_unbuildable_raises(self):
-        """get_latest returning None no longer raises; routing is skipped and
-        block path returns early after the KEL presence check."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        from yadacoin.core.chain import CHAIN
-        from yadacoin.core.keyeventlog import KeyEventLog
-
-        txn = Transaction(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            public_key_hash="pk_hash",
-            outputs=[Output(to="1OtherAddr", value=1.0)],
-        )
-        mock_block = MagicMock()
-        mock_block.index = CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK + 1
-
-        with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=True)):
-            with patch.object(
-                KeyEventLog, "get_latest", new=AsyncMock(return_value=None)
-            ):
-                # No exception — empty/missing tip means no routing enforcement
-                await txn.verify_kel_output_rules(block=mock_block)
-
     async def test_verify_kel_output_rules_block_returns(self):
-        """Lines 1232-1270: block is not None causes early return after routing check."""
+        """block is not None → UTXO completeness skipped; returns after self-send check."""
         from unittest.mock import AsyncMock, MagicMock, patch
-
-        from yadacoin.core.chain import CHAIN
-        from yadacoin.core.keyeventlog import KeyEventLog
 
         txn = Transaction(
             public_key=yadacoin.core.config.CONFIG.public_key,
@@ -1805,106 +1779,16 @@ class TestTransactionPureMethods(AsyncTestCase):
             outputs=[Output(to="1OtherAddr", value=1.0)],  # not self-send
         )
         mock_block = MagicMock()
-        mock_block.index = CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK - 1  # below routing fork
-
-        mock_entry = MagicMock()
-        mock_entry.mempool = False
-        mock_entry.public_key_hash = "different_hash"
-        mock_entry.prerotated_key_hash = "1OtherAddr"
+        mock_block.index = 100
 
         with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=True)):
-            with patch.object(
-                KeyEventLog,
-                "get_latest",
-                new=AsyncMock(return_value=mock_entry),
-            ):
-                await txn.verify_kel_output_rules(block=mock_block)
-                # Should return at line 1270 (block is not None)
+            await txn.verify_kel_output_rules(block=mock_block)
 
-    async def test_verify_kel_output_rules_coinbase_masternode_outputs_enforced(self):
-        """Coinbase is subject to KEL output routing; non-tip masternode pays raise."""
+    async def test_verify_kel_output_rules_self_send_after_kel_presence_raises(self):
+        """Tracked KEL address that self-sends raises KELSelfSendException."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from yadacoin.core.chain import CHAIN
-        from yadacoin.core.keyeventlog import (
-            KELOutputRoutingViolationException,
-            KeyEventLog,
-        )
-
-        txn = Transaction(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            public_key_hash="miner_pkh",
-            prerotated_key_hash="1MinerTip",
-            outputs=[
-                Output(to="1MasternodeOldKel", value=0.3),
-                Output(to="1MinerTip", value=11.25),
-            ],
-            coinbase=True,
-        )
-        txn.transaction_signature = "coinbase_sig"
-
-        mock_block = MagicMock()
-        mock_block.index = CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK + 1
-
-        mock_entry = MagicMock()
-        mock_entry.mempool = False
-        mock_entry.public_key_hash = "miner_pkh"
-        mock_entry.transaction_signature = "other_sig"
-        mock_entry.prerotated_key_hash = "1MinerTip"
-
-        with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=True)):
-            with patch.object(
-                KeyEventLog,
-                "get_latest",
-                new=AsyncMock(return_value=mock_entry),
-            ) as get_latest:
-                with self.assertRaises(KELOutputRoutingViolationException):
-                    await txn.verify_kel_output_rules(block=mock_block)
-                get_latest.assert_awaited_once()
-
-    async def test_verify_kel_output_rules_routing_violation_raises(self):
-        """Lines 1237-1259: routing fork check, not new entry, output to wrong addr → raises."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        from yadacoin.core.chain import CHAIN
-        from yadacoin.core.keyeventlog import (
-            KELOutputRoutingViolationException,
-            KeyEventLog,
-        )
-
-        txn = Transaction(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            public_key_hash="pk_hash_existing",
-            outputs=[Output(to="1WrongOutput", value=1.0)],
-        )
-        txn.transaction_signature = "txn_sig_not_in_log"
-
-        # Use a block index above routing fork
-        mock_block = MagicMock()
-        mock_block.index = CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK + 1
-
-        # key_log contains an entry with same public_key_hash but different txn_sig (so is_new=False)
-        mock_entry = MagicMock()
-        mock_entry.mempool = False
-        mock_entry.public_key_hash = "pk_hash_existing"
-        mock_entry.transaction_signature = "other_sig"  # ≠ txn.transaction_signature
-        mock_entry.prerotated_key_hash = "1CorrectOutput"
-
-        with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=True)):
-            with patch.object(
-                KeyEventLog,
-                "get_latest",
-                new=AsyncMock(return_value=mock_entry),
-            ):
-                with self.assertRaises(KELOutputRoutingViolationException):
-                    await txn.verify_kel_output_rules(block=mock_block)
-
-    async def test_verify_kel_output_rules_self_send_after_routing_raises(self):
-        """Lines 1261-1264: self.public_key_hash in outputs.to (after routing block) → KELSelfSendException."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        from yadacoin.core.chain import CHAIN
-        from yadacoin.core.keyeventlog import KELSelfSendException, KeyEventLog
+        from yadacoin.core.keyeventlog import KELSelfSendException
 
         txn = Transaction(
             public_key=yadacoin.core.config.CONFIG.public_key,
@@ -1912,20 +1796,13 @@ class TestTransactionPureMethods(AsyncTestCase):
             outputs=[Output(to="self_hash", value=1.0)],
         )
         txn.transaction_signature = "txn_sig_x"
-
-        # Block index below routing fork so routing block is skipped
+        # are_kel_fields_populated False so first self-send check is skipped
         mock_block = MagicMock()
-        mock_block.index = CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK - 1
+        mock_block.index = 100
 
-        mock_entry = MagicMock()
-        mock_entry.mempool = False
-        mock_entry.public_key_hash = "other_hash"
-
-        with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=True)):
+        with patch.object(txn, "are_kel_fields_populated", return_value=False):
             with patch.object(
-                KeyEventLog,
-                "get_latest",
-                new=AsyncMock(return_value=mock_entry),
+                txn, "has_key_event_log", new=AsyncMock(return_value=True)
             ):
                 with self.assertRaises(KELSelfSendException):
                     await txn.verify_kel_output_rules(block=mock_block)
@@ -2253,39 +2130,6 @@ class TestTransactionPureMethods(AsyncTestCase):
             ):
                 await txn.verify_kel_output_rules()
 
-    async def test_verify_kel_output_rules_routing_all_outputs_match_returns(self):
-        """Line 1259: all outputs match latest prerotated_key_hash → returns (routing OK)."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        from yadacoin.core.chain import CHAIN
-        from yadacoin.core.keyeventlog import KeyEventLog
-
-        txn = Transaction(
-            public_key=yadacoin.core.config.CONFIG.public_key,
-            public_key_hash="pk_hash_existing",
-            outputs=[Output(to="1CorrectOutput", value=1.0)],
-        )
-        txn.transaction_signature = "txn_sig_not_in_log"
-
-        mock_block = MagicMock()
-        mock_block.index = CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK + 1
-
-        # key_log entry has same public_key_hash → is_new=False
-        mock_entry = MagicMock()
-        mock_entry.mempool = False
-        mock_entry.public_key_hash = "pk_hash_existing"
-        mock_entry.transaction_signature = "other_sig"
-        mock_entry.prerotated_key_hash = "1CorrectOutput"  # all outputs match this
-
-        with patch.object(txn, "has_key_event_log", new=AsyncMock(return_value=True)):
-            with patch.object(
-                KeyEventLog,
-                "get_latest",
-                new=AsyncMock(return_value=mock_entry),
-            ):
-                # Should return at line 1259 (all outputs match, no routing violation)
-                await txn.verify_kel_output_rules(block=mock_block)
-
     # -----------------------------------------------------------------------
     # verify_kel_output_rules UTXO completeness check (lines 1272-1325)
     # -----------------------------------------------------------------------
@@ -2294,7 +2138,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         """Lines 1272-1301: UTXO check runs with empty aggregates and no inputs → no exception."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from yadacoin.core.chain import CHAIN
         from yadacoin.core.keyeventlog import KeyEventLog
 
         async def async_iter_empty(pipeline):
@@ -2317,7 +2160,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         mock_entry.prerotated_key_hash = "1CorrectDest"
 
         mock_block_lb = MagicMock()
-        mock_block_lb.block.index = CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK + 10
+        mock_block_lb.block.index = 6000000
 
         mock_mongo = MagicMock()
         mock_mongo.async_db.blocks.aggregate = async_iter_empty
@@ -2346,7 +2189,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         """Lines 1302-1308: UTXO mismatch raises KELDoesNotSpendAllUTXOsException."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from yadacoin.core.chain import CHAIN
         from yadacoin.core.keyeventlog import (
             KELDoesNotSpendAllUTXOsException,
             KeyEventLog,
@@ -2382,7 +2224,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         mock_entry.prerotated_key_hash = "1CorrectDest"
 
         mock_block_lb = MagicMock()
-        mock_block_lb.block.index = CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK + 10
+        mock_block_lb.block.index = 6000000
 
         mock_mongo = MagicMock()
         mock_mongo.async_db.blocks.aggregate = async_iter_one  # 1 UTXO
@@ -2414,7 +2256,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         """Lines 1309-1315: inputs > 0 but no on-chain UTXOs → KELMissingParentUTXOException."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from yadacoin.core.chain import CHAIN
         from yadacoin.core.keyeventlog import KELMissingParentUTXOException, KeyEventLog
 
         async def async_iter_empty(pipeline):
@@ -2439,7 +2280,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         mock_entry.prerotated_key_hash = "1CorrectDest"
 
         mock_block_lb = MagicMock()
-        mock_block_lb.block.index = CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK + 10
+        mock_block_lb.block.index = 6000000
 
         mock_mongo = MagicMock()
         mock_mongo.async_db.blocks.aggregate = async_iter_empty
@@ -2466,7 +2307,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         """Line 1293-1294: item has 'transactions' key → Transaction.from_dict(x['transactions'])."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from yadacoin.core.chain import CHAIN
         from yadacoin.core.keyeventlog import KeyEventLog
 
         txn_dict = {
@@ -2499,7 +2339,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         mock_entry.prerotated_key_hash = "1CorrectDest"
 
         mock_block_lb = MagicMock()
-        mock_block_lb.block.index = CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK + 10
+        mock_block_lb.block.index = 6000000
 
         mock_mongo = MagicMock()
         mock_mongo.async_db.blocks.aggregate = async_iter_one  # wrapped item
@@ -2531,7 +2371,6 @@ class TestTransactionPureMethods(AsyncTestCase):
         """Line 1236: is_input_spent returns True → total_spent += 1 → no mismatch as all UTXOs spent."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from yadacoin.core.chain import CHAIN
         from yadacoin.core.keyeventlog import KeyEventLog
 
         utxo_item = {
@@ -2563,7 +2402,7 @@ class TestTransactionPureMethods(AsyncTestCase):
         mock_entry.prerotated_key_hash = "1CorrectDest"
 
         mock_block_lb = MagicMock()
-        mock_block_lb.block.index = CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK + 10
+        mock_block_lb.block.index = 6000000
 
         mock_mongo = MagicMock()
         mock_mongo.async_db.blocks.aggregate = async_iter_one  # 1 UTXO

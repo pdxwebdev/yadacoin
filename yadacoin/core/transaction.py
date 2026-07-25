@@ -788,8 +788,6 @@ class Transaction(object):
                     _kel_index = self.config.LatestBlock.block.index
 
                 if _kel_index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
-                    pass
-
                     # Build the KEL once and reuse it for both output-rule
                     # enforcement and cross-key spend authorization below,
                     # instead of rebuilding the chain twice.  Block verification
@@ -1501,18 +1499,8 @@ class Transaction(object):
         from yadacoin.core.keyeventlog import (
             KELDoesNotSpendAllUTXOsException,
             KELMissingParentUTXOException,
-            KELOutputRoutingViolationException,
             KELSelfSendException,
-            KeyEventLog,
         )
-
-        # Determine effective block index for fork checks
-        if block is not None:
-            effective_index = block.index
-        elif mempool:
-            effective_index = self.config.LatestBlock.block.index + 1
-        else:
-            effective_index = self.config.LatestBlock.block.index
 
         # If KEL fields indicate this is a key event, it must not send back to its own address
         if self.are_kel_fields_populated():
@@ -1529,27 +1517,7 @@ class Transaction(object):
         ):
             return
 
-        if effective_index >= CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK:
-            latest = await KeyEventLog.get_latest(
-                self.public_key, onchain_only=(block is not None)
-            )
-            if latest is not None:
-                # Not a new key log entry: all outputs must only go to the latest
-                # confirmed key log entry's prerotated_key_hash.
-                latest_prerotated_key_hash = latest.prerotated_key_hash
-                for output in self.outputs:
-                    if (
-                        output.to != latest_prerotated_key_hash
-                        and output.to != self.prerotated_key_hash
-                    ):
-                        raise KELOutputRoutingViolationException(
-                            f"Non-rotating tx output {output.to!r} does not match latest KEL public_key_hash {latest_prerotated_key_hash!r}."
-                        )
-                return
-
-        if self.public_key_hash in {
-            output.to for output in self.outputs
-        }:  # pragma: no cover
+        if self.public_key_hash in {output.to for output in self.outputs}:
             raise KELSelfSendException(
                 f"Key event tx sends to its own public_key_hash ({self.public_key_hash}) instead of prerotated_key_hash."
             )
