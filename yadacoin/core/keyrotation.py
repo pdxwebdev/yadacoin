@@ -1303,8 +1303,9 @@ class NodeKeyRotationManager:
     async def advance_block_ratchet(self, block):
         """Build coinbase KEL material for block generation.
 
-        Resolves the current main-KEL tip from on-chain/mempool plus
-        ``key_event_log`` (rotations during the mine window), sets
+        Resolves the current main-KEL tip from the **on-chain** KEL only
+        (mempool and ``key_event_log`` are ignored so mined coinbase always
+        continues the confirmed chain other nodes will accept), sets
         ``block.public_key`` / ``block.private_key``, and returns a
         :class:`ReanchorTriplet` with template-only ``coinbase_confirming``.
         """
@@ -1323,9 +1324,10 @@ class NodeKeyRotationManager:
         """Build the coinbase KEL package for a mining template.
 
         Requires ``block``.  Does not write to ``miner_transactions``.
-        Branch announcements and auth rotations update ``key_event_log``
-        (and their own mempool entries) independently; this path only
-        parents coinbase off the live tip.
+        Parents coinbase exclusively off the on-chain KEL tip so the block
+        is canonical for peers that never saw this node's mempool or
+        ``key_event_log``.  Auth/branch tips in those collections must not
+        advance the mining ratchet.
         """
         if block is None:
             return None
@@ -1361,7 +1363,10 @@ class NodeKeyRotationManager:
             .hex()
         )
         try:
-            latest = await KeyEventLog.get_latest(k0_pub_hex, onchain_only=False)
+            # On-chain tip only.  Peers validate coinbase against confirmed KEL;
+            # mempool and key_event_log tips are local and must not advance the
+            # mining signer or prev_public_key_hash.
+            latest = await KeyEventLog.get_latest(k0_pub_hex, onchain_only=True)
         except Exception:
             return _empty_triplet()
         if not latest:
@@ -1391,31 +1396,6 @@ class NodeKeyRotationManager:
             .hex()
         )
         tip_prev_pkh = latest.public_key_hash
-        tip_counter = getattr(latest, "counter", 0) or 0
-
-        # Catch up past auth/branch tips in key_event_log during the mine window.
-        kel_tip = await config.mongo.async_db.key_event_log.find_one(
-            {"anchor_public_key": k0_pub_hex},
-            sort=[("counter", -1)],
-        )
-        if kel_tip and kel_tip.get("counter", 0) > tip_counter:
-            target_prerotated = kel_tip.get("prerotated_key_hash") or ""
-            guard = 0
-            while kn_address != target_prerotated and guard < 10000:
-                kn = derive_secure_path(
-                    kn["private_key"], kn["chain_code"], second_factor
-                )
-                kn_pub = _CoincurvePrivateKey(kn["private_key"]).public_key.format(
-                    compressed=True
-                )
-                kn_address = str(P2PKHBitcoinAddress.from_pubkey(kn_pub))
-                guard += 1
-            tip_prev_pkh = kel_tip.get("public_key_hash") or tip_prev_pkh
-            kn_pub_hex = (
-                _CoincurvePrivateKey(kn["private_key"])
-                .public_key.format(compressed=True)
-                .hex()
-            )
 
         kn1 = derive_secure_path(kn["private_key"], kn["chain_code"], second_factor)
         kn1_pub_bytes = _CoincurvePrivateKey(kn1["private_key"]).public_key.format(
@@ -1441,7 +1421,7 @@ class NodeKeyRotationManager:
             )
         )
 
-        # Coinbase = unconfirmed KEL step from live tip; coinbase_confirming
+        # Coinbase = unconfirmed KEL step from on-chain tip; coinbase_confirming
         # = its confirming sibling (template-only).
         coinbase_confirming_txn = Transaction(
             txn_time=int(time.time()),

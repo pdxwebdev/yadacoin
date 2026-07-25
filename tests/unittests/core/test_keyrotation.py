@@ -1211,9 +1211,9 @@ class TestQueueReanchor(AsyncTestCase):
         self.assertEqual(result.coinbase_public_key_hash, step2_addr)
         cfg.mongo.async_db.miner_transactions.replace_one.assert_not_called()
 
-    async def test_block_path_catches_up_key_event_log_tip(self):
-        """Mining path walks key_event_log when its counter is ahead of the
-        on-chain/mempool tip so coinbase parents the live auth tip."""
+    async def test_block_path_ignores_key_event_log_tip(self):
+        """Mining path parents coinbase off the on-chain tip only — a newer
+        key_event_log auth tip must not advance the block ratchet."""
         from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
 
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
@@ -1250,8 +1250,9 @@ class TestQueueReanchor(AsyncTestCase):
         step3_pub = CK(step3["private_key"]).public_key.format(compressed=True)
         step3_addr = str(P2PKHBitcoinAddress.from_pubkey(step3_pub))
 
+        # On-chain tip is at step1; key_event_log claims a later tip at step3.
         mock_entry = MagicMock()
-        mock_entry.public_key_hash = "1SomeAddress"
+        mock_entry.public_key_hash = "1OnChainTip"
         mock_entry.prerotated_key_hash = step1_addr
         mock_entry.counter = 0
 
@@ -1269,15 +1270,33 @@ class TestQueueReanchor(AsyncTestCase):
         with patch(
             "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
             new=AsyncMock(return_value=mock_entry),
-        ):
+        ) as mock_get_latest:
             result = await mgr._queue_reanchor(block=block)
 
         self.assertIsInstance(result, ReanchorTriplet)
         self.assertIsNotNone(result.coinbase_confirming)
-        self.assertEqual(result.coinbase_public_key_hash, step3_addr)
-        self.assertEqual(result.coinbase_prev_public_key_hash, step2_addr)
+        # Coinbase must parent the on-chain tip (step1), not the off-chain tip.
+        self.assertEqual(result.coinbase_public_key_hash, step1_addr)
+        self.assertEqual(result.coinbase_prev_public_key_hash, "1OnChainTip")
         cfg.mongo.async_db.miner_transactions.replace_one.assert_not_called()
-        cfg.mongo.async_db.key_event_log.find_one.assert_awaited()
+        # get_latest must be called on-chain-only
+        mock_get_latest.assert_awaited()
+        _, kwargs = mock_get_latest.await_args
+        # positional or keyword
+        if kwargs:
+            self.assertTrue(kwargs.get("onchain_only", False) or True)
+        call_args = mock_get_latest.await_args
+        # Accept either onchain_only=True kw or second positional True
+        self.assertTrue(
+            (call_args.kwargs.get("onchain_only") is True)
+            or (len(call_args.args) >= 2 and call_args.args[1] is True)
+            or (
+                len(call_args.args) >= 1
+                and call_args.kwargs.get("onchain_only") is True
+            )
+        )
+        # key_event_log must not be consulted for the mining ratchet
+        cfg.mongo.async_db.key_event_log.find_one.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -228,7 +228,7 @@ class Block(object):
         triplet = await config.kel_manager.advance_block_ratchet(block=block)
 
         # Template-only coinbase confirming KEL step (no preceding block-reanchor
-        # U/C pair). Validated via batch_txns against mempool/on-chain tip.
+        # U/C pair). Parent must be the on-chain KEL tip (see advance_block_ratchet).
         if (
             triplet is not None
             and getattr(triplet, "coinbase_confirming", None) is not None
