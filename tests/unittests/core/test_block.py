@@ -2984,6 +2984,131 @@ class TestBlock(AsyncTestCase):
         new=mock_generate_hash_from_header,
     )
     @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
+    async def test_verify_coinbase_prerotated_counts_as_miner_share(self):
+        """KEL coinbase pays miner to prerotated_key_hash; must not be MN-summed."""
+        from yadacoin.core.chain import CHAIN
+
+        block = await Block.from_dict(copy.deepcopy(masternode_fee_block))
+        reward = CHAIN.get_block_reward(block.index)
+        coinbase = next(t for t in block.transactions if t.coinbase)
+        prerotated = "1PrerotatedMinerShareAddressXXXXXX"
+        coinbase.prerotated_key_hash = prerotated
+        # Miner 90% to prerotated, 10% to a MN address
+        mn_addr = "1MasternodePaymentAddressYYYYYYYY"
+        coinbase.outputs = [
+            Mock(to=prerotated, value=reward * 0.9),
+            Mock(to=mn_addr, value=reward * 0.1),
+        ]
+        for t in block.transactions:
+            if not t.coinbase:
+                t.fee = 0.0
+                t.masternode_fee = 0.0
+
+        @property
+        async def contract_generated(a):
+            return False
+
+        @contract_generated.setter
+        def contract_generated(self, value):
+            pass
+
+        orig_fork = CHAIN.CHECK_MASTERNODE_FEE_FORK
+        CHAIN.CHECK_MASTERNODE_FEE_FORK = 0
+        try:
+            with mock.patch(
+                "yadacoin.core.transaction.Transaction.contract_generated",
+                new=contract_generated,
+            ), mock.patch.object(Block, "verify_signature", return_value=None):
+                await block.verify()
+        finally:
+            CHAIN.CHECK_MASTERNODE_FEE_FORK = orig_fork
+
+    async def test_pay_masternodes_skips_unresolved_identity_nodes(self):
+        """IA-only successful_nodes must not leave miner at 90% with zero MN outs."""
+        from yadacoin.core.chain import CHAIN
+
+        block = await Block.init_async(
+            version=CHAIN.get_version_for_height(CHAIN.PAY_MASTER_NODES_FORK),
+            block_index=CHAIN.PAY_MASTER_NODES_FORK,
+            target=1,
+        )
+        unresolved = Mock()
+        unresolved.identity = None
+        resolved = Mock()
+        resolved.identity = Mock()
+        resolved.identity.public_key = (
+            "02cd94b54fa5ec2431013e047e3d609d385e40c73538639acb77f6d1b0f2b46c4a"
+        )
+        saved = NodesTester.successful_nodes
+        NodesTester.successful_nodes = [unresolved, resolved]
+        try:
+            triplet = Mock()
+            triplet.coinbase_prerotated = "1MinerPrerotated"
+            triplet.coinbase_twice_prerotated = "1MinerTwice"
+            triplet.coinbase_public_key_hash = "1MinerPKH"
+            triplet.coinbase_prev_public_key_hash = ""
+            triplet.signer_public_key = (
+                "02cd94b54fa5ec2431013e047e3d609d385e40c73538639acb77f6d1b0f2b46c4a"
+            )
+            triplet.signer_private_key = "11" * 32
+            with mock.patch(
+                "yadacoin.core.block.NodeKeyRotationManager._sign",
+                return_value="sig",
+            ), mock.patch(
+                "yadacoin.core.block.Transaction.generate_hash",
+                new=AsyncMock(return_value="a" * 64),
+            ):
+                coinbase = await block.pay_masternodes([], triplet, 5.0)
+            # miner + one resolved MN (unresolved filtered out)
+            self.assertEqual(len(coinbase.outputs), 2)
+            values = sorted(float(o.value) for o in coinbase.outputs)
+            self.assertAlmostEqual(values[0], 0.5)  # 10% MN
+            self.assertAlmostEqual(values[1], 4.5)  # 90% miner
+        finally:
+            NodesTester.successful_nodes = saved
+
+    async def test_pay_masternodes_all_unresolved_gives_full_reward_to_miner(self):
+        """If every successful node lacks identity, miner gets 100%."""
+        from yadacoin.core.chain import CHAIN
+
+        block = await Block.init_async(
+            version=CHAIN.get_version_for_height(CHAIN.PAY_MASTER_NODES_FORK),
+            block_index=CHAIN.PAY_MASTER_NODES_FORK,
+            target=1,
+        )
+        unresolved = Mock()
+        unresolved.identity = None
+        saved = NodesTester.successful_nodes
+        NodesTester.successful_nodes = [unresolved]
+        try:
+            triplet = Mock()
+            triplet.coinbase_prerotated = "1MinerPrerotated"
+            triplet.coinbase_twice_prerotated = "1MinerTwice"
+            triplet.coinbase_public_key_hash = "1MinerPKH"
+            triplet.coinbase_prev_public_key_hash = ""
+            triplet.signer_public_key = (
+                "02cd94b54fa5ec2431013e047e3d609d385e40c73538639acb77f6d1b0f2b46c4a"
+            )
+            triplet.signer_private_key = "11" * 32
+            with mock.patch(
+                "yadacoin.core.block.NodeKeyRotationManager._sign",
+                return_value="sig",
+            ), mock.patch(
+                "yadacoin.core.block.Transaction.generate_hash",
+                new=AsyncMock(return_value="b" * 64),
+            ):
+                coinbase = await block.pay_masternodes([], triplet, 5.0)
+            self.assertEqual(len(coinbase.outputs), 1)
+            self.assertAlmostEqual(float(coinbase.outputs[0].value), 5.0)
+            self.assertEqual(coinbase.outputs[0].to, "1MinerPrerotated")
+        finally:
+            NodesTester.successful_nodes = saved
+
+    @mock.patch(
+        "yadacoin.core.block.Block.generate_hash_from_header",
+        new=mock_generate_hash_from_header,
+    )
+    @mock.patch("yadacoin.core.block.Block.get_merkle_root", new=mock_get_merkle_root)
     async def test_verify_pay_masternodes_fee_mismatch_raises(self):
         """Line 1039: verify() raises on fee mismatch at PAY_MASTER_NODES_FORK (sans CHECK_MASTERNODE)."""
         from yadacoin.core.chain import CHAIN

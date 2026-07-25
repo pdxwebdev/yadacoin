@@ -324,7 +324,17 @@ class Block(object):
             if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
                 masternode_fee_sum = sum(float(t.masternode_fee) for t in non_coinbase)
 
-            reward_nodes = NodesTester.successful_nodes
+            # Only nodes with a resolved identity can receive coinbase MN
+            # payments.  IA-only bootstrap/dynamic nodes still in
+            # NodesTester.successful_nodes with identity=None must not shrink
+            # the divisor or leave the miner at 90% with zero MN outputs
+            # (verify then sees coinbase_sum+masternode_sum = 0.9*reward).
+            reward_nodes = [
+                n
+                for n in (NodesTester.successful_nodes or [])
+                if getattr(n, "identity", None) is not None
+                and getattr(n.identity, "public_key", None)
+            ]
             self_output = None
             updated_outputs = []
             if reward_nodes:
@@ -339,8 +349,6 @@ class Block(object):
                     block_reward * 0.1 + masternode_fee_sum
                 ) / len(reward_nodes)
                 for successful_node in reward_nodes:
-                    if successful_node.identity is None:
-                        continue
                     updated_outputs.append(
                         Output.from_dict(
                             {
@@ -1001,17 +1009,20 @@ class Block(object):
 
             if txn.coinbase:
                 if self.index >= CHAIN.PAY_MASTER_NODES_FORK:
-                    # Miner share may be paid to the block public_key address or,
-                    # when KEL coinbase rotation is used, to prerotated_key_hash.
-                    # All other coinbase outputs count as masternode payments;
-                    # fee/reward totals are still enforced below.  Do not rebuild
-                    # a live MN allowlist — historical node sets cannot be
-                    # reconstructed reliably during bootstrap/sync.
-                    miner_target = txn.prerotated_key_hash or address
+                    # Miner share may be paid to the block public_key address
+                    # and/or the coinbase KEL prerotated_key_hash (KEL rotation
+                    # pays to the next key while the block is still signed by
+                    # the current key).  Count either as miner share so the
+                    # 90/10 split verifies.  All other coinbase outputs count
+                    # as masternode payments; fee/reward totals are still
+                    # enforced below.
+                    miner_targets = {address}
+                    if txn.prerotated_key_hash:
+                        miner_targets.add(txn.prerotated_key_hash)
                     for output in txn.outputs:
                         if float(output.value) < 0:
                             raise Exception("Coinbase output value cannot be negative")
-                        if output.to == miner_target:
+                        if output.to in miner_targets:
                             coinbase_sum += float(output.value)
                         else:
                             if output.to not in masternode_sums:
