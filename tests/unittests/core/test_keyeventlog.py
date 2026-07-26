@@ -23,6 +23,7 @@ from yadacoin.core.keyeventlog import (
     KELException,
     KELResult,
     KeyEventException,
+    KeyEventFieldsNotPopulatedException,
     PublicKeyMismatchException,
 )
 
@@ -690,7 +691,7 @@ class TestKeyEventLog(AsyncTestCase):
         xblock.transactions[1].public_key_hash = ""
         xblock.transactions[1].prev_public_key_hash = ""
 
-        with self.assertRaises(PublicKeyMismatchException):
+        with self.assertRaises(KeyEventFieldsNotPopulatedException):
             await xblock.verify()
 
     async def test_transaction_spends_to_expired_key_event(self):

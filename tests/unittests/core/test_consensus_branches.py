@@ -624,16 +624,15 @@ class TestInsertConsensusBlock(ConsensusBase):
         r = await self.consensus.insert_consensus_block(block, peer)
         self.assertFalse(r)
 
-    async def test_verify_fails(self):
+    async def test_inserts_without_verify(self):
+        # Verification is deferred to integrate/test_block; insert only stores.
         block = _mk_block()
         block.verify = AsyncMock(side_effect=Exception("bad"))
         peer = self._mk_peer()
         r = await self.consensus.insert_consensus_block(block, peer)
-        self.assertFalse(r)
-        self.consensus.mongo.async_db.consensus.replace_one.assert_awaited()
-        args, kwargs = self.consensus.mongo.async_db.consensus.replace_one.await_args
-        self.assertTrue(args[1].get("ignore"))
-        self.assertEqual(kwargs.get("upsert"), True)
+        self.assertTrue(r)
+        block.verify.assert_not_awaited()
+        self.consensus.mongo.async_db.consensus.insert_one.assert_awaited()
 
     async def test_inserts(self):
         block = _mk_block()
