@@ -109,6 +109,8 @@ class ConsensusBase(AsyncTestCase):
         cfg.mongo.async_db.consensus.find_one = AsyncMock(return_value=None)
         cfg.mongo.async_db.consensus.delete_many = AsyncMock()
         cfg.mongo.async_db.consensus.insert_one = AsyncMock()
+        cfg.mongo.async_db.consensus.replace_one = AsyncMock()
+        cfg.mongo.async_db.consensus.update_many = AsyncMock()
         _consensus_cursor = MagicMock()
         _consensus_cursor.to_list = AsyncMock(return_value=[])
         cfg.mongo.async_db.consensus.find = MagicMock(return_value=_consensus_cursor)
@@ -613,12 +615,25 @@ class TestInsertConsensusBlock(ConsensusBase):
         r = await self.consensus.insert_consensus_block(block, peer)
         self.assertTrue(r)
 
+    async def test_existing_ignored_returns_false(self):
+        self.consensus.mongo.async_db.consensus.find_one = AsyncMock(
+            return_value={"x": 1, "ignore": True}
+        )
+        block = _mk_block()
+        peer = self._mk_peer()
+        r = await self.consensus.insert_consensus_block(block, peer)
+        self.assertFalse(r)
+
     async def test_verify_fails(self):
         block = _mk_block()
         block.verify = AsyncMock(side_effect=Exception("bad"))
         peer = self._mk_peer()
         r = await self.consensus.insert_consensus_block(block, peer)
         self.assertFalse(r)
+        self.consensus.mongo.async_db.consensus.replace_one.assert_awaited()
+        args, kwargs = self.consensus.mongo.async_db.consensus.replace_one.await_args
+        self.assertTrue(args[1].get("ignore"))
+        self.assertEqual(kwargs.get("upsert"), True)
 
     async def test_inserts(self):
         block = _mk_block()
@@ -1214,6 +1229,14 @@ class TestBuildBackward(ConsensusBase):
         self.assertTrue(status)
         self.assertEqual(len(blocks), 1)
 
+    async def test_max_depth_exceeded_returns_false(self):
+        self.consensus.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        blocks, status = await self.consensus.build_backward_from_block_to_fork(
+            _mk_block(index=5), [], depth=101
+        )
+        self.assertFalse(status)
+        self.assertEqual(blocks, [])
+
 
 # ---------------------------------------------------------------------------
 # integrate_block_with_existing_chain (lines 454-478)
@@ -1222,12 +1245,22 @@ class TestBuildBackward(ConsensusBase):
 
 class TestIntegrateBlockWithExisting(ConsensusBase):
     async def test_status_false_returns(self):
+        orphan = _mk_block(index=4, signature="orph")
         self.consensus.build_backward_from_block_to_fork = AsyncMock(
-            return_value=([], False)
+            return_value=([orphan], False)
         )
-        await self.consensus.integrate_block_with_existing_chain(
-            _mk_block(), MagicMock()
+        block = _mk_block()
+        await self.consensus.integrate_block_with_existing_chain(block, MagicMock())
+        # tip + each walked orphan
+        self.assertEqual(
+            self.consensus.mongo.async_db.consensus.update_many.await_count, 2
         )
+        args, _kwargs = self.consensus.mongo.async_db.consensus.update_many.await_args
+        self.assertTrue(args[1]["$set"]["ignore"])
+
+    async def test_mark_ignored_none_block_noop(self):
+        await self.consensus._mark_consensus_block_ignored(None, "x")
+        self.consensus.mongo.async_db.consensus.update_many.assert_not_awaited()
 
     async def test_not_consecutive_returns_false(self):
         self.consensus.build_backward_from_block_to_fork = AsyncMock(

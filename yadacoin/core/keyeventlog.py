@@ -75,6 +75,10 @@ class PublicKeyMismatchException(Exception):
     pass
 
 
+class KeyEventFieldsNotPopulatedException(KELException):
+    pass
+
+
 class KeyEventChainStatus(Enum):
     ONCHAIN = "onchain"
     MEMPOOL = "mempool"
@@ -340,6 +344,168 @@ def classify_key_event_flag(txn: Transaction) -> KeyEventFlag:
     if looks_like_confirming_key_event(txn):
         return KeyEventFlag.CONFIRMING
     return KeyEventFlag.UNCONFIRMED
+
+
+def kel_hash_links_ok(previous: Transaction, current: Transaction) -> None:
+    """Raise KELException if *current* does not hash-link to *previous*."""
+    if previous.public_key_hash != current.prev_public_key_hash:
+        raise KELException(
+            "Mismatch: previous.public_key_hash does not match current.prev_public_key_hash",
+            txn=current,
+        )
+    if previous.prerotated_key_hash != current.public_key_hash:
+        raise KELException(
+            "Mismatch: previous.prerotated_key_hash does not match current.public_key_hash",
+            txn=current,
+        )
+    if previous.twice_prerotated_key_hash != current.prerotated_key_hash:
+        raise KELException(
+            "Mismatch: previous.twice_prerotated_key_hash does not match current.prerotated_key_hash",
+            txn=current,
+        )
+
+
+def kel_successor_flag_allowed(
+    prev_flag: KeyEventFlag, next_flag: KeyEventFlag
+) -> bool:
+    """Return True if *next_flag* may immediately follow *prev_flag* in a chain."""
+    if next_flag == KeyEventFlag.INCEPTION:
+        return False
+    if prev_flag == KeyEventFlag.UNCONFIRMED:
+        # Unconfirmed must be followed immediately by confirming only.
+        return next_flag == KeyEventFlag.CONFIRMING
+    # INCEPTION or CONFIRMING may be followed by CONFIRMING or UNCONFIRMED.
+    return next_flag in (KeyEventFlag.CONFIRMING, KeyEventFlag.UNCONFIRMED)
+
+
+def verify_kel_step(
+    previous: Transaction,
+    current: Transaction,
+    *,
+    previous_onchain: bool = False,
+    latest_entry=None,
+) -> None:
+    """Pairwise KEL link check used by block generation root-walk.
+
+    Validates hash links, flag succession, and flag-specific field shape on
+    *current*.  Does not consult mempool or key_event_log.
+    """
+    if previous is None:
+        raise KELException("verify_kel_step requires a previous entry", txn=current)
+
+    prev_flag = classify_key_event_flag(previous)
+    curr_flag = classify_key_event_flag(current)
+
+    if not kel_successor_flag_allowed(prev_flag, curr_flag):
+        raise KELException(
+            f"Invalid KEL succession: {prev_flag.value} -> {curr_flag.value}",
+            txn=current,
+        )
+
+    kel_hash_links_ok(previous, current)
+
+    ke = KeyEvent(
+        current,
+        flag=curr_flag,
+        status=KeyEventChainStatus.MEMPOOL,
+    )
+    if curr_flag == KeyEventFlag.CONFIRMING:
+        tip = latest_entry if latest_entry is not None else previous
+        ke.verify_confirming(tip, onchain=False)
+    elif curr_flag == KeyEventFlag.UNCONFIRMED:
+        ke.verify_unconfirmed()
+    elif curr_flag == KeyEventFlag.INCEPTION:
+        ke.verify_inception(onchain=False)
+
+
+async def get_latest_onchain_tip_for_txn(txn: Transaction):
+    """Return the latest on-chain KEL tip this *txn* should extend, or None.
+
+    Strictly on-chain (``onchain_only=True``).  Used for mempool-root detection
+    during block generation.
+    """
+    if not txn.prev_public_key_hash:
+        return None
+    pub = getattr(txn, "public_key", None) or ""
+    if pub:
+        try:
+            tip = await KeyEventLog.get_latest(pub, onchain_only=True)
+            if tip is not None:
+                return tip
+        except Exception:
+            pass
+    try:
+        return await KeyEventLog.get_latest(
+            address=txn.prev_public_key_hash, onchain_only=True
+        )
+    except Exception:
+        return None
+
+
+async def is_mempool_kel_root(txn: Transaction) -> tuple:
+    """Return ``(is_root, onchain_parent_txn_or_None)`` for block generation.
+
+    Roots are:
+      * INCEPTION / recovers-inception (no on-chain parent required), or
+      * direct child of the **latest** on-chain KEL tip for that key
+        (``parent.public_key_hash == txn.prev_public_key_hash`` and parent
+        has no on-chain child).
+
+    Mempool and ``key_event_log`` are ignored.
+    """
+    flag = classify_key_event_flag(txn)
+    if flag == KeyEventFlag.INCEPTION or is_recovers_inception(txn):
+        return True, None
+
+    if not txn.prev_public_key_hash:
+        return False, None
+
+    ke = KeyEvent(
+        txn,
+        flag=flag,
+        status=KeyEventChainStatus.MEMPOOL,
+    )
+    parent_result = await ke.get_onchain_parent()
+    if not parent_result or not parent_result.get("key_event"):
+        return False, None
+
+    parent_ke = parent_result["key_event"]
+    parent_txn = parent_ke.txn
+
+    if parent_txn.public_key_hash != txn.prev_public_key_hash:
+        return False, None
+
+    # Parent must be the latest on-chain tip (no on-chain child).
+    onchain_child = await parent_ke.get_onchain_child()
+    if onchain_child is not None:
+        return False, None
+
+    try:
+        verify_kel_step(parent_txn, txn, previous_onchain=True, latest_entry=parent_txn)
+    except Exception:
+        return False, None
+
+    return True, parent_txn
+
+
+def is_kel_chain_complete(entries) -> bool:
+    """True if *entries* (root-first) form a complete mempool KEL chain."""
+    if not entries:
+        return False
+    flags = [classify_key_event_flag(t) for t in entries]
+    # Never two unconfirmed in a row
+    for a, b in zip(flags, flags[1:]):
+        if a == KeyEventFlag.UNCONFIRMED and b == KeyEventFlag.UNCONFIRMED:
+            return False
+        if a == KeyEventFlag.UNCONFIRMED and b != KeyEventFlag.CONFIRMING:
+            return False
+    tip_flag = flags[-1]
+    if tip_flag == KeyEventFlag.CONFIRMING:
+        return True
+    # Lone inception is complete
+    if len(entries) == 1 and tip_flag == KeyEventFlag.INCEPTION:
+        return True
+    return False
 
 
 class KeyEvent:

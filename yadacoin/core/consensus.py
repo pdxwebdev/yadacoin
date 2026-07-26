@@ -229,6 +229,12 @@ class Consensus(object):
         )
 
         if existing:
+            if existing.get("ignore"):
+                self.app_log.debug(
+                    "Block with index %s, id %s previously failed verify; ignored."
+                    % (block.index, block.signature)
+                )
+                return False
             self.app_log.debug(
                 "Block with index %s, id %s already exists in consensus."
                 % (block.index, block.signature)
@@ -242,6 +248,20 @@ class Consensus(object):
                 "Failed to verify block with index %s, id %s for peer %s: %s"
                 % (block.index, block.signature, peer.to_string(), str(e))
             )
+            # Persist as ignored so peers re-offering the same invalid block
+            # do not restart orphan-chain walks forever.
+            await self.mongo.async_db.consensus.replace_one(
+                {"index": block.index, "id": block.signature},
+                {
+                    "block": block.to_dict(),
+                    "index": block.index,
+                    "id": block.signature,
+                    "peer": peer.to_dict(),
+                    "ignore": True,
+                    "ignore_reason": str(e)[:500],
+                },
+                upsert=True,
+            )
             return False
 
         self.app_log.debug(
@@ -249,7 +269,9 @@ class Consensus(object):
             % (block.index, block.signature, peer.to_string())
         )
 
-        await self.mongo.async_db.consensus.delete_many({"index": block.index})
+        await self.mongo.async_db.consensus.delete_many(
+            {"index": block.index, "ignore": {"$ne": True}}
+        )
 
         await self.mongo.async_db.consensus.insert_one(
             {
@@ -450,6 +472,7 @@ class Consensus(object):
                 "block.hash": block.prev_hash,
                 "block.index": (block.index - 1),
                 "block.version": CHAIN.get_version_for_height((block.index - 1)),
+                "ignore": {"$ne": True},
             }
         )
         async for new_block in new_blocks:
@@ -470,6 +493,15 @@ class Consensus(object):
         self, block, blocks, stream=None, depth=0
     ):
         self.app_log.debug(f"build_backward_from_block_to_fork: {block.index}")
+
+        # Bound orphan walks so a poisoned consensus tip cannot recurse
+        # dozens of levels every few seconds.
+        if depth > 100:
+            self.app_log.warning(
+                "build_backward_from_block_to_fork: max depth exceeded at index %s"
+                % block.index
+            )
+            return blocks if blocks is not None else [], False
 
         retrace_block = await self.mongo.async_db.blocks.find_one(
             {"hash": block.prev_hash, "time": {"$lt": block.time}}
@@ -497,6 +529,25 @@ class Consensus(object):
         backward_blocks.append(retrace_consensus_block)
         return backward_blocks, status
 
+    async def _mark_consensus_block_ignored(self, block, reason):
+        """Stop retrying an unintegrable consensus tip / orphan chain."""
+        if block is None:
+            return
+        await self.mongo.async_db.consensus.update_many(
+            {
+                "$or": [
+                    {"id": block.signature},
+                    {"index": block.index, "block.hash": block.hash},
+                ]
+            },
+            {
+                "$set": {
+                    "ignore": True,
+                    "ignore_reason": str(reason)[:500],
+                }
+            },
+        )
+
     async def integrate_block_with_existing_chain(self, block: Block, stream):
         self.app_log.debug("integrate_block_with_existing_chain")
         backward_blocks, status = await self.build_backward_from_block_to_fork(
@@ -505,6 +556,14 @@ class Consensus(object):
 
         if not status:
             self.app_log.debug("integrate_block_with_existing_chain: status is false")
+            # Orphan tip cannot connect to local chain (often because a parent
+            # failed verify and was ignored).  Mark the tip and every block
+            # already walked in this orphan segment so sibling tips sharing
+            # the same gap are not re-walked one-by-one forever.
+            reason = "orphan: cannot connect to local chain"
+            await self._mark_consensus_block_ignored(block, reason)
+            for orphan in backward_blocks or []:
+                await self._mark_consensus_block_ignored(orphan, reason)
             return
 
         forward_blocks_chain = await self.build_remote_chain(block)  # contains block

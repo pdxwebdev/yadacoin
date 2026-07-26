@@ -31,9 +31,9 @@ from yadacoin.core.keyeventlog import (
     DoesNotSpendEntirelyToPrerotatedKeyHashException,
     KELExceptionPreviousKeyHashReferenceMissing,
     KELHashCollection,
-    KELHashCollectionException,
     KeyEvent,
     KeyEventChainStatus,
+    KeyEventFieldsNotPopulatedException,
     KeyEventLog,
 )
 from yadacoin.core.keyrotation import NodeKeyRotationManager
@@ -268,6 +268,15 @@ class Block(object):
             for txn in pending_txns:
                 config.app_log.debug(f"Pending txn: {txn.to_json()}")
 
+        # Build complete KEL chains from on-chain roots only; drop incomplete
+        # members from the candidate set and the mempool before per-txn verify.
+        if index >= CHAIN.CHECK_KEL_FORK:
+            await Block.select_kel_chains_for_block(
+                pending_txns,
+                block_index=index,
+                max_transactions=1000,
+            )
+
         await Block.validate_transactions(
             block, pending_txns, transaction_objs, used_sigs, used_inputs, index, xtime
         )
@@ -463,6 +472,268 @@ class Block(object):
                 self.transactions.remove(linked_txn)
 
     @staticmethod
+    async def select_kel_chains_for_block(
+        txns, block_index=None, max_transactions=1000
+    ):
+        """Partition and filter KEL candidates for block generation.
+
+        1. Collect KEL candidates (``are_kel_fields_populated``).
+        2. Find mempool roots (inception, or direct child of latest on-chain tip).
+        3. Walk each root forward inside *txns* with pairwise ``verify_kel_step``.
+        4. Accept only complete chains; drop incomplete/orphan KEL members from
+           *txns* and delete them from ``miner_transactions``.
+        5. Respect *max_transactions* total block size: if a complete chain would
+           push the candidate set over the limit, keep the longest prefix that
+           still ends on a CONFIRMING entry (or a lone INCEPTION).  Deferred
+           tail members stay in the mempool for the next block (not failed).
+
+        Non-KEL transactions are left untouched.  Returns
+        ``(accepted_kel_txns, rejected_kel_txns)``.
+        """
+        from yadacoin.core.keyeventlog import (
+            KeyEventFlag,
+            classify_key_event_flag,
+            is_kel_chain_complete,
+            is_mempool_kel_root,
+            is_recovers_inception,
+            kel_successor_flag_allowed,
+            verify_kel_step,
+        )
+
+        config = Config()
+
+        kel_candidates = []
+        for txn in txns:
+            if not getattr(txn, "are_kel_fields_populated", None):
+                continue
+            if not txn.are_kel_fields_populated():
+                continue
+            kel_candidates.append(txn)
+
+        if not kel_candidates:
+            return [], []
+
+        # Index children by prev_public_key_hash for forward walks.
+        children_of = {}
+        by_sig = {}
+        for txn in kel_candidates:
+            by_sig[txn.transaction_signature] = txn
+            prev = txn.prev_public_key_hash or ""
+            children_of.setdefault(prev, []).append(txn)
+
+        claimed = set()  # transaction_signature
+        accepted = []
+        rejected = []
+        deferred = []  # valid chain tail deferred to next block (stay in mempool)
+
+        # Capacity: non-KEL already in the candidate set consume slots.
+        kel_sigs = {t.transaction_signature for t in kel_candidates}
+        non_kel_count = sum(1 for t in txns if t.transaction_signature not in kel_sigs)
+        # Slots remaining for KEL entries after non-KEL are reserved.
+        if max_transactions is None or max_transactions < 0:
+            max_transactions = 1000
+
+        def _slots_left():
+            return max(0, max_transactions - non_kel_count - len(accepted))
+
+        def _longest_fitting_prefix(chain):
+            """Longest root-first prefix that is complete and fits in remaining slots."""
+            slots = _slots_left()
+            if slots <= 0:
+                return []
+            # Prefer full chain when it fits and is complete.
+            if len(chain) <= slots and is_kel_chain_complete(chain):
+                return list(chain)
+            # Otherwise walk back to the last confirming tip within budget.
+            limit = min(len(chain), slots)
+            for end in range(limit, 0, -1):
+                prefix = chain[:end]
+                if is_kel_chain_complete(prefix):
+                    return prefix
+            return []
+
+        async def _defer(members, reason):
+            """Omit from this block but leave in mempool for a later block."""
+            for m in members:
+                sig = m.transaction_signature
+                if sig in claimed:  # pragma: no cover
+                    continue
+                if getattr(m, "coinbase", False):
+                    # Coinbase templates must stay in the candidate set.
+                    claimed.add(sig)
+                    if m not in accepted:
+                        accepted.append(m)
+                    continue
+                claimed.add(sig)
+                deferred.append(m)
+                config.app_log.info(
+                    f"select_kel_chains_for_block: deferring KEL txn "
+                    f"{sig[:24]}... to next block ({reason})"
+                )
+
+        async def _discard(members, reason):
+            for m in members:
+                sig = m.transaction_signature
+                if sig in claimed:
+                    continue
+                # Block-local coinbase / coinbase_confirming templates are not
+                # mempool entries and must stay in the candidate set.
+                if getattr(m, "coinbase", False):
+                    claimed.add(sig)
+                    accepted.append(m)
+                    config.app_log.debug(
+                        f"select_kel_chains_for_block: keeping coinbase KEL txn "
+                        f"{sig[:24]}... despite: {reason}"
+                    )
+                    continue
+                claimed.add(sig)
+                rejected.append(m)
+                config.app_log.info(
+                    f"select_kel_chains_for_block: discarding KEL txn "
+                    f"{sig[:24]}... ({reason})"
+                )
+                try:
+                    await config.mongo.async_db.failed_transactions.insert_one(
+                        {
+                            "reason": "KELChainDiscard",
+                            "message": str(reason),
+                            "txn": m.to_dict(),
+                        }
+                    )
+                except Exception as exc:
+                    config.app_log.warning(
+                        f"select_kel_chains_for_block: failed_transactions "
+                        f"insert failed: {exc}"
+                    )
+                try:
+                    await config.mongo.async_db.miner_transactions.delete_one(
+                        {"id": sig}
+                    )
+                except Exception as exc:
+                    config.app_log.warning(
+                        f"select_kel_chains_for_block: mempool delete failed: {exc}"
+                    )
+
+        # Identify roots first.
+        roots = []
+        root_parents = {}  # sig -> onchain parent txn or None
+        for txn in kel_candidates:
+            try:
+                is_root, parent = await is_mempool_kel_root(txn)
+            except Exception as exc:
+                config.app_log.warning(
+                    f"select_kel_chains_for_block: root check failed for "
+                    f"{txn.transaction_signature[:24]}...: {exc}"
+                )
+                is_root, parent = False, None
+            if is_root:
+                roots.append(txn)
+                root_parents[txn.transaction_signature] = parent
+
+        for root in roots:
+            if root.transaction_signature in claimed:
+                continue
+
+            chain = [root]
+            prev = root
+            prev_flag = classify_key_event_flag(root)
+            # If root is inception, validate its own shape.
+            if (
+                prev_flag == KeyEventFlag.INCEPTION or is_recovers_inception(root)
+            ) and not getattr(root, "coinbase", False):
+                try:
+                    from yadacoin.core.keyeventlog import KeyEvent, KeyEventChainStatus
+
+                    ke = KeyEvent(
+                        root,
+                        flag=KeyEventFlag.INCEPTION,
+                        status=KeyEventChainStatus.MEMPOOL,
+                    )
+                    if is_recovers_inception(root):
+                        ke.verify_fields(prev_public_key_hash_required=False)
+                    else:
+                        ke.verify_inception(onchain=False)
+                except Exception as exc:
+                    await _discard([root], f"invalid inception root: {exc}")
+                    continue
+
+            walk_failed = False
+            while True:
+                kids = [
+                    k
+                    for k in children_of.get(prev.public_key_hash, [])
+                    if k.transaction_signature not in claimed
+                    and k.transaction_signature != prev.transaction_signature
+                    and k not in chain
+                ]
+                if not kids:
+                    break
+                # Evaluate each candidate successor; require exactly one valid.
+                valid_kids = []
+                for kid in kids:
+                    kid_flag = classify_key_event_flag(kid)
+                    if not kel_successor_flag_allowed(prev_flag, kid_flag):
+                        continue
+                    try:
+                        verify_kel_step(prev, kid, previous_onchain=False)
+                        valid_kids.append(kid)
+                    except Exception:
+                        continue
+                if not valid_kids:
+                    # Kids exist but none are valid successors — stop walk;
+                    # invalid kids become orphans and are discarded later.
+                    break
+                if len(valid_kids) > 1:
+                    # Ambiguous fork in mempool.
+                    walk_failed = True
+                    chain.extend(valid_kids)
+                    break
+                nxt = valid_kids[0]
+                chain.append(nxt)
+                prev = nxt
+                prev_flag = classify_key_event_flag(nxt)
+
+            if walk_failed or not is_kel_chain_complete(chain):
+                # Also pull any unclaimed kids we didn't walk into discard set
+                # when the chain is incomplete at UNCONFIRMED tip.
+                await _discard(chain, "incomplete or invalid KEL chain")
+                continue
+
+            prefix = _longest_fitting_prefix(chain)
+            if not prefix:
+                # No complete prefix fits — defer entire chain to next block.
+                await _defer(chain, "block transaction limit; no complete prefix fits")
+                continue
+
+            for m in prefix:
+                claimed.add(m.transaction_signature)
+                accepted.append(m)
+
+            tail = chain[len(prefix) :]
+            if tail:
+                await _defer(
+                    tail,
+                    f"block transaction limit; kept {len(prefix)} of {len(chain)} "
+                    f"ending on confirming",
+                )
+
+        # Orphans: KEL candidates never claimed as part of a complete chain.
+        for txn in kel_candidates:
+            if txn.transaction_signature not in claimed:
+                await _discard([txn], "orphan KEL (not reached from a root)")
+
+        # Mutate txns: remove rejected (failed) and deferred (next block).
+        remove_sigs = {t.transaction_signature for t in rejected} | {
+            t.transaction_signature for t in deferred
+        }
+        if remove_sigs:
+            for txn in list(txns):
+                if txn.transaction_signature in remove_sigs:
+                    txns.remove(txn)
+
+        return accepted, rejected
+
+    @staticmethod
     async def validate_transactions(
         block, txns, transaction_objs, used_sigs, used_inputs, index, xtime
     ):
@@ -550,30 +821,9 @@ class Block(object):
                     mempool=False,
                     batch_txns=txns,
                 )
-                if (
-                    check_kel
-                    and isinstance(transaction_obj, Transaction)
-                    and transaction_obj.prev_public_key_hash
-                ):
-                    from yadacoin.core.keyeventlog import KeyEventLog
-
-                    kel_hash_collection = KELHashCollection()
-                    kel_hash_collection.config = Config()
-                    for candidate in txns:
-                        try:
-                            kel_hash_collection.add(candidate)
-                        except KELHashCollectionException:
-                            pass
-                    txn_key_event = KeyEvent(
-                        transaction_obj, status=KeyEventChainStatus.MEMPOOL
-                    )
-                    await KeyEventLog.init_async(
-                        txn_key_event,
-                        kel_hash_collection,
-                        block_index=index,
-                        batch_txns=txns,
-                        use_mempool=False,
-                    )
+                # KEL chain assembly is done in select_kel_chains_for_block
+                # before this loop.  Do not re-run KeyEventLog.init_async
+                # (9-scenario) during generate.
                 for output in transaction_obj.outputs:
                     if not config.address_is_valid(output.to):
                         raise TransactionAddressInvalidException(
@@ -920,6 +1170,10 @@ class Block(object):
                         )
 
                 has_kel = await txn.has_key_event_log(block=self)
+                if has_kel and not txn.are_kel_fields_populated():
+                    raise KeyEventFieldsNotPopulatedException(
+                        "Transaction has a KEL but key event fields are not populated."
+                    )
                 if not has_kel and txn.prev_public_key_hash:
                     # The parent KEL entry may live in a sibling transaction
                     # of this same in-progress block (common when an inception

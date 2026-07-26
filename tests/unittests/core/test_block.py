@@ -4208,8 +4208,8 @@ class TestBlockCoverageFinalGaps(AsyncTestCase):
                 f"all debug={Config().app_log.debug.call_args_list!r}"
             )
 
-    async def test_validate_transactions_check_kel_runs_init_async(self):
-        """Lines 545-557: check_kel + prev_public_key_hash calls KeyEventLog.init_async."""
+    async def test_validate_transactions_check_kel_skips_init_async(self):
+        """Generate path no longer calls KeyEventLog.init_async (root-walk does KEL)."""
         from yadacoin.core.chain import CHAIN
         from yadacoin.core.transaction import Transaction
 
@@ -4236,10 +4236,7 @@ class TestBlockCoverageFinalGaps(AsyncTestCase):
         ), mock.patch(
             "yadacoin.core.keyeventlog.KeyEventLog.init_async",
             new=AsyncMock(return_value=None),
-        ) as mock_init, mock.patch(
-            "yadacoin.core.keyeventlog.KELHashCollection.add",
-            return_value=None,
-        ):
+        ) as mock_init:
             await Block.validate_transactions(
                 None,
                 [txn],
@@ -4249,52 +4246,8 @@ class TestBlockCoverageFinalGaps(AsyncTestCase):
                 CHAIN.CHECK_KEL_FORK + 1,
                 int(time_module.time()),
             )
-        mock_init.assert_awaited()
+        mock_init.assert_not_awaited()
         self.assertIn(txn, transaction_objs)
-
-    async def test_validate_transactions_check_kel_hash_collection_exception_swallowed(
-        self,
-    ):
-        """Lines 550-553: KELHashCollection.add raising is swallowed."""
-        from yadacoin.core.chain import CHAIN
-        from yadacoin.core.keyeventlog import KELHashCollectionException
-        from yadacoin.core.transaction import Transaction
-
-        txn = Mock(spec=Transaction)
-        txn.transaction_signature = "sig_kel_hc"
-        txn.spent_in_txn = None
-        txn.inputs = []
-        txn.outputs = [Mock(to="1ValidAddr", value=1.0)]
-        txn.fee = 0.0
-        txn.masternode_fee = 0.0
-        txn.time = 0
-        txn.prev_public_key_hash = "1PrevPKH"
-        txn.public_key_hash = "1PKH"
-        txn.prerotated_key_hash = "1PKR"
-        txn.twice_prerotated_key_hash = "1TPKR"
-        txn.coinbase = False
-        txn.relationship = ""
-        txn.verify = AsyncMock(return_value=None)
-        txn.__class__ = Transaction
-
-        with mock.patch(
-            "yadacoin.core.config.Config.address_is_valid", return_value=True
-        ), mock.patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.init_async",
-            new=AsyncMock(return_value=None),
-        ), mock.patch(
-            "yadacoin.core.keyeventlog.KELHashCollection.add",
-            side_effect=KELHashCollectionException("dup"),
-        ):
-            await Block.validate_transactions(
-                None,
-                [txn],
-                [],
-                [],
-                {},
-                CHAIN.CHECK_KEL_FORK + 1,
-                int(time_module.time()),
-            )
 
     async def test_validate_transactions_kel_prev_removes_linked_from_transaction_objs(
         self,
