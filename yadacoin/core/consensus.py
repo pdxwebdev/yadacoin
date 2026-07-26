@@ -241,29 +241,6 @@ class Consensus(object):
             )
             return True
 
-        try:
-            await block.verify()
-        except Exception as e:
-            self.app_log.error(
-                "Failed to verify block with index %s, id %s for peer %s: %s"
-                % (block.index, block.signature, peer.to_string(), str(e))
-            )
-            # Persist as ignored so peers re-offering the same invalid block
-            # do not restart orphan-chain walks forever.
-            await self.mongo.async_db.consensus.replace_one(
-                {"index": block.index, "id": block.signature},
-                {
-                    "block": block.to_dict(),
-                    "index": block.index,
-                    "id": block.signature,
-                    "peer": peer.to_dict(),
-                    "ignore": True,
-                    "ignore_reason": str(e)[:500],
-                },
-                upsert=True,
-            )
-            return False
-
         self.app_log.debug(
             "Inserting new consensus block for index %s, id %s for peer %s."
             % (block.index, block.signature, peer.to_string())
