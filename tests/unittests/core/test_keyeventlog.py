@@ -675,7 +675,10 @@ class TestKeyEventLog(AsyncTestCase):
 
         xblock.transactions[1].prev_public_key_hash = "test fail"
 
-        with self.assertRaises(FatalKeyEventException):
+        # Parent lookup requires public_key_hash == prev; a forged prev finds
+        # no parent (KELException).  Legacy path that found parent by hash-link
+        # then mismatched prev raised FatalKeyEventException — either is reject.
+        with self.assertRaises((FatalKeyEventException, KELException)):
             await xblock.verify()
 
     async def test_transaction_spends_public_key_with_kel(self):
@@ -2271,12 +2274,20 @@ class TestKeyEventSendsAndParent(AsyncTestCase):
         self.assertEqual(result["key_event"].flag, KeyEventFlag.CONFIRMING)
 
     async def test_get_onchain_child_returns_key_event(self):
-        """Lines 412-413: get_onchain_child aggregate returns a block txn → returns KeyEvent."""
+        """get_onchain_child returns KeyEvent when child public_key_hash is parent prerotated."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from yadacoin.core.keyeventlog import KeyEvent
 
-        block_doc = {"transactions": dict(_INCEPTION_TXN_DICT)}
+        child_doc = {
+            "transactions": {
+                **dict(_INCEPTION_TXN_DICT),
+                "public_key_hash": _VALID_ADDR_B,
+                "prerotated_key_hash": _VALID_ADDR_C,
+                "twice_prerotated_key_hash": "1ChildTwiceXXXXXXXXXXXXXXXXXXXXXX",
+                "prev_public_key_hash": _VALID_ADDR_A,
+            }
+        }
 
         ke = _make_mock_ke(
             public_key_hash=_VALID_ADDR_A,
@@ -2285,7 +2296,7 @@ class TestKeyEventSendsAndParent(AsyncTestCase):
         )
 
         mock_cursor = MagicMock()
-        mock_cursor.to_list = AsyncMock(return_value=[block_doc])
+        mock_cursor.to_list = AsyncMock(return_value=[child_doc])
 
         with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
             mock_cfg = MagicMock()
@@ -5607,7 +5618,8 @@ class TestKeyEventLogCoverage100(AsyncTestCase):
 
     # ---- _walk_forward remaining branches ----
 
-    async def test_walk_forward_already_tagged_same_inception_stops(self):
+    async def test_walk_forward_already_tagged_same_inception_continues(self):
+        """Same-inception tagged successors must be followed to the true tip."""
         from yadacoin.core.keyeventlog import KeyEventLog
 
         candidate = MagicMock()
@@ -5615,10 +5627,16 @@ class TestKeyEventLogCoverage100(AsyncTestCase):
         candidate.counter = 5
         candidate.prerotated_key_hash = "next"
         candidate.transaction_signature = "sig"
+        candidate.public_key_hash = "addr"
 
+        # First call returns the tagged successor; second call (from successor
+        # prerotated) finds nothing — tip is candidate.
         cursor = MagicMock()
         cursor.to_list = AsyncMock(
-            return_value=[{"transactions": {"public_key_hash": "x"}}]
+            side_effect=[
+                [{"transactions": {"public_key_hash": "addr"}}],
+                [],
+            ]
         )
         Config().mongo.async_db.blocks.aggregate = MagicMock(return_value=cursor)
         Config().mongo.async_db.miner_transactions.find_one = AsyncMock(
@@ -5634,11 +5652,15 @@ class TestKeyEventLogCoverage100(AsyncTestCase):
 
         with patch(
             "yadacoin.core.transaction.Transaction.from_dict", return_value=candidate
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.find_recovery_successor",
+            new=AsyncMock(return_value=None),
         ):
             result = await KeyEventLog._walk_forward(
                 start, _VALID_PUBKEY, onchain_only=True
             )
-        self.assertIs(result, start)
+        self.assertIs(result, candidate)
+        self.assertEqual(result.counter, 5)
 
     async def test_walk_forward_different_inception_stops(self):
         from yadacoin.core.keyeventlog import KeyEventLog
@@ -5670,10 +5692,12 @@ class TestKeyEventLogCoverage100(AsyncTestCase):
             )
         self.assertIs(result, start)
 
-    async def test_walk_forward_mempool_already_tagged_stops(self):
+    async def test_walk_forward_mempool_already_tagged_continues(self):
+        """Same-inception tagged mempool successors must be followed."""
         from yadacoin.core.keyeventlog import KeyEventLog
 
         cursor = MagicMock()
+        # First on-chain lookup empty; second (after advancing) also empty.
         cursor.to_list = AsyncMock(return_value=[])
         Config().mongo.async_db.blocks.aggregate = MagicMock(return_value=cursor)
 
@@ -5682,9 +5706,14 @@ class TestKeyEventLogCoverage100(AsyncTestCase):
         candidate.counter = 9
         candidate.prerotated_key_hash = "n"
         candidate.transaction_signature = "m"
+        candidate.public_key_hash = "addr"
+        candidate.mempool = True
 
         Config().mongo.async_db.miner_transactions.find_one = AsyncMock(
-            return_value={"public_key_hash": "x"}
+            side_effect=[
+                {"public_key_hash": "addr"},  # first hop
+                None,  # tip exhausted
+            ]
         )
 
         start = MagicMock()
@@ -5696,11 +5725,15 @@ class TestKeyEventLogCoverage100(AsyncTestCase):
 
         with patch(
             "yadacoin.core.transaction.Transaction.from_dict", return_value=candidate
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.find_recovery_successor",
+            new=AsyncMock(return_value=None),
         ):
             result = await KeyEventLog._walk_forward(
                 start, _VALID_PUBKEY, onchain_only=False
             )
-        self.assertIs(result, start)
+        self.assertIs(result, candidate)
+        self.assertEqual(result.counter, 9)
 
     async def test_walk_forward_mempool_different_inception_stops(self):
         from yadacoin.core.keyeventlog import KeyEventLog
@@ -6667,3 +6700,637 @@ class TestClassifyKeyEventFlag(unittest.TestCase):
 
         t = self._txn(prev_public_key_hash="")
         self.assertEqual(classify_key_event_flag(t), KeyEventFlag.INCEPTION)
+
+
+class TestGetOnchainHashlinkTip(AsyncTestCase):
+    """Mining tip: O(1) candidate check, full walk only on failure."""
+
+    async def test_fast_path_accepts_valid_max_counter_candidate(self):
+        from bitcoin.wallet import P2PKHBitcoinAddress
+        from coincurve import PrivateKey as CK
+
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        priv = CK()
+        pub = priv.public_key.format(compressed=True).hex()
+        addr = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub)))
+
+        candidate = MagicMock()
+        candidate.public_key_hash = "1Tip"
+        candidate.prerotated_key_hash = "1Next"
+        candidate.twice_prerotated_key_hash = "1Twice"
+        candidate.prev_public_key_hash = "1Prev"
+        candidate.counter = 10
+        candidate.inception_public_key_hash = "1Inc"
+        candidate.transaction_signature = "tip_sig"
+
+        seed_txn = MagicMock()
+        seed_txn.inception_public_key_hash = "1Inc"
+        seed_txn.public_key_hash = addr
+
+        with patch.object(
+            KeyEventLog,
+            "_latest_from_inception_tag",
+            new=AsyncMock(return_value=candidate),
+        ) as mock_latest, patch.object(
+            KeyEventLog,
+            "_is_onchain_hashlink_tip_candidate",
+            new=AsyncMock(return_value=True),
+        ) as mock_check, patch.object(
+            KeyEventLog,
+            "_walk_onchain_hashlink_tip",
+            new=AsyncMock(),
+        ) as mock_walk, patch(
+            "yadacoin.core.keyeventlog.Config"
+        ) as mock_cfg_cls, patch(
+            "yadacoin.core.transaction.Transaction.from_dict",
+            return_value=seed_txn,
+        ):
+            cfg = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            cursor = MagicMock()
+            cursor.to_list = AsyncMock(
+                return_value=[{"transactions": {"public_key_hash": addr}}]
+            )
+            cfg.mongo.async_db.blocks.aggregate.return_value = cursor
+            result = await KeyEventLog.get_onchain_hashlink_tip(pub)
+
+        self.assertIs(result, candidate)
+        mock_latest.assert_awaited_once_with("1Inc", onchain_only=True)
+        mock_check.assert_awaited()
+        mock_walk.assert_not_awaited()
+
+    async def test_slow_path_when_candidate_fails_checks(self):
+        from bitcoin.wallet import P2PKHBitcoinAddress
+        from coincurve import PrivateKey as CK
+
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        priv = CK()
+        pub = priv.public_key.format(compressed=True).hex()
+        addr = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub)))
+
+        bad = MagicMock()
+        bad.public_key_hash = "1Jump"
+        bad.counter = 241
+        walked = MagicMock()
+        walked.public_key_hash = "1RealTip"
+        walked.prerotated_key_hash = "1Next"
+        walked.inception_public_key_hash = "1Inc"
+
+        seed_txn = MagicMock()
+        seed_txn.inception_public_key_hash = "1Inc"
+
+        with patch.object(
+            KeyEventLog,
+            "_latest_from_inception_tag",
+            new=AsyncMock(return_value=bad),
+        ), patch.object(
+            KeyEventLog,
+            "_is_onchain_hashlink_tip_candidate",
+            new=AsyncMock(return_value=False),
+        ), patch.object(
+            KeyEventLog,
+            "_walk_onchain_hashlink_tip",
+            new=AsyncMock(return_value=walked),
+        ) as mock_walk, patch(
+            "yadacoin.core.keyeventlog.Config"
+        ) as mock_cfg_cls, patch(
+            "yadacoin.core.transaction.Transaction.from_dict",
+            return_value=seed_txn,
+        ):
+            cfg = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            cfg.app_log = MagicMock()
+            cursor = MagicMock()
+            cursor.to_list = AsyncMock(
+                return_value=[{"transactions": {"public_key_hash": addr}}]
+            )
+            cfg.mongo.async_db.blocks.aggregate.return_value = cursor
+            result = await KeyEventLog.get_onchain_hashlink_tip(pub)
+
+        self.assertIs(result, walked)
+        mock_walk.assert_awaited_once()
+
+    async def test_candidate_check_rejects_missing_parent(self):
+        """Jump tip parented off unmined twice fails O(1) check."""
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        txn = MagicMock()
+        txn.public_key_hash = "1Jump"
+        txn.prerotated_key_hash = "1Next"
+        txn.twice_prerotated_key_hash = "1Twice"
+        txn.prev_public_key_hash = "1UnminedTwice"
+        txn.transaction_signature = "sig"
+
+        with patch("yadacoin.core.keyeventlog.Config") as mock_cfg_cls:
+            cfg = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            # No children; no parent
+            cursor = MagicMock()
+            cursor.to_list = AsyncMock(return_value=[])
+            cfg.mongo.async_db.blocks.aggregate.return_value = cursor
+            ok = await KeyEventLog._is_onchain_hashlink_tip_candidate(txn)
+        self.assertFalse(ok)
+
+    async def test_candidate_check_rejects_when_child_exists(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        txn = MagicMock()
+        txn.public_key_hash = "1Tip"
+        txn.prerotated_key_hash = "1Next"
+        txn.twice_prerotated_key_hash = "1Twice"
+        txn.prev_public_key_hash = "1Prev"
+        txn.transaction_signature = "tip_sig"
+
+        with patch("yadacoin.core.keyeventlog.Config") as mock_cfg_cls:
+            cfg = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            cursor = MagicMock()
+            cursor.to_list = AsyncMock(
+                return_value=[
+                    {
+                        "transactions": {
+                            "id": "child_sig",
+                            "public_key_hash": "1Next",
+                        }
+                    }
+                ]
+            )
+            cfg.mongo.async_db.blocks.aggregate.return_value = cursor
+            ok = await KeyEventLog._is_onchain_hashlink_tip_candidate(txn)
+        self.assertFalse(ok)
+
+    async def test_candidate_check_accepts_linked_tip(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        txn = MagicMock()
+        txn.public_key_hash = "1Tip"
+        txn.prerotated_key_hash = "1Next"
+        txn.twice_prerotated_key_hash = "1Twice"
+        txn.prev_public_key_hash = "1Prev"
+        txn.transaction_signature = "tip_sig"
+
+        parent_doc = {
+            "transactions": {
+                "public_key_hash": "1Prev",
+                "prerotated_key_hash": "1Tip",
+                "twice_prerotated_key_hash": "1Next",
+            }
+        }
+
+        with patch("yadacoin.core.keyeventlog.Config") as mock_cfg_cls:
+            cfg = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            # First aggregate: children (empty); second: parent
+            cursor = MagicMock()
+            cursor.to_list = AsyncMock(side_effect=[[], [parent_doc]])
+            cfg.mongo.async_db.blocks.aggregate.return_value = cursor
+            ok = await KeyEventLog._is_onchain_hashlink_tip_candidate(txn)
+        self.assertTrue(ok)
+
+    async def test_get_onchain_hashlink_tip_none_when_no_inception(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        with patch.object(
+            KeyEventLog,
+            "_walk_onchain_hashlink_tip",
+            new=AsyncMock(return_value=None),
+        ) as mock_walk, patch("yadacoin.core.keyeventlog.Config") as mock_cfg_cls:
+            cfg = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            cursor = MagicMock()
+            cursor.to_list = AsyncMock(return_value=[])
+            cfg.mongo.async_db.blocks.aggregate.return_value = cursor
+            # Invalid pubkey forces walk path via exception, or empty seed
+            result = await KeyEventLog.get_onchain_hashlink_tip("not-a-key")
+        self.assertIsNone(result)
+
+
+class TestSkipLinkChildAndGapFill(AsyncTestCase):
+    """605076 jumped past tip; 605077 must not gap-fill under that skip."""
+
+    async def test_get_onchain_child_detects_skip_link_via_prev(self):
+        """Child with prev == parent.prerotated is a skip-link child."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyeventlog import KeyEvent
+
+        # Parent tip at 1FTg, prerotated 12z, twice 1MvZ
+        parent_ke = _make_mock_ke(
+            public_key_hash="1FTgPWtRpMCzLJJKAUiGYjGmmCWta9Ai52",
+            prerotated_key_hash="12zQBCLKMHMvPX7uitR9Ws4seFS12FJWmk",
+            twice_prerotated_key_hash="1MvZRZsGgxGNgobus1K54gryDap1GWkrBP",
+        )
+        # 605076 coinbase: prev=1MvZ (parent.twice) — skip link past 12z
+        skip_child = {
+            "transactions": {
+                **dict(_INCEPTION_TXN_DICT),
+                "public_key_hash": "1NzERuNkzaRtcMEUymTSY3ndBsGLER1eZp",
+                "prerotated_key_hash": "15UfimSEDExEZ3AS4Ch1xYrXr5AV19mZaT",
+                "prev_public_key_hash": "1MvZRZsGgxGNgobus1K54gryDap1GWkrBP",
+            }
+        }
+        mock_cursor = MagicMock()
+        mock_cursor.to_list = AsyncMock(return_value=[skip_child])
+        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
+            mock_cfg = MagicMock()
+            mock_config_cls.return_value = mock_cfg
+            mock_cfg.mongo.async_db.blocks.aggregate.return_value = mock_cursor
+            result = await parent_ke.get_onchain_child()
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result, KeyEvent)
+        self.assertEqual(
+            result.txn.prev_public_key_hash,
+            "1MvZRZsGgxGNgobus1K54gryDap1GWkrBP",
+        )
+
+    async def test_init_async_rejects_gap_fill_when_parent_has_skip_child(self):
+        """Gap-fill U/C under a tip that already has a skip-link child is fatal."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyeventlog import (
+            FatalKeyEventException,
+            KeyEventChainStatus,
+            KeyEventFlag,
+            KeyEventLog,
+        )
+
+        parent_ke = _make_mock_ke(
+            flag=KeyEventFlag.CONFIRMING,
+            status=KeyEventChainStatus.ONCHAIN,
+            public_key_hash="1FTgParent",
+            prerotated_key_hash="12zNext",
+            twice_prerotated_key_hash="1MvTwice",
+        )
+        skip_child = _make_mock_ke(
+            public_key_hash="1NzJump",
+            prerotated_key_hash="15UAfter",
+            prev_public_key_hash="1MvTwice",
+        )
+        parent_ke.get_onchain_child = AsyncMock(return_value=skip_child)
+
+        # Gap-fill tries to be direct child of 1FTg
+        ke = _make_mock_ke(
+            prev_public_key_hash="1FTgParent",
+            public_key_hash="12zNext",
+            prerotated_key_hash="1MvTwice",
+            twice_prerotated_key_hash="1NzJump",
+            relationship="",
+            outputs_to="1MvTwice",
+        )
+        ke.get_onchain_parent = AsyncMock(return_value={"key_event": parent_ke})
+        parent_ke.txn.public_key_hash = "1FTgParent"
+
+        hash_collection = _make_hash_collection()
+        with patch.object(
+            KeyEventLog,
+            "get_latest",
+            new=AsyncMock(return_value=MagicMock(prerotated_key_hash="1MvTwice")),
+        ):
+            with self.assertRaises(FatalKeyEventException) as ctx:
+                await KeyEventLog.init_async(ke, hash_collection)
+            self.assertIn("onchain child", str(ctx.exception).lower())
+
+
+class TestOnchainHashlinkTipCandidateCoverage(AsyncTestCase):
+    """Cover remaining branches of _is_onchain_hashlink_tip_candidate / tip."""
+
+    async def test_candidate_none_returns_false(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        self.assertFalse(await KeyEventLog._is_onchain_hashlink_tip_candidate(None))
+
+    async def test_candidate_missing_pkh_or_pre_returns_false(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        t = MagicMock()
+        t.public_key_hash = ""
+        t.prerotated_key_hash = "1Next"
+        t.twice_prerotated_key_hash = ""
+        t.prev_public_key_hash = ""
+        self.assertFalse(await KeyEventLog._is_onchain_hashlink_tip_candidate(t))
+
+        t.public_key_hash = "1Tip"
+        t.prerotated_key_hash = ""
+        self.assertFalse(await KeyEventLog._is_onchain_hashlink_tip_candidate(t))
+
+    async def test_candidate_inception_no_prev_no_children(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        t = MagicMock()
+        t.public_key_hash = "1Inc"
+        t.prerotated_key_hash = "1Next"
+        t.twice_prerotated_key_hash = "1Twice"
+        t.prev_public_key_hash = ""
+        t.transaction_signature = "inc_sig"
+
+        with patch("yadacoin.core.keyeventlog.Config") as mock_cfg_cls:
+            cfg = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            cursor = MagicMock()
+            cursor.to_list = AsyncMock(return_value=[])
+            cfg.mongo.async_db.blocks.aggregate.return_value = cursor
+            ok = await KeyEventLog._is_onchain_hashlink_tip_candidate(t)
+        self.assertTrue(ok)
+
+    async def test_candidate_child_self_id_ignored(self):
+        """Child row matching our own id is not a real child."""
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        t = MagicMock()
+        t.public_key_hash = "1Tip"
+        t.prerotated_key_hash = "1Next"
+        t.twice_prerotated_key_hash = "1Twice"
+        t.prev_public_key_hash = ""
+        t.transaction_signature = "tip_sig"
+
+        with patch("yadacoin.core.keyeventlog.Config") as mock_cfg_cls:
+            cfg = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            cursor = MagicMock()
+            cursor.to_list = AsyncMock(
+                return_value=[
+                    {
+                        "transactions": {
+                            "id": "tip_sig",
+                            "public_key_hash": "1Other",
+                        }
+                    }
+                ]
+            )
+            cfg.mongo.async_db.blocks.aggregate.return_value = cursor
+            ok = await KeyEventLog._is_onchain_hashlink_tip_candidate(t)
+        self.assertTrue(ok)
+
+    async def test_candidate_parent_pre_mismatch(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        t = MagicMock()
+        t.public_key_hash = "1Tip"
+        t.prerotated_key_hash = "1Next"
+        t.twice_prerotated_key_hash = "1Twice"
+        t.prev_public_key_hash = "1Prev"
+        t.transaction_signature = "tip_sig"
+
+        parent_doc = {
+            "transactions": {
+                "public_key_hash": "1Prev",
+                "prerotated_key_hash": "1Wrong",
+                "twice_prerotated_key_hash": "1Next",
+            }
+        }
+        with patch("yadacoin.core.keyeventlog.Config") as mock_cfg_cls:
+            cfg = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            cursor = MagicMock()
+            cursor.to_list = AsyncMock(side_effect=[[], [parent_doc]])
+            cfg.mongo.async_db.blocks.aggregate.return_value = cursor
+            ok = await KeyEventLog._is_onchain_hashlink_tip_candidate(t)
+        self.assertFalse(ok)
+
+    async def test_candidate_parent_twice_mismatch(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        t = MagicMock()
+        t.public_key_hash = "1Tip"
+        t.prerotated_key_hash = "1Next"
+        t.twice_prerotated_key_hash = "1Twice"
+        t.prev_public_key_hash = "1Prev"
+        t.transaction_signature = "tip_sig"
+
+        parent_doc = {
+            "transactions": {
+                "public_key_hash": "1Prev",
+                "prerotated_key_hash": "1Tip",
+                "twice_prerotated_key_hash": "1WrongTwice",
+            }
+        }
+        with patch("yadacoin.core.keyeventlog.Config") as mock_cfg_cls:
+            cfg = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            cursor = MagicMock()
+            cursor.to_list = AsyncMock(side_effect=[[], [parent_doc]])
+            cfg.mongo.async_db.blocks.aggregate.return_value = cursor
+            ok = await KeyEventLog._is_onchain_hashlink_tip_candidate(t)
+        self.assertFalse(ok)
+
+    async def test_get_tip_no_inception_tag_walks(self):
+        from bitcoin.wallet import P2PKHBitcoinAddress
+        from coincurve import PrivateKey as CK
+
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        priv = CK()
+        pub = priv.public_key.format(compressed=True).hex()
+        addr = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub)))
+
+        seed = MagicMock()
+        seed.inception_public_key_hash = None
+        walked = MagicMock()
+
+        with patch.object(
+            KeyEventLog,
+            "_walk_onchain_hashlink_tip",
+            new=AsyncMock(return_value=walked),
+        ) as mock_walk, patch(
+            "yadacoin.core.keyeventlog.Config"
+        ) as mock_cfg_cls, patch(
+            "yadacoin.core.transaction.Transaction.from_dict",
+            return_value=seed,
+        ):
+            cfg = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            cursor = MagicMock()
+            cursor.to_list = AsyncMock(
+                return_value=[{"transactions": {"public_key_hash": addr}}]
+            )
+            cfg.mongo.async_db.blocks.aggregate.return_value = cursor
+            result = await KeyEventLog.get_onchain_hashlink_tip(pub)
+        self.assertIs(result, walked)
+        mock_walk.assert_awaited_once()
+
+    async def test_get_tip_candidate_check_exception_falls_to_walk(self):
+        from bitcoin.wallet import P2PKHBitcoinAddress
+        from coincurve import PrivateKey as CK
+
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        priv = CK()
+        pub = priv.public_key.format(compressed=True).hex()
+        addr = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub)))
+        seed = MagicMock()
+        seed.inception_public_key_hash = "1Inc"
+        walked = MagicMock()
+
+        with patch.object(
+            KeyEventLog,
+            "_latest_from_inception_tag",
+            new=AsyncMock(return_value=MagicMock()),
+        ), patch.object(
+            KeyEventLog,
+            "_is_onchain_hashlink_tip_candidate",
+            new=AsyncMock(side_effect=RuntimeError("db")),
+        ), patch.object(
+            KeyEventLog,
+            "_walk_onchain_hashlink_tip",
+            new=AsyncMock(return_value=walked),
+        ) as mock_walk, patch(
+            "yadacoin.core.keyeventlog.Config"
+        ) as mock_cfg_cls, patch(
+            "yadacoin.core.transaction.Transaction.from_dict",
+            return_value=seed,
+        ):
+            cfg = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            cfg.app_log = MagicMock()
+            cursor = MagicMock()
+            cursor.to_list = AsyncMock(
+                return_value=[{"transactions": {"public_key_hash": addr}}]
+            )
+            cfg.mongo.async_db.blocks.aggregate.return_value = cursor
+            result = await KeyEventLog.get_onchain_hashlink_tip(pub)
+        self.assertIs(result, walked)
+        mock_walk.assert_awaited_once()
+
+    async def test_get_tip_fast_path_key_log_debug(self):
+        from bitcoin.wallet import P2PKHBitcoinAddress
+        from coincurve import PrivateKey as CK
+
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        priv = CK()
+        pub = priv.public_key.format(compressed=True).hex()
+        addr = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub)))
+        seed = MagicMock()
+        seed.inception_public_key_hash = "1Inc"
+        candidate = MagicMock()
+        candidate.public_key_hash = "1Tip"
+        candidate.counter = 3
+
+        with patch.object(
+            KeyEventLog,
+            "_latest_from_inception_tag",
+            new=AsyncMock(return_value=candidate),
+        ), patch.object(
+            KeyEventLog,
+            "_is_onchain_hashlink_tip_candidate",
+            new=AsyncMock(return_value=True),
+        ), patch(
+            "yadacoin.core.keyeventlog.Config"
+        ) as mock_cfg_cls, patch(
+            "yadacoin.core.transaction.Transaction.from_dict",
+            return_value=seed,
+        ):
+            cfg = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            cfg.key_log_debug = True
+            cfg.app_log = MagicMock()
+            cursor = MagicMock()
+            cursor.to_list = AsyncMock(
+                return_value=[{"transactions": {"public_key_hash": addr}}]
+            )
+            cfg.mongo.async_db.blocks.aggregate.return_value = cursor
+            result = await KeyEventLog.get_onchain_hashlink_tip(pub)
+        self.assertIs(result, candidate)
+        cfg.app_log.debug.assert_called()
+
+    async def test_walk_onchain_hashlink_tip_none_inception(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        with patch.object(
+            KeyEventLog, "get_inception", new=AsyncMock(return_value=None)
+        ) as mock_inc, patch.object(
+            KeyEventLog, "_walk_forward", new=AsyncMock()
+        ) as mock_walk:
+            result = await KeyEventLog._walk_onchain_hashlink_tip("02pub")
+        self.assertIsNone(result)
+        mock_inc.assert_awaited()
+        mock_walk.assert_not_awaited()
+
+    async def test_walk_onchain_hashlink_tip_with_inception_walks(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        inception = MagicMock()
+        tip = MagicMock()
+        with patch.object(
+            KeyEventLog, "get_inception", new=AsyncMock(return_value=inception)
+        ), patch.object(
+            KeyEventLog, "_walk_forward", new=AsyncMock(return_value=tip)
+        ) as mock_walk:
+            result = await KeyEventLog._walk_onchain_hashlink_tip(
+                "02pub", follow_recovery=True
+            )
+        self.assertIs(result, tip)
+        mock_walk.assert_awaited_once()
+        self.assertEqual(mock_walk.await_args.kwargs.get("onchain_only"), True)
+        self.assertEqual(mock_walk.await_args.kwargs.get("follow_recovery"), True)
+
+
+class TestGetOnchainChildCoverage(AsyncTestCase):
+    async def test_no_or_clauses_returns_none(self):
+        pass
+
+        ke = _make_mock_ke(
+            public_key_hash="",
+            prerotated_key_hash="",
+            twice_prerotated_key_hash="",
+        )
+        result = await ke.get_onchain_child()
+        self.assertIsNone(result)
+
+    async def test_self_match_returns_none(self):
+        pass
+
+        ke = _make_mock_ke(
+            public_key_hash=_VALID_ADDR_A,
+            prerotated_key_hash=_VALID_ADDR_B,
+            twice_prerotated_key_hash=_VALID_ADDR_C,
+        )
+        ke.txn.transaction_signature = "self_sig"
+        doc = {
+            "transactions": {
+                **dict(_INCEPTION_TXN_DICT),
+                "id": "self_sig",
+                "public_key_hash": _VALID_ADDR_B,
+                "prev_public_key_hash": _VALID_ADDR_A,
+            },
+            "public_key": _INCEPTION_TXN_DICT["public_key"],
+        }
+        # Transaction.from_dict uses "id" as transaction_signature
+        mock_cursor = MagicMock()
+        mock_cursor.to_list = AsyncMock(return_value=[doc])
+        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls, patch(
+            "yadacoin.core.transaction.Transaction.from_dict"
+        ) as mock_from:
+            mock_cfg = MagicMock()
+            mock_config_cls.return_value = mock_cfg
+            mock_cfg.mongo.async_db.blocks.aggregate.return_value = mock_cursor
+            child_txn = MagicMock()
+            child_txn.transaction_signature = "self_sig"
+            child_txn.public_key_hash = _VALID_ADDR_B
+            mock_from.return_value = child_txn
+            result = await ke.get_onchain_child()
+        self.assertIsNone(result)
+
+    async def test_same_pkh_as_parent_returns_none(self):
+        ke = _make_mock_ke(
+            public_key_hash=_VALID_ADDR_A,
+            prerotated_key_hash=_VALID_ADDR_B,
+            twice_prerotated_key_hash=_VALID_ADDR_C,
+        )
+        ke.txn.transaction_signature = "parent_sig"
+        mock_cursor = MagicMock()
+        mock_cursor.to_list = AsyncMock(return_value=[{"transactions": {}}])
+        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls, patch(
+            "yadacoin.core.transaction.Transaction.from_dict"
+        ) as mock_from:
+            mock_cfg = MagicMock()
+            mock_config_cls.return_value = mock_cfg
+            mock_cfg.mongo.async_db.blocks.aggregate.return_value = mock_cursor
+            child_txn = MagicMock()
+            child_txn.transaction_signature = "other_sig"
+            child_txn.public_key_hash = _VALID_ADDR_A  # same as parent
+            mock_from.return_value = child_txn
+            result = await ke.get_onchain_child()
+        self.assertIsNone(result)

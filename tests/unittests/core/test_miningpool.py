@@ -743,8 +743,10 @@ class TestAcceptBlock(AsyncTestCase):
         block.index = 5
         block.transactions = [MagicMock(transaction_signature="s1")]
         block.to_dict = MagicMock(return_value={})
-        with patch("yadacoin.core.miningpool.Blockchain", MagicMock()):
+        with patch("yadacoin.core.miningpool.Blockchain") as mock_bc:
+            mock_bc.test_block = AsyncMock(return_value=True)
             await pool.accept_block(block)
+        mock_bc.test_block.assert_awaited()
         pool.config.consensus.insert_consensus_block.assert_awaited()
         pool.config.nodeShared.send_block_to_peers.assert_awaited()
 
@@ -755,8 +757,26 @@ class TestAcceptBlock(AsyncTestCase):
         block.index = 5
         block.transactions = []
         block.to_dict = MagicMock(return_value={})
-        with patch("yadacoin.core.miningpool.Blockchain", MagicMock()):
+        with patch("yadacoin.core.miningpool.Blockchain") as mock_bc:
+            mock_bc.test_block = AsyncMock(return_value=True)
             await pool.accept_block(block)
+        mock_bc.test_block.assert_awaited()
+        pool.config.nodeShared.send_block_to_peers.assert_not_awaited()
+
+    async def test_accept_block_rejects_failed_test_block(self):
+        """Pool must not insert/broadcast when test_block fails (same bar as peers)."""
+        pool = _mk_pool()
+        pool.refresh = AsyncMock()
+        block = MagicMock()
+        block.index = 5
+        block.transactions = []
+        block.to_dict = MagicMock(return_value={})
+        with patch("yadacoin.core.miningpool.Blockchain") as mock_bc:
+            mock_bc.test_block = AsyncMock(return_value=False)
+            with self.assertRaises(Exception) as ctx:
+                await pool.accept_block(block)
+        self.assertIn("test_block", str(ctx.exception))
+        pool.config.consensus.insert_consensus_block.assert_not_awaited()
         pool.config.nodeShared.send_block_to_peers.assert_not_awaited()
 
 

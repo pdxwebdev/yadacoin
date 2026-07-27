@@ -87,9 +87,8 @@ class ReanchorTriplet:
     """Coinbase KEL package for block generation.
 
     ``coinbase_confirming`` is template-only (injected into the candidate
-    block with the coinbase).  Tip is resolved from on-chain + mempool KEL
-    plus ``key_event_log`` (auth/branch rotations during the mine window).
-    No preceding block-reanchor or auth-interval U/C pair is minted here.
+    block with the coinbase).  Tip is resolved from the on-chain KEL only
+    so mined coinbase always continues the confirmed chain.
     """
 
     coinbase_confirming: object  # Transaction — confirming KEL step after coinbase
@@ -99,6 +98,8 @@ class ReanchorTriplet:
     coinbase_twice_prerotated: str  # address — coinbase's twice_prerotated_key_hash
     coinbase_public_key_hash: str  # address — coinbase's public_key_hash
     coinbase_prev_public_key_hash: str  # address — coinbase's prev_public_key_hash
+    coinbase_counter: object = None  # int | None — tip.counter + 1
+    coinbase_inception_public_key_hash: str = ""  # tip inception tag
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +108,9 @@ class ReanchorTriplet:
 # ---------------------------------------------------------------------------
 
 _CURVE_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+
+# Max BIP32 hops when walking K0 → tip.prerotated for coinbase signer.
+DERIVE_TIP_SIGNER_MAX_STEPS = 100000
 
 
 def _bip32_hardened_child(
@@ -1303,9 +1307,9 @@ class NodeKeyRotationManager:
     async def advance_block_ratchet(self, block):
         """Build coinbase KEL material for block generation.
 
-        Resolves the current main-KEL tip from the **on-chain** KEL only
-        (mempool and ``key_event_log`` are ignored so mined coinbase always
-        continues the confirmed chain other nodes will accept), sets
+        Resolves the main-KEL tip by **on-chain hash-link walk** from inception
+        (not max-counter; mempool/key_event_log ignored) so coinbase always
+        continues the confirmed prerotated chain, sets
         ``block.public_key`` / ``block.private_key``, and returns a
         :class:`ReanchorTriplet` with template-only ``coinbase_confirming``.
         """
@@ -1345,6 +1349,8 @@ class NodeKeyRotationManager:
                 coinbase_twice_prerotated=None,
                 coinbase_public_key_hash=None,
                 coinbase_prev_public_key_hash=None,
+                coinbase_counter=None,
+                coinbase_inception_public_key_hash="",
             )
 
         if not k0 or not second_factor:
@@ -1363,21 +1369,24 @@ class NodeKeyRotationManager:
             .hex()
         )
         try:
-            # On-chain tip only.  Peers validate coinbase against confirmed KEL;
-            # mempool and key_event_log tips are local and must not advance the
-            # mining signer or prev_public_key_hash.
-            latest = await KeyEventLog.get_latest(k0_pub_hex, onchain_only=True)
+            # Hash-link tip only — never max(counter).  Branch announcements and
+            # prior skipped-key blocks can write counters ahead of the real
+            # prerotated chain; max-counter then parents coinbase off a key that
+            # was never committed on-chain (exactly the 605100→605101 skip).
+            latest = await KeyEventLog.get_onchain_hashlink_tip(k0_pub_hex)
         except Exception:
             return _empty_triplet()
         if not latest:
             return _empty_triplet()
 
         # Walk derivation to latest.prerotated_key_hash (next unused signer).
+        # Guard against runaway loops if tip.prerotated is not on our path.
         cur = k0
         cur = derive_secure_path(cur["private_key"], cur["chain_code"], second_factor)
         cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
         cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
         cur_address = str(P2PKHBitcoinAddress.from_pubkey(cur_pub_bytes))
+        guard = 0
         while latest.prerotated_key_hash != cur_address:
             cur = derive_secure_path(
                 cur["private_key"], cur["chain_code"], second_factor
@@ -1385,8 +1394,17 @@ class NodeKeyRotationManager:
             cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
             cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
             cur_address = str(P2PKHBitcoinAddress.from_pubkey(cur_pub_bytes))
+            guard += 1
             if latest.prerotated_key_hash == cur_address:
                 break
+            if guard >= DERIVE_TIP_SIGNER_MAX_STEPS:
+                config.app_log.error(
+                    "NodeKeyRotationManager: cannot derive signer for tip "
+                    "prerotated=%s after %d steps — refusing block template",
+                    latest.prerotated_key_hash,
+                    guard,
+                )
+                return _empty_triplet()
 
         kn = cur
         kn_address = cur_address
@@ -1422,7 +1440,13 @@ class NodeKeyRotationManager:
         )
 
         # Coinbase = unconfirmed KEL step from on-chain tip; coinbase_confirming
-        # = its confirming sibling (template-only).
+        # = its confirming sibling (template-only).  Counters continue the tip
+        # so peers and get_latest never see a skipped KEL index.
+        tip_counter = getattr(latest, "counter", None)
+        tip_inception = getattr(latest, "inception_public_key_hash", None) or ""
+        coinbase_counter = (tip_counter + 1) if tip_counter is not None else None
+        confirming_counter = (tip_counter + 2) if tip_counter is not None else None
+
         coinbase_confirming_txn = Transaction(
             txn_time=int(time.time()),
             public_key=kn1_pub_hex,
@@ -1439,6 +1463,8 @@ class NodeKeyRotationManager:
             relationship_hash="",
             rid="",
             dh_public_key="",
+            counter=confirming_counter,
+            inception_public_key_hash=tip_inception or None,
         )
         coinbase_confirming_txn.hash = await coinbase_confirming_txn.generate_hash()
         coinbase_confirming_txn.transaction_signature = NodeKeyRotationManager._sign(
@@ -1455,6 +1481,8 @@ class NodeKeyRotationManager:
             coinbase_twice_prerotated=kn2_address,
             coinbase_public_key_hash=kn_address,
             coinbase_prev_public_key_hash=tip_prev_pkh,
+            coinbase_counter=coinbase_counter,
+            coinbase_inception_public_key_hash=tip_inception,
         )
 
     async def _create_inception(self, k0: dict, second_factor: str, k0_pub_hex: str):

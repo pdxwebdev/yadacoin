@@ -15,7 +15,7 @@ import copy
 import time as time_module
 import unittest
 from unittest import mock
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 from bitcoin.wallet import P2PKHBitcoinAddress
 from mongomock import MongoClient
@@ -4612,6 +4612,180 @@ class TestBlockExtraBlocksKelCoverage(AsyncTestCase):
         finally:
             CHAIN.CHECK_MASTERNODE_FEE_FORK = orig_fork
             CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK = orig_spends
+
+
+class TestBlockVerifyKelTipGuards(AsyncTestCase):
+    """Cover Block.verify gap-fill / coinbase tip continuity checks (lines ~1190+)."""
+
+    async def _run_verify_expecting(self, block, substr):
+        from yadacoin.core.block import Block
+        from yadacoin.core.chain import CHAIN
+
+        # Satisfy early structural checks so we reach the KEL tip guards.
+        txn_hashes = [getattr(t, "hash", "h") or "h" for t in block.transactions]
+        merkle = "m" * 64
+        block.merkle_root = merkle
+        block.hash = "a" * 64
+        block.nonce = "1"
+        block.header = "hdr"
+        block.version = CHAIN.get_version_for_height(block.index)
+
+        async def _fake_hash(*a, **k):
+            return block.hash
+
+        @property
+        async def contract_generated(self):
+            return False
+
+        @contract_generated.setter
+        def contract_generated(self, value):
+            pass
+
+        with mock.patch.object(
+            Block, "get_transaction_hashes", return_value=txn_hashes
+        ), mock.patch.object(
+            Block, "get_merkle_root", return_value=merkle
+        ), mock.patch.object(
+            Block, "generate_header", return_value="hdr"
+        ), mock.patch.object(
+            Block, "generate_hash_from_header", new=_fake_hash
+        ), mock.patch.object(
+            Block, "verify_signature", return_value=None
+        ), mock.patch(
+            "yadacoin.core.transaction.Transaction.contract_generated",
+            new=contract_generated,
+        ):
+            with self.assertRaises(Exception) as ctx:
+                await block.verify()
+        self.assertIn(substr.lower(), str(ctx.exception).lower())
+
+    def _coinbase_txn(self, **kw):
+        t = MagicMock()
+        t.coinbase = True
+        t.version = 7
+        t.are_kel_fields_populated = MagicMock(return_value=True)
+        t.prev_public_key_hash = kw.get("prev", "1Parent")
+        t.public_key_hash = kw.get("pkh", "1Child")
+        t.prerotated_key_hash = kw.get("pre", "1Next")
+        t.twice_prerotated_key_hash = kw.get("twice", "1Twice")
+        t.transaction_signature = kw.get("sig", "cb_sig")
+        t.hash = kw.get("hash", "cbhash")
+        t.inputs = []
+        t.outputs = []
+        t.time = 1000
+        t.relationship = ""
+        t.fee = 0
+        t.masternode_fee = 0
+        t.has_key_event_log = AsyncMock(return_value=False)
+        t.verify_kel_output_rules = AsyncMock(return_value=None)
+        return t
+
+    def _kel_txn(self, **kw):
+        t = MagicMock()
+        t.coinbase = False
+        t.version = 7
+        t.are_kel_fields_populated = MagicMock(return_value=True)
+        t.prev_public_key_hash = kw.get("prev", "1Parent")
+        t.public_key_hash = kw.get("pkh", "1Child")
+        t.prerotated_key_hash = kw.get("pre", "1Next")
+        t.twice_prerotated_key_hash = kw.get("twice", "1Twice")
+        t.transaction_signature = kw.get("sig", "kel_sig")
+        t.hash = kw.get("hash", "kelhash")
+        t.inputs = []
+        t.outputs = []
+        t.time = 1000
+        t.relationship = ""
+        t.fee = 0
+        t.masternode_fee = 0
+        t.has_key_event_log = AsyncMock(return_value=False)
+        t.verify_kel_output_rules = AsyncMock(return_value=None)
+        return t
+
+    def _shell(self, index):
+        from yadacoin.core.block import Block
+
+        block = Block.__new__(Block)
+        block.index = index
+        block.time = 1000
+        block.public_key = Config().public_key
+        block.config = Config()
+        block.app_log = MagicMock()
+        block.mongo = MagicMock()
+        block.config.mongo = MagicMock()
+        return block
+
+    async def test_coinbase_parent_pre_mismatch_raises(self):
+        from yadacoin.core.chain import CHAIN
+
+        block = self._shell(CHAIN.CHECK_KEL_FORK + 10)
+        block.transactions = [self._coinbase_txn(pkh="1Jump", pre="1Next")]
+        parent_doc = {
+            "transactions": [
+                {
+                    "public_key_hash": "1Parent",
+                    "prerotated_key_hash": "1ExpectedChild",
+                    "twice_prerotated_key_hash": "1Next",
+                }
+            ]
+        }
+        block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=parent_doc)
+        await self._run_verify_expecting(block, "skips or jumps")
+
+    async def test_coinbase_parent_twice_mismatch_raises(self):
+        from yadacoin.core.chain import CHAIN
+
+        block = self._shell(CHAIN.CHECK_KEL_FORK + 10)
+        block.transactions = [self._coinbase_txn(pkh="1Child", pre="1WrongNext")]
+        parent_doc = {
+            "transactions": [
+                {
+                    "public_key_hash": "1Parent",
+                    "prerotated_key_hash": "1Child",
+                    "twice_prerotated_key_hash": "1ExpectedNext",
+                }
+            ]
+        }
+        block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=parent_doc)
+        await self._run_verify_expecting(block, "hash-link broken")
+
+    async def test_gap_fill_rejected_when_parent_has_child(self):
+        from yadacoin.core.chain import CHAIN
+
+        block = self._shell(CHAIN.CHECK_KEL_FORK + 10)
+        # Dummy coinbase without kel tip check (no prev)
+        cb = self._coinbase_txn(prev="", pkh="1Cb", pre="1CbNext")
+        cb.are_kel_fields_populated = MagicMock(return_value=False)
+        kel = self._kel_txn()
+        block.transactions = [cb, kel]
+
+        parent_doc = {
+            "transactions": [
+                {
+                    "public_key_hash": "1Parent",
+                    "prerotated_key_hash": "1Child",
+                    "twice_prerotated_key_hash": "1Next",
+                }
+            ]
+        }
+        child_doc = {"index": 99}
+
+        async def find_one(query, *a, **k):
+            if query.get("transactions.public_key_hash") == "1Parent":
+                return parent_doc
+            if "$or" in query:
+                return child_doc
+            return None
+
+        block.config.mongo.async_db.blocks.find_one = AsyncMock(side_effect=find_one)
+        await self._run_verify_expecting(block, "gap-fill")
+
+    async def test_coinbase_missing_parent_raises(self):
+        from yadacoin.core.chain import CHAIN
+
+        block = self._shell(CHAIN.CHECK_KEL_FORK + 10)
+        block.transactions = [self._coinbase_txn(prev="1Missing")]
+        block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        await self._run_verify_expecting(block, "no on-chain parent")
 
 
 if __name__ == "__main__":

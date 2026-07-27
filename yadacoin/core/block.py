@@ -394,6 +394,12 @@ class Block(object):
         new_coinbase.twice_prerotated_key_hash = triplet.coinbase_twice_prerotated
         new_coinbase.public_key_hash = triplet.coinbase_public_key_hash
         new_coinbase.prev_public_key_hash = triplet.coinbase_prev_public_key_hash
+        if getattr(triplet, "coinbase_counter", None) is not None:
+            new_coinbase.counter = triplet.coinbase_counter
+        if getattr(triplet, "coinbase_inception_public_key_hash", None):
+            new_coinbase.inception_public_key_hash = (
+                triplet.coinbase_inception_public_key_hash
+            )
         self_output.to = triplet.coinbase_prerotated
 
         new_coinbase.hash = await new_coinbase.generate_hash()
@@ -1160,6 +1166,101 @@ class Block(object):
             if self.index >= CHAIN.CHECK_KEL_FORK:
                 # check if this transaction public key is listed in any KEL
                 # if it is, check if it's a valid key event
+
+                # KEL may only advance by the direct next hop of the current
+                # tip.  A parent already has a child ⇒ this entry is a second
+                # extension (fork / gap under corrupt history) and must be
+                # rejected.  Skips are never valid chain motion — they are a
+                # critical bug if they ever land on-chain.  Full pre/twice
+                # alignment for non-coinbase stays in KeyEventLog; coinbase
+                # gets explicit parent link checks here.
+                if (
+                    txn.are_kel_fields_populated()
+                    and txn.prev_public_key_hash
+                    and not any(
+                        getattr(s, "public_key_hash", None) == txn.prev_public_key_hash
+                        for s in self.transactions
+                        if s.transaction_signature != txn.transaction_signature
+                    )
+                ):
+                    parent_doc = await self.config.mongo.async_db.blocks.find_one(
+                        {
+                            "index": {"$lt": self.index},
+                            "transactions.public_key_hash": txn.prev_public_key_hash,
+                        },
+                        {
+                            "transactions": {
+                                "$elemMatch": {
+                                    "public_key_hash": txn.prev_public_key_hash
+                                }
+                            }
+                        },
+                    )
+                    if parent_doc and parent_doc.get("transactions"):
+                        parent_txn = parent_doc["transactions"][0]
+                        if txn.coinbase:
+                            if (
+                                parent_txn.get("prerotated_key_hash")
+                                != txn.public_key_hash
+                            ):
+                                raise Exception(
+                                    "Coinbase skips or jumps KEL tip: parent "
+                                    f"{txn.prev_public_key_hash} prerotated "
+                                    f"{parent_txn.get('prerotated_key_hash')} != "
+                                    f"coinbase public_key_hash {txn.public_key_hash}"
+                                )
+                            if (
+                                parent_txn.get("twice_prerotated_key_hash")
+                                and parent_txn.get("twice_prerotated_key_hash")
+                                != txn.prerotated_key_hash
+                            ):
+                                raise Exception(
+                                    "Coinbase KEL hash-link broken: parent "
+                                    f"twice_prerotated "
+                                    f"{parent_txn.get('twice_prerotated_key_hash')} "
+                                    f"!= coinbase prerotated {txn.prerotated_key_hash}"
+                                )
+                        # Parent must still be the sole tip: any on-chain entry
+                        # that already claims parent.pre / parent.twice (as pkh
+                        # or as prev) means this parent was already extended.
+                        parent_pre = parent_txn.get("prerotated_key_hash") or ""
+                        parent_twice = parent_txn.get("twice_prerotated_key_hash") or ""
+                        child_or = []
+                        if parent_pre:
+                            child_or.extend(
+                                [
+                                    {"transactions.public_key_hash": parent_pre},
+                                    {"transactions.prev_public_key_hash": parent_pre},
+                                ]
+                            )
+                        if parent_twice:
+                            child_or.extend(
+                                [
+                                    {"transactions.public_key_hash": parent_twice},
+                                    {"transactions.prev_public_key_hash": parent_twice},
+                                ]
+                            )
+                        if child_or:
+                            child_doc = (
+                                await self.config.mongo.async_db.blocks.find_one(
+                                    {
+                                        "index": {"$lt": self.index},
+                                        "$or": child_or,
+                                    },
+                                    {"index": 1},
+                                )
+                            )
+                            if child_doc:
+                                raise Exception(
+                                    "KEL parent is not tip (gap-fill rejected): "
+                                    f"parent {txn.prev_public_key_hash} already "
+                                    f"extended at index {child_doc.get('index')}"
+                                )
+                    elif txn.coinbase:
+                        raise Exception(
+                            "Coinbase prev_public_key_hash has no on-chain parent "
+                            f"KEL entry: {txn.prev_public_key_hash}"
+                        )
 
                 if self.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
                     await txn.verify_kel_output_rules(block=self)

@@ -1036,43 +1036,80 @@ class KeyEvent:
         return False  # we're no longer checking past KEL entries
 
     async def get_onchain_parent(self):
+        """Return the on-chain KEL parent of this entry, if any.
+
+        When ``prev_public_key_hash`` is set, prefer
+        ``public_key_hash == prev`` (direct hop).  Fallback hash-link match
+        (parent.pre == our pkh or parent.twice == our pre) is accepted only
+        if the parent's ``public_key_hash`` equals our prev — so a skipped-key
+        coinbase cannot attach to a grandparent via twice alone.
+
+        When prev is empty (inception / legacy callers), use the hash-link
+        query only.
+        """
         config = Config()
-        res = config.mongo.async_db.blocks.aggregate(
-            [
-                {
-                    "$match": {
-                        "$or": [
-                            {
-                                BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: self.txn.prerotated_key_hash,
-                            },
-                            {
-                                BlocksQueryFields.PREROTATED_KEY_HASH.value: self.txn.public_key_hash,
-                            },
-                        ]
-                    }
-                },
-                {"$unwind": "$transactions"},
-                {
-                    "$match": {
-                        "$or": [
-                            {
-                                BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: self.txn.prerotated_key_hash,
-                            },
-                            {
-                                BlocksQueryFields.PREROTATED_KEY_HASH.value: self.txn.public_key_hash,
-                            },
-                        ]
-                    }
-                },
-                {"$limit": 1},
-            ]
-        )
-        result = await res.to_list(length=None)
+        prev = self.txn.prev_public_key_hash or ""
+        result = None
+
+        if prev:
+            res = config.mongo.async_db.blocks.aggregate(
+                [
+                    {
+                        "$match": {
+                            BlocksQueryFields.PUBLIC_KEY_HASH.value: prev,
+                        }
+                    },
+                    {"$unwind": "$transactions"},
+                    {
+                        "$match": {
+                            BlocksQueryFields.PUBLIC_KEY_HASH.value: prev,
+                        }
+                    },
+                    {"$limit": 1},
+                ]
+            )
+            result = await res.to_list(length=None)
+
+        if not result:
+            res = config.mongo.async_db.blocks.aggregate(
+                [
+                    {
+                        "$match": {
+                            "$or": [
+                                {
+                                    BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: self.txn.prerotated_key_hash,
+                                },
+                                {
+                                    BlocksQueryFields.PREROTATED_KEY_HASH.value: self.txn.public_key_hash,
+                                },
+                            ]
+                        }
+                    },
+                    {"$unwind": "$transactions"},
+                    {
+                        "$match": {
+                            "$or": [
+                                {
+                                    BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: self.txn.prerotated_key_hash,
+                                },
+                                {
+                                    BlocksQueryFields.PREROTATED_KEY_HASH.value: self.txn.public_key_hash,
+                                },
+                            ]
+                        }
+                    },
+                    {"$limit": 1},
+                ]
+            )
+            result = await res.to_list(length=None)
+
         if result:
             from yadacoin.core.block import Block
 
             txn = Transaction.from_dict(result[0]["transactions"])
-            # from_dict always sets coinbase=False; restore for KEL classification.
+            # When the child declares a prev, the parent must be that address.
+            if prev and txn.public_key_hash != prev:
+                return None
             try:
                 block_proxy = type(
                     "BlockProxy",
@@ -1087,10 +1124,8 @@ class KeyEvent:
                 flag=classify_key_event_flag(txn),
                 status=KeyEventChainStatus.ONCHAIN,
             )
-
-            return {
-                "key_event": key_event,
-            }
+            return {"key_event": key_event}
+        return None
 
     async def get_mempool_parent(self):
         """Return the mempool parent entry for this key event, or None.
@@ -1124,20 +1159,39 @@ class KeyEvent:
         return None
 
     async def get_onchain_child(self):
+        """Return an on-chain KEL child of this entry, if any.
+
+        A child is any confirmed entry that claims this entry as predecessor
+        (``prev_public_key_hash == our public_key_hash``) or that occupies the
+        next committed hop (``public_key_hash == our prerotated_key_hash``).
+
+        Also treats corrupt jump entries as children: if something on-chain
+        has ``prev`` equal to our ``prerotated`` or ``twice_prerotated``, the
+        tip was already wrongly extended.  That must never happen on a valid
+        chain; detecting it here rejects further extensions (and gap-fill)
+        of a corrupted parent rather than treating the jump as legitimate.
+        """
         config = Config()
+        pkh = self.txn.public_key_hash or ""
+        pre = self.txn.prerotated_key_hash or ""
+        twice = self.txn.twice_prerotated_key_hash or ""
+        or_clauses = []
+        if pkh:
+            or_clauses.append({BlocksQueryFields.PREV_PUBLIC_KEY_HASH.value: pkh})
+        if pre:
+            or_clauses.append({BlocksQueryFields.PUBLIC_KEY_HASH.value: pre})
+            or_clauses.append({BlocksQueryFields.PREV_PUBLIC_KEY_HASH.value: pre})
+        if twice:
+            or_clauses.append({BlocksQueryFields.PREV_PUBLIC_KEY_HASH.value: twice})
+            or_clauses.append({BlocksQueryFields.PREROTATED_KEY_HASH.value: twice})
+        if not or_clauses:
+            return None
+
         res = config.mongo.async_db.blocks.aggregate(
             [
-                {
-                    "$match": {
-                        BlocksQueryFields.PREROTATED_KEY_HASH.value: self.txn.twice_prerotated_key_hash,
-                    }
-                },
+                {"$match": {"$or": or_clauses}},
                 {"$unwind": "$transactions"},
-                {
-                    "$match": {
-                        BlocksQueryFields.PREROTATED_KEY_HASH.value: self.txn.twice_prerotated_key_hash,
-                    }
-                },
+                {"$match": {"$or": or_clauses}},
                 {"$limit": 1},
             ]
         )
@@ -1146,6 +1200,11 @@ class KeyEvent:
             from yadacoin.core.block import Block
 
             txn = Transaction.from_dict(result[0]["transactions"])
+            # Ignore self.
+            if txn.transaction_signature == self.txn.transaction_signature:
+                return None
+            if txn.public_key_hash == pkh:
+                return None
             try:
                 block_proxy = type(
                     "BlockProxy",
@@ -1160,6 +1219,7 @@ class KeyEvent:
                 flag=classify_key_event_flag(txn),
                 status=KeyEventChainStatus.ONCHAIN,
             )
+        return None
 
 
 class KELHashCollectionException(Exception):
@@ -1331,14 +1391,18 @@ class KeyEventLog:
             # step 1.1: If found, check that this entry is the latest entry, if not, raise exception
             onchain_child = await result["key_event"].get_onchain_child()
             if onchain_child:
-                if (
+                # Parent already extended on-chain.  Allow only the identical
+                # already-on-chain entry (re-validation); any other child means
+                # this txn would skip or fork the KEL tip.
+                same_entry = (
                     key_event.txn.twice_prerotated_key_hash
-                    != onchain_child.txn.twice_prerotated_key_hash
-                    or key_event.txn.prerotated_key_hash
-                    != onchain_child.txn.prerotated_key_hash
-                    or key_event.txn.public_key_hash
-                    != onchain_child.txn.public_key_hash
-                ):
+                    == onchain_child.txn.twice_prerotated_key_hash
+                    and key_event.txn.prerotated_key_hash
+                    == onchain_child.txn.prerotated_key_hash
+                    and key_event.txn.public_key_hash
+                    == onchain_child.txn.public_key_hash
+                )
+                if not same_entry:
                     raise FatalKeyEventException(
                         "key_event.txn has onchain parent that already has an onchain child.",
                         other_txn_to_delete=hash_collection.prerotated_key_hashes.get(  # get the confirming key event if present
@@ -2289,13 +2353,13 @@ class KeyEventLog:
 
         If *start_entry* is not yet tagged (no ``inception_public_key_hash``),
         it is tagged as the inception (counter=0) before the walk begins.
-        Already-tagged entries (e.g. the tip returned by
-        ``_latest_from_inception_tag``) are not retagged — the walk starts
-        from ``start_entry.prerotated_key_hash`` and continues with
-        ``start_entry.counter + 1``, ``start_entry.counter + 2``, etc.
+        Already-tagged same-inception successors are followed (not stopped
+        on) so the true tip is reached even when intermediate entries were
+        tagged earlier.  Untagged successors are tagged with
+        ``start_entry.counter + 1``, ``+ 2``, etc.
 
         Returns the final tip entry reached (which may be *start_entry*
-        itself if there are no untagged successors).
+        itself if there are no successors).
         """
         config = Config()
         inception_pkh = getattr(start_entry, "inception_public_key_hash", None)
@@ -2310,9 +2374,15 @@ class KeyEventLog:
 
         txn = start_entry
         forward_iter = 0
+        visited = set()  # public_key_hash — cycle guard
 
         while True:
             forward_iter += 1
+            pkh = getattr(txn, "public_key_hash", None)
+            if pkh:
+                if pkh in visited:
+                    break
+                visited.add(pkh)
             address = txn.prerotated_key_hash
 
             result = config.mongo.async_db.blocks.aggregate(
@@ -2332,17 +2402,10 @@ class KeyEventLog:
                 candidate_inception = getattr(
                     candidate, "inception_public_key_hash", None
                 )
-                if candidate_inception == inception_pkh:
-                    if hasattr(config, "key_log_debug") and config.key_log_debug:
-                        config.app_log.debug(
-                            "_walk_forward iter=%d address=%s "
-                            "already_tagged counter=%d — stop",
-                            forward_iter,
-                            address,
-                            candidate.counter,
-                        )
-                    break
-                if candidate_inception is not None:
+                if (
+                    candidate_inception is not None
+                    and candidate_inception != inception_pkh
+                ):
                     if hasattr(config, "key_log_debug") and config.key_log_debug:
                         config.app_log.debug(
                             "_walk_forward iter=%d address=%s "
@@ -2352,7 +2415,11 @@ class KeyEventLog:
                             candidate_inception[:16],
                         )
                     break
-                else:
+                # Same-inception successors (tagged or not) continue the chain.
+                # Stopping on already-tagged entries left get_latest stuck on a
+                # stale tip when counters were tagged out of order, which made
+                # mining parent coinbase off a non-tip key and skip counters.
+                if candidate_inception is None:
                     counter += 1
                     candidate.inception_public_key_hash = inception_pkh
                     candidate.counter = counter
@@ -2366,8 +2433,20 @@ class KeyEventLog:
                             candidate.transaction_signature[:16],
                             counter,
                         )
-                    txn = candidate
-                    continue
+                else:
+                    tagged_c = getattr(candidate, "counter", None)
+                    if tagged_c is not None:
+                        counter = tagged_c
+                    if hasattr(config, "key_log_debug") and config.key_log_debug:
+                        config.app_log.debug(
+                            "_walk_forward iter=%d address=%s "
+                            "already_tagged counter=%s — continue",
+                            forward_iter,
+                            address,
+                            tagged_c,
+                        )
+                txn = candidate
+                continue
 
             if not onchain_only:
                 result_mempool = (
@@ -2381,17 +2460,10 @@ class KeyEventLog:
                     candidate_inception = getattr(
                         candidate, "inception_public_key_hash", None
                     )
-                    if candidate_inception == inception_pkh:
-                        if hasattr(config, "key_log_debug") and config.key_log_debug:
-                            config.app_log.debug(
-                                "_walk_forward iter=%d address=%s "
-                                "mempool already_tagged counter=%d — stop",
-                                forward_iter,
-                                address,
-                                candidate.counter,
-                            )
-                        break
-                    if candidate_inception is not None:
+                    if (
+                        candidate_inception is not None
+                        and candidate_inception != inception_pkh
+                    ):
                         if hasattr(config, "key_log_debug") and config.key_log_debug:
                             config.app_log.debug(
                                 "_walk_forward iter=%d address=%s "
@@ -2401,19 +2473,32 @@ class KeyEventLog:
                                 candidate_inception[:16],
                             )
                         break
-                    counter += 1
-                    candidate.inception_public_key_hash = inception_pkh
-                    candidate.counter = counter
-                    await KeyEventLog._tag_kel_entry_in_mongo(candidate)
-                    if hasattr(config, "key_log_debug") and config.key_log_debug:
-                        config.app_log.debug(
-                            "_walk_forward iter=%d address=%s "
-                            "found_mempool txn=%s counter=%d",
-                            forward_iter,
-                            address,
-                            candidate.transaction_signature[:16],
-                            counter,
-                        )
+                    if candidate_inception is None:
+                        counter += 1
+                        candidate.inception_public_key_hash = inception_pkh
+                        candidate.counter = counter
+                        await KeyEventLog._tag_kel_entry_in_mongo(candidate)
+                        if hasattr(config, "key_log_debug") and config.key_log_debug:
+                            config.app_log.debug(
+                                "_walk_forward iter=%d address=%s "
+                                "found_mempool txn=%s counter=%d",
+                                forward_iter,
+                                address,
+                                candidate.transaction_signature[:16],
+                                counter,
+                            )
+                    else:
+                        tagged_c = getattr(candidate, "counter", None)
+                        if tagged_c is not None:
+                            counter = tagged_c
+                        if hasattr(config, "key_log_debug") and config.key_log_debug:
+                            config.app_log.debug(
+                                "_walk_forward iter=%d address=%s "
+                                "mempool already_tagged counter=%s — continue",
+                                forward_iter,
+                                address,
+                                tagged_c,
+                            )
                     txn = candidate
                     continue
 
@@ -2519,6 +2604,193 @@ class KeyEventLog:
                     latest = mempool_txn
 
         return latest
+
+    @staticmethod
+    async def _is_onchain_hashlink_tip_candidate(txn):
+        """O(1) checks that *txn* is a plausible on-chain hash-link tip.
+
+        Indexed lookups only (no full KEL walk):
+
+        1. **Local tip** — no on-chain child of any kind: direct next hop
+           (``pkh == our pre`` / ``prev == our pkh``) or a corrupt jump that
+           already used our ``pre`` / ``twice`` as ``prev``.  A valid chain
+           never has the latter; if it does, max-counter is untrustworthy.
+        2. **Immediate parent hash-link** — if ``prev`` is set, that parent
+           exists on-chain with ``parent.pre == txn.pkh`` and
+           ``parent.twice == txn.pre`` (only legal next hop).
+
+        Candidates parented off an unmined address fail (2) → full walk.
+        Candidates that are not actually tip fail (1) → full walk.
+        Healthy tips pass both → accept without O(depth) work.
+        """
+        if txn is None:
+            return False
+        pkh = getattr(txn, "public_key_hash", None) or ""
+        pre = getattr(txn, "prerotated_key_hash", None) or ""
+        twice = getattr(txn, "twice_prerotated_key_hash", None) or ""
+        prev = getattr(txn, "prev_public_key_hash", None) or ""
+        if not pkh or not pre:
+            return False
+
+        config = Config()
+        self_id = getattr(txn, "transaction_signature", None)
+
+        child_or = [
+            {BlocksQueryFields.PUBLIC_KEY_HASH.value: pre},
+            {BlocksQueryFields.PREV_PUBLIC_KEY_HASH.value: pkh},
+            {BlocksQueryFields.PREV_PUBLIC_KEY_HASH.value: pre},
+        ]
+        if twice:
+            child_or.append({BlocksQueryFields.PREV_PUBLIC_KEY_HASH.value: twice})
+
+        child_cursor = config.mongo.async_db.blocks.aggregate(
+            [
+                {"$match": {"$or": child_or}},
+                {"$unwind": "$transactions"},
+                {"$match": {"$or": child_or}},
+                {"$limit": 1},
+            ]
+        )
+        child_rows = await child_cursor.to_list(length=1)
+        if child_rows:
+            child = child_rows[0].get("transactions") or {}
+            if child.get("id") != self_id and child.get("public_key_hash") != pkh:
+                return False
+
+        if not prev:
+            # Inception tip: only valid if nothing extends it (checked above).
+            return True
+
+        parent_cursor = config.mongo.async_db.blocks.aggregate(
+            [
+                {
+                    "$match": {
+                        BlocksQueryFields.PUBLIC_KEY_HASH.value: prev,
+                    }
+                },
+                {"$unwind": "$transactions"},
+                {
+                    "$match": {
+                        BlocksQueryFields.PUBLIC_KEY_HASH.value: prev,
+                    }
+                },
+                {"$limit": 1},
+            ]
+        )
+        parent_rows = await parent_cursor.to_list(length=1)
+        if not parent_rows:
+            # Parent address never mined as a KEL entry — not a legal tip.
+            return False
+        parent = parent_rows[0].get("transactions") or {}
+        if parent.get("prerotated_key_hash") != pkh:
+            return False
+        parent_twice = parent.get("twice_prerotated_key_hash") or ""
+        if parent_twice and parent_twice != pre:
+            return False
+        return True
+
+    @staticmethod
+    async def _walk_onchain_hashlink_tip(public_key, follow_recovery=False):
+        """Full O(depth) tip resolution: inception → on-chain hash-link walk."""
+        inception = await KeyEventLog.get_inception(
+            public_key,
+            onchain_only=True,
+            follow_recovery=follow_recovery,
+            segment_only=not follow_recovery,
+        )
+        if inception is None:
+            return None
+        return await KeyEventLog._walk_forward(
+            inception,
+            public_key,
+            onchain_only=True,
+            follow_recovery=follow_recovery,
+        )
+
+    @staticmethod
+    async def get_onchain_hashlink_tip(public_key, follow_recovery=False):
+        """Return the true on-chain KEL tip for mining / tip-sensitive paths.
+
+        **Fast path (O(1) queries):** max-``counter`` main entry for this
+        KEL's inception, validated with
+        :meth:`_is_onchain_hashlink_tip_candidate` (no children + immediate
+        parent hash-link).  Healthy chains hit this path.
+
+        **Slow path (O(depth)):** only when the candidate is missing,
+        untagged, or fails validation (counter jumped ahead of the
+        hash-linked tip, parented off unmined twice, etc.) — inception +
+        :meth:`_walk_forward` on-chain only.
+
+        Never consults mempool or ``key_event_log``.  Never trusts
+        max-counter alone (counters can lie; hash-links define the tip).
+        """
+        config = Config()
+        try:
+            address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+        except Exception:
+            return await KeyEventLog._walk_onchain_hashlink_tip(
+                public_key, follow_recovery=follow_recovery
+            )
+
+        seed_cursor = config.mongo.async_db.blocks.aggregate(
+            [
+                {
+                    "$match": {
+                        BlocksQueryFields.PUBLIC_KEY_HASH.value: address,
+                    }
+                },
+                {"$unwind": "$transactions"},
+                {
+                    "$match": {
+                        BlocksQueryFields.PUBLIC_KEY_HASH.value: address,
+                    }
+                },
+                {"$limit": 1},
+            ]
+        )
+        seed_rows = await seed_cursor.to_list(length=1)
+        inception_pkh = None
+        if seed_rows:
+            seed = Transaction.from_dict(seed_rows[0]["transactions"])
+            inception_pkh = getattr(seed, "inception_public_key_hash", None)
+
+        if not inception_pkh:
+            return await KeyEventLog._walk_onchain_hashlink_tip(
+                public_key, follow_recovery=follow_recovery
+            )
+
+        candidate = await KeyEventLog._latest_from_inception_tag(
+            inception_pkh, onchain_only=True
+        )
+        if candidate is not None:
+            try:
+                ok = await KeyEventLog._is_onchain_hashlink_tip_candidate(candidate)
+            except Exception as exc:
+                if hasattr(config, "app_log") and config.app_log:
+                    config.app_log.debug(
+                        "get_onchain_hashlink_tip: candidate check error %s",
+                        exc,
+                    )
+                ok = False
+            if ok:
+                if hasattr(config, "key_log_debug") and config.key_log_debug:
+                    config.app_log.debug(
+                        "get_onchain_hashlink_tip: fast path tip=%s counter=%s",
+                        getattr(candidate, "public_key_hash", "")[:16],
+                        getattr(candidate, "counter", None),
+                    )
+                return candidate
+            if hasattr(config, "app_log") and config.app_log:
+                config.app_log.info(
+                    "get_onchain_hashlink_tip: max-counter candidate "
+                    "pkh=%s counter=%s failed tip checks — full hash-link walk",
+                    getattr(candidate, "public_key_hash", ""),
+                    getattr(candidate, "counter", None),
+                )
+
+        return await KeyEventLog._walk_onchain_hashlink_tip(
+            public_key, follow_recovery=follow_recovery
+        )
 
     @staticmethod
     async def get_inception(

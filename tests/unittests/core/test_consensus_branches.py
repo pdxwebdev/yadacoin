@@ -362,6 +362,25 @@ class TestProcessBlockQueueItem(ConsensusBase):
         self.consensus.config.consensus.insert_consensus_block.assert_awaited()
         self.consensus.queue_consensus_tips.assert_not_awaited()
 
+    async def test_blockresponse_insert_raises_does_not_queue_tips(self):
+        """except path when insert_consensus_block raises (lines 134-140)."""
+        item, _ = self._mk_item(
+            body={"method": "blockresponse", "result": {"block": {"index": 105}}}
+        )
+        block = _mk_block(index=105)
+        self.consensus.config.consensus.insert_consensus_block = AsyncMock(
+            side_effect=Exception("db down")
+        )
+        self.consensus.queue_consensus_tips = AsyncMock(return_value=True)
+        self.consensus.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        with patch(
+            "yadacoin.core.consensus.Block.from_dict",
+            new=AsyncMock(return_value=block),
+        ):
+            await self.consensus.process_block_queue_item(item)
+        self.consensus.config.consensus.insert_consensus_block.assert_awaited()
+        self.consensus.queue_consensus_tips.assert_not_awaited()
+
     async def test_blockresponse_index_not_greater_still_inserts_off_chain(self):
         item, _ = self._mk_item(
             body={"method": "blockresponse", "result": {"block": {"index": 50}}}

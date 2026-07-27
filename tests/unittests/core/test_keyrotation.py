@@ -1091,7 +1091,7 @@ class TestQueueReanchor(AsyncTestCase):
         mgr._second_factor = "sf"
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            "yadacoin.core.keyeventlog.KeyEventLog.get_onchain_hashlink_tip",
             new=AsyncMock(return_value=None),
         ):
             result = await mgr._queue_reanchor(block=MagicMock())
@@ -1107,7 +1107,7 @@ class TestQueueReanchor(AsyncTestCase):
         mgr._second_factor = "sf"
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            "yadacoin.core.keyeventlog.KeyEventLog.get_onchain_hashlink_tip",
             new=AsyncMock(side_effect=Exception("db error")),
         ):
             result = await mgr._queue_reanchor(block=MagicMock())
@@ -1149,7 +1149,7 @@ class TestQueueReanchor(AsyncTestCase):
         mock_entry.counter = 0
 
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            "yadacoin.core.keyeventlog.KeyEventLog.get_onchain_hashlink_tip",
             new=AsyncMock(return_value=mock_entry),
         ):
             result = await mgr._queue_reanchor(block=block)
@@ -1201,7 +1201,7 @@ class TestQueueReanchor(AsyncTestCase):
 
         block = MagicMock()
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            "yadacoin.core.keyeventlog.KeyEventLog.get_onchain_hashlink_tip",
             new=AsyncMock(return_value=mock_entry),
         ):
             result = await mgr._queue_reanchor(block=block)
@@ -1268,7 +1268,7 @@ class TestQueueReanchor(AsyncTestCase):
 
         block = MagicMock()
         with patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            "yadacoin.core.keyeventlog.KeyEventLog.get_onchain_hashlink_tip",
             new=AsyncMock(return_value=mock_entry),
         ) as mock_get_latest:
             result = await mgr._queue_reanchor(block=block)
@@ -1279,22 +1279,8 @@ class TestQueueReanchor(AsyncTestCase):
         self.assertEqual(result.coinbase_public_key_hash, step1_addr)
         self.assertEqual(result.coinbase_prev_public_key_hash, "1OnChainTip")
         cfg.mongo.async_db.miner_transactions.replace_one.assert_not_called()
-        # get_latest must be called on-chain-only
+        # Mining tip must use hash-link walk (not max-counter get_latest)
         mock_get_latest.assert_awaited()
-        _, kwargs = mock_get_latest.await_args
-        # positional or keyword
-        if kwargs:
-            self.assertTrue(kwargs.get("onchain_only", False) or True)
-        call_args = mock_get_latest.await_args
-        # Accept either onchain_only=True kw or second positional True
-        self.assertTrue(
-            (call_args.kwargs.get("onchain_only") is True)
-            or (len(call_args.args) >= 2 and call_args.args[1] is True)
-            or (
-                len(call_args.args) >= 1
-                and call_args.kwargs.get("onchain_only") is True
-            )
-        )
         # key_event_log must not be consulted for the mining ratchet
         cfg.mongo.async_db.key_event_log.find_one.assert_not_called()
 
@@ -2697,3 +2683,219 @@ class TestWalkForwardFromLatest(AsyncTestCase):
         result = await KeyEventLog._walk_forward(latest, "02pub", onchain_only=True)
         self.assertIs(result, latest)
         cfg.mongo.async_db.miner_transactions.find_one.assert_not_awaited()
+
+    @patch("yadacoin.core.keyeventlog.Config")
+    async def test_walk_forward_follows_chain_of_tagged_successors(self, mock_cfg_cls):
+        """Regression: already-tagged intermediates must not freeze get_latest
+        on a stale tip (pool was parenting coinbase off a non-tip key)."""
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        cfg = MagicMock()
+        mock_cfg_cls.return_value = cfg
+
+        mid = MagicMock()
+        mid.inception_public_key_hash = "0xabc"
+        mid.counter = 3
+        mid.prerotated_key_hash = "1tip_addr"
+        mid.public_key_hash = "1mid_addr"
+        mid.transaction_signature = "mid_sig"
+
+        tip = MagicMock()
+        tip.inception_public_key_hash = "0xabc"
+        tip.counter = 4
+        tip.prerotated_key_hash = "1after_tip"
+        tip.public_key_hash = "1tip_addr"
+        tip.transaction_signature = "tip_sig"
+
+        # Walk: start -> mid -> tip -> none
+        cfg.mongo.async_db.blocks.aggregate.return_value.to_list = AsyncMock(
+            side_effect=[
+                [{"transactions": {"public_key_hash": "1mid_addr"}}],
+                [{"transactions": {"public_key_hash": "1tip_addr"}}],
+                [],
+            ]
+        )
+        cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+
+        latest = MagicMock()
+        latest.inception_public_key_hash = "0xabc"
+        latest.counter = 2
+        latest.prerotated_key_hash = "1mid_addr"
+        latest.public_key_hash = "1start"
+        latest.transaction_signature = "start_sig"
+
+        with patch(
+            "yadacoin.core.transaction.Transaction.from_dict",
+            side_effect=[mid, tip],
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.find_recovery_successor",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await KeyEventLog._walk_forward(latest, "02pub", onchain_only=True)
+
+        self.assertIs(result, tip)
+        self.assertEqual(result.counter, 4)
+
+
+class TestCoinbaseKelContinuity(AsyncTestCase):
+    """Coinbase must parent the on-chain tip's prerotated key (no skips)."""
+
+    @patch("yadacoin.core.keyeventlog.Config")
+    async def test_queue_reanchor_sets_contiguous_counters(self, mock_cfg_cls):
+        from bitcoin.wallet import P2PKHBitcoinAddress
+        from coincurve import PrivateKey as CK
+
+        from yadacoin.core.keyrotation import NodeKeyRotationManager, derive_secure_path
+
+        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        cfg = _make_config(kel_anchor_public_key="02pub")
+        cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock()
+        mgr = NodeKeyRotationManager(cfg)
+        mgr._k0 = {
+            "private_key": bytes.fromhex(priv_hex),
+            "chain_code": bytes.fromhex(priv_hex),
+        }
+        mgr._second_factor = "mysecret"
+
+        _k0 = {
+            "private_key": bytes.fromhex(priv_hex),
+            "chain_code": bytes.fromhex(priv_hex),
+        }
+        step1 = derive_secure_path(_k0["private_key"], _k0["chain_code"], "mysecret")
+        step1_pub = CK(step1["private_key"]).public_key.format(compressed=True)
+        step1_addr = str(P2PKHBitcoinAddress.from_pubkey(step1_pub))
+
+        mock_entry = MagicMock()
+        mock_entry.public_key_hash = "1TipParent"
+        mock_entry.prerotated_key_hash = step1_addr
+        mock_entry.counter = 237
+        mock_entry.inception_public_key_hash = "12k2tEZTKk63Z3gEqnscQDwg1uJoV4nu2y"
+
+        block = MagicMock()
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_onchain_hashlink_tip",
+            new=AsyncMock(return_value=mock_entry),
+        ):
+            result = await mgr._queue_reanchor(block=block)
+
+        self.assertEqual(result.coinbase_counter, 238)
+        self.assertEqual(
+            result.coinbase_inception_public_key_hash,
+            "12k2tEZTKk63Z3gEqnscQDwg1uJoV4nu2y",
+        )
+        self.assertEqual(result.coinbase_confirming.counter, 239)
+        self.assertEqual(result.coinbase_public_key_hash, step1_addr)
+        self.assertEqual(result.coinbase_prev_public_key_hash, "1TipParent")
+
+    async def test_queue_reanchor_does_not_use_max_counter_tip(self):
+        """Regression 605100→605101: max(counter) tip can be ahead of the
+        hash-linked tip (skipped keys).  Mining must parent the hash-link tip
+        only — coinbase.public_key_hash == tip.prerotated, never a jump."""
+        from bitcoin.wallet import P2PKHBitcoinAddress
+        from coincurve import PrivateKey as CK
+
+        from yadacoin.core.keyrotation import NodeKeyRotationManager, derive_secure_path
+
+        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        cfg = _make_config(kel_anchor_public_key="02pub")
+        cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock()
+        mgr = NodeKeyRotationManager(cfg)
+        mgr._k0 = {
+            "private_key": bytes.fromhex(priv_hex),
+            "chain_code": bytes.fromhex(priv_hex),
+        }
+        mgr._second_factor = "mysecret"
+
+        _k0 = {
+            "private_key": bytes.fromhex(priv_hex),
+            "chain_code": bytes.fromhex(priv_hex),
+        }
+        # Hash-link tip is at step1 (counter 237).  A max-counter phantom at
+        # step3 (counter 241) must NOT be used for mining.
+        step1 = derive_secure_path(_k0["private_key"], _k0["chain_code"], "mysecret")
+        step2 = derive_secure_path(
+            step1["private_key"], step1["chain_code"], "mysecret"
+        )
+        step3 = derive_secure_path(
+            step2["private_key"], step2["chain_code"], "mysecret"
+        )
+        step1_addr = str(
+            P2PKHBitcoinAddress.from_pubkey(
+                CK(step1["private_key"]).public_key.format(compressed=True)
+            )
+        )
+        step3_addr = str(
+            P2PKHBitcoinAddress.from_pubkey(
+                CK(step3["private_key"]).public_key.format(compressed=True)
+            )
+        )
+
+        hashlink_tip = MagicMock()
+        hashlink_tip.public_key_hash = "1HA6SbdqsYfy8gGcXv6Pnz1iy7Zs8FoBnT"
+        hashlink_tip.prerotated_key_hash = step1_addr
+        hashlink_tip.counter = 237
+        hashlink_tip.inception_public_key_hash = "12k2tEZTKk63Z3gEqnscQDwg1uJoV4nu2y"
+
+        block = MagicMock()
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_onchain_hashlink_tip",
+            new=AsyncMock(return_value=hashlink_tip),
+        ), patch(
+            # If mining still called get_latest, it would get the phantom tip.
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(
+                return_value=MagicMock(
+                    public_key_hash="1Phantom",
+                    prerotated_key_hash=step3_addr,
+                    counter=241,
+                    inception_public_key_hash="12k2tEZTKk63Z3gEqnscQDwg1uJoV4nu2y",
+                )
+            ),
+        ) as mock_get_latest:
+            result = await mgr._queue_reanchor(block=block)
+
+        mock_get_latest.assert_not_awaited()
+        self.assertEqual(result.coinbase_public_key_hash, step1_addr)
+        self.assertEqual(
+            result.coinbase_prev_public_key_hash,
+            "1HA6SbdqsYfy8gGcXv6Pnz1iy7Zs8FoBnT",
+        )
+        self.assertEqual(result.coinbase_counter, 238)
+        self.assertNotEqual(result.coinbase_public_key_hash, step3_addr)
+
+
+class TestQueueReanchorDerivationGuard(AsyncTestCase):
+    async def test_queue_reanchor_max_derivation_steps_returns_empty(self):
+        """When tip.prerotated never matches derived addresses, refuse template."""
+        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
+
+        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        cfg = _make_config(kel_anchor_public_key="02pub")
+        mgr = NodeKeyRotationManager(cfg)
+        mgr._k0 = {
+            "private_key": bytes.fromhex(priv_hex),
+            "chain_code": bytes.fromhex(priv_hex),
+        }
+        mgr._second_factor = "mysecret"
+
+        mock_entry = MagicMock()
+        mock_entry.public_key_hash = "1Tip"
+        mock_entry.prerotated_key_hash = "1NeverMatchesAnyDerivedAddressXX"
+        mock_entry.counter = 1
+        mock_entry.inception_public_key_hash = "1Inc"
+
+        block = MagicMock()
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_onchain_hashlink_tip",
+            new=AsyncMock(return_value=mock_entry),
+        ), patch(
+            "yadacoin.core.keyrotation.DERIVE_TIP_SIGNER_MAX_STEPS",
+            2,
+        ):
+            result = await mgr._queue_reanchor(block=block)
+
+        self.assertIsInstance(result, ReanchorTriplet)
+        self.assertIsNone(result.coinbase_confirming)
+        cfg.app_log.error.assert_called()
+        err_msg = str(cfg.app_log.error.call_args)
+        self.assertIn("cannot derive signer", err_msg)

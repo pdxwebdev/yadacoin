@@ -215,17 +215,20 @@ class MiningPool(object):
             try:
                 await block_candidate.verify()
             except Exception as e:
+                # Never accept an invalid block into consensus/local chain.
+                # Returning a share-style ack for pool miners must not insert
+                # a broken KEL coinbase (skipped keys) into the blockchain.
+                self.app_log.warning(
+                    f"Winning block candidate verify() failed "
+                    f"(block rejected, not inserted): {e}"
+                )
                 if accepted and self.config.network == "mainnet":
-                    self.app_log.warning(
-                        f"Winning block candidate verify() failed (block silently dropped): {e}"
-                    )
                     return {
                         "hash": hash1,
                         "nonce": nonce,
                         "height": job.index,
                         "id": block_candidate.signature,
                     }
-
                 return False
             # accept winning block
             await self.accept_block(block_candidate)
@@ -456,10 +459,26 @@ class MiningPool(object):
             yield x
 
     async def accept_block(self, block):
+        """Accept a pool-mined block into local consensus and broadcast.
+
+        Runs the same ``Blockchain.test_block`` path peers use on inbound
+        blocks *before* consensus insert / P2P broadcast, so the pool cannot
+        push a KEL-invalid template onto its own chain or the network.
+        ``process_nonce`` already calls ``block.verify()``; this catches the
+        fuller per-txn KEL / double-spend checks that only live in test_block.
+        """
         self.app_log.info("Candidate submitted for index: {}".format(block.index))
         self.app_log.info("Transactions:")
         for x in block.transactions:
             self.app_log.info(x.transaction_signature)
+
+        if not await Blockchain.test_block(block):
+            self.app_log.warning(
+                "Pool candidate failed Blockchain.test_block at index %s — "
+                "not inserting, not broadcasting",
+                block.index,
+            )
+            raise Exception(f"Pool block failed test_block at index {block.index}")
 
         await self.config.consensus.insert_consensus_block(block, self.config.peer)
 

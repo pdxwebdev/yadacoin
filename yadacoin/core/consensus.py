@@ -127,9 +127,18 @@ class Consensus(object):
                     {"hash": block.hash}, {"_id": 1}
                 )
                 if not on_chain:
-                    if not await self.config.consensus.insert_consensus_block(
-                        block, stream.peer
-                    ):
+                    try:
+                        inserted = await self.config.consensus.insert_consensus_block(
+                            block, stream.peer
+                        )
+                    except Exception as e:
+                        self.config.app_log.info(
+                            "blockresponse, error inserting consensus block: {}".format(
+                                e
+                            )
+                        )
+                        return
+                    if not inserted:
                         self.config.app_log.info(
                             "blockresponse, error inserting consensus block"
                         )
