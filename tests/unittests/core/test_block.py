@@ -4877,6 +4877,250 @@ class TestBlockVerifyKelTipGuards(AsyncTestCase):
                 self.assertNotIn("no on-chain parent", msg)
                 # Other failures (reward sums etc.) are OK for this unit test
 
+    async def _run_verify_with_extra(self, block, extra_blocks, expect_substr=None):
+        """Run verify with extra_blocks; optionally expect an exception substring."""
+        from yadacoin.core.block import Block
+        from yadacoin.core.chain import CHAIN
+
+        txn_hashes = [getattr(t, "hash", "h") or "h" for t in block.transactions]
+        merkle = "m" * 64
+        block.merkle_root = merkle
+        block.hash = "a" * 64
+        block.nonce = "1"
+        block.header = "hdr"
+        block.version = CHAIN.get_version_for_height(block.index)
+
+        async def _fake_hash(*a, **k):
+            return block.hash
+
+        @property
+        async def contract_generated(self):
+            return False
+
+        @contract_generated.setter
+        def contract_generated(self, value):
+            pass
+
+        with mock.patch.object(
+            Block, "get_transaction_hashes", return_value=txn_hashes
+        ), mock.patch.object(
+            Block, "get_merkle_root", return_value=merkle
+        ), mock.patch.object(
+            Block, "generate_header", return_value="hdr"
+        ), mock.patch.object(
+            Block, "generate_hash_from_header", new=_fake_hash
+        ), mock.patch.object(
+            Block, "verify_signature", return_value=None
+        ), mock.patch(
+            "yadacoin.core.transaction.Transaction.contract_generated",
+            new=contract_generated,
+        ), mock.patch(
+            "yadacoin.core.block.KeyEventLog.init_async",
+            new=AsyncMock(return_value=None),
+        ), mock.patch(
+            "yadacoin.core.block.KeyEvent.verify",
+            new=AsyncMock(return_value=None),
+        ), mock.patch(
+            "yadacoin.core.block.KELHashCollection.init_async",
+            new=AsyncMock(return_value=MagicMock()),
+        ):
+            if expect_substr is None:
+                try:
+                    await block.verify(extra_blocks=extra_blocks)
+                except Exception as e:
+                    self.assertNotIn("no on-chain parent", str(e).lower())
+                    self.assertNotIn("second extension", str(e).lower())
+            else:
+                with self.assertRaises(Exception) as ctx:
+                    await block.verify(extra_blocks=extra_blocks)
+                self.assertIn(expect_substr.lower(), str(ctx.exception).lower())
+
+    async def test_coinbase_parent_from_same_block_sibling(self):
+        """Parent resolved from same-block sibling (line ~1215 path)."""
+        from yadacoin.core.chain import CHAIN
+
+        block = self._shell(CHAIN.CHECK_KEL_FORK + 10)
+        parent = self._kel_txn(
+            prev="",
+            pkh="1Parent",
+            pre="1Child",
+            twice="1Next",
+            sig="parent_sig",
+            hash="phash",
+        )
+        # Parent is only a hash-link carrier for the tip check; skip full KEL.
+        parent.are_kel_fields_populated = MagicMock(return_value=False)
+        parent.has_key_event_log = AsyncMock(return_value=False)
+        cb = self._coinbase_txn(
+            prev="1Parent",
+            pkh="1Child",
+            pre="1Next",
+            twice="1Twice",
+            sig="cb_sig",
+        )
+        block.transactions = [cb, parent]
+        block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        await self._run_verify_with_extra(block, extra_blocks=[])
+
+    async def test_extra_blocks_skips_same_or_higher_index(self):
+        """extra_blocks with index >= self.index are skipped when resolving parent."""
+        from yadacoin.core.chain import CHAIN
+
+        index = CHAIN.CHECK_KEL_FORK + 10
+        # Future block in batch — must be skipped (continue branch)
+        future = MagicMock()
+        future.index = index + 1
+        future_txn = MagicMock()
+        future_txn.public_key_hash = "1Parent"
+        future_txn.prerotated_key_hash = "1Child"
+        future_txn.twice_prerotated_key_hash = "1Next"
+        future_txn.transaction_signature = "fut"
+        future.transactions = [future_txn]
+
+        # Valid prior parent
+        prior = MagicMock()
+        prior.index = index - 1
+        parent_txn = MagicMock()
+        parent_txn.public_key_hash = "1Parent"
+        parent_txn.prerotated_key_hash = "1Child"
+        parent_txn.twice_prerotated_key_hash = "1Next"
+        parent_txn.transaction_signature = "parent_sig"
+        parent_txn.prev_public_key_hash = "1Grand"
+        prior.transactions = [parent_txn]
+
+        block = self._shell(index)
+        block.transactions = [
+            self._coinbase_txn(prev="1Parent", pkh="1Child", pre="1Next")
+        ]
+        block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        await self._run_verify_with_extra(block, extra_blocks=[future, prior])
+
+    async def test_second_extension_from_same_block_sibling(self):
+        """Already-extended detected via same-block direct child of parent."""
+        from yadacoin.core.chain import CHAIN
+
+        block = self._shell(CHAIN.CHECK_KEL_FORK + 10)
+        # Structural siblings only (no full KEL verify on them).
+        parent = self._kel_txn(
+            prev="",
+            pkh="1Parent",
+            pre="1Child",
+            twice="1Next",
+            sig="parent_sig",
+            hash="phash",
+        )
+        parent.are_kel_fields_populated = MagicMock(return_value=False)
+        parent.has_key_event_log = AsyncMock(return_value=False)
+        first_child = self._kel_txn(
+            prev="1Parent",
+            pkh="1Child",
+            pre="1Next",
+            twice="1Twice",
+            sig="first_child",
+            hash="fchash",
+        )
+        first_child.are_kel_fields_populated = MagicMock(return_value=False)
+        first_child.has_key_event_log = AsyncMock(return_value=False)
+        # Coinbase is the second extension attempt — tip check runs on it first
+        # among KEL-populated txns and must raise before later KEL pipeline.
+        cb = self._coinbase_txn(
+            prev="1Parent",
+            pkh="1Child",
+            pre="1Next",
+            twice="1Twice",
+            sig="cb_second",
+        )
+        block.transactions = [cb, parent, first_child]
+        block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        await self._run_verify_with_extra(
+            block, extra_blocks=[], expect_substr="second extension"
+        )
+
+    async def test_second_extension_from_extra_blocks_child(self):
+        """Already-extended via prior extra_block that already has direct child."""
+        from yadacoin.core.chain import CHAIN
+
+        index = CHAIN.CHECK_KEL_FORK + 10
+        # Prior block with parent AND its direct child already
+        prior = MagicMock()
+        prior.index = index - 1
+        parent_txn = MagicMock()
+        parent_txn.public_key_hash = "1Parent"
+        parent_txn.prerotated_key_hash = "1Child"
+        parent_txn.twice_prerotated_key_hash = "1Next"
+        parent_txn.transaction_signature = "parent_sig"
+        parent_txn.prev_public_key_hash = "1Grand"
+        existing_child = MagicMock()
+        existing_child.public_key_hash = "1Child"
+        existing_child.prerotated_key_hash = "1Next"
+        existing_child.twice_prerotated_key_hash = "1Twice"
+        existing_child.transaction_signature = "exist_child"
+        existing_child.prev_public_key_hash = "1Parent"
+        prior.transactions = [parent_txn, existing_child]
+
+        # Future block in batch — skipped for child scan (index >= self)
+        future = MagicMock()
+        future.index = index + 5
+        future.transactions = []
+
+        block = self._shell(index)
+        cb = self._coinbase_txn(prev="", pkh="1Cb", pre="1CbN")
+        cb.are_kel_fields_populated = MagicMock(return_value=False)
+        # Non-coinbase trying to re-extend parent
+        kel = self._kel_txn(
+            prev="1Parent",
+            pkh="1Child",
+            pre="1Next",
+            twice="1Twice",
+            sig="dup_child",
+        )
+        block.transactions = [cb, kel]
+        block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        await self._run_verify_with_extra(
+            block,
+            extra_blocks=[future, prior],
+            expect_substr="second extension",
+        )
+
+    async def test_second_extension_via_pkh_equals_parent_pre(self):
+        """Direct child detected when sibling.pkh == parent.pre (not via prev)."""
+        from yadacoin.core.chain import CHAIN
+
+        block = self._shell(CHAIN.CHECK_KEL_FORK + 10)
+        parent = self._kel_txn(
+            prev="",
+            pkh="1Parent",
+            pre="1Child",
+            twice="1Next",
+            sig="parent_sig",
+            hash="phash",
+        )
+        parent.are_kel_fields_populated = MagicMock(return_value=False)
+        parent.has_key_event_log = AsyncMock(return_value=False)
+        # Occupies next hop via pkh == parent.pre (prev empty)
+        first_child = self._kel_txn(
+            prev="",
+            pkh="1Child",
+            pre="1Next",
+            twice="1Twice",
+            sig="first_by_pkh",
+            hash="fhash",
+        )
+        first_child.are_kel_fields_populated = MagicMock(return_value=False)
+        first_child.has_key_event_log = AsyncMock(return_value=False)
+        cb = self._coinbase_txn(
+            prev="1Parent",
+            pkh="1Child",
+            pre="1Next",
+            twice="1Twice",
+            sig="cb_second",
+        )
+        block.transactions = [cb, parent, first_child]
+        block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        await self._run_verify_with_extra(
+            block, extra_blocks=[], expect_substr="second extension"
+        )
+
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
