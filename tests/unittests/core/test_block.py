@@ -4748,7 +4748,7 @@ class TestBlockVerifyKelTipGuards(AsyncTestCase):
         block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=parent_doc)
         await self._run_verify_expecting(block, "hash-link broken")
 
-    async def test_gap_fill_rejected_when_parent_has_child(self):
+    async def test_second_extension_rejected_when_parent_has_child(self):
         from yadacoin.core.chain import CHAIN
 
         block = self._shell(CHAIN.CHECK_KEL_FORK + 10)
@@ -4777,7 +4777,7 @@ class TestBlockVerifyKelTipGuards(AsyncTestCase):
             return None
 
         block.config.mongo.async_db.blocks.find_one = AsyncMock(side_effect=find_one)
-        await self._run_verify_expecting(block, "gap-fill")
+        await self._run_verify_expecting(block, "second extension")
 
     async def test_coinbase_missing_parent_raises(self):
         from yadacoin.core.chain import CHAIN
@@ -4786,6 +4786,96 @@ class TestBlockVerifyKelTipGuards(AsyncTestCase):
         block.transactions = [self._coinbase_txn(prev="1Missing")]
         block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
         await self._run_verify_expecting(block, "no on-chain parent")
+
+    async def test_coinbase_parent_from_extra_blocks_ok(self):
+        """Sync batch: parent lives in prior block not yet in Mongo (605075→605076)."""
+        from yadacoin.core.block import Block
+        from yadacoin.core.chain import CHAIN
+
+        index = CHAIN.CHECK_KEL_FORK + 10
+        # Prior block confirming tip: pkh=15Xb, pre=1JJA, twice=1FTg
+        prior = MagicMock()
+        prior.index = index - 1
+        parent_txn = MagicMock()
+        parent_txn.public_key_hash = "15XbParent"
+        parent_txn.prerotated_key_hash = "1JJAChild"
+        parent_txn.twice_prerotated_key_hash = "1FTgTwice"
+        parent_txn.transaction_signature = "parent_sig"
+        parent_txn.prev_public_key_hash = "1Grand"
+        prior.transactions = [parent_txn]
+
+        block = self._shell(index)
+        # Coinbase extends parent: pkh=1JJA, pre=1FTg, prev=15Xb
+        cb = self._coinbase_txn(
+            prev="15XbParent",
+            pkh="1JJAChild",
+            pre="1FTgTwice",
+            twice="1Next",
+        )
+        # Confirming sibling (legal next hop of coinbase) — must not count as
+        # second child of parent
+        conf = self._kel_txn(
+            prev="1JJAChild",
+            pkh="1FTgTwice",
+            pre="1Next",
+            twice="1After",
+            sig="conf_sig",
+            hash="confhash",
+        )
+        block.transactions = [cb, conf]
+        # Mongo has nothing yet (batch not persisted)
+        block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+
+        txn_hashes = [t.hash for t in block.transactions]
+        merkle = "m" * 64
+        block.merkle_root = merkle
+        block.hash = "a" * 64
+        block.nonce = "1"
+        block.header = "hdr"
+        block.version = CHAIN.get_version_for_height(block.index)
+
+        async def _fake_hash(*a, **k):
+            return block.hash
+
+        @property
+        async def contract_generated(self):
+            return False
+
+        @contract_generated.setter
+        def contract_generated(self, value):
+            pass
+
+        # After tip guards, KEL pipeline may still run — stub it out
+        with mock.patch.object(
+            Block, "get_transaction_hashes", return_value=txn_hashes
+        ), mock.patch.object(
+            Block, "get_merkle_root", return_value=merkle
+        ), mock.patch.object(
+            Block, "generate_header", return_value="hdr"
+        ), mock.patch.object(
+            Block, "generate_hash_from_header", new=_fake_hash
+        ), mock.patch.object(
+            Block, "verify_signature", return_value=None
+        ), mock.patch(
+            "yadacoin.core.transaction.Transaction.contract_generated",
+            new=contract_generated,
+        ), mock.patch(
+            "yadacoin.core.block.KeyEventLog.init_async",
+            new=AsyncMock(return_value=None),
+        ), mock.patch(
+            "yadacoin.core.block.KeyEvent.verify",
+            new=AsyncMock(return_value=None),
+        ), mock.patch(
+            "yadacoin.core.block.KELHashCollection.init_async",
+            new=AsyncMock(return_value=MagicMock()),
+        ):
+            # Must NOT raise "no on-chain parent"
+            try:
+                await block.verify(extra_blocks=[prior])
+            except Exception as e:
+                msg = str(e).lower()
+                self.assertNotIn("no on-chain parent", msg)
+                # Other failures (reward sums etc.) are OK for this unit test
 
 
 if __name__ == "__main__":

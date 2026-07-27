@@ -1170,77 +1170,148 @@ class Block(object):
                 # KEL may only advance by the direct next hop of the current
                 # tip.  A parent already has a child ⇒ this entry is a second
                 # extension (fork / gap under corrupt history) and must be
-                # rejected.  Skips are never valid chain motion — they are a
-                # critical bug if they ever land on-chain.  Full pre/twice
+                # rejected.  Skips are never valid chain motion.  Full pre/twice
                 # alignment for non-coinbase stays in KeyEventLog; coinbase
                 # gets explicit parent link checks here.
-                if (
-                    txn.are_kel_fields_populated()
-                    and txn.prev_public_key_hash
-                    and not any(
-                        getattr(s, "public_key_hash", None) == txn.prev_public_key_hash
-                        for s in self.transactions
-                        if s.transaction_signature != txn.transaction_signature
-                    )
-                ):
-                    parent_doc = await self.config.mongo.async_db.blocks.find_one(
-                        {
-                            "index": {"$lt": self.index},
-                            "transactions.public_key_hash": txn.prev_public_key_hash,
-                        },
-                        {
-                            "transactions": {
-                                "$elemMatch": {
-                                    "public_key_hash": txn.prev_public_key_hash
+                #
+                # Parent resolution must include same-block siblings and
+                # extra_blocks (sync batch): during integrate, prior blocks in
+                # the batch are not yet in Mongo, so a Mongo-only lookup false-
+                # negatives "no parent" on valid continuous chains.
+                if txn.are_kel_fields_populated() and txn.prev_public_key_hash:
+                    prev_pkh = txn.prev_public_key_hash
+                    parent_fields = None  # dict with pkh/pre/twice
+
+                    def _fields_from_txn_obj(t):
+                        return {
+                            "public_key_hash": getattr(t, "public_key_hash", None)
+                            or "",
+                            "prerotated_key_hash": getattr(
+                                t, "prerotated_key_hash", None
+                            )
+                            or "",
+                            "twice_prerotated_key_hash": getattr(
+                                t, "twice_prerotated_key_hash", None
+                            )
+                            or "",
+                            "transaction_signature": getattr(
+                                t, "transaction_signature", None
+                            ),
+                        }
+
+                    # 1) Same-block sibling parent
+                    for s in self.transactions:
+                        if s.transaction_signature == txn.transaction_signature:
+                            continue
+                        if getattr(s, "public_key_hash", None) == prev_pkh:
+                            parent_fields = _fields_from_txn_obj(s)
+                            break
+
+                    # 2) Prior blocks in this verify batch (not yet persisted)
+                    if parent_fields is None and extra_blocks:
+                        for eb in extra_blocks:
+                            eb_idx = getattr(eb, "index", None)
+                            if eb_idx is not None and eb_idx >= self.index:
+                                continue
+                            for s in getattr(eb, "transactions", []) or []:
+                                if getattr(s, "public_key_hash", None) == prev_pkh:
+                                    parent_fields = _fields_from_txn_obj(s)
+                                    break
+                            if parent_fields is not None:
+                                break
+
+                    # 3) Confirmed chain in Mongo
+                    if parent_fields is None:
+                        parent_doc = await self.config.mongo.async_db.blocks.find_one(
+                            {
+                                "index": {"$lt": self.index},
+                                "transactions.public_key_hash": prev_pkh,
+                            },
+                            {
+                                "transactions": {
+                                    "$elemMatch": {"public_key_hash": prev_pkh}
                                 }
+                            },
+                        )
+                        if parent_doc and parent_doc.get("transactions"):
+                            pt = parent_doc["transactions"][0]
+                            parent_fields = {
+                                "public_key_hash": pt.get("public_key_hash") or "",
+                                "prerotated_key_hash": pt.get("prerotated_key_hash")
+                                or "",
+                                "twice_prerotated_key_hash": pt.get(
+                                    "twice_prerotated_key_hash"
+                                )
+                                or "",
+                                "transaction_signature": pt.get("id"),
                             }
-                        },
-                    )
-                    if parent_doc and parent_doc.get("transactions"):
-                        parent_txn = parent_doc["transactions"][0]
+
+                    if parent_fields is not None:
                         if txn.coinbase:
                             if (
-                                parent_txn.get("prerotated_key_hash")
+                                parent_fields["prerotated_key_hash"]
                                 != txn.public_key_hash
                             ):
                                 raise Exception(
                                     "Coinbase skips or jumps KEL tip: parent "
-                                    f"{txn.prev_public_key_hash} prerotated "
-                                    f"{parent_txn.get('prerotated_key_hash')} != "
+                                    f"{prev_pkh} prerotated "
+                                    f"{parent_fields['prerotated_key_hash']} != "
                                     f"coinbase public_key_hash {txn.public_key_hash}"
                                 )
                             if (
-                                parent_txn.get("twice_prerotated_key_hash")
-                                and parent_txn.get("twice_prerotated_key_hash")
+                                parent_fields["twice_prerotated_key_hash"]
+                                and parent_fields["twice_prerotated_key_hash"]
                                 != txn.prerotated_key_hash
                             ):
                                 raise Exception(
                                     "Coinbase KEL hash-link broken: parent "
                                     f"twice_prerotated "
-                                    f"{parent_txn.get('twice_prerotated_key_hash')} "
+                                    f"{parent_fields['twice_prerotated_key_hash']} "
                                     f"!= coinbase prerotated {txn.prerotated_key_hash}"
                                 )
-                        # Parent must still be the sole tip: any on-chain entry
-                        # that already claims parent.pre / parent.twice (as pkh
-                        # or as prev) means this parent was already extended.
-                        parent_pre = parent_txn.get("prerotated_key_hash") or ""
-                        parent_twice = parent_txn.get("twice_prerotated_key_hash") or ""
-                        child_or = []
-                        if parent_pre:
-                            child_or.extend(
-                                [
-                                    {"transactions.public_key_hash": parent_pre},
-                                    {"transactions.prev_public_key_hash": parent_pre},
-                                ]
-                            )
-                        if parent_twice:
-                            child_or.extend(
-                                [
-                                    {"transactions.public_key_hash": parent_twice},
-                                    {"transactions.prev_public_key_hash": parent_twice},
-                                ]
-                            )
-                        if child_or:
+                        # Parent may have at most one direct child.  Direct means
+                        # prev == parent.pkh or pkh == parent.pre.  Do not treat
+                        # the same-block confirming hop (prev == this.pkh) as a
+                        # second child of parent — that is the legal U→C pair.
+                        parent_pre = parent_fields["prerotated_key_hash"]
+                        parent_pkh = parent_fields["public_key_hash"] or prev_pkh
+                        self_sig = txn.transaction_signature
+
+                        def _is_direct_child_of_parent(t):
+                            if getattr(t, "transaction_signature", None) == self_sig:
+                                return False
+                            t_pkh = getattr(t, "public_key_hash", None) or ""
+                            t_prev = getattr(t, "prev_public_key_hash", None) or ""
+                            if t_prev == parent_pkh:
+                                return True
+                            if parent_pre and t_pkh == parent_pre:
+                                return True
+                            return False
+
+                        already_extended = False
+                        for s in self.transactions:
+                            if _is_direct_child_of_parent(s):
+                                already_extended = True
+                                break
+                        if not already_extended and extra_blocks:
+                            for eb in extra_blocks:
+                                eb_idx = getattr(eb, "index", None)
+                                if eb_idx is not None and eb_idx >= self.index:
+                                    continue
+                                for s in getattr(eb, "transactions", []) or []:
+                                    if _is_direct_child_of_parent(s):
+                                        already_extended = True
+                                        break
+                                if already_extended:
+                                    break
+                        if not already_extended:
+                            child_or = [
+                                {"transactions.prev_public_key_hash": parent_pkh},
+                            ]
+                            if parent_pre:
+                                child_or.append(
+                                    {"transactions.public_key_hash": parent_pre}
+                                )
                             child_doc = (
                                 await self.config.mongo.async_db.blocks.find_one(
                                     {
@@ -1251,15 +1322,16 @@ class Block(object):
                                 )
                             )
                             if child_doc:
-                                raise Exception(
-                                    "KEL parent is not tip (gap-fill rejected): "
-                                    f"parent {txn.prev_public_key_hash} already "
-                                    f"extended at index {child_doc.get('index')}"
-                                )
+                                already_extended = True
+                        if already_extended:
+                            raise Exception(
+                                "KEL parent is not tip (second extension rejected): "
+                                f"parent {prev_pkh} already extended"
+                            )
                     elif txn.coinbase:
                         raise Exception(
                             "Coinbase prev_public_key_hash has no on-chain parent "
-                            f"KEL entry: {txn.prev_public_key_hash}"
+                            f"KEL entry: {prev_pkh}"
                         )
 
                 if self.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
