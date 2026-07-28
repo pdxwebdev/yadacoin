@@ -748,6 +748,7 @@ class Block(object):
         # (since mempool state is not relevant for validation and
         # can be manipulated by attackers to cause valid transactions to be rejected)
         config = Config()
+        used_inputs_by_id = {}
         # Use a minimal block proxy so Transaction.verify() calls
         # has_key_event_log(block=proxy, mempool=False), mirroring Block.verify()'s
         # on-chain-only check.  Transactions whose KEL parent is only in the mempool
@@ -927,9 +928,34 @@ class Block(object):
                     for x in transaction_obj.inputs:
                         if (x.id, transaction_obj.public_key) in used_inputs:
                             failed = True
+                        elif x.id in used_inputs_by_id:
+                            from bitcoin.wallet import P2PKHBitcoinAddress
+
+                            from yadacoin.core.keyeventlog import KeyEventLog
+
+                            prior_pk = used_inputs_by_id[x.id]
+                            try:
+                                addr_a = str(
+                                    P2PKHBitcoinAddress.from_pubkey(
+                                        bytes.fromhex(transaction_obj.public_key)
+                                    )
+                                )
+                                addr_b = str(
+                                    P2PKHBitcoinAddress.from_pubkey(
+                                        bytes.fromhex(prior_pk)
+                                    )
+                                )
+                                if await KeyEventLog.is_same_kel(
+                                    addr_a, addr_b, onchain_only=True
+                                ):
+                                    failed = True
+                            except Exception:
+                                # Fail closed: cannot prove distinct KELs.
+                                failed = True
                         used_inputs[
                             (x.id, transaction_obj.public_key)
                         ] = transaction_obj
+                        used_inputs_by_id[x.id] = transaction_obj.public_key
                         input_ids.append(x.id)
                     is_input_spent = await config.BU.is_input_spent(
                         input_ids, transaction_obj.public_key
@@ -1584,6 +1610,7 @@ class Block(object):
     async def save(self):
         await self.verify()
         used_block_inputs = {}
+        used_block_inputs_by_id = {}
         for txn in self.transactions:
             if txn.inputs:
                 failed = False
@@ -1591,7 +1618,30 @@ class Block(object):
                 for x in txn.inputs:
                     if (x.id, txn.public_key) in used_block_inputs:
                         failed = True
+                    elif x.id in used_block_inputs_by_id:
+                        from bitcoin.wallet import P2PKHBitcoinAddress
+
+                        from yadacoin.core.keyeventlog import KeyEventLog
+
+                        prior_pk = used_block_inputs_by_id[x.id]
+                        try:
+                            addr_a = str(
+                                P2PKHBitcoinAddress.from_pubkey(
+                                    bytes.fromhex(txn.public_key)
+                                )
+                            )
+                            addr_b = str(
+                                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(prior_pk))
+                            )
+                            if await KeyEventLog.is_same_kel(
+                                addr_a, addr_b, onchain_only=True
+                            ):
+                                failed = True
+                        except Exception:
+                            # Fail closed: cannot prove distinct KELs.
+                            failed = True
                     used_block_inputs[(x.id, txn.public_key)] = txn
+                    used_block_inputs_by_id[x.id] = txn.public_key
                     input_ids.append(x.id)
                 is_input_spent = await yadacoin.core.config.CONFIG.BU.is_input_spent(
                     input_ids, txn.public_key

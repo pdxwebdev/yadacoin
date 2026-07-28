@@ -319,11 +319,16 @@ class TestIsInputSpent(BUTestCase):
             return
             yield
 
+        async def mp_iter():
+            yield {"id": "m1", "public_key": "pk1"}
+
         mock_db = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.__aiter__ = lambda self: empty_iter()
         mock_db.blocks.aggregate.return_value = mock_cursor
-        mock_db.miner_transactions.find_one = AsyncMock(return_value={"id": "m1"})
+        mp_cursor = MagicMock()
+        mp_cursor.__aiter__ = lambda self: mp_iter()
+        mock_db.miner_transactions.find.return_value = mp_cursor
 
         with patch.object(self.config.mongo, "async_db", new=mock_db):
             result = await self.bu.is_input_spent("m1", "pk1", inc_mempool=True)
@@ -349,7 +354,7 @@ class TestIsInputSpent(BUTestCase):
         self.assertEqual(call_args[0], {"$match": {"index": {"$lt": 5}}})
 
     async def test_with_extra_blocks_matching(self):
-        """Covers lines 800-810: extra_blocks branch in is_input_spent."""
+        """extra_blocks: spend found on fork chain is spent."""
         input_id = "test_input_id"
 
         class FakeInput:
@@ -357,35 +362,123 @@ class TestIsInputSpent(BUTestCase):
                 self.id = id
 
         class FakeTxn:
-            def __init__(self, inputs):
+            def __init__(self, inputs, public_key="pk1"):
                 self.inputs = [FakeInput(i) for i in inputs]
+                self.public_key = public_key
 
         class FakeBlock:
-            def __init__(self, index, input_ids):
+            def __init__(self, index, input_ids, public_key="pk1"):
                 self.index = index
-                self.transactions = [FakeTxn(input_ids)]
+                self.transactions = [FakeTxn(input_ids, public_key=public_key)]
 
-        block_doc = {"index": 1}
-
-        async def agg_iter(*args, **kwargs):
-            yield block_doc
+        async def empty_iter(*args, **kwargs):
+            return
+            yield
 
         mock_db = MagicMock()
         mock_cursor = MagicMock()
-        mock_cursor.__aiter__ = lambda self: agg_iter()
+        mock_cursor.__aiter__ = lambda self: empty_iter()
         mock_db.blocks.aggregate.return_value = mock_cursor
 
-        extra_blocks = [FakeBlock(1, [input_id])]
+        # Spend lives only on the fork (not in mongo).
+        extra_blocks = [FakeBlock(10, [input_id], public_key="pk1")]
 
         with patch.object(self.config.mongo, "async_db", new=mock_db):
             result = await self.bu.is_input_spent(
-                input_id, "pk1", extra_blocks=extra_blocks
+                input_id, "pk1", from_index=11, extra_blocks=extra_blocks
             )
         self.assertTrue(result)
 
-    async def test_with_extra_blocks_no_match_returns_false(self):
-        """Covers line 810: extra_blocks branch returns False when no match."""
-        block_doc = {"index": 99}  # index doesn't match extra_blocks
+    async def test_extra_blocks_spend_at_different_height(self):
+        """Fork spent the input at height 10; validating height 12 still sees it."""
+        input_id = "test_input_id"
+
+        class FakeInput:
+            def __init__(self, id):
+                self.id = id
+
+        class FakeTxn:
+            def __init__(self, inputs, public_key="pk1"):
+                self.inputs = [FakeInput(i) for i in inputs]
+                self.public_key = public_key
+
+        class FakeBlock:
+            def __init__(self, index, input_ids=None, public_key="pk1"):
+                self.index = index
+                self.transactions = (
+                    [FakeTxn(input_ids, public_key=public_key)] if input_ids else []
+                )
+
+        async def empty_iter(*args, **kwargs):
+            return
+            yield
+
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__aiter__ = lambda self: empty_iter()
+        mock_db.blocks.aggregate.return_value = mock_cursor
+
+        extra_blocks = [
+            FakeBlock(10, [input_id], public_key="pk1"),
+            FakeBlock(11),
+            FakeBlock(12),
+        ]
+
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            result = await self.bu.is_input_spent(
+                input_id, "pk1", from_index=12, extra_blocks=extra_blocks
+            )
+        self.assertTrue(result)
+
+    async def test_with_extra_blocks_different_pubkey_not_spent(self):
+        """extra_blocks: same input_id by a different non-KEL key is not spent."""
+        input_id = "test_input_id"
+
+        class FakeInput:
+            def __init__(self, id):
+                self.id = id
+
+        class FakeTxn:
+            def __init__(self, inputs, public_key):
+                self.inputs = [FakeInput(i) for i in inputs]
+                self.public_key = public_key
+
+        class FakeBlock:
+            def __init__(self, index, input_ids, public_key):
+                self.index = index
+                self.transactions = [FakeTxn(input_ids, public_key=public_key)]
+
+        async def empty_iter(*args, **kwargs):
+            return
+            yield
+
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__aiter__ = lambda self: empty_iter()
+        mock_db.blocks.aggregate.return_value = mock_cursor
+
+        extra_blocks = [FakeBlock(1, [input_id], public_key="bob_pk")]
+
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                new=AsyncMock(return_value=False),
+            ):
+                result = await self.bu.is_input_spent(
+                    input_id, "alice_pk", from_index=2, extra_blocks=extra_blocks
+                )
+        self.assertFalse(result)
+
+    async def test_mongo_spend_ignored_when_height_on_fork(self):
+        """Mongo spend at a height covered by extra_blocks does not count."""
+        block_doc = {
+            "index": 10,
+            "transactions": {
+                "id": "t1",
+                "public_key": "pk1",
+                "inputs": [{"id": "any_id"}],
+            },
+        }
 
         async def agg_iter(*args, **kwargs):
             yield block_doc
@@ -400,16 +493,119 @@ class TestIsInputSpent(BUTestCase):
                 self.index = index
                 self.transactions = []
 
-        extra_blocks = [FakeBlock(1)]  # index 1 != 99, so no match
+        # Fork replaces height 10 with a block that does not spend the input.
+        extra_blocks = [FakeBlock(10)]
 
         with patch.object(self.config.mongo, "async_db", new=mock_db):
             result = await self.bu.is_input_spent(
-                "any_id", "pk1", extra_blocks=extra_blocks
+                "any_id", "pk1", from_index=11, extra_blocks=extra_blocks
             )
         self.assertFalse(result)
 
-    async def test_extra_public_keys_builds_in_filter(self):
-        """Line 784: extra_public_keys branch uses $in filter."""
+    async def test_mongo_spend_outside_fork_still_counts(self):
+        """Mongo spend below the fork tip still counts when height is not on fork."""
+        block_doc = {
+            "index": 5,
+            "transactions": {
+                "id": "t1",
+                "public_key": "pk1",
+                "inputs": [{"id": "any_id"}],
+            },
+        }
+
+        async def agg_iter(*args, **kwargs):
+            yield block_doc
+
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__aiter__ = lambda self: agg_iter()
+        mock_db.blocks.aggregate.return_value = mock_cursor
+
+        class FakeBlock:
+            def __init__(self, index):
+                self.index = index
+                self.transactions = []
+
+        extra_blocks = [FakeBlock(10), FakeBlock(11)]
+
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            result = await self.bu.is_input_spent(
+                "any_id", "pk1", from_index=11, extra_blocks=extra_blocks
+            )
+        self.assertTrue(result)
+
+    async def test_same_kel_spender_counts_as_spent(self):
+        """A prior KEL key spending the input is spent for the tip key."""
+        block = {
+            "index": 1,
+            "transactions": {
+                "id": "t1",
+                "public_key": "aa" * 33,
+                "inputs": [{"id": "input_id"}],
+            },
+        }
+
+        async def agg_iter(*args, **kwargs):
+            yield block
+
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__aiter__ = lambda self: agg_iter()
+        mock_db.blocks.aggregate.return_value = mock_cursor
+
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                new=AsyncMock(return_value=True),
+            ):
+                # Use valid-looking hex keys so address derivation may run;
+                # is_same_kel is mocked either way after a successful parse or
+                # after the except path... use simple equal path via mock on
+                # P2PKH if needed. Mock address derivation too.
+                with patch(
+                    "yadacoin.core.blockchainutils.P2PKHBitcoinAddress.from_pubkey",
+                    side_effect=lambda b: type(
+                        "A", (), {"__str__": lambda self: "addr"}
+                    )(),
+                ):
+                    result = await self.bu.is_input_spent("input_id", "bb" * 33)
+        self.assertTrue(result)
+
+    async def test_different_kel_spender_not_spent(self):
+        """A different wallet spending the same parent input is not a double-spend."""
+        block = {
+            "index": 1,
+            "transactions": {
+                "id": "t1",
+                "public_key": "aa" * 33,
+                "inputs": [{"id": "input_id"}],
+            },
+        }
+
+        async def agg_iter(*args, **kwargs):
+            yield block
+
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__aiter__ = lambda self: agg_iter()
+        mock_db.blocks.aggregate.return_value = mock_cursor
+
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                new=AsyncMock(return_value=False),
+            ):
+                with patch(
+                    "yadacoin.core.blockchainutils.P2PKHBitcoinAddress.from_pubkey",
+                    side_effect=lambda b: type(
+                        "A", (), {"__str__": lambda self, b=b: f"addr-{b.hex()[:4]}"}
+                    )(),
+                ):
+                    result = await self.bu.is_input_spent("input_id", "bb" * 33)
+        self.assertFalse(result)
+
+    async def test_query_matches_input_id_only(self):
+        """Aggregate pipeline no longer filters by public_key (KEL dual-path)."""
 
         async def empty_iter(*args, **kwargs):
             return
@@ -421,15 +617,13 @@ class TestIsInputSpent(BUTestCase):
         mock_db.blocks.aggregate.return_value = mock_cursor
 
         with patch.object(self.config.mongo, "async_db", new=mock_db):
-            result = await self.bu.is_input_spent(
-                "input_id", "pk1", extra_public_keys={"pk2"}
-            )
-        self.assertFalse(result)
+            await self.bu.is_input_spent("input_id", "pk1")
         call_pipeline = mock_db.blocks.aggregate.call_args[0][0]
         first_match = call_pipeline[0]["$match"]
         self.assertIn("transactions", first_match)
         elem_match = first_match["transactions"]["$elemMatch"]
-        self.assertEqual(elem_match["public_key"], {"$in": ["pk1", "pk2"]})
+        self.assertEqual(elem_match, {"inputs.id": {"$in": ["input_id"]}})
+        self.assertNotIn("public_key", elem_match)
 
 
 # ---------------------------------------------------------------------------
@@ -439,29 +633,53 @@ class TestIsInputSpent(BUTestCase):
 
 class TestGetMempoolTransactions(BUTestCase):
     async def test_returns_found_transaction(self):
+        async def mp_iter():
+            yield {"id": "txn1", "public_key": "pk1"}
+
         mock_db = MagicMock()
-        mock_db.miner_transactions.find_one = AsyncMock(return_value={"id": "txn1"})
+        mp_cursor = MagicMock()
+        mp_cursor.__aiter__ = lambda self: mp_iter()
+        mock_db.miner_transactions.find.return_value = mp_cursor
         with patch.object(self.config.mongo, "async_db", new=mock_db):
             result = await self.bu.get_mempool_transactions("pk1", ["inp1"])
         self.assertEqual(result["id"], "txn1")
 
     async def test_returns_none_when_not_found(self):
+        async def mp_iter():
+            if False:
+                yield None
+
         mock_db = MagicMock()
-        mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        mp_cursor = MagicMock()
+        mp_cursor.__aiter__ = lambda self: mp_iter()
+        mock_db.miner_transactions.find.return_value = mp_cursor
         with patch.object(self.config.mongo, "async_db", new=mock_db):
             result = await self.bu.get_mempool_transactions("pk1", ["inp1"])
         self.assertIsNone(result)
 
-    async def test_extra_public_keys_builds_in_filter(self):
-        """Line 831: extra_public_keys branch uses $in filter."""
+    async def test_same_kel_mempool_match(self):
+        """Mempool spend by a same-KEL key counts as spent."""
+
+        async def mp_iter():
+            yield {"id": "txn1", "public_key": "aa" * 33}
+
         mock_db = MagicMock()
-        mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        mp_cursor = MagicMock()
+        mp_cursor.__aiter__ = lambda self: mp_iter()
+        mock_db.miner_transactions.find.return_value = mp_cursor
         with patch.object(self.config.mongo, "async_db", new=mock_db):
-            await self.bu.get_mempool_transactions(
-                "pk1", ["inp1"], extra_public_keys={"pk2"}
-            )
-        call_kwargs = mock_db.miner_transactions.find_one.call_args[0][0]
-        self.assertEqual(call_kwargs["public_key"], {"$in": ["pk1", "pk2"]})
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                new=AsyncMock(return_value=True),
+            ):
+                with patch(
+                    "yadacoin.core.blockchainutils.P2PKHBitcoinAddress.from_pubkey",
+                    side_effect=lambda b: type(
+                        "A", (), {"__str__": lambda self: "addr"}
+                    )(),
+                ):
+                    result = await self.bu.get_mempool_transactions("bb" * 33, ["inp1"])
+        self.assertEqual(result["id"], "txn1")
 
 
 # ---------------------------------------------------------------------------

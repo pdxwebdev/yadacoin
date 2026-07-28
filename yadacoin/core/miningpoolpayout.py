@@ -13,6 +13,8 @@ Full license terms: see LICENSE.txt in this repository.
 
 from logging import getLogger
 
+from bitcoin.wallet import P2PKHBitcoinAddress
+
 from yadacoin.core.block import Block
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
@@ -32,10 +34,49 @@ class PoolPayer(object):
         self.config = Config()
         self.app_log = getLogger("tornado.application")
 
+    def pool_inception_address(self):
+        """Stable pool identity: P2PKH of the KEL inception public key."""
+        inception = getattr(self.config, "inception", None)
+        if inception is not None and getattr(inception, "public_key", None):
+            return str(
+                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(inception.public_key))
+            )
+        return None
+
+    def payout_signer_keys(self):
+        """KEL tip signing keys."""
+        pub = getattr(self.config, "kel_anchor_public_key", None)
+        priv = getattr(self.config, "kel_anchor_private_key", None)
+        return pub, priv
+
+    def pool_reward_value(self, coinbase):
+        """Pool self-output value on a KEL coinbase (not masternode outs).
+
+        KEL coinbases pay the miner share to ``prerotated_key_hash``.
+        """
+        if not coinbase or not coinbase.outputs:
+            return 0.0
+        prerotated = getattr(coinbase, "prerotated_key_hash", None) or ""
+        if not prerotated:
+            return 0.0
+        return sum(float(o.value) for o in coinbase.outputs if str(o.to) == prerotated)
+
+    def is_pool_won_coinbase(self, coinbase):
+        """True when this coinbase is a KEL-tagged pool win with reward value."""
+        if not coinbase:
+            return False
+        inception_addr = self.pool_inception_address()
+        if not inception_addr:
+            return False
+        tagged = getattr(coinbase, "inception_public_key_hash", None) or ""
+        if tagged != inception_addr:
+            return False
+        return self.pool_reward_value(coinbase) > 0
+
     async def do_payout(self, already_paid_height=None):
         # first check which blocks we won.
         # then determine if we have already paid out
-        # they must be 6 blocks deep
+        # they must be payout_frequency blocks deep
         if not already_paid_height:
             already_paid_height = (
                 await self.config.mongo.async_db.share_payout.find_one(
@@ -45,26 +86,33 @@ class PoolPayer(object):
             if not already_paid_height:
                 already_paid_height = {}
 
+        inception_addr = self.pool_inception_address()
+        if not inception_addr:
+            self.app_log.warning("do_payout: no KEL inception — skipping")
+            return
+
+        # Every pool KEL coinbase is tagged with the stable inception address
+        # (same query PoolInfoHandler uses).
+        won_match = {
+            "transactions": {
+                "$elemMatch": {
+                    "inputs.0": {"$exists": False},
+                    "inception_public_key_hash": inception_addr,
+                }
+            },
+            "index": {"$gt": already_paid_height.get("index", 0)},
+        }
+        unwind_match = {
+            "transactions.inputs.0": {"$exists": False},
+            "transactions.inception_public_key_hash": inception_addr,
+            "$expr": {"$eq": ["$public_key", "$transactions.public_key"]},
+        }
+
         won_blocks = self.config.mongo.async_db.blocks.aggregate(
             [
-                {
-                    "$match": {
-                        "transactions": {
-                            "$elemMatch": {
-                                "inputs.0": {"$exists": False},
-                            }
-                        },
-                        "transactions.outputs.to": self.config.address,
-                        "index": {"$gt": already_paid_height.get("index", 0)},
-                    }
-                },
+                {"$match": won_match},
                 {"$unwind": "$transactions"},
-                {
-                    "$match": {
-                        "transactions.inputs.0": {"$exists": False},
-                        "transactions.outputs.to": self.config.address,
-                    }
-                },
+                {"$match": unwind_match},
                 {"$sort": {"index": 1}},
             ]
         )
@@ -81,7 +129,7 @@ class PoolPayer(object):
             )
             won_block = await Block.from_dict(won_block)
             coinbase = won_block.get_coinbase()
-            if coinbase.outputs[0].to != self.config.address:
+            if not self.is_pool_won_coinbase(coinbase):
                 continue
             if self.config.debug:
                 self.app_log.debug(won_block.index)
@@ -105,15 +153,23 @@ class PoolPayer(object):
         if not do_payout:
             return
 
+        signer_pub, signer_priv = self.payout_signer_keys()
+        if not signer_pub or not signer_priv:
+            self.app_log.warning("do_payout: no signing key available")
+            return
+
         # check if we already paid out
         outputs = {}
         coinbases = []
+        last_block = None
         for block in ready_blocks:
+            last_block = block
             if self.config.debug:
                 self.app_log.debug(
                     "do_payout_for_blocks begin loop {}".format(block.index)
                 )
-            already_used = await self.already_used(block.get_coinbase())
+            coinbase = block.get_coinbase()
+            already_used = await self.already_used(coinbase)
             if already_used:
                 await self.config.mongo.async_db.shares.delete_many(
                     {"index": block.index}
@@ -129,7 +185,7 @@ class PoolPayer(object):
             )
             if existing:
                 pending = await self.config.mongo.async_db.miner_transactions.find_one(
-                    {"inputs.id": block.get_coinbase().transaction_signature}
+                    {"inputs.id": coinbase.transaction_signature}
                 )
                 if pending:
                     return
@@ -138,7 +194,7 @@ class PoolPayer(object):
                     transaction = Transaction.from_dict(existing["txn"])
                     input_ids = [i.id for i in transaction.inputs]
                     if input_ids and await self.config.BU.is_input_spent(
-                        input_ids, self.config.public_key
+                        input_ids, signer_pub
                     ):
                         self.app_log.warning(
                             "share_payout for block {} references already-spent inputs, skipping rebroadcast".format(
@@ -174,16 +230,18 @@ class PoolPayer(object):
                         block.index
                     )
                 )
-            coinbase = block.get_coinbase()
-            if coinbase.outputs[0].to != self.config.address:
+            if not self.is_pool_won_coinbase(coinbase):
+                return
+            reward_value = self.pool_reward_value(coinbase)
+            if reward_value <= 0:
                 return
             if self.config.debug:
                 self.app_log.debug(
                     "do_payout_for_blocks passed address compare {}".format(block.index)
                 )
             pool_take = self.config.pool_take
-            total_pool_take = coinbase.outputs[0].value * pool_take
-            total_payout = coinbase.outputs[0].value - total_pool_take
+            total_pool_take = reward_value * pool_take
+            total_payout = reward_value - total_pool_take
             coinbases.append(coinbase)
             if self.config.debug:
                 self.app_log.debug(
@@ -243,8 +301,12 @@ class PoolPayer(object):
                 )
             )
         try:
+            # Ordinary value transfer (no KEL rotation fields). Tip key spends
+            # historical coinbase UTXOs via KEL cross-key authorization.
             transaction = await Transaction.generate(
                 fee=0.0001,
+                public_key=signer_pub,
+                private_key=signer_priv,
                 inputs=[
                     {"id": coinbase.transaction_signature} for coinbase in coinbases
                 ],
@@ -275,9 +337,7 @@ class PoolPayer(object):
         # This closes the reorg race window where a payout transaction could be
         # confirmed and rolled back simultaneously with do_payout running.
         input_ids = [i.id for i in transaction.inputs]
-        if input_ids and await self.config.BU.is_input_spent(
-            input_ids, self.config.public_key
-        ):
+        if input_ids and await self.config.BU.is_input_spent(input_ids, signer_pub):
             self.app_log.warning(
                 "do_payout: inputs already spent in confirmed block at insert time, aborting payout"
             )
@@ -285,8 +345,11 @@ class PoolPayer(object):
         await self.config.mongo.async_db.miner_transactions.insert_one(
             transaction.to_dict()
         )
+        payout_index = (
+            last_block.index if last_block is not None else ready_blocks[-1].index
+        )
         await self.config.mongo.async_db.share_payout.insert_one(
-            {"index": block.index, "txn": transaction.to_dict()}
+            {"index": payout_index, "txn": transaction.to_dict()}
         )
         await self.broadcast_transaction(transaction)
 
@@ -339,34 +402,15 @@ class PoolPayer(object):
         return difficulty
 
     async def already_used(self, txn):
-        results = self.config.mongo.async_db.blocks.aggregate(
-            [
-                {
-                    "$match": {
-                        "transactions.inputs.id": txn.transaction_signature,
-                    }
-                },
-                {"$unwind": "$transactions"},
-                {
-                    "$match": {
-                        "transactions.inputs.id": txn.transaction_signature,
-                        "transactions.public_key": self.config.public_key,
-                    }
-                },
-            ]
-        )
-        confirmed = [x async for x in results]
-        if confirmed:
-            return confirmed
-        # Also check mempool: another background task (e.g. combine_oldest_transactions)
-        # may have already queued a transaction spending this coinbase.
-        pending = await self.config.mongo.async_db.miner_transactions.find_one(
-            {
-                "inputs.id": txn.transaction_signature,
-                "public_key": self.config.public_key,
-            }
-        )
-        return [pending] if pending else []
+        """True if this coinbase is already spent by any same-KEL key."""
+        signer_pub, _ = self.payout_signer_keys()
+        if not signer_pub:
+            return False
+        if await self.config.BU.is_input_spent(
+            txn.transaction_signature, signer_pub, inc_mempool=True
+        ):
+            return True
+        return False
 
     async def broadcast_transaction(self, transaction):
         self.app_log.debug(f"broadcast_transaction {transaction.transaction_signature}")

@@ -373,17 +373,24 @@ class Transaction(object):
 
         cls_inst.coinbase = coinbase
         cls_inst.contract_generated = contract_generated
-
-        await cls_inst.do_money()
-
         cls_inst.public_key = public_key
-
         cls_inst.never_expire = never_expire
         cls_inst.private = private
         cls_inst.prerotated_key_hash = prerotated_key_hash
         cls_inst.twice_prerotated_key_hash = twice_prerotated_key_hash
         cls_inst.public_key_hash = public_key_hash
         cls_inst.prev_public_key_hash = prev_public_key_hash
+
+        if do_money:
+            await cls_inst.do_money()
+
+        if private_key and public_key:
+            from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+            cls_inst.hash = await cls_inst.generate_hash()
+            cls_inst.transaction_signature = NodeKeyRotationManager._sign(
+                private_key, cls_inst.hash
+            )
         return cls_inst
 
     async def do_money(self):
@@ -484,22 +491,38 @@ class Transaction(object):
         self, input_obj, input_txn, my_address, input_sum, inputs, outputs_and_fee_total
     ):
         address = my_address
+        kel_cross = False
+        try:
+            tip_index = self.config.LatestBlock.block.index
+            if tip_index >= CHAIN.KEL_CROSS_KEY_SPENDING_FORK and self.public_key:
+                kel_cross = await self.get_kel_cross_key_auth(address, mempool=True)
+        except Exception:
+            kel_cross = False
 
         for txn_output in input_txn.outputs:
-            if txn_output.to == address and float(txn_output.value) > 0.0:
-                if self.exact_match and not equal(
-                    txn_output.value, outputs_and_fee_total
-                ):
-                    continue
-                input_sum += txn_output.value
+            if float(txn_output.value) <= 0.0:
+                continue
+            out_to = str(txn_output.to)
+            owns = out_to == str(address)
+            if not owns and kel_cross:
+                from yadacoin.core.keyeventlog import KeyEventLog
 
-                if input_txn not in inputs:
-                    inputs.append(input_obj)
+                owns = await KeyEventLog.is_same_kel(
+                    out_to, str(address), onchain_only=True
+                )
+            if not owns:
+                continue
+            if self.exact_match and not equal(txn_output.value, outputs_and_fee_total):
+                continue
+            input_sum += txn_output.value
 
-                if input_sum > outputs_and_fee_total or equal(
-                    input_sum, outputs_and_fee_total
-                ):
-                    return input_sum
+            if input_txn not in inputs:
+                inputs.append(input_obj)
+
+            if input_sum > outputs_and_fee_total or equal(
+                input_sum, outputs_and_fee_total
+            ):
+                return input_sum
         return input_sum
 
     @classmethod
@@ -677,10 +700,6 @@ class Transaction(object):
 
         verify_hash = await self.generate_hash()
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
-
-        # Reused by both verify_kel_output_rules and get_kel_cross_key_auth so
-        # the KEL chain is not rebuilt twice in the same verify() call.  It is
-        # populated lazily only when KEL spend rules apply (inside check_kel).
 
         if check_kel:
             from yadacoin.core.keyeventlog import KeyEvent
@@ -904,13 +923,13 @@ class Transaction(object):
         total_input = 0
         exclude_recovered_ids = []
 
-        # KEL cross-key spending: if the signer is the latest KEL key its
-        # address equals kel[-1].prerotated_key_hash, and it is authorised to
-        # spend UTXOs locked to any previous KEL address.
-        kel_authorized_addresses, kel_authorized_pub_keys = (
+        # KEL cross-key spending: tip key may spend UTXOs locked to any prior
+        # KEL address. Double-spend detection uses is_same_kel inside
+        # is_input_spent; output ownership uses is_same_kel per output below.
+        kel_cross_key = (
             await self.get_kel_cross_key_auth(address, block=block, mempool=mempool)
             if self.inputs
-            else (None, None)
+            else False
         )
 
         async for txn in self.get_inputs(self.inputs):
@@ -937,32 +956,35 @@ class Transaction(object):
                     )
 
             if check_input_spent:
+                if block is not None:
+                    spent_from_index = block.index
+                elif self.extra_blocks:
+                    spent_from_index = self.extra_blocks[0].index
+                else:
+                    spent_from_index = self.config.LatestBlock.block.index
                 is_input_spent = await self.config.BU.is_input_spent(
                     txn_input.transaction_signature,
                     self.public_key,
-                    from_index=(
-                        self.extra_blocks[0].index
-                        if self.extra_blocks
-                        else self.config.LatestBlock.block.index
-                    ),
-                    extra_public_keys=(
-                        kel_authorized_pub_keys - {self.public_key}
-                        if kel_authorized_pub_keys
-                        else None
-                    ),
+                    from_index=spent_from_index,
+                    extra_blocks=self.extra_blocks or None,
                 )
                 if is_input_spent:
                     raise Exception("Input already spent")
 
             found = False
             for output in txn_input.outputs:
-                if kel_authorized_addresses is not None:
-                    if str(output.to) in kel_authorized_addresses:
-                        found = True
-                        total_input += float(output.value)
-                elif str(output.to) == str(address):
+                out_to = str(output.to)
+                if out_to == str(address):
                     found = True
                     total_input += float(output.value)
+                elif kel_cross_key:
+                    from yadacoin.core.keyeventlog import KeyEventLog
+
+                    if await KeyEventLog.is_same_kel(
+                        out_to, address, onchain_only=True
+                    ):
+                        found = True
+                        total_input += float(output.value)
 
             if not found:
                 raise InvalidTransactionException(
@@ -1386,17 +1408,13 @@ class Transaction(object):
         return False
 
     async def get_kel_cross_key_auth(self, address, block=None, mempool=False):
-        """Return (authorized_addresses, authorized_pub_keys) when the signer is
-        the latest KEL key (its address equals kel[-1].prerotated_key_hash),
-        enabling it to spend UTXOs locked to any previous KEL address.
+        """Return True when the signer is the latest KEL key and may spend
+        UTXOs locked to any previous KEL address.
 
-        Returns (None, None) when cross-key spending does not apply (non-KEL
-        signer, or below the KEL_CROSS_KEY_SPENDING_FORK height).
-
-        *key_log* may carry a pre-built KEL (a list of KeyEvent txns) so callers
-        like Transaction.verify() can reuse the same reconstruction that
-        verify_kel_output_rules already performed, rather than rebuilding the
-        chain a second time.  When omitted the KEL is built on demand.
+        Tip check: signer address equals ``kel[-1].prerotated_key_hash``.
+        Membership of individual prior addresses is decided cheaply via
+        ``KeyEventLog.is_same_kel`` (tagged inception walk), not by building
+        the full KEL key set.
         """
         if block is not None:
             effective_index = block.index
@@ -1406,22 +1424,12 @@ class Transaction(object):
             effective_index = self.config.LatestBlock.block.index
 
         if effective_index < CHAIN.KEL_CROSS_KEY_SPENDING_FORK:
-            return None, None
+            return False
 
         from yadacoin.core.keyeventlog import KeyEventLog
 
         latest = await KeyEventLog.get_latest(self.public_key, onchain_only=True)
-        if latest and latest.prerotated_key_hash == address:
-            # Build fast membership sets once rather than scanning the whole
-            # log per output during input validation.
-            authorized_addresses = {entry.public_key_hash for entry in [latest]} | {
-                address
-            }
-            authorized_pub_keys = {entry.public_key for entry in [latest]} | {
-                self.public_key
-            }
-            return authorized_addresses, authorized_pub_keys
-        return None, None
+        return bool(latest and latest.prerotated_key_hash == address)
 
     async def has_key_event_log(
         self, block=None, mempool=False, include_offchain=False

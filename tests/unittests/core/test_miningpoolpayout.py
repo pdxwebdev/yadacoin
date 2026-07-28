@@ -31,6 +31,10 @@ class _AsyncIter:
         return gen()
 
 
+INCEPTION_ADDR = "1InceptionAddr"
+INCEPTION_PUB = "aa" * 33  # placeholder; pool_inception_address is often mocked
+
+
 def _mk_config(address="addr1", debug=False):
     cfg = MagicMock()
     cfg.address = address
@@ -49,25 +53,43 @@ def _mk_config(address="addr1", debug=False):
     cfg.nodeClient.retry_messages = {}
     cfg.mongo = MagicMock()
     cfg.mongo.async_db = MagicMock()
+    cfg.inception = MagicMock()
+    cfg.inception.public_key = INCEPTION_PUB
+    cfg.kel_anchor_public_key = "kel_pub"
+    cfg.kel_anchor_private_key = "kel_priv"
+    cfg.BU = MagicMock()
+    cfg.BU.is_input_spent = AsyncMock(return_value=False)
     return cfg
 
 
-def _mk_payer(cfg=None):
+def _mk_payer(cfg=None, inception_addr=INCEPTION_ADDR):
     with patch(
         "yadacoin.core.miningpoolpayout.Config", return_value=cfg or _mk_config()
     ):
-        return PoolPayer()
+        p = PoolPayer()
+    p.pool_inception_address = MagicMock(return_value=inception_addr)
+    return p
 
 
-def _mk_block(index=10, address="addr1", coinbase_value=50):
+def _mk_block(
+    index=10,
+    address="addr1",
+    coinbase_value=50,
+    prerotated=None,
+    inception_pkh=INCEPTION_ADDR,
+):
+    if prerotated is None:
+        prerotated = address
     block = MagicMock()
     block.index = index
     coinbase = MagicMock()
     out = MagicMock()
-    out.to = address
+    out.to = prerotated
     out.value = coinbase_value
     coinbase.outputs = [out]
     coinbase.transaction_signature = f"sig{index}"
+    coinbase.prerotated_key_hash = prerotated
+    coinbase.inception_public_key_hash = inception_pkh
     block.get_coinbase = MagicMock(return_value=coinbase)
     return block
 
@@ -107,54 +129,31 @@ class TestGetDifficulty(AsyncTestCase):
 
 
 class TestAlreadyUsed(AsyncTestCase):
-    async def test_already_used_returns_list(self):
+    async def test_already_used_true_when_spent(self):
         p = _mk_payer()
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter([{"x": 1}, {"x": 2}])
-        )
+        p.config.kel_anchor_public_key = "kel_pub"
+        p.config.BU.is_input_spent = AsyncMock(return_value=True)
         txn = MagicMock(transaction_signature="sig")
         r = await p.already_used(txn)
-        self.assertEqual(r, [{"x": 1}, {"x": 2}])
+        self.assertTrue(r)
+        p.config.BU.is_input_spent.assert_awaited_once_with(
+            "sig", "kel_pub", inc_mempool=True
+        )
 
-    async def test_already_used_empty(self):
+    async def test_already_used_false_when_unspent(self):
         p = _mk_payer()
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter([])
-        )
-        p.config.mongo.async_db.miner_transactions.find_one = AsyncMock(
-            return_value=None
-        )
+        p.config.kel_anchor_public_key = "kel_pub"
+        p.config.BU.is_input_spent = AsyncMock(return_value=False)
         r = await p.already_used(MagicMock(transaction_signature="s"))
-        self.assertEqual(r, [])
+        self.assertFalse(r)
 
-    async def test_already_used_confirmed_skips_mempool_check(self):
-        """If confirmed blocks already contain the spend, mempool is not queried."""
+    async def test_already_used_no_kel_anchor_returns_false(self):
         p = _mk_payer()
-        confirmed_doc = {"index": 5}
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter([confirmed_doc])
-        )
-        mempool_find = AsyncMock()
-        p.config.mongo.async_db.miner_transactions.find_one = mempool_find
+        p.config.kel_anchor_public_key = None
+        p.config.BU.is_input_spent = AsyncMock(return_value=True)
         r = await p.already_used(MagicMock(transaction_signature="sig"))
-        self.assertEqual(r, [confirmed_doc])
-        mempool_find.assert_not_awaited()
-
-    async def test_already_used_pending_in_mempool(self):
-        """Falls through to mempool check when no confirmed spend exists."""
-        p = _mk_payer()
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter([])
-        )
-        pending_doc = {"id": "pending_tx", "public_key": "pk"}
-        p.config.mongo.async_db.miner_transactions.find_one = AsyncMock(
-            return_value=pending_doc
-        )
-        r = await p.already_used(MagicMock(transaction_signature="sig"))
-        self.assertEqual(r, [pending_doc])
-        p.config.mongo.async_db.miner_transactions.find_one.assert_awaited_once_with(
-            {"inputs.id": "sig", "public_key": "pk"}
-        )
+        self.assertFalse(r)
+        p.config.BU.is_input_spent.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -274,19 +273,26 @@ class TestDoPayout(AsyncTestCase):
         await p.do_payout(already_paid_height={"index": 5})
 
     async def test_skip_block_with_wrong_address(self):
-        """Coinbase outputs[0].to mismatch -> continue."""
+        """Coinbase not tagged with pool inception -> continue."""
         p, cfg = await self._setup_basic(debug=True)
         cfg.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
         cfg.mongo.async_db.blocks.aggregate = MagicMock(
             return_value=_AsyncIter([{"index": 10, "id": "i", "hash": "h"}])
         )
         cfg.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
-        block = _mk_block(index=10, address="other")
+        block = _mk_block(index=10, address="other", inception_pkh="1NotPool")
         with patch(
             "yadacoin.core.miningpoolpayout.Block.from_dict",
             new=AsyncMock(return_value=block),
         ):
             await p.do_payout()
+
+    async def test_no_inception_returns(self):
+        p, cfg = await self._setup_basic()
+        p.pool_inception_address = MagicMock(return_value=None)
+        cfg.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
+        await p.do_payout()
+        cfg.mongo.async_db.blocks.aggregate.assert_not_called()
 
     async def test_breaks_when_enough_ready_blocks(self):
         """ready_blocks length >= payout_frequency triggers break -> do_payout=True."""
@@ -311,7 +317,7 @@ class TestDoPayout(AsyncTestCase):
             new=AsyncMock(side_effect=[b1, b2]),
         ):
             # already_used returns truthy -> deletes and continues
-            p.already_used = AsyncMock(return_value=[1])
+            p.already_used = AsyncMock(return_value=True)
             cfg.mongo.async_db.shares.delete_many = AsyncMock()
             await p.do_payout()
         cfg.mongo.async_db.shares.delete_many.assert_awaited()
@@ -340,7 +346,7 @@ class TestDoPayout(AsyncTestCase):
             "yadacoin.core.miningpoolpayout.Block.from_dict",
             new=AsyncMock(side_effect=[b1, b2]),
         ):
-            p.already_used = AsyncMock(return_value=[])
+            p.already_used = AsyncMock(return_value=False)
             cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(
                 return_value={"pending": True}
             )
@@ -371,9 +377,13 @@ class TestDoPayout(AsyncTestCase):
             new=AsyncMock(side_effect=[b1, b2]),
         ), patch(
             "yadacoin.core.miningpoolpayout.Transaction.from_dict",
-            return_value=MagicMock(to_dict=MagicMock(return_value={})),
+            return_value=MagicMock(
+                to_dict=MagicMock(return_value={}),
+                inputs=[MagicMock(id="sig10")],
+            ),
         ):
-            p.already_used = AsyncMock(return_value=[])
+            p.already_used = AsyncMock(return_value=False)
+            cfg.BU.is_input_spent = AsyncMock(return_value=False)
             cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(
                 return_value=None
             )
@@ -399,7 +409,7 @@ class TestDoPayout(AsyncTestCase):
             "yadacoin.core.miningpoolpayout.Block.from_dict",
             new=AsyncMock(side_effect=[_mk_block(10), _mk_block(11)]),
         ):
-            p.already_used = AsyncMock(return_value=[])
+            p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(side_effect=KeyError("k"))
             await p.do_payout()
 
@@ -420,7 +430,7 @@ class TestDoPayout(AsyncTestCase):
             "yadacoin.core.miningpoolpayout.Block.from_dict",
             new=AsyncMock(side_effect=[_mk_block(10), _mk_block(11)]),
         ):
-            p.already_used = AsyncMock(return_value=[])
+            p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(side_effect=Exception("bad"))
             await p.do_payout()
 
@@ -442,14 +452,14 @@ class TestDoPayout(AsyncTestCase):
             "yadacoin.core.miningpoolpayout.Block.from_dict",
             new=AsyncMock(side_effect=[_mk_block(10), _mk_block(11)]),
         ):
-            p.already_used = AsyncMock(return_value=[])
+            p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(return_value=False)
             await p.do_payout()
         # ready_blocks present but outputs empty -> share_payout.insert_one called
         cfg.mongo.async_db.share_payout.insert_one.assert_awaited()
 
     async def test_address_changed_returns(self):
-        """Second coinbase address check (line 166) returns when mismatch."""
+        """Second coinbase ownership check returns when no longer a pool win."""
         p, cfg = await self._setup_basic()
         cfg.payout_frequency = 1
         cfg.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
@@ -463,8 +473,6 @@ class TestDoPayout(AsyncTestCase):
         )
         cfg.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
 
-        # First (won) block: ready_blocks gets it (initial loop call must show good)
-        # In payout loop: 4 get_coinbase() calls; the 4th (line 162) returns bad
         block = MagicMock()
         block.index = 10
         good = MagicMock()
@@ -473,11 +481,17 @@ class TestDoPayout(AsyncTestCase):
         gout.value = 50
         good.outputs = [gout]
         good.transaction_signature = "sig10"
+        good.prerotated_key_hash = cfg.address
+        good.inception_public_key_hash = INCEPTION_ADDR
         bad = MagicMock()
         bout = MagicMock()
         bout.to = "different"
+        bout.value = 50
         bad.outputs = [bout]
         bad.transaction_signature = "sig10"
+        bad.prerotated_key_hash = ""
+        bad.inception_public_key_hash = ""
+        # discovery: good; already_used path: good; ownership recheck: bad
         block.get_coinbase = MagicMock(side_effect=[good, good, bad])
         block2 = _mk_block(index=11)
 
@@ -485,7 +499,7 @@ class TestDoPayout(AsyncTestCase):
             "yadacoin.core.miningpoolpayout.Block.from_dict",
             new=AsyncMock(side_effect=[block, block2]),
         ):
-            p.already_used = AsyncMock(return_value=[])
+            p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(
                 return_value={"a": {"payout_share": 1.0}}
             )
@@ -514,7 +528,7 @@ class TestDoPayout(AsyncTestCase):
             "yadacoin.core.miningpoolpayout.Block.from_dict",
             new=AsyncMock(side_effect=[_mk_block(10), _mk_block(11)]),
         ):
-            p.already_used = AsyncMock(return_value=[])
+            p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(
                 return_value={"addr1": {"payout_share": 1.0}}
             )
@@ -546,7 +560,7 @@ class TestDoPayout(AsyncTestCase):
             "yadacoin.core.miningpoolpayout.Transaction.generate",
             new=AsyncMock(return_value=gen_txn),
         ):
-            p.already_used = AsyncMock(return_value=[])
+            p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(
                 return_value={"a1": {"payout_share": 1.0}}
             )
@@ -575,7 +589,7 @@ class TestDoPayout(AsyncTestCase):
             "yadacoin.core.miningpoolpayout.Transaction.generate",
             new=AsyncMock(side_effect=NotEnoughMoneyException("nope")),
         ):
-            p.already_used = AsyncMock(return_value=[])
+            p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(
                 return_value={"a1": {"payout_share": 1.0}}
             )
@@ -606,7 +620,7 @@ class TestDoPayout(AsyncTestCase):
             "yadacoin.core.miningpoolpayout.Transaction.generate",
             new=AsyncMock(side_effect=Exception("oops")),
         ):
-            p.already_used = AsyncMock(return_value=[])
+            p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(
                 return_value={"a1": {"payout_share": 1.0}}
             )
@@ -639,7 +653,7 @@ class TestDoPayout(AsyncTestCase):
             "yadacoin.core.miningpoolpayout.Transaction.generate",
             new=AsyncMock(side_effect=Exception("oops")),
         ):
-            p.already_used = AsyncMock(return_value=[])
+            p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(
                 return_value={"a1": {"payout_share": 1.0}}
             )
@@ -670,7 +684,7 @@ class TestDoPayout(AsyncTestCase):
             "yadacoin.core.miningpoolpayout.Transaction.generate",
             new=AsyncMock(return_value=gen_txn),
         ):
-            p.already_used = AsyncMock(return_value=[])
+            p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(
                 return_value={"a1": {"payout_share": 1.0}}
             )
@@ -712,7 +726,7 @@ class TestDoPayout(AsyncTestCase):
             "yadacoin.core.miningpoolpayout.Transaction.from_dict",
             return_value=mock_txn,
         ):
-            p.already_used = AsyncMock(return_value=[])
+            p.already_used = AsyncMock(return_value=False)
             cfg.mongo.async_db.miner_transactions.find_one = AsyncMock(
                 return_value=None
             )
@@ -748,7 +762,7 @@ class TestDoPayout(AsyncTestCase):
             "yadacoin.core.miningpoolpayout.Transaction.generate",
             new=AsyncMock(return_value=gen_txn),
         ):
-            p.already_used = AsyncMock(return_value=[])
+            p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(
                 return_value={"a1": {"payout_share": 1.0}}
             )

@@ -1213,29 +1213,27 @@ class TestVerifyCoverageGaps(TransactionTestCase):
                 await txn.verify()
 
     async def test_get_kel_cross_key_auth_block_branch(self):
-        """Line 1229: get_kel_cross_key_auth uses block.index when block is not None."""
+        """Below fork: get_kel_cross_key_auth returns False."""
         from unittest.mock import MagicMock
 
         from yadacoin.core.chain import CHAIN
 
         txn = Transaction(public_key=self.public_key)
         mock_block = MagicMock()
-        # Below fork: should return (None, None) after setting effective_index = block.index
         mock_block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK - 1
 
         result = await txn.get_kel_cross_key_auth("some_address", block=mock_block)
 
-        self.assertEqual(result, (None, None))
+        self.assertFalse(result)
 
     async def test_get_kel_cross_key_auth_mempool_branch(self):
-        """Line 1259: get_kel_cross_key_auth uses LatestBlock.block.index + 1 when mempool=True."""
+        """Mempool path below fork returns False."""
         from unittest.mock import MagicMock
 
         from yadacoin.core.chain import CHAIN
 
         txn = Transaction(public_key=self.public_key)
         mock_lb = MagicMock()
-        # Set index below fork so we get (None, None) without needing a DB call
         mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK - 2
 
         with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
@@ -1243,10 +1241,10 @@ class TestVerifyCoverageGaps(TransactionTestCase):
                 "some_address", block=None, mempool=True
             )
 
-        self.assertEqual(result, (None, None))
+        self.assertFalse(result)
 
-    async def test_get_kel_cross_key_auth_returns_authorized_keys(self):
-        """Lines 1238-1247: get_kel_cross_key_auth returns authorized sets when KEL found."""
+    async def test_get_kel_cross_key_auth_returns_true_for_tip(self):
+        """True when signer address is the KEL tip prerotated_key_hash."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from yadacoin.core.chain import CHAIN
@@ -1257,27 +1255,19 @@ class TestVerifyCoverageGaps(TransactionTestCase):
 
         address = "1TargetAddress"
         kel_entry = MagicMock()
-        kel_entry.prerotated_key_hash = (
-            address  # kel[-1].prerotated_key_hash == address
-        )
-        kel_entry.public_key_hash = "1PrevKeyHash"
-        kel_entry.public_key = "prevpubkey"
+        kel_entry.prerotated_key_hash = address
 
-        # Production uses KeyEventLog.get_latest (single tip), not build_from_public_key.
         with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
             with patch(
                 "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
                 new=AsyncMock(return_value=kel_entry),
             ):
-                auth_addrs, auth_pks = await txn.get_kel_cross_key_auth(address)
+                result = await txn.get_kel_cross_key_auth(address)
 
-        self.assertIn(address, auth_addrs)
-        self.assertIn("1PrevKeyHash", auth_addrs)
-        self.assertIn(self.public_key, auth_pks)
-        self.assertIn("prevpubkey", auth_pks)
+        self.assertTrue(result)
 
-    async def test_get_kel_cross_key_auth_no_match_returns_none(self):
-        """Line 1247: get_kel_cross_key_auth returns (None, None) when KEL address mismatch."""
+    async def test_get_kel_cross_key_auth_no_match_returns_false(self):
+        """False when signer is not the KEL tip key."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from yadacoin.core.chain import CHAIN
@@ -1296,7 +1286,7 @@ class TestVerifyCoverageGaps(TransactionTestCase):
             ):
                 result = await txn.get_kel_cross_key_auth("1NotMatching")
 
-        self.assertEqual(result, (None, None))
+        self.assertFalse(result)
 
     async def test_verify_kel_authorized_output_found(self):
         """Lines 799-801: kel_authorized_addresses is not None and output.to matches."""
@@ -1324,15 +1314,11 @@ class TestVerifyCoverageGaps(TransactionTestCase):
         mock_lb = MagicMock()
         mock_lb.block.index = 100
 
-        # Return address in authorized set so kel_authorized_addresses is not None
-        authorized_addresses = {address, "1OtherAddr"}
-        authorized_pub_keys = {self.public_key}
-
         with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
             with patch.object(
                 txn,
                 "get_kel_cross_key_auth",
-                new=AsyncMock(return_value=(authorized_addresses, authorized_pub_keys)),
+                new=AsyncMock(return_value=True),
             ):
                 # check_input_spent=False avoids needing to mock BU.is_input_spent
                 await txn.verify(check_input_spent=False)

@@ -2188,28 +2188,25 @@ class KeyEventLog:
         config = Config()
         latest = await KeyEventLog.get_latest(public_key=public_key, onchain_only=False)
         if latest is None:
-            return KELResult([])
+            return []
+        inception_pkh = getattr(latest, "inception_public_key_hash", None) or getattr(
+            latest, "public_key_hash", None
+        )
+        if not inception_pkh:
+            return []
         cursor = config.mongo.async_db.blocks.aggregate(
             [
-                {
-                    "$match": {
-                        "transactions.public_key_hash": latest.inception_public_key_hash
-                    }
-                },
+                {"$match": {"transactions.inception_public_key_hash": inception_pkh}},
                 {"$unwind": "$transactions"},
-                {
-                    "$match": {
-                        "transactions.public_key_hash": latest.inception_public_key_hash
-                    }
-                },
-                {"$sort": {"transactions.counter": -1}},
+                {"$match": {"transactions.inception_public_key_hash": inception_pkh}},
+                {"$sort": {"transactions.counter": 1}},
             ]
         )
         rows = await cursor.to_list(length=None)
         log = [Transaction.from_dict(row["transactions"]) for row in rows]
 
         mempool_cursor = config.mongo.async_db.miner_transactions.find(
-            {"inception_public_key_hash": latest.inception_public_key_hash}
+            {"inception_public_key_hash": inception_pkh}
         )
         async for doc in mempool_cursor:
             log.append(Transaction.from_dict(doc))

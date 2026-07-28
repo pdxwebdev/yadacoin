@@ -209,6 +209,7 @@ class Blockchain(object):
                         items_indexed[input_item.id].spent_in_txn = txn
 
         used_inputs = {}
+        used_inputs_by_id = {}
         i = 0
         async for transaction in Blockchain.get_txns(block.transactions[:]):
             if extra_blocks:
@@ -263,9 +264,7 @@ class Blockchain(object):
                     is_input_spent = await config.BU.is_input_spent(
                         x.id,
                         transaction.public_key,
-                        from_index=(
-                            extra_blocks[0].index if extra_blocks else block.index
-                        ),
+                        from_index=block.index,
                         extra_blocks=extra_blocks,
                     )
                     if is_input_spent:
@@ -277,7 +276,32 @@ class Blockchain(object):
                         failed = True
                     if (x.id, transaction.public_key) in used_inputs:
                         failed = True
+                    elif x.id in used_inputs_by_id:
+                        # Same input id spent earlier in this block by another key —
+                        # only a conflict when both keys share a KEL.
+                        from bitcoin.wallet import P2PKHBitcoinAddress
+
+                        from yadacoin.core.keyeventlog import KeyEventLog
+
+                        prior_pk = used_inputs_by_id[x.id]
+                        try:
+                            addr_a = str(
+                                P2PKHBitcoinAddress.from_pubkey(
+                                    bytes.fromhex(transaction.public_key)
+                                )
+                            )
+                            addr_b = str(
+                                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(prior_pk))
+                            )
+                            if await KeyEventLog.is_same_kel(
+                                addr_a, addr_b, onchain_only=True
+                            ):
+                                failed = True
+                        except Exception:
+                            # Fail closed: cannot prove distinct KELs.
+                            failed = True
                     used_inputs[(x.id, transaction.public_key)] = transaction
+                    used_inputs_by_id[x.id] = transaction.public_key
                     used_ids_in_this_txn.append(x.id)
                 if failed and block.index >= CHAIN.CHECK_DOUBLE_SPEND_FROM:
                     return False

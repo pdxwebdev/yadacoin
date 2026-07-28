@@ -737,24 +737,66 @@ class BlockChainUtils(object):
         inc_mempool=False,
         from_index=None,
         extra_blocks=None,
-        extra_public_keys=None,
     ):
         if not isinstance(input_ids, list):
             input_ids = [input_ids]
-        # When extra_public_keys is provided (KEL cross-key spending), check
-        # whether the input was spent by ANY of the authorised public keys so
-        # that a spend by a previous KEL key is correctly detected.
-        if extra_public_keys:
-            pk_filter = {"$in": [public_key] + list(extra_public_keys)}
-        else:
-            pk_filter = public_key
+        input_ids_set = set(input_ids)
+
+        try:
+            spender_address = str(
+                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
+            )
+        except Exception:
+            spender_address = None
+
+        async def conflicts(other_public_key):
+            # Non-KEL: exact public_key match only.
+            # KEL: also True when both keys share the same inception
+            # (is_same_kel uses tagged inception / walk — no full KEL build).
+            if not other_public_key:
+                return False
+            if other_public_key == public_key:
+                return True
+            if spender_address is None:
+                return False
+            try:
+                other_address = str(
+                    P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(other_public_key))
+                )
+            except Exception:
+                return False
+            from yadacoin.core.keyeventlog import KeyEventLog
+
+            return await KeyEventLog.is_same_kel(
+                spender_address, other_address, onchain_only=True
+            )
+
+        # Candidate fork / sync batch: scan prior in-memory blocks first.
+        # from_index is the block being validated — only earlier fork heights
+        # can have already spent this input.
+        fork_indices = set()
+        if extra_blocks:
+            for block in extra_blocks:
+                fork_indices.add(block.index)
+                if from_index is not None and block.index >= from_index:
+                    continue
+                for txn in block.transactions:
+                    for txn_input in getattr(txn, "inputs", None) or []:
+                        if getattr(
+                            txn_input, "id", None
+                        ) in input_ids_set and await conflicts(
+                            getattr(txn, "public_key", None)
+                        ):
+                            return True
+
+        # Search mongo by input id only. Heights covered by extra_blocks are
+        # replaced by the fork view above and must not count as spent.
         query = [
             {
                 "$match": {
                     "transactions": {
                         "$elemMatch": {
                             "inputs.id": {"$in": input_ids},
-                            "public_key": pk_filter,
                         }
                     }
                 }
@@ -763,45 +805,55 @@ class BlockChainUtils(object):
             {
                 "$match": {
                     "transactions.inputs.id": {"$in": input_ids},
-                    "transactions.public_key": pk_filter,
                 }
             },
         ]
-        if from_index:
+        if from_index is not None:
             self.config.app_log.debug(f"from_index {from_index}")
             query.insert(0, {"$match": {"index": {"$lt": from_index}}})
         async for x in self.mongo.async_db.blocks.aggregate(query, allowDiskUse=True):
-            if extra_blocks:
-                for block in extra_blocks:
-                    if block.index == x["index"]:
-                        for txn in block.transactions:
-                            for txn_input in txn.inputs:
-                                for input_id in input_ids:
-                                    self.config.app_log.debug(
-                                        f"{input_id} {txn_input.id}"
-                                    )
-                                    if input_id == txn_input.id:
-                                        return True
-                return False
-            return True
+            if x.get("index") in fork_indices:
+                continue
+            if await conflicts(x.get("transactions", {}).get("public_key")):
+                return True
 
         if inc_mempool:
-            if await self.get_mempool_transactions(
-                public_key, input_ids, extra_public_keys=extra_public_keys
-            ):
+            if await self.get_mempool_transactions(public_key, input_ids):
                 return True
         return False
 
-    async def get_mempool_transactions(
-        self, public_key, input_ids, extra_public_keys=None
-    ):
-        if extra_public_keys:
-            pk_filter = {"$in": [public_key] + list(extra_public_keys)}
-        else:
-            pk_filter = public_key
-        return await self.mongo.async_db.miner_transactions.find_one(
-            {"inputs.id": {"$in": input_ids}, "public_key": pk_filter}
+    async def get_mempool_transactions(self, public_key, input_ids):
+        try:
+            spender_address = str(
+                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
+            )
+        except Exception:
+            spender_address = None
+
+        cursor = self.mongo.async_db.miner_transactions.find(
+            {"inputs.id": {"$in": input_ids}}
         )
+        async for doc in cursor:
+            other_pk = doc.get("public_key")
+            if not other_pk:
+                continue
+            if other_pk == public_key:
+                return doc
+            if spender_address is None:
+                continue
+            try:
+                other_address = str(
+                    P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(other_pk))
+                )
+            except Exception:
+                continue
+            from yadacoin.core.keyeventlog import KeyEventLog
+
+            if await KeyEventLog.is_same_kel(
+                spender_address, other_address, onchain_only=True
+            ):
+                return doc
+        return None
 
     async def get_unspent_outputs(
         self, address, amount_needed=0, min_value=0, max_utxos=100, from_index=None
