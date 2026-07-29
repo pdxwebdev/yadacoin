@@ -212,6 +212,21 @@ class Mongo(object):
             ],
             name="__txn_prev_public_key_hash",
         )
+        __txn_inception_public_key_hash = IndexModel(
+            [
+                ("transactions.inception_public_key_hash", ASCENDING),
+            ],
+            name="__txn_inception_public_key_hash",
+            sparse=True,
+        )
+        __txn_inception_public_key_hash_counter = IndexModel(
+            [
+                ("transactions.inception_public_key_hash", ASCENDING),
+                ("transactions.counter", DESCENDING),
+            ],
+            name="__txn_inception_public_key_hash_counter",
+            sparse=True,
+        )
         __txn_rel_agent = IndexModel(
             [
                 ("transactions.relationship.agent", ASCENDING),
@@ -268,6 +283,8 @@ class Mongo(object):
                     __txn_twice_prerotated_key_hash,
                     __txn_public_key_hash,
                     __txn_prev_public_key_hash,
+                    __txn_inception_public_key_hash,
+                    __txn_inception_public_key_hash_counter,
                     __txn_rel_agent,
                     _txn_rel_identity_username,
                 ]
