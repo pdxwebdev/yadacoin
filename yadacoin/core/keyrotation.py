@@ -106,13 +106,10 @@ class ReanchorTriplet:
     coinbase_inception_public_key_hash: str = ""  # tip inception tag
     kn1_private_key: str = ""  # hex — signs coinbase_confirming
     kn1_public_key: str = ""  # hex
-    kn2_private_key: str = ""  # hex — signs template pool-payout unconfirmed
+    kn2_private_key: str = ""  # hex — first template payout unconfirmed signer
     kn2_public_key: str = ""  # hex
-    kn3_private_key: str = ""  # hex — signs template pool-payout confirming
-    kn3_public_key: str = ""  # hex
-    kn3_address: str = ""  # addr(Kn+3) — payout prerotated / confirming pkh
-    kn4_address: str = ""  # addr(Kn+4) — payout confirming prerotated
-    kn5_address: str = ""  # addr(Kn+5) — payout confirming twice
+    kn2_chain_code: str = ""  # hex — seed to derive further payout pairs
+    kn2_address: str = ""  # addr(Kn+2)
 
 
 # ---------------------------------------------------------------------------
@@ -1368,11 +1365,8 @@ class NodeKeyRotationManager:
                 kn1_public_key="",
                 kn2_private_key="",
                 kn2_public_key="",
-                kn3_private_key="",
-                kn3_public_key="",
-                kn3_address="",
-                kn4_address="",
-                kn5_address="",
+                kn2_chain_code="",
+                kn2_address="",
             )
 
         if not k0 or not second_factor:
@@ -1448,26 +1442,12 @@ class NodeKeyRotationManager:
         kn2_pub_bytes = _CoincurvePrivateKey(kn2["private_key"]).public_key.format(
             compressed=True
         )
-        kn2_pub_bytes.hex()
+        kn2_pub_hex = kn2_pub_bytes.hex()
         kn2_address = str(P2PKHBitcoinAddress.from_pubkey(kn2_pub_bytes))
         kn3 = derive_secure_path(kn2["private_key"], kn2["chain_code"], second_factor)
-        kn3_pub_bytes = _CoincurvePrivateKey(kn3["private_key"]).public_key.format(
-            compressed=True
-        )
-        kn3_pub_bytes.hex()
-        kn3_address = str(P2PKHBitcoinAddress.from_pubkey(kn3_pub_bytes))
-        kn4 = derive_secure_path(kn3["private_key"], kn3["chain_code"], second_factor)
-        kn4_address = str(
+        kn3_address = str(
             P2PKHBitcoinAddress.from_pubkey(
-                _CoincurvePrivateKey(kn4["private_key"]).public_key.format(
-                    compressed=True
-                )
-            )
-        )
-        kn5 = derive_secure_path(kn4["private_key"], kn4["chain_code"], second_factor)
-        kn5_address = str(
-            P2PKHBitcoinAddress.from_pubkey(
-                _CoincurvePrivateKey(kn5["private_key"]).public_key.format(
+                _CoincurvePrivateKey(kn3["private_key"]).public_key.format(
                     compressed=True
                 )
             )
@@ -1517,6 +1497,12 @@ class NodeKeyRotationManager:
             coinbase_prev_public_key_hash=tip_prev_pkh,
             coinbase_counter=coinbase_counter,
             coinbase_inception_public_key_hash=tip_inception,
+            kn1_private_key=kn1["private_key"].hex(),
+            kn1_public_key=kn1_pub_hex,
+            kn2_private_key=kn2["private_key"].hex(),
+            kn2_public_key=kn2_pub_hex,
+            kn2_chain_code=kn2["chain_code"].hex(),
+            kn2_address=kn2_address,
         )
 
     async def _create_inception(self, k0: dict, second_factor: str, k0_pub_hex: str):

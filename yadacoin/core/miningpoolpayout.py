@@ -80,16 +80,26 @@ class PoolPayer(object):
             txn.transaction_signature, signer_public_key, inc_mempool=False
         )
 
-    async def collect_settlement(self, signer_public_key, exclude_coinbase_ids=None):
-        """Collect unpaid pool-won coinbases ready to settle in a template.
+    async def collect_settlement_batches(
+        self, signer_public_key, exclude_coinbase_ids=None
+    ):
+        """Collect all unpaid ready coinbases, chunked by payout_frequency.
 
-        Returns ``(coinbases, miner_outputs, settled_indexes)`` or
-        ``([], {}, [])`` when nothing is ready.
+        Each batch is ``payout_frequency`` won blocks (one settlement U/C pair).
+        When behind, returns multiple batches so one template can settle
+        ``n * payout_frequency`` unpaid wins.
+
+        Returns list of ``(coinbases, miner_outputs, settled_indexes)``.
         """
         exclude_coinbase_ids = set(exclude_coinbase_ids or [])
         inception_addr = self.pool_inception_address()
         if not inception_addr:
-            return [], {}, []
+            return []
+
+        freq = max(1, int(getattr(self.config, "payout_frequency", 6) or 6))
+        max_batches = int(
+            getattr(self.config, "max_payout_batches_per_block", 20) or 20
+        )
 
         already_paid_height = await self.config.mongo.async_db.share_payout.find_one(
             {}, sort=[("index", -1)]
@@ -123,6 +133,7 @@ class PoolPayer(object):
 
         ready_blocks = []
         latest_index = self.config.LatestBlock.block.index
+        max_ready = freq * max_batches
         async for won_block in won_blocks:
             won_block = await self.config.mongo.async_db.blocks.find_one(
                 {
@@ -139,18 +150,14 @@ class PoolPayer(object):
                 continue
             if coinbase.transaction_signature in exclude_coinbase_ids:
                 continue
-            if (won_block.index + self.config.payout_frequency) > latest_index:
+            if (won_block.index + freq) > latest_index:
                 continue
             ready_blocks.append(won_block)
-            if len(ready_blocks) >= self.config.payout_frequency:
+            if len(ready_blocks) >= max_ready:
                 break
 
-        if len(ready_blocks) < self.config.payout_frequency:
-            return [], {}, []
-
-        outputs = {}
-        coinbases = []
-        settled_indexes = []
+        # Filter to payable entries first, then chunk into full *freq* batches.
+        payable = []  # (block, coinbase, shares, reward_value)
         for block in ready_blocks:
             coinbase = block.get_coinbase()
             if await self.already_used(coinbase, signer_public_key):
@@ -162,7 +169,6 @@ class PoolPayer(object):
                 {"index": block.index}
             )
             if existing and existing.get("txn"):
-                # Already recorded as paid (won template previously confirmed).
                 continue
             try:
                 shares = await self.get_share_list_for_height(block.index)
@@ -171,61 +177,94 @@ class PoolPayer(object):
             except Exception as e:
                 self.app_log.warning("collect_settlement shares: %s", e)
                 continue
-
             reward_value = self.pool_reward_value(coinbase)
             if reward_value <= 0:
                 continue
-            pool_take = self.config.pool_take
-            total_payout = reward_value - (reward_value * pool_take)
-            coinbases.append(coinbase)
-            settled_indexes.append(block.index)
-            for address, x in shares.items():
-                if address not in outputs:
-                    outputs[address] = 0.0
-                outputs[address] += total_payout * x["payout_share"]
+            payable.append((block, coinbase, shares, reward_value))
 
-        return coinbases, outputs, settled_indexes
+        n_batches = len(payable) // freq
+        if n_batches <= 0:
+            return []
+
+        batches = []
+        pool_take = self.config.pool_take
+        for b in range(n_batches):
+            chunk = payable[b * freq : (b + 1) * freq]
+            outputs = {}
+            coinbases = []
+            settled_indexes = []
+            for block, coinbase, shares, reward_value in chunk:
+                total_payout = reward_value - (reward_value * pool_take)
+                coinbases.append(coinbase)
+                settled_indexes.append(block.index)
+                for address, x in shares.items():
+                    if address not in outputs:
+                        outputs[address] = 0.0
+                    outputs[address] += total_payout * x["payout_share"]
+            batches.append((coinbases, outputs, settled_indexes))
+
+        return batches
+
+    async def collect_settlement(self, signer_public_key, exclude_coinbase_ids=None):
+        """Back-compat: first settlement batch only."""
+        batches = await self.collect_settlement_batches(
+            signer_public_key, exclude_coinbase_ids=exclude_coinbase_ids
+        )
+        if not batches:
+            return [], {}, []
+        return batches[0]
+
+    def _derive_key_material(self, priv_hex, cc_hex, second_factor):
+        from yadacoin.core.keyrotation import _CoincurvePrivateKey, derive_secure_path
+
+        nxt = derive_secure_path(
+            bytes.fromhex(priv_hex), bytes.fromhex(cc_hex), second_factor
+        )
+        pub_bytes = _CoincurvePrivateKey(nxt["private_key"]).public_key.format(
+            compressed=True
+        )
+        addr = str(P2PKHBitcoinAddress.from_pubkey(pub_bytes))
+        return {
+            "private_key": nxt["private_key"].hex(),
+            "chain_code": nxt["chain_code"].hex(),
+            "public_key": pub_bytes.hex(),
+            "address": addr,
+        }
 
     async def build_template_payout_pair(
-        self, triplet, coinbase_txn, coinbases, miner_outputs, fee=0.0001
+        self,
+        coinbase_txn,
+        coinbases,
+        miner_outputs,
+        *,
+        signer_pub,
+        signer_priv,
+        signer_pkh,
+        prerotated,
+        twice,
+        prev_pkh,
+        confirming_pub,
+        confirming_priv,
+        confirming_pkh,
+        confirming_pre,
+        confirming_twice,
+        tip_counter,
+        inception,
+        batch_txns_for_auth,
+        fee=0.0001,
+        spend_template_coinbase=False,
     ):
-        """Build template-only KEL U/C that extends the coinbase confirming tip.
-
-        Parent chain in the same block:
-          on-chain tip → coinbase (U, Kn) → coinbase_confirming (C, Kn+1)
-            → payout U (Kn+2) → payout C (Kn+3)
-
-        No mempool insert.  Lives only if this block template wins.
-        """
+        """Build one template-only KEL U/C payout pair at a derived tip."""
         from yadacoin.core.keyrotation import NodeKeyRotationManager
         from yadacoin.core.transaction import Input, Output
 
-        if not triplet or not coinbase_txn:
-            return None, None
-        if not getattr(triplet, "kn2_private_key", None) or not triplet.kn3_address:
-            self.app_log.warning(
-                "build_template_payout_pair: triplet missing kn2/kn3 material"
-            )
-            return None, None
         if not coinbases or not miner_outputs:
             return None, None
-
-        confirming_parent = getattr(triplet, "coinbase_confirming", None)
-        if confirming_parent is None:
-            return None, None
-
-        # Payout unconfirmed signed by Kn+2 (addr = coinbase twice = confirming pre)
-        signer_pub = triplet.kn2_public_key
-        signer_priv = triplet.kn2_private_key
-        signer_pkh = triplet.coinbase_twice_prerotated  # Kn+2 address
-        prerotated = triplet.kn3_address  # Kn+3
-        twice = triplet.kn4_address  # Kn+4
-        prev_pkh = triplet.coinbase_prerotated  # Kn+1 = confirming public_key_hash
 
         my_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(signer_pub)))
         if my_address != signer_pkh:
             self.app_log.warning(
-                "build_template_payout_pair: kn2 address mismatch %s != %s",
+                "build_template_payout_pair: signer address mismatch %s != %s",
                 my_address,
                 signer_pkh,
             )
@@ -238,20 +277,14 @@ class PoolPayer(object):
         if len(outputs_list) < 2:
             return None, None
 
-        # Spend prior unpaid coinbases + this template's coinbase reward out.
         input_ids = [cb.transaction_signature for cb in coinbases]
-        if coinbase_txn.transaction_signature not in input_ids:
-            input_ids.append(coinbase_txn.transaction_signature)
+        if spend_template_coinbase and coinbase_txn is not None:
+            if coinbase_txn.transaction_signature not in input_ids:
+                input_ids.append(coinbase_txn.transaction_signature)
         inputs_list = [Input(signature=i) for i in input_ids]
 
-        tip_counter = getattr(confirming_parent, "counter", None)
         payout_u_counter = (tip_counter + 1) if tip_counter is not None else None
         payout_c_counter = (tip_counter + 2) if tip_counter is not None else None
-        inception = (
-            getattr(triplet, "coinbase_inception_public_key_hash", None)
-            or getattr(confirming_parent, "inception_public_key_hash", None)
-            or None
-        )
 
         unconfirmed = Transaction(
             txn_time=int(time()),
@@ -273,19 +306,16 @@ class PoolPayer(object):
             inception_public_key_hash=inception,
         )
 
-        # Sum value: prior coinbases via is_same_kel; this block coinbase via
-        # input_txn link (same-block spend).
         input_sum = 0.0
         evaluated = []
         miner_total = sum(float(v) for v in miner_outputs.values())
         needed = miner_total + float(fee)
 
-        parents_by_id = {}
-        for cb in coinbases:
-            parents_by_id[cb.transaction_signature] = cb
-        parents_by_id[coinbase_txn.transaction_signature] = coinbase_txn
+        parents_by_id = {cb.transaction_signature: cb for cb in coinbases}
+        if coinbase_txn is not None:
+            parents_by_id[coinbase_txn.transaction_signature] = coinbase_txn
 
-        batch_for_auth = [coinbase_txn, confirming_parent, unconfirmed]
+        batch_for_auth = list(batch_txns_for_auth or []) + [unconfirmed]
         for inp in list(unconfirmed.inputs):
             parent = parents_by_id.get(inp.id)
             if parent is None:
@@ -307,11 +337,7 @@ class PoolPayer(object):
                 batch_txns=batch_for_auth,
             )
 
-        # Also credit this block's coinbase prerotated out if sum_inputs missed
-        # it (signer is Kn+2; coinbase pays Kn+1 prerotated — same KEL).
         if input_sum + 1e-12 < needed:
-            # Force-credit pool reward outs on each parent via is_same_kel path
-            # by ensuring kel auth works; if still short, abort settlement.
             raise NotEnoughMoneyException(
                 f"template payout inputs {input_sum} < miner+fee {needed}"
             )
@@ -327,18 +353,17 @@ class PoolPayer(object):
             signer_priv, unconfirmed.hash
         )
 
-        # Confirming sibling Kn+3 → Kn+4/Kn+5
         confirming = Transaction(
             txn_time=int(time()),
             version=7,
-            public_key=triplet.kn3_public_key,
+            public_key=confirming_pub,
             inputs=[],
-            outputs=[Output(to=triplet.kn4_address, value=0.0)],
+            outputs=[Output(to=confirming_pre, value=0.0)],
             fee=0.0,
             masternode_fee=0.0,
-            prerotated_key_hash=triplet.kn4_address,
-            twice_prerotated_key_hash=triplet.kn5_address,
-            public_key_hash=triplet.kn3_address,
+            prerotated_key_hash=confirming_pre,
+            twice_prerotated_key_hash=confirming_twice,
+            public_key_hash=confirming_pkh,
             prev_public_key_hash=signer_pkh,
             relationship="",
             relationship_hash="",
@@ -349,57 +374,149 @@ class PoolPayer(object):
         )
         confirming.hash = await confirming.generate_hash()
         confirming.transaction_signature = NodeKeyRotationManager._sign(
-            triplet.kn3_private_key, confirming.hash
+            confirming_priv, confirming.hash
         )
         return unconfirmed, confirming
 
     async def attach_template_settlement(self, pending_txns, triplet, coinbase_txn):
-        """If pool_payout is enabled, append template-only payout U/C to *pending_txns*.
+        """Attach one or more template-only payout U/C pairs (catch-up batches).
 
-        Returns metadata dict for the template (settled indexes) or None.
+        Each batch settles ``payout_frequency`` unpaid won blocks.  Multiple
+        batches chain in the same block:
+
+          coinbase U/C → payout0 U/C → payout1 U/C → …
+
+        Returns metadata with all settled indexes and payout txn ids, or None.
         """
         if not getattr(self.config, "pool_payout", False):
             return None
         if not triplet or not coinbase_txn:
             return None
+
+        from yadacoin.core.keyrotation import _read_second_factor
+
         try:
-            # Payout signer is Kn+2; spent-check can use kn2 or coinbase signer.
             signer_for_spent = (
                 getattr(triplet, "kn2_public_key", None) or triplet.signer_public_key
             )
-            coinbases, miner_outputs, settled_indexes = await self.collect_settlement(
+            batches = await self.collect_settlement_batches(
                 signer_for_spent,
                 exclude_coinbase_ids={coinbase_txn.transaction_signature},
             )
-            if not coinbases:
+            if not batches:
                 return None
-            unconfirmed, confirming = await self.build_template_payout_pair(
-                triplet, coinbase_txn, coinbases, miner_outputs
+
+            second_factor = _read_second_factor()
+            if not second_factor:
+                self.app_log.warning(
+                    "attach_template_settlement: SECOND_FACTOR missing"
+                )
+                return None
+            if not getattr(triplet, "kn2_private_key", None) or not getattr(
+                triplet, "kn2_chain_code", None
+            ):
+                self.app_log.warning(
+                    "attach_template_settlement: triplet missing kn2 material"
+                )
+                return None
+
+            confirming_parent = getattr(triplet, "coinbase_confirming", None)
+            if confirming_parent is None:
+                return None
+
+            inception = (
+                getattr(triplet, "coinbase_inception_public_key_hash", None)
+                or getattr(confirming_parent, "inception_public_key_hash", None)
+                or None
             )
-            if unconfirmed is None:
+
+            cur_signer = {
+                "private_key": triplet.kn2_private_key,
+                "chain_code": triplet.kn2_chain_code,
+                "public_key": triplet.kn2_public_key,
+                "address": triplet.kn2_address or triplet.coinbase_twice_prerotated,
+            }
+            prev_pkh = triplet.coinbase_prerotated  # Kn+1
+            tip_counter = getattr(confirming_parent, "counter", None)
+            batch_auth = [coinbase_txn, confirming_parent]
+
+            all_indexes = []
+            payout_ids = []
+            confirming_ids = []
+
+            for batch_i, (coinbases, miner_outputs, settled_indexes) in enumerate(
+                batches
+            ):
+                kn_c = self._derive_key_material(
+                    cur_signer["private_key"], cur_signer["chain_code"], second_factor
+                )
+                kn_c_pre = self._derive_key_material(
+                    kn_c["private_key"], kn_c["chain_code"], second_factor
+                )
+                kn_c_twice = self._derive_key_material(
+                    kn_c_pre["private_key"], kn_c_pre["chain_code"], second_factor
+                )
+
+                unconfirmed, confirming = await self.build_template_payout_pair(
+                    coinbase_txn,
+                    coinbases,
+                    miner_outputs,
+                    signer_pub=cur_signer["public_key"],
+                    signer_priv=cur_signer["private_key"],
+                    signer_pkh=cur_signer["address"],
+                    prerotated=kn_c["address"],
+                    twice=kn_c_pre["address"],
+                    prev_pkh=prev_pkh,
+                    confirming_pub=kn_c["public_key"],
+                    confirming_priv=kn_c["private_key"],
+                    confirming_pkh=kn_c["address"],
+                    confirming_pre=kn_c_pre["address"],
+                    confirming_twice=kn_c_twice["address"],
+                    tip_counter=tip_counter,
+                    inception=inception,
+                    batch_txns_for_auth=batch_auth,
+                    spend_template_coinbase=(batch_i == 0),
+                )
+                if unconfirmed is None:
+                    break
+
+                items = {t.transaction_signature: t for t in pending_txns}
+                items[coinbase_txn.transaction_signature] = coinbase_txn
+                items[unconfirmed.transaction_signature] = unconfirmed
+                for inp in unconfirmed.inputs:
+                    if inp.id in items:
+                        inp.input_txn = items[inp.id]
+                        items[inp.id].spent_in_txn = unconfirmed
+                pending_txns.append(unconfirmed)
+                if confirming is not None:
+                    pending_txns.append(confirming)
+
+                all_indexes.extend(settled_indexes)
+                payout_ids.append(unconfirmed.transaction_signature)
+                if confirming is not None:
+                    confirming_ids.append(confirming.transaction_signature)
+
+                batch_auth.extend(
+                    [x for x in (unconfirmed, confirming) if x is not None]
+                )
+                prev_pkh = kn_c["address"]
+                tip_counter = getattr(confirming, "counter", None)
+                cur_signer = kn_c_pre
+
+            if not payout_ids:
                 return None
-            # Same-block input links for coinbase → payout
-            items = {t.transaction_signature: t for t in pending_txns}
-            items[coinbase_txn.transaction_signature] = coinbase_txn
-            items[unconfirmed.transaction_signature] = unconfirmed
-            for inp in unconfirmed.inputs:
-                if inp.id in items:
-                    inp.input_txn = items[inp.id]
-                    items[inp.id].spent_in_txn = unconfirmed
-            pending_txns.append(unconfirmed)
-            if confirming is not None:
-                pending_txns.append(confirming)
+
             self.app_log.info(
-                "template pool settlement attached: indexes=%s u=%s",
-                settled_indexes,
-                unconfirmed.transaction_signature[:16],
+                "template pool settlement attached: batches=%d indexes=%s",
+                len(payout_ids),
+                all_indexes,
             )
             return {
-                "settled_indexes": settled_indexes,
-                "payout_txn_id": unconfirmed.transaction_signature,
-                "confirming_txn_id": (
-                    confirming.transaction_signature if confirming else None
-                ),
+                "settled_indexes": all_indexes,
+                "payout_txn_ids": payout_ids,
+                "confirming_txn_ids": confirming_ids,
+                "payout_txn_id": payout_ids[0],
+                "confirming_txn_id": confirming_ids[0] if confirming_ids else None,
             }
         except NotEnoughMoneyException as e:
             self.app_log.debug("template settlement skipped: %s", e)
@@ -412,20 +529,26 @@ class PoolPayer(object):
         """After a template wins, record share_payout rows for settled heights."""
         if not meta or not meta.get("settled_indexes"):
             return
-        payout_id = meta.get("payout_txn_id")
-        txn_doc = None
-        if payout_id:
-            for t in block.transactions:
-                if t.transaction_signature == payout_id:
-                    txn_doc = t.to_dict()
-                    break
+        payout_ids = list(meta.get("payout_txn_ids") or [])
+        if meta.get("payout_txn_id") and meta["payout_txn_id"] not in payout_ids:
+            payout_ids.insert(0, meta["payout_txn_id"])
+        txn_docs = {}
+        for t in block.transactions:
+            if t.transaction_signature in payout_ids:
+                txn_docs[t.transaction_signature] = t.to_dict()
+        primary = None
+        for pid in payout_ids:
+            if pid in txn_docs:
+                primary = txn_docs[pid]
+                break
         for index in meta["settled_indexes"]:
             await self.config.mongo.async_db.share_payout.update_one(
                 {"index": index},
                 {
                     "$set": {
                         "index": index,
-                        "txn": txn_doc,
+                        "txn": primary,
+                        "payout_txn_ids": payout_ids,
                         "block_index": block.index,
                         "block_hash": block.hash,
                     }

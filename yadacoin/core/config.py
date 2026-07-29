@@ -135,6 +135,9 @@ class Config:
         self.pool_payout = config.get("pool_payout", False)
         self.pool_take = config.get("pool_take", 0.01)
         self.payout_frequency = config.get("payout_frequency", 6)
+        self.max_payout_batches_per_block = config.get(
+            "max_payout_batches_per_block", 20
+        )
         self.max_miners = config.get("max_miners", 100)
         self.max_peers = config.get("max_peers", 20)
         self.pool_diff = config.get("pool_diff", 100000)
@@ -403,6 +406,7 @@ class Config:
                 "pool_payout": False,
                 "pool_take": 0.01,
                 "payout_frequency": 6,
+                "max_payout_batches_per_block": 20,
                 "max_miners": 100,
                 "max_peers": 20,
                 "pool_diff": 100000,
@@ -478,6 +482,9 @@ class Config:
         cls.pool_payout = config.get("pool_payout", False)
         cls.pool_take = config.get("pool_take", 0.01)
         cls.payout_frequency = config.get("payout_frequency", 6)
+        cls.max_payout_batches_per_block = config.get(
+            "max_payout_batches_per_block", 20
+        )
         cls.max_miners = config.get("max_miners", 100)
         cls.max_peers = config.get("max_peers", 20)
         cls.pool_diff = config.get("pool_diff", 100000)
@@ -644,6 +651,9 @@ class Config:
             "pool_payout": self.pool_payout,
             "pool_take": self.pool_take,
             "payout_frequency": self.payout_frequency,
+            "max_payout_batches_per_block": getattr(
+                self, "max_payout_batches_per_block", 20
+            ),
             "max_miners": self.max_miners,
             "max_peers": self.max_peers,
             "restrict_graph_api": self.restrict_graph_api,
