@@ -1216,7 +1216,6 @@ class TestVerifyCoverageGaps(TransactionTestCase):
         """Second inception for same public_key_hash is rejected."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from yadacoin.core.chain import CHAIN
         from yadacoin.core.transaction import InvalidTransactionException
 
         txn = Transaction(
@@ -1233,9 +1232,7 @@ class TestVerifyCoverageGaps(TransactionTestCase):
         mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
         with patch.object(txn.config.mongo, "async_db", mock_db):
             with self.assertRaises(InvalidTransactionException) as ctx:
-                await txn.assert_unique_inception(
-                    block_index=CHAIN.KEL_UNIQUE_INCEPTION_FORK + 1
-                )
+                await txn.assert_unique_inception(block_index=600000)
         self.assertIn("Duplicate KEL inception", str(ctx.exception))
         mock_db.blocks.find_one.assert_awaited()
 
