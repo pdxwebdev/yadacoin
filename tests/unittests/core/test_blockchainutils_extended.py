@@ -994,3 +994,191 @@ class TestGetUnspentOutputs(BUTestCase):
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
+
+
+class TestIsInputSpentExceptionPaths(BUTestCase):
+    async def test_conflicts_invalid_other_pubkey(self):
+        block = {
+            "index": 1,
+            "transactions": {
+                "id": "t1",
+                "public_key": "not-hex",
+                "inputs": [{"id": "input_id"}],
+            },
+        }
+
+        async def agg_iter(*args, **kwargs):
+            yield block
+
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__aiter__ = lambda self: agg_iter()
+        mock_db.blocks.aggregate.return_value = mock_cursor
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            with patch(
+                "yadacoin.core.blockchainutils.P2PKHBitcoinAddress.from_pubkey",
+                side_effect=lambda b: type("A", (), {"__str__": lambda s: "addr"})(),
+            ):
+                # spender ok, other fails decode in conflicts
+                result = await self.bu.is_input_spent("input_id", "bb" * 33)
+        self.assertFalse(result)
+
+    async def test_mempool_invalid_other_pk(self):
+        async def empty_iter(*args, **kwargs):
+            return
+            yield
+
+        async def mp_iter():
+            yield {"id": "m1", "public_key": "zz"}  # invalid hex
+
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__aiter__ = lambda self: empty_iter()
+        mock_db.blocks.aggregate.return_value = mock_cursor
+        mp_cursor = MagicMock()
+        mp_cursor.__aiter__ = lambda self: mp_iter()
+        mock_db.miner_transactions.find.return_value = mp_cursor
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            with patch(
+                "yadacoin.core.blockchainutils.P2PKHBitcoinAddress.from_pubkey",
+                side_effect=[
+                    type("A", (), {"__str__": lambda s: "addr"})(),  # spender
+                    Exception("bad"),  # other
+                ],
+            ):
+                result = await self.bu.is_input_spent(
+                    "input_id", "bb" * 33, inc_mempool=True
+                )
+        self.assertFalse(result)
+
+    async def test_from_index_in_query(self):
+        async def empty_iter(*args, **kwargs):
+            return
+            yield
+
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__aiter__ = lambda self: empty_iter()
+        mock_db.blocks.aggregate.return_value = mock_cursor
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            await self.bu.is_input_spent("input_id", "pk1", from_index=50)
+        pipeline = mock_db.blocks.aggregate.call_args[0][0]
+        self.assertEqual(pipeline[0], {"$match": {"index": {"$lt": 50}}})
+
+
+class TestIsInputSpentSpenderNone(BUTestCase):
+    async def test_invalid_spender_pubkey(self):
+        block = {
+            "index": 1,
+            "transactions": {
+                "public_key": "aa" * 33,
+                "inputs": [{"id": "inp"}],
+            },
+        }
+
+        async def agg():
+            yield block
+
+        mock_db = MagicMock()
+        cur = MagicMock()
+        cur.__aiter__ = lambda s: agg()
+        mock_db.blocks.aggregate.return_value = cur
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            result = await self.bu.is_input_spent("inp", "not-hex-key")
+        self.assertFalse(result)
+
+    async def test_mempool_spender_none(self):
+        async def empty():
+            return
+            yield
+
+        async def mp():
+            yield {"public_key": "aa" * 33, "id": "x"}
+
+        mock_db = MagicMock()
+        cur = MagicMock()
+        cur.__aiter__ = lambda s: empty()
+        mock_db.blocks.aggregate.return_value = cur
+        mp_cur = MagicMock()
+        mp_cur.__aiter__ = lambda s: mp()
+        mock_db.miner_transactions.find.return_value = mp_cur
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            result = await self.bu.is_input_spent(
+                "inp", "bad-spender", inc_mempool=True
+            )
+        self.assertFalse(result)
+
+    async def test_mempool_empty_other_pk(self):
+        async def empty():
+            return
+            yield
+
+        async def mp():
+            yield {"public_key": "", "id": "x"}
+            yield {"public_key": None, "id": "y"}
+
+        mock_db = MagicMock()
+        cur = MagicMock()
+        cur.__aiter__ = lambda s: empty()
+        mock_db.blocks.aggregate.return_value = cur
+        mp_cur = MagicMock()
+        mp_cur.__aiter__ = lambda s: mp()
+        mock_db.miner_transactions.find.return_value = mp_cur
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            result = await self.bu.is_input_spent("inp", "pk1", inc_mempool=True)
+        self.assertFalse(result)
+
+
+class TestIsInputSpentFinalGaps(BUTestCase):
+    async def test_conflicts_empty_other_public_key(self):
+        """Line 757: other_public_key falsy → return False."""
+        block = {
+            "index": 1,
+            "transactions": {
+                "public_key": None,
+                "inputs": [{"id": "inp"}],
+            },
+        }
+
+        async def agg():
+            yield block
+
+        mock_db = MagicMock()
+        cur = MagicMock()
+        cur.__aiter__ = lambda s: agg()
+        mock_db.blocks.aggregate.return_value = cur
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            result = await self.bu.is_input_spent("inp", "bb" * 33)
+        self.assertFalse(result)
+
+    async def test_mempool_other_from_pubkey_exception(self):
+        """Lines 848-849: from_pubkey raises on other → continue."""
+
+        async def mp():
+            yield {"public_key": "02" + "cd" * 32, "id": "x"}
+            # second doc so we continue after exception
+            yield {"public_key": "02" + "cd" * 32, "id": "y"}
+
+        mock_db = MagicMock()
+        mp_cursor = MagicMock()
+        mp_cursor.__aiter__ = lambda s: mp()
+        mock_db.miner_transactions.find.return_value = mp_cursor
+
+        n = {"c": 0}
+
+        def from_pub(b):
+            n["c"] += 1
+            # 1st = spender in get_mempool_transactions; rest = others (raise)
+            if n["c"] == 1:
+                return type("A", (), {"__str__": lambda s: "spender"})()
+            raise ValueError("bad other pubkey")
+
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            with patch(
+                "yadacoin.core.blockchainutils.P2PKHBitcoinAddress.from_pubkey",
+                side_effect=from_pub,
+            ):
+                # Call get_mempool_transactions directly so only one spender resolve
+                result = await self.bu.get_mempool_transactions("bb" * 33, ["inp"])
+        self.assertIsNone(result)
+        self.assertGreaterEqual(n["c"], 2)

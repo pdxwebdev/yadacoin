@@ -1744,6 +1744,32 @@ class TestKeyEventExtraBlocksAndMempoolCoverage(AsyncTestCase):
         self.assertIn("2.5", paths)
 
 
+class TestGetLogEmptyInception(AsyncTestCase):
+    async def test_get_log_empty_inception_pkh(self):
+        """Line 2196: latest exists but no inception/public_key_hash → []."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        latest = MagicMock()
+        latest.inception_public_key_hash = None
+        latest.public_key_hash = None
+        with patch.object(
+            KeyEventLog, "get_latest", new=AsyncMock(return_value=latest)
+        ):
+            result = await KeyEventLog.get_log(public_key="aa" * 33)
+        self.assertEqual(result, [])
+
+    async def test_get_log_latest_none(self):
+        from unittest.mock import AsyncMock, patch
+
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        with patch.object(KeyEventLog, "get_latest", new=AsyncMock(return_value=None)):
+            result = await KeyEventLog.get_log(public_key="aa" * 33)
+        self.assertEqual(result, [])
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
 

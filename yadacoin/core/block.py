@@ -183,6 +183,28 @@ class Block(object):
     async def copy(self):
         return await Block.from_json(self.to_json())
 
+    @staticmethod
+    async def _maybe_attach_pool_settlement(
+        block, config, pending_txns, triplet, coinbase_txn
+    ):
+        """Attach template pool settlement if enabled; never fail block build."""
+        block.pool_settlement_meta = None
+        if not (
+            getattr(config, "pool_payout", False)
+            and getattr(config, "pp", None) is not None
+            and coinbase_txn is not None
+            and triplet is not None
+        ):
+            return
+        try:
+            block.pool_settlement_meta = await config.pp.attach_template_settlement(
+                pending_txns, triplet, coinbase_txn, block_time=block.time
+            )
+        except Exception as exc:
+            config.app_log.warning(
+                "Block.generate: template pool settlement skipped: %s", exc
+            )
+
     @classmethod
     async def generate(
         cls,
@@ -262,21 +284,9 @@ class Block(object):
 
         # Pool settlement is template-only: same-block KEL extension after the
         # coinbase U/C pair.  If this template loses, payout never happened.
-        block.pool_settlement_meta = None
-        if (
-            getattr(config, "pool_payout", False)
-            and getattr(config, "pp", None) is not None
-            and coinbase_txn is not None
-            and triplet is not None
-        ):
-            try:
-                block.pool_settlement_meta = await config.pp.attach_template_settlement(
-                    pending_txns, triplet, coinbase_txn, block_time=block.time
-                )
-            except Exception as exc:
-                config.app_log.warning(
-                    "Block.generate: template pool settlement skipped: %s", exc
-                )
+        await Block._maybe_attach_pool_settlement(
+            block, config, pending_txns, triplet, coinbase_txn
+        )
 
         if config.LatestBlock.block.index + 1 >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK:
             items_indexed = {x.transaction_signature: x for x in pending_txns}
@@ -403,8 +413,9 @@ class Block(object):
                 )
 
             updated_outputs.append(self_output)
+            block_time = getattr(self, "time", None)
             new_coinbase = Transaction(
-                txn_time=int(self.time) if self.time else int(time.time()),
+                txn_time=int(block_time) if block_time else int(time.time()),
                 version=7,
                 outputs=updated_outputs,
                 coinbase=True,

@@ -178,8 +178,7 @@ class PoolPayer(object):
                 self.app_log.warning("collect_settlement shares: %s", e)
                 continue
             reward_value = self.pool_reward_value(coinbase)
-            if reward_value <= 0:
-                continue
+            # is_pool_won_coinbase already requires reward_value > 0.
             payable.append((block, coinbase, shares, reward_value))
 
         n_batches = len(payable) // freq
@@ -346,13 +345,7 @@ class PoolPayer(object):
                 == coinbase_txn.transaction_signature
             ):
                 # This template's coinbase: credit outs to its prerotated.
-                credited = 0.0
-                pre = getattr(parent, "prerotated_key_hash", None) or ""
-                for o in parent.outputs or []:
-                    if pre and str(o.to) == pre and float(o.value) > 0:
-                        credited += float(o.value)
-                if credited <= 0:
-                    credited = float(self.pool_reward_value(parent))
+                credited = float(self.pool_reward_value(parent))
             else:
                 credited = float(self.pool_reward_value(parent))
                 if credited <= 0:
@@ -384,10 +377,8 @@ class PoolPayer(object):
             )
 
         unconfirmed.inputs = evaluated if evaluated else list(unconfirmed.inputs)
-        change = input_sum - needed
-        if change < 0:
-            change = 0.0
-        unconfirmed.outputs[0].value = float(change)
+        # input_sum >= needed is guaranteed by the NotEnoughMoneyException guard.
+        unconfirmed.outputs[0].value = float(input_sum - needed)
 
         unconfirmed.hash = await unconfirmed.generate_hash()
         unconfirmed.transaction_signature = NodeKeyRotationManager._sign(

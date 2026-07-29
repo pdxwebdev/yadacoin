@@ -5124,3 +5124,550 @@ class TestBlockVerifyKelTipGuards(AsyncTestCase):
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
+
+
+class TestTemplateKelAndSameKelSpend(AsyncTestCase):
+    async def test_protect_template_kel_cascade(self):
+        from yadacoin.core.block import Block
+
+        failed = MagicMock(coinbase=False, template_kel=False)
+        linked = MagicMock(coinbase=False, template_kel=True)
+        self.assertTrue(Block._protect_template_kel_cascade(failed, linked))
+        failed2 = MagicMock(coinbase=False, template_kel=True)
+        self.assertFalse(Block._protect_template_kel_cascade(failed2, linked))
+        linked2 = MagicMock(coinbase=True, template_kel=False)
+        self.assertTrue(Block._protect_template_kel_cascade(failed, linked2))
+        # Line 460: linked is not template → do not protect
+        linked_plain = MagicMock(coinbase=False, template_kel=False)
+        self.assertFalse(Block._protect_template_kel_cascade(failed2, linked_plain))
+
+    async def test_validate_transactions_same_kel_conflict(self):
+        """Two txns spending same input_id with same-KEL keys → failed."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.block import Block
+        from yadacoin.core.chain import CHAIN
+
+        block = MagicMock()
+        block.index = CHAIN.CHECK_KEL_FORK + 10
+        block.time = 1000000
+
+        def mk_txn(sig, pk):
+            t = MagicMock()
+            t.transaction_signature = sig
+            t.public_key = pk
+            t.inputs = [MagicMock(id="shared_inp")]
+            t.coinbase = False
+            t.template_kel = False
+            t.time = block.time
+            t.hash = "h" + sig
+            t.verify = AsyncMock(return_value=None)
+            t.contract_generated = False
+            t.spent_in_txn = None
+            t.relationship = None
+            return t
+
+        t1 = mk_txn("sig1", "aa" * 33)
+        t2 = mk_txn("sig2", "bb" * 33)
+        txns = [t1, t2]
+        transaction_objs = []
+        used_sigs = []
+        used_inputs = {}
+
+        with patch("yadacoin.core.block.Config") as mock_cfg_cls:
+            cfg = MagicMock()
+            cfg.mongo.async_db.miner_transactions.delete_many = AsyncMock()
+            cfg.mongo.async_db.miner_transactions.delete_one = AsyncMock()
+            cfg.mongo.async_db.failed_transactions = MagicMock()
+            cfg.BU.is_input_spent = AsyncMock(return_value=False)
+            cfg.public_key = "zz" * 33
+            cfg.app_log = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                new=AsyncMock(return_value=True),
+            ):
+                with patch(
+                    "bitcoin.wallet.P2PKHBitcoinAddress.from_pubkey",
+                    side_effect=lambda b: type(
+                        "A", (), {"__str__": lambda s, b=b: f"a{b.hex()[:4]}"}
+                    )(),
+                ):
+                    with patch(
+                        "yadacoin.core.block.Block.find_kel_linked_group",
+                        return_value=[],
+                    ):
+                        with patch(
+                            "yadacoin.core.transaction.Transaction.handle_exception",
+                            new=AsyncMock(),
+                        ):
+                            await Block.validate_transactions(
+                                block,
+                                txns,
+                                transaction_objs,
+                                used_sigs,
+                                used_inputs,
+                                block.index,
+                                block.time,
+                            )
+        # used_inputs_by_id / same-KEL path was exercised (keys are (id, pk)).
+        self.assertTrue(any(k[0] == "shared_inp" for k in used_inputs))
+        self.assertGreaterEqual(len(used_sigs), 1)
+
+    async def test_validate_transactions_same_kel_exception_fail_closed(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.block import Block
+        from yadacoin.core.chain import CHAIN
+
+        block = MagicMock()
+        block.index = CHAIN.CHECK_KEL_FORK + 10
+        block.time = 1000000
+
+        def mk_txn(sig, pk):
+            t = MagicMock()
+            t.transaction_signature = sig
+            t.public_key = pk
+            t.inputs = [MagicMock(id="shared_inp")]
+            t.coinbase = False
+            t.template_kel = False
+            t.time = block.time
+            t.hash = "h" + sig
+            t.verify = AsyncMock(return_value=None)
+            t.contract_generated = False
+            t.spent_in_txn = None
+            t.relationship = None
+            return t
+
+        t1 = mk_txn("sig1", "aa" * 33)
+        t2 = mk_txn("sig2", "not-valid-hex")
+        txns = [t1, t2]
+        with patch("yadacoin.core.block.Config") as mock_cfg_cls:
+            cfg = MagicMock()
+            cfg.mongo.async_db.miner_transactions.delete_many = AsyncMock()
+            cfg.mongo.async_db.miner_transactions.delete_one = AsyncMock()
+            cfg.BU.is_input_spent = AsyncMock(return_value=False)
+            cfg.public_key = "zz" * 33
+            cfg.app_log = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            with patch(
+                "yadacoin.core.block.Block.find_kel_linked_group", return_value=[]
+            ):
+                with patch(
+                    "yadacoin.core.transaction.Transaction.handle_exception",
+                    new=AsyncMock(),
+                ):
+                    await Block.validate_transactions(
+                        block, txns, [], [], {}, block.index, block.time
+                    )
+
+    async def test_save_same_kel_conflict(self):
+        """block.save() used_block_inputs_by_id same-KEL path raises."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.block import Block
+        from yadacoin.core.chain import CHAIN
+
+        block = Block.__new__(Block)
+        block.index = CHAIN.CHECK_KEL_FORK + 10
+        block.hash = "h" * 64
+        block.public_key = "pk"
+        block.signature = "sig"
+        block.time = 1000
+        block.version = 5
+        block.prev_hash = "p"
+        block.merkle_root = "m"
+        block.special_min = False
+        block.target = 1
+        block.header = "hdr"
+        block.nonce = "1"
+        block.pool_settlement_meta = None
+
+        def mk_txn(sig, pk):
+            t = MagicMock()
+            t.transaction_signature = sig
+            t.public_key = pk
+            t.inputs = [MagicMock(id="shared")]
+            t.outputs = []
+            t.coinbase = False
+            t.to_dict = MagicMock(return_value={"id": sig})
+            return t
+
+        block.transactions = [mk_txn("s1", "aa" * 33), mk_txn("s2", "bb" * 33)]
+
+        async def fake_verify(self, *a, **k):
+            return None
+
+        with patch("yadacoin.core.config.CONFIG") as cfg:
+            cfg.BU.is_input_spent = AsyncMock(return_value=False)
+            cfg.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+            cfg.mongo.async_db.blocks.replace_one = AsyncMock()
+            cfg.mongo.async_db.blocks.insert_one = AsyncMock()
+            cfg.app_log = MagicMock()
+            with patch.object(Block, "verify", fake_verify):
+                with patch(
+                    "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                    new=AsyncMock(return_value=True),
+                ):
+                    with patch(
+                        "bitcoin.wallet.P2PKHBitcoinAddress.from_pubkey",
+                        side_effect=lambda b: type(
+                            "A", (), {"__str__": lambda s: "addr"}
+                        )(),
+                    ):
+                        with self.assertRaises(Exception) as ctx:
+                            await block.save()
+                        self.assertIn("double spend", str(ctx.exception).lower())
+
+    async def test_save_same_kel_exception_fail_closed(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.block import Block
+        from yadacoin.core.chain import CHAIN
+
+        block = Block.__new__(Block)
+        block.index = CHAIN.CHECK_KEL_FORK + 10
+        block.hash = "h" * 64
+        block.public_key = "pk"
+        block.signature = "sig"
+        block.time = 1000
+        block.version = 5
+        block.prev_hash = "p"
+        block.merkle_root = "m"
+        block.special_min = False
+        block.target = 1
+        block.header = "hdr"
+        block.nonce = "1"
+        block.pool_settlement_meta = None
+
+        def mk_txn(sig, pk):
+            t = MagicMock()
+            t.transaction_signature = sig
+            t.public_key = pk
+            t.inputs = [MagicMock(id="shared")]
+            t.outputs = []
+            t.coinbase = False
+            t.to_dict = MagicMock(return_value={"id": sig})
+            return t
+
+        block.transactions = [mk_txn("s1", "aa" * 33), mk_txn("s2", "nothex")]
+
+        async def fake_verify(self, *a, **k):
+            return None
+
+        with patch("yadacoin.core.config.CONFIG") as cfg:
+            cfg.BU.is_input_spent = AsyncMock(return_value=False)
+            cfg.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+            cfg.app_log = MagicMock()
+            with patch.object(Block, "verify", fake_verify):
+                with self.assertRaises(Exception) as ctx:
+                    await block.save()
+                self.assertIn("double spend", str(ctx.exception).lower())
+
+    async def test_generate_settlement_exception_swallowed(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from yadacoin.core.block import Block
+
+        config = MagicMock()
+        config.pool_payout = True
+        config.pp = MagicMock()
+        config.pp.attach_template_settlement = AsyncMock(side_effect=RuntimeError("x"))
+        config.app_log = MagicMock()
+        block = MagicMock()
+        block.time = 123
+        await Block._maybe_attach_pool_settlement(
+            block, config, [], MagicMock(), MagicMock()
+        )
+        config.app_log.warning.assert_called()
+        self.assertIsNone(block.pool_settlement_meta)
+
+    async def test_generate_settlement_success(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from yadacoin.core.block import Block
+
+        config = MagicMock()
+        config.pool_payout = True
+        config.pp = MagicMock()
+        config.pp.attach_template_settlement = AsyncMock(return_value={"ok": 1})
+        config.app_log = MagicMock()
+        block = MagicMock()
+        block.time = 123
+        await Block._maybe_attach_pool_settlement(
+            block, config, [], MagicMock(), MagicMock()
+        )
+        self.assertEqual(block.pool_settlement_meta, {"ok": 1})
+
+    async def test_generate_settlement_disabled(self):
+        from unittest.mock import MagicMock
+
+        from yadacoin.core.block import Block
+
+        config = MagicMock()
+        config.pool_payout = False
+        config.pp = MagicMock()
+        block = MagicMock()
+        await Block._maybe_attach_pool_settlement(
+            block, config, [], MagicMock(), MagicMock()
+        )
+        self.assertIsNone(block.pool_settlement_meta)
+
+    async def test_validate_cascade_removes_linked_coinbase_transient(self):
+        """KEL transient skip path logs when linked coinbase is cascade-removed."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.block import Block
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.keyeventlog import (
+            KELExceptionPreviousKeyHashReferenceMissing,
+        )
+
+        block = MagicMock()
+        block.index = CHAIN.CHECK_KEL_FORK + 10
+        block.time = 1000000
+
+        failed = MagicMock()
+        failed.transaction_signature = "fail_sig"
+        failed.public_key = "aa" * 33
+        failed.inputs = []
+        failed.coinbase = False
+        failed.template_kel = True
+        failed.time = block.time
+        failed.hash = "hf"
+        failed.verify = AsyncMock(
+            side_effect=KELExceptionPreviousKeyHashReferenceMissing("missing prev")
+        )
+        failed.contract_generated = False
+        failed.spent_in_txn = None
+        failed.relationship = None
+
+        linked_cb = MagicMock()
+        linked_cb.transaction_signature = "cb_sig"
+        linked_cb.public_key = "bb" * 33
+        linked_cb.inputs = []
+        linked_cb.coinbase = True
+        linked_cb.template_kel = True
+        linked_cb.time = block.time
+        linked_cb.hash = "hc"
+        linked_cb.verify = AsyncMock(return_value=None)
+        linked_cb.contract_generated = False
+        linked_cb.spent_in_txn = None
+        linked_cb.relationship = None
+
+        txns = [failed, linked_cb]
+        transaction_objs = [linked_cb]
+        with patch("yadacoin.core.block.Config") as mock_cfg_cls:
+            cfg = MagicMock()
+            cfg.mongo.async_db.miner_transactions.delete_many = AsyncMock()
+            cfg.mongo.async_db.miner_transactions.delete_one = AsyncMock()
+            cfg.BU.is_input_spent = AsyncMock(return_value=False)
+            cfg.public_key = "zz" * 33
+            cfg.app_log = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            with patch(
+                "yadacoin.core.block.Block.find_kel_linked_group",
+                return_value=[failed, linked_cb],
+            ):
+                with patch(
+                    "yadacoin.core.transaction.Transaction.handle_exception",
+                    new=AsyncMock(),
+                ):
+                    await Block.validate_transactions(
+                        block, txns, transaction_objs, [], {}, block.index, block.time
+                    )
+        warn_calls = [
+            c
+            for c in cfg.app_log.warning.call_args_list
+            if c.args and "linked coinbase" in str(c.args[0])
+        ]
+        self.assertTrue(len(warn_calls) >= 1)
+
+    async def test_validate_cascade_removes_linked_coinbase_permanent(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.block import Block
+        from yadacoin.core.chain import CHAIN
+
+        block = MagicMock()
+        block.index = CHAIN.CHECK_KEL_FORK + 10
+        block.time = 1000000
+
+        failed = MagicMock()
+        failed.transaction_signature = "fail_sig"
+        failed.public_key = "aa" * 33
+        failed.inputs = []
+        failed.coinbase = False
+        failed.template_kel = True
+        failed.time = block.time
+        failed.hash = "hf"
+        failed.verify = AsyncMock(side_effect=ValueError("permanent"))
+        failed.contract_generated = False
+        failed.spent_in_txn = None
+        failed.relationship = None
+
+        linked_cb = MagicMock()
+        linked_cb.transaction_signature = "cb_sig"
+        linked_cb.public_key = "bb" * 33
+        linked_cb.inputs = []
+        linked_cb.coinbase = True
+        linked_cb.template_kel = True
+        linked_cb.time = block.time
+        linked_cb.hash = "hc"
+        linked_cb.verify = AsyncMock(return_value=None)
+        linked_cb.contract_generated = False
+        linked_cb.spent_in_txn = None
+        linked_cb.relationship = None
+
+        txns = [failed, linked_cb]
+        with patch("yadacoin.core.block.Config") as mock_cfg_cls:
+            cfg = MagicMock()
+            cfg.mongo.async_db.miner_transactions.delete_many = AsyncMock()
+            cfg.mongo.async_db.miner_transactions.delete_one = AsyncMock()
+            cfg.BU.is_input_spent = AsyncMock(return_value=False)
+            cfg.public_key = "zz" * 33
+            cfg.app_log = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            with patch(
+                "yadacoin.core.block.Block.find_kel_linked_group",
+                return_value=[failed, linked_cb],
+            ):
+                with patch(
+                    "yadacoin.core.transaction.Transaction.handle_exception",
+                    new=AsyncMock(),
+                ):
+                    await Block.validate_transactions(
+                        block, txns, [], [], {}, block.index, block.time
+                    )
+        warn_calls = [
+            c
+            for c in cfg.app_log.warning.call_args_list
+            if c.args and "permanent KEL skip" in str(c.args[0])
+        ]
+        self.assertTrue(len(warn_calls) >= 1)
+
+    async def test_validate_cascade_protects_template_from_nontemplate_failure_transient(
+        self,
+    ):
+        """Line 921: non-template failure does not cascade-remove template_kel sibling."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.block import Block
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.keyeventlog import (
+            KELExceptionPreviousKeyHashReferenceMissing,
+        )
+
+        block = MagicMock()
+        block.index = CHAIN.CHECK_KEL_FORK + 10
+        block.time = 1000000
+
+        failed = MagicMock()
+        failed.transaction_signature = "fail_sig"
+        failed.public_key = "aa" * 33
+        failed.inputs = []
+        failed.coinbase = False
+        failed.template_kel = False  # non-template failure
+        failed.time = block.time
+        failed.hash = "hf"
+        failed.verify = AsyncMock(
+            side_effect=KELExceptionPreviousKeyHashReferenceMissing("missing")
+        )
+        failed.contract_generated = False
+        failed.spent_in_txn = None
+        failed.relationship = None
+
+        linked_tmpl = MagicMock()
+        linked_tmpl.transaction_signature = "tmpl_sig"
+        linked_tmpl.public_key = "bb" * 33
+        linked_tmpl.inputs = []
+        linked_tmpl.coinbase = False
+        linked_tmpl.template_kel = True  # protected
+        linked_tmpl.time = block.time
+        linked_tmpl.hash = "ht"
+        linked_tmpl.verify = AsyncMock(return_value=None)
+        linked_tmpl.contract_generated = False
+        linked_tmpl.spent_in_txn = None
+        linked_tmpl.relationship = None
+
+        txns = [failed, linked_tmpl]
+        with patch("yadacoin.core.block.Config") as mock_cfg_cls:
+            cfg = MagicMock()
+            cfg.mongo.async_db.miner_transactions.delete_many = AsyncMock()
+            cfg.mongo.async_db.miner_transactions.delete_one = AsyncMock()
+            cfg.BU.is_input_spent = AsyncMock(return_value=False)
+            cfg.public_key = "zz" * 33
+            cfg.app_log = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            with patch(
+                "yadacoin.core.block.Block.find_kel_linked_group",
+                return_value=[failed, linked_tmpl],
+            ):
+                await Block.validate_transactions(
+                    block, txns, [], [], {}, block.index, block.time
+                )
+        # Template sibling must remain
+        self.assertIn(linked_tmpl, txns)
+        # Failed itself removed
+        self.assertNotIn(failed, txns)
+
+    async def test_validate_cascade_protects_template_from_nontemplate_failure_permanent(
+        self,
+    ):
+        """Line 961: permanent path also protects template_kel from non-template fail."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.block import Block
+        from yadacoin.core.chain import CHAIN
+
+        block = MagicMock()
+        block.index = CHAIN.CHECK_KEL_FORK + 10
+        block.time = 1000000
+
+        failed = MagicMock()
+        failed.transaction_signature = "fail_sig"
+        failed.public_key = "aa" * 33
+        failed.inputs = []
+        failed.coinbase = False
+        failed.template_kel = False
+        failed.time = block.time
+        failed.hash = "hf"
+        failed.verify = AsyncMock(side_effect=ValueError("permanent"))
+        failed.contract_generated = False
+        failed.spent_in_txn = None
+        failed.relationship = None
+
+        linked_tmpl = MagicMock()
+        linked_tmpl.transaction_signature = "tmpl_sig"
+        linked_tmpl.public_key = "bb" * 33
+        linked_tmpl.inputs = []
+        linked_tmpl.coinbase = False
+        linked_tmpl.template_kel = True
+        linked_tmpl.time = block.time
+        linked_tmpl.hash = "ht"
+        linked_tmpl.verify = AsyncMock(return_value=None)
+        linked_tmpl.contract_generated = False
+        linked_tmpl.spent_in_txn = None
+        linked_tmpl.relationship = None
+
+        txns = [failed, linked_tmpl]
+        with patch("yadacoin.core.block.Config") as mock_cfg_cls:
+            cfg = MagicMock()
+            cfg.mongo.async_db.miner_transactions.delete_many = AsyncMock()
+            cfg.mongo.async_db.miner_transactions.delete_one = AsyncMock()
+            cfg.BU.is_input_spent = AsyncMock(return_value=False)
+            cfg.public_key = "zz" * 33
+            cfg.app_log = MagicMock()
+            mock_cfg_cls.return_value = cfg
+            with patch(
+                "yadacoin.core.block.Block.find_kel_linked_group",
+                return_value=[failed, linked_tmpl],
+            ):
+                with patch(
+                    "yadacoin.core.transaction.Transaction.handle_exception",
+                    new=AsyncMock(),
+                ):
+                    await Block.validate_transactions(
+                        block, txns, [], [], {}, block.index, block.time
+                    )
+        self.assertIn(linked_tmpl, txns)

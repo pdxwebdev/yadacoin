@@ -1297,6 +1297,586 @@ class TestVerifyCoverageGaps(TransactionTestCase):
         # Would fail if it queried mongo without short-circuit.
         await txn.assert_unique_inception(block_index=700000)
 
+    async def test_assert_unique_inception_rejects_extra_blocks(self):
+        from yadacoin.core.transaction import InvalidTransactionException
+
+        a = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1PreA",
+            twice_prerotated_key_hash="1TwiceA",
+            public_key_hash="1Same",
+            prev_public_key_hash="",
+            transaction_signature="sig-a",
+            inception_public_key_hash="1Same",
+        )
+        b = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1PreB",
+            twice_prerotated_key_hash="1TwiceB",
+            public_key_hash="1Same",
+            prev_public_key_hash="",
+            transaction_signature="sig-b",
+            inception_public_key_hash="1Same",
+        )
+        eb = MagicMock()
+        eb.index = 10
+        eb.transactions = [a]
+        with self.assertRaises(InvalidTransactionException):
+            await b.assert_unique_inception(block_index=20, extra_blocks=[eb])
+
+    async def test_assert_unique_inception_rejects_mempool(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.transaction import InvalidTransactionException
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1PkHash",
+            prev_public_key_hash="",
+            transaction_signature="sig-new",
+            inception_public_key_hash="1PkHash",
+        )
+        mock_db = MagicMock()
+        mock_db.blocks.find_one = AsyncMock(return_value=None)
+        mock_db.miner_transactions.find_one = AsyncMock(return_value={"id": "other"})
+        with patch.object(txn.config.mongo, "async_db", mock_db):
+            with self.assertRaises(InvalidTransactionException):
+                await txn.assert_unique_inception(block_index=700000)
+
+    async def test_assert_unique_inception_skips_no_kel_fields(self):
+        txn = Transaction(public_key=self.public_key)
+        await txn.assert_unique_inception(block_index=700000)
+
+    async def test_assert_unique_inception_skips_recovery(self):
+        from yadacoin.core.recoveryannouncement import RecoveryProof
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1Pk",
+            prev_public_key_hash="",
+            transaction_signature="sig-r",
+        )
+        txn.relationship = RecoveryProof("aa" * 32, "bb" * 32, "cc" * 32)
+        await txn.assert_unique_inception(block_index=700000)
+
+    async def test_output_owned_by_kel_spender(self):
+        from unittest.mock import AsyncMock, patch
+
+        txn = Transaction(public_key=self.public_key)
+        txn.inception_public_key_hash = "1Inc"
+        self.assertTrue(await txn._output_owned_by_kel_spender("addr", "addr", False))
+        self.assertFalse(await txn._output_owned_by_kel_spender("other", "addr", False))
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+            new=AsyncMock(
+                return_value=MagicMock(
+                    inception_public_key_hash="1Inc", public_key_hash="1Inc"
+                )
+            ),
+        ):
+            self.assertTrue(
+                await txn._output_owned_by_kel_spender("out", "spender", True)
+            )
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+            new=AsyncMock(return_value=None),
+        ):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                new=AsyncMock(return_value=True),
+            ):
+                self.assertTrue(
+                    await txn._output_owned_by_kel_spender("out", "spender", True)
+                )
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+            new=AsyncMock(return_value=None),
+        ):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                new=AsyncMock(return_value=False),
+            ):
+                self.assertFalse(
+                    await txn._output_owned_by_kel_spender("out", "spender", True)
+                )
+
+    async def test_get_kel_cross_key_auth_batch_walk(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        spender = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1TipPre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1TipPkh",
+            prev_public_key_hash="1MidPre",
+            inception_public_key_hash="1Inc",
+            transaction_signature="sig-tip",
+        )
+        parent = MagicMock()
+        parent.are_kel_fields_populated = lambda: True
+        parent.transaction_signature = "sig-parent"
+        parent.prev_public_key_hash = "1OnchainPkh"
+        parent.public_key_hash = "1OnchainPre"
+        parent.prerotated_key_hash = "1TipPkh"
+        parent.inception_public_key_hash = "1Inc"
+
+        mid = MagicMock()
+        mid.are_kel_fields_populated = lambda: True
+        mid.transaction_signature = "sig-mid"
+        mid.prev_public_key_hash = "1OnchainPre"
+        mid.public_key_hash = "1TipPkh"
+        mid.prerotated_key_hash = "1TipPre"
+        mid.inception_public_key_hash = "1Inc"
+
+        latest = MagicMock()
+        latest.public_key_hash = "1OnchainPkh"
+        latest.prerotated_key_hash = "1OnchainPre"
+
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK + 10
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog._latest_from_inception_tag",
+                new=AsyncMock(return_value=latest),
+            ):
+                ok = await spender.get_kel_cross_key_auth(
+                    "1TipPre", mempool=True, batch_txns=[parent, mid, spender]
+                )
+        self.assertTrue(ok)
+
+    async def test_sum_inputs_kel_parent_inc_match(self):
+        """sum_inputs credits prerotated out via parent inception match."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.transaction import Output
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+            inception_public_key_hash="1Inc",
+        )
+        out = Output(to="1Pre", value=10.0)
+        out_zero = Output(to="1Pre", value=0.0)
+        parent = MagicMock()
+        parent.outputs = [out_zero, out]
+        parent.inception_public_key_hash = "1Inc"
+        parent.prerotated_key_hash = "1Pre"
+        inp = MagicMock()
+        inputs = []
+        with patch.object(
+            txn, "get_kel_cross_key_auth", new=AsyncMock(return_value=True)
+        ):
+            with patch.object(
+                txn,
+                "_output_owned_by_kel_spender",
+                new=AsyncMock(return_value=False),
+            ):
+                total = await txn.sum_inputs(inp, parent, "1Spender", 0.0, inputs, 5.0)
+        self.assertEqual(total, 10.0)
+        self.assertEqual(len(inputs), 1)
+
+    async def test_sum_inputs_auth_exception(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.transaction import Output
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+        )
+        parent = MagicMock()
+        parent.outputs = [Output(to="1X", value=1.0)]
+        with patch.object(
+            txn, "get_kel_cross_key_auth", new=AsyncMock(side_effect=RuntimeError("x"))
+        ):
+            total = await txn.sum_inputs(MagicMock(), parent, "1X", 0.0, [], 10.0)
+        # auth failed → kel_log_spend False → exact address match still works
+        self.assertEqual(total, 1.0)
+
+    async def test_assert_unique_inception_empty_pkh(self):
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="",
+            prev_public_key_hash="",
+            transaction_signature="s",
+        )
+        # Force are_kel_fields true but empty pkh
+        txn.public_key_hash = ""
+        txn.prerotated_key_hash = "1Pre"
+        txn.twice_prerotated_key_hash = "1T"
+        txn.prev_public_key_hash = ""
+        await txn.assert_unique_inception()
+
+    async def test_assert_unique_inception_skips_future_extra_block(self):
+        a = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1PreA",
+            twice_prerotated_key_hash="1TwiceA",
+            public_key_hash="1Same",
+            prev_public_key_hash="",
+            transaction_signature="sig-a",
+            inception_public_key_hash="1Same",
+        )
+        b = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1PreB",
+            twice_prerotated_key_hash="1TwiceB",
+            public_key_hash="1Same",
+            prev_public_key_hash="",
+            transaction_signature="sig-b",
+            inception_public_key_hash="1Same",
+        )
+        eb = MagicMock()
+        eb.index = 50  # >= block_index → skip
+        eb.transactions = [a]
+        from unittest.mock import AsyncMock, patch
+
+        mock_db = MagicMock()
+        mock_db.blocks.find_one = AsyncMock(return_value=None)
+        mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        with patch.object(b.config.mongo, "async_db", mock_db):
+            await b.assert_unique_inception(block_index=20, extra_blocks=[eb])
+
+    async def test_assert_unique_inception_other_not_kel(self):
+        from unittest.mock import AsyncMock, patch
+
+        a = MagicMock()
+        a.transaction_signature = "sig-a"
+        a.are_kel_fields_populated = lambda: False
+        a.prev_public_key_hash = ""
+        a.public_key_hash = "1Same"
+        b = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1PreB",
+            twice_prerotated_key_hash="1TwiceB",
+            public_key_hash="1Same",
+            prev_public_key_hash="",
+            transaction_signature="sig-b",
+            inception_public_key_hash="1Same",
+        )
+        mock_db = MagicMock()
+        mock_db.blocks.find_one = AsyncMock(return_value=None)
+        mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        with patch.object(b.config.mongo, "async_db", mock_db):
+            await b.assert_unique_inception(batch_txns=[a, b])
+
+    async def test_get_kel_cross_key_auth_from_batch_tag(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+            # no inception on self
+        )
+        sibling = MagicMock()
+        sibling.inception_public_key_hash = "1Inc"
+        sibling.are_kel_fields_populated = lambda: True
+        sibling.transaction_signature = "sib"
+        sibling.prev_public_key_hash = "x"
+        sibling.public_key_hash = "y"
+        sibling.prerotated_key_hash = "z"
+        latest = MagicMock(public_key_hash="1Pk", prerotated_key_hash="1Pre")
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog._latest_from_inception_tag",
+                new=AsyncMock(return_value=latest),
+            ):
+                ok = await txn.get_kel_cross_key_auth("1Pre", batch_txns=[sibling])
+        self.assertTrue(ok)
+
+    async def test_get_kel_cross_key_auth_resolve_via_address(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+        )
+        inception = MagicMock(
+            inception_public_key_hash="1Inc",
+            public_key_hash="1Inc",
+            public_key="aa" * 33,
+        )
+        latest = MagicMock(public_key_hash="1A", prerotated_key_hash="1Pre")
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                new=AsyncMock(return_value=inception),
+            ):
+                with patch(
+                    "yadacoin.core.keyeventlog.KeyEventLog._latest_from_inception_tag",
+                    new=AsyncMock(return_value=latest),
+                ):
+                    ok = await txn.get_kel_cross_key_auth("1Pre")
+        self.assertTrue(ok)
+
+    async def test_get_kel_cross_key_auth_no_batch_false(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+            inception_public_key_hash="1Inc",
+        )
+        latest = MagicMock(public_key_hash="1A", prerotated_key_hash="1Other")
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog._latest_from_inception_tag",
+                new=AsyncMock(return_value=latest),
+            ):
+                ok = await txn.get_kel_cross_key_auth("1Pre", batch_txns=None)
+        self.assertFalse(ok)
+
+    async def test_get_kel_cross_key_auth_block_index(self):
+        from unittest.mock import MagicMock
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+            inception_public_key_hash="1Inc",
+        )
+        block = MagicMock()
+        block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK - 1
+        self.assertFalse(await txn.get_kel_cross_key_auth("1Pre", block=block))
+
+    async def test_get_kel_cross_key_auth_empty_cand_and_batch_resolve(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="",
+            prev_public_key_hash="",
+            # no inception tag on self
+        )
+        # Force empty public_key_hash after construct
+        txn.public_key_hash = ""
+        txn.prev_public_key_hash = ""
+        batch_t = MagicMock()
+        batch_t.prev_public_key_hash = ""
+        batch_t.public_key_hash = ""
+        batch_t.prerotated_key_hash = "1Cand"
+        batch_t.are_kel_fields_populated = lambda: True
+        batch_t.transaction_signature = "b"
+        inception = MagicMock(
+            inception_public_key_hash="1Inc", public_key_hash="1Inc", public_key=None
+        )
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK + 1
+
+        async def get_inc(address=None, **k):
+            if address == "1Cand":
+                return inception
+            return None
+
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                new=AsyncMock(side_effect=get_inc),
+            ):
+                with patch(
+                    "yadacoin.core.keyeventlog.KeyEventLog._latest_from_inception_tag",
+                    new=AsyncMock(return_value=None),
+                ):
+                    # latest None → False
+                    ok = await txn.get_kel_cross_key_auth("addr", batch_txns=[batch_t])
+        self.assertFalse(ok)
+
+    async def test_get_kel_cross_key_auth_latest_from_inception_pubkey(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+        )
+        inception = MagicMock(
+            inception_public_key_hash="1Inc",
+            public_key_hash="1Inc",
+            public_key="aa" * 33,
+        )
+        latest = MagicMock(public_key_hash="1A", prerotated_key_hash="1Pre")
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                new=AsyncMock(return_value=inception),
+            ):
+                with patch(
+                    "yadacoin.core.keyeventlog.KeyEventLog._latest_from_inception_tag",
+                    new=AsyncMock(return_value=None),
+                ):
+                    with patch(
+                        "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+                        new=AsyncMock(return_value=latest),
+                    ):
+                        ok = await txn.get_kel_cross_key_auth("1Pre")
+        self.assertTrue(ok)
+
+    async def test_get_kel_cross_key_auth_walk_skips_non_kel(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1TipPre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1TipPkh",
+            prev_public_key_hash="1Mid",
+            inception_public_key_hash="1Inc",
+            transaction_signature="sig-tip",
+        )
+        junk = MagicMock()
+        junk.are_kel_fields_populated = lambda: False
+        junk.transaction_signature = "junk"
+        # same signature as self should skip
+        twin = MagicMock()
+        twin.are_kel_fields_populated = lambda: True
+        twin.transaction_signature = "sig-tip"
+        twin.prev_public_key_hash = "x"
+        twin.public_key_hash = "y"
+        twin.prerotated_key_hash = "z"
+        latest = MagicMock(public_key_hash="1A", prerotated_key_hash="1B")
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog._latest_from_inception_tag",
+                new=AsyncMock(return_value=latest),
+            ):
+                ok = await txn.get_kel_cross_key_auth(
+                    "1TipPre", batch_txns=[junk, twin, txn]
+                )
+        self.assertFalse(ok)
+
+    async def test_assert_unique_other_has_prev(self):
+        from unittest.mock import AsyncMock, patch
+
+        a = MagicMock()
+        a.transaction_signature = "sig-a"
+        a.are_kel_fields_populated = lambda: True
+        a.prev_public_key_hash = "1Prev"  # rotation, not inception
+        a.public_key_hash = "1Same"
+        b = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1PreB",
+            twice_prerotated_key_hash="1TwiceB",
+            public_key_hash="1Same",
+            prev_public_key_hash="",
+            transaction_signature="sig-b",
+            inception_public_key_hash="1Same",
+        )
+        mock_db = MagicMock()
+        mock_db.blocks.find_one = AsyncMock(return_value=None)
+        mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        with patch.object(b.config.mongo, "async_db", mock_db):
+            await b.assert_unique_inception(batch_txns=[a, b])
+
+    async def test_verify_owned_via_parent_inc(self):
+        """verify() credits out when parent inception matches."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+        from yadacoin.core.transaction import Input, Output
+
+        parent = Transaction(
+            public_key=self.public_key,
+            outputs=[Output(to="1PreParent", value=5.0)],
+            prerotated_key_hash="1PreParent",
+            twice_prerotated_key_hash="1T",
+            public_key_hash="1PkP",
+            prev_public_key_hash="",
+            inception_public_key_hash="1Inc",
+            transaction_signature="parent_sig",
+            coinbase=True,
+        )
+        txn = Transaction(
+            public_key=self.public_key,
+            outputs=[Output(to="1Dest", value=4.0)],
+            fee=1.0,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash=str(
+                __import__(
+                    "bitcoin.wallet", fromlist=["P2PKHBitcoinAddress"]
+                ).P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
+            ),
+            prev_public_key_hash="1Prev",
+            inception_public_key_hash="1Inc",
+        )
+        txn.inputs = [Input(signature="parent_sig", input_txn=parent)]
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = NodeKeyRotationManager._sign(
+            self.private_key, txn.hash
+        )
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK + 10
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch.object(
+                txn, "get_kel_cross_key_auth", new=AsyncMock(return_value=True)
+            ):
+                with patch.object(
+                    txn,
+                    "_output_owned_by_kel_spender",
+                    new=AsyncMock(return_value=False),
+                ):
+                    with patch.object(
+                        txn, "has_key_event_log", new=AsyncMock(return_value=False)
+                    ):
+                        with patch.object(
+                            txn, "assert_unique_inception", new=AsyncMock()
+                        ):
+                            await txn.verify(check_input_spent=False, check_kel=False)
+
     async def test_get_kel_cross_key_auth_block_branch(self):
         """Below fork: get_kel_cross_key_auth returns False."""
         from unittest.mock import MagicMock
@@ -1825,3 +2405,240 @@ class TestVerifyCheckKelBatchAndPrevHash(TransactionTestCase):
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
+
+
+class TestNewCodeCoverageFinal(TransactionTestCase):
+    async def test_to_dict_includes_counter_and_inception(self):
+        txn = Transaction(
+            public_key=self.public_key,
+            outputs=[],
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1T",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+            counter=7,
+            inception_public_key_hash="1Inc",
+        )
+        d = txn.to_dict()
+        self.assertEqual(d["counter"], 7)
+        self.assertEqual(d["inception_public_key_hash"], "1Inc")
+
+    async def test_has_key_event_log_bad_pubkey(self):
+        txn = Transaction(public_key="not-hex")
+        self.assertFalse(await txn.has_key_event_log())
+
+    async def test_has_key_event_log_no_pubkey(self):
+        txn = Transaction(public_key="")
+        self.assertFalse(await txn.has_key_event_log())
+
+    async def test_get_kel_cross_inception_none(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1T",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+        )
+        txn.inception_public_key_hash = None
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                new=AsyncMock(return_value=None),
+            ):
+                self.assertFalse(await txn.get_kel_cross_key_auth("1Pre"))
+
+    async def test_get_kel_cross_batch_empty_cands(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1T",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+        )
+        # No inception on self; batch members have empty cand fields only
+        txn.inception_public_key_hash = None
+        t = MagicMock(spec=[])  # no auto attrs
+        # manually set only what we need
+        type(t).prev_public_key_hash = None
+        type(t).public_key_hash = None
+        type(t).prerotated_key_hash = None
+        type(t).inception_public_key_hash = None
+        type(t).are_kel_fields_populated = lambda self: True
+        type(t).transaction_signature = "t1"
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                new=AsyncMock(return_value=None),
+            ):
+                # address cand will be tried and return None
+                self.assertFalse(
+                    await txn.get_kel_cross_key_auth("addr", batch_txns=[t])
+                )
+
+    async def test_check_input_spent_block_and_extra(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+        from yadacoin.core.transaction import Input, Output
+
+        addr = str(
+            __import__(
+                "bitcoin.wallet", fromlist=["P2PKHBitcoinAddress"]
+            ).P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
+        )
+        parent = Transaction(
+            public_key=self.public_key,
+            outputs=[Output(to=addr, value=5.0)],
+            transaction_signature="psig",
+            coinbase=True,
+        )
+        txn = Transaction(
+            public_key=self.public_key,
+            outputs=[Output(to=addr, value=4.0)],
+            fee=1.0,
+        )
+        txn.inputs = [Input(signature="psig", input_txn=parent)]
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = NodeKeyRotationManager._sign(
+            self.private_key, txn.hash
+        )
+        block = MagicMock()
+        block.index = 100
+        mock_lb = MagicMock()
+        mock_lb.block.index = 100
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch.object(
+                self.config.BU, "is_input_spent", new=AsyncMock(return_value=False)
+            ) as spent:
+                await txn.verify(check_input_spent=True, check_kel=False, block=block)
+                self.assertEqual(spent.await_args.kwargs.get("from_index"), 100)
+
+        eb = MagicMock()
+        eb.index = 99
+        txn.extra_blocks = [eb]
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch.object(
+                self.config.BU, "is_input_spent", new=AsyncMock(return_value=False)
+            ) as spent2:
+                await txn.verify(check_input_spent=True, check_kel=False, block=None)
+                self.assertEqual(spent2.await_args.kwargs.get("from_index"), 99)
+
+
+class TestKelCrossRemainingLines(TransactionTestCase):
+    async def test_empty_cand_continue(self):
+        """Line 1601: skip falsy cands in self-lookup loop."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1T",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+        )
+        txn.inception_public_key_hash = None
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                new=AsyncMock(return_value=None),
+            ):
+                # address=None is skipped (continue); prev/pkh still queried
+                self.assertFalse(await txn.get_kel_cross_key_auth(None))
+
+    async def test_batch_resolve_inception(self):
+        """Lines 1608-1622: find inception via batch prerotated cand."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1T",
+            public_key_hash="x",
+            prev_public_key_hash="y",
+        )
+        txn.inception_public_key_hash = None
+        txn.public_key_hash = ""
+        txn.prev_public_key_hash = ""
+
+        t = MagicMock()
+        t.prev_public_key_hash = None
+        t.public_key_hash = None
+        t.prerotated_key_hash = "1Hit"
+        t.inception_public_key_hash = None
+        t.are_kel_fields_populated = lambda: True
+        t.transaction_signature = "t"
+
+        inception = MagicMock(
+            inception_public_key_hash="1Inc",
+            public_key_hash="1Inc",
+            public_key=None,
+        )
+        # tip prerotated must equal the address we pass for auth success
+        latest = MagicMock(public_key_hash="1On", prerotated_key_hash="1Wanted")
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK
+
+        async def gi(address=None, **k):
+            # Only batch cand resolves; address "1Wanted" must NOT resolve
+            # via get_inception or we'd never reach batch loop.
+            if address == "1Hit":
+                return inception
+            return None
+
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                new=AsyncMock(side_effect=gi),
+            ):
+                with patch(
+                    "yadacoin.core.keyeventlog.KeyEventLog._latest_from_inception_tag",
+                    new=AsyncMock(return_value=latest),
+                ):
+                    ok = await txn.get_kel_cross_key_auth("1Wanted", batch_txns=[t])
+        self.assertTrue(ok)
+
+    async def test_inception_tag_fields_both_empty(self):
+        """Line 1629: inception object exists but tags are empty."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1T",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+        )
+        txn.inception_public_key_hash = None
+        empty_inc = MagicMock(
+            inception_public_key_hash=None,
+            public_key_hash=None,
+            public_key=None,
+        )
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                new=AsyncMock(return_value=empty_inc),
+            ):
+                self.assertFalse(await txn.get_kel_cross_key_auth("1Pk"))
