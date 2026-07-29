@@ -1244,12 +1244,16 @@ class TestVerifyCoverageGaps(TransactionTestCase):
         self.assertFalse(result)
 
     async def test_get_kel_cross_key_auth_returns_true_for_tip(self):
-        """True when signer address is the KEL tip prerotated_key_hash."""
+        """True when KEL fields set and signer is tip prerotated_key_hash."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from yadacoin.core.chain import CHAIN
 
         txn = Transaction(public_key=self.public_key)
+        txn.prerotated_key_hash = "1Pre"
+        txn.twice_prerotated_key_hash = "1Twice"
+        txn.public_key_hash = "1Pk"
+        txn.prev_public_key_hash = "1Prev"
         mock_lb = MagicMock()
         mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK
 
@@ -1265,6 +1269,27 @@ class TestVerifyCoverageGaps(TransactionTestCase):
                 result = await txn.get_kel_cross_key_auth(address)
 
         self.assertTrue(result)
+
+    async def test_get_kel_cross_key_auth_false_without_kel_fields(self):
+        """Plain tip transfer cannot cross-spend prior KEL addresses."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(public_key=self.public_key)
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK
+        kel_entry = MagicMock()
+        kel_entry.prerotated_key_hash = "1TargetAddress"
+
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+                new=AsyncMock(return_value=kel_entry),
+            ):
+                result = await txn.get_kel_cross_key_auth("1TargetAddress")
+
+        self.assertFalse(result)
 
     async def test_get_kel_cross_key_auth_no_match_returns_false(self):
         """False when signer is not the KEL tip key."""
@@ -1304,6 +1329,10 @@ class TestVerifyCoverageGaps(TransactionTestCase):
         txn = Transaction(
             public_key=self.public_key,
             outputs=[Output(to=address, value=2.0)],
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash=address,
+            prev_public_key_hash="1Prev",
         )
         txn.inputs = [Input(signature="sig1", input_txn=input_txn_obj)]
         txn.hash = await txn.generate_hash()
@@ -1320,8 +1349,11 @@ class TestVerifyCoverageGaps(TransactionTestCase):
                 "get_kel_cross_key_auth",
                 new=AsyncMock(return_value=True),
             ):
-                # check_input_spent=False avoids needing to mock BU.is_input_spent
-                await txn.verify(check_input_spent=False)
+                with patch.object(
+                    txn, "has_key_event_log", new=AsyncMock(return_value=False)
+                ):
+                    # check_input_spent=False avoids needing to mock BU.is_input_spent
+                    await txn.verify(check_input_spent=False, check_kel=False)
 
 
 class TestVerifyCheckKelBatchAndPrevHash(TransactionTestCase):

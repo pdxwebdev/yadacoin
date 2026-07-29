@@ -491,20 +491,21 @@ class Transaction(object):
         self, input_obj, input_txn, my_address, input_sum, inputs, outputs_and_fee_total
     ):
         address = my_address
-        kel_cross = False
+        # Prior-KEL-address value only when this txn is a key-log entry
+        # (one-time keys: plain tip spends are not authorized).
+        kel_log_spend = False
         try:
-            tip_index = self.config.LatestBlock.block.index
-            if tip_index >= CHAIN.KEL_CROSS_KEY_SPENDING_FORK and self.public_key:
-                kel_cross = await self.get_kel_cross_key_auth(address, mempool=True)
+            if self.are_kel_fields_populated() and self.public_key:
+                kel_log_spend = await self.get_kel_cross_key_auth(address, mempool=True)
         except Exception:
-            kel_cross = False
+            kel_log_spend = False
 
         for txn_output in input_txn.outputs:
             if float(txn_output.value) <= 0.0:
                 continue
             out_to = str(txn_output.to)
             owns = out_to == str(address)
-            if not owns and kel_cross:
+            if not owns and kel_log_spend:
                 from yadacoin.core.keyeventlog import KeyEventLog
 
                 owns = await KeyEventLog.is_same_kel(
@@ -923,11 +924,13 @@ class Transaction(object):
         total_input = 0
         exclude_recovered_ids = []
 
-        # KEL cross-key spending: tip key may spend UTXOs locked to any prior
-        # KEL address. Double-spend detection uses is_same_kel inside
-        # is_input_spent; output ownership uses is_same_kel per output below.
-        kel_cross_key = (
-            await self.get_kel_cross_key_auth(address, block=block, mempool=mempool)
+        # Prior KEL addresses may only be spent by a key-log entry (KEL fields
+        # populated). Keys are one-time-use: a plain tip transfer cannot pull
+        # value from older KEL outs. Double-spend detection still uses
+        # is_same_kel inside is_input_spent.
+        kel_log_spend = (
+            self.are_kel_fields_populated()
+            and await self.get_kel_cross_key_auth(address, block=block, mempool=mempool)
             if self.inputs
             else False
         )
@@ -977,7 +980,7 @@ class Transaction(object):
                 if out_to == str(address):
                     found = True
                     total_input += float(output.value)
-                elif kel_cross_key:
+                elif kel_log_spend:
                     from yadacoin.core.keyeventlog import KeyEventLog
 
                     if await KeyEventLog.is_same_kel(
@@ -1408,14 +1411,20 @@ class Transaction(object):
         return False
 
     async def get_kel_cross_key_auth(self, address, block=None, mempool=False):
-        """Return True when the signer is the latest KEL key and may spend
-        UTXOs locked to any previous KEL address.
+        """Return True when this txn may credit UTXOs locked to prior KEL addresses.
 
-        Tip check: signer address equals ``kel[-1].prerotated_key_hash``.
-        Membership of individual prior addresses is decided cheaply via
-        ``KeyEventLog.is_same_kel`` (tagged inception walk), not by building
-        the full KEL key set.
+        Requires:
+        * this txn is a key-log entry (``are_kel_fields_populated``) — keys are
+          one-time-use; plain tip spends are never authorized;
+        * fork height;
+        * signer address is the current tip prerotated key
+          (``kel[-1].prerotated_key_hash``).
+
+        Per-output membership still uses ``KeyEventLog.is_same_kel``.
         """
+        if not self.are_kel_fields_populated():
+            return False
+
         if block is not None:
             effective_index = block.index
         elif mempool:

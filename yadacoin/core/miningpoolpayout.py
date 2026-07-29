@@ -290,30 +290,27 @@ class PoolPayer(object):
         if not coinbases:
             return
 
-        outputs_formatted = []
-        for address, output in outputs.items():
-            outputs_formatted.append({"to": address, "value": output})
-
+        fee = 0.0001
         if self.config.debug:
             self.app_log.debug(
                 "do_payout_for_blocks done formatting outputs {}".format(
                     [{"id": coinbase.transaction_signature} for coinbase in coinbases]
                 )
             )
+
         try:
-            # Ordinary value transfer (no KEL rotation fields). Tip key spends
-            # historical coinbase UTXOs via KEL cross-key authorization.
-            transaction = await Transaction.generate(
-                fee=0.0001,
-                public_key=signer_pub,
-                private_key=signer_priv,
-                inputs=[
-                    {"id": coinbase.transaction_signature} for coinbase in coinbases
-                ],
-                outputs=outputs_formatted,
+            # Payout is a KEL unconfirmed+confirming rotation (same idiom as
+            # block generation), not a plain transfer.  The tip key is already
+            # committed in the KEL, so only a rotation step can spend.
+            unconfirmed, confirming = await self.build_kel_payout_pair(
+                coinbases=coinbases,
+                miner_outputs=outputs,
+                fee=fee,
             )
             self.app_log.debug(
-                "transaction generated: {}".format(transaction.transaction_signature)
+                "payout U/C generated: u=%s c=%s",
+                unconfirmed.transaction_signature,
+                confirming.transaction_signature if confirming else None,
             )
         except NotEnoughMoneyException as e:
             if self.config.debug:
@@ -326,32 +323,145 @@ class PoolPayer(object):
             return
 
         try:
-            await transaction.verify()
+            await unconfirmed.verify(mempool=True)
+            if confirming is not None:
+                await confirming.verify(
+                    mempool=True, batch_txns=[unconfirmed, confirming]
+                )
         except Exception as e:
             if self.config.debug:
                 self.app_log.debug(e)
             raise
-        self.app_log.debug("transaction verified")
-        # Final guard: check that none of the coinbase inputs were spent in a
-        # confirmed block during the time between already_used checks and now.
-        # This closes the reorg race window where a payout transaction could be
-        # confirmed and rolled back simultaneously with do_payout running.
-        input_ids = [i.id for i in transaction.inputs]
-        if input_ids and await self.config.BU.is_input_spent(input_ids, signer_pub):
+        self.app_log.debug("payout U/C verified")
+
+        input_ids = [i.id for i in unconfirmed.inputs]
+        if input_ids and await self.config.BU.is_input_spent(
+            input_ids, unconfirmed.public_key
+        ):
             self.app_log.warning(
                 "do_payout: inputs already spent in confirmed block at insert time, aborting payout"
             )
             return
+
         await self.config.mongo.async_db.miner_transactions.insert_one(
-            transaction.to_dict()
+            unconfirmed.to_dict()
         )
+        if confirming is not None:
+            await self.config.mongo.async_db.miner_transactions.insert_one(
+                confirming.to_dict()
+            )
         payout_index = (
             last_block.index if last_block is not None else ready_blocks[-1].index
         )
         await self.config.mongo.async_db.share_payout.insert_one(
-            {"index": payout_index, "txn": transaction.to_dict()}
+            {
+                "index": payout_index,
+                "txn": unconfirmed.to_dict(),
+                "confirming": confirming.to_dict() if confirming else None,
+            }
         )
-        await self.broadcast_transaction(transaction)
+        await self.broadcast_transaction(unconfirmed)
+        if confirming is not None:
+            await self.broadcast_transaction(confirming)
+
+    async def build_kel_payout_pair(self, coinbases, miner_outputs, fee):
+        """Build a KEL unconfirmed+confirming payout pair (same idiom as mining).
+
+        Unconfirmed (Kn): spends collected coinbase UTXOs, pays miners, routes
+        pool take/change to ``prerotated_key_hash`` (Kn+1).
+        Confirming (Kn+1): zero-value hash-link commit from the rotation manager.
+        """
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+        from yadacoin.core.transaction import Input, Output
+
+        kel_manager = getattr(self.config, "kel_manager", None)
+        if kel_manager is None:
+            raise Exception("do_payout: kel_manager not available")
+
+        class _PayoutBlockStub:
+            private_key = None
+            public_key = None
+
+        triplet = await kel_manager.advance_block_ratchet(block=_PayoutBlockStub())
+        if (
+            triplet is None
+            or not triplet.signer_public_key
+            or not triplet.signer_private_key
+            or not triplet.coinbase_prerotated
+        ):
+            raise Exception("do_payout: failed to build KEL rotation triplet")
+
+        prerotated = triplet.coinbase_prerotated
+        # outputs[0] must equal prerotated_key_hash for key-event validation.
+        outputs_list = [Output(to=prerotated, value=0.0)]
+        for address, value in miner_outputs.items():
+            if value > 0:
+                outputs_list.append(Output(to=address, value=float(value)))
+
+        inputs_list = [Input(signature=cb.transaction_signature) for cb in coinbases]
+
+        unconfirmed = Transaction(
+            version=7,
+            public_key=triplet.signer_public_key,
+            inputs=inputs_list,
+            outputs=outputs_list,
+            fee=float(fee),
+            masternode_fee=0.0,
+            prerotated_key_hash=triplet.coinbase_prerotated,
+            twice_prerotated_key_hash=triplet.coinbase_twice_prerotated,
+            public_key_hash=triplet.coinbase_public_key_hash,
+            prev_public_key_hash=triplet.coinbase_prev_public_key_hash,
+            relationship="",
+            relationship_hash="",
+            rid="",
+            dh_public_key="",
+        )
+        if getattr(triplet, "coinbase_counter", None) is not None:
+            unconfirmed.counter = triplet.coinbase_counter
+        if getattr(triplet, "coinbase_inception_public_key_hash", None):
+            unconfirmed.inception_public_key_hash = (
+                triplet.coinbase_inception_public_key_hash
+            )
+
+        my_address = str(
+            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(triplet.signer_public_key))
+        )
+        input_sum = 0.0
+        evaluated = []
+        miner_total = sum(float(v) for v in miner_outputs.values())
+        needed = miner_total + float(fee)
+        for inp in list(unconfirmed.inputs):
+            parent = await self._load_input_txn(inp)
+            input_sum = await unconfirmed.sum_inputs(
+                inp, parent, my_address, input_sum, evaluated, needed
+            )
+        unconfirmed.inputs = evaluated if evaluated else list(unconfirmed.inputs)
+
+        if input_sum + 1e-12 < needed:
+            raise NotEnoughMoneyException(
+                f"payout inputs {input_sum} < miner+fee {needed}"
+            )
+        # Pool take + remainder stays on the next KEL key (prerotated).
+        change = input_sum - needed
+        if change < 0:
+            change = 0.0
+        unconfirmed.outputs[0].value = float(change)
+
+        unconfirmed.hash = await unconfirmed.generate_hash()
+        unconfirmed.transaction_signature = NodeKeyRotationManager._sign(
+            triplet.signer_private_key, unconfirmed.hash
+        )
+
+        confirming = getattr(triplet, "coinbase_confirming", None)
+        return unconfirmed, confirming
+
+    async def _load_input_txn(self, inp):
+        txn = await self.config.BU.get_transaction_by_id(inp.id, instance=True)
+        if not txn:
+            raise NotEnoughMoneyException(f"payout input not found: {inp.id}")
+        if not hasattr(txn, "outputs"):
+            txn = Transaction.from_dict(txn)
+        return txn
 
     async def get_share_list_for_height(self, index):
         raw_shares = []

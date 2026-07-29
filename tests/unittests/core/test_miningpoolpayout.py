@@ -550,24 +550,29 @@ class TestDoPayout(AsyncTestCase):
             )
         )
         cfg.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
-        gen_txn = MagicMock(transaction_signature="payout_sig")
-        gen_txn.to_dict = MagicMock(return_value={"t": 1})
-        gen_txn.verify = AsyncMock()
+        unconfirmed = MagicMock(
+            transaction_signature="payout_sig", public_key="kel_pub"
+        )
+        unconfirmed.to_dict = MagicMock(return_value={"t": 1})
+        unconfirmed.verify = AsyncMock()
+        unconfirmed.inputs = [MagicMock(id="sig10")]
+        confirming = MagicMock(transaction_signature="confirm_sig")
+        confirming.to_dict = MagicMock(return_value={"c": 1})
+        confirming.verify = AsyncMock()
         with patch(
             "yadacoin.core.miningpoolpayout.Block.from_dict",
             new=AsyncMock(side_effect=[_mk_block(10), _mk_block(11)]),
-        ), patch(
-            "yadacoin.core.miningpoolpayout.Transaction.generate",
-            new=AsyncMock(return_value=gen_txn),
         ):
             p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(
                 return_value={"a1": {"payout_share": 1.0}}
             )
+            p.build_kel_payout_pair = AsyncMock(return_value=(unconfirmed, confirming))
             p.broadcast_transaction = AsyncMock()
             await p.do_payout()
-        p.broadcast_transaction.assert_awaited()
-        gen_txn.verify.assert_awaited()
+        self.assertEqual(p.broadcast_transaction.await_count, 2)
+        unconfirmed.verify.assert_awaited()
+        confirming.verify.assert_awaited()
 
     async def test_not_enough_money_exception(self):
         p, cfg = await self._setup_basic(debug=True)
@@ -585,18 +590,18 @@ class TestDoPayout(AsyncTestCase):
         with patch(
             "yadacoin.core.miningpoolpayout.Block.from_dict",
             new=AsyncMock(side_effect=[_mk_block(10), _mk_block(11)]),
-        ), patch(
-            "yadacoin.core.miningpoolpayout.Transaction.generate",
-            new=AsyncMock(side_effect=NotEnoughMoneyException("nope")),
         ):
             p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(
                 return_value={"a1": {"payout_share": 1.0}}
             )
+            p.build_kel_payout_pair = AsyncMock(
+                side_effect=NotEnoughMoneyException("nope")
+            )
             await p.do_payout()
 
     async def test_generate_generic_exception_returns(self):
-        """Transaction.generate raises a generic Exception (debug branch) ->
+        """build_kel_payout_pair raises a generic Exception (debug branch) ->
         the except Exception handler logs (when debug) and returns without
         proceeding to verify/broadcast.
         """
@@ -616,14 +621,12 @@ class TestDoPayout(AsyncTestCase):
         with patch(
             "yadacoin.core.miningpoolpayout.Block.from_dict",
             new=AsyncMock(side_effect=[_mk_block(10), _mk_block(11)]),
-        ), patch(
-            "yadacoin.core.miningpoolpayout.Transaction.generate",
-            new=AsyncMock(side_effect=Exception("oops")),
         ):
             p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(
                 return_value={"a1": {"payout_share": 1.0}}
             )
+            p.build_kel_payout_pair = AsyncMock(side_effect=Exception("oops"))
             p.broadcast_transaction = AsyncMock()
             # Should return cleanly, not raise.
             await p.do_payout()
@@ -649,14 +652,12 @@ class TestDoPayout(AsyncTestCase):
         with patch(
             "yadacoin.core.miningpoolpayout.Block.from_dict",
             new=AsyncMock(side_effect=[_mk_block(10), _mk_block(11)]),
-        ), patch(
-            "yadacoin.core.miningpoolpayout.Transaction.generate",
-            new=AsyncMock(side_effect=Exception("oops")),
         ):
             p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(
                 return_value={"a1": {"payout_share": 1.0}}
             )
+            p.build_kel_payout_pair = AsyncMock(side_effect=Exception("oops"))
             p.broadcast_transaction = AsyncMock()
             await p.do_payout()
         p.broadcast_transaction.assert_not_awaited()
@@ -675,19 +676,18 @@ class TestDoPayout(AsyncTestCase):
             )
         )
         cfg.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
-        gen_txn = MagicMock(transaction_signature="ps")
-        gen_txn.verify = AsyncMock(side_effect=Exception("verifybad"))
+        unconfirmed = MagicMock(transaction_signature="ps", public_key="kel_pub")
+        unconfirmed.verify = AsyncMock(side_effect=Exception("verifybad"))
+        unconfirmed.inputs = []
         with patch(
             "yadacoin.core.miningpoolpayout.Block.from_dict",
             new=AsyncMock(side_effect=[_mk_block(10), _mk_block(11)]),
-        ), patch(
-            "yadacoin.core.miningpoolpayout.Transaction.generate",
-            new=AsyncMock(return_value=gen_txn),
         ):
             p.already_used = AsyncMock(return_value=False)
             p.get_share_list_for_height = AsyncMock(
                 return_value={"a1": {"payout_share": 1.0}}
             )
+            p.build_kel_payout_pair = AsyncMock(return_value=(unconfirmed, None))
             with self.assertRaises(Exception):
                 await p.do_payout()
 
