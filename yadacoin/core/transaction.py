@@ -816,6 +816,16 @@ class Transaction(object):
                     txn=self,
                 )
 
+            # Unique inception: no second KEL root for the same public_key_hash
+            # / inception tag (covers re-included identical ids and fresh ids).
+            _uniq_idx = block.index if block is not None else None
+            if _uniq_idx is None or _uniq_idx >= CHAIN.KEL_UNIQUE_INCEPTION_FORK:
+                await self.assert_unique_inception(
+                    block_index=_uniq_idx,
+                    batch_txns=batch_txns,
+                    extra_blocks=extra_blocks,
+                )
+
             if has_kel:
                 if block is not None:
                     _kel_index = block.index
@@ -1306,6 +1316,111 @@ class Transaction(object):
         if self.prev_public_key_hash:
             return True
         return False
+
+    async def assert_unique_inception(
+        self,
+        block_index=None,
+        batch_txns=None,
+        extra_blocks=None,
+    ):
+        """Reject a second inception for this public_key_hash / inception tag.
+
+        An inception has empty ``prev_public_key_hash`` (non-recovery).  Once any
+        on-chain (or same-batch) KEL entry exists for the same
+        ``public_key_hash`` — or tags this address as
+        ``inception_public_key_hash`` — a further inception is refused, even if
+        the transaction id differs.
+        """
+        from yadacoin.core.keyeventlog import BlocksQueryFields
+
+        if not self.are_kel_fields_populated():
+            return
+        # Recovery / rotation entries carry prev; only bare inceptions.
+        if self.prev_public_key_hash:
+            return
+        from yadacoin.core.recoveryannouncement import RecoveryProof, RecoveryTransition
+
+        if isinstance(self.relationship, (RecoveryProof, RecoveryTransition)):
+            return
+
+        pkh = getattr(self, "public_key_hash", None) or ""
+        if not pkh:
+            return
+
+        my_sig = self.transaction_signature or ""
+        inception_tag = getattr(self, "inception_public_key_hash", None) or pkh
+
+        def _other_inception(txn):
+            if not txn or getattr(txn, "transaction_signature", None) == my_sig:
+                return False
+            if not getattr(txn, "are_kel_fields_populated", lambda: False)():
+                return False
+            if getattr(txn, "prev_public_key_hash", None):
+                return False
+            t_pkh = getattr(txn, "public_key_hash", None) or ""
+            t_inc = getattr(txn, "inception_public_key_hash", None) or ""
+            return t_pkh == pkh or t_inc == inception_tag or t_pkh == inception_tag
+
+        for txn in batch_txns or []:
+            if _other_inception(txn):
+                raise InvalidTransactionException(
+                    f"Duplicate KEL inception for public_key_hash={pkh}: "
+                    f"another inception is present in the same block/batch"
+                )
+
+        for eb in extra_blocks or []:
+            eb_idx = getattr(eb, "index", None)
+            if block_index is not None and eb_idx is not None and eb_idx >= block_index:
+                continue
+            for txn in getattr(eb, "transactions", None) or []:
+                if _other_inception(txn):
+                    raise InvalidTransactionException(
+                        f"Duplicate KEL inception for public_key_hash={pkh}: "
+                        f"already present in candidate chain"
+                    )
+
+        # On-chain: any prior entry with this public_key_hash, or any entry that
+        # tags this address as the KEL inception.
+        match = {
+            "$or": [
+                {BlocksQueryFields.PUBLIC_KEY_HASH.value: pkh},
+                {"transactions.inception_public_key_hash": inception_tag},
+                {"transactions.inception_public_key_hash": pkh},
+            ]
+        }
+        if block_index is not None:
+            match["index"] = {"$lt": int(block_index)}
+        if my_sig:
+            # Still detect when a *different* id already claimed this pkh.
+            # Same-id re-inclusion is also caught because we do not exclude
+            # by id here (unlike username uniqueness).
+            pass
+        doc = await self.config.mongo.async_db.blocks.find_one(
+            match, {"index": 1, "transactions.id": 1}
+        )
+        if doc:
+            raise InvalidTransactionException(
+                f"Duplicate KEL inception for public_key_hash={pkh}: "
+                f"KEL already exists on-chain (block {doc.get('index')})"
+            )
+
+        # Mempool: another pending inception for the same pkh (not us).
+        mem_q = {
+            "$or": [
+                {"public_key_hash": pkh},
+                {"inception_public_key_hash": inception_tag},
+                {"inception_public_key_hash": pkh},
+            ],
+            "prev_public_key_hash": {"$in": [None, ""]},
+        }
+        if my_sig:
+            mem_q["id"] = {"$ne": my_sig}
+        mem = await self.config.mongo.async_db.miner_transactions.find_one(mem_q)
+        if mem:
+            raise InvalidTransactionException(
+                f"Duplicate KEL inception for public_key_hash={pkh}: "
+                f"another inception is already in the mempool"
+            )
 
     async def is_already_onchain(self, block_index=None):
         from yadacoin.core.keyeventlog import BlocksQueryFields

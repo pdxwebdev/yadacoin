@@ -1212,6 +1212,91 @@ class TestVerifyCoverageGaps(TransactionTestCase):
             with patch.object(Transaction, "verify_signature", return_value=None):
                 await txn.verify()
 
+    async def test_assert_unique_inception_rejects_onchain_pkh(self):
+        """Second inception for same public_key_hash is rejected."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.transaction import InvalidTransactionException
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1PkHash",
+            prev_public_key_hash="",
+            transaction_signature="sig-new",
+            inception_public_key_hash="1PkHash",
+        )
+        mock_db = MagicMock()
+        mock_db.blocks.find_one = AsyncMock(return_value={"index": 100})
+        mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        with patch.object(txn.config.mongo, "async_db", mock_db):
+            with self.assertRaises(InvalidTransactionException) as ctx:
+                await txn.assert_unique_inception(
+                    block_index=CHAIN.KEL_UNIQUE_INCEPTION_FORK + 1
+                )
+        self.assertIn("Duplicate KEL inception", str(ctx.exception))
+        mock_db.blocks.find_one.assert_awaited()
+
+    async def test_assert_unique_inception_rejects_batch_sibling(self):
+        """Two inceptions for same pkh in one batch — second fails."""
+        from yadacoin.core.transaction import InvalidTransactionException
+
+        a = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1PreA",
+            twice_prerotated_key_hash="1TwiceA",
+            public_key_hash="1Same",
+            prev_public_key_hash="",
+            transaction_signature="sig-a",
+            inception_public_key_hash="1Same",
+        )
+        b = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1PreB",
+            twice_prerotated_key_hash="1TwiceB",
+            public_key_hash="1Same",
+            prev_public_key_hash="",
+            transaction_signature="sig-b",
+            inception_public_key_hash="1Same",
+        )
+        with self.assertRaises(InvalidTransactionException):
+            await b.assert_unique_inception(batch_txns=[a, b])
+
+    async def test_assert_unique_inception_allows_first(self):
+        """First inception with no on-chain/mempool hit is allowed."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1Fresh",
+            prev_public_key_hash="",
+            transaction_signature="sig-fresh",
+            inception_public_key_hash="1Fresh",
+        )
+        mock_db = MagicMock()
+        mock_db.blocks.find_one = AsyncMock(return_value=None)
+        mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        with patch.object(txn.config.mongo, "async_db", mock_db):
+            await txn.assert_unique_inception(block_index=700000)
+        mock_db.blocks.find_one.assert_awaited()
+
+    async def test_assert_unique_inception_skips_rotations(self):
+        """Entries with prev_public_key_hash are not inceptions."""
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+            transaction_signature="sig-rot",
+        )
+        # Would fail if it queried mongo without short-circuit.
+        await txn.assert_unique_inception(block_index=700000)
+
     async def test_get_kel_cross_key_auth_block_branch(self):
         """Below fork: get_kel_cross_key_auth returns False."""
         from unittest.mock import MagicMock

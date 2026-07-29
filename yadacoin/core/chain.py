@@ -135,6 +135,10 @@ class CHAIN(object):
     # relationships are rejected during transaction verification.
     # Placeholder height — set before mainnet activation.
     KEL_BRANCH_ANNOUNCEMENT_FORK = 605000
+    # Reject a second KEL inception for the same public_key_hash / inception
+    # tag even when the transaction id differs (or when username uniqueness
+    # is bypassed by exclude_txn_sig on a re-included identical id).
+    KEL_UNIQUE_INCEPTION_FORK = 606000
 
     @classmethod
     def target_block_time(cls, network: str):
