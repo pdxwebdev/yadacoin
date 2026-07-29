@@ -426,20 +426,38 @@ class PoolPayer(object):
         my_address = str(
             P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(triplet.signer_public_key))
         )
+        # Sum owned outs on each coinbase (same-KEL prior addresses via
+        # get_kel_cross_key_auth + is_same_kel).  Also track pool_reward_value
+        # as a diagnostic when ownership summing under-counts.
         input_sum = 0.0
         evaluated = []
+        reward_sum = 0.0
         miner_total = sum(float(v) for v in miner_outputs.values())
         needed = miner_total + float(fee)
-        for inp in list(unconfirmed.inputs):
+        for inp, cb in zip(list(unconfirmed.inputs), coinbases):
+            reward_sum += float(self.pool_reward_value(cb))
             parent = await self._load_input_txn(inp)
+            before = input_sum
             input_sum = await unconfirmed.sum_inputs(
                 inp, parent, my_address, input_sum, evaluated, needed
             )
+            if input_sum <= before and self.config.debug:
+                self.app_log.debug(
+                    "payout sum_inputs credited 0 for coinbase %s "
+                    "reward=%s signer=%s parent_outs=%s kel_auth=%s",
+                    getattr(cb, "transaction_signature", "?")[:16],
+                    self.pool_reward_value(cb),
+                    my_address,
+                    [(str(o.to), o.value) for o in getattr(parent, "outputs", [])],
+                    await unconfirmed.get_kel_cross_key_auth(my_address, mempool=True),
+                )
         unconfirmed.inputs = evaluated if evaluated else list(unconfirmed.inputs)
 
         if input_sum + 1e-12 < needed:
             raise NotEnoughMoneyException(
-                f"payout inputs {input_sum} < miner+fee {needed}"
+                f"payout inputs {input_sum} < miner+fee {needed} "
+                f"(pool_reward_sum={reward_sum}, signer={my_address}, "
+                f"kel_auth={await unconfirmed.get_kel_cross_key_auth(my_address, mempool=True)})"
             )
         # Pool take + remainder stays on the next KEL key (prerotated).
         change = input_sum - needed

@@ -1258,15 +1258,23 @@ class TestVerifyCoverageGaps(TransactionTestCase):
         mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK
 
         address = "1TargetAddress"
+        inception = MagicMock()
+        inception.inception_public_key_hash = "1Inception"
+        inception.public_key_hash = "1Inception"
+        inception.public_key = "aa" * 33
         kel_entry = MagicMock()
         kel_entry.prerotated_key_hash = address
 
         with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
             with patch(
-                "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
-                new=AsyncMock(return_value=kel_entry),
+                "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                new=AsyncMock(return_value=inception),
             ):
-                result = await txn.get_kel_cross_key_auth(address)
+                with patch(
+                    "yadacoin.core.keyeventlog.KeyEventLog._latest_from_inception_tag",
+                    new=AsyncMock(return_value=kel_entry),
+                ):
+                    result = await txn.get_kel_cross_key_auth(address)
 
         self.assertTrue(result)
 

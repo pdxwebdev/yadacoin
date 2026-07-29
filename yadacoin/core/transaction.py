@@ -1420,6 +1420,10 @@ class Transaction(object):
         * signer address is the current tip prerotated key
           (``kel[-1].prerotated_key_hash``).
 
+        The unused tip key only appears on-chain as some entry's
+        ``prerotated_key_hash``, not as ``public_key_hash``, so tip resolution
+        goes address → inception → latest rather than ``get_latest(signer_pub)``.
+
         Per-output membership still uses ``KeyEventLog.is_same_kel``.
         """
         if not self.are_kel_fields_populated():
@@ -1437,7 +1441,24 @@ class Transaction(object):
 
         from yadacoin.core.keyeventlog import KeyEventLog
 
-        latest = await KeyEventLog.get_latest(self.public_key, onchain_only=True)
+        # Resolve the KEL tip for *address*.  get_latest(public_key) only finds
+        # entries whose public_key_hash matches the signer — that fails for the
+        # unused tip key, which has not yet authored a KEL entry.
+        inception = await KeyEventLog.get_inception(address=address, onchain_only=True)
+        if inception is None:
+            return False
+        inception_pkh = getattr(
+            inception, "inception_public_key_hash", None
+        ) or getattr(inception, "public_key_hash", None)
+        if not inception_pkh:
+            return False
+        latest = await KeyEventLog._latest_from_inception_tag(
+            inception_pkh, onchain_only=True
+        )
+        if latest is None and getattr(inception, "public_key", None):
+            latest = await KeyEventLog.get_latest(
+                public_key=inception.public_key, onchain_only=True
+            )
         return bool(latest and latest.prerotated_key_hash == address)
 
     async def has_key_event_log(
