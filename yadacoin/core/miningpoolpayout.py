@@ -412,6 +412,54 @@ class PoolPayer(object):
         confirming.template_kel = True
         return unconfirmed, confirming
 
+    async def _bump_coinbase_for_settlement_fees(
+        self, coinbase_txn, triplet, batch_count, fee=0.0001
+    ):
+        """Add settlement payout fees to the template coinbase miner output.
+
+        ``Block.pay_masternodes`` runs before template settlement is attached, so
+        those fees are not in the original coinbase.  Mutates and re-signs
+        ``coinbase_txn`` in place so later spends (first batch) see the correct
+        ``pool_reward_value``.
+        """
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        signer_priv = getattr(triplet, "signer_private_key", None) if triplet else None
+        if (
+            not coinbase_txn
+            or not isinstance(signer_priv, str)
+            or not signer_priv
+            or batch_count <= 0
+        ):
+            return coinbase_txn
+        total_fee = float(batch_count) * float(fee)
+        if total_fee <= 0:
+            return coinbase_txn
+        prerotated = getattr(coinbase_txn, "prerotated_key_hash", None) or ""
+        target = None
+        for output in coinbase_txn.outputs or []:
+            if prerotated and str(output.to) == prerotated:
+                target = output
+                break
+        if target is None and coinbase_txn.outputs:
+            target = coinbase_txn.outputs[-1]
+        if target is None:
+            return coinbase_txn
+        try:
+            target.value = float(target.value) + total_fee
+            coinbase_txn.hash = await coinbase_txn.generate_hash()
+            coinbase_txn.transaction_signature = NodeKeyRotationManager._sign(
+                signer_priv, coinbase_txn.hash
+            )
+        except Exception as exc:
+            self.app_log.warning("_bump_coinbase_for_settlement_fees failed: %s", exc)
+            # Best-effort undo so a partial bump never leaves inconsistent value.
+            try:
+                target.value = float(target.value) - total_fee
+            except Exception:
+                pass
+        return coinbase_txn
+
     async def attach_template_settlement(
         self, pending_txns, triplet, coinbase_txn, block_time=None
     ):
@@ -459,6 +507,17 @@ class PoolPayer(object):
             confirming_parent = getattr(triplet, "coinbase_confirming", None)
             if confirming_parent is None:
                 return None
+
+            # Coinbase is built before settlement. Each payout U carries a fee
+            # (default 0.0001) that verify() folds into fee_sum, so the miner
+            # self-output must include those fees or TotalValueMismatchException
+            # fires (fees > coinbase_sum - reward). Bump and re-sign in place
+            # before building spends so pool_reward_value credits the full amount.
+            # Only after preflight so a failed attach never leaves an inflated coinbase.
+            settlement_fee = 0.0001
+            await self._bump_coinbase_for_settlement_fees(
+                coinbase_txn, triplet, len(batches), fee=settlement_fee
+            )
 
             inception = (
                 getattr(triplet, "coinbase_inception_public_key_hash", None)

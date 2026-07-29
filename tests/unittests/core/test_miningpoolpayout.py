@@ -64,6 +64,7 @@ def _mk_coinbase(sig="sig10", value=50.0, prerotated="1Pre", inception=INCEPTION
     cb.transaction_signature = sig
     cb.prerotated_key_hash = prerotated
     cb.inception_public_key_hash = inception
+    cb.generate_hash = AsyncMock(return_value="cbhash")
     return cb
 
 
@@ -90,6 +91,26 @@ class TestHelpers(AsyncTestCase):
         p.config.BU.is_input_spent = AsyncMock(return_value=True)
         self.assertTrue(await p.already_used(_mk_coinbase(), "kel_pub"))
         self.assertFalse(await p.already_used(_mk_coinbase(), None))
+
+    async def test_bump_coinbase_for_settlement_fees(self):
+        """13 settlement batches add 0.0013 to miner self-output (verify fee_sum)."""
+        p = _mk_payer()
+        cb = _mk_coinbase(value=12.5, prerotated="1MinerPre", sig="old_sig")
+        cb.generate_hash = AsyncMock(return_value="newhash")
+        triplet = MagicMock(signer_private_key="11" * 32)
+        with patch(
+            "yadacoin.core.keyrotation.NodeKeyRotationManager._sign",
+            return_value="new_sig",
+        ) as sign:
+            await p._bump_coinbase_for_settlement_fees(cb, triplet, 13, fee=0.0001)
+        self.assertAlmostEqual(float(cb.outputs[0].value), 12.5013)
+        self.assertEqual(cb.hash, "newhash")
+        self.assertEqual(cb.transaction_signature, "new_sig")
+        sign.assert_called_once()
+        # no-op guards
+        cb2 = _mk_coinbase(value=12.5)
+        await p._bump_coinbase_for_settlement_fees(cb2, triplet, 0)
+        self.assertAlmostEqual(float(cb2.outputs[0].value), 12.5)
 
 
 class TestGetShareList(AsyncTestCase):
@@ -240,6 +261,7 @@ class TestAttachTemplateSettlement(AsyncTestCase):
 
     async def test_multiple_batches_chained(self):
         p = _mk_payer()
+        p._bump_coinbase_for_settlement_fees = AsyncMock()
         cb = _mk_coinbase("sig_cb")
         batch0 = ([_mk_coinbase("s1"), _mk_coinbase("s2")], {"m": 10.0}, [10, 11])
         batch1 = ([_mk_coinbase("s3"), _mk_coinbase("s4")], {"m": 20.0}, [12, 13])
@@ -1018,6 +1040,7 @@ class TestBuildMoreBranches(AsyncTestCase):
 class TestAttachInceptionTagging(AsyncTestCase):
     async def test_sets_missing_inception_tags(self):
         p = _mk_payer()
+        p._bump_coinbase_for_settlement_fees = AsyncMock()
         cb = _mk_coinbase("sig_cb")
         cb.inception_public_key_hash = ""
         conf = MagicMock(counter=2, inception_public_key_hash="")
@@ -1054,6 +1077,7 @@ class TestAttachInceptionTagging(AsyncTestCase):
 
     async def test_links_same_block_inputs(self):
         p = _mk_payer()
+        p._bump_coinbase_for_settlement_fees = AsyncMock()
         cb = _mk_coinbase("sig_cb")
         inp = MagicMock(id="sig_cb")
         u = MagicMock(transaction_signature="u0", inputs=[inp], counter=3)
