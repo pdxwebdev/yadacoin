@@ -513,26 +513,21 @@ class Transaction(object):
             if float(txn_output.value) <= 0.0:
                 continue
             out_to = str(txn_output.to)
-            owns = out_to == str(address)
+            owns = await self._output_owned_by_kel_spender(
+                out_to, address, kel_log_spend
+            )
             if not owns and kel_log_spend:
-                from yadacoin.core.keyeventlog import KeyEventLog
-
-                owns = await KeyEventLog.is_same_kel(
-                    out_to, str(address), onchain_only=True
-                )
-                # Unused tip keys are not on-chain yet; match via this txn's
-                # inception tag against the output address's KEL inception.
-                if not owns:
-                    my_inc = getattr(self, "inception_public_key_hash", None)
-                    if my_inc:
-                        out_inc = await KeyEventLog.get_inception(
-                            address=out_to, onchain_only=True
-                        )
-                        if out_inc is not None:
-                            out_tag = getattr(
-                                out_inc, "inception_public_key_hash", None
-                            ) or getattr(out_inc, "public_key_hash", None)
-                            owns = out_tag == my_inc
+                parent_inc = getattr(input_txn, "inception_public_key_hash", None)
+                my_inc = getattr(self, "inception_public_key_hash", None)
+                pre = getattr(input_txn, "prerotated_key_hash", None) or ""
+                if (
+                    parent_inc
+                    and my_inc
+                    and parent_inc == my_inc
+                    and pre
+                    and out_to == pre
+                ):
+                    owns = True
             if not owns:
                 continue
             if self.exact_match and not equal(txn_output.value, outputs_and_fee_total):
@@ -1001,29 +996,26 @@ class Transaction(object):
             found = False
             for output in txn_input.outputs:
                 out_to = str(output.to)
-                if out_to == str(address):
+                owned = await self._output_owned_by_kel_spender(
+                    out_to, address, kel_log_spend
+                )
+                if not owned and kel_log_spend:
+                    # Same-block / tagged parent coinbase: pool self-out is
+                    # prerotated_key_hash; MN outs stay foreign.
+                    parent_inc = getattr(txn_input, "inception_public_key_hash", None)
+                    my_inc = getattr(self, "inception_public_key_hash", None)
+                    pre = getattr(txn_input, "prerotated_key_hash", None) or ""
+                    if (
+                        parent_inc
+                        and my_inc
+                        and parent_inc == my_inc
+                        and pre
+                        and out_to == pre
+                    ):
+                        owned = True
+                if owned:
                     found = True
                     total_input += float(output.value)
-                elif kel_log_spend:
-                    from yadacoin.core.keyeventlog import KeyEventLog
-
-                    same = await KeyEventLog.is_same_kel(
-                        out_to, address, onchain_only=True
-                    )
-                    if not same:
-                        my_inc = getattr(self, "inception_public_key_hash", None)
-                        if my_inc:
-                            out_inc = await KeyEventLog.get_inception(
-                                address=out_to, onchain_only=True
-                            )
-                            if out_inc is not None:
-                                out_tag = getattr(
-                                    out_inc, "inception_public_key_hash", None
-                                ) or getattr(out_inc, "public_key_hash", None)
-                                same = out_tag == my_inc
-                    if same:
-                        found = True
-                        total_input += float(output.value)
 
             if not found:
                 raise InvalidTransactionException(
@@ -1449,18 +1441,16 @@ class Transaction(object):
     async def get_kel_cross_key_auth(
         self, address, block=None, mempool=False, batch_txns=None
     ):
-        """Return True when this txn may credit UTXOs locked to prior KEL addresses.
+        """Return True when this KEL-log txn may credit prior same-KEL UTXOs.
 
         Requires:
-        * this txn is a key-log entry (``are_kel_fields_populated``);
+        * KEL fields populated (one-time-use keys — plain spends never qualify);
         * fork height;
-        * signer *address* is the current tip prerotated key — either the
-          on-chain tip, or the tip after walking same-block *batch_txns*
-          (coinbase U/C → template payout U).
+        * signer *address* is the effective tip prerotated key after walking
+          on-chain tip + same-block *batch_txns* (coinbase U/C → payout U…).
 
-        The unused tip key is often not on-chain yet (only appears as a
-        future prerotated).  Inception is resolved from this txn / batch
-        tags first, then on-chain lookup.
+        Inception is taken from this txn / batch tags first so unused tip keys
+        (not yet on-chain as public_key_hash) still authorize.
         """
         if not self.are_kel_fields_populated():
             return False
@@ -1477,7 +1467,6 @@ class Transaction(object):
 
         from yadacoin.core.keyeventlog import KeyEventLog
 
-        # 1) Inception tag from this txn or same-block batch (template path).
         inception_pkh = getattr(self, "inception_public_key_hash", None) or None
         if not inception_pkh and batch_txns:
             for t in batch_txns:
@@ -1488,17 +1477,24 @@ class Transaction(object):
 
         inception = None
         if not inception_pkh:
-            # 2) On-chain inception for *address* (works when address already
-            # appears as public_key_hash or prerotated_key_hash).
-            inception = await KeyEventLog.get_inception(
-                address=address, onchain_only=True
-            )
+            for cand in (
+                address,
+                getattr(self, "prev_public_key_hash", None),
+                getattr(self, "public_key_hash", None),
+            ):
+                if not cand:
+                    continue
+                inception = await KeyEventLog.get_inception(
+                    address=cand, onchain_only=True
+                )
+                if inception is not None:
+                    break
             if inception is None and batch_txns:
-                # 3) Resolve via any batch member that is already on-chain.
                 for t in batch_txns:
                     for cand in (
                         getattr(t, "prev_public_key_hash", None),
                         getattr(t, "public_key_hash", None),
+                        getattr(t, "prerotated_key_hash", None),
                     ):
                         if not cand:
                             continue
@@ -1531,40 +1527,85 @@ class Transaction(object):
         if latest is None:
             return False
 
+        tip_pkh = latest.public_key_hash
         tip_pre = latest.prerotated_key_hash
         if tip_pre == address:
             return True
 
-        # Same-block extension: walk batch KEL entries that continue *latest*.
         if not batch_txns:
             return False
-        tip_pkh = latest.public_key_hash
-        tip_pre = latest.prerotated_key_hash
-        remaining = [
-            t
-            for t in batch_txns
-            if t is not self
-            and getattr(t, "are_kel_fields_populated", lambda: False)()
-            and getattr(t, "transaction_signature", None)
-            != getattr(self, "transaction_signature", None)
-        ]
-        for _ in range(len(remaining) + 1):
-            if tip_pre == address:
+
+        # Include every same-block KEL entry (except self) that can extend tip.
+        remaining = []
+        for t in batch_txns:
+            if t is self:
+                continue
+            if not getattr(t, "are_kel_fields_populated", lambda: False)():
+                continue
+            if getattr(t, "transaction_signature", None) and getattr(
+                t, "transaction_signature", None
+            ) == getattr(self, "transaction_signature", None):
+                continue
+            remaining.append(t)
+
+        # Walk forward. Prefer unique successor; if multiple, try all via BFS.
+        from collections import deque
+
+        queue = deque([(tip_pkh, tip_pre)])
+        seen = {(tip_pkh, tip_pre)}
+        while queue:
+            cur_pkh, cur_pre = queue.popleft()
+            if cur_pre == address:
                 return True
-            nxt = None
             for t in remaining:
                 if (
-                    getattr(t, "prev_public_key_hash", None) == tip_pkh
-                    and getattr(t, "public_key_hash", None) == tip_pre
+                    getattr(t, "prev_public_key_hash", None) == cur_pkh
+                    and getattr(t, "public_key_hash", None) == cur_pre
                 ):
-                    nxt = t
-                    break
-            if nxt is None:
-                break
-            remaining = [t for t in remaining if t is not nxt]
-            tip_pkh = nxt.public_key_hash
-            tip_pre = nxt.prerotated_key_hash
-        return tip_pre == address
+                    state = (t.public_key_hash, t.prerotated_key_hash)
+                    if state not in seen:
+                        seen.add(state)
+                        queue.append(state)
+        return False
+
+    async def _output_owned_by_kel_spender(
+        self, out_to, spender_address, kel_log_spend
+    ):
+        """True if *out_to* is spendable by this KEL-log txn's signer."""
+        if out_to == str(spender_address):
+            return True
+        if not kel_log_spend:
+            return False
+
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        # Fast path: same inception tag on this txn vs output address.
+        my_inc = getattr(self, "inception_public_key_hash", None)
+        if my_inc:
+            # Output may itself be a KEL-tagged coinbase with inception field.
+            # Prefer that over get_inception when the parent is in-memory.
+            out_inc = await KeyEventLog.get_inception(address=out_to, onchain_only=True)
+            if out_inc is not None:
+                out_tag = getattr(
+                    out_inc, "inception_public_key_hash", None
+                ) or getattr(out_inc, "public_key_hash", None)
+                if out_tag == my_inc:
+                    return True
+
+        # is_same_kel works when both addresses resolve on-chain.
+        if await KeyEventLog.is_same_kel(
+            out_to, str(spender_address), onchain_only=True
+        ):
+            return True
+
+        # Last resort: if spender doesn't resolve but my_inc matches out via
+        # prerotated/public_key_hash appearance on any tagged entry.
+        if my_inc:
+            # Direct equality: coinbase prerotated often equals a prior tip.
+            # Already handled by out_to == spender.  Check parent inception
+            # field when input_txn is available is caller's job.
+            pass
+        return False
 
     async def has_key_event_log(
         self, block=None, mempool=False, include_offchain=False
