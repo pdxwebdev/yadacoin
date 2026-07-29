@@ -117,6 +117,7 @@ class Block(object):
         "special_target",
         "header",
         "private_key",
+        "pool_settlement_meta",
     )
 
     @classmethod
@@ -168,6 +169,8 @@ class Block(object):
             self.special_target = self.target
             # TODO: do we need recalc special target here if special min?
         self.header = header
+        self.private_key = None
+        self.pool_settlement_meta = None
 
         self.transactions = []
         for txn in transactions or []:
