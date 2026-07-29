@@ -89,17 +89,30 @@ class ReanchorTriplet:
     ``coinbase_confirming`` is template-only (injected into the candidate
     block with the coinbase).  Tip is resolved from the on-chain KEL only
     so mined coinbase always continues the confirmed chain.
+
+    kn1/kn2/kn3 key material supports an optional same-block pool-payout
+    rotation that extends the coinbase confirming tip (template-only; no
+    mempool).
     """
 
     coinbase_confirming: object  # Transaction — confirming KEL step after coinbase
-    signer_private_key: str  # hex — key that signs the coinbase
+    signer_private_key: str  # hex — key that signs the coinbase (Kn)
     signer_public_key: str  # hex — block / coinbase public key
-    coinbase_prerotated: str  # address — coinbase's prerotated_key_hash
-    coinbase_twice_prerotated: str  # address — coinbase's twice_prerotated_key_hash
-    coinbase_public_key_hash: str  # address — coinbase's public_key_hash
+    coinbase_prerotated: str  # address — coinbase's prerotated_key_hash (Kn+1)
+    coinbase_twice_prerotated: str  # address — coinbase's twice_prerotated_key_hash (Kn+2)
+    coinbase_public_key_hash: str  # address — coinbase's public_key_hash (Kn)
     coinbase_prev_public_key_hash: str  # address — coinbase's prev_public_key_hash
     coinbase_counter: object = None  # int | None — tip.counter + 1
     coinbase_inception_public_key_hash: str = ""  # tip inception tag
+    kn1_private_key: str = ""  # hex — signs coinbase_confirming
+    kn1_public_key: str = ""  # hex
+    kn2_private_key: str = ""  # hex — signs template pool-payout unconfirmed
+    kn2_public_key: str = ""  # hex
+    kn3_private_key: str = ""  # hex — signs template pool-payout confirming
+    kn3_public_key: str = ""  # hex
+    kn3_address: str = ""  # addr(Kn+3) — payout prerotated / confirming pkh
+    kn4_address: str = ""  # addr(Kn+4) — payout confirming prerotated
+    kn5_address: str = ""  # addr(Kn+5) — payout confirming twice
 
 
 # ---------------------------------------------------------------------------
@@ -1351,6 +1364,15 @@ class NodeKeyRotationManager:
                 coinbase_prev_public_key_hash=None,
                 coinbase_counter=None,
                 coinbase_inception_public_key_hash="",
+                kn1_private_key="",
+                kn1_public_key="",
+                kn2_private_key="",
+                kn2_public_key="",
+                kn3_private_key="",
+                kn3_public_key="",
+                kn3_address="",
+                kn4_address="",
+                kn5_address="",
             )
 
         if not k0 or not second_factor:
@@ -1423,17 +1445,29 @@ class NodeKeyRotationManager:
         kn1_address = str(P2PKHBitcoinAddress.from_pubkey(kn1_pub_bytes))
 
         kn2 = derive_secure_path(kn1["private_key"], kn1["chain_code"], second_factor)
-        kn2_address = str(
+        kn2_pub_bytes = _CoincurvePrivateKey(kn2["private_key"]).public_key.format(
+            compressed=True
+        )
+        kn2_pub_bytes.hex()
+        kn2_address = str(P2PKHBitcoinAddress.from_pubkey(kn2_pub_bytes))
+        kn3 = derive_secure_path(kn2["private_key"], kn2["chain_code"], second_factor)
+        kn3_pub_bytes = _CoincurvePrivateKey(kn3["private_key"]).public_key.format(
+            compressed=True
+        )
+        kn3_pub_bytes.hex()
+        kn3_address = str(P2PKHBitcoinAddress.from_pubkey(kn3_pub_bytes))
+        kn4 = derive_secure_path(kn3["private_key"], kn3["chain_code"], second_factor)
+        kn4_address = str(
             P2PKHBitcoinAddress.from_pubkey(
-                _CoincurvePrivateKey(kn2["private_key"]).public_key.format(
+                _CoincurvePrivateKey(kn4["private_key"]).public_key.format(
                     compressed=True
                 )
             )
         )
-        kn3 = derive_secure_path(kn2["private_key"], kn2["chain_code"], second_factor)
-        kn3_address = str(
+        kn5 = derive_secure_path(kn4["private_key"], kn4["chain_code"], second_factor)
+        kn5_address = str(
             P2PKHBitcoinAddress.from_pubkey(
-                _CoincurvePrivateKey(kn3["private_key"]).public_key.format(
+                _CoincurvePrivateKey(kn5["private_key"]).public_key.format(
                     compressed=True
                 )
             )

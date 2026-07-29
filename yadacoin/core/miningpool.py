@@ -480,6 +480,16 @@ class MiningPool(object):
             )
             raise Exception(f"Pool block failed test_block at index {block.index}")
 
+        # Template won: record share_payout for any settlement embedded in it.
+        meta = getattr(block, "pool_settlement_meta", None)
+        if meta and getattr(self.config, "pp", None) is not None:
+            try:
+                await self.config.pp.record_template_settlement(meta, block)
+            except Exception as exc:
+                self.app_log.warning(
+                    "accept_block: failed to record template settlement: %s", exc
+                )
+
         await self.config.consensus.insert_consensus_block(block, self.config.peer)
 
         self.config.processing_queues.block_queue.add(

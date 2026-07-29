@@ -256,6 +256,25 @@ class Block(object):
         )
         if coinbase_txn is not None:
             pending_txns.append(coinbase_txn)
+
+        # Pool settlement is template-only: same-block KEL extension after the
+        # coinbase U/C pair.  If this template loses, payout never happened.
+        block.pool_settlement_meta = None
+        if (
+            getattr(config, "pool_payout", False)
+            and getattr(config, "pp", None) is not None
+            and coinbase_txn is not None
+            and triplet is not None
+        ):
+            try:
+                block.pool_settlement_meta = await config.pp.attach_template_settlement(
+                    pending_txns, triplet, coinbase_txn
+                )
+            except Exception as exc:
+                config.app_log.warning(
+                    "Block.generate: template pool settlement skipped: %s", exc
+                )
+
         if config.LatestBlock.block.index + 1 >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK:
             items_indexed = {x.transaction_signature: x for x in pending_txns}
             for txn in pending_txns:

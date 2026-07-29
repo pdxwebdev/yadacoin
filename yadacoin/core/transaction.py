@@ -488,7 +488,14 @@ class Transaction(object):
         raise NotEnoughMoneyException("not enough money")
 
     async def sum_inputs(
-        self, input_obj, input_txn, my_address, input_sum, inputs, outputs_and_fee_total
+        self,
+        input_obj,
+        input_txn,
+        my_address,
+        input_sum,
+        inputs,
+        outputs_and_fee_total,
+        batch_txns=None,
     ):
         address = my_address
         # Prior-KEL-address value only when this txn is a key-log entry
@@ -496,7 +503,9 @@ class Transaction(object):
         kel_log_spend = False
         try:
             if self.are_kel_fields_populated() and self.public_key:
-                kel_log_spend = await self.get_kel_cross_key_auth(address, mempool=True)
+                kel_log_spend = await self.get_kel_cross_key_auth(
+                    address, mempool=True, batch_txns=batch_txns
+                )
         except Exception:
             kel_log_spend = False
 
@@ -930,7 +939,9 @@ class Transaction(object):
         # is_same_kel inside is_input_spent.
         kel_log_spend = (
             self.are_kel_fields_populated()
-            and await self.get_kel_cross_key_auth(address, block=block, mempool=mempool)
+            and await self.get_kel_cross_key_auth(
+                address, block=block, mempool=mempool, batch_txns=batch_txns
+            )
             if self.inputs
             else False
         )
@@ -1410,19 +1421,17 @@ class Transaction(object):
             return True
         return False
 
-    async def get_kel_cross_key_auth(self, address, block=None, mempool=False):
+    async def get_kel_cross_key_auth(
+        self, address, block=None, mempool=False, batch_txns=None
+    ):
         """Return True when this txn may credit UTXOs locked to prior KEL addresses.
 
         Requires:
-        * this txn is a key-log entry (``are_kel_fields_populated``) — keys are
-          one-time-use; plain tip spends are never authorized;
+        * this txn is a key-log entry (``are_kel_fields_populated``);
         * fork height;
-        * signer address is the current tip prerotated key
-          (``kel[-1].prerotated_key_hash``).
-
-        The unused tip key only appears on-chain as some entry's
-        ``prerotated_key_hash``, not as ``public_key_hash``, so tip resolution
-        goes address → inception → latest rather than ``get_latest(signer_pub)``.
+        * signer *address* is the current tip prerotated key — either the
+          on-chain tip, or the tip after walking same-block *batch_txns*
+          (coinbase U/C → template payout U).
 
         Per-output membership still uses ``KeyEventLog.is_same_kel``.
         """
@@ -1441,9 +1450,6 @@ class Transaction(object):
 
         from yadacoin.core.keyeventlog import KeyEventLog
 
-        # Resolve the KEL tip for *address*.  get_latest(public_key) only finds
-        # entries whose public_key_hash matches the signer — that fails for the
-        # unused tip key, which has not yet authored a KEL entry.
         inception = await KeyEventLog.get_inception(address=address, onchain_only=True)
         if inception is None:
             return False
@@ -1459,7 +1465,46 @@ class Transaction(object):
             latest = await KeyEventLog.get_latest(
                 public_key=inception.public_key, onchain_only=True
             )
-        return bool(latest and latest.prerotated_key_hash == address)
+        if latest is None:
+            return False
+
+        tip_pre = latest.prerotated_key_hash
+        if tip_pre == address:
+            return True
+
+        # Same-block extension: walk batch KEL entries that continue *latest*
+        # via prev/public_key_hash links.  Template pool payout is signed by
+        # Kn+2 after coinbase U (Kn) + confirming (Kn+1) in the same block.
+        if not batch_txns:
+            return False
+        tip_pkh = latest.public_key_hash
+        tip_pre = latest.prerotated_key_hash
+        remaining = [
+            t
+            for t in batch_txns
+            if t is not self
+            and getattr(t, "are_kel_fields_populated", lambda: False)()
+            and getattr(t, "transaction_signature", None)
+            != getattr(self, "transaction_signature", None)
+        ]
+        # Greedy forward walk (chains are short).
+        for _ in range(len(remaining) + 1):
+            if tip_pre == address:
+                return True
+            nxt = None
+            for t in remaining:
+                if (
+                    getattr(t, "prev_public_key_hash", None) == tip_pkh
+                    and getattr(t, "public_key_hash", None) == tip_pre
+                ):
+                    nxt = t
+                    break
+            if nxt is None:
+                break
+            remaining = [t for t in remaining if t is not nxt]
+            tip_pkh = nxt.public_key_hash
+            tip_pre = nxt.prerotated_key_hash
+        return tip_pre == address
 
     async def has_key_event_log(
         self, block=None, mempool=False, include_offchain=False
@@ -1670,6 +1715,12 @@ class Transaction(object):
             ret["requested_rid"] = self.requested_rid
         if self.miner_signature:
             ret["miner_signature"] = self.miner_signature
+        if getattr(self, "counter", None) is not None:
+            ret["counter"] = self.counter
+        if getattr(self, "inception_public_key_hash", None):
+            ret["inception_public_key_hash"] = self.inception_public_key_hash
+        if getattr(self, "branch_public_key_hash_path", None):
+            ret["branch_public_key_hash_path"] = self.branch_public_key_hash_path
         return ret
 
     def to_json(self):
