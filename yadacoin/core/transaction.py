@@ -819,12 +819,11 @@ class Transaction(object):
             # Unique inception: no second KEL root for the same public_key_hash
             # / inception tag (covers re-included identical ids and fresh ids).
             _uniq_idx = block.index if block is not None else None
-            if _uniq_idx is None or _uniq_idx >= CHAIN.KEL_UNIQUE_INCEPTION_FORK:
-                await self.assert_unique_inception(
-                    block_index=_uniq_idx,
-                    batch_txns=batch_txns,
-                    extra_blocks=extra_blocks,
-                )
+            await self.assert_unique_inception(
+                block_index=_uniq_idx,
+                batch_txns=batch_txns,
+                extra_blocks=extra_blocks,
+            )
 
             if has_kel:
                 if block is not None:
