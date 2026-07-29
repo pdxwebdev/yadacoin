@@ -428,7 +428,29 @@ class Block(object):
         new_coinbase.transaction_signature = NodeKeyRotationManager._sign(
             triplet.signer_private_key, new_coinbase.hash
         )
+        new_coinbase.template_kel = True
         return new_coinbase
+
+    @staticmethod
+    def _protect_template_kel_cascade(failed_txn, linked_txn) -> bool:
+        """True if *linked_txn* must not be cascade-removed when *failed_txn* fails.
+
+        Mining template KEL (coinbase + confirming + optional payout U/C) must
+        not be stripped because an unrelated mempool KEL failed.  Failures
+        inside the template chain still cascade among themselves.
+        """
+        linked_is_template = bool(
+            getattr(linked_txn, "coinbase", False)
+            or getattr(linked_txn, "template_kel", False)
+        )
+        if not linked_is_template:
+            return False
+        failed_is_template = bool(
+            getattr(failed_txn, "coinbase", False)
+            or getattr(failed_txn, "template_kel", False)
+        )
+        # Protect template members from non-template failures.
+        return not failed_is_template
 
     @staticmethod
     def find_kel_linked_group(txn: Transaction, candidates) -> list:
@@ -580,14 +602,21 @@ class Block(object):
                     return prefix
             return []
 
+        def _is_template_kel(m):
+            # Coinbase unconfirmed, coinbase_confirming, and template pool
+            # payout U/C pairs are block-local — never discard/defer them.
+            return bool(
+                getattr(m, "coinbase", False) or getattr(m, "template_kel", False)
+            )
+
         async def _defer(members, reason):
             """Omit from this block but leave in mempool for a later block."""
             for m in members:
                 sig = m.transaction_signature
                 if sig in claimed:  # pragma: no cover
                     continue
-                if getattr(m, "coinbase", False):
-                    # Coinbase templates must stay in the candidate set.
+                if _is_template_kel(m):
+                    # Template KEL steps must stay in the candidate set.
                     claimed.add(sig)
                     if m not in accepted:
                         accepted.append(m)
@@ -604,13 +633,14 @@ class Block(object):
                 sig = m.transaction_signature
                 if sig in claimed:
                     continue
-                # Block-local coinbase / coinbase_confirming templates are not
-                # mempool entries and must stay in the candidate set.
-                if getattr(m, "coinbase", False):
+                # Block-local coinbase / coinbase_confirming / template payout
+                # are not mempool entries and must stay in the candidate set.
+                if _is_template_kel(m):
                     claimed.add(sig)
-                    accepted.append(m)
+                    if m not in accepted:
+                        accepted.append(m)
                     config.app_log.debug(
-                        f"select_kel_chains_for_block: keeping coinbase KEL txn "
+                        f"select_kel_chains_for_block: keeping template KEL txn "
                         f"{sig[:24]}... despite: {reason}"
                     )
                     continue
@@ -869,6 +899,13 @@ class Block(object):
                 )
                 linked_group = Block.find_kel_linked_group(transaction_obj, txns)
                 for linked_txn in linked_group:
+                    if (
+                        linked_txn is not transaction_obj
+                        and Block._protect_template_kel_cascade(
+                            transaction_obj, linked_txn
+                        )
+                    ):
+                        continue
                     if linked_txn.coinbase:
                         config.app_log.warning(
                             f"validate_transactions transient KEL skip: linked coinbase txn removed from block: {linked_txn.transaction_signature}"
@@ -902,6 +939,13 @@ class Block(object):
                 # orphan an arbitrarily long chain of siblings, not just one.
                 linked_group = Block.find_kel_linked_group(transaction_obj, txns)
                 for linked_txn in linked_group:
+                    if (
+                        linked_txn is not transaction_obj
+                        and Block._protect_template_kel_cascade(
+                            transaction_obj, linked_txn
+                        )
+                    ):
+                        continue
                     if linked_txn.coinbase:
                         config.app_log.warning(
                             f"validate_transactions permanent KEL skip: linked coinbase txn removed from block: {linked_txn.transaction_signature}"

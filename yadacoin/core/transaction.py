@@ -520,6 +520,19 @@ class Transaction(object):
                 owns = await KeyEventLog.is_same_kel(
                     out_to, str(address), onchain_only=True
                 )
+                # Unused tip keys are not on-chain yet; match via this txn's
+                # inception tag against the output address's KEL inception.
+                if not owns:
+                    my_inc = getattr(self, "inception_public_key_hash", None)
+                    if my_inc:
+                        out_inc = await KeyEventLog.get_inception(
+                            address=out_to, onchain_only=True
+                        )
+                        if out_inc is not None:
+                            out_tag = getattr(
+                                out_inc, "inception_public_key_hash", None
+                            ) or getattr(out_inc, "public_key_hash", None)
+                            owns = out_tag == my_inc
             if not owns:
                 continue
             if self.exact_match and not equal(txn_output.value, outputs_and_fee_total):
@@ -994,9 +1007,21 @@ class Transaction(object):
                 elif kel_log_spend:
                     from yadacoin.core.keyeventlog import KeyEventLog
 
-                    if await KeyEventLog.is_same_kel(
+                    same = await KeyEventLog.is_same_kel(
                         out_to, address, onchain_only=True
-                    ):
+                    )
+                    if not same:
+                        my_inc = getattr(self, "inception_public_key_hash", None)
+                        if my_inc:
+                            out_inc = await KeyEventLog.get_inception(
+                                address=out_to, onchain_only=True
+                            )
+                            if out_inc is not None:
+                                out_tag = getattr(
+                                    out_inc, "inception_public_key_hash", None
+                                ) or getattr(out_inc, "public_key_hash", None)
+                                same = out_tag == my_inc
+                    if same:
                         found = True
                         total_input += float(output.value)
 
@@ -1433,7 +1458,9 @@ class Transaction(object):
           on-chain tip, or the tip after walking same-block *batch_txns*
           (coinbase U/C → template payout U).
 
-        Per-output membership still uses ``KeyEventLog.is_same_kel``.
+        The unused tip key is often not on-chain yet (only appears as a
+        future prerotated).  Inception is resolved from this txn / batch
+        tags first, then on-chain lookup.
         """
         if not self.are_kel_fields_populated():
             return False
@@ -1450,18 +1477,54 @@ class Transaction(object):
 
         from yadacoin.core.keyeventlog import KeyEventLog
 
-        inception = await KeyEventLog.get_inception(address=address, onchain_only=True)
-        if inception is None:
-            return False
-        inception_pkh = getattr(
-            inception, "inception_public_key_hash", None
-        ) or getattr(inception, "public_key_hash", None)
+        # 1) Inception tag from this txn or same-block batch (template path).
+        inception_pkh = getattr(self, "inception_public_key_hash", None) or None
+        if not inception_pkh and batch_txns:
+            for t in batch_txns:
+                tag = getattr(t, "inception_public_key_hash", None)
+                if tag:
+                    inception_pkh = tag
+                    break
+
+        inception = None
+        if not inception_pkh:
+            # 2) On-chain inception for *address* (works when address already
+            # appears as public_key_hash or prerotated_key_hash).
+            inception = await KeyEventLog.get_inception(
+                address=address, onchain_only=True
+            )
+            if inception is None and batch_txns:
+                # 3) Resolve via any batch member that is already on-chain.
+                for t in batch_txns:
+                    for cand in (
+                        getattr(t, "prev_public_key_hash", None),
+                        getattr(t, "public_key_hash", None),
+                    ):
+                        if not cand:
+                            continue
+                        inception = await KeyEventLog.get_inception(
+                            address=cand, onchain_only=True
+                        )
+                        if inception is not None:
+                            break
+                    if inception is not None:
+                        break
+            if inception is None:
+                return False
+            inception_pkh = getattr(
+                inception, "inception_public_key_hash", None
+            ) or getattr(inception, "public_key_hash", None)
         if not inception_pkh:
             return False
+
         latest = await KeyEventLog._latest_from_inception_tag(
             inception_pkh, onchain_only=True
         )
-        if latest is None and getattr(inception, "public_key", None):
+        if (
+            latest is None
+            and inception is not None
+            and getattr(inception, "public_key", None)
+        ):
             latest = await KeyEventLog.get_latest(
                 public_key=inception.public_key, onchain_only=True
             )
@@ -1472,9 +1535,7 @@ class Transaction(object):
         if tip_pre == address:
             return True
 
-        # Same-block extension: walk batch KEL entries that continue *latest*
-        # via prev/public_key_hash links.  Template pool payout is signed by
-        # Kn+2 after coinbase U (Kn) + confirming (Kn+1) in the same block.
+        # Same-block extension: walk batch KEL entries that continue *latest*.
         if not batch_txns:
             return False
         tip_pkh = latest.public_key_hash
@@ -1487,7 +1548,6 @@ class Transaction(object):
             and getattr(t, "transaction_signature", None)
             != getattr(self, "transaction_signature", None)
         ]
-        # Greedy forward walk (chains are short).
         for _ in range(len(remaining) + 1):
             if tip_pre == address:
                 return True

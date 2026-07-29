@@ -1484,6 +1484,9 @@ class NodeKeyRotationManager:
         coinbase_confirming_txn.transaction_signature = NodeKeyRotationManager._sign(
             kn1["private_key"].hex(), coinbase_confirming_txn.hash
         )
+        # Template-only sibling of the coinbase.  Not coinbase=True (that would
+        # reclassify it as UNCONFIRMED).  select_kel_chains must not discard it.
+        coinbase_confirming_txn.template_kel = True
 
         block.private_key = kn["private_key"].hex()
         block.public_key = kn_pub_hex

@@ -306,8 +306,9 @@ class PoolPayer(object):
             inception_public_key_hash=inception,
         )
 
-        input_sum = 0.0
-        evaluated = []
+        # Value credit: these inputs are already filtered as pool-won KEL
+        # coinbases (or this template's coinbase).  Do not rely on
+        # sum_inputs/is_same_kel for the unused tip key (not on-chain yet).
         miner_total = sum(float(v) for v in miner_outputs.values())
         needed = miner_total + float(fee)
 
@@ -315,7 +316,8 @@ class PoolPayer(object):
         if coinbase_txn is not None:
             parents_by_id[coinbase_txn.transaction_signature] = coinbase_txn
 
-        batch_for_auth = list(batch_txns_for_auth or []) + [unconfirmed]
+        input_sum = 0.0
+        evaluated = []
         for inp in list(unconfirmed.inputs):
             parent = parents_by_id.get(inp.id)
             if parent is None:
@@ -323,23 +325,56 @@ class PoolPayer(object):
                     inp.id, instance=True
                 )
             if parent is None:
+                self.app_log.warning(
+                    "build_template_payout_pair: missing parent for input %s",
+                    getattr(inp, "id", "?")[:16],
+                )
                 continue
             if not hasattr(parent, "outputs"):
                 parent = Transaction.from_dict(parent)
             inp.input_txn = parent
-            input_sum = await unconfirmed.sum_inputs(
-                inp,
-                parent,
-                my_address,
-                input_sum,
-                evaluated,
-                needed,
-                batch_txns=batch_for_auth,
-            )
+
+            if parent is coinbase_txn or (
+                coinbase_txn is not None
+                and getattr(parent, "transaction_signature", None)
+                == coinbase_txn.transaction_signature
+            ):
+                # This template's coinbase: credit outs to its prerotated.
+                credited = 0.0
+                pre = getattr(parent, "prerotated_key_hash", None) or ""
+                for o in parent.outputs or []:
+                    if pre and str(o.to) == pre and float(o.value) > 0:
+                        credited += float(o.value)
+                if credited <= 0:
+                    credited = float(self.pool_reward_value(parent))
+            else:
+                credited = float(self.pool_reward_value(parent))
+                if credited <= 0:
+                    # Fallback: sum positive outs (legacy-shaped coinbase).
+                    credited = sum(
+                        float(o.value)
+                        for o in (parent.outputs or [])
+                        if float(getattr(o, "value", 0) or 0) > 0
+                    )
+
+            if credited <= 0:
+                self.app_log.warning(
+                    "build_template_payout_pair: zero credit for input %s "
+                    "pre=%s outs=%s",
+                    getattr(inp, "id", "?")[:16],
+                    getattr(parent, "prerotated_key_hash", None),
+                    [(str(o.to), o.value) for o in (parent.outputs or [])],
+                )
+                continue
+
+            input_sum += credited
+            evaluated.append(inp)
 
         if input_sum + 1e-12 < needed:
             raise NotEnoughMoneyException(
-                f"template payout inputs {input_sum} < miner+fee {needed}"
+                f"template payout inputs {input_sum} < miner+fee {needed} "
+                f"(coinbases={len(coinbases)} evaluated={len(evaluated)} "
+                f"signer={my_address})"
             )
 
         unconfirmed.inputs = evaluated if evaluated else list(unconfirmed.inputs)
@@ -352,6 +387,7 @@ class PoolPayer(object):
         unconfirmed.transaction_signature = NodeKeyRotationManager._sign(
             signer_priv, unconfirmed.hash
         )
+        unconfirmed.template_kel = True
 
         confirming = Transaction(
             txn_time=int(time()),
@@ -376,6 +412,7 @@ class PoolPayer(object):
         confirming.transaction_signature = NodeKeyRotationManager._sign(
             confirming_priv, confirming.hash
         )
+        confirming.template_kel = True
         return unconfirmed, confirming
 
     async def attach_template_settlement(self, pending_txns, triplet, coinbase_txn):
@@ -427,8 +464,15 @@ class PoolPayer(object):
             inception = (
                 getattr(triplet, "coinbase_inception_public_key_hash", None)
                 or getattr(confirming_parent, "inception_public_key_hash", None)
+                or getattr(coinbase_txn, "inception_public_key_hash", None)
                 or None
             )
+            # Ensure template KEL parents carry the inception tag for tip-auth.
+            if inception:
+                if not getattr(coinbase_txn, "inception_public_key_hash", None):
+                    coinbase_txn.inception_public_key_hash = inception
+                if not getattr(confirming_parent, "inception_public_key_hash", None):
+                    confirming_parent.inception_public_key_hash = inception
 
             cur_signer = {
                 "private_key": triplet.kn2_private_key,
