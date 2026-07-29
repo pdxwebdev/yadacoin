@@ -253,6 +253,7 @@ class PoolPayer(object):
         batch_txns_for_auth,
         fee=0.0001,
         spend_template_coinbase=False,
+        txn_time=None,
     ):
         """Build one template-only KEL U/C payout pair at a derived tip."""
         from yadacoin.core.keyrotation import NodeKeyRotationManager
@@ -285,9 +286,14 @@ class PoolPayer(object):
 
         payout_u_counter = (tip_counter + 1) if tip_counter is not None else None
         payout_c_counter = (tip_counter + 2) if tip_counter is not None else None
+        # Must not exceed block.time + TIME_TOLERANCE (settlement can take >10s).
+        if txn_time is None:
+            txn_time = int(time())
+        else:
+            txn_time = int(txn_time)
 
         unconfirmed = Transaction(
-            txn_time=int(time()),
+            txn_time=txn_time,
             version=7,
             public_key=signer_pub,
             inputs=inputs_list,
@@ -390,7 +396,7 @@ class PoolPayer(object):
         unconfirmed.template_kel = True
 
         confirming = Transaction(
-            txn_time=int(time()),
+            txn_time=txn_time,
             version=7,
             public_key=confirming_pub,
             inputs=[],
@@ -415,7 +421,9 @@ class PoolPayer(object):
         confirming.template_kel = True
         return unconfirmed, confirming
 
-    async def attach_template_settlement(self, pending_txns, triplet, coinbase_txn):
+    async def attach_template_settlement(
+        self, pending_txns, triplet, coinbase_txn, block_time=None
+    ):
         """Attach one or more template-only payout U/C pairs (catch-up batches).
 
         Each batch settles ``payout_frequency`` unpaid won blocks.  Multiple
@@ -520,6 +528,7 @@ class PoolPayer(object):
                     inception=inception,
                     batch_txns_for_auth=batch_auth,
                     spend_template_coinbase=(batch_i == 0),
+                    txn_time=block_time,
                 )
                 if unconfirmed is None:
                     break

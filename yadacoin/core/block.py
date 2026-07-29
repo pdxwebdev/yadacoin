@@ -271,7 +271,7 @@ class Block(object):
         ):
             try:
                 block.pool_settlement_meta = await config.pp.attach_template_settlement(
-                    pending_txns, triplet, coinbase_txn
+                    pending_txns, triplet, coinbase_txn, block_time=block.time
                 )
             except Exception as exc:
                 config.app_log.warning(
@@ -404,6 +404,7 @@ class Block(object):
 
             updated_outputs.append(self_output)
             new_coinbase = Transaction(
+                txn_time=int(self.time) if self.time else int(time.time()),
                 version=7,
                 outputs=updated_outputs,
                 coinbase=True,

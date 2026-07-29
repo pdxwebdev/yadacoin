@@ -1461,8 +1461,11 @@ class NodeKeyRotationManager:
         coinbase_counter = (tip_counter + 1) if tip_counter is not None else None
         confirming_counter = (tip_counter + 2) if tip_counter is not None else None
 
+        # Use block.time so template assembly delay cannot push confirming
+        # past TIME_TOLERANCE relative to the block header.
+        confirming_time = int(getattr(block, "time", 0) or time.time())
         coinbase_confirming_txn = Transaction(
-            txn_time=int(time.time()),
+            txn_time=confirming_time,
             public_key=kn1_pub_hex,
             outputs=[{"to": kn2_address, "value": 0.0}],
             inputs=[],
