@@ -65,13 +65,13 @@ function updatePayoutsTable(payouts) {
 
     let blockLink =
       payout.block_height && payout.block_height !== "N/A"
-        ? `<a href="https://pool.yadacoin.io/explorer?term=${payout.block_height}" target="_blank">${payout.block_height}</a>`
+        ? `<a href="/explorer?term=${payout.block_height}" target="_blank">${payout.block_height}</a>`
         : "N/A";
 
     const row = document.createElement("tr");
     row.innerHTML = `
             <td>${new Date(payout.time * 1000).toLocaleString()}</td>
-            <td class="text-start hash-cell"><a href="https://poolyadacoin.io/explorer?term=${payout.hash}" target="_blank">${(payout.hash || "N/A").toString().substring(0, 36)}${(payout.hash || "").length > 36 ? "..." : ""}</a></td>
+            <td class="text-start hash-cell"><a href="/explorer?term=${payout.hash}" target="_blank">${(payout.hash || "N/A").toString().substring(0, 36)}${(payout.hash || "").length > 36 ? "..." : ""}</a></td>
             <td>${payout.amount ? payout.amount.toFixed(6) : "0.000000"} YDA</td>
             <td>${payout.fee ? payout.fee.toFixed(6) : "0.000000"} YDA</td>
             <td>${payout.payees || "N/A"}</td>
