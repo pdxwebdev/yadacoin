@@ -504,7 +504,10 @@ class Transaction(object):
         try:
             if self.are_kel_fields_populated() and self.public_key:
                 kel_log_spend = await self.get_kel_cross_key_auth(
-                    address, mempool=True, batch_txns=batch_txns
+                    address,
+                    mempool=True,
+                    batch_txns=batch_txns,
+                    extra_blocks=getattr(self, "extra_blocks", None),
                 )
         except Exception:
             kel_log_spend = False
@@ -514,7 +517,11 @@ class Transaction(object):
                 continue
             out_to = str(txn_output.to)
             owns = await self._output_owned_by_kel_spender(
-                out_to, address, kel_log_spend
+                out_to,
+                address,
+                kel_log_spend,
+                extra_blocks=getattr(self, "extra_blocks", None),
+                batch_txns=batch_txns,
             )
             if not owns and kel_log_spend:
                 parent_inc = getattr(input_txn, "inception_public_key_hash", None)
@@ -715,6 +722,9 @@ class Transaction(object):
             raise TooManyInputsException(
                 f"Maximum inputs of {CHAIN.MAX_INPUTS} exceeded."
             )
+
+        if extra_blocks is not None:
+            self.extra_blocks = extra_blocks
 
         verify_hash = await self.generate_hash()
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
@@ -957,7 +967,11 @@ class Transaction(object):
         kel_log_spend = (
             self.are_kel_fields_populated()
             and await self.get_kel_cross_key_auth(
-                address, block=block, mempool=mempool, batch_txns=batch_txns
+                address,
+                block=block,
+                mempool=mempool,
+                batch_txns=batch_txns,
+                extra_blocks=extra_blocks or getattr(self, "extra_blocks", None),
             )
             if self.inputs
             else False
@@ -1007,7 +1021,12 @@ class Transaction(object):
             for output in txn_input.outputs:
                 out_to = str(output.to)
                 owned = await self._output_owned_by_kel_spender(
-                    out_to, address, kel_log_spend
+                    out_to,
+                    address,
+                    kel_log_spend,
+                    extra_blocks=extra_blocks or getattr(self, "extra_blocks", None),
+                    batch_txns=batch_txns,
+                    block=block,
                 )
                 if not owned and kel_log_spend:
                     # Same-block / tagged parent coinbase: pool self-out is
@@ -1368,8 +1387,11 @@ class Transaction(object):
                     f"another inception is present in the same block/batch"
                 )
 
+        fork_indices = set()
         for eb in extra_blocks or []:
             eb_idx = getattr(eb, "index", None)
+            if eb_idx is not None:
+                fork_indices.add(int(eb_idx))
             if block_index is not None and eb_idx is not None and eb_idx >= block_index:
                 continue
             for txn in getattr(eb, "transactions", None) or []:
@@ -1380,7 +1402,9 @@ class Transaction(object):
                     )
 
         # On-chain: any prior entry with this public_key_hash, or any entry that
-        # tags this address as the KEL inception.
+        # tags this address as the KEL inception. Heights covered by
+        # extra_blocks are replaced by the inbound fork view and must not
+        # count as an existing KEL.
         match = {
             "$or": [
                 {BlocksQueryFields.PUBLIC_KEY_HASH.value: pkh},
@@ -1390,15 +1414,31 @@ class Transaction(object):
         }
         if block_index is not None:
             match["index"] = {"$lt": int(block_index)}
-        if my_sig:
-            # Still detect when a *different* id already claimed this pkh.
-            # Same-id re-inclusion is also caught because we do not exclude
-            # by id here (unlike username uniqueness).
-            pass
-        doc = await self.config.mongo.async_db.blocks.find_one(
-            match, {"index": 1, "transactions.id": 1}
+        cursor = self.config.mongo.async_db.blocks.find(
+            match, {"index": 1, "transactions": 1}
         )
-        if doc:
+        async for doc in cursor:
+            idx = doc.get("index")
+            if idx is not None and int(idx) in fork_indices:
+                continue
+            # Same-id re-inclusion / re-validation of this inception is OK.
+            if my_sig:
+                same = False
+                for t in doc.get("transactions") or []:
+                    if not isinstance(t, dict):
+                        continue
+                    if t.get("id") != my_sig:
+                        continue
+                    t_pkh = t.get("public_key_hash") or ""
+                    t_inc = t.get("inception_public_key_hash") or ""
+                    t_prev = t.get("prev_public_key_hash") or ""
+                    if t_prev:
+                        continue
+                    if t_pkh == pkh or t_inc == inception_tag or t_pkh == inception_tag:
+                        same = True
+                        break
+                if same:
+                    continue
             raise InvalidTransactionException(
                 f"Duplicate KEL inception for public_key_hash={pkh}: "
                 f"KEL already exists on-chain (block {doc.get('index')})"
@@ -1422,7 +1462,13 @@ class Transaction(object):
                 f"another inception is already in the mempool"
             )
 
-    async def is_already_onchain(self, block_index=None):
+    async def is_already_onchain(self, block_index=None, extra_blocks=None):
+        """True if this KEL entry already exists on the effective chain.
+
+        When verifying an inbound / fork batch, pass ``extra_blocks``. Heights
+        covered by those blocks are replaced by the fork view and must not
+        count as an existing on-chain key event.
+        """
         from yadacoin.core.keyeventlog import BlocksQueryFields
 
         config = Config()
@@ -1462,12 +1508,50 @@ class Transaction(object):
             )
         if not query:
             return False
+
+        fork_indices = set()
+        for eb in extra_blocks or []:
+            idx = getattr(eb, "index", None)
+            if idx is not None:
+                fork_indices.add(int(idx))
+
+        my_sig = getattr(self, "transaction_signature", None) or ""
+        my_twice = getattr(self, "twice_prerotated_key_hash", None) or ""
+        my_pre = getattr(self, "prerotated_key_hash", None) or ""
+        my_pkh = getattr(self, "public_key_hash", None) or ""
+        my_prev = (
+            "" if is_recovers else (getattr(self, "prev_public_key_hash", None) or "")
+        )
+
+        def _txn_matches(t):
+            if not isinstance(t, dict):
+                return False
+            if my_sig and t.get("id") == my_sig:
+                # Same entry re-validation is not a conflicting on-chain hit.
+                return False
+            if my_twice and t.get("twice_prerotated_key_hash") == my_twice:
+                return True
+            if my_pre and t.get("prerotated_key_hash") == my_pre:
+                return True
+            if my_pkh and t.get("public_key_hash") == my_pkh:
+                return True
+            if my_prev and t.get("prev_public_key_hash") == my_prev:
+                return True
+            return False
+
         match = {"$or": query}
         if block_index is not None:
             match["index"] = {"$lt": block_index}
-        result = await config.mongo.async_db.blocks.find_one(match)
-        if result:
-            return True
+        cursor = config.mongo.async_db.blocks.find(
+            match, {"index": 1, "transactions": 1}
+        )
+        async for doc in cursor:
+            idx = doc.get("index")
+            if idx is not None and int(idx) in fork_indices:
+                continue
+            for t in doc.get("transactions") or []:
+                if _txn_matches(t):
+                    return True
         return False
 
     async def is_already_in_mempool(self):
@@ -1553,8 +1637,112 @@ class Transaction(object):
             return True
         return False
 
+    def _kel_walk_candidates(
+        self, batch_txns=None, extra_blocks=None, block_index=None
+    ):
+        """KEL entries that may extend the tip (same-block + inbound fork)."""
+        remaining = []
+        seen_sigs = set()
+        my_sig = getattr(self, "transaction_signature", None)
+
+        def _add(t):
+            if t is None or t is self:
+                return
+            if not getattr(t, "are_kel_fields_populated", lambda: False)():
+                return
+            sig = getattr(t, "transaction_signature", None)
+            if my_sig and sig == my_sig:
+                return
+            if sig is not None:
+                if sig in seen_sigs:
+                    return
+                seen_sigs.add(sig)
+            remaining.append(t)
+
+        for t in batch_txns or []:
+            _add(t)
+
+        for block in extra_blocks or []:
+            idx = getattr(block, "index", None)
+            if block_index is not None and idx is not None and idx > block_index:
+                continue
+            for t in getattr(block, "transactions", None) or []:
+                _add(t)
+
+        return remaining
+
+    def _inception_tag_of(self, txn):
+        if txn is None:
+            return None
+        return getattr(txn, "inception_public_key_hash", None) or getattr(
+            txn, "public_key_hash", None
+        )
+
+    def _kel_tip_states_from_candidates(self, inception_pkh, candidates, mongo_latest):
+        """Tip (pkh, pre) states for *inception_pkh* under a fork-aware view.
+
+        Prefer tips present in inbound candidates. Fall back to the mongo tip
+        when the inbound set has no entry for this inception.
+        """
+
+        starts = []
+        if mongo_latest is not None:
+            starts.append(
+                (
+                    getattr(mongo_latest, "public_key_hash", None),
+                    getattr(mongo_latest, "prerotated_key_hash", None),
+                )
+            )
+
+        matching = []
+        for t in candidates:
+            tag = getattr(t, "inception_public_key_hash", None)
+            if tag and tag != inception_pkh:
+                continue
+            # Untagged inbound KEL entries still participate in the walk; they
+            # are linked by prev/public_key_hash rather than inception tag.
+            matching.append(t)
+
+        # Seed from candidate entries that look like roots relative to matching:
+        # no parent inside matching (prev not equal to some entry's pkh).
+        pkhs = {
+            getattr(t, "public_key_hash", None)
+            for t in matching
+            if getattr(t, "public_key_hash", None)
+        }
+        for t in matching:
+            prev = getattr(t, "prev_public_key_hash", None) or ""
+            if prev and prev in pkhs:
+                continue
+            starts.append(
+                (
+                    getattr(t, "public_key_hash", None),
+                    getattr(t, "prerotated_key_hash", None),
+                )
+            )
+            # Also allow walking from parent tip state into this entry.
+            if prev:
+                starts.append((prev, getattr(t, "public_key_hash", None)))
+
+        # Dedup starts
+        tip_states = []
+        seen = set()
+        for state in starts:
+            if not state[0] and not state[1]:
+                continue
+            if state in seen:
+                continue
+            seen.add(state)
+            tip_states.append(state)
+        return tip_states, matching
+
     async def get_kel_cross_key_auth(
-        self, address, block=None, mempool=False, batch_txns=None
+        self,
+        address,
+        block=None,
+        mempool=False,
+        batch_txns=None,
+        extra_blocks=None,
     ):
         """Return True when this KEL-log txn may credit prior same-KEL UTXOs.
 
@@ -1562,7 +1750,8 @@ class Transaction(object):
         * KEL fields populated (one-time-use keys — plain spends never qualify);
         * fork height;
         * signer *address* is the effective tip prerotated key after walking
-          on-chain tip + same-block *batch_txns* (coinbase U/C → payout U…).
+          on-chain tip + same-block *batch_txns* + inbound *extra_blocks*
+          (fork / sync batch).
 
         Inception is taken from this txn / batch tags first so unused tip keys
         (not yet on-chain as public_key_hash) still authorize.
@@ -1580,7 +1769,14 @@ class Transaction(object):
         if effective_index < CHAIN.KEL_CROSS_KEY_SPENDING_FORK:
             return False
 
+        from collections import deque
+
         from yadacoin.core.keyeventlog import KeyEventLog
+
+        if extra_blocks is None:
+            extra_blocks = getattr(self, "extra_blocks", None) or []
+
+        block_index = getattr(block, "index", None) if block is not None else None
 
         inception_pkh = getattr(self, "inception_public_key_hash", None) or None
         if not inception_pkh and batch_txns:
@@ -1588,6 +1784,18 @@ class Transaction(object):
                 tag = getattr(t, "inception_public_key_hash", None)
                 if tag:
                     inception_pkh = tag
+                    break
+        if not inception_pkh and extra_blocks:
+            for block_obj in extra_blocks:
+                idx = getattr(block_obj, "index", None)
+                if block_index is not None and idx is not None and idx > block_index:
+                    continue
+                for t in getattr(block_obj, "transactions", None) or []:
+                    tag = getattr(t, "inception_public_key_hash", None)
+                    if tag:
+                        inception_pkh = tag
+                        break
+                if inception_pkh:
                     break
 
         inception = None
@@ -1620,6 +1828,32 @@ class Transaction(object):
                             break
                     if inception is not None:
                         break
+            if inception is None and extra_blocks:
+                for block_obj in extra_blocks:
+                    idx = getattr(block_obj, "index", None)
+                    if (
+                        block_index is not None
+                        and idx is not None
+                        and idx > block_index
+                    ):
+                        continue
+                    for t in getattr(block_obj, "transactions", None) or []:
+                        for cand in (
+                            getattr(t, "prev_public_key_hash", None),
+                            getattr(t, "public_key_hash", None),
+                            getattr(t, "prerotated_key_hash", None),
+                        ):
+                            if not cand:
+                                continue
+                            inception = await KeyEventLog.get_inception(
+                                address=cand, onchain_only=True
+                            )
+                            if inception is not None:
+                                break
+                        if inception is not None:
+                            break
+                    if inception is not None:
+                        break
             if inception is None:
                 return False
             inception_pkh = getattr(
@@ -1639,40 +1873,30 @@ class Transaction(object):
             latest = await KeyEventLog.get_latest(
                 public_key=inception.public_key, onchain_only=True
             )
-        if latest is None:
+
+        remaining = self._kel_walk_candidates(
+            batch_txns=batch_txns,
+            extra_blocks=extra_blocks,
+            block_index=block_index,
+        )
+
+        # When verifying an inbound fork, tip may only exist in extra_blocks.
+        tip_states, walk_txns = self._kel_tip_states_from_candidates(
+            inception_pkh, remaining, latest
+        )
+        if not tip_states:
             return False
 
-        tip_pkh = latest.public_key_hash
-        tip_pre = latest.prerotated_key_hash
-        if tip_pre == address:
-            return True
-
-        if not batch_txns:
-            return False
-
-        # Include every same-block KEL entry (except self) that can extend tip.
-        remaining = []
-        for t in batch_txns:
-            if t is self:
-                continue
-            if not getattr(t, "are_kel_fields_populated", lambda: False)():
-                continue
-            if getattr(t, "transaction_signature", None) and getattr(
-                t, "transaction_signature", None
-            ) == getattr(self, "transaction_signature", None):
-                continue
-            remaining.append(t)
-
-        # Walk forward. Prefer unique successor; if multiple, try all via BFS.
-        from collections import deque
-
-        queue = deque([(tip_pkh, tip_pre)])
-        seen = {(tip_pkh, tip_pre)}
+        queue = deque(tip_states)
+        seen = set(tip_states)
         while queue:
             cur_pkh, cur_pre = queue.popleft()
             if cur_pre == address:
                 return True
-            for t in remaining:
+            if cur_pkh == address:
+                # Signer may be the tip public_key_hash itself (coinbase path).
+                return True
+            for t in walk_txns:
                 if (
                     getattr(t, "prev_public_key_hash", None) == cur_pkh
                     and getattr(t, "public_key_hash", None) == cur_pre
@@ -1681,10 +1905,53 @@ class Transaction(object):
                     if state not in seen:
                         seen.add(state)
                         queue.append(state)
+                # Also accept direct prev==cur_pre when cur_pre is the live tip key
+                # (some coinbase rotations only set prev to tip prerotated).
+                elif getattr(t, "prev_public_key_hash", None) == cur_pre and getattr(
+                    t, "public_key_hash", None
+                ):
+                    state = (t.public_key_hash, t.prerotated_key_hash)
+                    if state not in seen:
+                        seen.add(state)
+                        queue.append(state)
         return False
 
+    def _kel_txn_matching_address(
+        self, address, batch_txns=None, extra_blocks=None, block=None
+    ):
+        """Find a KEL txn in inbound view that involves *address*."""
+        block_index = getattr(block, "index", None) if block is not None else None
+
+        def _matches(t):
+            if not t or not getattr(t, "are_kel_fields_populated", lambda: False)():
+                return False
+            return address in (
+                getattr(t, "public_key_hash", None),
+                getattr(t, "prerotated_key_hash", None),
+                getattr(t, "twice_prerotated_key_hash", None),
+                getattr(t, "prev_public_key_hash", None),
+            )
+
+        for t in batch_txns or []:
+            if _matches(t):
+                return t
+        for block_obj in extra_blocks or []:
+            idx = getattr(block_obj, "index", None)
+            if block_index is not None and idx is not None and idx > block_index:
+                continue
+            for t in getattr(block_obj, "transactions", None) or []:
+                if _matches(t):
+                    return t
+        return None
+
     async def _output_owned_by_kel_spender(
-        self, out_to, spender_address, kel_log_spend
+        self,
+        out_to,
+        spender_address,
+        kel_log_spend,
+        extra_blocks=None,
+        batch_txns=None,
+        block=None,
     ):
         """True if *out_to* is spendable by this KEL-log txn's signer."""
         if out_to == str(spender_address):
@@ -1694,9 +1961,31 @@ class Transaction(object):
 
         from yadacoin.core.keyeventlog import KeyEventLog
 
+        if extra_blocks is None:
+            extra_blocks = getattr(self, "extra_blocks", None) or []
+
         # Fast path: same inception tag on this txn vs output address.
         my_inc = getattr(self, "inception_public_key_hash", None)
         if my_inc:
+            # Inbound fork first: parent coinbase/UTXO may only exist there.
+            inbound = self._kel_txn_matching_address(
+                out_to, batch_txns=batch_txns, extra_blocks=extra_blocks, block=block
+            )
+            if inbound is not None:
+                out_tag = getattr(
+                    inbound, "inception_public_key_hash", None
+                ) or getattr(inbound, "public_key_hash", None)
+                if out_tag == my_inc:
+                    return True
+                # Output is this entry's prerotated / pkh under same walk.
+                if out_to in (
+                    getattr(inbound, "prerotated_key_hash", None),
+                    getattr(inbound, "public_key_hash", None),
+                ):
+                    inb_inc = getattr(inbound, "inception_public_key_hash", None)
+                    if not inb_inc or inb_inc == my_inc:
+                        return True
+
             # Output may itself be a KEL-tagged coinbase with inception field.
             # Prefer that over get_inception when the parent is in-memory.
             out_inc = await KeyEventLog.get_inception(address=out_to, onchain_only=True)

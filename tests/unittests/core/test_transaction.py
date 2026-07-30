@@ -1537,15 +1537,22 @@ class TestTransactionPureMethods(AsyncTestCase):
         self.assertFalse(result)
 
     async def test_is_already_onchain_with_field_found(self):
-        """Lines 1063-1101: KEL field set, find_one returns doc → returns True."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        """KEL field set, matching on-chain txn → returns True."""
+        from unittest.mock import MagicMock, patch
 
         txn = Transaction(
             public_key=yadacoin.core.config.CONFIG.public_key,
             prerotated_key_hash="somehash",
         )
         mock_mongo = MagicMock()
-        mock_mongo.async_db.blocks.find_one = AsyncMock(return_value={"_id": "block1"})
+
+        async def _find(*a, **k):
+            yield {
+                "index": 1,
+                "transactions": [{"id": "other", "prerotated_key_hash": "somehash"}],
+            }
+
+        mock_mongo.async_db.blocks.find = MagicMock(side_effect=_find)
         mock_cfg = MagicMock()
         mock_cfg.mongo = mock_mongo
 
@@ -1554,8 +1561,8 @@ class TestTransactionPureMethods(AsyncTestCase):
         self.assertTrue(result)
 
     async def test_is_already_onchain_with_field_not_found(self):
-        """Lines 1063-1101: KEL field set, find_one returns None → returns False."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        """KEL field set, no matching docs → returns False."""
+        from unittest.mock import MagicMock, patch
 
         txn = Transaction(
             public_key=yadacoin.core.config.CONFIG.public_key,
@@ -1564,7 +1571,12 @@ class TestTransactionPureMethods(AsyncTestCase):
             prev_public_key_hash="ccc",
         )
         mock_mongo = MagicMock()
-        mock_mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+
+        async def _empty(*a, **k):
+            if False:
+                yield None
+
+        mock_mongo.async_db.blocks.find = MagicMock(side_effect=_empty)
         mock_cfg = MagicMock()
         mock_cfg.mongo = mock_mongo
 

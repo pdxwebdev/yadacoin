@@ -636,12 +636,27 @@ class TestInsertConsensusBlock(ConsensusBase):
 
     async def test_existing_ignored_returns_false(self):
         self.consensus.mongo.async_db.consensus.find_one = AsyncMock(
-            return_value={"x": 1, "ignore": True}
+            return_value={"x": 1, "ignore": True, "ignore_reason": "verify failed"}
         )
         block = _mk_block()
         peer = self._mk_peer()
         r = await self.consensus.insert_consensus_block(block, peer)
         self.assertFalse(r)
+
+    async def test_existing_orphan_ignored_allows_retry(self):
+        self.consensus.mongo.async_db.consensus.find_one = AsyncMock(
+            return_value={
+                "x": 1,
+                "ignore": True,
+                "ignore_reason": "orphan: cannot connect to local chain",
+            }
+        )
+        block = _mk_block()
+        peer = self._mk_peer()
+        r = await self.consensus.insert_consensus_block(block, peer)
+        self.assertTrue(r)
+        self.consensus.mongo.async_db.consensus.delete_many.assert_awaited()
+        self.consensus.mongo.async_db.consensus.insert_one.assert_awaited()
 
     async def test_inserts_without_verify(self):
         # Verification is deferred to integrate/test_block; insert only stores.
@@ -1262,13 +1277,23 @@ class TestBuildBackward(ConsensusBase):
 
 
 class TestIntegrateBlockWithExisting(ConsensusBase):
-    async def test_status_false_returns(self):
+    async def test_status_false_with_stream_does_not_ignore(self):
+        """Parents may still be in flight; do not poison heavier fork tips."""
         orphan = _mk_block(index=4, signature="orph")
         self.consensus.build_backward_from_block_to_fork = AsyncMock(
             return_value=([orphan], False)
         )
         block = _mk_block()
         await self.consensus.integrate_block_with_existing_chain(block, MagicMock())
+        self.consensus.mongo.async_db.consensus.update_many.assert_not_awaited()
+
+    async def test_status_false_without_stream_marks_ignore(self):
+        orphan = _mk_block(index=4, signature="orph")
+        self.consensus.build_backward_from_block_to_fork = AsyncMock(
+            return_value=([orphan], False)
+        )
+        block = _mk_block()
+        await self.consensus.integrate_block_with_existing_chain(block, None)
         # tip + each walked orphan
         self.assertEqual(
             self.consensus.mongo.async_db.consensus.update_many.await_count, 2

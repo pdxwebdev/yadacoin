@@ -1029,7 +1029,9 @@ class KeyEvent:
                         txn=self.txn,
                     )
 
-        if await self.txn.is_already_onchain(block_index=block_index):
+        if await self.txn.is_already_onchain(
+            block_index=block_index, extra_blocks=extra_blocks
+        ):
             raise KELException("Key event is already onchain", txn=self.txn)
 
     async def sends_to_past_kel_entry(self, block_index=None):
@@ -1158,7 +1160,67 @@ class KeyEvent:
             return {"key_event": key_event}
         return None
 
-    async def get_onchain_child(self):
+    def _txn_is_kel_child(self, txn, exclude_txn_sig=None, direct_only=False):
+        """True if *txn* links as a KEL child of this entry (not self).
+
+        When ``direct_only`` is True, only ``prev_public_key_hash == our
+        public_key_hash`` counts.  Used for same-block batch checks where a
+        single direct child is valid and prerotated/twice hop matches would
+        false-positive on unconfirmed+confirming pairs.
+        """
+        if txn is None:
+            return False
+        pkh = self.txn.public_key_hash or ""
+        pre = self.txn.prerotated_key_hash or ""
+        twice = self.txn.twice_prerotated_key_hash or ""
+        try:
+            sig = txn.transaction_signature
+            if sig == self.txn.transaction_signature:
+                return False
+            if exclude_txn_sig and sig == exclude_txn_sig:
+                return False
+        except Exception:
+            pass
+        t_pkh = getattr(txn, "public_key_hash", None) or ""
+        if t_pkh and t_pkh == pkh:
+            return False
+        t_prev = getattr(txn, "prev_public_key_hash", None) or ""
+        t_pre = getattr(txn, "prerotated_key_hash", None) or ""
+        if pkh and t_prev == pkh:
+            return True
+        if direct_only:
+            return False
+        if pre and (t_pkh == pre or t_prev == pre):
+            return True
+        if twice and (t_prev == twice or t_pre == twice):
+            return True
+        return False
+
+    def _key_event_from_child_txn(self, txn, block_public_key=None):
+        from yadacoin.core.block import Block
+
+        try:
+            block_proxy = type(
+                "BlockProxy",
+                (),
+                {"public_key": block_public_key or ""},
+            )()
+            txn.coinbase = Block.is_coinbase(block_proxy, txn)
+        except Exception:
+            txn.coinbase = False
+        return KeyEvent(
+            txn,
+            flag=classify_key_event_flag(txn),
+            status=KeyEventChainStatus.ONCHAIN,
+        )
+
+    async def get_onchain_child(
+        self,
+        block_index=None,
+        batch_txns=None,
+        extra_blocks=None,
+        exclude_txn_sig=None,
+    ):
         """Return an on-chain KEL child of this entry, if any.
 
         A child is any confirmed entry that claims this entry as predecessor
@@ -1170,8 +1232,22 @@ class KeyEvent:
         tip was already wrongly extended.  That must never happen on a valid
         chain; detecting it here rejects further extensions (and gap-fill)
         of a corrupted parent rather than treating the jump as legitimate.
+
+        When verifying an inbound / fork chain, pass ``extra_blocks`` (and
+        optional ``batch_txns`` / ``block_index``). Heights covered by
+        ``extra_blocks`` are treated as replaced by the fork view — children
+        that exist only on the local losing branch must not reject the inbound
+        KEL extension.
+
+        Same-block ``batch_txns``: a single direct child is valid (the entry
+        under verification). Only a *second* distinct direct child in that
+        batch is treated as a conflict.
         """
-        config = Config()
+        if extra_blocks is None:
+            extra_blocks = []
+        if batch_txns is None:
+            batch_txns = []
+
         pkh = self.txn.public_key_hash or ""
         pre = self.txn.prerotated_key_hash or ""
         twice = self.txn.twice_prerotated_key_hash or ""
@@ -1184,41 +1260,80 @@ class KeyEvent:
         if twice:
             or_clauses.append({BlocksQueryFields.PREV_PUBLIC_KEY_HASH.value: twice})
             or_clauses.append({BlocksQueryFields.PREROTATED_KEY_HASH.value: twice})
+        if not or_clauses and not batch_txns and not extra_blocks:
+            return None
+
+        # Same-block batch: a single direct child is valid. Only two or more
+        # distinct direct children of this parent in the batch is a conflict.
+        batch_children_by_sig = {}
+        for t in batch_txns:
+            if self._txn_is_kel_child(t, direct_only=True):
+                sig = getattr(t, "transaction_signature", None)
+                if sig is not None:
+                    batch_children_by_sig[sig] = t
+        if len(batch_children_by_sig) >= 2:
+            for sig, t in batch_children_by_sig.items():
+                if exclude_txn_sig and sig == exclude_txn_sig:
+                    continue
+                return self._key_event_from_child_txn(t)
+            # Fallback: return any (should not happen if exclude is one of them)
+            return self._key_event_from_child_txn(
+                next(iter(batch_children_by_sig.values()))
+            )
+
+        fork_indices = set()
+        for block in extra_blocks:
+            idx = getattr(block, "index", None)
+            if idx is not None:
+                fork_indices.add(idx)
+            if block_index is not None and idx is not None and idx > block_index:
+                # Future inbound blocks are not yet committed relative to
+                # the entry under verification.
+                continue
+            # Prior fork heights: any child is a real extension on the inbound
+            # chain. Same height as the block under verification is handled via
+            # batch_txns (multi-child rule); skip double-counting here.
+            same_height = (
+                block_index is not None and idx is not None and idx == block_index
+            )
+            if same_height:
+                continue
+            for txn in getattr(block, "transactions", None) or []:
+                if self._txn_is_kel_child(txn, exclude_txn_sig=exclude_txn_sig):
+                    return self._key_event_from_child_txn(
+                        txn, getattr(block, "public_key", None)
+                    )
+
         if not or_clauses:
             return None
 
-        res = config.mongo.async_db.blocks.aggregate(
-            [
-                {"$match": {"$or": or_clauses}},
-                {"$unwind": "$transactions"},
-                {"$match": {"$or": or_clauses}},
-                {"$limit": 1},
-            ]
-        )
+        config = Config()
+        pipeline = [
+            {"$match": {"$or": or_clauses}},
+            {"$unwind": "$transactions"},
+            {"$match": {"$or": or_clauses}},
+            {"$limit": 20},
+        ]
+        res = config.mongo.async_db.blocks.aggregate(pipeline)
         result = await res.to_list(length=None)
-        if result:
-            from yadacoin.core.block import Block
+        for row in result or []:
+            # Heights present in the inbound fork are replaced; skip them.
+            if row.get("index") in fork_indices:
+                continue
+            if (
+                block_index is not None
+                and row.get("index") is not None
+                and row["index"] > block_index
+                and fork_indices
+            ):
+                # Only apply this bound when verifying a fork batch; normal
+                # mempool tip checks still see the full chain.
+                continue
 
-            txn = Transaction.from_dict(result[0]["transactions"])
-            # Ignore self.
-            if txn.transaction_signature == self.txn.transaction_signature:
-                return None
-            if txn.public_key_hash == pkh:
-                return None
-            try:
-                block_proxy = type(
-                    "BlockProxy",
-                    (),
-                    {"public_key": result[0].get("public_key", "")},
-                )()
-                txn.coinbase = Block.is_coinbase(block_proxy, txn)
-            except Exception:
-                txn.coinbase = False
-            return KeyEvent(
-                txn,
-                flag=classify_key_event_flag(txn),
-                status=KeyEventChainStatus.ONCHAIN,
-            )
+            txn = Transaction.from_dict(row["transactions"])
+            if not self._txn_is_kel_child(txn, exclude_txn_sig=exclude_txn_sig):
+                continue
+            return self._key_event_from_child_txn(txn, row.get("public_key", ""))
         return None
 
 
@@ -1389,7 +1504,12 @@ class KeyEventLog:
         latest_entry = await KeyEventLog.get_latest(key_event.txn.public_key)
         if result and result["key_event"]:
             # step 1.1: If found, check that this entry is the latest entry, if not, raise exception
-            onchain_child = await result["key_event"].get_onchain_child()
+            onchain_child = await result["key_event"].get_onchain_child(
+                block_index=block_index,
+                batch_txns=batch_txns,
+                extra_blocks=extra_blocks,
+                exclude_txn_sig=getattr(key_event.txn, "transaction_signature", None),
+            )
             if onchain_child:
                 # Parent already extended on-chain.  Allow only the identical
                 # already-on-chain entry (re-validation); any other child means

@@ -7442,6 +7442,394 @@ class TestGetOnchainChildCoverage(AsyncTestCase):
         self.assertIsNone(result)
 
 
+class TestGetOnchainChildForkView(AsyncTestCase):
+    """Inbound fork verification must ignore children on replaced local heights."""
+
+    async def test_skips_mongo_child_on_fork_replaced_height(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        parent = _make_mock_ke(
+            public_key_hash=_VALID_ADDR_A,
+            prerotated_key_hash=_VALID_ADDR_B,
+            twice_prerotated_key_hash=_VALID_ADDR_C,
+        )
+        parent.txn.transaction_signature = "parent_sig"
+
+        # Local (losing) chain has a child at the height being replaced.
+        local_child_doc = {
+            "index": 100,
+            "public_key": "pk",
+            "transactions": {
+                **dict(_INCEPTION_TXN_DICT),
+                "id": "local_child_sig",
+                "public_key_hash": _VALID_ADDR_B,
+                "prev_public_key_hash": _VALID_ADDR_A,
+                "prerotated_key_hash": _VALID_ADDR_C,
+                "twice_prerotated_key_hash": "1LocalTwiceXXXXXXXXXXXXXXXXXXXXX",
+            },
+        }
+
+        extra_block = MagicMock()
+        extra_block.index = 100
+        extra_block.public_key = "pk"
+        # Inbound fork block at same height has no KEL child of parent yet.
+        extra_block.transactions = []
+
+        mock_cursor = MagicMock()
+        mock_cursor.to_list = AsyncMock(return_value=[local_child_doc])
+
+        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
+            mock_cfg = MagicMock()
+            mock_config_cls.return_value = mock_cfg
+            mock_cfg.mongo.async_db.blocks.aggregate.return_value = mock_cursor
+            result = await parent.get_onchain_child(
+                block_index=101,
+                extra_blocks=[extra_block],
+                exclude_txn_sig="inbound_child_sig",
+            )
+
+        self.assertIsNone(result)
+
+    async def test_finds_child_in_extra_blocks(self):
+        from unittest.mock import MagicMock, patch
+
+        from yadacoin.core.keyeventlog import KeyEvent
+        from yadacoin.core.transaction import Transaction
+
+        parent = _make_mock_ke(
+            public_key_hash=_VALID_ADDR_A,
+            prerotated_key_hash=_VALID_ADDR_B,
+            twice_prerotated_key_hash=_VALID_ADDR_C,
+        )
+        parent.txn.transaction_signature = "parent_sig"
+
+        child_txn = Transaction.from_dict(
+            {
+                **dict(_INCEPTION_TXN_DICT),
+                "id": "fork_child_sig",
+                "public_key_hash": _VALID_ADDR_B,
+                "prev_public_key_hash": _VALID_ADDR_A,
+                "prerotated_key_hash": _VALID_ADDR_C,
+                "twice_prerotated_key_hash": "1ForkTwiceXXXXXXXXXXXXXXXXXXXXXX",
+            }
+        )
+
+        extra_block = MagicMock()
+        extra_block.index = 100
+        extra_block.public_key = "pk"
+        extra_block.transactions = [child_txn]
+
+        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
+            mock_cfg = MagicMock()
+            mock_config_cls.return_value = mock_cfg
+            # Must not need mongo when child is in extra_blocks
+            mock_cfg.mongo.async_db.blocks.aggregate.side_effect = AssertionError(
+                "should not query mongo"
+            )
+            result = await parent.get_onchain_child(
+                block_index=101, extra_blocks=[extra_block]
+            )
+
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result, KeyEvent)
+        self.assertEqual(result.txn.transaction_signature, "fork_child_sig")
+
+    async def test_single_batch_child_under_verification_ok(self):
+        """One direct child in the same block (the txn being verified) is fine."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        parent = _make_mock_ke(
+            public_key_hash=_VALID_ADDR_A,
+            prerotated_key_hash=_VALID_ADDR_B,
+            twice_prerotated_key_hash=_VALID_ADDR_C,
+        )
+        parent.txn.transaction_signature = "parent_sig"
+
+        inbound = MagicMock()
+        inbound.transaction_signature = "inbound_sig"
+        inbound.public_key_hash = _VALID_ADDR_B
+        inbound.prev_public_key_hash = _VALID_ADDR_A
+        inbound.prerotated_key_hash = _VALID_ADDR_C
+        inbound.twice_prerotated_key_hash = "1InbTwiceXXXXXXXXXXXXXXXXXXXXXXX"
+
+        mock_cursor = MagicMock()
+        mock_cursor.to_list = AsyncMock(return_value=[])
+        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
+            mock_cfg = MagicMock()
+            mock_config_cls.return_value = mock_cfg
+            mock_cfg.mongo.async_db.blocks.aggregate.return_value = mock_cursor
+            result = await parent.get_onchain_child(
+                batch_txns=[inbound], exclude_txn_sig="inbound_sig"
+            )
+
+        self.assertIsNone(result)
+
+    async def test_multiple_batch_children_conflict(self):
+        """Two distinct direct children in the same block is a conflict."""
+        from unittest.mock import MagicMock, patch
+
+        from yadacoin.core.keyeventlog import KeyEvent
+        from yadacoin.core.transaction import Transaction
+
+        parent = _make_mock_ke(
+            public_key_hash=_VALID_ADDR_A,
+            prerotated_key_hash=_VALID_ADDR_B,
+            twice_prerotated_key_hash=_VALID_ADDR_C,
+        )
+        parent.txn.transaction_signature = "parent_sig"
+
+        inbound = MagicMock()
+        inbound.transaction_signature = "inbound_sig"
+        inbound.public_key_hash = _VALID_ADDR_B
+        inbound.prev_public_key_hash = _VALID_ADDR_A
+        inbound.prerotated_key_hash = _VALID_ADDR_C
+        inbound.twice_prerotated_key_hash = "1InbTwiceXXXXXXXXXXXXXXXXXXXXXXX"
+
+        sibling = Transaction.from_dict(
+            {
+                **dict(_INCEPTION_TXN_DICT),
+                "id": "sibling_sig",
+                "public_key_hash": "1SiblingChildXXXXXXXXXXXXXXXXXXXX",
+                "prev_public_key_hash": _VALID_ADDR_A,
+                "prerotated_key_hash": "1SiblingPreXXXXXXXXXXXXXXXXXXXXXX",
+                "twice_prerotated_key_hash": "1SiblingTwiceXXXXXXXXXXXXXXXXXXXX",
+            }
+        )
+
+        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
+            mock_cfg = MagicMock()
+            mock_config_cls.return_value = mock_cfg
+            mock_cfg.mongo.async_db.blocks.aggregate.side_effect = AssertionError(
+                "batch conflict should short-circuit before mongo"
+            )
+            result = await parent.get_onchain_child(
+                batch_txns=[inbound, sibling], exclude_txn_sig="inbound_sig"
+            )
+
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result, KeyEvent)
+        self.assertEqual(result.txn.transaction_signature, "sibling_sig")
+
+    async def test_txn_is_kel_child_none_and_exclude_and_exception(self):
+        """Lines 1172/1181-1183: None, exclude_sig, and bad sig attribute."""
+        parent = _make_mock_ke(
+            public_key_hash=_VALID_ADDR_A,
+            prerotated_key_hash=_VALID_ADDR_B,
+            twice_prerotated_key_hash=_VALID_ADDR_C,
+        )
+        parent.txn.transaction_signature = "parent_sig"
+        self.assertFalse(parent._txn_is_kel_child(None))
+
+        excluded = MagicMock()
+        excluded.transaction_signature = "skip_me"
+        excluded.public_key_hash = "other"
+        excluded.prev_public_key_hash = _VALID_ADDR_A
+        excluded.prerotated_key_hash = "x"
+        self.assertFalse(parent._txn_is_kel_child(excluded, exclude_txn_sig="skip_me"))
+
+        class BadSig:
+            @property
+            def transaction_signature(self):
+                raise RuntimeError("no sig")
+
+            public_key_hash = "other"
+            prev_public_key_hash = _VALID_ADDR_A
+            prerotated_key_hash = "x"
+
+        self.assertTrue(parent._txn_is_kel_child(BadSig()))
+
+    async def test_txn_is_kel_child_pre_twice_and_false(self):
+        """Lines 1194/1196/1197: prerotated/twice matches and final False."""
+        parent = _make_mock_ke(
+            public_key_hash=_VALID_ADDR_A,
+            prerotated_key_hash=_VALID_ADDR_B,
+            twice_prerotated_key_hash=_VALID_ADDR_C,
+        )
+        parent.txn.transaction_signature = "parent_sig"
+
+        via_pre = MagicMock()
+        via_pre.transaction_signature = "via_pre"
+        via_pre.public_key_hash = _VALID_ADDR_B  # == parent.pre
+        via_pre.prev_public_key_hash = "unrelated"
+        via_pre.prerotated_key_hash = "x"
+        self.assertTrue(parent._txn_is_kel_child(via_pre, direct_only=False))
+        self.assertFalse(parent._txn_is_kel_child(via_pre, direct_only=True))
+
+        via_twice = MagicMock()
+        via_twice.transaction_signature = "via_twice"
+        via_twice.public_key_hash = "other"
+        via_twice.prev_public_key_hash = _VALID_ADDR_C  # == parent.twice
+        via_twice.prerotated_key_hash = "x"
+        self.assertTrue(parent._txn_is_kel_child(via_twice, direct_only=False))
+
+        no_link = MagicMock()
+        no_link.transaction_signature = "no"
+        no_link.public_key_hash = "zzz"
+        no_link.prev_public_key_hash = "yyy"
+        no_link.prerotated_key_hash = "xxx"
+        self.assertFalse(parent._txn_is_kel_child(no_link))
+
+    async def test_multiple_batch_children_all_excluded_fallback(self):
+        """Line 1280: when every batch child matches exclude, return any."""
+        from unittest.mock import MagicMock, patch
+
+        from yadacoin.core.keyeventlog import KeyEvent
+        from yadacoin.core.transaction import Transaction
+
+        parent = _make_mock_ke(
+            public_key_hash=_VALID_ADDR_A,
+            prerotated_key_hash=_VALID_ADDR_B,
+            twice_prerotated_key_hash=_VALID_ADDR_C,
+        )
+        parent.txn.transaction_signature = "parent_sig"
+
+        child_a = Transaction.from_dict(
+            {
+                **dict(_INCEPTION_TXN_DICT),
+                "id": "s1",
+                "public_key_hash": _VALID_ADDR_B,
+                "prev_public_key_hash": _VALID_ADDR_A,
+                "prerotated_key_hash": _VALID_ADDR_C,
+                "twice_prerotated_key_hash": "1T1XXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            }
+        )
+        child_b = Transaction.from_dict(
+            {
+                **dict(_INCEPTION_TXN_DICT),
+                "id": "s2",
+                "public_key_hash": "1OtherChildXXXXXXXXXXXXXXXXXXXXX",
+                "prev_public_key_hash": _VALID_ADDR_A,
+                "prerotated_key_hash": "1OtherPreXXXXXXXXXXXXXXXXXXXXXX",
+                "twice_prerotated_key_hash": "1OtherTwiceXXXXXXXXXXXXXXXXXXXX",
+            }
+        )
+
+        class AlwaysEqual:
+            def __eq__(self, other):
+                return True
+
+            def __bool__(self):
+                return True
+
+        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
+            mock_cfg = MagicMock()
+            mock_config_cls.return_value = mock_cfg
+            mock_cfg.mongo.async_db.blocks.aggregate.side_effect = AssertionError(
+                "should not reach mongo"
+            )
+            result = await parent.get_onchain_child(
+                batch_txns=[child_a, child_b],
+                exclude_txn_sig=AlwaysEqual(),
+            )
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result, KeyEvent)
+
+    async def test_extra_blocks_skips_future_and_same_height(self):
+        """Lines 1296/1304: future and same-height extra_blocks are skipped."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        parent = _make_mock_ke(
+            public_key_hash=_VALID_ADDR_A,
+            prerotated_key_hash=_VALID_ADDR_B,
+            twice_prerotated_key_hash=_VALID_ADDR_C,
+        )
+        parent.txn.transaction_signature = "parent_sig"
+
+        child = MagicMock()
+        child.transaction_signature = "child_sig"
+        child.public_key_hash = _VALID_ADDR_B
+        child.prev_public_key_hash = _VALID_ADDR_A
+        child.prerotated_key_hash = _VALID_ADDR_C
+        child.twice_prerotated_key_hash = "1T"
+
+        future = MagicMock()
+        future.index = 200
+        future.public_key = "pk"
+        future.transactions = [child]
+
+        same = MagicMock()
+        same.index = 100
+        same.public_key = "pk"
+        same.transactions = [child]
+
+        mock_cursor = MagicMock()
+        mock_cursor.to_list = AsyncMock(return_value=[])
+        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
+            mock_cfg = MagicMock()
+            mock_config_cls.return_value = mock_cfg
+            mock_cfg.mongo.async_db.blocks.aggregate.return_value = mock_cursor
+            result = await parent.get_onchain_child(
+                block_index=100,
+                extra_blocks=[future, same],
+            )
+        self.assertIsNone(result)
+
+    async def test_no_or_clauses_returns_none(self):
+        """Line 1314: empty KEL fields and no batch/extra => None early; with
+        empty fields but empty batch that already ran, or_clauses empty."""
+        from unittest.mock import MagicMock
+
+        parent = _make_mock_ke(
+            public_key_hash="",
+            prerotated_key_hash="",
+            twice_prerotated_key_hash="",
+        )
+        parent.txn.public_key_hash = ""
+        parent.txn.prerotated_key_hash = ""
+        parent.txn.twice_prerotated_key_hash = ""
+        parent.txn.transaction_signature = "parent_sig"
+
+        # With no or_clauses and empty batch that didn't hit multi-child,
+        # and extra_blocks that add fork_indices but no children:
+        eb = MagicMock()
+        eb.index = 50
+        eb.transactions = []
+        result = await parent.get_onchain_child(extra_blocks=[eb], batch_txns=[])
+        self.assertIsNone(result)
+
+    async def test_mongo_row_above_block_index_with_fork_skipped(self):
+        """Line 1337: when fork_indices set, rows above block_index are skipped."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        parent = _make_mock_ke(
+            public_key_hash=_VALID_ADDR_A,
+            prerotated_key_hash=_VALID_ADDR_B,
+            twice_prerotated_key_hash=_VALID_ADDR_C,
+        )
+        parent.txn.transaction_signature = "parent_sig"
+
+        future_child_doc = {
+            "index": 150,
+            "public_key": "pk",
+            "transactions": {
+                **dict(_INCEPTION_TXN_DICT),
+                "id": "future_child",
+                "public_key_hash": _VALID_ADDR_B,
+                "prev_public_key_hash": _VALID_ADDR_A,
+                "prerotated_key_hash": _VALID_ADDR_C,
+                "twice_prerotated_key_hash": "1FutXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            },
+        }
+
+        # fork_indices non-empty via extra_block at unrelated height
+        eb = MagicMock()
+        eb.index = 90
+        eb.public_key = "pk"
+        eb.transactions = []
+
+        mock_cursor = MagicMock()
+        mock_cursor.to_list = AsyncMock(return_value=[future_child_doc])
+        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
+            mock_cfg = MagicMock()
+            mock_config_cls.return_value = mock_cfg
+            mock_cfg.mongo.async_db.blocks.aggregate.return_value = mock_cursor
+            result = await parent.get_onchain_child(
+                block_index=100,
+                extra_blocks=[eb],
+            )
+        self.assertIsNone(result)
+
+
 class TestInceptionTagAndSpendConflictGaps(AsyncTestCase):
     """Cover remaining _inception_tag and kel_spend_conflict branches."""
 

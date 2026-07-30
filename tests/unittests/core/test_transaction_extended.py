@@ -591,7 +591,12 @@ class TestIsAlreadyOnchain(TransactionTestCase):
             prerotated_key_hash="somehash",
         )
         mock_db = MagicMock()
-        mock_db.blocks.find_one = AsyncMock(return_value=None)
+
+        async def _empty(*a, **k):
+            if False:
+                yield None
+
+        mock_db.blocks.find = MagicMock(side_effect=_empty)
         with patch.object(txn.config.mongo, "async_db", new=mock_db):
             result = await txn.is_already_onchain()
         self.assertFalse(result)
@@ -604,13 +609,20 @@ class TestIsAlreadyOnchain(TransactionTestCase):
             prerotated_key_hash="somehash",
         )
         mock_db = MagicMock()
-        mock_db.blocks.find_one = AsyncMock(return_value={"index": 1})
+
+        async def _find(*a, **k):
+            yield {
+                "index": 1,
+                "transactions": [{"id": "other", "prerotated_key_hash": "somehash"}],
+            }
+
+        mock_db.blocks.find = MagicMock(side_effect=_find)
         with patch.object(txn.config.mongo, "async_db", new=mock_db):
             result = await txn.is_already_onchain()
         self.assertTrue(result)
 
     async def test_with_block_index_adds_index_filter(self):
-        """Line 1221: block_index provided → query includes an index '$lt' filter."""
+        """block_index provided → query includes an index '$lt' filter."""
         txn = Transaction(
             public_key=self.public_key,
             inputs=[],
@@ -619,17 +631,65 @@ class TestIsAlreadyOnchain(TransactionTestCase):
         )
         captured_queries = []
 
-        async def mock_find_one(query):
+        async def mock_find(query, *a, **k):
             captured_queries.append(query)
-            return None
+            if False:
+                yield None
 
         mock_db = MagicMock()
-        mock_db.blocks.find_one = mock_find_one
+        mock_db.blocks.find = MagicMock(side_effect=mock_find)
         with patch.object(txn.config.mongo, "async_db", new=mock_db):
             result = await txn.is_already_onchain(block_index=100)
         self.assertFalse(result)
         self.assertIn("index", captured_queries[0])
         self.assertEqual(captured_queries[0]["index"], {"$lt": 100})
+
+    async def test_skips_fork_replaced_height(self):
+        """Local KEL at a height covered by extra_blocks must not count."""
+        txn = Transaction(
+            public_key=self.public_key,
+            inputs=[],
+            outputs=[],
+            prerotated_key_hash="somehash",
+            transaction_signature="inbound_sig",
+        )
+        mock_db = MagicMock()
+
+        async def _find(*a, **k):
+            yield {
+                "index": 100,
+                "transactions": [
+                    {"id": "local_sig", "prerotated_key_hash": "somehash"}
+                ],
+            }
+
+        mock_db.blocks.find = MagicMock(side_effect=_find)
+        eb = MagicMock()
+        eb.index = 100
+        with patch.object(txn.config.mongo, "async_db", new=mock_db):
+            result = await txn.is_already_onchain(block_index=101, extra_blocks=[eb])
+        self.assertFalse(result)
+
+    async def test_same_id_revalidation_not_already_onchain(self):
+        txn = Transaction(
+            public_key=self.public_key,
+            inputs=[],
+            outputs=[],
+            prerotated_key_hash="somehash",
+            transaction_signature="same_sig",
+        )
+        mock_db = MagicMock()
+
+        async def _find(*a, **k):
+            yield {
+                "index": 50,
+                "transactions": [{"id": "same_sig", "prerotated_key_hash": "somehash"}],
+            }
+
+        mock_db.blocks.find = MagicMock(side_effect=_find)
+        with patch.object(txn.config.mongo, "async_db", new=mock_db):
+            result = await txn.is_already_onchain(block_index=100)
+        self.assertFalse(result)
 
 
 class TestIsAlreadyInMempool(TransactionTestCase):
@@ -1228,13 +1288,55 @@ class TestVerifyCoverageGaps(TransactionTestCase):
             inception_public_key_hash="1PkHash",
         )
         mock_db = MagicMock()
-        mock_db.blocks.find_one = AsyncMock(return_value={"index": 100})
+
+        async def _find(_q, _p=None):
+            yield {"index": 100, "transactions": []}
+
+        mock_db.blocks.find = MagicMock(side_effect=lambda *a, **k: _find(*a, **k))
         mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
         with patch.object(txn.config.mongo, "async_db", mock_db):
             with self.assertRaises(InvalidTransactionException) as ctx:
                 await txn.assert_unique_inception(block_index=600000)
         self.assertIn("Duplicate KEL inception", str(ctx.exception))
-        mock_db.blocks.find_one.assert_awaited()
+        mock_db.blocks.find.assert_called()
+
+    async def test_assert_unique_inception_skips_fork_replaced_height(self):
+        """Local KEL at a height covered by extra_blocks must not block inbound."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1PkHash",
+            prev_public_key_hash="",
+            transaction_signature="sig-new",
+            inception_public_key_hash="1PkHash",
+        )
+        # Inbound fork block at height 100 replaces local chain content.
+        eb = MagicMock()
+        eb.index = 100
+        eb.transactions = []  # no competing inception on inbound
+
+        mock_db = MagicMock()
+
+        async def _find(_q, _p=None):
+            yield {
+                "index": 100,
+                "transactions": [
+                    {
+                        "id": "local-other",
+                        "public_key_hash": "1PkHash",
+                        "prev_public_key_hash": "",
+                        "inception_public_key_hash": "1PkHash",
+                    }
+                ],
+            }
+
+        mock_db.blocks.find = MagicMock(side_effect=lambda *a, **k: _find(*a, **k))
+        mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        with patch.object(txn.config.mongo, "async_db", mock_db):
+            await txn.assert_unique_inception(block_index=101, extra_blocks=[eb])
 
     async def test_assert_unique_inception_rejects_batch_sibling(self):
         """Two inceptions for same pkh in one batch — second fails."""
@@ -1275,11 +1377,16 @@ class TestVerifyCoverageGaps(TransactionTestCase):
             inception_public_key_hash="1Fresh",
         )
         mock_db = MagicMock()
-        mock_db.blocks.find_one = AsyncMock(return_value=None)
+
+        async def _find(_q, _p=None):
+            if False:
+                yield None
+
+        mock_db.blocks.find = MagicMock(side_effect=lambda *a, **k: _find(*a, **k))
         mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
         with patch.object(txn.config.mongo, "async_db", mock_db):
             await txn.assert_unique_inception(block_index=700000)
-        mock_db.blocks.find_one.assert_awaited()
+        mock_db.blocks.find.assert_called()
 
     async def test_assert_unique_inception_skips_rotations(self):
         """Entries with prev_public_key_hash are not inceptions."""
@@ -1336,7 +1443,12 @@ class TestVerifyCoverageGaps(TransactionTestCase):
             inception_public_key_hash="1PkHash",
         )
         mock_db = MagicMock()
-        mock_db.blocks.find_one = AsyncMock(return_value=None)
+
+        async def _find(_q, _p=None):
+            if False:
+                yield None
+
+        mock_db.blocks.find = MagicMock(side_effect=lambda *a, **k: _find(*a, **k))
         mock_db.miner_transactions.find_one = AsyncMock(return_value={"id": "other"})
         with patch.object(txn.config.mongo, "async_db", mock_db):
             with self.assertRaises(InvalidTransactionException):
@@ -1447,6 +1559,64 @@ class TestVerifyCoverageGaps(TransactionTestCase):
                 )
         self.assertTrue(ok)
 
+    async def test_get_kel_cross_key_auth_extra_blocks_walk(self):
+        """Inbound fork KEL tips must authorize spends, not only local mongo."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        spender = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1TipPre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1TipPkh",
+            prev_public_key_hash="1MidPre",
+            inception_public_key_hash="1Inc",
+            transaction_signature="sig-tip",
+        )
+        parent = MagicMock()
+        parent.are_kel_fields_populated = lambda: True
+        parent.transaction_signature = "sig-parent"
+        parent.prev_public_key_hash = "1OnchainPkh"
+        parent.public_key_hash = "1OnchainPre"
+        parent.prerotated_key_hash = "1TipPkh"
+        parent.inception_public_key_hash = "1Inc"
+
+        mid = MagicMock()
+        mid.are_kel_fields_populated = lambda: True
+        mid.transaction_signature = "sig-mid"
+        mid.prev_public_key_hash = "1OnchainPre"
+        mid.public_key_hash = "1TipPkh"
+        mid.prerotated_key_hash = "1TipPre"
+        mid.inception_public_key_hash = "1Inc"
+
+        fork_block = MagicMock()
+        fork_block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK + 5
+        fork_block.transactions = [parent, mid]
+
+        # Local mongo tip is older / on the losing branch — walk must use
+        # extra_blocks to reach 1TipPre.
+        latest = MagicMock()
+        latest.public_key_hash = "1OnchainPkh"
+        latest.prerotated_key_hash = "1OnchainPre"
+
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK + 10
+        block = MagicMock()
+        block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK + 6
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog._latest_from_inception_tag",
+                new=AsyncMock(return_value=latest),
+            ):
+                ok = await spender.get_kel_cross_key_auth(
+                    "1TipPre",
+                    block=block,
+                    batch_txns=[spender],
+                    extra_blocks=[fork_block],
+                )
+        self.assertTrue(ok)
+
     async def test_sum_inputs_kel_parent_inc_match(self):
         """sum_inputs credits prerotated out via parent inception match."""
         from unittest.mock import AsyncMock, MagicMock, patch
@@ -1543,7 +1713,12 @@ class TestVerifyCoverageGaps(TransactionTestCase):
         from unittest.mock import AsyncMock, patch
 
         mock_db = MagicMock()
-        mock_db.blocks.find_one = AsyncMock(return_value=None)
+
+        async def _find(_q, _p=None):
+            if False:
+                yield None
+
+        mock_db.blocks.find = MagicMock(side_effect=lambda *a, **k: _find(*a, **k))
         mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
         with patch.object(b.config.mongo, "async_db", mock_db):
             await b.assert_unique_inception(block_index=20, extra_blocks=[eb])
@@ -1566,7 +1741,12 @@ class TestVerifyCoverageGaps(TransactionTestCase):
             inception_public_key_hash="1Same",
         )
         mock_db = MagicMock()
-        mock_db.blocks.find_one = AsyncMock(return_value=None)
+
+        async def _find(_q, _p=None):
+            if False:
+                yield None
+
+        mock_db.blocks.find = MagicMock(side_effect=lambda *a, **k: _find(*a, **k))
         mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
         with patch.object(b.config.mongo, "async_db", mock_db):
             await b.assert_unique_inception(batch_txns=[a, b])
@@ -1812,7 +1992,12 @@ class TestVerifyCoverageGaps(TransactionTestCase):
             inception_public_key_hash="1Same",
         )
         mock_db = MagicMock()
-        mock_db.blocks.find_one = AsyncMock(return_value=None)
+
+        async def _find(_q, _p=None):
+            if False:
+                yield None
+
+        mock_db.blocks.find = MagicMock(side_effect=lambda *a, **k: _find(*a, **k))
         mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
         with patch.object(b.config.mongo, "async_db", mock_db):
             await b.assert_unique_inception(batch_txns=[a, b])
@@ -2639,3 +2824,489 @@ class TestKelCrossRemainingLines(TransactionTestCase):
                 new=AsyncMock(return_value=empty_inc),
             ):
                 self.assertFalse(await txn.get_kel_cross_key_auth("1Pk"))
+
+
+class TestCoverageGapsTo100(TransactionTestCase):
+    """Fill remaining coverage gaps for 100% line coverage."""
+
+    async def test_assert_unique_inception_same_id_revalidation(self):
+        """Lines 1428-1441: same-id inception re-validation is allowed."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1PkHash",
+            prev_public_key_hash="",
+            transaction_signature="same-sig",
+            inception_public_key_hash="1PkHash",
+        )
+        mock_db = MagicMock()
+
+        async def _find(_q, _p=None):
+            yield {
+                "index": 50,
+                "transactions": [
+                    "not-a-dict",
+                    {
+                        "id": "other-sig",
+                        "public_key_hash": "nope",
+                        "prev_public_key_hash": "",
+                    },
+                    {
+                        "id": "same-sig",
+                        "public_key_hash": "1PkHash",
+                        "prev_public_key_hash": "has-prev-skip",
+                        "inception_public_key_hash": "1PkHash",
+                    },
+                    {
+                        "id": "same-sig",
+                        "public_key_hash": "1PkHash",
+                        "prev_public_key_hash": "",
+                        "inception_public_key_hash": "1PkHash",
+                    },
+                ],
+            }
+
+        mock_db.blocks.find = MagicMock(side_effect=lambda *a, **k: _find(*a, **k))
+        mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
+        with patch.object(txn.config.mongo, "async_db", mock_db):
+            await txn.assert_unique_inception(block_index=100)
+
+    async def test_is_already_onchain_txn_matches_branches(self):
+        """Lines 1530-1542: _txn_matches non-dict, twice/pre/pkh/prev/false."""
+        from unittest.mock import MagicMock, patch
+
+        txn = Transaction(
+            public_key=self.public_key,
+            inputs=[],
+            outputs=[],
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1Pkh",
+            prev_public_key_hash="1Prev",
+            transaction_signature="my-sig",
+        )
+        mock_db = MagicMock()
+
+        async def _find_nondict(*a, **k):
+            yield {"index": 1, "transactions": ["x", None]}
+
+        mock_db.blocks.find = MagicMock(side_effect=_find_nondict)
+        with patch.object(txn.config.mongo, "async_db", mock_db):
+            self.assertFalse(await txn.is_already_onchain(block_index=10))
+
+        async def _find_twice(*a, **k):
+            yield {
+                "index": 1,
+                "transactions": [
+                    {"id": "other", "twice_prerotated_key_hash": "1Twice"}
+                ],
+            }
+
+        mock_db.blocks.find = MagicMock(side_effect=_find_twice)
+        with patch.object(txn.config.mongo, "async_db", mock_db):
+            self.assertTrue(await txn.is_already_onchain(block_index=10))
+
+        async def _find_pkh(*a, **k):
+            yield {
+                "index": 1,
+                "transactions": [{"id": "other", "public_key_hash": "1Pkh"}],
+            }
+
+        mock_db.blocks.find = MagicMock(side_effect=_find_pkh)
+        with patch.object(txn.config.mongo, "async_db", mock_db):
+            self.assertTrue(await txn.is_already_onchain(block_index=10))
+
+        async def _find_prev(*a, **k):
+            yield {
+                "index": 1,
+                "transactions": [{"id": "other", "prev_public_key_hash": "1Prev"}],
+            }
+
+        mock_db.blocks.find = MagicMock(side_effect=_find_prev)
+        with patch.object(txn.config.mongo, "async_db", mock_db):
+            self.assertTrue(await txn.is_already_onchain(block_index=10))
+
+        async def _find_nomatch(*a, **k):
+            yield {
+                "index": 1,
+                "transactions": [{"id": "other", "public_key_hash": "zzz"}],
+            }
+
+        mock_db.blocks.find = MagicMock(side_effect=_find_nomatch)
+        with patch.object(txn.config.mongo, "async_db", mock_db):
+            self.assertFalse(await txn.is_already_onchain(block_index=10))
+
+    def test_kel_walk_candidates_and_inception_tag(self):
+        """Lines 1660/1674/1681-1683: walk candidates + inception tag helper."""
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1T",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+            transaction_signature="self-sig",
+        )
+        self.assertIsNone(txn._inception_tag_of(None))
+        bare = MagicMock()
+        bare.inception_public_key_hash = None
+        bare.public_key_hash = "1X"
+        self.assertEqual(txn._inception_tag_of(bare), "1X")
+
+        a = MagicMock()
+        a.are_kel_fields_populated = lambda: True
+        a.transaction_signature = "dup"
+        a.public_key_hash = "A"
+        b = MagicMock()
+        b.are_kel_fields_populated = lambda: True
+        b.transaction_signature = "dup"  # duplicate sig skipped
+        b.public_key_hash = "B"
+        self_dup = MagicMock()
+        self_dup.are_kel_fields_populated = lambda: True
+        self_dup.transaction_signature = "self-sig"
+        self_dup.public_key_hash = "S"
+
+        future = MagicMock()
+        future.index = 50
+        future.transactions = [a]
+
+        prior = MagicMock()
+        prior.index = 10
+        prior.transactions = [b, self_dup]
+
+        remaining = txn._kel_walk_candidates(
+            batch_txns=[a, b, self_dup],
+            extra_blocks=[future, prior],
+            block_index=20,
+        )
+        # a from batch; b skipped as dup sig; self_dup skipped; future skipped;
+        # prior re-adds nothing new for a/b
+        self.assertEqual(len(remaining), 1)
+        self.assertIs(remaining[0], a)
+
+    def test_kel_tip_states_from_candidates_filters(self):
+        """Lines 1708/1731/1739: tag mismatch, prev seed, empty state skip."""
+        txn = Transaction(public_key=self.public_key)
+        wrong = MagicMock()
+        wrong.inception_public_key_hash = "OTHER"
+        wrong.public_key_hash = "W"
+        wrong.prev_public_key_hash = ""
+        wrong.prerotated_key_hash = "Wp"
+
+        empty = MagicMock()
+        empty.inception_public_key_hash = "INC"
+        empty.public_key_hash = None
+        empty.prev_public_key_hash = ""
+        empty.prerotated_key_hash = None
+
+        root = MagicMock()
+        root.inception_public_key_hash = "INC"
+        root.public_key_hash = "R"
+        root.prev_public_key_hash = "OUT"
+        root.prerotated_key_hash = "Rp"
+
+        child = MagicMock()
+        child.inception_public_key_hash = "INC"
+        child.public_key_hash = "C"
+        child.prev_public_key_hash = "R"
+        child.prerotated_key_hash = "Cp"
+
+        tips, matching = txn._kel_tip_states_from_candidates(
+            "INC", [wrong, empty, root, child], None
+        )
+        self.assertNotIn(wrong, matching)
+        self.assertIn(root, matching)
+        self.assertIn(child, matching)
+        # empty state (None, None) skipped; root and parent-seed present
+        self.assertTrue(any(s[0] == "R" for s in tips))
+        self.assertTrue(any(s == ("OUT", "R") for s in tips))
+
+    async def test_get_kel_cross_inception_from_extra_blocks_tag(self):
+        """Lines 1796-1810: inception tag discovered via extra_blocks."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1T",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+        )
+        txn.inception_public_key_hash = None
+
+        tagged = MagicMock()
+        tagged.inception_public_key_hash = "1Inc"
+        tagged.are_kel_fields_populated = lambda: True
+        tagged.transaction_signature = "t1"
+        tagged.public_key_hash = "1On"
+        tagged.prerotated_key_hash = "1Wanted"
+        tagged.prev_public_key_hash = ""
+
+        block = MagicMock()
+        block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK + 6
+
+        future = MagicMock()
+        future.index = block.index + 50
+        future.transactions = [tagged]
+
+        prior = MagicMock()
+        prior.index = block.index - 1
+        prior.transactions = [tagged]
+
+        latest = MagicMock(public_key_hash="1On", prerotated_key_hash="1Wanted")
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK + 10
+
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog._latest_from_inception_tag",
+                new=AsyncMock(return_value=latest),
+            ):
+                ok = await txn.get_kel_cross_key_auth(
+                    "1Wanted",
+                    block=block,
+                    extra_blocks=[future, prior],
+                )
+        self.assertTrue(ok)
+
+    async def test_get_kel_cross_inception_resolve_via_extra_blocks(self):
+        """Lines 1843-1867: get_inception via extra_blocks cands."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1T",
+            public_key_hash="",
+            prev_public_key_hash="",
+        )
+        txn.inception_public_key_hash = None
+        txn.public_key_hash = ""
+        txn.prev_public_key_hash = ""
+
+        t = MagicMock()
+        t.prev_public_key_hash = None
+        t.public_key_hash = None
+        t.prerotated_key_hash = "1Hit"
+        t.inception_public_key_hash = None
+        t.are_kel_fields_populated = lambda: True
+        t.transaction_signature = "t"
+
+        block = MagicMock()
+        block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK + 6
+
+        future = MagicMock()
+        future.index = block.index + 50
+        future.transactions = [t]
+
+        prior = MagicMock()
+        prior.index = block.index - 1
+        prior.transactions = [t]
+
+        inception = MagicMock(
+            inception_public_key_hash="1Inc",
+            public_key_hash="1Inc",
+            public_key=None,
+        )
+        latest = MagicMock(public_key_hash="1On", prerotated_key_hash="1Wanted")
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK + 10
+
+        async def gi(address=None, **k):
+            if address == "1Hit":
+                return inception
+            return None
+
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                new=AsyncMock(side_effect=gi),
+            ):
+                with patch(
+                    "yadacoin.core.keyeventlog.KeyEventLog._latest_from_inception_tag",
+                    new=AsyncMock(return_value=latest),
+                ):
+                    ok = await txn.get_kel_cross_key_auth(
+                        "1Wanted",
+                        block=block,
+                        extra_blocks=[future, prior],
+                    )
+        self.assertTrue(ok)
+
+    async def test_get_kel_cross_empty_tips_and_pkh_match_and_walk(self):
+        """Lines 1899/1909/1917-1918: empty tips, pkh match, BFS walk."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1T",
+            public_key_hash="1Pk",
+            prev_public_key_hash="1Prev",
+            inception_public_key_hash="1Inc",
+            transaction_signature="self",
+        )
+        mock_lb = MagicMock()
+        mock_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK + 5
+
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog._latest_from_inception_tag",
+                new=AsyncMock(return_value=None),
+            ):
+                with patch.object(
+                    txn, "_kel_tip_states_from_candidates", return_value=([], [])
+                ):
+                    self.assertFalse(
+                        await txn.get_kel_cross_key_auth("1X", mempool=True)
+                    )
+
+        # cur_pkh == address (coinbase path)
+        latest = MagicMock(public_key_hash="1TipPkh", prerotated_key_hash="1TipPre")
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog._latest_from_inception_tag",
+                new=AsyncMock(return_value=latest),
+            ):
+                self.assertTrue(
+                    await txn.get_kel_cross_key_auth("1TipPkh", mempool=True)
+                )
+
+        # BFS walk via first branch (prev==cur_pkh & pkh==cur_pre). Include a
+        # root so hop prevs are in-group and are not themselves tip seeds —
+        # otherwise (T1,T2) is pre-seeded and 1917-1918 never runs.
+        root = MagicMock()
+        root.are_kel_fields_populated = lambda: True
+        root.transaction_signature = "root"
+        root.prev_public_key_hash = ""
+        root.public_key_hash = "T0"
+        root.prerotated_key_hash = "T1"
+        root.inception_public_key_hash = "1Inc"
+
+        hop1 = MagicMock()
+        hop1.are_kel_fields_populated = lambda: True
+        hop1.transaction_signature = "h1"
+        hop1.prev_public_key_hash = "T0"
+        hop1.public_key_hash = "T1"
+        hop1.prerotated_key_hash = "T2"
+        hop1.inception_public_key_hash = "1Inc"
+
+        hop2 = MagicMock()
+        hop2.are_kel_fields_populated = lambda: True
+        hop2.transaction_signature = "h2"
+        hop2.prev_public_key_hash = "T1"
+        hop2.public_key_hash = "T2"
+        hop2.prerotated_key_hash = "1Wanted"
+        hop2.inception_public_key_hash = "1Inc"
+
+        latest2 = MagicMock(public_key_hash="T0", prerotated_key_hash="T1")
+        with patch.object(self.config, "LatestBlock", create=True, new=mock_lb):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog._latest_from_inception_tag",
+                new=AsyncMock(return_value=latest2),
+            ):
+                ok = await txn.get_kel_cross_key_auth(
+                    "1Wanted", mempool=True, batch_txns=[root, hop1, hop2]
+                )
+        self.assertTrue(ok)
+
+    def test_kel_txn_matching_address(self):
+        """Lines 1935-1957: match helper batch/extra/future skip."""
+        txn = Transaction(public_key=self.public_key)
+        no_kel = MagicMock()
+        no_kel.are_kel_fields_populated = lambda: False
+
+        hit = MagicMock()
+        hit.are_kel_fields_populated = lambda: True
+        hit.public_key_hash = "1Hit"
+        hit.prerotated_key_hash = "x"
+        hit.twice_prerotated_key_hash = "y"
+        hit.prev_public_key_hash = "z"
+
+        self.assertIs(
+            txn._kel_txn_matching_address("1Hit", batch_txns=[no_kel, hit]), hit
+        )
+
+        future = MagicMock()
+        future.index = 100
+        future.transactions = [hit]
+        prior = MagicMock()
+        prior.index = 5
+        prior.transactions = [hit]
+        block = MagicMock()
+        block.index = 10
+        self.assertIsNone(
+            txn._kel_txn_matching_address("1Hit", extra_blocks=[future], block=block)
+        )
+        self.assertIs(
+            txn._kel_txn_matching_address(
+                "1Hit", extra_blocks=[future, prior], block=block
+            ),
+            hit,
+        )
+        self.assertIsNone(txn._kel_txn_matching_address("missing", batch_txns=[hit]))
+
+    async def test_output_owned_inbound_matching(self):
+        """Lines 1988-2000: inbound same-inc and prerotated ownership."""
+        from unittest.mock import AsyncMock, patch
+
+        txn = Transaction(public_key=self.public_key)
+        txn.inception_public_key_hash = "1Inc"
+
+        inbound = MagicMock()
+        inbound.are_kel_fields_populated = lambda: True
+        inbound.inception_public_key_hash = "1Inc"
+        inbound.public_key_hash = "1Out"
+        inbound.prerotated_key_hash = "1OutPre"
+        inbound.twice_prerotated_key_hash = "t"
+        inbound.prev_public_key_hash = "p"
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+            new=AsyncMock(return_value=None),
+        ):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                new=AsyncMock(return_value=False),
+            ):
+                self.assertTrue(
+                    await txn._output_owned_by_kel_spender(
+                        "1Out",
+                        "spender",
+                        True,
+                        batch_txns=[inbound],
+                    )
+                )
+
+        inbound2 = MagicMock()
+        inbound2.are_kel_fields_populated = lambda: True
+        inbound2.inception_public_key_hash = None  # untagged but same walk
+        inbound2.public_key_hash = "1Pk"
+        inbound2.prerotated_key_hash = "1OutPre"
+        inbound2.twice_prerotated_key_hash = "t"
+        inbound2.prev_public_key_hash = "p"
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+            new=AsyncMock(return_value=None),
+        ):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                new=AsyncMock(return_value=False),
+            ):
+                self.assertTrue(
+                    await txn._output_owned_by_kel_spender(
+                        "1OutPre",
+                        "spender",
+                        True,
+                        batch_txns=[inbound2],
+                    )
+                )

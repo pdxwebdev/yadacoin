@@ -1056,6 +1056,47 @@ class TestGetUnspentOutputs(BUTestCase):
         self.assertAlmostEqual(result["balance"], 0.0)
 
 
+class TestGetUnspentOutputsZeroProcessingTime(BUTestCase):
+    async def test_zero_processing_time_else_branch(self):
+        """Line 979: processing_time <= 0 hits the else pass."""
+        mock_db = MagicMock()
+        mock_db.reversed_public_keys.find_one = AsyncMock(
+            return_value={"public_key": self.config.public_key}
+        )
+        outputs = [
+            {
+                "id": "txn1",
+                "outputs": [{"to": self.config.address, "value": 5.0}],
+                "time": 100,
+            },
+        ]
+        mock_db.blocks.aggregate.return_value.to_list = AsyncMock(return_value=outputs)
+        mock_db.miner_transactions.aggregate.return_value.to_list = AsyncMock(
+            return_value=[]
+        )
+
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            with patch.object(
+                self.bu,
+                "get_chain_spent_inputs",
+                new=AsyncMock(return_value=set()),
+            ):
+                with patch.object(
+                    self.bu,
+                    "get_mempool_spent_inputs",
+                    new=AsyncMock(return_value=[]),
+                ):
+                    # Constant clock → processing_time == 0 → else pass
+                    with patch(
+                        "yadacoin.core.blockchainutils.precise_time",
+                        return_value=1000.0,
+                    ):
+                        result = await self.bu.get_unspent_outputs(
+                            self.config.address, amount_needed=1.0
+                        )
+        self.assertIn("unspent_utxos", result)
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
 

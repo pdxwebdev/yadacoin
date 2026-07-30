@@ -238,17 +238,29 @@ class Consensus(object):
         )
 
         if existing:
-            if existing.get("ignore"):
+            ignore_reason = existing.get("ignore_reason") or ""
+            # Orphan gaps are transient (parents still inbound). Allow retry so
+            # a heavier fork is not permanently poisoned after the first miss.
+            if existing.get("ignore") and not str(ignore_reason).startswith("orphan:"):
                 self.app_log.debug(
                     "Block with index %s, id %s previously failed verify; ignored."
                     % (block.index, block.signature)
                 )
                 return False
-            self.app_log.debug(
-                "Block with index %s, id %s already exists in consensus."
-                % (block.index, block.signature)
-            )
-            return True
+            if existing.get("ignore") and str(ignore_reason).startswith("orphan:"):
+                await self.mongo.async_db.consensus.delete_many(
+                    {
+                        "index": block.index,
+                        "id": block.signature,
+                        "ignore": True,
+                    }
+                )
+            else:
+                self.app_log.debug(
+                    "Block with index %s, id %s already exists in consensus."
+                    % (block.index, block.signature)
+                )
+                return True
 
         self.app_log.debug(
             "Inserting new consensus block for index %s, id %s for peer %s."
@@ -542,10 +554,12 @@ class Consensus(object):
 
         if not status:
             self.app_log.debug("integrate_block_with_existing_chain: status is false")
-            # Orphan tip cannot connect to local chain (often because a parent
-            # failed verify and was ignored).  Mark the tip and every block
-            # already walked in this orphan segment so sibling tips sharing
-            # the same gap are not re-walked one-by-one forever.
+            # Missing parents: build_backward already issued getblock when a
+            # stream is present. Do NOT mark ignore yet — that permanently
+            # blocks heavier hash-fork tips until parents arrive.
+            if stream is not None:
+                return
+            # No peer to fetch parents from; stop retrying this orphan segment.
             reason = "orphan: cannot connect to local chain"
             await self._mark_consensus_block_ignored(block, reason)
             for orphan in backward_blocks or []:

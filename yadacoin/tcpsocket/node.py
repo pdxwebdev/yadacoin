@@ -934,16 +934,47 @@ class NodeRPC(BaseRPC):
             {"block.hash": block.prev_hash}
         )
 
-    async def fill_gap(self, end_index, stream):
-        start_block = await self.config.mongo.async_db.blocks.find_one(
-            {"index": {"$lt": end_index}}, sort=[("index", -1)]
-        )
-        if end_index - 1 <= start_block["index"] + 1:
+    async def fill_gap(self, end_index, stream, first_block=None):
+        """Fetch history needed to connect an unlinked inbound tip/batch.
+
+        Index-contiguous chains can still be hash-divergent (forks). The old
+        early-return when ``end_index - 1 <= local_tip + 1`` skipped those
+        entirely. Always pull an overlapping window ending just before the
+        failed block, and seed a parent ``getblock`` when we have the tip.
+        """
+        our_index = int(self.config.LatestBlock.block.index)
+        end = max(0, int(end_index) - 1)
+        max_batch = int(CHAIN.MAX_BLOCKS_PER_MESSAGE)
+
+        if first_block is not None and getattr(first_block, "prev_hash", None):
+            try:
+                await self.config.nodeShared.write_params(
+                    stream,
+                    "getblock",
+                    {
+                        "hash": first_block.prev_hash,
+                        "index": int(first_block.index) - 1,
+                    },
+                )
+            except Exception:
+                pass
+
+        # Peer blocks at heights we already have (hash fork) plus any gap.
+        start = max(0, end - max_batch + 1)
+        if start > our_index:
+            start = max(0, our_index - max_batch + 1)
+        if end < our_index:
+            # Ensure the window reaches our tip so competing blocks at shared
+            # heights are included, not only a hole below the fork.
+            end = our_index
+
+        if start > end:
             return
+
         await self.config.nodeShared.write_params(
             stream,
             "getblocks",
-            {"start_index": start_block["index"] + 1, "end_index": end_index - 1},
+            {"start_index": int(start), "end_index": int(end)},
         )
 
     async def send_mempool(self, peer_stream):
@@ -1102,7 +1133,18 @@ class NodeRPC(BaseRPC):
         )
 
         if not status:
-            await self.fill_gap(first_inbound_block.index, stream)
+            # Keep unconnected tips so parent getblock / overlapping getblocks
+            # can complete the fork walk instead of discarding the batch.
+            try:
+                for inbound in blocks:
+                    await self.config.consensus.insert_consensus_block(
+                        inbound, stream.peer
+                    )
+            except Exception:
+                pass
+            await self.fill_gap(
+                first_inbound_block.index, stream, first_block=first_inbound_block
+            )
             self.config.consensus.syncing = False
             return False
 

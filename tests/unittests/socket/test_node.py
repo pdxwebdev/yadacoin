@@ -167,12 +167,16 @@ class TestBlocksResponseForkAssembly(AsyncTestCase):
         server.config.consensus.build_backward_from_block_to_fork = AsyncMock(
             return_value=([], False)
         )
+        server.config.consensus.insert_consensus_block = AsyncMock(return_value=True)
         server.config.processing_queues = MagicMock()
         server.config.processing_queues.block_queue = MagicMock()
         server.fill_gap = AsyncMock()
         server.write_result = AsyncMock()
 
         stream = MagicMock()
+        stream.peer.protocol_version = 1
+        stream.peer.host = "127.0.0.1"
+        stream.peer = MagicMock()
         stream.peer.protocol_version = 1
         stream.peer.host = "127.0.0.1"
 
@@ -188,7 +192,8 @@ class TestBlocksResponseForkAssembly(AsyncTestCase):
             result = await server.blocksresponse(body, stream)
 
         self.assertFalse(result)
-        server.fill_gap.assert_awaited_once_with(20, stream)
+        server.fill_gap.assert_awaited_once_with(20, stream, first_block=tip)
+        server.config.consensus.insert_consensus_block.assert_awaited()
         server.config.processing_queues.block_queue.add.assert_not_called()
 
     async def test_blocksresponse_no_blocks(self):
@@ -288,6 +293,64 @@ class TestBlocksResponseForkAssembly(AsyncTestCase):
         args = server.write_result.await_args[0]
         self.assertEqual(args[1], "blocksresponse_confirmed")
         server.config.processing_queues.block_queue.add.assert_called_once()
+
+
+class TestFillGapHashFork(AsyncTestCase):
+    async def test_fill_gap_requests_overlap_on_hash_fork(self):
+        """Index-contiguous but hash-divergent tips must still pull history."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.tcpsocket.node import NodeSocketServer
+
+        server = NodeSocketServer.__new__(NodeSocketServer)
+        server.config = MagicMock()
+        server.config.LatestBlock.block.index = 605120
+        server.config.nodeShared = MagicMock()
+        server.config.nodeShared.write_params = AsyncMock()
+
+        stream = MagicMock()
+        first = MagicMock()
+        first.index = 605121
+        first.prev_hash = "alt605120"
+
+        await server.fill_gap(605121, stream, first_block=first)
+
+        calls = server.config.nodeShared.write_params.await_args_list
+        methods = [c.args[1] for c in calls]
+        self.assertIn("getblock", methods)
+        self.assertIn("getblocks", methods)
+        getblocks = [c for c in calls if c.args[1] == "getblocks"][0]
+        params = getblocks.args[2]
+        self.assertLessEqual(params["start_index"], 605120)
+        self.assertGreaterEqual(params["end_index"], 605120)
+        self.assertLessEqual(
+            params["end_index"] - params["start_index"] + 1,
+            CHAIN.MAX_BLOCKS_PER_MESSAGE,
+        )
+        getblock = [c for c in calls if c.args[1] == "getblock"][0]
+        self.assertEqual(getblock.args[2]["hash"], "alt605120")
+        self.assertEqual(getblock.args[2]["index"], 605120)
+
+    async def test_fill_gap_classic_index_hole(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from yadacoin.tcpsocket.node import NodeSocketServer
+
+        server = NodeSocketServer.__new__(NodeSocketServer)
+        server.config = MagicMock()
+        server.config.LatestBlock.block.index = 100
+        server.config.nodeShared = MagicMock()
+        server.config.nodeShared.write_params = AsyncMock()
+
+        stream = MagicMock()
+        await server.fill_gap(150, stream)
+
+        server.config.nodeShared.write_params.assert_awaited()
+        args = server.config.nodeShared.write_params.await_args[0]
+        self.assertEqual(args[1], "getblocks")
+        self.assertEqual(args[2]["end_index"], 149)
+        self.assertLessEqual(args[2]["start_index"], 149)
 
 
 class TestNewBlockPeerTracking(AsyncTestCase):

@@ -1544,31 +1544,45 @@ class Block(object):
                             if parent_fields is not None:
                                 break
 
-                    # 3) Confirmed chain in Mongo
+                    # Heights covered by the inbound fork are replaced; do not
+                    # treat local content at those indices as the live KEL.
+                    fork_indices = set()
+                    for eb in extra_blocks or []:
+                        eb_idx = getattr(eb, "index", None)
+                        if eb_idx is not None:
+                            fork_indices.add(int(eb_idx))
+
+                    # 3) Confirmed chain in Mongo (skip fork-replaced heights)
                     if parent_fields is None:
-                        parent_doc = await self.config.mongo.async_db.blocks.find_one(
+                        parent_cursor = self.config.mongo.async_db.blocks.find(
                             {
                                 "index": {"$lt": self.index},
                                 "transactions.public_key_hash": prev_pkh,
                             },
                             {
+                                "index": 1,
                                 "transactions": {
                                     "$elemMatch": {"public_key_hash": prev_pkh}
-                                }
+                                },
                             },
                         )
-                        if parent_doc and parent_doc.get("transactions"):
-                            pt = parent_doc["transactions"][0]
-                            parent_fields = {
-                                "public_key_hash": pt.get("public_key_hash") or "",
-                                "prerotated_key_hash": pt.get("prerotated_key_hash")
-                                or "",
-                                "twice_prerotated_key_hash": pt.get(
-                                    "twice_prerotated_key_hash"
-                                )
-                                or "",
-                                "transaction_signature": pt.get("id"),
-                            }
+                        async for parent_doc in parent_cursor:
+                            pidx = parent_doc.get("index")
+                            if pidx is not None and int(pidx) in fork_indices:
+                                continue
+                            if parent_doc.get("transactions"):
+                                pt = parent_doc["transactions"][0]
+                                parent_fields = {
+                                    "public_key_hash": pt.get("public_key_hash") or "",
+                                    "prerotated_key_hash": pt.get("prerotated_key_hash")
+                                    or "",
+                                    "twice_prerotated_key_hash": pt.get(
+                                        "twice_prerotated_key_hash"
+                                    )
+                                    or "",
+                                    "transaction_signature": pt.get("id"),
+                                }
+                                break
 
                     if parent_fields is not None:
                         if txn.coinbase:
@@ -1636,17 +1650,32 @@ class Block(object):
                                 child_or.append(
                                     {"transactions.public_key_hash": parent_pre}
                                 )
-                            child_doc = (
-                                await self.config.mongo.async_db.blocks.find_one(
-                                    {
-                                        "index": {"$lt": self.index},
-                                        "$or": child_or,
-                                    },
-                                    {"index": 1},
-                                )
+                            child_cursor = self.config.mongo.async_db.blocks.find(
+                                {
+                                    "index": {"$lt": self.index},
+                                    "$or": child_or,
+                                },
+                                {"index": 1, "transactions": 1},
                             )
-                            if child_doc:
-                                already_extended = True
+                            async for child_doc in child_cursor:
+                                cidx = child_doc.get("index")
+                                if cidx is not None and int(cidx) in fork_indices:
+                                    continue
+                                # Confirm a real direct child txn (not self).
+                                for ct in child_doc.get("transactions") or []:
+                                    if not isinstance(ct, dict):
+                                        continue
+                                    if self_sig and ct.get("id") == self_sig:
+                                        continue
+                                    t_pkh = ct.get("public_key_hash") or ""
+                                    t_prev = ct.get("prev_public_key_hash") or ""
+                                    if t_prev == parent_pkh or (
+                                        parent_pre and t_pkh == parent_pre
+                                    ):
+                                        already_extended = True
+                                        break
+                                if already_extended:
+                                    break
                         if already_extended:
                             raise Exception(
                                 "KEL parent is not tip (second extension rejected): "

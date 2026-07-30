@@ -4714,21 +4714,47 @@ class TestBlockVerifyKelTipGuards(AsyncTestCase):
         block.config.mongo = MagicMock()
         return block
 
+    def _mock_blocks_find(self, block, docs_or_side_effect):
+        """Wire async cursor for blocks.find (tip guards no longer use find_one)."""
+        if callable(docs_or_side_effect):
+            side = docs_or_side_effect
+
+            async def _find(query, *a, **k):
+                doc = side(query)
+                if doc is not None:
+                    yield doc
+
+        else:
+            docs = docs_or_side_effect
+            if docs is None:
+                docs = []
+            elif isinstance(docs, dict):
+                docs = [docs]
+
+            async def _find(query, *a, **k):
+                for d in docs:
+                    yield d
+
+        block.config.mongo.async_db.blocks.find = MagicMock(side_effect=_find)
+        # Legacy find_one still used elsewhere in verify path
+        block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+
     async def test_coinbase_parent_pre_mismatch_raises(self):
         from yadacoin.core.chain import CHAIN
 
         block = self._shell(CHAIN.CHECK_KEL_FORK + 10)
         block.transactions = [self._coinbase_txn(pkh="1Jump", pre="1Next")]
         parent_doc = {
+            "index": 1,
             "transactions": [
                 {
                     "public_key_hash": "1Parent",
                     "prerotated_key_hash": "1ExpectedChild",
                     "twice_prerotated_key_hash": "1Next",
                 }
-            ]
+            ],
         }
-        block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=parent_doc)
+        self._mock_blocks_find(block, parent_doc)
         await self._run_verify_expecting(block, "skips or jumps")
 
     async def test_coinbase_parent_twice_mismatch_raises(self):
@@ -4737,15 +4763,16 @@ class TestBlockVerifyKelTipGuards(AsyncTestCase):
         block = self._shell(CHAIN.CHECK_KEL_FORK + 10)
         block.transactions = [self._coinbase_txn(pkh="1Child", pre="1WrongNext")]
         parent_doc = {
+            "index": 1,
             "transactions": [
                 {
                     "public_key_hash": "1Parent",
                     "prerotated_key_hash": "1Child",
                     "twice_prerotated_key_hash": "1ExpectedNext",
                 }
-            ]
+            ],
         }
-        block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=parent_doc)
+        self._mock_blocks_find(block, parent_doc)
         await self._run_verify_expecting(block, "hash-link broken")
 
     async def test_second_extension_rejected_when_parent_has_child(self):
@@ -4759,24 +4786,36 @@ class TestBlockVerifyKelTipGuards(AsyncTestCase):
         block.transactions = [cb, kel]
 
         parent_doc = {
+            "index": 50,
             "transactions": [
                 {
+                    "id": "parent_id",
                     "public_key_hash": "1Parent",
                     "prerotated_key_hash": "1Child",
                     "twice_prerotated_key_hash": "1Next",
                 }
-            ]
+            ],
         }
-        child_doc = {"index": 99}
+        child_doc = {
+            "index": 99,
+            "transactions": [
+                {
+                    "id": "existing_child",
+                    "public_key_hash": "1Child",
+                    "prev_public_key_hash": "1Parent",
+                    "prerotated_key_hash": "1Next",
+                }
+            ],
+        }
 
-        async def find_one(query, *a, **k):
+        def side(query):
             if query.get("transactions.public_key_hash") == "1Parent":
                 return parent_doc
             if "$or" in query:
                 return child_doc
             return None
 
-        block.config.mongo.async_db.blocks.find_one = AsyncMock(side_effect=find_one)
+        self._mock_blocks_find(block, side)
         await self._run_verify_expecting(block, "second extension")
 
     async def test_coinbase_missing_parent_raises(self):
@@ -4784,7 +4823,7 @@ class TestBlockVerifyKelTipGuards(AsyncTestCase):
 
         block = self._shell(CHAIN.CHECK_KEL_FORK + 10)
         block.transactions = [self._coinbase_txn(prev="1Missing")]
-        block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        self._mock_blocks_find(block, [])
         await self._run_verify_expecting(block, "no on-chain parent")
 
     async def test_coinbase_parent_from_extra_blocks_ok(self):
@@ -5120,6 +5159,161 @@ class TestBlockVerifyKelTipGuards(AsyncTestCase):
         await self._run_verify_with_extra(
             block, extra_blocks=[], expect_substr="second extension"
         )
+
+    async def test_second_extension_skips_fork_replaced_mongo_child(self):
+        """Local child at a height covered by extra_blocks must not block inbound."""
+        from yadacoin.core.chain import CHAIN
+
+        index = CHAIN.CHECK_KEL_FORK + 10
+        # Inbound fork block at height 99 replaces local chain content there.
+        prior = MagicMock()
+        prior.index = 99
+        parent_txn = MagicMock()
+        parent_txn.public_key_hash = "1Parent"
+        parent_txn.prerotated_key_hash = "1Child"
+        parent_txn.twice_prerotated_key_hash = "1Next"
+        parent_txn.transaction_signature = "parent_sig"
+        parent_txn.prev_public_key_hash = "1Grand"
+        prior.transactions = [parent_txn]  # no child on inbound fork
+
+        block = self._shell(index)
+        cb = self._coinbase_txn(prev="", pkh="1Cb", pre="1CbN")
+        cb.are_kel_fields_populated = MagicMock(return_value=False)
+        kel = self._kel_txn(
+            prev="1Parent",
+            pkh="1Child",
+            pre="1Next",
+            twice="1Twice",
+            sig="inbound_child",
+        )
+        block.transactions = [cb, kel]
+
+        # Local losing branch has a child of parent at height 99.
+        def side(query):
+            if "$or" in query:
+                return {
+                    "index": 99,
+                    "transactions": [
+                        {
+                            "id": "local_child",
+                            "public_key_hash": "1Child",
+                            "prev_public_key_hash": "1Parent",
+                        }
+                    ],
+                }
+            return None
+
+        self._mock_blocks_find(block, side)
+        await self._run_verify_with_extra(
+            block, extra_blocks=[prior], expect_substr=None
+        )
+
+    async def test_parent_lookup_skips_fork_replaced_mongo_parent(self):
+        """Line 1572: parent at fork-replaced height is skipped; no parent found."""
+        from yadacoin.core.chain import CHAIN
+
+        index = CHAIN.CHECK_KEL_FORK + 10
+        # Inbound fork covers height 50 (where local parent lives) but does not
+        # itself contain the parent — parent_fields stays None after skip.
+        prior = MagicMock()
+        prior.index = 50
+        prior.transactions = []  # no parent on inbound fork
+
+        block = self._shell(index)
+        cb = self._coinbase_txn(prev="1MissingParent", pkh="1Child", pre="1Next")
+        block.transactions = [cb]
+
+        # Local losing branch has parent at height 50.
+        parent_doc = {
+            "index": 50,
+            "transactions": [
+                {
+                    "id": "local_parent",
+                    "public_key_hash": "1MissingParent",
+                    "prerotated_key_hash": "1Child",
+                    "twice_prerotated_key_hash": "1Next",
+                }
+            ],
+        }
+
+        def side(query):
+            if query.get("transactions.public_key_hash") == "1MissingParent":
+                return parent_doc
+            return None
+
+        self._mock_blocks_find(block, side)
+        await self._run_verify_with_extra(
+            block, extra_blocks=[prior], expect_substr="no on-chain parent"
+        )
+
+    async def test_second_extension_skips_nondict_and_self_sig_mongo_child(self):
+        """Lines 1670/1672: non-dict and self-id mongo children are ignored."""
+        from yadacoin.core.chain import CHAIN
+
+        index = CHAIN.CHECK_KEL_FORK + 10
+        block = self._shell(index)
+        cb = self._coinbase_txn(prev="", pkh="1Cb", pre="1CbN")
+        cb.are_kel_fields_populated = MagicMock(return_value=False)
+        # Non-coinbase extending parent; self_sig = "inbound_child"
+        kel = self._kel_txn(
+            prev="1Parent",
+            pkh="1Child",
+            pre="1Next",
+            twice="1Twice",
+            sig="inbound_child",
+        )
+        block.transactions = [cb, kel]
+
+        parent_doc = {
+            "index": 40,
+            "transactions": [
+                {
+                    "id": "parent_id",
+                    "public_key_hash": "1Parent",
+                    "prerotated_key_hash": "1Child",
+                    "twice_prerotated_key_hash": "1Next",
+                }
+            ],
+        }
+        # Child scan yields non-dict + self-id only — must NOT mark already_extended
+        child_doc = {
+            "index": 45,
+            "transactions": [
+                "not-a-dict",
+                {
+                    "id": "inbound_child",
+                    "public_key_hash": "1Child",
+                    "prev_public_key_hash": "1Parent",
+                },
+            ],
+        }
+
+        def side(query):
+            if query.get("transactions.public_key_hash") == "1Parent":
+                return parent_doc
+            if "$or" in query:
+                return child_doc
+            return None
+
+        self._mock_blocks_find(block, side)
+        await self._run_verify_with_extra(block, extra_blocks=[], expect_substr=None)
+
+    async def test_verify_future_txn_time_pass_branch(self):
+        """Line 1488: verify() no-ops on future txn.time (enforced elsewhere)."""
+        from yadacoin.core.chain import CHAIN
+
+        index = max(CHAIN.CHECK_TIME_FROM + 1, CHAIN.CHECK_KEL_FORK + 1)
+        block = self._shell(index)
+        block.time = 1000
+        # Non-KEL coinbase so tip guards do not raise
+        cb = self._coinbase_txn(prev="", pkh="1Cb", pre="1N")
+        cb.are_kel_fields_populated = MagicMock(return_value=False)
+        cb.has_key_event_log = AsyncMock(return_value=False)
+        cb.time = block.time + CHAIN.TIME_TOLERANCE + 50
+        block.transactions = [cb]
+        block.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        self._mock_blocks_find(block, [])
+        await self._run_verify_with_extra(block, extra_blocks=[], expect_substr=None)
 
 
 if __name__ == "__main__":

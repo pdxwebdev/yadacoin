@@ -347,6 +347,10 @@ class IdentityAnnouncement:
         During block verification / reorg, pass ``below_index`` (current block
         height) so only confirmed blocks strictly below that height count, and
         pass ``batch_txns`` / ``extra_blocks`` for the candidate chain.
+
+        Heights covered by ``extra_blocks`` are replaced by the inbound fork
+        view: a claim that exists only on the local losing branch at those
+        heights must not block the inbound identity announcement.
         """
         from yadacoin.core.config import Config
 
@@ -356,17 +360,14 @@ class IdentityAnnouncement:
             extra_blocks = []
         if batch_txns is None:
             batch_txns = []
-        base_query = {"relationship.identity.username": username}
 
-        chain_query = {"transactions.relationship.identity.username": username}
-        if below_index is not None:
-            chain_query["index"] = {"$lt": int(below_index)}
-        if exclude_txn_sig:
-            chain_query["transactions.id"] = {"$ne": exclude_txn_sig}
-        result = await config.mongo.async_db.blocks.find_one(chain_query)
-        if result:
-            return True
+        fork_indices = set()
+        for block in extra_blocks:
+            idx = getattr(block, "index", None)
+            if idx is not None:
+                fork_indices.add(int(idx))
 
+        # Candidate chain first: same-block batch, then prior inbound blocks.
         for txn in batch_txns:
             if IdentityAnnouncement._txn_claims_username(
                 txn, username, exclude_txn_sig
@@ -374,14 +375,41 @@ class IdentityAnnouncement:
                 return True
 
         for block in extra_blocks:
+            idx = getattr(block, "index", None)
+            if (
+                below_index is not None
+                and idx is not None
+                and int(idx) >= int(below_index)
+            ):
+                continue
             for txn in getattr(block, "transactions", []) or []:
                 if IdentityAnnouncement._txn_claims_username(
                     txn, username, exclude_txn_sig
                 ):
                     return True
 
+        # Local chain: skip heights replaced by the inbound fork.
+        chain_query = {"transactions.relationship.identity.username": username}
+        if below_index is not None:
+            chain_query["index"] = {"$lt": int(below_index)}
+        cursor = config.mongo.async_db.blocks.find(
+            chain_query, {"index": 1, "transactions": 1}
+        )
+        async for doc in cursor:
+            idx = doc.get("index")
+            if idx is not None and int(idx) in fork_indices:
+                continue
+            for t in doc.get("transactions") or []:
+                if not isinstance(t, dict):
+                    continue
+                if exclude_txn_sig and t.get("id") == exclude_txn_sig:
+                    continue
+                identity = (t.get("relationship") or {}).get("identity") or {}
+                if isinstance(identity, dict) and identity.get("username") == username:
+                    return True
+
         if use_mempool:
-            mempool_query = dict(base_query)
+            mempool_query = {"relationship.identity.username": username}
             if exclude_txn_sig:
                 mempool_query["id"] = {"$ne": exclude_txn_sig}
             result = await config.mongo.async_db.miner_transactions.find_one(
