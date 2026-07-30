@@ -39,10 +39,25 @@ class StratumServer(RPCSocketServer):
         if not cls.config:
             cls.config = Config()
 
-        if cls.config.mp and time.time() - cls.config.mp.block_factory.time > 600:
+        if not cls.config.mp:
+            return
+
+        # Factory may be None while a won block awaits insert_block tip update.
+        if cls.config.mp.block_factory is None:
+            try:
+                await cls.config.mp.ensure_fresh_factory()
+            except Exception:
+                cls.config.app_log.warning(traceback.format_exc())
+            if cls.config.mp.block_factory is None:
+                return
+
+        if time.time() - cls.config.mp.block_factory.time > 600:
             await cls.config.mp.refresh()
 
-        if cls.config.mp and cls.current_header != cls.config.mp.block_factory.header:
+        if (
+            cls.config.mp.block_factory is not None
+            and cls.current_header != cls.config.mp.block_factory.header
+        ):
             try:
                 await cls.send_jobs()
             except:

@@ -47,6 +47,9 @@ class MiningPool(object):
             self.index = last_block.index
         self.last_refresh = 0
         self.block_factory = None
+        # After accept_block, tip may lag the won height until insert_block.
+        # Block rebuilds at that height until LatestBlock catches up.
+        self.pending_won_index = None
         self.excluded = []
         await self.refresh()
         return self
@@ -228,6 +231,10 @@ class MiningPool(object):
                     f"Winning block candidate verify() failed "
                     f"(block rejected, not inserted): {e}"
                 )
+                # Drop this template so miners stop hashing KEL-invalid
+                # coinbase / mempool chains (e.g. parent already has on-chain
+                # child).  Rebuild when tip allows; otherwise wait for insert.
+                await self._invalidate_factory_and_refresh(reason=f"verify failed: {e}")
                 if accepted and self.config.network == "mainnet":
                     return {
                         "hash": hash1,
@@ -267,13 +274,6 @@ class MiningPool(object):
             try:
                 await block_candidate.verify()
             except Exception as e:
-                if accepted:
-                    return {
-                        "hash": hash1,
-                        "nonce": nonce,
-                        "height": job.index,
-                        "id": block_candidate.signature,
-                    }
                 self.app_log.warning(
                     "Verify error {} - hash {} header {} nonce {}".format(
                         e,
@@ -282,6 +282,16 @@ class MiningPool(object):
                         block_candidate.nonce,
                     )
                 )
+                await self._invalidate_factory_and_refresh(
+                    reason=f"special_min verify failed: {e}"
+                )
+                if accepted:
+                    return {
+                        "hash": hash1,
+                        "nonce": nonce,
+                        "height": job.index,
+                        "id": block_candidate.signature,
+                    }
                 return False
             # accept winning block
             await self.accept_block(block_candidate)
@@ -317,6 +327,40 @@ class MiningPool(object):
             return False
         return int(self.block_factory.index) <= int(tip.index)
 
+    def _tip_ready_for_template(self):
+        """False while a won block is still awaiting insert_block tip update."""
+        pending = self.pending_won_index
+        if pending is None:
+            return True
+        tip = getattr(self.config.LatestBlock, "block", None)
+        if tip is None:
+            return False
+        if int(tip.index) >= int(pending):
+            self.pending_won_index = None
+            return True
+        return False
+
+    async def _invalidate_factory_and_refresh(self, reason=""):
+        """Drop the live template and rebuild when the chain tip allows it.
+
+        Used after accept_block (won height not yet tip) and after verify()
+        rejects a candidate so miners are not left hashing a KEL-invalid
+        template (on-chain parent already has a child, skipped keys, etc.).
+        """
+        if reason:
+            self.app_log.info("Invalidating pool block factory (%s)", reason)
+        self.block_factory = None
+        if self._tip_ready_for_template():
+            try:
+                await self.refresh()
+            except Exception:
+                from traceback import format_exc
+
+                self.app_log.warning(
+                    "Pool factory refresh after invalidate failed: %s",
+                    format_exc(),
+                )
+
     async def refresh(self):
         """Refresh computes a new bloc to mine. The block is stored in self.block_factory and contains
         the transactions at the time of the refresh. Since tx hash is in the header, a refresh here means we have to
@@ -325,14 +369,29 @@ class MiningPool(object):
         try:
             if self.refreshing:
                 return
+            # Do not rebuild at height H while a won H is still only in the
+            # consensus queue — coinbase would re-parent off the pre-win tip.
+            if not self._tip_ready_for_template():
+                self.app_log.debug(
+                    "mp.refresh deferred: waiting for tip to reach won index %s",
+                    self.pending_won_index,
+                )
+                return
             # Stale templates must rebuild even while peers report unsynced;
             # otherwise miners keep hashing a coinbase whose KEL parent is
             # already spent by the tip we just accepted.
-            if not self._factory_is_stale() and not await Peer.is_synced():
+            if (
+                self.block_factory is not None
+                and not self._factory_is_stale()
+                and not await Peer.is_synced()
+            ):
                 return
             self.refreshing = True
             self.excluded = []
             await self.config.LatestBlock.block_checker()
+            if not self._tip_ready_for_template():
+                self.refreshing = False
+                return
             if self.block_factory:
                 self.last_block_time = int(self.block_factory.time)
             self.block_factory = await Block.generate(
@@ -530,9 +589,11 @@ class MiningPool(object):
 
             await self.config.websocketServer.send_block(block)
 
-        # Do NOT refresh here. The won block is only in consensus/queue until
-        # insert_block persists it and updates LatestBlock. Refreshing now
-        # rebuilds the template against the old on-chain KEL tip, so the next
-        # coinbase re-parents off a key that already has an on-chain child
-        # ("key_event.txn has onchain parent that already has an onchain child").
-        # insert_block (and the stale-factory guard below) refresh after tip moves.
+        # Won block is only in consensus/queue until insert_block updates
+        # LatestBlock.  Drop the live template immediately so further nonces
+        # cannot re-submit the same KEL coinbase, and block rebuilds at this
+        # height until the tip advances (see pending_won_index).
+        self.pending_won_index = int(block.index)
+        await self._invalidate_factory_and_refresh(
+            reason=f"accepted block {block.index}"
+        )

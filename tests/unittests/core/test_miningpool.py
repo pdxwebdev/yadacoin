@@ -86,6 +86,7 @@ def _mk_pool(cfg=None):
     pool.last_refresh = 0
     pool.refreshing = False
     pool.block_factory = None
+    pool.pending_won_index = None
     pool.excluded = []
     return pool
 
@@ -481,12 +482,16 @@ class TestRefresh(AsyncTestCase):
             await pool.refresh()
 
     async def test_refresh_skips_when_not_synced(self):
+        # Non-stale factory + unsynced peers must not rebuild.
         pool = _mk_pool()
+        pool.block_factory = MagicMock(index=100)
+        pool.config.LatestBlock.block = MagicMock(index=99)
         with patch(
             "yadacoin.core.miningpool.Peer.is_synced",
             new=AsyncMock(return_value=False),
-        ):
+        ), patch("yadacoin.core.miningpool.Block.generate", new=AsyncMock()) as gen:
             await pool.refresh()
+        gen.assert_not_awaited()
 
     async def test_refresh_full(self):
         pool = _mk_pool()
@@ -775,6 +780,9 @@ class TestAcceptBlock(AsyncTestCase):
     async def test_accept_block_mainnet(self):
         pool = _mk_pool()
         pool.refresh = AsyncMock()
+        pool.block_factory = MagicMock(index=5)
+        # Tip still behind won height -> invalidate without rebuild.
+        pool.config.LatestBlock.block = MagicMock(index=4)
         block = MagicMock()
         block.index = 5
         block.transactions = [MagicMock(transaction_signature="s1")]
@@ -785,12 +793,16 @@ class TestAcceptBlock(AsyncTestCase):
         mock_bc.test_block.assert_awaited()
         pool.config.consensus.insert_consensus_block.assert_awaited()
         pool.config.nodeShared.send_block_to_peers.assert_awaited()
-        # Refresh waits for insert_block so KEL tip is on-chain first.
+        self.assertEqual(pool.pending_won_index, 5)
+        self.assertIsNone(pool.block_factory)
+        # Rebuild deferred until tip reaches won height.
         pool.refresh.assert_not_awaited()
 
     async def test_accept_block_regnet(self):
         pool = _mk_pool(_mk_config(network="regnet"))
         pool.refresh = AsyncMock()
+        pool.block_factory = MagicMock(index=5)
+        pool.config.LatestBlock.block = MagicMock(index=4)
         block = MagicMock()
         block.index = 5
         block.transactions = []
@@ -800,6 +812,8 @@ class TestAcceptBlock(AsyncTestCase):
             await pool.accept_block(block)
         mock_bc.test_block.assert_awaited()
         pool.config.nodeShared.send_block_to_peers.assert_not_awaited()
+        self.assertEqual(pool.pending_won_index, 5)
+        self.assertIsNone(pool.block_factory)
         pool.refresh.assert_not_awaited()
 
     async def test_accept_block_rejects_failed_test_block(self):
@@ -859,10 +873,12 @@ class TestRemainingBranches(AsyncTestCase):
         job = MagicMock(index=100, extra_nonce="x", miner_diff=1000)
         pool.mongo.async_db.shares.update_one = AsyncMock()
         bf.verify = AsyncMock(side_effect=Exception("bad"))
+        pool._invalidate_factory_and_refresh = AsyncMock()
         r = await pool.process_nonce(
             MagicMock(address="a", address_only="ao"), "n", job, body
         )
         self.assertFalse(r)
+        pool._invalidate_factory_and_refresh.assert_awaited()
 
     async def test_process_nonce_special_min_verify_error_accepted(self):
         """Lines 257-285: special_min path verify error with accepted=True."""
@@ -879,6 +895,7 @@ class TestRemainingBranches(AsyncTestCase):
         pool.last_block_time = 0
         bf.verify = AsyncMock(side_effect=Exception("bad"))
         pool.mongo.async_db.shares.update_one = AsyncMock()
+        pool._invalidate_factory_and_refresh = AsyncMock()
         body = {"params": {"result": bf.hash}}
         job = MagicMock(index=100, extra_nonce="x", miner_diff=1000)
         with patch(
@@ -890,6 +907,7 @@ class TestRemainingBranches(AsyncTestCase):
             )
         # accepted -> returns hash dict (not False)
         self.assertIn("hash", r)
+        pool._invalidate_factory_and_refresh.assert_awaited()
 
     async def test_process_nonce_special_min_verify_error_not_accepted(self):
         """Special_min verify error with accepted=False -> return False."""
@@ -907,6 +925,7 @@ class TestRemainingBranches(AsyncTestCase):
         pool.config.pool_diff = 1
         pool.last_block_time = 0
         bf.verify = AsyncMock(side_effect=Exception("bad"))
+        pool._invalidate_factory_and_refresh = AsyncMock()
         body = {"params": {"result": bf.hash}}
         job = MagicMock(index=100, extra_nonce="x", miner_diff=1000)
         with patch(
@@ -915,6 +934,7 @@ class TestRemainingBranches(AsyncTestCase):
         ):
             r = await pool.process_nonce(MagicMock(), "n", job, body)
         self.assertFalse(r)
+        pool._invalidate_factory_and_refresh.assert_awaited()
 
     async def test_block_template_truly_no_factory(self):
         """Line 374: refresh path when factory is None."""
@@ -968,3 +988,96 @@ class TestRemainingBranches(AsyncTestCase):
         pool.block_factory = MagicMock(index=100)
         pool.config.LatestBlock.block = None
         self.assertFalse(pool._factory_is_stale())
+
+    def test_factory_is_stale_no_factory_returns_false(self):
+        """Missing factory is not stale."""
+        pool = _mk_pool()
+        pool.block_factory = None
+        self.assertFalse(pool._factory_is_stale())
+
+
+class TestPendingWonAndInvalidate(AsyncTestCase):
+    def test_tip_ready_false_when_tip_missing(self):
+        pool = _mk_pool()
+        pool.pending_won_index = 101
+        pool.config.LatestBlock.block = None
+        self.assertFalse(pool._tip_ready_for_template())
+        self.assertEqual(pool.pending_won_index, 101)
+
+    def test_tip_ready_clears_pending_when_tip_catches_up(self):
+        pool = _mk_pool()
+        pool.pending_won_index = 100
+        pool.config.LatestBlock.block = MagicMock(index=100)
+        self.assertTrue(pool._tip_ready_for_template())
+        self.assertIsNone(pool.pending_won_index)
+
+    def test_tip_ready_false_while_pending_ahead(self):
+        pool = _mk_pool()
+        pool.pending_won_index = 101
+        pool.config.LatestBlock.block = MagicMock(index=100)
+        self.assertFalse(pool._tip_ready_for_template())
+        self.assertEqual(pool.pending_won_index, 101)
+
+    async def test_refresh_defers_while_pending_won(self):
+        pool = _mk_pool()
+        pool.pending_won_index = 101
+        pool.config.LatestBlock.block = MagicMock(index=100)
+        with patch("yadacoin.core.miningpool.Block.generate", new=AsyncMock()) as gen:
+            await pool.refresh()
+        gen.assert_not_awaited()
+        self.assertIsNone(pool.block_factory)
+
+    async def test_refresh_aborts_if_tip_not_ready_after_block_checker(self):
+        """After block_checker, pending win can make tip not ready; clear refreshing."""
+        pool = _mk_pool()
+        pool.pending_won_index = None
+        pool.config.LatestBlock.block = MagicMock(index=100)
+
+        async def checker():
+            pool.pending_won_index = 101
+            pool.config.LatestBlock.block = MagicMock(index=100)
+
+        pool.config.LatestBlock.block_checker = AsyncMock(side_effect=checker)
+        with patch(
+            "yadacoin.core.miningpool.Peer.is_synced",
+            new=AsyncMock(return_value=True),
+        ), patch("yadacoin.core.miningpool.Block.generate", new=AsyncMock()) as gen:
+            await pool.refresh()
+        gen.assert_not_awaited()
+        self.assertFalse(pool.refreshing)
+        self.assertIsNone(pool.block_factory)
+
+    async def test_invalidate_drops_factory_without_refresh_when_pending(self):
+        pool = _mk_pool()
+        pool.block_factory = MagicMock(index=101)
+        pool.pending_won_index = 101
+        pool.config.LatestBlock.block = MagicMock(index=100)
+        pool.refresh = AsyncMock()
+        await pool._invalidate_factory_and_refresh(reason="test")
+        self.assertIsNone(pool.block_factory)
+        pool.refresh.assert_not_awaited()
+
+    async def test_invalidate_refreshes_when_tip_ready(self):
+        pool = _mk_pool()
+        pool.block_factory = MagicMock(index=100)
+        pool.pending_won_index = None
+        pool.refresh = AsyncMock()
+        await pool._invalidate_factory_and_refresh(reason="test")
+        self.assertIsNone(pool.block_factory)
+        pool.refresh.assert_awaited_once()
+
+    async def test_accept_block_sets_pending_and_invalidates(self):
+        pool = _mk_pool()
+        pool.block_factory = MagicMock(index=101)
+        block = MagicMock(index=101, transactions=[])
+        pool.config.consensus.insert_consensus_block = AsyncMock()
+        pool.config.processing_queues.block_queue.add = MagicMock()
+        pool.config.network = "regnet"
+        pool._invalidate_factory_and_refresh = AsyncMock()
+        with patch(
+            "yadacoin.core.miningpool.Blockchain.test_block",
+            new=AsyncMock(return_value=True),
+        ):
+            await pool.accept_block(block)
+        self.assertEqual(pool.pending_won_index, 101)
+        pool._invalidate_factory_and_refresh.assert_awaited()
