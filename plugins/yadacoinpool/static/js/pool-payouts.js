@@ -40,7 +40,12 @@ function updatePayoutsTable(payouts) {
     displayedPayouts += newPayouts.length;
 
     if (newPayouts.length === 0) {
-        document.getElementById("load-more-payouts").style.display = "none";
+        const loadMore = document.getElementById("load-more-payouts");
+        if (loadMore) loadMore.style.display = "none";
+        if (displayedPayouts === 0) {
+            tableBody.innerHTML =
+                `<tr><td colspan="7" class="text-center text-muted">No payouts found</td></tr>`;
+        }
         return;
     }
 
@@ -62,7 +67,7 @@ function updatePayoutsTable(payouts) {
         const row = document.createElement("tr");
         row.innerHTML = `
             <td>${new Date(payout.time * 1000).toLocaleString()}</td>
-            <td class="text-start hash-cell"><a href="https://yadacoin.io/explorer?term=${payout.hash}" target="_blank">${payout.hash.substring(0, 36)}...</a></td>
+            <td class="text-start hash-cell"><a href="https://yadacoin.io/explorer?term=${payout.hash}" target="_blank">${(payout.hash || "N/A").toString().substring(0, 36)}${(payout.hash || "").length > 36 ? "..." : ""}</a></td>
             <td>${payout.amount ? payout.amount.toFixed(6) : "0.000000"} YDA</td>
             <td>${payout.fee ? payout.fee.toFixed(6) : "0.000000"} YDA</td>
             <td>${payout.payees || "N/A"}</td>

@@ -546,84 +546,101 @@ class PoolBlocksHandler(BaseWebHandler):
 
 class PoolPayoutsHandler(BaseWebHandler):
     async def get(self):
-        payouts = (
-            await self.config.mongo.async_db.share_payout.find({}, {"_id": 0})
-            .sort([("index", -1)])
-            .to_list(50)
-        )
+        """List pool miner settlements from on-chain coinbase spends.
 
+        Won pool coinbases are tagged with ``inception_public_key_hash``.
+        Settlements spend those coinbases under the same inception tag.  We
+        cross-reference spent coinbase ids (from the pool KEL cache) to the
+        spending transactions and report each unique spend as a payout.
+        """
+        summary = await get_pool_kel_blocks(self.config)
+        inception_pkh = summary.get("inception_public_key_hash")
+        spent_ids = list(summary.get("spent_coinbase_ids") or [])
+
+        if not inception_pkh or not spent_ids:
+            self.render_as_json({"payouts": []})
+            return
+
+        # Cap the $in set for the spend lookup (newest coinbases first in cache).
+        spent_ids = spent_ids[:500]
+
+        spend_rows = await self.config.mongo.async_db.blocks.aggregate(
+            [
+                {
+                    "$match": {
+                        "transactions": {
+                            "$elemMatch": {
+                                "inception_public_key_hash": inception_pkh,
+                                "inputs.id": {"$in": spent_ids},
+                            }
+                        }
+                    }
+                },
+                {"$unwind": "$transactions"},
+                {
+                    "$match": {
+                        "transactions.inception_public_key_hash": inception_pkh,
+                        "transactions.inputs.id": {"$in": spent_ids},
+                        "transactions.inputs.0": {"$exists": True},
+                    }
+                },
+                {"$sort": {"index": -1, "transactions.time": -1}},
+                {
+                    "$project": {
+                        "_id": 0,
+                        "block_index": "$index",
+                        "txn": "$transactions",
+                    }
+                },
+            ]
+        ).to_list(length=None)
+
+        seen = set()
         result_payouts = []
-        for payout in payouts:
-            txn = payout.get("txn", {})
-            outputs = txn.get("outputs", [])
+        for row in spend_rows:
+            txn = row.get("txn") or {}
+            tx_id = txn.get("id") or txn.get("transaction_signature")
+            if not tx_id or tx_id in seen:
+                continue
+            seen.add(tx_id)
 
-            tx_hash = txn.get("hash", "N/A")
-            tx_time = txn.get("time", 0)
-            pool_fee = sum(
-                o["value"] for o in outputs if o["to"] == self.config.address
-            )
-            total_amount = sum(
-                o["value"] for o in outputs if o["to"] != self.config.address
-            )
-            payees = len([o for o in outputs if o["to"] != self.config.address])
+            outputs = txn.get("outputs") or []
+            # Template settlement: change stays on prerotated tip; miner outs
+            # are the remaining positive-value outputs.
+            prerotated = txn.get("prerotated_key_hash") or ""
+            miner_outs = [
+                o
+                for o in outputs
+                if float(o.get("value") or 0) > 0 and o.get("to") != prerotated
+            ]
+            if not miner_outs:
+                continue
 
-            block = await self.config.mongo.async_db.blocks.find_one(
-                {"transactions.hash": tx_hash}, {"index": 1}
-            )
-            in_mempool = (
-                await self.config.mongo.async_db.miner_transactions.count_documents(
-                    {"hash": tx_hash}
-                )
-            )
-            in_failed = (
-                await self.config.mongo.async_db.failed_transactions.count_documents(
-                    {"txn.hash": tx_hash}
-                )
-            )
-
-            if block:
-                status = "Confirmed"
-                block_index = block["index"]
-            elif in_mempool:
-                status = "Pending"
-                block_index = "N/A"
-            elif in_failed:
-                # Before reporting failure, check whether the payout inputs are
-                # already confirmed-spent by a *different* transaction — the
-                # duplicate-payout reorg scenario where P1 was confirmed, a reorg
-                # window triggered P2, and P2 later failed because P1 came back.
-                # If P1 is on-chain spending the same inputs the payout succeeded.
-                input_ids = [i["id"] for i in txn.get("inputs", []) if "id" in i]
-                confirmed_spend = None
-                if input_ids:
-                    confirmed_spend = await self.config.mongo.async_db.blocks.find_one(
-                        {
-                            "transactions.inputs.id": {"$in": input_ids},
-                            "transactions.public_key": txn.get("public_key"),
-                        },
-                        {"index": 1},
-                    )
-                if confirmed_spend:
-                    status = "Confirmed"
-                    block_index = confirmed_spend["index"]
-                else:
-                    status = "Failed"
-                    block_index = "N/A"
-            else:
-                status = "Unknown"
-                block_index = "N/A"
+            total_amount = sum(float(o.get("value") or 0) for o in miner_outs)
+            network_fee = float(txn.get("fee") or 0)
+            tx_hash = txn.get("hash") or "N/A"
+            tx_time = int(txn.get("time") or 0)
+            coinbase_inputs = [
+                i.get("id")
+                for i in (txn.get("inputs") or [])
+                if i.get("id") in set(spent_ids)
+            ]
 
             result_payouts.append(
                 {
                     "time": tx_time,
                     "hash": tx_hash,
+                    "id": tx_id,
                     "amount": total_amount,
-                    "fee": pool_fee,
-                    "payees": payees,
-                    "status": status,
-                    "block_height": block_index,
+                    "fee": network_fee,
+                    "payees": len(miner_outs),
+                    "status": "Confirmed",
+                    "block_height": row.get("block_index", "N/A"),
+                    "for_blocks": len(coinbase_inputs),
                 }
             )
+            if len(result_payouts) >= 50:
+                break
 
         self.render_as_json({"payouts": result_payouts})
 
