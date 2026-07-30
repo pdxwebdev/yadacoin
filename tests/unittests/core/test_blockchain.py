@@ -1670,5 +1670,24 @@ class TestBlockchainSameKelDoubleSpend(AsyncTestCase):
         self.assertFalse(result)
 
 
+class TestTestBlockEnsureKelTagsFailure(AsyncTestCase):
+    async def asyncSetUp(self):
+        from logging import getLogger
+
+        await super().asyncSetUp()
+        self.config = Config()
+        if not hasattr(self.config, "app_log") or self.config.app_log is None:
+            self.config.app_log = getLogger("tornado.application")
+
+    async def test_ensure_kel_tags_failure_returns_false(self):
+        block = _make_test_block(index=0)
+        with mock.patch(
+            "yadacoin.core.block.Block.ensure_kel_tags",
+            new=AsyncMock(side_effect=Exception("tag fail")),
+        ):
+            result = await Blockchain.test_block(block)
+        self.assertFalse(result)
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

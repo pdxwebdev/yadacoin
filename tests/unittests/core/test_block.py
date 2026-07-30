@@ -5679,3 +5679,391 @@ class TestTemplateKelAndSameKelSpend(AsyncTestCase):
                         block, txns, [], [], {}, block.index, block.time
                     )
         self.assertIn(linked_tmpl, txns)
+
+
+class TestTagKelAndEnsureKelGaps(AsyncTestCase):
+    """Cover tag_kel_chain_entries and ensure_kel_tags edge branches."""
+
+    def test_tag_kel_empty_chain(self):
+        Block.tag_kel_chain_entries([])
+        Block.tag_kel_chain_entries(None)
+
+    def test_tag_kel_onchain_parent_and_boundary_mismatch(self):
+        parent = MagicMock()
+        parent.inception_public_key_hash = "INC"
+        parent.public_key_hash = "P"
+        parent.counter = 3
+
+        e0 = MagicMock()
+        e0.inception_public_key_hash = None
+        e0.counter = None
+        e0.public_key_hash = "K0"
+        Block.tag_kel_chain_entries([e0], onchain_parent=parent)
+        self.assertEqual(e0.inception_public_key_hash, "INC")
+        self.assertEqual(e0.counter, 4)
+
+        e1 = MagicMock()
+        e1.inception_public_key_hash = "OTHER"
+        e1.counter = 0
+        e1.public_key_hash = "K1"
+        # mismatch should abort without raising
+        Block.tag_kel_chain_entries([e1], onchain_parent=parent)
+
+    def test_tag_kel_no_inception_pkh(self):
+        e = MagicMock(
+            spec=[]
+        )  # no inception or public_key_hash attrs via getattr default
+
+        # use simple namespace-like
+        class E:
+            pass
+
+        e = E()
+        e.inception_public_key_hash = None
+        e.public_key_hash = None
+        e.counter = None
+        Block.tag_kel_chain_entries([e], onchain_parent=None)
+
+    async def test_ensure_kel_root_claimed_continue_and_group_seed(self):
+        from yadacoin.core.keyeventlog import KeyEventFlag
+
+        class T:
+            def __init__(self, sig, pkh, prev="", pre="", inc=None, counter=None):
+                self.transaction_signature = sig
+                self.public_key_hash = pkh
+                self.prev_public_key_hash = prev
+                self.prerotated_key_hash = pre
+                self.twice_prerotated_key_hash = ""
+                self.inception_public_key_hash = inc
+                self.counter = counter
+
+            def are_kel_fields_populated(self):
+                return True
+
+        # Two roots; second already claimed via shared walk? force claimed continue
+        # by making is_mempool_kel_root return True for same txn twice - not possible.
+        # Instead: root A tagged via walk; remaining unclaimed B has seed in group.
+
+        root = T("s0", "K0", prev="", pre="K1")
+        child = T("s1", "K1", prev="K0", pre="K2")
+        # already fully tagged leftover (claimed via tag check)
+        tagged = T("s2", "KX", prev="", pre="KY", inc="INCX", counter=0)
+        # untagged with seed sibling already tagged in linked group
+        seed = T("s3", "G0", prev="", pre="G1", inc="GINC", counter=0)
+        untagged = T("s4", "G1", prev="G0", pre="G2")
+
+        async def fake_root(txn):
+            if txn is root:
+                return True, None
+            return False, None
+
+        with mock.patch(
+            "yadacoin.core.keyeventlog.is_mempool_kel_root",
+            new=AsyncMock(side_effect=fake_root),
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.classify_key_event_flag",
+            side_effect=lambda txn: (
+                KeyEventFlag.INCEPTION
+                if txn in (root, tagged, seed)
+                else KeyEventFlag.CONFIRMING
+            ),
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.kel_successor_flag_allowed",
+            return_value=True,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.verify_kel_step",
+            return_value=None,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.is_recovers_inception",
+            return_value=False,
+        ), mock.patch(
+            "yadacoin.core.block.Block.find_kel_linked_group",
+            side_effect=lambda txn, cands: (
+                [seed, untagged] if txn in (seed, untagged) else [txn]
+            ),
+        ):
+            await Block.ensure_kel_tags([root, child, tagged, seed, untagged])
+
+        self.assertEqual(root.inception_public_key_hash, "K0")
+        self.assertEqual(child.inception_public_key_hash, "K0")
+        # untagged should pick up seed inception via ordered group tagging
+        self.assertEqual(untagged.inception_public_key_hash, "GINC")
+
+    async def test_ensure_kel_inception_shaped_untagged_no_seed(self):
+        from yadacoin.core.keyeventlog import KeyEventFlag
+
+        class T:
+            def __init__(self, sig, pkh, prev="", pre=""):
+                self.transaction_signature = sig
+                self.public_key_hash = pkh
+                self.prev_public_key_hash = prev
+                self.prerotated_key_hash = pre
+                self.twice_prerotated_key_hash = ""
+                self.inception_public_key_hash = None
+                self.counter = None
+
+            def are_kel_fields_populated(self):
+                return True
+
+        lone = T("s0", "K0", prev="", pre="K1")
+
+        async def fake_root(txn):
+            return False, None
+
+        with mock.patch(
+            "yadacoin.core.keyeventlog.is_mempool_kel_root",
+            new=AsyncMock(side_effect=fake_root),
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.classify_key_event_flag",
+            return_value=KeyEventFlag.INCEPTION,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.is_recovers_inception",
+            return_value=False,
+        ), mock.patch(
+            "yadacoin.core.block.Block.find_kel_linked_group",
+            return_value=[lone],
+        ):
+            await Block.ensure_kel_tags([lone])
+        self.assertEqual(lone.inception_public_key_hash, "K0")
+        self.assertEqual(lone.counter, 0)
+
+    async def test_ensure_kel_verify_step_exception_and_flag_disallowed(self):
+        from yadacoin.core.keyeventlog import KeyEventFlag
+
+        class T:
+            def __init__(self, sig, pkh, prev="", pre=""):
+                self.transaction_signature = sig
+                self.public_key_hash = pkh
+                self.prev_public_key_hash = prev
+                self.prerotated_key_hash = pre
+                self.twice_prerotated_key_hash = ""
+                self.inception_public_key_hash = None
+                self.counter = None
+
+            def are_kel_fields_populated(self):
+                return True
+
+        root = T("s0", "K0", prev="", pre="K1")
+        bad = T("s1", "K1", prev="K0", pre="K2")
+        ok = T("s2", "K1b", prev="K0", pre="K2b")  # second kid -> ambiguous
+
+        async def fake_root(txn):
+            if txn is root:
+                return True, None
+            return False, None
+
+        call = {"n": 0}
+
+        def allow(prev_flag, kid_flag):
+            # disallow first kid
+            return kid_flag != "DISALLOW"
+
+        def classify(txn):
+            if txn is root:
+                return KeyEventFlag.INCEPTION
+            if txn is bad:
+                return "DISALLOW"
+            return KeyEventFlag.CONFIRMING
+
+        def vstep(prev, kid, previous_onchain=False):
+            if kid is ok:
+                raise Exception("bad step")
+            return None
+
+        with mock.patch(
+            "yadacoin.core.keyeventlog.is_mempool_kel_root",
+            new=AsyncMock(side_effect=fake_root),
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.classify_key_event_flag",
+            side_effect=classify,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.kel_successor_flag_allowed",
+            side_effect=allow,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.verify_kel_step",
+            side_effect=vstep,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.is_recovers_inception",
+            return_value=False,
+        ):
+            await Block.ensure_kel_tags([root, bad, ok])
+        # root still tagged alone
+        self.assertEqual(root.inception_public_key_hash, "K0")
+
+    async def test_ensure_kel_duplicate_root_claimed_continue(self):
+        """Same root returned twice via is_mempool_kel_root list with shared sig."""
+        from yadacoin.core.keyeventlog import KeyEventFlag
+
+        class T:
+            def __init__(self, sig, pkh):
+                self.transaction_signature = sig
+                self.public_key_hash = pkh
+                self.prev_public_key_hash = ""
+                self.prerotated_key_hash = "K1"
+                self.inception_public_key_hash = None
+                self.counter = None
+
+            def are_kel_fields_populated(self):
+                return True
+
+        root = T("same_sig", "K0")
+        # second candidate with same signature object identity different but same sig string
+        root2 = T("same_sig", "K0")
+
+        async def fake_root(txn):
+            return True, None
+
+        with mock.patch(
+            "yadacoin.core.keyeventlog.is_mempool_kel_root",
+            new=AsyncMock(side_effect=fake_root),
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.classify_key_event_flag",
+            return_value=KeyEventFlag.INCEPTION,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.kel_successor_flag_allowed",
+            return_value=True,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.verify_kel_step",
+            return_value=None,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.is_recovers_inception",
+            return_value=False,
+        ):
+            await Block.ensure_kel_tags([root, root2])
+        self.assertEqual(root.inception_public_key_hash, "K0")
+
+    async def test_ensure_kel_group_no_starts_uses_seed(self):
+        """Cycle-like group: all prevs in by_pkh so starts empty -> seed."""
+        from yadacoin.core.keyeventlog import KeyEventFlag
+
+        class T:
+            def __init__(self, sig, pkh, prev, pre, inc=None, counter=None):
+                self.transaction_signature = sig
+                self.public_key_hash = pkh
+                self.prev_public_key_hash = prev
+                self.prerotated_key_hash = pre
+                self.twice_prerotated_key_hash = ""
+                self.inception_public_key_hash = inc
+                self.counter = counter
+
+            def are_kel_fields_populated(self):
+                return True
+
+        # A->B->A cycle in prev links with seed on A
+        a = T("sa", "A", prev="B", pre="B", inc="INC", counter=0)
+        b = T("sb", "B", prev="A", pre="A")
+
+        async def fake_root(txn):
+            return False, None
+
+        with mock.patch(
+            "yadacoin.core.keyeventlog.is_mempool_kel_root",
+            new=AsyncMock(side_effect=fake_root),
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.classify_key_event_flag",
+            return_value=KeyEventFlag.CONFIRMING,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.is_recovers_inception",
+            return_value=False,
+        ), mock.patch(
+            "yadacoin.core.block.Block.find_kel_linked_group",
+            return_value=[a, b],
+        ):
+            await Block.ensure_kel_tags([a, b])
+        self.assertEqual(b.inception_public_key_hash, "INC")
+
+    async def test_save_ensure_kel_tags_failure(self):
+        block = Block()
+        block.index = 0
+        block.transactions = []
+        with mock.patch.object(Block, "verify", new=AsyncMock(return_value=None)):
+            with mock.patch.object(
+                Block, "ensure_kel_tags", new=AsyncMock(side_effect=Exception("e"))
+            ):
+                with self.assertRaises(Exception) as ctx:
+                    await block.save()
+        self.assertIn("ensure_kel_tags failed", str(ctx.exception))
+
+    async def test_ensure_kel_group_bfs_seen_and_orphan_append(self):
+        """Orphan with in-group prev but no prerotated link hits ordered.append (745)."""
+        from yadacoin.core.keyeventlog import KeyEventFlag
+
+        class T:
+            def __init__(self, sig, pkh, prev="", pre="", inc=None, counter=None):
+                self.transaction_signature = sig
+                self.public_key_hash = pkh
+                self.prev_public_key_hash = prev
+                self.prerotated_key_hash = pre
+                self.twice_prerotated_key_hash = ""
+                self.inception_public_key_hash = inc
+                self.counter = counter
+
+            def are_kel_fields_populated(self):
+                return True
+
+        # seed start; child linked via prerotated; orphan prev in by_pkh so not a
+        # start, but pkh != seed.pre so BFS never reaches it -> line 745.
+        seed = T("s0", "A", prev="OUT", pre="B", inc="INC", counter=0)
+        child = T("s1", "B", prev="A", pre="C")
+        orphan = T("s2", "Z", prev="A", pre="Y")
+
+        async def fake_root(txn):
+            return False, None
+
+        with mock.patch(
+            "yadacoin.core.keyeventlog.is_mempool_kel_root",
+            new=AsyncMock(side_effect=fake_root),
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.classify_key_event_flag",
+            return_value=KeyEventFlag.CONFIRMING,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.is_recovers_inception",
+            return_value=False,
+        ), mock.patch(
+            "yadacoin.core.block.Block.find_kel_linked_group",
+            return_value=[seed, child, orphan],
+        ):
+            await Block.ensure_kel_tags([seed, child, orphan])
+
+        self.assertEqual(child.inception_public_key_hash, "INC")
+        self.assertEqual(orphan.inception_public_key_hash, "INC")
+
+    async def test_ensure_kel_group_duplicate_start_hits_seen_continue(self):
+        """Duplicate start nodes in group make queue hit id(cur) in seen (line 730)."""
+        from yadacoin.core.keyeventlog import KeyEventFlag
+
+        class T:
+            def __init__(self, sig, pkh, prev="", pre="", inc=None, counter=None):
+                self.transaction_signature = sig
+                self.public_key_hash = pkh
+                self.prev_public_key_hash = prev
+                self.prerotated_key_hash = pre
+                self.twice_prerotated_key_hash = ""
+                self.inception_public_key_hash = inc
+                self.counter = counter
+
+            def are_kel_fields_populated(self):
+                return True
+
+        # seed appears twice in group with prev outside by_pkh -> starts=[seed, seed]
+        seed = T("s0", "A", prev="OUT", pre="B", inc="INC", counter=0)
+        child = T("s1", "B", prev="A", pre="C")
+
+        async def fake_root(txn):
+            return False, None
+
+        with mock.patch(
+            "yadacoin.core.keyeventlog.is_mempool_kel_root",
+            new=AsyncMock(side_effect=fake_root),
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.classify_key_event_flag",
+            return_value=KeyEventFlag.CONFIRMING,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.is_recovers_inception",
+            return_value=False,
+        ), mock.patch(
+            "yadacoin.core.block.Block.find_kel_linked_group",
+            return_value=[seed, seed, child],
+        ):
+            await Block.ensure_kel_tags([seed, child])
+        self.assertEqual(child.inception_public_key_hash, "INC")

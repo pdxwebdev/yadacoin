@@ -715,7 +715,9 @@ async def mock_get_unspent_txns(self, query):
     return get_txn()
 
 
-async def mock_get_mempool_transactions(self, public_key, input_ids):
+async def mock_get_mempool_transactions(
+    self, public_key, input_ids, spender_inception=None
+):
     async def get_txn():
         yield True
 

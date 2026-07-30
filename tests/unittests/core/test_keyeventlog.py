@@ -7440,3 +7440,122 @@ class TestGetOnchainChildCoverage(AsyncTestCase):
             mock_from.return_value = child_txn
             result = await ke.get_onchain_child()
         self.assertIsNone(result)
+
+
+class TestInceptionTagAndSpendConflictGaps(AsyncTestCase):
+    """Cover remaining _inception_tag and kel_spend_conflict branches."""
+
+    async def test_inception_tag_object_falls_back_to_public_key_hash(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        class Obj:
+            inception_public_key_hash = None
+            public_key_hash = "fallback_pkh"
+
+        self.assertEqual(KeyEventLog._inception_tag(Obj()), "fallback_pkh")
+        self.assertIsNone(KeyEventLog._inception_tag(type("X", (), {})()))
+        self.assertIsNone(KeyEventLog._inception_tag(""))
+
+    async def test_kel_spend_conflict_missing_keys(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        self.assertFalse(await KeyEventLog.kel_spend_conflict(None, "pk"))
+        self.assertFalse(await KeyEventLog.kel_spend_conflict("pk", None))
+        self.assertFalse(await KeyEventLog.kel_spend_conflict("", "pk"))
+
+    async def test_kel_spend_conflict_get_inception_raises_on_both(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        with patch.object(
+            KeyEventLog, "get_inception", new=AsyncMock(side_effect=Exception("db"))
+        ):
+            with patch(
+                "yadacoin.core.keyeventlog.P2PKHBitcoinAddress.from_pubkey",
+                side_effect=lambda b: type("A", (), {"__str__": lambda s: "addr"})(),
+            ):
+                self.assertFalse(
+                    await KeyEventLog.kel_spend_conflict("aa" * 33, "bb" * 33)
+                )
+
+    async def test_kel_spend_conflict_one_side_tag_matches_resolved(self):
+        """tag_a + resolved addr_b; pk_a unparseable so both-addr path skipped."""
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        class Inc:
+            def __init__(self, tag):
+                self.inception_public_key_hash = tag
+
+        valid_b = "02" + "ab" * 32
+        with patch.object(
+            KeyEventLog, "get_inception", new=AsyncMock(return_value=Inc("same_inc"))
+        ):
+            # pk_a invalid hex -> addr_a None; pk_b valid -> addr_b set
+            self.assertTrue(
+                await KeyEventLog.kel_spend_conflict(
+                    "not-hex",
+                    valid_b,
+                    inception_a="same_inc",
+                    inception_b=None,
+                )
+            )
+
+    async def test_kel_spend_conflict_one_side_tag_b_matches_resolved(self):
+        """tag_b + resolved addr_a; pk_b unparseable so both-addr path skipped."""
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        class Inc:
+            def __init__(self, tag):
+                self.inception_public_key_hash = tag
+
+        valid_a = "02" + "ab" * 32
+        with patch.object(
+            KeyEventLog, "get_inception", new=AsyncMock(return_value=Inc("same_inc"))
+        ):
+            self.assertTrue(
+                await KeyEventLog.kel_spend_conflict(
+                    valid_a,
+                    "not-hex",
+                    inception_a=None,
+                    inception_b="same_inc",
+                )
+            )
+
+    async def test_kel_spend_conflict_one_side_tag_get_inception_raises(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        # tag_a set, tag_b empty, addr_b present, get_inception raises
+        with patch.object(
+            KeyEventLog, "get_inception", new=AsyncMock(side_effect=Exception("x"))
+        ):
+            with patch(
+                "yadacoin.core.keyeventlog.P2PKHBitcoinAddress.from_pubkey",
+                side_effect=lambda b: type("A", (), {"__str__": lambda s: "addr"})(),
+            ):
+                # falls through to no proof -> False (no both tags)
+                self.assertFalse(
+                    await KeyEventLog.kel_spend_conflict(
+                        "aa" * 33,
+                        "bb" * 33,
+                        inception_a="only_a",
+                        inception_b=None,
+                    )
+                )
+
+    async def test_kel_spend_conflict_tag_b_get_inception_raises(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        with patch.object(
+            KeyEventLog, "get_inception", new=AsyncMock(side_effect=Exception("x"))
+        ):
+            with patch(
+                "yadacoin.core.keyeventlog.P2PKHBitcoinAddress.from_pubkey",
+                side_effect=lambda b: type("A", (), {"__str__": lambda s: "addr"})(),
+            ):
+                self.assertFalse(
+                    await KeyEventLog.kel_spend_conflict(
+                        "aa" * 33,
+                        "bb" * 33,
+                        inception_a=None,
+                        inception_b="only_b",
+                    )
+                )

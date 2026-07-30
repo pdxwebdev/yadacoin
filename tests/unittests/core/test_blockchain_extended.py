@@ -211,6 +211,7 @@ class TestTestBlock(AsyncTestCase):
         """Block at index 0 should pass immediately after verify"""
         block = Block()
         block.index = 0
+        block.transactions = []
         # Block uses __slots__ so can't patch instance attrs; patch at class level
         with patch.object(Block, "verify", new=AsyncMock()):
             result = await Blockchain.test_block(block)
@@ -222,6 +223,7 @@ class TestTestBlock(AsyncTestCase):
 
         block = Block()
         block.index = 1
+        block.transactions = []
         block.time = int(_time.time()) + 99999  # future time as int
 
         with patch.object(Block, "verify", new=AsyncMock()):

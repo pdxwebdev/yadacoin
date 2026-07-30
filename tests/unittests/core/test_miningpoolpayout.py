@@ -1479,3 +1479,78 @@ class TestFinalCoverageGaps(AsyncTestCase):
         self.assertIsNone(
             await p.attach_template_settlement([], triplet, _mk_coinbase())
         )
+
+
+class TestBumpCoinbaseGaps(AsyncTestCase):
+    async def test_bump_total_fee_non_positive(self):
+        p = _mk_payer()
+        cb = _mk_coinbase(value=10.0)
+        triplet = MagicMock(signer_private_key="11" * 32)
+        # fee 0 -> total_fee <= 0
+        out = await p._bump_coinbase_for_settlement_fees(cb, triplet, 5, fee=0)
+        self.assertIs(out, cb)
+        self.assertAlmostEqual(float(cb.outputs[0].value), 10.0)
+
+    async def test_bump_falls_back_to_last_output(self):
+        p = _mk_payer()
+        cb = _mk_coinbase(value=10.0, prerotated="1Pre")
+        # output.to does not match prerotated
+        cb.outputs[0].to = "other"
+        cb.prerotated_key_hash = "1Pre"
+        triplet = MagicMock(signer_private_key="11" * 32)
+        with patch(
+            "yadacoin.core.keyrotation.NodeKeyRotationManager._sign",
+            return_value="sig",
+        ):
+            await p._bump_coinbase_for_settlement_fees(cb, triplet, 1, fee=0.1)
+        self.assertAlmostEqual(float(cb.outputs[0].value), 10.1)
+
+    async def test_bump_no_outputs_returns(self):
+        p = _mk_payer()
+        cb = _mk_coinbase(value=10.0)
+        cb.outputs = []
+        triplet = MagicMock(signer_private_key="11" * 32)
+        out = await p._bump_coinbase_for_settlement_fees(cb, triplet, 1, fee=0.1)
+        self.assertIs(out, cb)
+
+    async def test_bump_exception_undoes_value(self):
+        p = _mk_payer()
+        p.app_log = MagicMock()
+        cb = _mk_coinbase(value=10.0, prerotated="1Pre")
+        cb.generate_hash = AsyncMock(side_effect=Exception("hash fail"))
+        triplet = MagicMock(signer_private_key="11" * 32)
+        out = await p._bump_coinbase_for_settlement_fees(cb, triplet, 2, fee=0.5)
+        self.assertIs(out, cb)
+        # 10 + 1.0 then undo -> 10
+        self.assertAlmostEqual(float(cb.outputs[0].value), 10.0)
+
+    async def test_bump_exception_undo_also_fails(self):
+        p = _mk_payer()
+        p.app_log = MagicMock()
+        cb = _mk_coinbase(value=10.0, prerotated="1Pre")
+
+        class FlakyOut:
+            def __init__(self):
+                self.to = "1Pre"
+                self._value = 10.0
+                self._reads = 0
+
+            @property
+            def value(self):
+                self._reads += 1
+                # 1st read: add path float(value); 2nd read: undo path
+                if self._reads >= 2:
+                    raise Exception("undo fail")
+                return self._value
+
+            @value.setter
+            def value(self, v):
+                self._value = v
+
+        out = FlakyOut()
+        cb.outputs = [out]
+        cb.prerotated_key_hash = "1Pre"
+        cb.generate_hash = AsyncMock(side_effect=Exception("hash fail"))
+        triplet = MagicMock(signer_private_key="11" * 32)
+        result = await p._bump_coinbase_for_settlement_fees(cb, triplet, 1, fee=1.0)
+        self.assertIs(result, cb)

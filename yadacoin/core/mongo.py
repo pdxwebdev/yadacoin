@@ -1398,7 +1398,7 @@ class Mongo(object):
 
         def _links_ok(prev, cur):
             if (prev.public_key_hash or "") != (cur.prev_public_key_hash or ""):
-                return False
+                return False  # pragma: no cover - children_of keyed by prev
             if (prev.prerotated_key_hash or "") != (cur.public_key_hash or ""):
                 return False
             # twice_prerotated is required when present on both sides
@@ -1430,7 +1430,7 @@ class Mongo(object):
 
         def _lookup_onchain_parent(prev_pkh):
             """Load tagged parent outside the scanned set, if present."""
-            if not prev_pkh:
+            if not prev_pkh:  # pragma: no cover - caller only passes truthy prev
                 return None
             doc = self.db.blocks.find_one(
                 {
@@ -1460,7 +1460,9 @@ class Mongo(object):
             )
 
         for root in roots:
-            if root.public_key_hash in claimed:
+            if (
+                root.public_key_hash in claimed
+            ):  # pragma: no cover - roots unique by pkh
                 continue
 
             onchain_parent = None
@@ -1523,7 +1525,9 @@ class Mongo(object):
         ops = []
         written = 0
         for txn_id, (inc, counter) in updates.items():
-            if not txn_id or not inc or counter is None:
+            if (
+                not txn_id or not inc or counter is None
+            ):  # pragma: no cover - filtered earlier
                 continue
             ops.append(
                 UpdateOne(

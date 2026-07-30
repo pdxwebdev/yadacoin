@@ -461,7 +461,7 @@ class TestIsInputSpent(BUTestCase):
 
         with patch.object(self.config.mongo, "async_db", new=mock_db):
             with patch(
-                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                "yadacoin.core.keyeventlog.KeyEventLog.kel_spend_conflict",
                 new=AsyncMock(return_value=False),
             ):
                 result = await self.bu.is_input_spent(
@@ -555,20 +555,10 @@ class TestIsInputSpent(BUTestCase):
 
         with patch.object(self.config.mongo, "async_db", new=mock_db):
             with patch(
-                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                "yadacoin.core.keyeventlog.KeyEventLog.kel_spend_conflict",
                 new=AsyncMock(return_value=True),
             ):
-                # Use valid-looking hex keys so address derivation may run;
-                # is_same_kel is mocked either way after a successful parse or
-                # after the except path... use simple equal path via mock on
-                # P2PKH if needed. Mock address derivation too.
-                with patch(
-                    "yadacoin.core.blockchainutils.P2PKHBitcoinAddress.from_pubkey",
-                    side_effect=lambda b: type(
-                        "A", (), {"__str__": lambda self: "addr"}
-                    )(),
-                ):
-                    result = await self.bu.is_input_spent("input_id", "bb" * 33)
+                result = await self.bu.is_input_spent("input_id", "bb" * 33)
         self.assertTrue(result)
 
     async def test_different_kel_spender_not_spent(self):
@@ -592,16 +582,10 @@ class TestIsInputSpent(BUTestCase):
 
         with patch.object(self.config.mongo, "async_db", new=mock_db):
             with patch(
-                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                "yadacoin.core.keyeventlog.KeyEventLog.kel_spend_conflict",
                 new=AsyncMock(return_value=False),
             ):
-                with patch(
-                    "yadacoin.core.blockchainutils.P2PKHBitcoinAddress.from_pubkey",
-                    side_effect=lambda b: type(
-                        "A", (), {"__str__": lambda self, b=b: f"addr-{b.hex()[:4]}"}
-                    )(),
-                ):
-                    result = await self.bu.is_input_spent("input_id", "bb" * 33)
+                result = await self.bu.is_input_spent("input_id", "bb" * 33)
         self.assertFalse(result)
 
     async def test_same_inception_tag_counts_as_spent_without_onchain_kel(self):
@@ -733,16 +717,10 @@ class TestGetMempoolTransactions(BUTestCase):
         mock_db.miner_transactions.find.return_value = mp_cursor
         with patch.object(self.config.mongo, "async_db", new=mock_db):
             with patch(
-                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                "yadacoin.core.keyeventlog.KeyEventLog.kel_spend_conflict",
                 new=AsyncMock(return_value=True),
             ):
-                with patch(
-                    "yadacoin.core.blockchainutils.P2PKHBitcoinAddress.from_pubkey",
-                    side_effect=lambda b: type(
-                        "A", (), {"__str__": lambda self: "addr"}
-                    )(),
-                ):
-                    result = await self.bu.get_mempool_transactions("bb" * 33, ["inp1"])
+                result = await self.bu.get_mempool_transactions("bb" * 33, ["inp1"])
         self.assertEqual(result["id"], "txn1")
 
     async def test_mempool_same_inception_tag_match(self):
@@ -759,8 +737,8 @@ class TestGetMempoolTransactions(BUTestCase):
         mock_db.miner_transactions.find.return_value = mp_cursor
         with patch.object(self.config.mongo, "async_db", new=mock_db):
             with patch(
-                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
-                new=AsyncMock(return_value=False),
+                "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                new=AsyncMock(return_value=None),
             ):
                 result = await self.bu.get_mempool_transactions(
                     "bb" * 33, ["inp1"], spender_inception="pool_inc"
