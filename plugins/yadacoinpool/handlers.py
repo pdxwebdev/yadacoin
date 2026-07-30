@@ -2,7 +2,6 @@ import os
 import time
 
 import requests
-from bitcoin.wallet import P2PKHBitcoinAddress
 from tornado.web import StaticFileHandler
 
 from yadacoin import version
@@ -10,64 +9,179 @@ from yadacoin.core.chain import CHAIN
 from yadacoin.http.base import BaseHandler
 
 # Site DB collection used to cache the pool's KEL-aware block summary so we do
-# not rebuild the KEL and scan the blocks collection on every request.  Only the
-# count of all blocks won and the last five won-block details are stored — the
-# full set of won blocks is never cached.
+# not rebuild expensive aggregates on every request.  Only the count of won
+# blocks, the last five, spent coinbase ids, and the signing public_key set
+# are stored — the full set of won blocks is never cached.
 POOL_KEL_BLOCKS_COLLECTION = "pool_kel_blocks"
 
 
-async def _build_pool_kel_cache(config, pool_public_key, latest_hash, latest_height):
-    """Build the KEL key set and the pool-info summary from the chain.
+def _pool_inception_public_key_hash(config):
+    """Stable pool KEL identity: inception txn public_key_hash (P2PKH address).
 
-    A pool that uses key rotation mines blocks under a constantly changing
-    signing key, so a simple ``{"public_key": pool_public_key}`` lookup misses
-    every block won under a previous KEL key.  We collect the full set of
-    on-chain KEL public keys (the inception key plus every rotated key) and use
-    them to count/lookup blocks whose ``public_key`` matches any of them.
-
-    Returns the cache document: ``identity``, ``public_keys``, ``total`` (count
-    of all blocks won), ``last_five`` (the five most recent won-block docs), and
-    the on-chain tip ``block_hash``/``block_height``/``cached_at``.
+    Prefer ``config.inception.public_key_hash``; otherwise derive the address
+    from ``config.inception.public_key`` the same way mining pool payouts do.
     """
-    from yadacoin.core.keyeventlog import KeyEventLog
-
-    public_keys = [pool_public_key]
+    inception = getattr(config, "inception", None)
+    if inception is None:
+        return None
+    pkh = getattr(inception, "public_key_hash", None) or ""
+    if pkh:
+        return pkh
+    pub = getattr(inception, "public_key", None) or ""
+    if not pub:
+        return None
     try:
-        kel = await KeyEventLog.build_from_public_key(
-            pool_public_key, onchain_only=True
-        )
-        for entry in kel:
-            if entry.public_key and entry.public_key not in public_keys:
-                public_keys.append(entry.public_key)
-    except Exception as exc:
-        config.app_log.warning("pool KEL build failed for %s: %s", pool_public_key, exc)
+        from bitcoin.wallet import P2PKHBitcoinAddress
 
-    total = 0
-    last_five = []
-    if public_keys:
-        total = await config.mongo.async_db.blocks.count_documents(
-            {"public_key": {"$in": public_keys}}
+        return str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub)))
+    except Exception:
+        return None
+
+
+async def _build_pool_kel_cache(config, pool_public_key, latest_hash, latest_height):
+    """Build pool win summary from inception-tagged coinbases.
+
+    1. Locate every block whose coinbase (no inputs, block.public_key matches
+       txn.public_key) carries ``inception_public_key_hash`` equal to this
+       node's inception address.
+    2. Collect those coinbase transaction ids.
+    3. Cross-reference which of those ids appear as inputs on later
+       transactions that carry the same ``inception_public_key_hash``
+       (same-KEL spends / settlements).
+
+    Returns a cache document with ``total``, ``last_five``, ``spent_coinbase_ids``,
+    ``public_keys`` (distinct signing keys from won blocks), and tip metadata.
+    """
+    inception_pkh = _pool_inception_public_key_hash(config)
+    identity = inception_pkh or pool_public_key
+
+    if not inception_pkh:
+        config.app_log.warning(
+            "pool KEL cache: no config.inception public_key_hash; empty summary"
         )
-        last_five = (
-            await config.mongo.async_db.blocks.find(
-                {"public_key": {"$in": public_keys}}, {"_id": 0}
-            )
-            .sort([("index", -1)])
-            .to_list(5)
-        )
+        return {
+            "identity": identity,
+            "inception_public_key_hash": None,
+            "public_keys": [pool_public_key] if pool_public_key else [],
+            "total": 0,
+            "last_five": [],
+            "spent_coinbase_ids": [],
+            "block_hash": latest_hash,
+            "block_height": latest_height,
+            "cached_at": time.time(),
+        }
+
+    # Coinbase = no inputs + same public_key as the block header (pool win).
+    won_rows = await config.mongo.async_db.blocks.aggregate(
+        [
+            {
+                "$match": {
+                    "transactions": {
+                        "$elemMatch": {
+                            "inputs.0": {"$exists": False},
+                            "inception_public_key_hash": inception_pkh,
+                        }
+                    }
+                }
+            },
+            {"$unwind": "$transactions"},
+            {
+                "$match": {
+                    "transactions.inputs.0": {"$exists": False},
+                    "transactions.inception_public_key_hash": inception_pkh,
+                    "$expr": {"$eq": ["$public_key", "$transactions.public_key"]},
+                }
+            },
+            {"$sort": {"index": -1}},
+            {
+                "$project": {
+                    "_id": 0,
+                    "index": 1,
+                    "hash": 1,
+                    "public_key": 1,
+                    "updated_at": 1,
+                    "time": 1,
+                    "target": 1,
+                    "coinbase_id": {
+                        "$ifNull": [
+                            "$transactions.id",
+                            "$transactions.transaction_signature",
+                        ]
+                    },
+                    "transactions": ["$transactions"],
+                }
+            },
+        ]
+    ).to_list(length=None)
+
+    coinbase_ids = []
+    public_keys = []
+    for row in won_rows:
+        cid = row.get("coinbase_id")
+        if cid and cid not in coinbase_ids:
+            coinbase_ids.append(cid)
+        pk = row.get("public_key")
+        if pk and pk not in public_keys:
+            public_keys.append(pk)
+
+    spent_coinbase_ids = []
+    if coinbase_ids:
+        # Same-KEL spends of those coinbases (payouts / settlements / rotations).
+        spend_rows = await config.mongo.async_db.blocks.aggregate(
+            [
+                {
+                    "$match": {
+                        "transactions": {
+                            "$elemMatch": {
+                                "inception_public_key_hash": inception_pkh,
+                                "inputs.id": {"$in": coinbase_ids},
+                            }
+                        }
+                    }
+                },
+                {"$unwind": "$transactions"},
+                {
+                    "$match": {
+                        "transactions.inception_public_key_hash": inception_pkh,
+                        "transactions.inputs.id": {"$in": coinbase_ids},
+                    }
+                },
+                {"$unwind": "$transactions.inputs"},
+                {
+                    "$match": {
+                        "transactions.inputs.id": {"$in": coinbase_ids},
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": "$transactions.inputs.id",
+                    }
+                },
+            ]
+        ).to_list(length=None)
+        spent_set = {r["_id"] for r in spend_rows if r.get("_id")}
+        # Preserve coinbase order from newest won block first.
+        spent_coinbase_ids = [cid for cid in coinbase_ids if cid in spent_set]
+
+    total = len(won_rows)
+    last_five = won_rows[:5]
+    for row in last_five:
+        row["coinbase_spent"] = row.get("coinbase_id") in set(spent_coinbase_ids)
 
     return {
-        "identity": pool_public_key,
-        "public_keys": public_keys,
+        "identity": identity,
+        "inception_public_key_hash": inception_pkh,
+        "public_keys": public_keys or ([pool_public_key] if pool_public_key else []),
         "total": total,
         "last_five": last_five,
+        "spent_coinbase_ids": spent_coinbase_ids,
         "block_hash": latest_hash,
         "block_height": latest_height,
         "cached_at": time.time(),
     }
 
 
-async def _load_pool_kel_cache(config, pool_public_key):
+async def _load_pool_kel_cache(config, pool_public_key=None):
     """Return the cached pool KEL doc, rebuilding it when the on-chain tip
     changes (or there is no entry).  The cache is invalidated whenever the
     latest cached entry's stored ``block_hash`` no longer equals
@@ -75,11 +189,18 @@ async def _load_pool_kel_cache(config, pool_public_key):
     site_db = config.mongo.async_site_db
     latest_hash = config.LatestBlock.block.hash
     latest_height = config.LatestBlock.block.index
+    inception_pkh = _pool_inception_public_key_hash(config)
+    identity = inception_pkh or pool_public_key or "unknown"
 
     cached = await site_db[POOL_KEL_BLOCKS_COLLECTION].find_one(
-        {"identity": pool_public_key}, sort=[("cached_at", -1)]
+        {"identity": identity}, sort=[("cached_at", -1)]
     )
-    if cached and cached.get("block_hash") == latest_hash and cached.get("public_keys"):
+    if (
+        cached
+        and cached.get("block_hash") == latest_hash
+        and cached.get("inception_public_key_hash") == inception_pkh
+        and "spent_coinbase_ids" in cached
+    ):
         return cached
 
     doc = await _build_pool_kel_cache(
@@ -88,40 +209,55 @@ async def _load_pool_kel_cache(config, pool_public_key):
 
     # Invalidate any stale entries for this identity, then store the fresh result.
     try:
-        await site_db[POOL_KEL_BLOCKS_COLLECTION].delete_many(
-            {"identity": pool_public_key}
-        )
+        await site_db[POOL_KEL_BLOCKS_COLLECTION].delete_many({"identity": identity})
     except Exception:
         pass
     try:
         await site_db[POOL_KEL_BLOCKS_COLLECTION].insert_one(doc)
     except Exception as exc:
-        config.app_log.warning(
-            "pool KEL cache write failed for %s: %s", pool_public_key, exc
-        )
+        config.app_log.warning("pool KEL cache write failed for %s: %s", identity, exc)
 
     return doc
 
 
-async def get_pool_kel_blocks(config, pool_public_key):
-    """Return the pool-info block summary across the entire KEL.
+async def get_pool_kel_blocks(config, pool_public_key=None):
+    """Return the pool-info block summary for this node's KEL inception.
 
-    Returns ``{"total": <blocks won>, "last_five": [<5 won block docs>]}``.  The
-    result is cached in the ``yadacoin_site`` database (``pool_kel_blocks``
-    collection) and invalidated when the on-chain tip hash changes.
+    Won blocks are those whose coinbase is tagged with
+    ``config.inception.public_key_hash``.  Coinbase ids are then cross-checked
+    against same-inception spends on-chain.
+
+    Returns::
+
+        {
+            "total": <blocks won>,
+            "last_five": [<won block docs with coinbase_id / coinbase_spent>],
+            "spent_coinbase_ids": [<coinbase txn ids spent by same-KEL txns>],
+            "inception_public_key_hash": <address>,
+        }
     """
     doc = await _load_pool_kel_cache(config, pool_public_key)
-    return {"total": doc.get("total", 0), "last_five": doc.get("last_five", [])}
+    return {
+        "total": doc.get("total", 0),
+        "last_five": doc.get("last_five", []),
+        "spent_coinbase_ids": doc.get("spent_coinbase_ids", []),
+        "inception_public_key_hash": doc.get("inception_public_key_hash"),
+    }
 
 
-async def get_pool_kel_public_keys(config, pool_public_key):
-    """Return the on-chain KEL public-key set for the pool (cached by tip hash).
+async def get_pool_kel_public_keys(config, pool_public_key=None):
+    """Return distinct block signing public keys from won pool blocks.
 
-    Used by the detailed pool-blocks listing, which only needs the key set to
-    issue a targeted ``$in`` query rather than rebuilding the KEL per request.
+    Derived from inception-tagged coinbase wins (cached by tip hash).  Falls
+    back to ``pool_public_key`` when no wins / no inception are available.
     """
     doc = await _load_pool_kel_cache(config, pool_public_key)
-    return doc.get("public_keys", [pool_public_key])
+    keys = doc.get("public_keys") or []
+    if keys:
+        return keys
+    if pool_public_key:
+        return [pool_public_key]
+    return []
 
 
 class BaseWebHandler(BaseHandler):
@@ -181,43 +317,9 @@ class MarketInfoHandler(BaseWebHandler):
 class PoolInfoHandler(BaseWebHandler):
     async def get(self):
         await self.config.LatestBlock.block_checker()
-        pool_address = str(
-            P2PKHBitcoinAddress.from_pubkey(
-                bytes.fromhex(self.config.inception.public_key)
-            )
-        )
-        total_blocks_found = await self.config.mongo.async_db.blocks.aggregate(
-            [
-                {
-                    "$match": {
-                        "transactions.inception_public_key_hash": pool_address,
-                    }
-                },
-                {"$unwind": "$transactions"},
-                {
-                    "$match": {
-                        "transactions.inception_public_key_hash": pool_address,
-                        "$expr": {"$eq": ["$public_key", "$transactions.public_key"]},
-                    }
-                },
-                {"$count": "total"},
-            ]
-        ).to_list(length=1)
-        total_blocks_found = total_blocks_found[0]["total"] if total_blocks_found else 0
-        pool_blocks_found_list = await self.config.mongo.async_db.blocks.aggregate(
-            [
-                {"$match": {"transactions.inception_public_key_hash": pool_address}},
-                {"$unwind": "$transactions"},
-                {
-                    "$match": {
-                        "transactions.inception_public_key_hash": pool_address,
-                        "$expr": {"$eq": ["$public_key", "$transactions.public_key"]},
-                    }
-                },
-                {"$sort": {"index": -1}},
-                {"$limit": 5},
-            ]
-        ).to_list(length=5)
+        pool_blocks_found = await get_pool_kel_blocks(self.config)
+        total_blocks_found = pool_blocks_found["total"]
+        pool_blocks_found_list = pool_blocks_found["last_five"]
         expected_blocks = 144
         mining_time_interval = 600
         shares_count = await self.config.mongo.async_db.shares.count_documents(
@@ -353,56 +455,89 @@ class PoolInfoHandler(BaseWebHandler):
 
 class PoolBlocksHandler(BaseWebHandler):
     async def get(self):
-        pool_public_key = (
-            self.config.pool_public_key
-            if hasattr(self.config, "pool_public_key")
-            else self.config.public_key
-        )
+        # Full won-block listing via inception-tagged coinbases (same cache as
+        # pool-info).  public_keys remain available for callers that need them.
+        summary = await get_pool_kel_blocks(self.config)
+        inception_pkh = summary.get("inception_public_key_hash")
+        spent = set(summary.get("spent_coinbase_ids") or [])
 
-        public_keys = await get_pool_kel_public_keys(self.config, pool_public_key)
-        pool_blocks_found_list = (
-            await self.config.mongo.async_db.blocks.find(
-                {"public_key": {"$in": public_keys}},
+        if not inception_pkh:
+            self.render_as_json({"blocks": []})
+            return
+
+        pool_blocks_found_list = await self.config.mongo.async_db.blocks.aggregate(
+            [
                 {
-                    "_id": 0,
-                    "index": 1,
-                    "hash": 1,
-                    "updated_at": 1,
-                    "transactions": 1,
-                    "target": 1,
+                    "$match": {
+                        "transactions": {
+                            "$elemMatch": {
+                                "inputs.0": {"$exists": False},
+                                "inception_public_key_hash": inception_pkh,
+                            }
+                        }
+                    }
                 },
-            )
-            .sort([("index", -1)])
-            .to_list(300)
-        )
+                {"$unwind": "$transactions"},
+                {
+                    "$match": {
+                        "transactions.inputs.0": {"$exists": False},
+                        "transactions.inception_public_key_hash": inception_pkh,
+                        "$expr": {"$eq": ["$public_key", "$transactions.public_key"]},
+                    }
+                },
+                {"$sort": {"index": -1}},
+                {"$limit": 300},
+                {
+                    "$project": {
+                        "_id": 0,
+                        "index": 1,
+                        "hash": 1,
+                        "updated_at": 1,
+                        "target": 1,
+                        "transactions": ["$transactions"],
+                        "coinbase_id": {
+                            "$ifNull": [
+                                "$transactions.id",
+                                "$transactions.transaction_signature",
+                            ]
+                        },
+                    }
+                },
+            ]
+        ).to_list(300)
 
         max_target = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+        pool_address = getattr(self.config, "address", None)
 
         result_blocks = []
         for block in pool_blocks_found_list:
-            if not block.get("transactions"):
+            txns = block.get("transactions") or []
+            if not txns:
                 continue
-
-            coinbase_tx = block["transactions"][-1]
-            reward = 0
-
+            coinbase_tx = txns[0]
+            reward = 0.0
+            prerotated = coinbase_tx.get("prerotated_key_hash") or ""
             for output in coinbase_tx.get("outputs", []):
-                if output["to"] == self.config.address:
-                    reward += output["value"]
+                to = output.get("to")
+                if prerotated and to == prerotated:
+                    reward += float(output.get("value") or 0)
+                elif pool_address and to == pool_address:
+                    reward += float(output.get("value") or 0)
 
             difficulty = (
-                max_target / int(block["target"], 16) if "target" in block else 0
+                max_target / int(block["target"], 16) if block.get("target") else 0
             )
-            txn_count = max(len(block["transactions"]) - 1, 0)
-
+            coinbase_id = block.get("coinbase_id")
             result_blocks.append(
                 {
                     "height": block["index"],
-                    "time": block.get("updated_at", coinbase_tx["time"]),
+                    "time": block.get("updated_at", coinbase_tx.get("time")),
                     "hash": block["hash"],
                     "reward": reward,
                     "difficulty": round(difficulty, 3),
-                    "txn_count": txn_count,
+                    "txn_count": 0,  # listing is coinbase-only unwind
+                    "coinbase_id": coinbase_id,
+                    "coinbase_spent": coinbase_id in spent,
                 }
             )
 
