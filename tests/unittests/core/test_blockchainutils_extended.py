@@ -604,6 +604,70 @@ class TestIsInputSpent(BUTestCase):
                     result = await self.bu.is_input_spent("input_id", "bb" * 33)
         self.assertFalse(result)
 
+    async def test_same_inception_tag_counts_as_spent_without_onchain_kel(self):
+        """Prior spend + tip spend sharing tags is spent when on-chain resolve fails."""
+        block = {
+            "index": 1,
+            "transactions": {
+                "id": "t1",
+                "public_key": "aa" * 33,
+                "inception_public_key_hash": "pool_inc",
+                "inputs": [{"id": "coinbase_id"}],
+            },
+        }
+
+        async def agg_iter(*args, **kwargs):
+            yield block
+
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__aiter__ = lambda self: agg_iter()
+        mock_db.blocks.aggregate.return_value = mock_cursor
+
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                new=AsyncMock(return_value=None),
+            ):
+                result = await self.bu.is_input_spent(
+                    "coinbase_id",
+                    "bb" * 33,
+                    spender_inception="pool_inc",
+                )
+        self.assertTrue(result)
+
+    async def test_different_inception_tag_not_spent(self):
+        """Different inception tags on spenders of same parent input is not a conflict."""
+        block = {
+            "index": 1,
+            "transactions": {
+                "id": "t1",
+                "public_key": "aa" * 33,
+                "inception_public_key_hash": "kel_a",
+                "inputs": [{"id": "parent_id"}],
+            },
+        }
+
+        async def agg_iter(*args, **kwargs):
+            yield block
+
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__aiter__ = lambda self: agg_iter()
+        mock_db.blocks.aggregate.return_value = mock_cursor
+
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                new=AsyncMock(return_value=None),
+            ):
+                result = await self.bu.is_input_spent(
+                    "parent_id",
+                    "bb" * 33,
+                    spender_inception="kel_b",
+                )
+        self.assertFalse(result)
+
     async def test_query_matches_input_id_only(self):
         """Aggregate pipeline no longer filters by public_key (KEL dual-path)."""
 
@@ -679,6 +743,28 @@ class TestGetMempoolTransactions(BUTestCase):
                     )(),
                 ):
                     result = await self.bu.get_mempool_transactions("bb" * 33, ["inp1"])
+        self.assertEqual(result["id"], "txn1")
+
+    async def test_mempool_same_inception_tag_match(self):
+        async def mp_iter():
+            yield {
+                "id": "txn1",
+                "public_key": "aa" * 33,
+                "inception_public_key_hash": "pool_inc",
+            }
+
+        mock_db = MagicMock()
+        mp_cursor = MagicMock()
+        mp_cursor.__aiter__ = lambda self: mp_iter()
+        mock_db.miner_transactions.find.return_value = mp_cursor
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                new=AsyncMock(return_value=False),
+            ):
+                result = await self.bu.get_mempool_transactions(
+                    "bb" * 33, ["inp1"], spender_inception="pool_inc"
+                )
         self.assertEqual(result["id"], "txn1")
 
 

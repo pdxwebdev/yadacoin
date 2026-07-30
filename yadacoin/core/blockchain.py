@@ -151,6 +151,20 @@ class Blockchain(object):
             config.app_log.warning("Integrate block error 1: {}".format(e))
             return False
 
+        # Never trust peer/mempool inception tags for double-spend.
+        # Derive local tags before any spend-conflict check.
+        from yadacoin.core.block import Block
+
+        try:
+            await Block.ensure_kel_tags(block.transactions, clear_untrusted=True)
+        except Exception as e:
+            config.app_log.warning(
+                "test_block: ensure_kel_tags failed at height %s: %s",
+                getattr(block, "index", "?"),
+                e,
+            )
+            return False
+
         if block.index == 0:
             return True
 
@@ -261,11 +275,15 @@ class Blockchain(object):
                             config.app_log.warning(
                                 f"input not found: {block.index} {transaction.public_key} {x.id}"
                             )
+                    spender_inc = getattr(
+                        transaction, "inception_public_key_hash", None
+                    )
                     is_input_spent = await config.BU.is_input_spent(
                         x.id,
                         transaction.public_key,
                         from_index=block.index,
                         extra_blocks=extra_blocks,
+                        spender_inception=spender_inc,
                     )
                     if is_input_spent:
                         config.app_log.warning(
@@ -278,30 +296,28 @@ class Blockchain(object):
                         failed = True
                     elif x.id in used_inputs_by_id:
                         # Same input id spent earlier in this block by another key —
-                        # only a conflict when both keys share a KEL.
-                        from bitcoin.wallet import P2PKHBitcoinAddress
-
+                        # only a conflict when both keys share a KEL (prefer
+                        # inception tags; tip keys often do not resolve on-chain).
                         from yadacoin.core.keyeventlog import KeyEventLog
 
-                        prior_pk = used_inputs_by_id[x.id]
+                        prior_pk, prior_inc = used_inputs_by_id[x.id]
                         try:
-                            addr_a = str(
-                                P2PKHBitcoinAddress.from_pubkey(
-                                    bytes.fromhex(transaction.public_key)
-                                )
-                            )
-                            addr_b = str(
-                                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(prior_pk))
-                            )
-                            if await KeyEventLog.is_same_kel(
-                                addr_a, addr_b, onchain_only=True
+                            if await KeyEventLog.kel_spend_conflict(
+                                transaction.public_key,
+                                prior_pk,
+                                inception_a=spender_inc,
+                                inception_b=prior_inc,
+                                onchain_only=True,
                             ):
                                 failed = True
                         except Exception:
                             # Fail closed: cannot prove distinct KELs.
                             failed = True
                     used_inputs[(x.id, transaction.public_key)] = transaction
-                    used_inputs_by_id[x.id] = transaction.public_key
+                    used_inputs_by_id[x.id] = (
+                        transaction.public_key,
+                        spender_inc,
+                    )
                     used_ids_in_this_txn.append(x.id)
                 if failed and block.index >= CHAIN.CHECK_DOUBLE_SPEND_FROM:
                     return False

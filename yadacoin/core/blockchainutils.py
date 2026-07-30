@@ -737,38 +737,25 @@ class BlockChainUtils(object):
         inc_mempool=False,
         from_index=None,
         extra_blocks=None,
+        spender_inception=None,
     ):
         if not isinstance(input_ids, list):
             input_ids = [input_ids]
         input_ids_set = set(input_ids)
 
-        try:
-            spender_address = str(
-                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
-            )
-        except Exception:
-            spender_address = None
+        from yadacoin.core.keyeventlog import KeyEventLog
 
-        async def conflicts(other_public_key):
+        async def conflicts(other_public_key, other_inception=None):
             # Non-KEL: exact public_key match only.
-            # KEL: also True when both keys share the same inception
-            # (is_same_kel uses tagged inception / walk — no full KEL build).
-            if not other_public_key:
-                return False
-            if other_public_key == public_key:
-                return True
-            if spender_address is None:
-                return False
-            try:
-                other_address = str(
-                    P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(other_public_key))
-                )
-            except Exception:
-                return False
-            from yadacoin.core.keyeventlog import KeyEventLog
-
-            return await KeyEventLog.is_same_kel(
-                spender_address, other_address, onchain_only=True
+            # KEL: True when both keys share the same inception. Prefer tags on
+            # the spending txns (pool tip keys often lack on-chain address
+            # resolution until confirmed).
+            return await KeyEventLog.kel_spend_conflict(
+                public_key,
+                other_public_key,
+                inception_a=spender_inception,
+                inception_b=other_inception,
+                onchain_only=True,
             )
 
         # Candidate fork / sync batch: scan prior in-memory blocks first.
@@ -782,12 +769,12 @@ class BlockChainUtils(object):
                     continue
                 for txn in block.transactions:
                     for txn_input in getattr(txn, "inputs", None) or []:
-                        if getattr(
-                            txn_input, "id", None
-                        ) in input_ids_set and await conflicts(
-                            getattr(txn, "public_key", None)
-                        ):
-                            return True
+                        if getattr(txn_input, "id", None) in input_ids_set:
+                            other_inc = getattr(txn, "inception_public_key_hash", None)
+                            if await conflicts(
+                                getattr(txn, "public_key", None), other_inc
+                            ):
+                                return True
 
         # Search mongo by input id only. Heights covered by extra_blocks are
         # replaced by the fork view above and must not count as spent.
@@ -814,21 +801,24 @@ class BlockChainUtils(object):
         async for x in self.mongo.async_db.blocks.aggregate(query, allowDiskUse=True):
             if x.get("index") in fork_indices:
                 continue
-            if await conflicts(x.get("transactions", {}).get("public_key")):
+            other_txn = x.get("transactions", {}) or {}
+            if await conflicts(
+                other_txn.get("public_key"),
+                other_txn.get("inception_public_key_hash"),
+            ):
                 return True
 
         if inc_mempool:
-            if await self.get_mempool_transactions(public_key, input_ids):
+            if await self.get_mempool_transactions(
+                public_key, input_ids, spender_inception=spender_inception
+            ):
                 return True
         return False
 
-    async def get_mempool_transactions(self, public_key, input_ids):
-        try:
-            spender_address = str(
-                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
-            )
-        except Exception:
-            spender_address = None
+    async def get_mempool_transactions(
+        self, public_key, input_ids, spender_inception=None
+    ):
+        from yadacoin.core.keyeventlog import KeyEventLog
 
         cursor = self.mongo.async_db.miner_transactions.find(
             {"inputs.id": {"$in": input_ids}}
@@ -837,20 +827,12 @@ class BlockChainUtils(object):
             other_pk = doc.get("public_key")
             if not other_pk:
                 continue
-            if other_pk == public_key:
-                return doc
-            if spender_address is None:
-                continue
-            try:
-                other_address = str(
-                    P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(other_pk))
-                )
-            except Exception:
-                continue
-            from yadacoin.core.keyeventlog import KeyEventLog
-
-            if await KeyEventLog.is_same_kel(
-                spender_address, other_address, onchain_only=True
+            if await KeyEventLog.kel_spend_conflict(
+                public_key,
+                other_pk,
+                inception_a=spender_inception,
+                inception_b=doc.get("inception_public_key_hash"),
+                onchain_only=True,
             ):
                 return doc
         return None

@@ -2214,6 +2214,21 @@ class KeyEventLog:
         return log
 
     @staticmethod
+    def _inception_tag(value):
+        """Normalize an inception tag or inception-bearing object to a string."""
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value or None
+        tag = getattr(value, "inception_public_key_hash", None)
+        if isinstance(tag, str) and tag:
+            return tag
+        pkh = getattr(value, "public_key_hash", None)
+        if isinstance(pkh, str) and pkh:
+            return pkh
+        return None
+
+    @staticmethod
     async def is_same_kel(public_key_hash_a, public_key_hash_b, onchain_only=False):
         """Return True if *public_key_a* and *public_key_b* are in the same
         KEL (i.e., share the same inception), False otherwise.
@@ -2232,6 +2247,88 @@ class KeyEventLog:
         return getattr(inception_a, "inception_public_key_hash", None) == getattr(
             inception_b, "inception_public_key_hash", None
         )
+
+    @staticmethod
+    async def kel_spend_conflict(
+        public_key_a,
+        public_key_b,
+        inception_a=None,
+        inception_b=None,
+        onchain_only=True,
+    ):
+        """True when two spenders conflict for the same UTXO input id.
+
+        Same public key always conflicts. Distinct keys conflict only when they
+        share a KEL inception.
+
+        On-chain / address resolution is authoritative when both sides resolve.
+        Inception tags are used only when resolution cannot prove same/distinct
+        (e.g. pool tip keys not yet on-chain). Callers must strip untrusted
+        peer/mempool tags and derive local tags before relying on this path.
+        """
+        if not public_key_a or not public_key_b:
+            return False
+        if public_key_a == public_key_b:
+            return True
+
+        tag_a = KeyEventLog._inception_tag(inception_a)
+        tag_b = KeyEventLog._inception_tag(inception_b)
+
+        try:
+            addr_a = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key_a)))
+        except Exception:
+            addr_a = None
+        try:
+            addr_b = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key_b)))
+        except Exception:
+            addr_b = None
+
+        # Authoritative path: both addresses resolve to inceptions.
+        if addr_a is not None and addr_b is not None:
+            try:
+                inception_obj_a = await KeyEventLog.get_inception(
+                    address=addr_a, onchain_only=onchain_only
+                )
+                inception_obj_b = await KeyEventLog.get_inception(
+                    address=addr_b, onchain_only=onchain_only
+                )
+            except Exception:
+                inception_obj_a = None
+                inception_obj_b = None
+            if inception_obj_a is not None and inception_obj_b is not None:
+                resolved_a = KeyEventLog._inception_tag(inception_obj_a)
+                resolved_b = KeyEventLog._inception_tag(inception_obj_b)
+                if resolved_a is not None and resolved_b is not None:
+                    return resolved_a == resolved_b
+
+        # One side tagged, other resolved on-chain.
+        if tag_a and not tag_b and addr_b:
+            try:
+                other = await KeyEventLog.get_inception(
+                    address=addr_b, onchain_only=onchain_only
+                )
+            except Exception:
+                other = None
+            other_tag = KeyEventLog._inception_tag(other)
+            if other_tag is not None:
+                return tag_a == other_tag
+        if tag_b and not tag_a and addr_a:
+            try:
+                other = await KeyEventLog.get_inception(
+                    address=addr_a, onchain_only=onchain_only
+                )
+            except Exception:
+                other = None
+            other_tag = KeyEventLog._inception_tag(other)
+            if other_tag is not None:
+                return tag_b == other_tag
+
+        # Unresolvable tips: local tags only (must be derived, not peer-supplied).
+        if tag_a and tag_b:
+            return tag_a == tag_b
+
+        # Cannot prove same KEL for distinct keys (e.g. multi-recipient parent).
+        return False
 
     @staticmethod
     async def get_latest(
@@ -2830,6 +2927,9 @@ class KeyEventLog:
                     {
                         BlocksQueryFields.PREROTATED_KEY_HASH.value: address,
                     },
+                    {
+                        BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: address,
+                    },
                 ],
                 "transactions.inception_public_key_hash": {"$exists": True},
             },
@@ -2842,6 +2942,7 @@ class KeyEventLog:
                 if (
                     t.get("public_key_hash") == address
                     or t.get("prerotated_key_hash") == address
+                    or t.get("twice_prerotated_key_hash") == address
                 )
                 and t.get("inception_public_key_hash")
             ]

@@ -636,6 +636,18 @@ class Consensus(object):
                 {"index": {"$gte": block.index}}
             )
 
+            # Tags were stripped/derived in test_block; re-derive for persistence
+            # so insert remains correct if called without test_block.
+            try:
+                await Block.ensure_kel_tags(block.transactions, clear_untrusted=True)
+            except Exception as exc:
+                self.app_log.warning(
+                    "insert_block: ensure_kel_tags failed at height %s: %s",
+                    getattr(block, "index", "?"),
+                    exc,
+                )
+                raise
+
             db_block = block.to_dict()
 
             db_block["updated_at"] = time()

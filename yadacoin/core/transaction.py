@@ -998,6 +998,7 @@ class Transaction(object):
                     self.public_key,
                     from_index=spent_from_index,
                     extra_blocks=self.extra_blocks or None,
+                    spender_inception=getattr(self, "inception_public_key_hash", None),
                 )
                 if is_input_spent:
                     raise Exception("Input already spent")
@@ -1865,6 +1866,7 @@ class Transaction(object):
                 tx.transaction_signature,
                 self.public_key,
                 inc_mempool=False,
+                spender_inception=getattr(self, "inception_public_key_hash", None),
             ):
                 total_spent += 1
         mempool_chain_input_sum = len(all_inputs) + len(all_mempool_inputs)

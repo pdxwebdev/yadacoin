@@ -1331,6 +1331,7 @@ class NodeApplication(Application):
             )
 
     def init_config_properties(self, test=False):
+        self.config.app_log = logging.getLogger("tornado.application")
         self.config.health = Health()
         self.config.processing_queues = ProcessingQueues()
         self.config.mongo = Mongo()
@@ -1387,7 +1388,6 @@ class NodeApplication(Application):
         tornado.ioloop.IOLoop.current().add_callback(self.init_peer)
 
         self.config.websocketServer = RCPWebSocketServer
-        self.config.app_log = logging.getLogger("tornado.application")
         self.config.challenges = {}
         if MODES.WEB.value in self.config.modes:
             for x in [User, Group]:

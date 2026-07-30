@@ -15,7 +15,7 @@ import logging
 from time import time
 
 from motor.motor_tornado import MotorClient
-from pymongo import ASCENDING, DESCENDING, IndexModel, MongoClient
+from pymongo import ASCENDING, DESCENDING, IndexModel, MongoClient, UpdateOne
 from pymongo.errors import OperationFailure
 from pymongo.monitoring import CommandListener
 
@@ -1185,6 +1185,393 @@ class Mongo(object):
             self.db.consensus.delete_many({"block.index": {"$gte": 591762}})
             self.config.app_log.warning(
                 "Rollback complete. Node will resync from block 591762 on next consensus run."
+            )
+
+        # Protocol fork: one-time truncate so nodes re-verify/resync from 605075.
+        FORK_REVERIFY_INDEX = 605075
+        fork_migration_id = "fork_reverify_605075"
+        try:
+            fork_done = self.db.migrations.find_one(
+                {"_id": fork_migration_id, "complete": True}
+            )
+        except Exception:
+            fork_done = None
+        if not fork_done:
+            fork_present = self.db.blocks.find_one(
+                {"index": {"$gte": FORK_REVERIFY_INDEX}}, {"_id": 1, "index": 1}
+            )
+            if fork_present:
+                self.config.app_log.warning(
+                    "Protocol fork reverify required. Truncating local chain "
+                    "from block %s and resyncing from peers.",
+                    FORK_REVERIFY_INDEX,
+                )
+                self.db.blocks.delete_many({"index": {"$gte": FORK_REVERIFY_INDEX}})
+                self.db.consensus.delete_many(
+                    {"block.index": {"$gte": FORK_REVERIFY_INDEX}}
+                )
+                self.config.app_log.warning(
+                    "Rollback complete. Node will resync from block %s on next "
+                    "consensus run.",
+                    FORK_REVERIFY_INDEX,
+                )
+            try:
+                self.db.migrations.update_one(
+                    {"_id": fork_migration_id},
+                    {
+                        "$set": {
+                            "complete": True,
+                            "from_index": FORK_REVERIFY_INDEX,
+                            "updated_at": time(),
+                        }
+                    },
+                    upsert=True,
+                )
+            except Exception:
+                pass
+
+        # One-time / incremental: stamp inception_public_key_hash + counter on
+        # historical KEL entries that predate tagging (needed for double-spend).
+        try:
+            self.backfill_kel_tags()
+        except Exception as exc:
+            try:
+                self.config.app_log.warning(
+                    "Mongo startup backfill_kel_tags failed: %s", exc
+                )
+            except Exception:
+                pass
+
+    def backfill_kel_tags(self, batch_size=500):
+        """Ensure on-chain KEL txns have inception_public_key_hash and counter.
+
+        Runs at Mongo startup once (migration watermark). Scans blocks from
+        CHECK_KEL_FORK, walks unique prerotated-linked successors only (no
+        ambiguous kids[0] fallback), stamps via the same rules as
+        ``Block.tag_kel_chain_entries``, and bulk-writes updates.
+        """
+        from yadacoin.core.block import Block
+        from yadacoin.core.chain import CHAIN
+
+        app_log = getattr(self.config, "app_log", None)
+        start_index = getattr(CHAIN, "CHECK_KEL_FORK", 0) or 0
+        migration_id = "backfill_kel_tags_v2"
+
+        try:
+            if self.db.migrations.find_one({"_id": migration_id, "complete": True}):
+                return
+        except Exception:
+            # migrations collection may not exist yet; continue and create it.
+            pass
+
+        untagged_query = {
+            "index": {"$gte": start_index},
+            "transactions": {
+                "$elemMatch": {
+                    "public_key_hash": {"$exists": True, "$nin": [None, ""]},
+                    "prerotated_key_hash": {"$exists": True, "$nin": [None, ""]},
+                    "$or": [
+                        {"inception_public_key_hash": {"$exists": False}},
+                        {"inception_public_key_hash": None},
+                        {"inception_public_key_hash": ""},
+                        {"counter": {"$exists": False}},
+                        {"counter": None},
+                    ],
+                }
+            },
+        }
+        if self.db.blocks.find_one(untagged_query, {"_id": 1}) is None:
+            try:
+                self.db.migrations.update_one(
+                    {"_id": migration_id},
+                    {
+                        "$set": {
+                            "complete": True,
+                            "written": 0,
+                            "updated_at": time(),
+                        }
+                    },
+                    upsert=True,
+                )
+            except Exception:
+                pass
+            return
+
+        if app_log:
+            app_log.warning(
+                "backfill_kel_tags: untagged KEL entries found; stamping "
+                "inception_public_key_hash/counter from height %s",
+                start_index,
+            )
+
+        class _KelEntry:
+            __slots__ = (
+                "block_index",
+                "id",
+                "public_key_hash",
+                "prev_public_key_hash",
+                "prerotated_key_hash",
+                "twice_prerotated_key_hash",
+                "inception_public_key_hash",
+                "counter",
+            )
+
+            def __init__(self, **kwargs):
+                for k, v in kwargs.items():
+                    setattr(self, k, v)
+
+        entries = []
+        cursor = self.db.blocks.find(
+            {
+                "index": {"$gte": start_index},
+                "transactions.public_key_hash": {"$exists": True, "$nin": [None, ""]},
+                "transactions.prerotated_key_hash": {
+                    "$exists": True,
+                    "$nin": [None, ""],
+                },
+            },
+            {
+                "index": 1,
+                "transactions.id": 1,
+                "transactions.public_key_hash": 1,
+                "transactions.prev_public_key_hash": 1,
+                "transactions.prerotated_key_hash": 1,
+                "transactions.twice_prerotated_key_hash": 1,
+                "transactions.inception_public_key_hash": 1,
+                "transactions.counter": 1,
+            },
+        ).sort([("index", ASCENDING)])
+
+        for block in cursor:
+            bindex = block.get("index")
+            for txn in block.get("transactions") or []:
+                pkh = txn.get("public_key_hash") or ""
+                pre = txn.get("prerotated_key_hash") or ""
+                if not pkh or not pre:
+                    continue
+                entries.append(
+                    _KelEntry(
+                        block_index=bindex,
+                        id=txn.get("id"),
+                        public_key_hash=pkh,
+                        prev_public_key_hash=txn.get("prev_public_key_hash") or "",
+                        prerotated_key_hash=pre,
+                        twice_prerotated_key_hash=txn.get("twice_prerotated_key_hash")
+                        or "",
+                        inception_public_key_hash=txn.get("inception_public_key_hash")
+                        or None,
+                        counter=txn.get("counter"),
+                    )
+                )
+
+        if not entries:
+            try:
+                self.db.migrations.update_one(
+                    {"_id": migration_id},
+                    {
+                        "$set": {
+                            "complete": True,
+                            "written": 0,
+                            "updated_at": time(),
+                        }
+                    },
+                    upsert=True,
+                )
+            except Exception:
+                pass
+            return
+
+        by_pkh = {}
+        for e in entries:
+            prev = by_pkh.get(e.public_key_hash)
+            if prev is None or e.block_index < prev.block_index:
+                by_pkh[e.public_key_hash] = e
+
+        children_of = {}
+        for e in by_pkh.values():
+            children_of.setdefault(e.prev_public_key_hash or "", []).append(e)
+        for kids in children_of.values():
+            kids.sort(key=lambda x: (x.block_index, x.id or ""))
+
+        claimed = set()
+        updates = {}  # txn_id -> (inception, counter)
+
+        def _links_ok(prev, cur):
+            if (prev.public_key_hash or "") != (cur.prev_public_key_hash or ""):
+                return False
+            if (prev.prerotated_key_hash or "") != (cur.public_key_hash or ""):
+                return False
+            # twice_prerotated is required when present on both sides
+            prev_twice = prev.twice_prerotated_key_hash or ""
+            cur_pre = cur.prerotated_key_hash or ""
+            if prev_twice and cur_pre and prev_twice != cur_pre:
+                return False
+            return True
+
+        def _record_updates(chain, before_tags):
+            """Write only entries that gained missing tags in this pass."""
+            for e in chain:
+                if not e.id:
+                    continue
+                inc = getattr(e, "inception_public_key_hash", None)
+                counter = getattr(e, "counter", None)
+                if not inc or counter is None:
+                    continue
+                prev_inc, prev_c = before_tags.get(id(e), (None, None))
+                if prev_inc is None or prev_c is None:
+                    updates[e.id] = (inc, counter)
+
+        roots = [
+            e
+            for e in by_pkh.values()
+            if not e.prev_public_key_hash or e.prev_public_key_hash not in by_pkh
+        ]
+        roots.sort(key=lambda x: (x.block_index, x.id or ""))
+
+        def _lookup_onchain_parent(prev_pkh):
+            """Load tagged parent outside the scanned set, if present."""
+            if not prev_pkh:
+                return None
+            doc = self.db.blocks.find_one(
+                {
+                    "transactions": {
+                        "$elemMatch": {
+                            "public_key_hash": prev_pkh,
+                            "inception_public_key_hash": {
+                                "$exists": True,
+                                "$nin": [None, ""],
+                            },
+                            "counter": {"$exists": True, "$ne": None},
+                        }
+                    }
+                },
+                {"transactions.$": 1},
+            )
+            if not doc:
+                return None
+            txns = doc.get("transactions") or []
+            if not txns:
+                return None
+            t = txns[0]
+            return _KelEntry(
+                public_key_hash=t.get("public_key_hash") or prev_pkh,
+                inception_public_key_hash=t.get("inception_public_key_hash"),
+                counter=t.get("counter"),
+            )
+
+        for root in roots:
+            if root.public_key_hash in claimed:
+                continue
+
+            onchain_parent = None
+            if root.prev_public_key_hash:
+                # Extension root: require existing tags or a tagged on-chain parent.
+                # Never invent a new inception from a dangling prev.
+                if getattr(root, "inception_public_key_hash", None) is not None:
+                    parent_counter = getattr(root, "counter", None)
+                    if parent_counter is not None and parent_counter > 0:
+                        onchain_parent = _KelEntry(
+                            public_key_hash=root.prev_public_key_hash,
+                            inception_public_key_hash=root.inception_public_key_hash,
+                            counter=parent_counter - 1,
+                        )
+                else:
+                    onchain_parent = _lookup_onchain_parent(root.prev_public_key_hash)
+                    if onchain_parent is None:
+                        continue
+
+            chain = [root]
+            cur = root
+            while True:
+                candidates = [
+                    k
+                    for k in children_of.get(cur.public_key_hash, [])
+                    if k.public_key_hash not in claimed
+                    and k not in chain
+                    and _links_ok(cur, k)
+                ]
+                if len(candidates) != 1:
+                    # Zero or ambiguous successors: stop without guessing.
+                    break
+                nxt = candidates[0]
+                chain.append(nxt)
+                cur = nxt
+
+            # tag_kel_chain_entries preserves already-set tags.
+            before_tags = {
+                id(e): (
+                    getattr(e, "inception_public_key_hash", None),
+                    getattr(e, "counter", None),
+                )
+                for e in chain
+            }
+            Block.tag_kel_chain_entries(chain, onchain_parent=onchain_parent)
+            _record_updates(chain, before_tags)
+            for e in chain:
+                claimed.add(e.public_key_hash)
+
+        # Already fully tagged leftovers: mark claimed so we do not reprocess.
+        for e in by_pkh.values():
+            if e.public_key_hash in claimed:
+                continue
+            if (
+                getattr(e, "inception_public_key_hash", None)
+                and getattr(e, "counter", None) is not None
+            ):
+                claimed.add(e.public_key_hash)
+
+        ops = []
+        written = 0
+        for txn_id, (inc, counter) in updates.items():
+            if not txn_id or not inc or counter is None:
+                continue
+            ops.append(
+                UpdateOne(
+                    {"transactions.id": txn_id},
+                    {
+                        "$set": {
+                            "transactions.$[elem].inception_public_key_hash": inc,
+                            "transactions.$[elem].counter": counter,
+                        }
+                    },
+                    array_filters=[{"elem.id": txn_id}],
+                )
+            )
+            if len(ops) >= batch_size:
+                result = self.db.blocks.bulk_write(ops, ordered=False)
+                written += getattr(result, "modified_count", 0) or 0
+                ops = []
+        if ops:
+            result = self.db.blocks.bulk_write(ops, ordered=False)
+            written += getattr(result, "modified_count", 0) or 0
+
+        # Mark complete only when no untagged KEL remain.
+        still_untagged = self.db.blocks.find_one(untagged_query, {"_id": 1}) is not None
+        try:
+            self.db.migrations.update_one(
+                {"_id": migration_id},
+                {
+                    "$set": {
+                        "complete": not still_untagged,
+                        "written": written,
+                        "updated_at": time(),
+                        "still_untagged": still_untagged,
+                    }
+                },
+                upsert=True,
+            )
+        except Exception as exc:
+            if app_log:
+                app_log.warning(
+                    "backfill_kel_tags: failed to write migration watermark: %s",
+                    exc,
+                )
+
+        if app_log:
+            app_log.warning(
+                "backfill_kel_tags: stamped %s KEL transaction(s); complete=%s",
+                written,
+                not still_untagged,
             )
 
 

@@ -5184,7 +5184,7 @@ class TestTemplateKelAndSameKelSpend(AsyncTestCase):
             cfg.app_log = MagicMock()
             mock_cfg_cls.return_value = cfg
             with patch(
-                "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                "yadacoin.core.keyeventlog.KeyEventLog.kel_spend_conflict",
                 new=AsyncMock(return_value=True),
             ):
                 with patch(
@@ -5257,9 +5257,13 @@ class TestTemplateKelAndSameKelSpend(AsyncTestCase):
                     "yadacoin.core.transaction.Transaction.handle_exception",
                     new=AsyncMock(),
                 ):
-                    await Block.validate_transactions(
-                        block, txns, [], [], {}, block.index, block.time
-                    )
+                    with patch(
+                        "yadacoin.core.keyeventlog.KeyEventLog.kel_spend_conflict",
+                        new=AsyncMock(side_effect=Exception("kel compare failed")),
+                    ):
+                        await Block.validate_transactions(
+                            block, txns, [], [], {}, block.index, block.time
+                        )
 
     async def test_save_same_kel_conflict(self):
         """block.save() used_block_inputs_by_id same-KEL path raises."""
@@ -5306,7 +5310,7 @@ class TestTemplateKelAndSameKelSpend(AsyncTestCase):
             cfg.app_log = MagicMock()
             with patch.object(Block, "verify", fake_verify):
                 with patch(
-                    "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+                    "yadacoin.core.keyeventlog.KeyEventLog.kel_spend_conflict",
                     new=AsyncMock(return_value=True),
                 ):
                     with patch(
@@ -5360,9 +5364,13 @@ class TestTemplateKelAndSameKelSpend(AsyncTestCase):
             cfg.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
             cfg.app_log = MagicMock()
             with patch.object(Block, "verify", fake_verify):
-                with self.assertRaises(Exception) as ctx:
-                    await block.save()
-                self.assertIn("double spend", str(ctx.exception).lower())
+                with patch(
+                    "yadacoin.core.keyeventlog.KeyEventLog.kel_spend_conflict",
+                    new=AsyncMock(side_effect=Exception("kel compare failed")),
+                ):
+                    with self.assertRaises(Exception) as ctx:
+                        await block.save()
+                    self.assertIn("double spend", str(ctx.exception).lower())
 
     async def test_generate_settlement_exception_swallowed(self):
         from unittest.mock import AsyncMock, MagicMock

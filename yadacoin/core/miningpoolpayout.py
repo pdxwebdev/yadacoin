@@ -73,11 +73,22 @@ class PoolPayer(object):
         return self.pool_reward_value(coinbase) > 0
 
     async def already_used(self, txn, signer_public_key):
-        """True if this coinbase is already spent by any same-KEL key."""
+        """True if this coinbase is already spent by any same-KEL key.
+
+        Pass the pool inception tag so tip keys that are not yet resolvable
+        on-chain still conflict with prior same-KEL spends of this coinbase.
+        """
         if not signer_public_key or not txn:
             return False
+        inception = (
+            getattr(txn, "inception_public_key_hash", None)
+            or self.pool_inception_address()
+        )
         return await self.config.BU.is_input_spent(
-            txn.transaction_signature, signer_public_key, inc_mempool=False
+            txn.transaction_signature,
+            signer_public_key,
+            inc_mempool=False,
+            spender_inception=inception,
         )
 
     async def collect_settlement_batches(

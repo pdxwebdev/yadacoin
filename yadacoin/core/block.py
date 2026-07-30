@@ -534,6 +534,220 @@ class Block(object):
                 self.transactions.remove(linked_txn)
 
     @staticmethod
+    def tag_kel_chain_entries(chain, onchain_parent=None):
+        """Stamp inception_public_key_hash and counter on in-memory KEL entries.
+
+        Block generation loads mempool txns via ``from_dict`` before any KEL walk
+        has tagged them. Double-spend and tip-auth need these fields on the
+        objects that enter ``validate_transactions`` / the mined block.
+
+        *onchain_parent* is the latest on-chain tip when *chain[0]* extends it;
+        ``None`` means *chain[0]* is an inception / recovers-inception root.
+        Existing tags are preserved when already set; counters advance from the
+        last known tagged counter in the parent→chain sequence.
+        """
+        if not chain:
+            return
+
+        if onchain_parent is not None:
+            inception_pkh = getattr(
+                onchain_parent, "inception_public_key_hash", None
+            ) or getattr(onchain_parent, "public_key_hash", None)
+            parent_counter = getattr(onchain_parent, "counter", None)
+            next_counter = parent_counter + 1 if parent_counter is not None else None
+        else:
+            root = chain[0]
+            inception_pkh = getattr(root, "inception_public_key_hash", None) or getattr(
+                root, "public_key_hash", None
+            )
+            next_counter = 0
+
+        if not inception_pkh:
+            return
+
+        for entry in chain:
+            existing_inc = getattr(entry, "inception_public_key_hash", None)
+            if existing_inc:
+                if existing_inc != inception_pkh:
+                    # Do not retag across KEL boundaries.
+                    return
+                inception_pkh = existing_inc
+            else:
+                entry.inception_public_key_hash = inception_pkh
+
+            existing_c = getattr(entry, "counter", None)
+            if existing_c is not None:
+                next_counter = existing_c + 1
+            else:
+                if next_counter is not None:
+                    entry.counter = next_counter
+                    next_counter = next_counter + 1
+
+    @staticmethod
+    def clear_untrusted_kel_tags(txns):
+        """Drop peer/mempool inception tags so local derivation is authoritative."""
+        if not txns:
+            return
+        for txn in txns:
+            if hasattr(txn, "inception_public_key_hash"):
+                txn.inception_public_key_hash = None
+            if hasattr(txn, "counter"):
+                txn.counter = None
+
+    @staticmethod
+    async def ensure_kel_tags(txns, *, clear_untrusted=False):
+        """Ensure KEL txns carry inception_public_key_hash and counter in-memory.
+
+        Used at block insert (and generation) so persisted block documents
+        always store these fields for double-spend / tip lookup. Walks KEL
+        chains inside *txns* the same way as generation: inception roots, or
+        direct children of the latest on-chain tip. Existing tags are kept
+        unless *clear_untrusted* is True (peer/mempool path).
+        """
+        if clear_untrusted:
+            Block.clear_untrusted_kel_tags(txns)
+        if not txns:
+            return
+
+        from yadacoin.core.keyeventlog import (
+            KeyEventFlag,
+            classify_key_event_flag,
+            is_mempool_kel_root,
+            is_recovers_inception,
+            kel_successor_flag_allowed,
+            verify_kel_step,
+        )
+
+        kel_candidates = []
+        for txn in txns:
+            are_kel = getattr(txn, "are_kel_fields_populated", None)
+            if not are_kel or not txn.are_kel_fields_populated():
+                continue
+            kel_candidates.append(txn)
+
+        if not kel_candidates:
+            return
+
+        children_of = {}
+        for txn in kel_candidates:
+            prev = getattr(txn, "prev_public_key_hash", None) or ""
+            children_of.setdefault(prev, []).append(txn)
+
+        claimed = set()
+        roots = []
+        root_parents = {}
+        for txn in kel_candidates:
+            try:
+                is_root, parent = await is_mempool_kel_root(txn)
+            except Exception:
+                is_root, parent = False, None
+            if is_root:
+                roots.append(txn)
+                root_parents[txn.transaction_signature] = parent
+
+        for root in roots:
+            if root.transaction_signature in claimed:
+                continue
+            chain = [root]
+            prev = root
+            prev_flag = classify_key_event_flag(root)
+            while True:
+                kids = [
+                    k
+                    for k in children_of.get(prev.public_key_hash, [])
+                    if k.transaction_signature not in claimed
+                    and k.transaction_signature != prev.transaction_signature
+                    and k not in chain
+                ]
+                if not kids:
+                    break
+                valid_kids = []
+                for kid in kids:
+                    kid_flag = classify_key_event_flag(kid)
+                    if not kel_successor_flag_allowed(prev_flag, kid_flag):
+                        continue
+                    try:
+                        verify_kel_step(prev, kid, previous_onchain=False)
+                        valid_kids.append(kid)
+                    except Exception:
+                        continue
+                if len(valid_kids) != 1:
+                    break
+                nxt = valid_kids[0]
+                chain.append(nxt)
+                prev = nxt
+                prev_flag = classify_key_event_flag(nxt)
+
+            Block.tag_kel_chain_entries(
+                chain, onchain_parent=root_parents.get(root.transaction_signature)
+            )
+            for m in chain:
+                claimed.add(m.transaction_signature)
+
+        # Remaining unclaimed KEL entries: stamp from any already-tagged sibling
+        # in a linked group (template coinbase/settlement often already tagged).
+        for txn in kel_candidates:
+            if txn.transaction_signature in claimed:
+                continue
+            if (
+                getattr(txn, "inception_public_key_hash", None) is not None
+                and getattr(txn, "counter", None) is not None
+            ):
+                claimed.add(txn.transaction_signature)
+                continue
+            group = Block.find_kel_linked_group(txn, kel_candidates)
+            # Prefer a member that already has inception as seed for ordering.
+            seed = None
+            for g in group:
+                if getattr(g, "inception_public_key_hash", None):
+                    seed = g
+                    break
+            if seed is None:
+                # Inception-shaped untagged root: use public_key_hash.
+                flag = classify_key_event_flag(txn)
+                if flag == KeyEventFlag.INCEPTION or is_recovers_inception(txn):
+                    Block.tag_kel_chain_entries([txn], onchain_parent=None)
+                    claimed.add(txn.transaction_signature)
+                continue
+            by_pkh = {
+                getattr(g, "public_key_hash", None): g
+                for g in group
+                if getattr(g, "public_key_hash", None)
+            }
+            starts = [
+                g
+                for g in group
+                if getattr(g, "prev_public_key_hash", None) not in by_pkh
+            ]
+            if not starts:
+                starts = [seed]
+            ordered = []
+            seen = set()
+            queue = list(starts)
+            while queue:
+                cur = queue.pop(0)
+                if id(cur) in seen:
+                    continue
+                seen.add(id(cur))
+                ordered.append(cur)
+                pre = getattr(cur, "prerotated_key_hash", None)
+                cur_pkh = getattr(cur, "public_key_hash", None)
+                for g in group:
+                    if id(g) in seen:
+                        continue
+                    if (
+                        getattr(g, "prev_public_key_hash", None) == cur_pkh
+                        and getattr(g, "public_key_hash", None) == pre
+                    ):
+                        queue.append(g)
+            for g in group:
+                if id(g) not in seen:
+                    ordered.append(g)
+            Block.tag_kel_chain_entries(ordered, onchain_parent=None)
+            for g in ordered:
+                claimed.add(g.transaction_signature)
+
+    @staticmethod
     async def select_kel_chains_for_block(
         txns, block_index=None, max_transactions=1000
     ):
@@ -548,6 +762,8 @@ class Block(object):
            push the candidate set over the limit, keep the longest prefix that
            still ends on a CONFIRMING entry (or a lone INCEPTION).  Deferred
            tail members stay in the mempool for the next block (not failed).
+        6. Stamp ``inception_public_key_hash`` / ``counter`` on accepted members
+           so block-generation double-spend and tip-auth see KEL identity.
 
         Non-KEL transactions are left untouched.  Returns
         ``(accepted_kel_txns, rejected_kel_txns)``.
@@ -775,6 +991,10 @@ class Block(object):
                 await _defer(chain, "block transaction limit; no complete prefix fits")
                 continue
 
+            # Stamp inception/counter on the kept prefix before verify/double-spend.
+            Block.tag_kel_chain_entries(
+                prefix, onchain_parent=root_parents.get(root.transaction_signature)
+            )
             for m in prefix:
                 claimed.add(m.transaction_signature)
                 accepted.append(m)
@@ -1003,28 +1223,23 @@ class Block(object):
                 if transaction_obj.inputs:
                     failed = False
                     input_ids = []
+                    spender_inc = getattr(
+                        transaction_obj, "inception_public_key_hash", None
+                    )
                     for x in transaction_obj.inputs:
                         if (x.id, transaction_obj.public_key) in used_inputs:
                             failed = True
                         elif x.id in used_inputs_by_id:
-                            from bitcoin.wallet import P2PKHBitcoinAddress
-
                             from yadacoin.core.keyeventlog import KeyEventLog
 
-                            prior_pk = used_inputs_by_id[x.id]
+                            prior_pk, prior_inc = used_inputs_by_id[x.id]
                             try:
-                                addr_a = str(
-                                    P2PKHBitcoinAddress.from_pubkey(
-                                        bytes.fromhex(transaction_obj.public_key)
-                                    )
-                                )
-                                addr_b = str(
-                                    P2PKHBitcoinAddress.from_pubkey(
-                                        bytes.fromhex(prior_pk)
-                                    )
-                                )
-                                if await KeyEventLog.is_same_kel(
-                                    addr_a, addr_b, onchain_only=True
+                                if await KeyEventLog.kel_spend_conflict(
+                                    transaction_obj.public_key,
+                                    prior_pk,
+                                    inception_a=spender_inc,
+                                    inception_b=prior_inc,
+                                    onchain_only=True,
                                 ):
                                     failed = True
                             except Exception:
@@ -1033,10 +1248,15 @@ class Block(object):
                         used_inputs[
                             (x.id, transaction_obj.public_key)
                         ] = transaction_obj
-                        used_inputs_by_id[x.id] = transaction_obj.public_key
+                        used_inputs_by_id[x.id] = (
+                            transaction_obj.public_key,
+                            spender_inc,
+                        )
                         input_ids.append(x.id)
                     is_input_spent = await config.BU.is_input_spent(
-                        input_ids, transaction_obj.public_key
+                        input_ids,
+                        transaction_obj.public_key,
+                        spender_inception=spender_inc,
                     )
                     if is_input_spent:
                         if transaction_obj.public_key == config.public_key:
@@ -1687,42 +1907,47 @@ class Block(object):
 
     async def save(self):
         await self.verify()
+        try:
+            await Block.ensure_kel_tags(self.transactions)
+        except Exception as exc:
+            raise Exception(
+                "Block.save: ensure_kel_tags failed at height {}: {}".format(
+                    self.index, exc
+                )
+            ) from exc
         used_block_inputs = {}
         used_block_inputs_by_id = {}
         for txn in self.transactions:
             if txn.inputs:
                 failed = False
                 input_ids = []
+                spender_inc = getattr(txn, "inception_public_key_hash", None)
                 for x in txn.inputs:
                     if (x.id, txn.public_key) in used_block_inputs:
                         failed = True
                     elif x.id in used_block_inputs_by_id:
-                        from bitcoin.wallet import P2PKHBitcoinAddress
-
                         from yadacoin.core.keyeventlog import KeyEventLog
 
-                        prior_pk = used_block_inputs_by_id[x.id]
+                        prior_pk, prior_inc = used_block_inputs_by_id[x.id]
                         try:
-                            addr_a = str(
-                                P2PKHBitcoinAddress.from_pubkey(
-                                    bytes.fromhex(txn.public_key)
-                                )
-                            )
-                            addr_b = str(
-                                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(prior_pk))
-                            )
-                            if await KeyEventLog.is_same_kel(
-                                addr_a, addr_b, onchain_only=True
+                            if await KeyEventLog.kel_spend_conflict(
+                                txn.public_key,
+                                prior_pk,
+                                inception_a=spender_inc,
+                                inception_b=prior_inc,
+                                onchain_only=True,
                             ):
                                 failed = True
                         except Exception:
                             # Fail closed: cannot prove distinct KELs.
                             failed = True
                     used_block_inputs[(x.id, txn.public_key)] = txn
-                    used_block_inputs_by_id[x.id] = txn.public_key
+                    used_block_inputs_by_id[x.id] = (txn.public_key, spender_inc)
                     input_ids.append(x.id)
                 is_input_spent = await yadacoin.core.config.CONFIG.BU.is_input_spent(
-                    input_ids, txn.public_key
+                    input_ids,
+                    txn.public_key,
+                    spender_inception=spender_inc,
                 )
                 if is_input_spent:
                     failed = True

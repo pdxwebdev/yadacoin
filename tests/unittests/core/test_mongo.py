@@ -646,6 +646,7 @@ class TestMongoInitPaths(AsyncTestCase):
             None,  # connection test
             {"index": 516355},  # missing block already present, skip insert
             {"transactions": "hack_data"},  # hack check: exploit detected
+            None,  # backfill_kel_tags: no untagged KEL
         ]
         mock_client = MagicMock()
         mock_client.__getitem__.return_value = mock_db
@@ -677,3 +678,121 @@ class TestMongoInitPaths(AsyncTestCase):
                 # Should not raise
                 m = Mongo()
         self.assertIsNotNone(m)
+
+
+class TestBackfillKelTags(AsyncTestCase):
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.config = Config()
+        self.config.app_log = logging.getLogger("tornado.application")
+
+    def _mongo_with_db(self, mock_db):
+        m = Mongo.__new__(Mongo)
+        m.config = self.config
+        m.db = mock_db
+        return m
+
+    def _setup_migration_miss(self, mock_db):
+        mock_db.migrations.find_one.return_value = None
+        mock_db.migrations.update_one = MagicMock()
+
+    def test_backfill_noop_when_migration_complete(self):
+        mock_db = MagicMock()
+        mock_db.migrations.find_one.return_value = {"_id": "x", "complete": True}
+        m = self._mongo_with_db(mock_db)
+        m.backfill_kel_tags()
+        mock_db.blocks.find_one.assert_not_called()
+        mock_db.blocks.find.assert_not_called()
+
+    def test_backfill_noop_when_no_untagged(self):
+        mock_db = MagicMock()
+        self._setup_migration_miss(mock_db)
+        # first find_one: untagged probe -> None
+        mock_db.blocks.find_one.return_value = None
+        m = self._mongo_with_db(mock_db)
+        m.backfill_kel_tags()
+        mock_db.blocks.find.assert_not_called()
+        mock_db.migrations.update_one.assert_called()
+
+    def test_backfill_stamps_inception_chain(self):
+        mock_db = MagicMock()
+        self._setup_migration_miss(mock_db)
+        # untagged present, then still_untagged check after write -> None
+        mock_db.blocks.find_one.side_effect = [{"_id": "x"}, None]
+        mock_db.blocks.find.return_value.sort.return_value = [
+            {
+                "index": 530500,
+                "transactions": [
+                    {
+                        "id": "id0",
+                        "public_key_hash": "K0",
+                        "prev_public_key_hash": "",
+                        "prerotated_key_hash": "K1",
+                        "twice_prerotated_key_hash": "K2",
+                    },
+                    {
+                        "id": "id1",
+                        "public_key_hash": "K1",
+                        "prev_public_key_hash": "K0",
+                        "prerotated_key_hash": "K2",
+                        "twice_prerotated_key_hash": "K3",
+                    },
+                ],
+            }
+        ]
+        result = MagicMock()
+        result.modified_count = 2
+        mock_db.blocks.bulk_write.return_value = result
+        m = self._mongo_with_db(mock_db)
+        m.backfill_kel_tags()
+        self.assertEqual(mock_db.blocks.bulk_write.call_count, 1)
+        ops = mock_db.blocks.bulk_write.call_args.args[0]
+        self.assertEqual(len(ops), 2)
+        sets = {op._filter["transactions.id"]: op._doc["$set"] for op in ops}
+        self.assertEqual(
+            sets["id0"]["transactions.$[elem].inception_public_key_hash"], "K0"
+        )
+        self.assertEqual(sets["id0"]["transactions.$[elem].counter"], 0)
+        self.assertEqual(
+            sets["id1"]["transactions.$[elem].inception_public_key_hash"], "K0"
+        )
+        self.assertEqual(sets["id1"]["transactions.$[elem].counter"], 1)
+
+    def test_backfill_preserves_existing_tags(self):
+        mock_db = MagicMock()
+        self._setup_migration_miss(mock_db)
+        mock_db.blocks.find_one.side_effect = [{"_id": "x"}, None]
+        mock_db.blocks.find.return_value.sort.return_value = [
+            {
+                "index": 530500,
+                "transactions": [
+                    {
+                        "id": "id0",
+                        "public_key_hash": "K0",
+                        "prev_public_key_hash": "",
+                        "prerotated_key_hash": "K1",
+                        "twice_prerotated_key_hash": "K2",
+                        "inception_public_key_hash": "K0",
+                        "counter": 0,
+                    },
+                    {
+                        "id": "id1",
+                        "public_key_hash": "K1",
+                        "prev_public_key_hash": "K0",
+                        "prerotated_key_hash": "K2",
+                        "twice_prerotated_key_hash": "K3",
+                        # missing tags only on successor
+                    },
+                ],
+            }
+        ]
+        result = MagicMock()
+        result.modified_count = 1
+        mock_db.blocks.bulk_write.return_value = result
+        m = self._mongo_with_db(mock_db)
+        m.backfill_kel_tags()
+        ops = mock_db.blocks.bulk_write.call_args.args[0]
+        self.assertEqual(len(ops), 1)
+        op = ops[0]
+        self.assertEqual(op._filter["transactions.id"], "id1")
+        self.assertEqual(op._doc["$set"]["transactions.$[elem].counter"], 1)

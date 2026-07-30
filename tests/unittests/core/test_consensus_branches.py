@@ -1569,6 +1569,20 @@ class TestInsertBlock(ConsensusBase):
         )
         await self.consensus.insert_block(block, MagicMock())
 
+    async def test_insert_block_calls_ensure_kel_tags(self):
+        """insert_block stamps KEL tags before to_dict/persist."""
+        block = _mk_block()
+        self.consensus.config.mp = None
+        with patch(
+            "yadacoin.core.consensus.Block.ensure_kel_tags",
+            new=AsyncMock(),
+        ) as ensure:
+            r = await self.consensus.insert_block(block, MagicMock())
+        self.assertTrue(r)
+        ensure.assert_awaited_once_with(block.transactions, clear_untrusted=True)
+        # to_dict runs after ensure so persisted docs include tags
+        block.to_dict.assert_called()
+
     async def test_insert_block_at_content_takedown_fork_calls_apply(self):
         """consensus.py line 555: block.index >= CONTENT_TAKEDOWN_FORK triggers _apply_content_takedowns."""
         from yadacoin.core.chain import CHAIN

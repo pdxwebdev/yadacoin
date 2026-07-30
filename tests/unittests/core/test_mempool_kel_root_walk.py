@@ -1,3 +1,5 @@
+import unittest
+
 """
 Tests for mempool KEL root-walk block generation helpers.
 """
@@ -1594,3 +1596,129 @@ class TestDeferClaimedContinue(AsyncTestCase):
         self.assertTrue(any(t.transaction_signature == "c1" for t in a))
         # c2 deferred once (second dup hit claimed continue)
         self.assertEqual(r, [])
+
+
+class TestTagKelChainEntries(unittest.IsolatedAsyncioTestCase):
+    def test_tags_inception_root_chain(self):
+        from yadacoin.core.block import Block
+
+        class T:
+            def __init__(self, pkh, prev="", pre="", inc=None, counter=None):
+                self.public_key_hash = pkh
+                self.prev_public_key_hash = prev
+                self.prerotated_key_hash = pre
+                if inc is not None:
+                    self.inception_public_key_hash = inc
+                if counter is not None:
+                    self.counter = counter
+
+        root = T("K0", prev="", pre="K1")
+        conf = T("K1", prev="K0", pre="K2")
+        Block.tag_kel_chain_entries([root, conf], onchain_parent=None)
+        self.assertEqual(root.inception_public_key_hash, "K0")
+        self.assertEqual(root.counter, 0)
+        self.assertEqual(conf.inception_public_key_hash, "K0")
+        self.assertEqual(conf.counter, 1)
+
+    def test_tags_extension_from_onchain_parent(self):
+        from yadacoin.core.block import Block
+
+        class T:
+            def __init__(self, pkh, prev="", pre="", inc=None, counter=None):
+                self.public_key_hash = pkh
+                self.prev_public_key_hash = prev
+                self.prerotated_key_hash = pre
+                if inc is not None:
+                    self.inception_public_key_hash = inc
+                if counter is not None:
+                    self.counter = counter
+
+        parent = T("K5", prev="K4", pre="K6", inc="K0", counter=5)
+        u = T("K6", prev="K5", pre="K7")
+        c = T("K7", prev="K6", pre="K8")
+        Block.tag_kel_chain_entries([u, c], onchain_parent=parent)
+        self.assertEqual(u.inception_public_key_hash, "K0")
+        self.assertEqual(u.counter, 6)
+        self.assertEqual(c.inception_public_key_hash, "K0")
+        self.assertEqual(c.counter, 7)
+
+    def test_preserves_existing_tags(self):
+        from yadacoin.core.block import Block
+
+        class T:
+            def __init__(self, pkh, prev="", pre="", inc=None, counter=None):
+                self.public_key_hash = pkh
+                self.prev_public_key_hash = prev
+                self.prerotated_key_hash = pre
+                if inc is not None:
+                    self.inception_public_key_hash = inc
+                if counter is not None:
+                    self.counter = counter
+
+        root = T("K0", prev="", pre="K1", inc="K0", counter=0)
+        conf = T("K1", prev="K0", pre="K2")  # untagged successor
+        Block.tag_kel_chain_entries([root, conf], onchain_parent=None)
+        self.assertEqual(root.counter, 0)
+        self.assertEqual(conf.inception_public_key_hash, "K0")
+        self.assertEqual(conf.counter, 1)
+
+
+class TestEnsureKelTags(unittest.IsolatedAsyncioTestCase):
+    async def test_ensure_tags_inception_pair(self):
+        from unittest.mock import AsyncMock, patch
+
+        from yadacoin.core.block import Block
+        from yadacoin.core.keyeventlog import KeyEventFlag
+
+        class T:
+            def __init__(self, sig, pkh, prev="", pre="", inputs=None):
+                self.transaction_signature = sig
+                self.public_key_hash = pkh
+                self.prev_public_key_hash = prev
+                self.prerotated_key_hash = pre
+                self.twice_prerotated_key_hash = pre + "x" if pre else "x"
+                self.inputs = inputs or []
+                self.coinbase = False
+                self.template_kel = False
+
+            def are_kel_fields_populated(self):
+                return bool(self.public_key_hash and self.prerotated_key_hash)
+
+        root = T("s0", "K0", prev="", pre="K1")
+        conf = T("s1", "K1", prev="K0", pre="K2")
+
+        async def fake_root(txn):
+            if txn is root:
+                return True, None
+            return False, None
+
+        with patch(
+            "yadacoin.core.keyeventlog.is_mempool_kel_root",
+            new=AsyncMock(side_effect=fake_root),
+        ), patch(
+            "yadacoin.core.keyeventlog.classify_key_event_flag",
+            side_effect=lambda txn: (
+                KeyEventFlag.INCEPTION if txn is root else KeyEventFlag.CONFIRMING
+            ),
+        ), patch(
+            "yadacoin.core.keyeventlog.kel_successor_flag_allowed",
+            return_value=True,
+        ), patch(
+            "yadacoin.core.keyeventlog.verify_kel_step",
+            return_value=None,
+        ), patch(
+            "yadacoin.core.keyeventlog.is_recovers_inception",
+            return_value=False,
+        ):
+            await Block.ensure_kel_tags([root, conf])
+
+        self.assertEqual(root.inception_public_key_hash, "K0")
+        self.assertEqual(root.counter, 0)
+        self.assertEqual(conf.inception_public_key_hash, "K0")
+        self.assertEqual(conf.counter, 1)
+
+    async def test_ensure_empty_noop(self):
+        from yadacoin.core.block import Block
+
+        await Block.ensure_kel_tags([])
+        await Block.ensure_kel_tags(None)
