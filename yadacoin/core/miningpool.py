@@ -97,6 +97,12 @@ class MiningPool(object):
             item = self.config.processing_queues.nonce_queue.pop()
 
     async def process_nonce(self, miner, nonce, job, body):
+        await self.ensure_fresh_factory()
+        if self.block_factory is None:
+            return False
+        # Job was built for a prior height/header — drop it so stratum re-jobs.
+        if int(getattr(job, "index", -1)) != int(self.block_factory.index):
+            return False
         nonce = nonce + job.extra_nonce
         header = self.block_factory.header
         self.config.app_log.debug(f"Extra Nonce for job {job.index}: {job.extra_nonce}")
@@ -297,13 +303,32 @@ class MiningPool(object):
                 "id": block_candidate.signature,
             }
 
+    def _factory_is_stale(self):
+        """True when cached template height is at or behind the chain tip.
+
+        Missing factory is not stale — callers that need a factory use
+        ``ensure_fresh_factory``; ``refresh`` still honors ``is_synced`` for
+        the initial build.
+        """
+        if self.block_factory is None:
+            return False
+        tip = getattr(self.config.LatestBlock, "block", None)
+        if tip is None:
+            return False
+        return int(self.block_factory.index) <= int(tip.index)
+
     async def refresh(self):
         """Refresh computes a new bloc to mine. The block is stored in self.block_factory and contains
         the transactions at the time of the refresh. Since tx hash is in the header, a refresh here means we have to
         trigger the events for the pools, even if the block index did not change."""
         # TODO: to be taken care of, no refresh atm between blocks
         try:
-            if self.refreshing or not await Peer.is_synced():
+            if self.refreshing:
+                return
+            # Stale templates must rebuild even while peers report unsynced;
+            # otherwise miners keep hashing a coinbase whose KEL parent is
+            # already spent by the tip we just accepted.
+            if not self._factory_is_stale() and not await Peer.is_synced():
                 return
             self.refreshing = True
             self.excluded = []
@@ -322,10 +347,15 @@ class MiningPool(object):
             self.app_log.error("Exception {} mp.refresh".format(format_exc()))
             raise
 
+    async def ensure_fresh_factory(self):
+        """Rebuild block_factory when missing or targeting an already-mined height."""
+        if self.block_factory is None or self._factory_is_stale():
+            await self.refresh()
+
     async def block_to_mine_info(self):
         """Returns info for current block to mine"""
+        await self.ensure_fresh_factory()
         if self.block_factory is None:
-            # await self.refresh()
             return {}
 
         def _txn_summary(txn):
@@ -367,8 +397,7 @@ class MiningPool(object):
 
     async def block_template(self, agent, peer_id):
         """Returns info for current block to mine"""
-        if self.block_factory is None:
-            await self.refresh()
+        await self.ensure_fresh_factory()
         if not self.block_factory.target:
             await self.set_target_from_last_non_special_min(
                 self.config.LatestBlock.block
@@ -501,4 +530,9 @@ class MiningPool(object):
 
             await self.config.websocketServer.send_block(block)
 
-        await self.refresh()
+        # Do NOT refresh here. The won block is only in consensus/queue until
+        # insert_block persists it and updates LatestBlock. Refreshing now
+        # rebuilds the template against the old on-chain KEL tip, so the next
+        # coinbase re-parents off a key that already has an on-chain child
+        # ("key_event.txn has onchain parent that already has an onchain child").
+        # insert_block (and the stale-factory guard below) refresh after tip moves.

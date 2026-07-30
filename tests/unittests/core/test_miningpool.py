@@ -62,9 +62,9 @@ def _mk_config(network="mainnet"):
     cfg.BU.is_input_spent = AsyncMock(return_value=False)
     cfg.BU.generate_signature = MagicMock(return_value="sig")
     cfg.LatestBlock = MagicMock()
-    cfg.LatestBlock.block.index = 100
+    cfg.LatestBlock.block.index = 99
     cfg.LatestBlock.block.time = 1000
-    cfg.LatestBlock.block.copy = AsyncMock(return_value=MagicMock(time=1000, index=100))
+    cfg.LatestBlock.block.copy = AsyncMock(return_value=MagicMock(time=1000, index=99))
     cfg.LatestBlock.block_checker = AsyncMock()
     cfg.mongo = MagicMock()
     cfg.mongo.async_db = MagicMock()
@@ -103,7 +103,7 @@ class TestInitAsync(AsyncTestCase):
         ):
             pool = await MiningPool.init_async()
         self.assertEqual(pool.last_block_time, 1000)
-        self.assertEqual(pool.index, 100)
+        self.assertEqual(pool.index, 99)
 
     async def test_init_async_no_block(self):
         cfg = _mk_config()
@@ -543,6 +543,41 @@ class TestRefresh(AsyncTestCase):
                 await pool.refresh()
         self.assertFalse(pool.refreshing)
 
+    async def test_refresh_rebuilds_stale_when_unsynced(self):
+        """Stale tip-height factory must refresh even if Peer.is_synced is false."""
+        pool = _mk_pool()
+        pool.block_factory = MagicMock(time=1234, index=100)  # tip is 100
+        bf = _mk_block_factory()
+        bf.generate_header = MagicMock(return_value="hdr")
+        with patch(
+            "yadacoin.core.miningpool.Peer.is_synced",
+            new=AsyncMock(return_value=False),
+        ), patch(
+            "yadacoin.core.miningpool.Block.generate", new=AsyncMock(return_value=bf)
+        ), patch.object(
+            pool.config.LatestBlock, "block_checker", AsyncMock()
+        ), patch.object(
+            pool.config.LatestBlock, "block", MagicMock(index=100)
+        ):
+            await pool.refresh()
+        self.assertEqual(pool.block_factory, bf)
+
+    async def test_ensure_fresh_factory_refreshes_stale(self):
+        pool = _mk_pool()
+        pool.block_factory = MagicMock(index=100)
+        pool.refresh = AsyncMock()
+        pool.config.LatestBlock.block = MagicMock(index=100)
+        await pool.ensure_fresh_factory()
+        pool.refresh.assert_awaited_once()
+
+    async def test_ensure_fresh_factory_keeps_next_height(self):
+        pool = _mk_pool()
+        pool.block_factory = MagicMock(index=101)
+        pool.refresh = AsyncMock()
+        pool.config.LatestBlock.block = MagicMock(index=100)
+        await pool.ensure_fresh_factory()
+        pool.refresh.assert_not_awaited()
+
 
 # ---------------------------------------------------------------------------
 # block_to_mine_info / block_template / generate_job
@@ -568,6 +603,7 @@ def _mk_txn_obj():
 class TestBlockInfo(AsyncTestCase):
     async def test_block_to_mine_info_no_factory(self):
         pool = _mk_pool()
+        pool.refresh = AsyncMock()  # factory stays None after ensure_fresh
         r = await pool.block_to_mine_info()
         self.assertEqual(r, {})
 
@@ -749,6 +785,8 @@ class TestAcceptBlock(AsyncTestCase):
         mock_bc.test_block.assert_awaited()
         pool.config.consensus.insert_consensus_block.assert_awaited()
         pool.config.nodeShared.send_block_to_peers.assert_awaited()
+        # Refresh waits for insert_block so KEL tip is on-chain first.
+        pool.refresh.assert_not_awaited()
 
     async def test_accept_block_regnet(self):
         pool = _mk_pool(_mk_config(network="regnet"))
@@ -762,6 +800,7 @@ class TestAcceptBlock(AsyncTestCase):
             await pool.accept_block(block)
         mock_bc.test_block.assert_awaited()
         pool.config.nodeShared.send_block_to_peers.assert_not_awaited()
+        pool.refresh.assert_not_awaited()
 
     async def test_accept_block_rejects_failed_test_block(self):
         """Pool must not insert/broadcast when test_block fails (same bar as peers)."""
@@ -778,6 +817,7 @@ class TestAcceptBlock(AsyncTestCase):
         self.assertIn("test_block", str(ctx.exception))
         pool.config.consensus.insert_consensus_block.assert_not_awaited()
         pool.config.nodeShared.send_block_to_peers.assert_not_awaited()
+        pool.refresh.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -895,3 +935,36 @@ class TestRemainingBranches(AsyncTestCase):
             r = await pool.block_template("agent", "peer")
         self.assertEqual(r, "job")
         pool.refresh.assert_awaited()
+
+    async def test_process_nonce_no_factory_returns_false(self):
+        """process_nonce returns False when factory stays None after ensure_fresh."""
+        pool = _mk_pool()
+        pool.block_factory = None
+        pool.refresh = AsyncMock()
+        r = await pool.process_nonce(
+            MagicMock(),
+            "n",
+            MagicMock(index=100, extra_nonce="x"),
+            {"params": {"result": "h"}},
+        )
+        self.assertFalse(r)
+
+    async def test_process_nonce_stale_job_index_returns_false(self):
+        """process_nonce drops jobs whose height does not match the factory."""
+        pool = _mk_pool()
+        pool.block_factory = _mk_block_factory(index=101)
+        pool.ensure_fresh_factory = AsyncMock()
+        r = await pool.process_nonce(
+            MagicMock(),
+            "n",
+            MagicMock(index=100, extra_nonce="x"),
+            {"params": {"result": "h"}},
+        )
+        self.assertFalse(r)
+
+    async def test_factory_is_stale_no_tip_returns_false(self):
+        """_factory_is_stale is False when LatestBlock.block is missing."""
+        pool = _mk_pool()
+        pool.block_factory = MagicMock(index=100)
+        pool.config.LatestBlock.block = None
+        self.assertFalse(pool._factory_is_stale())
