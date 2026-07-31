@@ -1119,6 +1119,52 @@ class TestBlockchainUtilsCoverage(AsyncTestCase):
         ok = await bu._wallet_balance_cache_is_valid(cache_doc, latest_block=latest)
         self.assertFalse(ok)
 
+    async def test_chain_marker_edge_cases(self):
+        bu, config = _make_bu()
+        self.assertFalse(await bu._chain_marker_is_valid(None))
+        self.assertFalse(await bu._chain_marker_is_valid({}))
+        self.assertFalse(
+            await bu._chain_marker_is_valid({"last_block_hash": "h"})  # no index
+        )
+
+        # hash exists but at wrong height
+        config.mongo.async_db.blocks.find_one = mock.AsyncMock(
+            return_value={"hash": "h", "index": 9}
+        )
+        self.assertFalse(
+            await bu._chain_marker_is_valid(
+                {"last_block_hash": "h", "last_block_index": 10},
+                latest_block={"index": 12},
+            )
+        )
+
+        # tip missing / tip behind marker
+        async def find_ok(query, *args, **kwargs):
+            if query.get("hash") == "h":
+                return {"hash": "h", "index": 10}
+            if query.get("index") == 10:
+                return {"hash": "h"}
+            return None
+
+        config.mongo.async_db.blocks.find_one = mock.AsyncMock(side_effect=find_ok)
+        bu.get_latest_block_async = mock.AsyncMock(return_value=None)
+        self.assertFalse(
+            await bu._chain_marker_is_valid(
+                {"last_block_hash": "h", "last_block_index": 10}
+            )
+        )
+        self.assertFalse(
+            await bu._chain_marker_is_valid(
+                {"last_block_hash": "h", "last_block_index": 10},
+                latest_block={"index": 5},
+            )
+        )
+
+        # invalidate with reason logs
+        config.mongo.async_db.wallet_balance_cache.delete_one = mock.AsyncMock()
+        await bu._invalidate_wallet_balance_cache("addr", reason="reorg")
+        config.mongo.async_db.wallet_balance_cache.delete_one.assert_awaited_once()
+
     async def test_get_final_balance_invalidates_stale_cache(self):
         bu, config = _make_bu()
         bu.get_reverse_public_key = mock.AsyncMock(return_value="pk")
@@ -1245,6 +1291,26 @@ class TestBlockchainUtilsCoverage(AsyncTestCase):
                 limit=1,
             ):
                 pass
+
+        # limit + amount_needed: stop at count>=limit without raising TooMany
+        bu.get_unspent_txns = mock.AsyncMock(
+            return_value=_AsyncCursor(
+                [
+                    {"id": "u1", "outputs": [{"to": "addr", "value": 0.5}]},
+                    {"id": "u2", "outputs": [{"to": "addr", "value": 0.5}]},
+                    {"id": "u3", "outputs": [{"to": "addr", "value": 0.5}]},
+                ]
+            )
+        )
+        got = []
+        async for u in bu.get_wallet_unspent_transactions(
+            unspent_txns_query=[],
+            address="addr",
+            limit=2,
+            amount_needed=10.0,  # never met by small values
+        ):
+            got.append(u["id"])
+        self.assertEqual(got, ["u1", "u2"])
 
     # ------------------------------------------------------------------
     # Lines 507-519, 527: mempool branch in get_wallet_unspent_transactions
