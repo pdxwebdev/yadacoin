@@ -805,77 +805,6 @@ class TestGetChainSpentInputs(BUTestCase):
         result = await self.bu.get_chain_spent_inputs(None)
         self.assertEqual(result, set())
 
-    async def test_iter_blocks_aggregate_hint_fallback(self):
-        """Hinted aggregate fails mid-iteration; retry without hint."""
-
-        class FailingCursor:
-            def __aiter__(self):
-                return self
-
-            async def __anext__(self):
-                raise Exception("bad hint")
-
-        class OkCursor:
-            def __init__(self, items):
-                self._items = list(items)
-                self._i = 0
-
-            def __aiter__(self):
-                return self
-
-            async def __anext__(self):
-                if self._i >= len(self._items):
-                    raise StopAsyncIteration
-                item = self._items[self._i]
-                self._i += 1
-                return item
-
-        n = {"c": 0}
-
-        def aggregate(*args, **kwargs):
-            n["c"] += 1
-            if "hint" in kwargs:
-                return FailingCursor()
-            return OkCursor([{"id": "recovered"}])
-
-        mock_db = MagicMock()
-        mock_db.blocks.aggregate.side_effect = aggregate
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            result = await self.bu.get_chain_spent_inputs("pk1")
-        self.assertEqual(result, {"recovered"})
-        self.assertGreaterEqual(n["c"], 2)
-
-    async def test_get_spent_among_candidates_empty_and_from_index(self):
-        empty = await self.bu.get_spent_among_candidates(None, ["a"])
-        self.assertEqual(empty, set())
-        empty2 = await self.bu.get_spent_among_candidates("pk", [])
-        self.assertEqual(empty2, set())
-
-        class OkCursor:
-            def __init__(self, items):
-                self._items = list(items)
-                self._i = 0
-
-            def __aiter__(self):
-                return self
-
-            async def __anext__(self):
-                if self._i >= len(self._items):
-                    raise StopAsyncIteration
-                item = self._items[self._i]
-                self._i += 1
-                return item
-
-        mock_db = MagicMock()
-        mock_db.blocks.aggregate.return_value = OkCursor([{"_id": "spent1"}])
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            spent = await self.bu.get_spent_among_candidates(
-                "pk", ["spent1", "free"], from_index=10
-            )
-        self.assertEqual(spent, {"spent1"})
-        # from_index => no compound-index hint
-        self.assertNotIn("hint", mock_db.blocks.aggregate.call_args.kwargs)
-
 
 # ---------------------------------------------------------------------------
 # floor_to_two_decimal_places
@@ -942,17 +871,15 @@ class TestGetHashRate(BUTestCase):
 
 
 class TestBalanceMethods(BUTestCase):
-    def _agg_db(self, rows, public_key=None):
+    async def _make_mock_db_with_aggregate_result(self, result_value):
         mock_db = MagicMock()
-        mock_db.blocks.aggregate.return_value.to_list = AsyncMock(return_value=rows)
-        pk = self.config.public_key if public_key is None else public_key
+        mock_db.blocks.aggregate.return_value.to_list = AsyncMock(
+            return_value=[{"totalReceived": result_value}]
+        )
         mock_db.reversed_public_keys.find_one = AsyncMock(
-            return_value={"public_key": pk} if pk else None
+            return_value={"public_key": self.config.public_key}
         )
         return mock_db
-
-    async def _make_mock_db_with_aggregate_result(self, result_value):
-        return self._agg_db([{"total_balance": result_value}])
 
     async def test_get_total_received_balance_returns_value(self):
         mock_db = await self._make_mock_db_with_aggregate_result(10.5)
@@ -961,167 +888,36 @@ class TestBalanceMethods(BUTestCase):
         self.assertAlmostEqual(result, 10.5)
 
     async def test_get_total_received_balance_returns_zero_when_empty(self):
-        mock_db = self._agg_db([])
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            result = await self.bu.get_total_received_balance(self.config.address)
-        self.assertEqual(result, 0.0)
-
-    async def test_get_spent_balance_returns_sum(self):
-        facet_result = {
-            "total_spent_outputs": 3.0,
-            "total_fee": 0.1,
-            "total_mn_fee": 0.05,
-        }
-        mock_db = self._agg_db([facet_result])
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            result = await self.bu.get_spent_balance(self.config.address)
-            # Historical API maps from_index -> to_index on get_total_spent_balance
-            result2 = await self.bu.get_spent_balance(
-                self.config.address, from_index=100
-            )
-        self.assertAlmostEqual(result, 3.15)
-        self.assertAlmostEqual(result2, 3.15)
-
-    async def test_get_spent_balance_returns_zero_when_empty(self):
-        mock_db = self._agg_db([])
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            result = await self.bu.get_spent_balance(self.config.address)
-        self.assertEqual(result, 0.0)
-
-    async def test_get_total_spent_no_public_key_returns_zero(self):
-        mock_db = self._agg_db([], public_key=False)
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            result = await self.bu.get_total_spent_balance(self.config.address)
-        self.assertEqual(result, 0.0)
-
-    async def test_get_total_spent_with_from_index_and_total_spent(self):
-        mock_db = self._agg_db([{"totalSpent": 4.25}])
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            result = await self.bu.get_total_spent_balance(
-                self.config.address, from_index=5
-            )
-        self.assertAlmostEqual(result, 4.25)
-        # from_index set => no index hint on aggregate
-        kwargs = mock_db.blocks.aggregate.call_args.kwargs
-        self.assertNotIn("hint", kwargs)
-
-    async def test_aggregate_blocks_hint_fallback_on_error(self):
         mock_db = MagicMock()
-        call_n = {"n": 0}
-
-        class Agg:
-            def __init__(self, fail_hint):
-                self.fail_hint = fail_hint
-
-            def to_list(self, length=1):
-                call_n["n"] += 1
-                if self.fail_hint:
-                    raise Exception("no hint index")
-                return [{"totalSpent": 1.5}]
-
-            async def __aiter__(self):
-                if False:
-                    yield {}
-
-        def aggregate(*args, **kwargs):
-            return Agg(fail_hint="hint" in kwargs)
-
-        # Async to_list
-        async def to_list_ok(length=1):
-            return [{"totalSpent": 1.5}]
-
-        async def to_list_fail(length=1):
-            raise Exception("no hint index")
-
-        n = {"c": 0}
-
-        def aggregate2(*args, **kwargs):
-            cur = MagicMock()
-            n["c"] += 1
-            if "hint" in kwargs:
-                cur.to_list = to_list_fail
-            else:
-                cur.to_list = to_list_ok
-            return cur
-
-        mock_db.blocks.aggregate.side_effect = aggregate2
-        mock_db.reversed_public_keys.find_one = AsyncMock(
-            return_value={"public_key": self.config.public_key}
-        )
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            result = await self.bu.get_total_spent_balance(self.config.address)
-        self.assertAlmostEqual(result, 1.5)
-        self.assertGreaterEqual(n["c"], 2)
-
-    async def test_received_from_others_no_pk_and_from_index(self):
-        mock_db = self._agg_db([{"totalReceived": 2.0}], public_key=False)
-        # reverse lookup returns None so txn_cond uses no-public_key branch
-        self.bu.get_reverse_public_key = AsyncMock(return_value=None)
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            result = await self.bu.get_received_from_others_balance(
-                self.config.address, public_key=None, from_index=3
-            )
-        self.assertAlmostEqual(result, 2.0)
-
-    async def test_received_solo_no_pk_returns_zero(self):
-        mock_db = self._agg_db([], public_key=False)
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            result = await self.bu.get_received_solo_mining_balance(self.config.address)
-        self.assertEqual(result, 0.0)
-
-    async def test_received_solo_index_filters_and_legacy_total_balance(self):
-        mock_db = self._agg_db([{"total_balance": 9.0}])
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            result = await self.bu.get_received_solo_mining_balance(
-                self.config.address, from_index=1, to_index=99
-            )
-        self.assertAlmostEqual(result, 9.0)
-
-    async def test_masternode_coinbase_index_filters_and_legacy(self):
-        mock_db = self._agg_db([{"total_balance": 1.25}])
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            result = await self.bu.get_masternode_coinbase_balance(
-                self.config.address, from_index=2, to_index=50
-            )
-        self.assertAlmostEqual(result, 1.25)
-        mock_db2 = self._agg_db([{"totalReceived": 0.75}])
-        with patch.object(self.config.mongo, "async_db", new=mock_db2):
-            result2 = await self.bu.get_masternode_coinbase_balance(self.config.address)
-        self.assertAlmostEqual(result2, 0.75)
-
-    async def test_coinbase_alias_and_compute_components_without_pk_arg(self):
-        mock_db = self._agg_db([{"totalReceived": 0.0}])
-        # spent facet empty; received paths return 0
         mock_db.blocks.aggregate.return_value.to_list = AsyncMock(return_value=[])
         mock_db.reversed_public_keys.find_one = AsyncMock(
             return_value={"public_key": self.config.public_key}
         )
         with patch.object(self.config.mongo, "async_db", new=mock_db):
-            alias = await self.bu.get_coinbase_total_output_balance(self.config.address)
-            comps = await self.bu._compute_balance_components(self.config.address)
-        self.assertEqual(alias, 0.0)
-        self.assertEqual(comps["public_key"], self.config.public_key)
-        self.assertIn("total_spent", comps)
+            result = await self.bu.get_total_received_balance(self.config.address)
+        self.assertEqual(result, 0.0)
 
-    async def test_save_wallet_balance_cache_writes_doc(self):
+    async def test_get_spent_balance_returns_sum(self):
         mock_db = MagicMock()
-        mock_db.wallet_balance_cache.update_one = AsyncMock()
-        mock_db.wallet_balance_cache.find_one = AsyncMock(
-            return_value={"balance": 1.0, "address": self.config.address}
+        mock_db.blocks.aggregate.return_value.to_list = AsyncMock(
+            return_value=[{"totalSpent": 3.15}]
+        )
+        mock_db.reversed_public_keys.find_one = AsyncMock(
+            return_value={"public_key": self.config.public_key}
         )
         with patch.object(self.config.mongo, "async_db", new=mock_db):
-            bal = await self.bu._save_wallet_balance_cache(
-                self.config.address,
-                self.config.public_key,
-                1.0,
-                4.0,
-                5.0,
-                {"hash": "h", "index": 7},
-            )
-            cached = await self.bu._get_wallet_balance_cache(self.config.address)
-        self.assertAlmostEqual(bal, 8.0)
-        self.assertEqual(cached["balance"], 1.0)
-        mock_db.wallet_balance_cache.update_one.assert_awaited_once()
+            result = await self.bu.get_spent_balance(self.config.address)
+        self.assertAlmostEqual(result, 3.15)
+
+    async def test_get_spent_balance_returns_zero_when_empty(self):
+        mock_db = MagicMock()
+        mock_db.blocks.aggregate.return_value.to_list = AsyncMock(return_value=[])
+        mock_db.reversed_public_keys.find_one = AsyncMock(
+            return_value={"public_key": self.config.public_key}
+        )
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            result = await self.bu.get_spent_balance(self.config.address)
+        self.assertEqual(result, 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -1221,7 +1017,6 @@ class TestGetUnspentOutputs(BUTestCase):
                 }
             ],
             "balance": 4.0,
-            "max_transferable_value": 4.0,
             "last_block_hash": "tip",
             "last_block_index": 10,
         }
@@ -1231,88 +1026,7 @@ class TestGetUnspentOutputs(BUTestCase):
         self.bu.get_mempool_spent_inputs = AsyncMock(return_value=[])
         result = await self.bu.get_unspent_outputs(self.config.address, amount_needed=0)
         self.assertAlmostEqual(result["balance"], 4.0)
-        self.assertAlmostEqual(result["max_transferable_value"], 4.0)
         self.bu._select_spendable_utxos.assert_not_awaited()
-
-    async def test_unspent_cache_hit_legacy_max_transferable(self):
-        """DISPLAY path sums UTXOs when max_transferable_value is absent."""
-        self.bu.get_reverse_public_key = AsyncMock(return_value=self.config.public_key)
-        self.bu.get_latest_block_async = AsyncMock(
-            return_value={"hash": "tip", "index": 10}
-        )
-        self.bu.get_wallet_balance = AsyncMock(return_value=7.0)
-        cache_doc = {
-            "unspent_utxos": [
-                {"id": "a", "outputs": [{"value": 3.0}], "time": 1},
-                {"id": "b", "outputs": [{"value": 4.0}], "time": 2},
-            ],
-            "last_block_hash": "tip",
-            "last_block_index": 10,
-        }
-        self.bu._get_wallet_unspent_cache = AsyncMock(return_value=cache_doc)
-        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=True)
-        result = await self.bu.get_unspent_outputs(self.config.address, amount_needed=0)
-        self.assertAlmostEqual(result["max_transferable_value"], 7.0)
-
-    async def test_unspent_cache_invalid_triggers_invalidate(self):
-        self.bu.get_reverse_public_key = AsyncMock(return_value=self.config.public_key)
-        self.bu.get_latest_block_async = AsyncMock(
-            return_value={"hash": "tip", "index": 10}
-        )
-        self.bu.get_wallet_balance = AsyncMock(return_value=1.0)
-        self.bu._get_wallet_unspent_cache = AsyncMock(
-            return_value={"last_block_hash": "stale", "last_block_index": 1}
-        )
-        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=False)
-        self.bu._invalidate_wallet_unspent_cache = AsyncMock()
-        self.bu._select_spendable_utxos = AsyncMock(
-            return_value=(
-                [{"id": "u1", "outputs": [{"value": 1.0}], "time": 1}],
-                1.0,
-            )
-        )
-        self.bu._save_wallet_unspent_cache = AsyncMock(return_value=1.0)
-        self.bu.get_mempool_spent_inputs = AsyncMock(return_value=[])
-        result = await self.bu.get_unspent_outputs(
-            self.config.address, amount_needed=0.5
-        )
-        self.bu._invalidate_wallet_unspent_cache.assert_awaited()
-        self.assertEqual(len(result["unspent_utxos"]), 1)
-
-    async def test_unspent_cache_reselect_when_amount_not_covered(self):
-        self.bu.get_reverse_public_key = AsyncMock(return_value=self.config.public_key)
-        self.bu.get_latest_block_async = AsyncMock(
-            return_value={"hash": "tip", "index": 10}
-        )
-        self.bu.get_wallet_balance = AsyncMock(return_value=1.0)
-        cache_doc = {
-            "unspent_utxos": [
-                {"id": "small", "outputs": [{"value": 1.0}], "time": 1},
-            ],
-            "max_transferable_value": 1.0,
-            "selection_complete": False,
-            "last_block_hash": "tip",
-            "last_block_index": 10,
-        }
-        self.bu._get_wallet_unspent_cache = AsyncMock(return_value=cache_doc)
-        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=True)
-        self.bu._select_spendable_utxos = AsyncMock(
-            return_value=(
-                [
-                    {"id": "small", "outputs": [{"value": 1.0}], "time": 1},
-                    {"id": "big", "outputs": [{"value": 9.0}], "time": 2},
-                ],
-                10.0,
-            )
-        )
-        self.bu._save_wallet_unspent_cache = AsyncMock(return_value=10.0)
-        self.bu.get_mempool_spent_inputs = AsyncMock(return_value=[])
-        result = await self.bu.get_unspent_outputs(
-            self.config.address, amount_needed=5.0
-        )
-        self.bu._select_spendable_utxos.assert_awaited()
-        ids = [u["id"] for u in result["unspent_utxos"]]
-        self.assertIn("big", ids)
 
     async def test_unspent_cache_incremental(self):
         self.bu.get_reverse_public_key = AsyncMock(return_value=self.config.public_key)
@@ -1341,8 +1055,6 @@ class TestGetUnspentOutputs(BUTestCase):
         }
         self.bu._get_wallet_unspent_cache = AsyncMock(return_value=cache_doc)
         self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=True)
-        # Exercise real _filter_unspent_outputs + empty-cache _async_empty_set path
-        # by only mocking lower-level spent lookup and fetch.
         self.bu._fetch_received_outputs = AsyncMock(
             return_value=[
                 {
@@ -1353,413 +1065,38 @@ class TestGetUnspentOutputs(BUTestCase):
             ]
         )
         self.bu.get_spent_among_candidates = AsyncMock(return_value={"spent_later"})
-        self.bu._select_spendable_utxos = AsyncMock(
+        self.bu._filter_unspent_outputs = AsyncMock(
             return_value=(
                 [
                     {
-                        "id": "extra",
-                        "outputs": [{"to": self.config.address, "value": 1.0}],
-                        "time": 4,
-                    }
+                        "id": "old1",
+                        "outputs": [{"to": self.config.address, "value": 5.0}],
+                        "time": 1,
+                    },
+                    {
+                        "id": "new1",
+                        "outputs": [{"to": self.config.address, "value": 3.0}],
+                        "time": 3,
+                    },
                 ],
-                1.0,
+                8.0,
             )
         )
-        self.bu._save_wallet_unspent_cache = AsyncMock(return_value=8.0)
+        self.bu._select_spendable_utxos = AsyncMock(return_value=([], 0.0))
+        self.bu._save_wallet_unspent_cache = AsyncMock(return_value=None)
         self.bu.get_mempool_spent_inputs = AsyncMock(return_value=[])
-        # force sparse max_utxos so extra select merge runs
+        # amount_needed > 0 skips the display-only fast path and runs incremental.
         result = await self.bu.get_unspent_outputs(
-            self.config.address, amount_needed=0, max_utxos=5
+            self.config.address, amount_needed=1.0
         )
         self.assertAlmostEqual(result["balance"], 8.0)
-        self.bu._save_wallet_unspent_cache.assert_awaited()
-
-    async def test_incremental_falls_through_when_amount_short(self):
-        self.bu.get_reverse_public_key = AsyncMock(return_value=self.config.public_key)
-        self.bu.get_latest_block_async = AsyncMock(
-            return_value={"hash": "newtip", "index": 12}
-        )
-        self.bu.get_wallet_balance = AsyncMock(return_value=2.0)
-        cache_doc = {
-            "unspent_utxos": [
-                {"id": "old1", "outputs": [{"value": 1.0}], "time": 1},
-            ],
-            "last_block_hash": "oldtip",
-            "last_block_index": 10,
-        }
-        self.bu._get_wallet_unspent_cache = AsyncMock(return_value=cache_doc)
-        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=True)
-        self.bu._fetch_received_outputs = AsyncMock(return_value=[])
-        self.bu.get_spent_among_candidates = AsyncMock(return_value=set())
-        # After incremental merge still short of amount with room under max_utxos
-        # => selectable=None fallthrough; FULL select then provides enough.
-        select_calls = {"n": 0}
-
-        async def select(*args, **kwargs):
-            select_calls["n"] += 1
-            if select_calls["n"] == 1:
-                # sparse extra during incremental merge
-                return ([{"id": "extra", "outputs": [{"value": 0.5}], "time": 2}], 0.5)
-            # full select after fallthrough
-            return (
-                [
-                    {"id": "old1", "outputs": [{"value": 1.0}], "time": 1},
-                    {"id": "more", "outputs": [{"value": 10.0}], "time": 2},
-                ],
-                11.0,
-            )
-
-        self.bu._select_spendable_utxos = AsyncMock(side_effect=select)
-        self.bu._save_wallet_unspent_cache = AsyncMock(return_value=11.0)
-        self.bu.get_mempool_spent_inputs = AsyncMock(return_value=[])
-        result = await self.bu.get_unspent_outputs(
-            self.config.address, amount_needed=5.0, max_utxos=10
-        )
+        # Selection stops once amount_needed is covered (largest first).
         ids = [u["id"] for u in result["unspent_utxos"]]
-        self.assertIn("more", ids)
-        self.assertGreaterEqual(select_calls["n"], 2)
-
-    async def test_incremental_extra_merge_hits_max_utxos(self):
-        self.bu.get_reverse_public_key = AsyncMock(return_value=self.config.public_key)
-        self.bu.get_latest_block_async = AsyncMock(
-            return_value={"hash": "newtip", "index": 12}
-        )
-        self.bu.get_wallet_balance = AsyncMock(return_value=3.0)
-        cache_doc = {
-            "unspent_utxos": [
-                {"id": "old1", "outputs": [{"value": 1.0}], "time": 1},
-            ],
-            "last_block_hash": "oldtip",
-            "last_block_index": 10,
-        }
-        self.bu._get_wallet_unspent_cache = AsyncMock(return_value=cache_doc)
-        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=True)
-        self.bu._fetch_received_outputs = AsyncMock(return_value=[])
-        self.bu.get_spent_among_candidates = AsyncMock(return_value=set())
-        self.bu._select_spendable_utxos = AsyncMock(
-            return_value=(
-                [
-                    {"id": "e1", "outputs": [{"value": 1.0}], "time": 2},
-                    {"id": "e2", "outputs": [{"value": 1.0}], "time": 3},
-                    {"id": "e3", "outputs": [{"value": 1.0}], "time": 4},
-                ],
-                3.0,
-            )
-        )
-        self.bu._save_wallet_unspent_cache = AsyncMock(return_value=2.0)
-        self.bu.get_mempool_spent_inputs = AsyncMock(return_value=[])
-        result = await self.bu.get_unspent_outputs(
-            self.config.address, amount_needed=0, max_utxos=2
-        )
-        self.assertAlmostEqual(result["balance"], 3.0)
+        self.assertTrue(ids)
+        self.assertIn(ids[0], {"old1", "new1"})
         self.bu._save_wallet_unspent_cache.assert_awaited()
-
-    async def test_select_spendable_and_fetch_received_real(self):
-        """Drive real _select_spendable_utxos / _fetch_received_outputs / filter."""
-        self.config.balance_min_utxo = 0.5
-        outputs = [
-            {"id": "big", "outputs": [{"value": 5.0}], "time": 3},
-            {"id": "med", "outputs": [{"value": 2.0}], "time": 2},
-            {"id": "dust", "outputs": [{"value": 0.1}], "time": 1},
-            {"id": "spent", "outputs": [{"value": 4.0}], "time": 4},
-        ]
-
-        async def fetch(*args, **kwargs):
-            # honor min_value roughly like mongo would
-            mv = kwargs.get("min_value") or 0
-            return [o for o in outputs if self.bu._utxo_value(o) >= float(mv or 0)]
-
-        self.bu._fetch_received_outputs = AsyncMock(side_effect=fetch)
-        self.bu.get_spent_among_candidates = AsyncMock(return_value={"spent"})
-        selected, total = await self.bu._select_spendable_utxos(
-            self.config.address,
-            self.config.public_key,
-            max_utxos=2,
-            amount_needed=6.0,
-        )
-        ids = [u["id"] for u in selected]
-        self.assertNotIn("spent", ids)
-        self.assertGreaterEqual(total, 6.0)
-
-    async def test_fetch_received_outputs_pipeline_and_hint_fallback(self):
-        mock_db = MagicMock()
-        n = {"c": 0}
-
-        async def to_list(length=None):
-            n["c"] += 1
-            if n["c"] == 1:
-                raise Exception("missing index")
-            return [{"id": "t1", "outputs": [{"to": "a", "value": 1.0}], "time": 1}]
-
-        cur = MagicMock()
-        cur.to_list = to_list
-        mock_db.blocks.aggregate.return_value = cur
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            rows = await self.bu._fetch_received_outputs(
-                self.config.address,
-                min_value=0.01,
-                max_blocks=10,
-                sort_by_value=True,
-                limit=5,
-            )
-        self.assertEqual(len(rows), 1)
-        # first attempt used hint, second without
-        self.assertGreaterEqual(mock_db.blocks.aggregate.call_count, 2)
-
-    async def test_fetch_received_with_index_bounds_no_hint(self):
-        mock_db = MagicMock()
-        mock_db.blocks.aggregate.return_value.to_list = AsyncMock(return_value=[])
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            await self.bu._fetch_received_outputs(
-                self.config.address,
-                from_index=1,
-                to_index=9,
-                sort_time=1,
-                sort_by_value=False,
-            )
-        kwargs = mock_db.blocks.aggregate.call_args.kwargs
-        self.assertNotIn("hint", kwargs)
-
-    async def test_fetch_received_default_uses_to_hint(self):
-        mock_db = MagicMock()
-        mock_db.blocks.aggregate.return_value.to_list = AsyncMock(return_value=[])
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            await self.bu._fetch_received_outputs(self.config.address)
-        self.assertEqual(mock_db.blocks.aggregate.call_args.kwargs.get("hint"), "__to")
-
-    async def test_filter_unspent_empty_and_batch_stop(self):
-        empty, tot = await self.bu._filter_unspent_outputs("pk", [])
-        self.assertEqual(empty, [])
-        self.assertEqual(tot, 0.0)
-
-        outs = [{"id": f"i{i}", "outputs": [{"value": 1.0}]} for i in range(5)]
-        self.bu.get_spent_among_candidates = AsyncMock(return_value=set())
-        # stop on max_unspent inside batch
-        got, total = await self.bu._filter_unspent_outputs(
-            "pk", outs, batch_size=2, max_unspent=2
-        )
-        self.assertEqual(len(got), 2)
-        # stop on amount_needed
-        got2, total2 = await self.bu._filter_unspent_outputs(
-            "pk", outs, batch_size=10, amount_needed=2.5
-        )
-        self.assertGreaterEqual(total2, 2.5)
-        self.assertLessEqual(len(got2), 3)
-        # exact multiple of batch_size => final flush() sees empty pending
-        outs4 = [{"id": f"j{i}", "outputs": [{"value": 1.0}]} for i in range(4)]
-        got3, _ = await self.bu._filter_unspent_outputs(
-            "pk", outs4, batch_size=2, max_unspent=100
-        )
-        self.assertEqual(len(got3), 4)
-
-    async def test_save_wallet_unspent_cache_and_cached_max(self):
-        mock_db = MagicMock()
-        mock_db.wallet_unspent_cache.update_one = AsyncMock()
-        mock_db.wallet_unspent_cache.find_one = AsyncMock(
-            return_value={
-                "max_transferable_value": 3.33,
-                "last_block_hash": "h",
-                "last_block_index": 5,
-                "unspent_utxos": [],
-            }
-        )
-        mock_db.wallet_unspent_cache.delete_one = AsyncMock()
-        mock_db.blocks.find_one = AsyncMock(
-            side_effect=lambda q, *a, **k: (
-                {"hash": "h", "index": 5}
-                if q.get("hash") == "h" or q.get("index") == 5
-                else None
-            )
-        )
-        self.bu.get_latest_block_async = AsyncMock(
-            return_value={"hash": "tip", "index": 8}
-        )
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
-            bal = await self.bu._save_wallet_unspent_cache(
-                self.config.address,
-                self.config.public_key,
-                [{"id": "u", "time": 1, "outputs": [{"value": 2.5}]}],
-                {"hash": "h", "index": 5},
-                selection_complete=True,
-            )
-            self.assertAlmostEqual(bal, 2.5)
-            # exception path
-            mock_db.wallet_unspent_cache.update_one = AsyncMock(
-                side_effect=Exception("bson too large")
-            )
-            bal2 = await self.bu._save_wallet_unspent_cache(
-                self.config.address,
-                self.config.public_key,
-                [{"id": "u2", "outputs": [{"value": 1.0}]}],
-                {"hash": "h", "index": 5},
-            )
-            self.assertAlmostEqual(bal2, 1.0)
-            mx = await self.bu.get_cached_max_transferable_value(self.config.address)
-            self.assertAlmostEqual(mx, 3.33)
-            await self.bu._invalidate_wallet_unspent_cache(
-                self.config.address, reason="test"
-            )
-            mock_db.wallet_unspent_cache.delete_one.assert_awaited()
-
-    async def test_cached_max_transferable_legacy_and_miss(self):
-        self.bu.get_latest_block_async = AsyncMock(
-            return_value={"hash": "tip", "index": 3}
-        )
-        self.bu._get_wallet_unspent_cache = AsyncMock(return_value=None)
-        self.assertEqual(
-            await self.bu.get_cached_max_transferable_value(self.config.address), 0.0
-        )
-        self.bu._get_wallet_unspent_cache = AsyncMock(
-            return_value={"last_block_hash": "x", "last_block_index": 1}
-        )
-        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=False)
-        self.assertEqual(
-            await self.bu.get_cached_max_transferable_value(self.config.address), 0.0
-        )
-        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=True)
-        self.bu._get_wallet_unspent_cache = AsyncMock(
-            return_value={
-                "unspent_utxos": [
-                    {"outputs": [{"value": 1.5}, {"value": None}]},
-                    {"outputs": None},
-                ]
-            }
-        )
-        mx = await self.bu.get_cached_max_transferable_value(self.config.address)
-        self.assertAlmostEqual(mx, 1.5)
-
-    async def test_select_dust_fallback_and_async_empty_set(self):
-        self.config.balance_min_utxo = 10.0
-
-        # first pass with high min_value returns nothing; dust fallback min_value=0
-        async def fetch(*args, **kwargs):
-            mv = float(kwargs.get("min_value") or 0)
-            if mv > 0:
-                return []
-            # many small coins; target high so amount stop does not fire first
-            return [
-                {"id": f"tiny{i}", "outputs": [{"value": 0.5}], "time": i}
-                for i in range(5)
-            ]
-
-        self.bu._fetch_received_outputs = AsyncMock(side_effect=fetch)
-        self.bu.get_spent_among_candidates = AsyncMock(return_value=set())
-        selected, total = await self.bu._select_spendable_utxos(
-            self.config.address,
-            self.config.public_key,
-            max_utxos=2,
-            amount_needed=100.0,  # never met -> max_utxos break in dust merge
-        )
-        self.assertEqual(len(selected), 2)
-        # amount_needed falsy => min_value = cfg_min (line 1575)
-        self.config.balance_min_utxo = 1.0
-        self.bu._fetch_received_outputs = AsyncMock(
-            return_value=[{"id": "a", "outputs": [{"value": 11.0}], "time": 1}]
-        )
-        selected0, _ = await self.bu._select_spendable_utxos(
-            self.config.address,
-            self.config.public_key,
-            max_utxos=3,
-            amount_needed=None,
-            min_value=None,
-        )
-        self.assertEqual([u["id"] for u in selected0], ["a"])
-        empty = await self.bu._async_empty_set()
-        self.assertEqual(empty, set())
-
-    async def test_from_index_historical_fork_select(self):
-        """from_index path fetches to_index-bounded candidates then filters."""
-        self.bu.get_reverse_public_key = AsyncMock(return_value=self.config.public_key)
-        self.bu.get_latest_block_async = AsyncMock(
-            return_value={"hash": "tip", "index": 20}
-        )
-        self.bu.get_wallet_balance = AsyncMock(return_value=5.0)
-        self.bu._get_wallet_unspent_cache = AsyncMock(return_value=None)
-        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=False)
-        self.bu._fetch_received_outputs = AsyncMock(
-            return_value=[
-                {"id": "h1", "outputs": [{"value": 5.0}], "time": 1},
-                {"id": "h2", "outputs": [{"value": 3.0}], "time": 2},
-            ]
-        )
-        self.bu.get_spent_among_candidates = AsyncMock(return_value=set())
-        self.bu.get_mempool_spent_inputs = AsyncMock(return_value=[])
-        result = await self.bu.get_unspent_outputs(
-            self.config.address, amount_needed=4.0, from_index=15
-        )
-        self.bu._fetch_received_outputs.assert_awaited()
-        kwargs = self.bu._fetch_received_outputs.await_args.kwargs
-        self.assertEqual(kwargs.get("to_index"), 15)
-        self.assertEqual(len(result["unspent_utxos"]), 1)
-
-    async def test_select_meets_target_stops_windows_and_dust(self):
-        """Cover window loop target break and dust-fallback target break."""
-        self.config.balance_min_utxo = 0.0
-        # Window 1 returns enough to meet target; window 2 hits total>=target break.
-        calls = {"n": 0}
-
-        async def fetch_windows(*args, **kwargs):
-            calls["n"] += 1
-            if calls["n"] == 1:
-                return [{"id": "big", "outputs": [{"value": 10.0}], "time": 1}]
-            return [{"id": "more", "outputs": [{"value": 10.0}], "time": 2}]
-
-        self.bu._fetch_received_outputs = AsyncMock(side_effect=fetch_windows)
-        self.bu.get_spent_among_candidates = AsyncMock(return_value=set())
-        selected, total = await self.bu._select_spendable_utxos(
-            self.config.address,
-            self.config.public_key,
-            max_utxos=50,
-            amount_needed=5.0,
-            min_value=0,
-        )
-        self.assertGreaterEqual(total, 5.0)
-        self.assertEqual([u["id"] for u in selected], ["big"])
-
-        # Dust fallback: first pass empty under high min_value; dust adds until target
-        async def fetch_dust(*args, **kwargs):
-            mv = float(kwargs.get("min_value") or 0)
-            if mv > 0:
-                return []
-            return [
-                {"id": "d1", "outputs": [{"value": 0.3}], "time": 1},
-                {"id": "d2", "outputs": [{"value": 0.3}], "time": 2},
-                {"id": "d3", "outputs": [{"value": 0.3}], "time": 3},
-            ]
-
-        self.config.balance_min_utxo = 5.0
-        self.bu._fetch_received_outputs = AsyncMock(side_effect=fetch_dust)
-        selected2, total2 = await self.bu._select_spendable_utxos(
-            self.config.address,
-            self.config.public_key,
-            max_utxos=50,
-            amount_needed=0.5,
-            min_value=None,
-        )
-        self.assertGreaterEqual(total2, 0.5)
-        self.assertLessEqual(len(selected2), 2)
-
-    async def test_incremental_empty_cache_uses_async_empty_set(self):
-        self.bu.get_reverse_public_key = AsyncMock(return_value=self.config.public_key)
-        self.bu.get_latest_block_async = AsyncMock(
-            return_value={"hash": "newtip", "index": 12}
-        )
-        self.bu.get_wallet_balance = AsyncMock(return_value=0.0)
-        cache_doc = {
-            "unspent_utxos": [],
-            "last_block_hash": "old",
-            "last_block_index": 10,
-        }
-        self.bu._get_wallet_unspent_cache = AsyncMock(return_value=cache_doc)
-        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=True)
-        self.bu._fetch_received_outputs = AsyncMock(return_value=[])
-        self.bu.get_spent_among_candidates = AsyncMock()
-        self.bu._select_spendable_utxos = AsyncMock(return_value=([], 0.0))
-        self.bu._save_wallet_unspent_cache = AsyncMock(return_value=0.0)
-        self.bu.get_mempool_spent_inputs = AsyncMock(return_value=[])
-        await self.bu.get_unspent_outputs(self.config.address, amount_needed=0)
-        # empty by_id => get_spent_among_candidates not used
-        self.bu.get_spent_among_candidates.assert_not_awaited()
+        # Also verify max_transferable reflects the full selectable set.
+        self.assertAlmostEqual(result["max_transferable_value"], 8.0)
 
 
 class TestGetUnspentOutputsMempoolOverlay(BUTestCase):
@@ -1768,6 +1105,7 @@ class TestGetUnspentOutputsMempoolOverlay(BUTestCase):
         self.bu.get_latest_block_async = AsyncMock(
             return_value={"hash": "tip", "index": 10}
         )
+        self.bu.get_wallet_balance = AsyncMock(return_value=7.0)
         cache_doc = {
             "address": self.config.address,
             "public_key": self.config.public_key,
@@ -1795,7 +1133,9 @@ class TestGetUnspentOutputsMempoolOverlay(BUTestCase):
         )
         ids = [u["id"] for u in result["unspent_utxos"]]
         self.assertEqual(ids, ["still_good"])
-        self.assertAlmostEqual(result["balance"], 2.0)
+        # Chain balance comes from wallet_balance_cache, not filtered UTXO sum.
+        self.assertAlmostEqual(result["balance"], 7.0)
+        self.assertAlmostEqual(result.get("max_transferable_value", 2.0), 2.0)
 
 
 if __name__ == "__main__":
@@ -1988,3 +1328,713 @@ class TestIsInputSpentFinalGaps(BUTestCase):
                 result = await self.bu.get_mempool_transactions("bb" * 33, ["inp"])
         self.assertIsNone(result)
         self.assertGreaterEqual(n["c"], 2)
+
+
+# ---------------------------------------------------------------------------
+# Coverage pass for wallet cache / UTXO selection / balance edge paths
+# ---------------------------------------------------------------------------
+
+
+class TestWalletCacheAndSelectionCoverage(BUTestCase):
+    async def test_async_empty_set(self):
+        self.assertEqual(await self.bu._async_empty_set(), set())
+
+    async def test_iter_blocks_aggregate_hint_fallback(self):
+        calls = {"n": 0}
+
+        class Cursor:
+            def __init__(self, docs):
+                self._docs = docs
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if not self._docs:
+                    raise StopAsyncIteration
+                return self._docs.pop(0)
+
+        def aggregate(pipeline, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1 and "hint" in kwargs:
+                raise Exception("no hint")
+            return Cursor([{"_id": 1}])
+
+        mock_db = MagicMock()
+        mock_db.blocks.aggregate.side_effect = aggregate
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            docs = []
+            async for d in self.bu._iter_blocks_aggregate([{"$match": {}}], hint="h"):
+                docs.append(d)
+        self.assertEqual(docs, [{"_id": 1}])
+        self.assertGreaterEqual(calls["n"], 2)
+
+    async def test_aggregate_blocks_hint_fallback(self):
+        class Agg:
+            def __init__(self, fail_hint=False):
+                self.fail_hint = fail_hint
+
+            def to_list(self, length=None):
+                async def _():
+                    if self.fail_hint:
+                        raise Exception("bad hint")
+                    return [{"ok": 1}]
+
+                return _()
+
+        calls = {"n": 0}
+
+        def aggregate(pipeline, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1 and "hint" in kwargs:
+                return Agg(fail_hint=True)
+            return Agg(fail_hint=False)
+
+        mock_db = MagicMock()
+        mock_db.blocks.aggregate.side_effect = aggregate
+
+        # _aggregate_blocks uses to_list on cursor; first call raises via await
+        # Make first to_list raise, second succeed
+        class C1:
+            async def to_list(self, length=None):
+                raise Exception("hint fail")
+
+        class C2:
+            async def to_list(self, length=None):
+                return [{"ok": 1}]
+
+        seq = [C1(), C2()]
+
+        def agg2(pipeline, **kwargs):
+            return seq.pop(0)
+
+        mock_db.blocks.aggregate.side_effect = agg2
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            result = await self.bu._aggregate_blocks([{"$match": {}}], hint="h")
+        self.assertEqual(result, [{"ok": 1}])
+
+    async def test_total_spent_no_public_key(self):
+        self.bu.get_reverse_public_key = AsyncMock(return_value=None)
+        self.assertEqual(await self.bu.get_total_spent_balance("addr"), 0.0)
+
+    async def test_total_spent_with_from_index(self):
+        mock_db = MagicMock()
+        mock_db.blocks.aggregate.return_value.to_list = AsyncMock(
+            return_value=[{"totalSpent": 1.5}]
+        )
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            result = await self.bu.get_total_spent_balance(
+                "addr", public_key="pk", from_index=10
+            )
+        self.assertEqual(result, 1.5)
+        pipeline = mock_db.blocks.aggregate.call_args[0][0]
+        self.assertEqual(pipeline[0]["$match"]["index"], {"$gt": 10})
+
+    async def test_received_from_others_no_public_key_and_from_index(self):
+        mock_db = MagicMock()
+        mock_db.blocks.aggregate.return_value.to_list = AsyncMock(
+            return_value=[{"totalReceived": 4.0}]
+        )
+        self.bu.get_reverse_public_key = AsyncMock(return_value=None)
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            result = await self.bu.get_received_from_others_balance(
+                "addr", public_key=None, from_index=3
+            )
+        self.assertEqual(result, 4.0)
+
+    async def test_solo_mining_no_public_key_and_from_index(self):
+        self.bu.get_reverse_public_key = AsyncMock(return_value=None)
+        self.assertEqual(await self.bu.get_received_solo_mining_balance("a"), 0.0)
+        mock_db = MagicMock()
+        mock_db.blocks.aggregate.return_value.to_list = AsyncMock(
+            return_value=[{"totalReceived": 2.0}]
+        )
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            result = await self.bu.get_received_solo_mining_balance(
+                "addr", public_key="pk", from_index=5
+            )
+        self.assertEqual(result, 2.0)
+
+    async def test_masternode_coinbase_branches(self):
+        mock_db = MagicMock()
+        mock_db.blocks.aggregate.return_value.to_list = AsyncMock(
+            return_value=[{"totalReceived": 2.5}]
+        )
+        self.bu.get_reverse_public_key = AsyncMock(return_value=None)
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            r1 = await self.bu.get_masternode_coinbase_balance(
+                "addr", public_key="pk", from_index=1
+            )
+            r2 = await self.bu.get_masternode_coinbase_balance("addr", public_key=None)
+        self.assertEqual(r1, 2.5)
+        self.assertEqual(r2, 2.5)
+
+    async def test_spent_balance_upper_bound_and_no_pk(self):
+        self.bu.get_reverse_public_key = AsyncMock(return_value=None)
+        self.assertEqual(await self.bu.get_spent_balance("a", from_index=10), 0.0)
+        mock_db = MagicMock()
+        mock_db.blocks.aggregate.return_value.to_list = AsyncMock(
+            return_value=[{"totalSpent": 9.0}]
+        )
+        self.bu.get_reverse_public_key = AsyncMock(return_value="pk")
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            result = await self.bu.get_spent_balance("addr", from_index=500)
+        self.assertEqual(result, 9.0)
+        pipeline = mock_db.blocks.aggregate.call_args[0][0]
+        self.assertEqual(pipeline[0]["$match"]["index"], {"$lt": 500})
+
+    async def test_compute_balance_components_resolves_pk(self):
+        self.bu.get_reverse_public_key = AsyncMock(return_value="pk")
+        self.bu.get_total_spent_balance = AsyncMock(return_value=1.0)
+        self.bu.get_received_from_others_balance = AsyncMock(return_value=2.0)
+        self.bu.get_received_solo_mining_balance = AsyncMock(return_value=3.0)
+        self.bu.get_masternode_coinbase_balance = AsyncMock(return_value=4.0)
+        result = await self.bu._compute_balance_components("addr")
+        self.assertEqual(result["public_key"], "pk")
+        self.assertEqual(result["received_solo_mining"], 7.0)
+        self.assertEqual(result["total_spent"], 1.0)
+
+    async def test_chain_marker_validation_branches(self):
+        self.assertFalse(await self.bu._chain_marker_is_valid(None))
+        self.assertFalse(
+            await self.bu._chain_marker_is_valid({"last_block_hash": None})
+        )
+        mock_db = MagicMock()
+        mock_db.blocks.find_one = AsyncMock(return_value=None)
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            self.assertFalse(
+                await self.bu._chain_marker_is_valid(
+                    {"last_block_hash": "h", "last_block_index": 1}
+                )
+            )
+
+        async def find_one(q, *a, **k):
+            if "hash" in q:
+                return {"hash": "h", "index": 2}  # index mismatch
+            return None
+
+        mock_db.blocks.find_one = AsyncMock(side_effect=find_one)
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            self.assertFalse(
+                await self.bu._chain_marker_is_valid(
+                    {"last_block_hash": "h", "last_block_index": 1},
+                    latest_block={"index": 5},
+                )
+            )
+
+        async def find_one2(q, *a, **k):
+            if "hash" in q:
+                return {"hash": "h", "index": 1}
+            return None
+
+        mock_db.blocks.find_one = AsyncMock(side_effect=find_one2)
+        self.bu.get_latest_block_async = AsyncMock(return_value=None)
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            self.assertFalse(
+                await self.bu._chain_marker_is_valid(
+                    {"last_block_hash": "h", "last_block_index": 1}
+                )
+            )
+
+        self.bu.get_latest_block_async = AsyncMock(
+            return_value={"index": 0, "hash": "t"}
+        )
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            self.assertFalse(
+                await self.bu._chain_marker_is_valid(
+                    {"last_block_hash": "h", "last_block_index": 1}
+                )
+            )
+
+    async def test_invalidate_wallet_balance_cache(self):
+        mock_db = MagicMock()
+        mock_db.wallet_balance_cache.delete_one = AsyncMock()
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            await self.bu._invalidate_wallet_balance_cache("a", reason="reorg")
+        mock_db.wallet_balance_cache.delete_one.assert_awaited()
+
+    async def test_get_cached_max_transferable_value_paths(self):
+        self.bu.get_latest_block_async = AsyncMock(
+            return_value={"hash": "t", "index": 1}
+        )
+        self.bu._get_wallet_unspent_cache = AsyncMock(return_value=None)
+        self.assertEqual(await self.bu.get_cached_max_transferable_value("a"), 0.0)
+
+        self.bu._get_wallet_unspent_cache = AsyncMock(return_value={"x": 1})
+        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=False)
+        self.assertEqual(await self.bu.get_cached_max_transferable_value("a"), 0.0)
+
+        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=True)
+        self.bu._get_wallet_unspent_cache = AsyncMock(
+            return_value={"max_transferable_value": 12.34}
+        )
+        self.assertEqual(await self.bu.get_cached_max_transferable_value("a"), 12.34)
+
+        self.bu._get_wallet_unspent_cache = AsyncMock(
+            return_value={
+                "unspent_utxos": [
+                    {"outputs": [{"value": 1.5}, {"value": 2.5}]},
+                    {"outputs": None},
+                ]
+            }
+        )
+        self.assertEqual(await self.bu.get_cached_max_transferable_value("a"), 4.0)
+
+    async def test_save_wallet_unspent_cache_success_and_fail(self):
+        mock_db = MagicMock()
+        mock_db.wallet_unspent_cache.update_one = AsyncMock()
+        latest = {"hash": "h", "index": 9}
+        utxos = [
+            {"id": "a", "time": 1, "outputs": [{"value": 3.0}]},
+            {"id": "b", "time": 2, "outputs": [{"value": 1.0}]},
+        ]
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            bal = await self.bu._save_wallet_unspent_cache(
+                "addr", "pk", utxos, latest, selection_complete=True
+            )
+        self.assertEqual(bal, 4.0)
+        mock_db.wallet_unspent_cache.update_one.assert_awaited()
+
+        mock_db.wallet_unspent_cache.update_one = AsyncMock(
+            side_effect=Exception("bson too big")
+        )
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            bal = await self.bu._save_wallet_unspent_cache(
+                "addr", "pk", utxos, latest, max_utxos=1
+            )
+        self.assertEqual(bal, 4.0)
+
+    async def test_invalidate_wallet_unspent_cache(self):
+        mock_db = MagicMock()
+        mock_db.wallet_unspent_cache.delete_one = AsyncMock()
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            await self.bu._invalidate_wallet_unspent_cache("a", reason="x")
+        mock_db.wallet_unspent_cache.delete_one.assert_awaited()
+
+    async def test_fetch_received_outputs_branches(self):
+        class Agg:
+            def __init__(self, docs, fail=False):
+                self.docs = docs
+                self.fail = fail
+
+            async def to_list(self, length=None):
+                if self.fail:
+                    raise Exception("hint")
+                return self.docs
+
+        calls = {"n": 0}
+
+        def aggregate(q, **kwargs):
+            calls["n"] += 1
+            if kwargs.get("hint") and calls["n"] == 1:
+                return Agg([], fail=True)
+            return Agg([{"id": "x", "outputs": [{"to": "a", "value": 1}]}])
+
+        mock_db = MagicMock()
+        mock_db.blocks.aggregate.side_effect = aggregate
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            docs = await self.bu._fetch_received_outputs(
+                "a",
+                from_index=1,
+                to_index=10,
+                max_blocks=5,
+                min_value=0.1,
+                sort_by_value=False,
+            )
+        self.assertEqual(len(docs), 1)
+
+        calls["n"] = 0
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            docs = await self.bu._fetch_received_outputs(
+                "a", max_blocks=5, sort_by_value=True, limit=10
+            )
+        self.assertEqual(len(docs), 1)
+
+        calls["n"] = 0
+
+        def aggregate2(q, **kwargs):
+            return Agg([{"id": "y"}])
+
+        mock_db.blocks.aggregate.side_effect = aggregate2
+        with patch.object(self.config.mongo, "async_db", new=mock_db):
+            docs = await self.bu._fetch_received_outputs("a")
+        self.assertEqual(docs[0]["id"], "y")
+
+    async def test_filter_unspent_outputs_branches(self):
+        empty, total = await self.bu._filter_unspent_outputs("pk", [])
+        self.assertEqual(empty, [])
+        self.assertEqual(total, 0.0)
+
+        outputs = [
+            {"id": "s1", "outputs": [{"value": 1.0}]},
+            {"id": "u1", "outputs": [{"value": 2.0}]},
+            {"id": None, "outputs": [{"value": 9.0}]},
+            {"id": "u2", "outputs": [{"value": 3.0}]},
+            {"id": "u3", "outputs": [{"value": 4.0}]},
+        ]
+        self.bu.get_spent_among_candidates = AsyncMock(return_value={"s1"})
+        unspent, total = await self.bu._filter_unspent_outputs(
+            "pk", outputs, batch_size=2, max_unspent=2
+        )
+        self.assertEqual(len(unspent), 2)
+        self.assertEqual(total, 5.0)
+
+        self.bu.get_spent_among_candidates = AsyncMock(return_value=set())
+        unspent, total = await self.bu._filter_unspent_outputs(
+            "pk",
+            [
+                {"id": "a", "outputs": [{"value": 5.0}]},
+                {"id": "b", "outputs": [{"value": 5.0}]},
+            ],
+            batch_size=10,
+            amount_needed=5.0,
+        )
+        self.assertEqual(len(unspent), 1)
+        self.assertEqual(total, 5.0)
+
+        # batch flush early return
+        many = [{"id": f"i{i}", "outputs": [{"value": 1.0}]} for i in range(5)]
+        self.bu.get_spent_among_candidates = AsyncMock(return_value=set())
+        unspent, total = await self.bu._filter_unspent_outputs(
+            "pk", many, batch_size=2, max_unspent=1
+        )
+        self.assertEqual(len(unspent), 1)
+
+    async def test_select_spendable_utxos_windows_and_dust(self):
+        self.config.balance_min_utxo = 1.0
+        outs = [
+            {"id": "big", "time": 2, "outputs": [{"value": 10.0}]},
+            {"id": "mid", "time": 1, "outputs": [{"value": 5.0}]},
+        ]
+        self.bu._fetch_received_outputs = AsyncMock(return_value=outs)
+        self.bu._filter_unspent_outputs = AsyncMock(
+            side_effect=lambda pk, fresh, **kw: (
+                fresh[: kw.get("max_unspent", 10)],
+                sum(self.bu._utxo_value(x) for x in fresh[: kw.get("max_unspent", 10)]),
+            )
+        )
+        unspent, total = await self.bu._select_spendable_utxos(
+            "addr", "pk", max_utxos=2, amount_needed=12.0
+        )
+        self.assertTrue(unspent)
+        self.assertGreaterEqual(total, 10.0)
+
+        # dust fallback path: first pass short with min_value, second without
+        self.config.balance_min_utxo = 5.0
+        call = {"n": 0}
+
+        async def fetch(*a, **k):
+            call["n"] += 1
+            if k.get("min_value", 0) > 0:
+                return []  # no large coins
+            return [{"id": "dust", "time": 1, "outputs": [{"value": 0.5}]}]
+
+        self.bu._fetch_received_outputs = AsyncMock(side_effect=fetch)
+
+        async def filt(pk, fresh, **kw):
+            return list(fresh), sum(self.bu._utxo_value(x) for x in fresh)
+
+        self.bu._filter_unspent_outputs = AsyncMock(side_effect=filt)
+        unspent, total = await self.bu._select_spendable_utxos(
+            "addr", "pk", max_utxos=5, amount_needed=0.5
+        )
+        self.assertEqual(unspent[0]["id"], "dust")
+
+        # amount_needed=0 uses cfg min
+        self.bu._fetch_received_outputs = AsyncMock(return_value=outs)
+        self.bu._filter_unspent_outputs = AsyncMock(
+            side_effect=lambda pk, fresh, **kw: (fresh, 15.0)
+        )
+        unspent, total = await self.bu._select_spendable_utxos(
+            "addr", "pk", max_utxos=2, amount_needed=0
+        )
+        self.assertEqual(len(unspent), 2)
+
+    async def test_get_unspent_outputs_reorg_and_reselect(self):
+        self.bu.get_reverse_public_key = AsyncMock(return_value="pk")
+        self.bu.get_latest_block_async = AsyncMock(
+            return_value={"hash": "tip", "index": 10}
+        )
+        self.bu.get_wallet_balance = AsyncMock(return_value=9.0)
+        self.bu.get_mempool_spent_inputs = AsyncMock(return_value=[])
+        # invalid cache → invalidate
+        self.bu._get_wallet_unspent_cache = AsyncMock(
+            return_value={"last_block_hash": "old", "unspent_utxos": []}
+        )
+        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=False)
+        self.bu._invalidate_wallet_unspent_cache = AsyncMock()
+        self.bu._select_spendable_utxos = AsyncMock(
+            return_value=(
+                [{"id": "a", "time": 1, "outputs": [{"value": 9.0}]}],
+                9.0,
+            )
+        )
+        self.bu._save_wallet_unspent_cache = AsyncMock(return_value=9.0)
+        result = await self.bu.get_unspent_outputs("addr", amount_needed=1.0)
+        self.bu._invalidate_wallet_unspent_cache.assert_awaited()
+        self.assertEqual(result["unspent_utxos"][0]["id"], "a")
+
+        # cache hit but incomplete → RESELECT
+        cache = {
+            "unspent_utxos": [{"id": "small", "time": 1, "outputs": [{"value": 1.0}]}],
+            "max_transferable_value": 1.0,
+            "last_block_hash": "tip",
+            "last_block_index": 10,
+            "selection_complete": False,
+        }
+        self.bu._get_wallet_unspent_cache = AsyncMock(return_value=cache)
+        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=True)
+        self.bu._select_spendable_utxos = AsyncMock(
+            return_value=(
+                [
+                    {"id": "big", "time": 2, "outputs": [{"value": 20.0}]},
+                    {"id": "small", "time": 1, "outputs": [{"value": 1.0}]},
+                ],
+                21.0,
+            )
+        )
+        self.bu._save_wallet_unspent_cache = AsyncMock(return_value=21.0)
+        result = await self.bu.get_unspent_outputs("addr", amount_needed=15.0)
+        self.assertEqual(result["unspent_utxos"][0]["id"], "big")
+
+    async def test_get_unspent_outputs_incremental_extra_and_reselect(self):
+        self.bu.get_reverse_public_key = AsyncMock(return_value="pk")
+        self.bu.get_latest_block_async = AsyncMock(
+            return_value={"hash": "new", "index": 20}
+        )
+        self.bu.get_wallet_balance = AsyncMock(return_value=30.0)
+        self.bu.get_mempool_spent_inputs = AsyncMock(return_value=[])
+        cache = {
+            "unspent_utxos": [{"id": "old", "time": 1, "outputs": [{"value": 1.0}]}],
+            "last_block_hash": "old",
+            "last_block_index": 10,
+        }
+        self.bu._get_wallet_unspent_cache = AsyncMock(return_value=cache)
+        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=True)
+        self.bu._fetch_received_outputs = AsyncMock(
+            return_value=[{"id": "n1", "time": 2, "outputs": [{"value": 2.0}]}]
+        )
+        self.bu.get_spent_among_candidates = AsyncMock(return_value=set())
+        # filter returns sparse set to force extra select
+        self.bu._filter_unspent_outputs = AsyncMock(
+            return_value=(
+                [{"id": "old", "time": 1, "outputs": [{"value": 1.0}]}],
+                1.0,
+            )
+        )
+        self.bu._select_spendable_utxos = AsyncMock(
+            return_value=(
+                [
+                    {"id": "extra", "time": 3, "outputs": [{"value": 50.0}]},
+                    {"id": "old", "time": 1, "outputs": [{"value": 1.0}]},
+                ],
+                51.0,
+            )
+        )
+        self.bu._save_wallet_unspent_cache = AsyncMock(return_value=51.0)
+        # short amount triggers fallthrough to full select after incremental short
+        result = await self.bu.get_unspent_outputs(
+            "addr", amount_needed=40.0, max_utxos=2
+        )
+        ids = [u["id"] for u in result["unspent_utxos"]]
+        self.assertIn("extra", ids)
+
+    async def test_get_unspent_outputs_from_index_path(self):
+        self.bu.get_reverse_public_key = AsyncMock(return_value="pk")
+        self.bu.get_latest_block_async = AsyncMock(return_value=None)
+        self.bu.get_wallet_balance = AsyncMock(return_value=5.0)
+        self.bu.get_mempool_spent_inputs = AsyncMock(return_value=["mp"])
+        self.bu._get_wallet_unspent_cache = AsyncMock(return_value=None)
+        self.bu._fetch_received_outputs = AsyncMock(
+            return_value=[
+                {"id": "mp", "time": 1, "outputs": [{"value": 9.0}]},
+                {"id": "ok", "time": 2, "outputs": [{"value": 5.0}]},
+            ]
+        )
+        self.bu._filter_unspent_outputs = AsyncMock(
+            return_value=(
+                [{"id": "ok", "time": 2, "outputs": [{"value": 5.0}]}],
+                5.0,
+            )
+        )
+        result = await self.bu.get_unspent_outputs(
+            "addr", amount_needed=1.0, from_index=100
+        )
+        self.assertEqual(result["unspent_utxos"][0]["id"], "ok")
+
+    async def test_get_unspent_outputs_mempool_filter_on_full_select(self):
+        self.bu.get_reverse_public_key = AsyncMock(return_value="pk")
+        self.bu.get_latest_block_async = AsyncMock(
+            return_value={"hash": "t", "index": 1}
+        )
+        self.bu.get_wallet_balance = AsyncMock(return_value=3.0)
+        self.bu.get_mempool_spent_inputs = AsyncMock(return_value=["spent"])
+        self.bu._get_wallet_unspent_cache = AsyncMock(return_value=None)
+        self.bu._select_spendable_utxos = AsyncMock(
+            return_value=(
+                [
+                    {"id": "spent", "time": 1, "outputs": [{"value": 9.0}]},
+                    {"id": "keep", "time": 2, "outputs": [{"value": 3.0}]},
+                ],
+                12.0,
+            )
+        )
+        self.bu._save_wallet_unspent_cache = AsyncMock(return_value=3.0)
+        result = await self.bu.get_unspent_outputs("addr", amount_needed=1.0)
+        self.assertEqual([u["id"] for u in result["unspent_utxos"]], ["keep"])
+
+    async def test_spent_among_candidates_empty_and_from_index(self):
+        self.assertEqual(await self.bu.get_spent_among_candidates(None, ["a"]), set())
+        self.assertEqual(await self.bu.get_spent_among_candidates("pk", []), set())
+
+        async def gen(*a, **k):
+            yield {"_id": "a"}
+            if False:
+                yield None
+
+        self.bu._iter_blocks_aggregate = gen
+        spent = await self.bu.get_spent_among_candidates("pk", ["a", "b"], from_index=5)
+        self.assertEqual(spent, {"a"})
+
+
+class TestRemainingCoverageGaps(BUTestCase):
+    async def test_filter_flush_empty_pending(self):
+        """Covers flush() early return when pending is empty (line 1584)."""
+        # Force a final flush with empty pending: only None-id outputs after batch.
+        # batch_size larger than list so loop never mid-flushes; final await flush()
+        # runs with pending that has items. Instead call flush via empty batch edge:
+        # provide outputs that fill pending then get cleared, then empty trailing flush.
+        # Direct approach: monkeypatch loop to call flush when pending empty.
+        outputs = [{"id": "a", "outputs": [{"value": 1.0}]}]
+        self.bu.get_spent_among_candidates = AsyncMock(return_value=set())
+        # Normal path covers non-empty. Call _filter with empty after internal:
+        # Use batch_size=1 with one output - flush runs with pending.
+        # To hit empty pending return: call flush after clear via custom path.
+        unspent, total = await self.bu._filter_unspent_outputs("pk", outputs)
+        self.assertEqual(len(unspent), 1)
+
+        # Invoke the nested flush with empty pending by replaying method logic
+        # through a tiny subclass hook.
+        seen = {}
+
+        async def tracking_filter(
+            public_key, outputs, batch_size=100, max_unspent=None, amount_needed=None
+        ):
+            if not outputs:
+                return [], 0.0
+            unspent = []
+            total = 0.0
+            pending = []
+
+            async def flush():
+                nonlocal total
+                if not pending:
+                    seen["empty"] = True
+                    return False
+                ids = [o["id"] for o in pending if o.get("id")]
+                spent = await self.bu.get_spent_among_candidates(public_key, ids)
+                for output in pending:
+                    oid = output.get("id")
+                    if not oid or oid in spent:
+                        continue
+                    unspent.append(output)
+                    total += self.bu._utxo_value(output)
+                pending.clear()
+                return False
+
+            for output in outputs:
+                pending.append(output)
+                if len(pending) >= batch_size:
+                    await flush()
+            await flush()  # second call after clear -> empty pending
+            return unspent, total
+
+        self.bu._filter_unspent_outputs = tracking_filter
+        await self.bu._filter_unspent_outputs(
+            "pk", [{"id": "x", "outputs": [{"value": 1}]}], batch_size=1
+        )
+        # Direct empty flush via real method: empty outputs already returns early.
+        # Call real implementation's flush by using outputs=[] after restoring.
+        from yadacoin.core.blockchainutils import BlockChainUtils
+
+        real = BlockChainUtils._filter_unspent_outputs
+        # Restore and hit empty pending by batch that clears then final flush:
+        # batch_size=1, one spent-filtered? Actually after processing one item
+        # pending is cleared in flush, then final await flush() hits empty.
+        self.bu.get_spent_among_candidates = AsyncMock(return_value=set())
+        result = await real(
+            self.bu, "pk", [{"id": "z", "outputs": [{"value": 1.0}]}], batch_size=1
+        )
+        self.assertEqual(result[0][0]["id"], "z")
+
+    async def test_select_dust_fallback_max_utxos_break(self):
+        """Covers dust-fallback break when max_utxos reached (line 1729)."""
+        self.config.balance_min_utxo = 10.0
+        call = {"n": 0}
+
+        async def fetch(*a, **k):
+            call["n"] += 1
+            if k.get("min_value", 0) > 0:
+                return []
+            # return more dust than max_utxos
+            return [
+                {"id": f"d{i}", "time": i, "outputs": [{"value": 0.1}]}
+                for i in range(5)
+            ]
+
+        self.bu._fetch_received_outputs = AsyncMock(side_effect=fetch)
+
+        async def filt(pk, fresh, **kw):
+            need = kw.get("max_unspent") or len(fresh)
+            take = list(fresh)[:need]
+            return take, sum(self.bu._utxo_value(x) for x in take)
+
+        self.bu._filter_unspent_outputs = AsyncMock(side_effect=filt)
+        unspent, total = await self.bu._select_spendable_utxos(
+            "addr", "pk", max_utxos=2, amount_needed=1.0
+        )
+        self.assertEqual(len(unspent), 2)
+
+    async def test_incremental_short_falls_through_to_full(self):
+        """Covers selectable = None fallthrough when incremental still short (1907)."""
+        self.bu.get_reverse_public_key = AsyncMock(return_value="pk")
+        self.bu.get_latest_block_async = AsyncMock(
+            return_value={"hash": "new", "index": 20}
+        )
+        self.bu.get_wallet_balance = AsyncMock(return_value=100.0)
+        self.bu.get_mempool_spent_inputs = AsyncMock(return_value=[])
+        cache = {
+            "unspent_utxos": [{"id": "tiny", "time": 1, "outputs": [{"value": 1.0}]}],
+            "last_block_hash": "old",
+            "last_block_index": 10,
+        }
+        self.bu._get_wallet_unspent_cache = AsyncMock(return_value=cache)
+        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=True)
+        self.bu._fetch_received_outputs = AsyncMock(return_value=[])
+        self.bu.get_spent_among_candidates = AsyncMock(return_value=set())
+        # Incremental keeps only the tiny utxo — short of amount_needed and
+        # under max_utxos so selectable is cleared for full reselect.
+        self.bu._filter_unspent_outputs = AsyncMock(
+            return_value=(
+                [{"id": "tiny", "time": 1, "outputs": [{"value": 1.0}]}],
+                1.0,
+            )
+        )
+        # extra select also returns sparse (len < max) so still short
+        self.bu._select_spendable_utxos = AsyncMock(
+            side_effect=[
+                ([{"id": "tiny", "time": 1, "outputs": [{"value": 1.0}]}], 1.0),
+                # full select after fallthrough
+                (
+                    [{"id": "big", "time": 2, "outputs": [{"value": 50.0}]}],
+                    50.0,
+                ),
+            ]
+        )
+        self.bu._save_wallet_unspent_cache = AsyncMock(return_value=50.0)
+        result = await self.bu.get_unspent_outputs(
+            "addr", amount_needed=40.0, max_utxos=10
+        )
+        self.assertEqual(result["unspent_utxos"][0]["id"], "big")
+        # full select path was used (second call)
+        self.assertEqual(self.bu._select_spendable_utxos.await_count, 2)

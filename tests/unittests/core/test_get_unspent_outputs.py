@@ -229,19 +229,20 @@ class TestUTXO(AsyncTestCase):
         # Assert the total count of UTXOs matches the expected count
         self.assertEqual(len(utxo_result["unspent_utxos"]), len(expected_unspent_utxos))
 
-        # Assert the total balance matches the sum of expected UTXO values
-        self.assertAlmostEqual(
-            utxo_result["balance"],
-            sum([utxo["outputs"][0]["value"] for utxo in expected_unspent_utxos]),
-            places=8,
+        # Chain balance is independent of the selected spend set.
+        # Selected UTXOs should cover amount_needed after mempool overlay.
+        selected_sum = sum(
+            utxo["outputs"][0]["value"] for utxo in utxo_result["unspent_utxos"]
         )
+        self.assertGreaterEqual(selected_sum, amount_needed)
 
         # Assert each UTXO in the result matches the expected values
-        for expected, actual in zip(
-            expected_unspent_utxos, utxo_result["unspent_utxos"]
-        ):
-            self.assertEqual(expected["id"], actual["id"])
-            self.assertEqual(expected["outputs"], actual["outputs"])
+        actual_by_id = {u["id"]: u for u in utxo_result["unspent_utxos"]}
+        for expected in expected_unspent_utxos:
+            self.assertIn(expected["id"], actual_by_id)
+            self.assertEqual(
+                expected["outputs"], actual_by_id[expected["id"]]["outputs"]
+            )
 
         # Log the results for debugging purposes
         logger.info(f"Unspent UTXOs: {utxo_result['unspent_utxos']}")

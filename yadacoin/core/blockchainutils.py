@@ -160,15 +160,7 @@ class BlockChainUtils(object):
         async for doc in cursor:
             yield doc
 
-    async def get_total_spent_balance(
-        self, address, public_key=None, from_index=None, to_index=None
-    ):
-        """Sum value sent away from address by transactions signed with public_key.
-
-        Includes fees and masternode fees. Only non-coinbase spends (has inputs).
-        from_index: only blocks with index > from_index (incremental cache).
-        to_index: only blocks with index < to_index (historical get_spent_balance API).
-        """
+    async def get_total_spent_balance(self, address, public_key=None, from_index=None):
         if public_key is None:
             public_key = await self.get_reverse_public_key(address)
         if not public_key:
@@ -178,15 +170,10 @@ class BlockChainUtils(object):
             "transactions.public_key": public_key,
             "transactions.inputs.0": {"$exists": True},
         }
-        index_q = {}
         if from_index is not None:
-            index_q["$gt"] = from_index
-        if to_index is not None:
-            index_q["$lt"] = to_index
-        if index_q:
-            match["index"] = index_q
+            match["index"] = {"$gt": from_index}
 
-        # Per-txn: external outputs + fee + masternode_fee, then sum.
+        # Sum external outputs + fee + masternode_fee per spend txn.
         pipeline = [
             {"$match": match},
             {
@@ -224,12 +211,7 @@ class BlockChainUtils(object):
                                     "$map": {
                                         "input": {
                                             "$filter": {
-                                                "input": {
-                                                    "$ifNull": [
-                                                        "$transactions.outputs",
-                                                        [],
-                                                    ]
-                                                },
+                                                "input": "$transactions.outputs",
                                                 "as": "out",
                                                 "cond": {"$ne": ["$$out.to", address]},
                                             }
@@ -248,19 +230,9 @@ class BlockChainUtils(object):
             {"$group": {"_id": None, "totalSpent": {"$sum": "$spent"}}},
         ]
 
-        hint = "__txn_public_key" if from_index is None and to_index is None else None
+        hint = "__txn_public_key" if from_index is None else None
         result = await self._aggregate_blocks(pipeline, hint=hint)
-        if not result:
-            return 0.0
-        row = result[0]
-        if "totalSpent" in row:
-            return float(row["totalSpent"] or 0.0)
-        # Backward-compatible mock/legacy facet shape
-        return float(
-            (row.get("total_spent_outputs") or 0.0)
-            + (row.get("total_fee") or 0.0)
-            + (row.get("total_mn_fee") or 0.0)
-        )
+        return result[0]["totalSpent"] if result else 0.0
 
     async def get_received_from_others_balance(
         self, address, public_key=None, from_index=None
@@ -268,32 +240,58 @@ class BlockChainUtils(object):
         if public_key is None:
             public_key = await self.get_reverse_public_key(address)
 
-        # Non-coinbase payments from others (has inputs, not signed by address key).
-        has_to_addr = {
-            "$gt": [
-                {
-                    "$size": {
-                        "$filter": {
-                            "input": "$$txn.outputs",
-                            "as": "out",
-                            "cond": {"$eq": ["$$out.to", address]},
-                        }
-                    }
-                },
-                0,
-            ]
-        }
-        has_inputs = {"$gt": [{"$size": {"$ifNull": ["$$txn.inputs", []]}}, 0]}
+        # Non-coinbase payments from others (has inputs).
         if public_key:
             txn_cond = {
                 "$and": [
                     {"$ne": ["$$txn.public_key", public_key]},
-                    has_inputs,
-                    has_to_addr,
+                    {
+                        "$gt": [
+                            {"$size": {"$ifNull": ["$$txn.inputs", []]}},
+                            0,
+                        ]
+                    },
+                    {
+                        "$gt": [
+                            {
+                                "$size": {
+                                    "$filter": {
+                                        "input": "$$txn.outputs",
+                                        "as": "out",
+                                        "cond": {"$eq": ["$$out.to", address]},
+                                    }
+                                }
+                            },
+                            0,
+                        ]
+                    },
                 ]
             }
         else:
-            txn_cond = {"$and": [has_inputs, has_to_addr]}
+            txn_cond = {
+                "$and": [
+                    {
+                        "$gt": [
+                            {"$size": {"$ifNull": ["$$txn.inputs", []]}},
+                            0,
+                        ]
+                    },
+                    {
+                        "$gt": [
+                            {
+                                "$size": {
+                                    "$filter": {
+                                        "input": "$$txn.outputs",
+                                        "as": "out",
+                                        "cond": {"$eq": ["$$out.to", address]},
+                                    }
+                                }
+                            },
+                            0,
+                        ]
+                    },
+                ]
+            }
 
         match = {"transactions.outputs.to": address}
         if from_index is not None:
@@ -337,15 +335,10 @@ class BlockChainUtils(object):
 
         hint = "__to" if from_index is None else None
         result = await self._aggregate_blocks(pipeline, hint=hint)
-        if not result:
-            return 0.0
-        row = result[0]
-        if "totalReceived" in row:
-            return float(row["totalReceived"] or 0.0)
-        return float(row.get("total_balance") or 0.0)
+        return result[0]["totalReceived"] if result else 0.0
 
     async def get_received_solo_mining_balance(
-        self, address, public_key=None, from_index=None, to_index=None
+        self, address, public_key=None, from_index=None
     ):
         """Coinbase outputs paid to address on blocks mined by public_key."""
         if public_key is None:
@@ -356,15 +349,9 @@ class BlockChainUtils(object):
         match = {
             "public_key": public_key,
             "transactions.outputs.to": address,
-            "transactions.inputs": {"$eq": []},
         }
-        index_q = {}
         if from_index is not None:
-            index_q["$gt"] = from_index
-        if to_index is not None:
-            index_q["$lt"] = to_index
-        if index_q:
-            match["index"] = index_q
+            match["index"] = {"$gt": from_index}
 
         pipeline = [
             {"$match": match},
@@ -431,39 +418,75 @@ class BlockChainUtils(object):
             {"$group": {"_id": None, "totalReceived": {"$sum": "$received"}}},
         ]
 
-        hint = (
-            "__public_key_outputs_to"
-            if from_index is None and to_index is None
-            else None
-        )
+        hint = "__public_key_outputs_to" if from_index is None else None
         result = await self._aggregate_blocks(pipeline, hint=hint)
-        if not result:
-            return 0.0
-        row = result[0]
-        if "totalReceived" in row:
-            return float(row["totalReceived"] or 0.0)
-        return float(row.get("total_balance") or 0.0)
+        return result[0]["totalReceived"] if result else 0.0
 
     async def get_masternode_coinbase_balance(
-        self, address, public_key=None, from_index=None, to_index=None
+        self, address, public_key=None, from_index=None
     ):
-        """Coinbase shares paid to address on blocks mined by someone else."""
+        """Coinbase outputs paid to address on blocks NOT mined by public_key."""
         if public_key is None:
             public_key = await self.get_reverse_public_key(address)
+
+        if public_key:
+            txn_cond = {
+                "$and": [
+                    {"$ne": ["$$txn.public_key", public_key]},
+                    {
+                        "$eq": [
+                            {"$size": {"$ifNull": ["$$txn.inputs", []]}},
+                            0,
+                        ]
+                    },
+                    {
+                        "$gt": [
+                            {
+                                "$size": {
+                                    "$filter": {
+                                        "input": "$$txn.outputs",
+                                        "as": "out",
+                                        "cond": {"$eq": ["$$out.to", address]},
+                                    }
+                                }
+                            },
+                            0,
+                        ]
+                    },
+                ]
+            }
+        else:
+            txn_cond = {
+                "$and": [
+                    {
+                        "$eq": [
+                            {"$size": {"$ifNull": ["$$txn.inputs", []]}},
+                            0,
+                        ]
+                    },
+                    {
+                        "$gt": [
+                            {
+                                "$size": {
+                                    "$filter": {
+                                        "input": "$$txn.outputs",
+                                        "as": "out",
+                                        "cond": {"$eq": ["$$out.to", address]},
+                                    }
+                                }
+                            },
+                            0,
+                        ]
+                    },
+                ]
+            }
 
         match = {
             "transactions.outputs.to": address,
             "transactions.inputs": {"$eq": []},
         }
-        if public_key:
-            match["public_key"] = {"$ne": public_key}
-        index_q = {}
         if from_index is not None:
-            index_q["$gt"] = from_index
-        if to_index is not None:
-            index_q["$lt"] = to_index
-        if index_q:
-            match["index"] = index_q
+            match["index"] = {"$gt": from_index}
 
         pipeline = [
             {"$match": match},
@@ -473,36 +496,7 @@ class BlockChainUtils(object):
                         "$filter": {
                             "input": "$transactions",
                             "as": "txn",
-                            "cond": {
-                                "$and": [
-                                    {
-                                        "$eq": [
-                                            {
-                                                "$size": {
-                                                    "$ifNull": ["$$txn.inputs", []]
-                                                }
-                                            },
-                                            0,
-                                        ]
-                                    },
-                                    {
-                                        "$gt": [
-                                            {
-                                                "$size": {
-                                                    "$filter": {
-                                                        "input": "$$txn.outputs",
-                                                        "as": "out",
-                                                        "cond": {
-                                                            "$eq": ["$$out.to", address]
-                                                        },
-                                                    }
-                                                }
-                                            },
-                                            0,
-                                        ]
-                                    },
-                                ]
-                            },
+                            "cond": txn_cond,
                         }
                     }
                 }
@@ -530,13 +524,9 @@ class BlockChainUtils(object):
             {"$group": {"_id": None, "totalReceived": {"$sum": "$received"}}},
         ]
 
-        result = await self._aggregate_blocks(pipeline, hint=None)
-        if not result:
-            return 0.0
-        row = result[0]
-        if "totalReceived" in row:
-            return float(row["totalReceived"] or 0.0)
-        return float(row.get("total_balance") or 0.0)
+        hint = "__to" if from_index is None else None
+        result = await self._aggregate_blocks(pipeline, hint=hint)
+        return result[0]["totalReceived"] if result else 0.0
 
     # Backward-compatible aliases used by older callers/tests
     async def get_coinbase_total_output_balance(self, address):
@@ -546,8 +536,81 @@ class BlockChainUtils(object):
         return await self.get_received_from_others_balance(address)
 
     async def get_spent_balance(self, address, from_index=None):
-        # Historical API: from_index means only blocks with index < from_index.
-        return await self.get_total_spent_balance(address, to_index=from_index)
+        """Public spent balance.
+
+        ``from_index`` is an exclusive upper bound (index < from_index), matching
+        the historical API. Incremental cache updates use
+        ``get_total_spent_balance(..., from_index=)`` with a lower bound instead.
+        """
+        if from_index is None:
+            return await self.get_total_spent_balance(address)
+
+        public_key = await self.get_reverse_public_key(address)
+        if not public_key:
+            return 0.0
+
+        match = {
+            "transactions.public_key": public_key,
+            "transactions.inputs.0": {"$exists": True},
+            "index": {"$lt": from_index},
+        }
+        pipeline = [
+            {"$match": match},
+            {
+                "$project": {
+                    "transactions": {
+                        "$filter": {
+                            "input": "$transactions",
+                            "as": "txn",
+                            "cond": {
+                                "$and": [
+                                    {"$eq": ["$$txn.public_key", public_key]},
+                                    {
+                                        "$gt": [
+                                            {
+                                                "$size": {
+                                                    "$ifNull": ["$$txn.inputs", []]
+                                                }
+                                            },
+                                            0,
+                                        ]
+                                    },
+                                ]
+                            },
+                        }
+                    }
+                }
+            },
+            {"$unwind": "$transactions"},
+            {
+                "$project": {
+                    "spent": {
+                        "$add": [
+                            {
+                                "$sum": {
+                                    "$map": {
+                                        "input": {
+                                            "$filter": {
+                                                "input": "$transactions.outputs",
+                                                "as": "out",
+                                                "cond": {"$ne": ["$$out.to", address]},
+                                            }
+                                        },
+                                        "as": "out",
+                                        "in": "$$out.value",
+                                    }
+                                }
+                            },
+                            {"$ifNull": ["$transactions.fee", 0]},
+                            {"$ifNull": ["$transactions.masternode_fee", 0]},
+                        ]
+                    }
+                }
+            },
+            {"$group": {"_id": None, "totalSpent": {"$sum": "$spent"}}},
+        ]
+        result = await self._aggregate_blocks(pipeline, hint=None)
+        return result[0]["totalSpent"] if result else 0.0
 
     async def _compute_balance_components(
         self, address, public_key=None, from_index=None
@@ -1702,40 +1765,40 @@ class BlockChainUtils(object):
 
         # Balance is maintained separately (and cheaply once cached).
         balance_task = asyncio.create_task(self.get_wallet_balance(address))
+        # Fetch mempool spends early so selection does not early-stop on
+        # coins that will be filtered out by the mempool overlay.
+        mempool_spent_task = asyncio.create_task(
+            self.get_mempool_spent_inputs(public_key)
+        )
 
         cache_doc = await self._get_wallet_unspent_cache(address)
 
-        # amount_needed=0 + tip unchanged: return cached max_transferable without
-        # reselection. Tip advances still go through INCREMENTAL below so the
-        # cache marker and UTXO set stay warm.
-        if (
-            not amount_needed
-            and cache_doc
-            and latest_block
-            and cache_doc.get("last_block_hash") == latest_block.get("hash")
-            and await self._wallet_unspent_cache_is_valid(
+        # amount_needed=0 is a balance/max_transferable poll. Prefer any
+        # reorg-safe cached max_transferable without running selection.
+        if not amount_needed and cache_doc:
+            if await self._wallet_unspent_cache_is_valid(
                 cache_doc, latest_block=latest_block
-            )
-        ):
-            balance = await balance_task
-            max_t = cache_doc.get("max_transferable_value")
-            if max_t is None:
-                max_t = sum(
-                    self._utxo_value(u) for u in (cache_doc.get("unspent_utxos") or [])
+            ):
+                balance = await balance_task
+                max_t = cache_doc.get("max_transferable_value")
+                if max_t is None:
+                    max_t = sum(
+                        self._utxo_value(u)
+                        for u in (cache_doc.get("unspent_utxos") or [])
+                    )
+                max_t = self.floor_to_two_decimal_places(float(max_t or 0.0))
+                elapsed = precise_time() - start_time
+                self.config.app_log.info(
+                    "Unspent cache DISPLAY for %s: max_transferable=%.8f (%.2fs)",
+                    address,
+                    max_t,
+                    elapsed,
                 )
-            max_t = self.floor_to_two_decimal_places(float(max_t or 0.0))
-            elapsed = precise_time() - start_time
-            self.config.app_log.info(
-                "Unspent cache DISPLAY for %s: max_transferable=%.8f (%.2fs)",
-                address,
-                max_t,
-                elapsed,
-            )
-            return {
-                "unspent_utxos": [],
-                "balance": balance,
-                "max_transferable_value": max_t,
-            }
+                return {
+                    "unspent_utxos": [],
+                    "balance": balance,
+                    "max_transferable_value": max_t,
+                }
         cache_valid = await self._wallet_unspent_cache_is_valid(
             cache_doc, latest_block=latest_block
         )
@@ -1857,32 +1920,35 @@ class BlockChainUtils(object):
             if cache_mode != "RESELECT":
                 cache_mode = "FULL"
             if from_index:
-                # Historical fork window: fetch candidates below from_index.
-                # Do not early-stop on amount_needed here — mempool overlay
-                # may remove large UTXOs after chain filtering.
                 outputs = await self._fetch_received_outputs(
                     address,
                     to_index=from_index,
                     sort_time=-1,
                     limit=max_utxos * 50,
-                    min_value=float(getattr(self.config, "balance_min_utxo", 0) or 0)
-                    if min_value is None
-                    else float(min_value or 0),
+                    min_value=float(getattr(self.config, "balance_min_utxo", 0) or 0),
                     sort_by_value=True,
                 )
+                # Exclude mempool-spent before amount trim so under-collection
+                # cannot leave us short after the overlay.
+                spent_mp = set(await mempool_spent_task or [])
+                if spent_mp:
+                    outputs = [o for o in outputs if o.get("id") not in spent_mp]
                 selectable, _ = await self._filter_unspent_outputs(
                     public_key,
                     outputs,
                     batch_size=100,
                     max_unspent=max_utxos,
-                    amount_needed=None,
+                    amount_needed=amount_needed if amount_needed else None,
                 )
             else:
-                # Collect a full max_utxos set on-chain; amount cut happens after
-                # mempool overlay so spent-in-mempool coins cannot starve selection.
+                # Do not early-stop on amount during chain select; mempool may
+                # remove large coins. Collect up to max_utxos then overlay.
                 selectable, _ = await self._select_spendable_utxos(
                     address, public_key, max_utxos, amount_needed=0
                 )
+                spent_mp = set(await mempool_spent_task or [])
+                if spent_mp:
+                    selectable = [u for u in selectable if u.get("id") not in spent_mp]
                 if latest_block:
                     await self._save_wallet_unspent_cache(
                         address,
@@ -1893,25 +1959,25 @@ class BlockChainUtils(object):
                         max_utxos=max_utxos,
                     )
 
-        # Mempool overlay (not cached) — apply before amount_needed cut.
-        spent_inputs_mempool = set(
-            await self.get_mempool_spent_inputs(public_key) or []
-        )
+        # Mempool overlay (not cached).
+        spent_inputs_mempool = set(await mempool_spent_task or [])
         if spent_inputs_mempool:
             selectable = [
-                u for u in (selectable or []) if u.get("id") not in spent_inputs_mempool
+                u for u in selectable if u.get("id") not in spent_inputs_mempool
             ]
+
+        balance = await balance_task
 
         # Largest first so max_transferable and amount_needed use the best coins.
         top = sorted(
             selectable or [],
             key=lambda x: (-self._utxo_value(x), x.get("time") or 0),
         )[:max_utxos]
-        utxo_total = sum(self._utxo_value(u) for u in top)
-        max_transferable_value = self.floor_to_two_decimal_places(utxo_total)
+        max_transferable_value = self.floor_to_two_decimal_places(
+            sum(self._utxo_value(u) for u in top)
+        )
 
         if not amount_needed:
-            balance = await balance_task
             elapsed = precise_time() - start_time
             self.config.app_log.info(
                 "Unspent cache %s for %s: balance=%.8f selectable=%s "
@@ -1928,15 +1994,6 @@ class BlockChainUtils(object):
                 "balance": balance,
                 "max_transferable_value": max_transferable_value,
             }
-
-        # Cancel wallet-balance work when returning spendable inputs; callers
-        # that need chain balance can call get_wallet_balance separately.
-        if not balance_task.done():
-            balance_task.cancel()
-            try:
-                await balance_task
-            except (asyncio.CancelledError, Exception):
-                pass
 
         unspent_utxos = []
         total_collected_value = 0.0
@@ -1956,15 +2013,13 @@ class BlockChainUtils(object):
             len(unspent_utxos),
             max_utxos,
             total_collected_value,
-            utxo_total,
+            balance,
             elapsed,
         )
 
         return {
             "unspent_utxos": unspent_utxos,
-            # Match historical API: balance is sum of currently-unspent UTXOs
-            # (after mempool overlay), not the wallet_balance_cache figure.
-            "balance": utxo_total,
+            "balance": balance,
             "max_transferable_value": max_transferable_value,
         }
 
