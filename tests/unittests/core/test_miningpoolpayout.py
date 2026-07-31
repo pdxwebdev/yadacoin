@@ -68,6 +68,20 @@ def _mk_coinbase(sig="sig10", value=50.0, prerotated="1Pre", inception=INCEPTION
     return cb
 
 
+def _mk_aggregate_side_effect(won_rows, spent_ids=None):
+    """blocks.aggregate: first call = won rows; later = spent coinbase group rows."""
+    spent_ids = list(spent_ids or [])
+    calls = {"n": 0}
+
+    def _agg(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _AsyncIter(won_rows)
+        return _AsyncIter([{"_id": cid} for cid in spent_ids])
+
+    return MagicMock(side_effect=_agg)
+
+
 def _mk_block(index=10, coinbase=None):
     block = MagicMock()
     block.index = index
@@ -150,9 +164,8 @@ class TestCollectSettlementBatches(AsyncTestCase):
         p = _mk_payer()
         p.config.payout_frequency = 2
         p.config.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter([{"index": 10, "id": "i", "hash": "h"}])
-        )
+        won = [{"index": 10, "id": "i", "hash": "h", "coinbase_id": "sig10"}]
+        p.config.mongo.async_db.blocks.aggregate = _mk_aggregate_side_effect(won)
         p.config.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
         with patch(
             "yadacoin.core.miningpoolpayout.Block.from_dict",
@@ -172,10 +185,11 @@ class TestCollectSettlementBatches(AsyncTestCase):
         p.config.max_payout_batches_per_block = 20
         p.config.LatestBlock.block.index = 200
         p.config.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
-        docs = [{"index": i, "id": f"i{i}", "hash": f"h{i}"} for i in range(10, 22)]
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter(docs)
-        )
+        docs = [
+            {"index": i, "id": f"i{i}", "hash": f"h{i}", "coinbase_id": f"sig{i}"}
+            for i in range(10, 22)
+        ]
+        p.config.mongo.async_db.blocks.aggregate = _mk_aggregate_side_effect(docs)
         p.config.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
 
         async def from_dict(d):
@@ -215,10 +229,11 @@ class TestCollectSettlementBatches(AsyncTestCase):
         p.config.max_payout_batches_per_block = 2  # cap at 2 batches = 4 blocks
         p.config.LatestBlock.block.index = 200
         p.config.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
-        docs = [{"index": i, "id": f"i{i}", "hash": f"h{i}"} for i in range(10, 30)]
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter(docs)
-        )
+        docs = [
+            {"index": i, "id": f"i{i}", "hash": f"h{i}", "coinbase_id": f"sig{i}"}
+            for i in range(10, 30)
+        ]
+        p.config.mongo.async_db.blocks.aggregate = _mk_aggregate_side_effect(docs)
         p.config.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
         blocks = [_mk_block(i, _mk_coinbase(f"sig{i}")) for i in range(10, 14)]
         call_i = {"n": 0}
@@ -375,6 +390,13 @@ class TestPoolInceptionAndReward(AsyncTestCase):
         p.pool_inception_address = MagicMock(return_value=None)
         self.assertFalse(p.is_pool_won_coinbase(_mk_coinbase()))
 
+    async def test_get_same_kel_spent_coinbase_ids_early_return(self):
+        p = _mk_payer(inception_addr=None)
+        self.assertEqual(await p.get_same_kel_spent_coinbase_ids(["sig1"]), set())
+        p = _mk_payer()
+        self.assertEqual(await p.get_same_kel_spent_coinbase_ids([]), set())
+        self.assertEqual(await p.get_same_kel_spent_coinbase_ids(None), set())
+
 
 class TestCollectSettlementBranches(AsyncTestCase):
     async def test_skips_already_used_and_existing_payout(self):
@@ -382,18 +404,10 @@ class TestCollectSettlementBranches(AsyncTestCase):
         p.config.payout_frequency = 1
         p.config.LatestBlock.block.index = 200
         p.config.mongo.async_db.share_payout.find_one = AsyncMock(
-            side_effect=[None, {"index": 10, "txn": {"id": "x"}}, None]
+            return_value={"txn": {"id": "paid"}}
         )
-        # first call is already_paid_height, then per-block existing
-        p.config.mongo.async_db.share_payout.find_one = AsyncMock(
-            side_effect=[
-                None,  # already_paid_height
-                {"txn": {"id": "paid"}},  # existing for first block
-            ]
-        )
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter([{"index": 10, "id": "i", "hash": "h"}])
-        )
+        won = [{"index": 10, "id": "i", "hash": "h", "coinbase_id": "sig10"}]
+        p.config.mongo.async_db.blocks.aggregate = _mk_aggregate_side_effect(won)
         p.config.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
         p.config.mongo.async_db.shares.delete_many = AsyncMock()
         with patch(
@@ -404,14 +418,54 @@ class TestCollectSettlementBranches(AsyncTestCase):
             batches = await p.collect_settlement_batches("pk")
         self.assertEqual(batches, [])
 
+    async def test_skips_on_chain_spent_coinbases(self):
+        """Paid wins (on-chain spends) must not fill max_ready before unpaid ones."""
+        p = _mk_payer()
+        p.config.payout_frequency = 1
+        p.config.max_payout_batches_per_block = 2
+        p.config.LatestBlock.block.index = 200
+        p.config.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
+        # Many historically spent coinbases, then two unpaid that need payout.
+        docs = [
+            {"index": i, "id": f"i{i}", "hash": f"h{i}", "coinbase_id": f"sig{i}"}
+            for i in range(1, 20)
+        ]
+        spent = [f"sig{i}" for i in range(1, 18)]
+        p.config.mongo.async_db.blocks.aggregate = _mk_aggregate_side_effect(
+            docs, spent_ids=spent
+        )
+        p.config.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
+        unpaid = [
+            _mk_block(18, _mk_coinbase("sig18")),
+            _mk_block(19, _mk_coinbase("sig19")),
+        ]
+        call_i = {"n": 0}
+
+        async def from_dict_side(doc):
+            b = unpaid[call_i["n"]]
+            call_i["n"] += 1
+            return b
+
+        with patch(
+            "yadacoin.core.miningpoolpayout.Block.from_dict",
+            new=AsyncMock(side_effect=from_dict_side),
+        ):
+            p.already_used = AsyncMock(return_value=False)
+            p.get_share_list_for_height = AsyncMock(
+                return_value={"m": {"payout_share": 1.0}}
+            )
+            batches = await p.collect_settlement_batches("pk")
+        self.assertEqual(len(batches), 2)
+        self.assertEqual(batches[0][2], [18])
+        self.assertEqual(batches[1][2], [19])
+
     async def test_skips_already_used_deletes_shares(self):
         p = _mk_payer()
         p.config.payout_frequency = 1
         p.config.LatestBlock.block.index = 200
         p.config.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter([{"index": 10, "id": "i", "hash": "h"}])
-        )
+        won = [{"index": 10, "id": "i", "hash": "h", "coinbase_id": "sig10"}]
+        p.config.mongo.async_db.blocks.aggregate = _mk_aggregate_side_effect(won)
         p.config.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
         p.config.mongo.async_db.shares.delete_many = AsyncMock()
         with patch(
@@ -428,9 +482,8 @@ class TestCollectSettlementBranches(AsyncTestCase):
         p.config.payout_frequency = 1
         p.config.LatestBlock.block.index = 200
         p.config.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter([{"index": 10, "id": "i", "hash": "h"}])
-        )
+        won = [{"index": 10, "id": "i", "hash": "h", "coinbase_id": "sig10"}]
+        p.config.mongo.async_db.blocks.aggregate = _mk_aggregate_side_effect(won)
         p.config.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
         with patch(
             "yadacoin.core.miningpoolpayout.Block.from_dict",
@@ -446,9 +499,8 @@ class TestCollectSettlementBranches(AsyncTestCase):
         p.config.payout_frequency = 1
         p.config.LatestBlock.block.index = 200
         p.config.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter([{"index": 10, "id": "i", "hash": "h"}])
-        )
+        won = [{"index": 10, "id": "i", "hash": "h", "coinbase_id": "sig10"}]
+        p.config.mongo.async_db.blocks.aggregate = _mk_aggregate_side_effect(won)
         p.config.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
         cb = _mk_coinbase("sig10")
         with patch(
@@ -465,9 +517,8 @@ class TestCollectSettlementBranches(AsyncTestCase):
         p.config.payout_frequency = 1
         p.config.LatestBlock.block.index = 200
         p.config.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter([{"index": 10, "id": "i", "hash": "h"}])
-        )
+        won = [{"index": 10, "id": "i", "hash": "h", "coinbase_id": "sig10"}]
+        p.config.mongo.async_db.blocks.aggregate = _mk_aggregate_side_effect(won)
         p.config.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
         with patch(
             "yadacoin.core.miningpoolpayout.Block.from_dict",
@@ -480,9 +531,8 @@ class TestCollectSettlementBranches(AsyncTestCase):
         p = _mk_payer()
         p.config.payout_frequency = 1
         p.config.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter([{"index": 10, "id": "i", "hash": "h"}])
-        )
+        won = [{"index": 10, "id": "i", "hash": "h", "coinbase_id": "sig10"}]
+        p.config.mongo.async_db.blocks.aggregate = _mk_aggregate_side_effect(won)
         p.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
         batches = await p.collect_settlement_batches("pk")
         self.assertEqual(batches, [])
@@ -1120,9 +1170,8 @@ class TestCollectDepthAndMaxReady(AsyncTestCase):
         p.config.payout_frequency = 10
         p.config.LatestBlock.block.index = 15  # 10+10 > 15
         p.config.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter([{"index": 10, "id": "i", "hash": "h"}])
-        )
+        won = [{"index": 10, "id": "i", "hash": "h", "coinbase_id": "sig10"}]
+        p.config.mongo.async_db.blocks.aggregate = _mk_aggregate_side_effect(won)
         p.config.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
         with patch(
             "yadacoin.core.miningpoolpayout.Block.from_dict",
@@ -1136,9 +1185,8 @@ class TestCollectDepthAndMaxReady(AsyncTestCase):
         p.config.payout_frequency = 1
         p.config.LatestBlock.block.index = 200
         p.config.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter([{"index": 10, "id": "i", "hash": "h"}])
-        )
+        won = [{"index": 10, "id": "i", "hash": "h", "coinbase_id": "sig10"}]
+        p.config.mongo.async_db.blocks.aggregate = _mk_aggregate_side_effect(won)
         p.config.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
         cb = _mk_coinbase(value=0.0)
         with patch(
@@ -1157,9 +1205,8 @@ class TestCollectDepthAndMaxReady(AsyncTestCase):
         p.config.payout_frequency = 1
         p.config.LatestBlock.block.index = 200
         p.config.mongo.async_db.share_payout.find_one = AsyncMock(return_value=None)
-        p.config.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_AsyncIter([{"index": 10, "id": "i", "hash": "h"}])
-        )
+        won = [{"index": 10, "id": "i", "hash": "h", "coinbase_id": "sig10"}]
+        p.config.mongo.async_db.blocks.aggregate = _mk_aggregate_side_effect(won)
         p.config.mongo.async_db.blocks.find_one = AsyncMock(return_value={"x": 1})
         with patch(
             "yadacoin.core.miningpoolpayout.Block.from_dict",

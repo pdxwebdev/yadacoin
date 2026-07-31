@@ -91,6 +91,53 @@ class PoolPayer(object):
             spender_inception=inception,
         )
 
+    async def get_same_kel_spent_coinbase_ids(self, coinbase_ids):
+        """Return coinbase ids already spent by same-KEL on-chain txns.
+
+        Same algorithm as ``PoolPayoutsHandler`` /
+        ``_build_pool_kel_cache``: pool coinbases are paid when their ids
+        appear as inputs on later transactions tagged with this pool's
+        ``inception_public_key_hash``.
+        """
+        inception_addr = self.pool_inception_address()
+        if not inception_addr or not coinbase_ids:
+            return set()
+
+        spent = set()
+        ids = [cid for cid in coinbase_ids if cid]
+        chunk_size = 500
+        for i in range(0, len(ids), chunk_size):
+            chunk = ids[i : i + chunk_size]
+            cursor = self.config.mongo.async_db.blocks.aggregate(
+                [
+                    {
+                        "$match": {
+                            "transactions": {
+                                "$elemMatch": {
+                                    "inception_public_key_hash": inception_addr,
+                                    "inputs.id": {"$in": chunk},
+                                }
+                            }
+                        }
+                    },
+                    {"$unwind": "$transactions"},
+                    {
+                        "$match": {
+                            "transactions.inception_public_key_hash": inception_addr,
+                            "transactions.inputs.id": {"$in": chunk},
+                        }
+                    },
+                    {"$unwind": "$transactions.inputs"},
+                    {"$match": {"transactions.inputs.id": {"$in": chunk}}},
+                    {"$group": {"_id": "$transactions.inputs.id"}},
+                ]
+            )
+            async for row in cursor:
+                cid = row.get("_id")
+                if cid:
+                    spent.add(cid)
+        return spent
+
     async def collect_settlement_batches(
         self, signer_public_key, exclude_coinbase_ids=None
     ):
@@ -99,6 +146,11 @@ class PoolPayer(object):
         Each batch is ``payout_frequency`` won blocks (one settlement U/C pair).
         When behind, returns multiple batches so one template can settle
         ``n * payout_frequency`` unpaid wins.
+
+        Already-paid wins are detected on-chain (same-KEL spends of pool
+        coinbases), not via the ``share_payout`` collection watermark — so
+        historically settled blocks cannot exhaust ``max_ready`` before
+        unpaid wins are reached.
 
         Returns list of ``(coinbases, miner_outputs, settled_indexes)``.
         """
@@ -112,12 +164,6 @@ class PoolPayer(object):
             getattr(self.config, "max_payout_batches_per_block", 20) or 20
         )
 
-        already_paid_height = await self.config.mongo.async_db.share_payout.find_one(
-            {}, sort=[("index", -1)]
-        )
-        if not already_paid_height:
-            already_paid_height = {}
-
         won_match = {
             "transactions": {
                 "$elemMatch": {
@@ -125,7 +171,6 @@ class PoolPayer(object):
                     "inception_public_key_hash": inception_addr,
                 }
             },
-            "index": {"$gt": already_paid_height.get("index", 0)},
         }
         unwind_match = {
             "transactions.inputs.0": {"$exists": False},
@@ -133,24 +178,53 @@ class PoolPayer(object):
             "$expr": {"$eq": ["$public_key", "$transactions.public_key"]},
         }
 
-        won_blocks = self.config.mongo.async_db.blocks.aggregate(
+        won_rows = []
+        won_cursor = self.config.mongo.async_db.blocks.aggregate(
             [
                 {"$match": won_match},
                 {"$unwind": "$transactions"},
                 {"$match": unwind_match},
                 {"$sort": {"index": 1}},
+                {
+                    "$project": {
+                        "_id": 0,
+                        "index": 1,
+                        "id": 1,
+                        "hash": 1,
+                        "coinbase_id": {
+                            "$ifNull": [
+                                "$transactions.id",
+                                "$transactions.transaction_signature",
+                            ]
+                        },
+                    }
+                },
             ]
+        )
+        async for row in won_cursor:
+            won_rows.append(row)
+
+        spent_ids = await self.get_same_kel_spent_coinbase_ids(
+            [r.get("coinbase_id") for r in won_rows]
         )
 
         ready_blocks = []
         latest_index = self.config.LatestBlock.block.index
         max_ready = freq * max_batches
-        async for won_block in won_blocks:
+        for row in won_rows:
+            coinbase_id = row.get("coinbase_id")
+            if coinbase_id and coinbase_id in spent_ids:
+                continue
+            if coinbase_id and coinbase_id in exclude_coinbase_ids:
+                continue
+            if (row.get("index", 0) + freq) > latest_index:
+                continue
+
             won_block = await self.config.mongo.async_db.blocks.find_one(
                 {
-                    "index": won_block["index"],
-                    "id": won_block["id"],
-                    "hash": won_block["hash"],
+                    "index": row["index"],
+                    "id": row["id"],
+                    "hash": row["hash"],
                 }
             )
             if not won_block:
@@ -159,10 +233,18 @@ class PoolPayer(object):
             coinbase = won_block.get_coinbase()
             if not self.is_pool_won_coinbase(coinbase):
                 continue
-            if coinbase.transaction_signature in exclude_coinbase_ids:
+            # Belt-and-suspenders: local share_payout row or spent input check.
+            if await self.already_used(coinbase, signer_public_key):
+                await self.config.mongo.async_db.shares.delete_many(
+                    {"index": won_block.index}
+                )
                 continue
-            if (won_block.index + freq) > latest_index:
+            existing = await self.config.mongo.async_db.share_payout.find_one(
+                {"index": won_block.index}
+            )
+            if existing and existing.get("txn"):
                 continue
+
             ready_blocks.append(won_block)
             if len(ready_blocks) >= max_ready:
                 break
@@ -171,16 +253,6 @@ class PoolPayer(object):
         payable = []  # (block, coinbase, shares, reward_value)
         for block in ready_blocks:
             coinbase = block.get_coinbase()
-            if await self.already_used(coinbase, signer_public_key):
-                await self.config.mongo.async_db.shares.delete_many(
-                    {"index": block.index}
-                )
-                continue
-            existing = await self.config.mongo.async_db.share_payout.find_one(
-                {"index": block.index}
-            )
-            if existing and existing.get("txn"):
-                continue
             try:
                 shares = await self.get_share_list_for_height(block.index)
                 if not shares:
