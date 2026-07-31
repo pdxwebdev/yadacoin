@@ -976,12 +976,91 @@ class TestBlockchainUtilsCoverage(AsyncTestCase):
 
     async def test_get_final_balance_sums_components(self):
         bu, config = _make_bu()
-        bu.get_coinbase_total_output_balance = mock.AsyncMock(return_value=100.0)
-        bu.get_masternode_coinbase_balance = mock.AsyncMock(return_value=10.0)
-        bu.get_total_received_balance = mock.AsyncMock(return_value=50.0)
-        bu.get_spent_balance = mock.AsyncMock(return_value=30.0)
+        bu.get_reverse_public_key = mock.AsyncMock(return_value="pk")
+        bu.get_latest_block_async = mock.AsyncMock(
+            return_value={"hash": "tiphash", "index": 10}
+        )
+        bu._get_wallet_balance_cache = mock.AsyncMock(return_value=None)
+        bu._wallet_balance_cache_is_valid = mock.AsyncMock(return_value=False)
+        bu.get_total_spent_balance = mock.AsyncMock(return_value=30.0)
+        bu.get_received_from_others_balance = mock.AsyncMock(return_value=50.0)
+        bu.get_received_solo_mining_balance = mock.AsyncMock(return_value=100.0)
+        bu._save_wallet_balance_cache = mock.AsyncMock(return_value=120.0)
         result = await bu.get_final_balance("addr")
-        self.assertEqual(result, 130.0)  # (100 + 10 + 50) - 30
+        self.assertEqual(result, 120.0)  # (100 + 50) - 30
+        bu.get_reverse_public_key.assert_awaited_once_with("addr")
+        bu.get_total_spent_balance.assert_awaited_once_with(
+            "addr", "pk", from_index=None
+        )
+        bu.get_received_from_others_balance.assert_awaited_once_with(
+            "addr", "pk", from_index=None
+        )
+        bu.get_received_solo_mining_balance.assert_awaited_once_with(
+            "addr", "pk", from_index=None
+        )
+        bu._save_wallet_balance_cache.assert_awaited_once()
+
+    async def test_get_final_balance_cache_hit(self):
+        bu, config = _make_bu()
+        bu.get_reverse_public_key = mock.AsyncMock(return_value="pk")
+        bu.get_latest_block_async = mock.AsyncMock(
+            return_value={"hash": "tiphash", "index": 10}
+        )
+        cache_doc = {
+            "address": "addr",
+            "public_key": "pk",
+            "balance": 77.5,
+            "last_block_hash": "tiphash",
+            "last_block_index": 10,
+            "total_spent": 1.0,
+            "received_from_others": 2.0,
+            "received_solo_mining": 76.5,
+        }
+        bu._get_wallet_balance_cache = mock.AsyncMock(return_value=cache_doc)
+        bu._wallet_balance_cache_is_valid = mock.AsyncMock(return_value=True)
+        bu._compute_balance_components = mock.AsyncMock()
+        result = await bu.get_final_balance("addr")
+        self.assertEqual(result, 77.5)
+        bu._compute_balance_components.assert_not_awaited()
+
+    async def test_get_final_balance_incremental(self):
+        bu, config = _make_bu()
+        bu.get_reverse_public_key = mock.AsyncMock(return_value="pk")
+        bu.get_latest_block_async = mock.AsyncMock(
+            return_value={"hash": "newtip", "index": 12}
+        )
+        cache_doc = {
+            "address": "addr",
+            "public_key": "pk",
+            "balance": 100.0,
+            "last_block_hash": "oldtip",
+            "last_block_index": 10,
+            "total_spent": 30.0,
+            "received_from_others": 50.0,
+            "received_solo_mining": 80.0,
+        }
+        bu._get_wallet_balance_cache = mock.AsyncMock(return_value=cache_doc)
+        bu._wallet_balance_cache_is_valid = mock.AsyncMock(return_value=True)
+        bu._compute_balance_components = mock.AsyncMock(
+            return_value={
+                "public_key": "pk",
+                "total_spent": 5.0,
+                "received_from_others": 2.0,
+                "received_solo_mining": 1.0,
+            }
+        )
+        bu._save_wallet_balance_cache = mock.AsyncMock(return_value=98.0)
+        result = await bu.get_final_balance("addr")
+        self.assertEqual(result, 98.0)
+        bu._compute_balance_components.assert_awaited_once_with(
+            "addr", public_key="pk", from_index=10
+        )
+        # (80+1) + (50+2) - (30+5) = 98
+        args = bu._save_wallet_balance_cache.await_args.args
+        self.assertEqual(args[0], "addr")
+        self.assertEqual(args[2], 35.0)  # total_spent
+        self.assertEqual(args[3], 52.0)  # received_from_others
+        self.assertEqual(args[4], 81.0)  # received_solo_mining
 
     async def test_get_wallet_balance_delegates_to_final(self):
         bu, _ = _make_bu()
@@ -989,6 +1068,82 @@ class TestBlockchainUtilsCoverage(AsyncTestCase):
         result = await bu.get_wallet_balance("addr")
         self.assertEqual(result, 42.0)
         bu.get_final_balance.assert_awaited_once_with("addr")
+
+    async def test_wallet_balance_cache_is_valid_happy_path(self):
+        bu, config = _make_bu()
+        cache_doc = {
+            "last_block_hash": "h10",
+            "last_block_index": 10,
+        }
+        latest = {"hash": "htip", "index": 12}
+
+        async def find_one(query, *args, **kwargs):
+            if query.get("hash") == "h10":
+                return {"hash": "h10", "index": 10}
+            if query.get("index") == 10:
+                return {"hash": "h10"}
+            return None
+
+        config.mongo.async_db.blocks.find_one = mock.AsyncMock(side_effect=find_one)
+        ok = await bu._wallet_balance_cache_is_valid(cache_doc, latest_block=latest)
+        self.assertTrue(ok)
+
+    async def test_wallet_balance_cache_invalid_when_hash_missing(self):
+        bu, config = _make_bu()
+        cache_doc = {"last_block_hash": "gone", "last_block_index": 10}
+        config.mongo.async_db.blocks.find_one = mock.AsyncMock(return_value=None)
+        ok = await bu._wallet_balance_cache_is_valid(
+            cache_doc, latest_block={"hash": "t", "index": 12}
+        )
+        self.assertFalse(ok)
+
+    async def test_wallet_balance_cache_invalid_on_reorg_at_height(self):
+        bu, config = _make_bu()
+        cache_doc = {"last_block_hash": "oldh", "last_block_index": 10}
+        latest = {"hash": "t", "index": 12}
+
+        async def find_one(query, *args, **kwargs):
+            # hash still orphaned somewhere would fail; here hash lookup misses
+            # or index has a different hash
+            if "hash" in query:
+                return {"hash": "oldh", "index": 10}
+            if query.get("index") == 10:
+                return {"hash": "newh"}  # reorg replaced block at height 10
+            return None
+
+        config.mongo.async_db.blocks.find_one = mock.AsyncMock(side_effect=find_one)
+        ok = await bu._wallet_balance_cache_is_valid(cache_doc, latest_block=latest)
+        self.assertFalse(ok)
+
+    async def test_get_final_balance_invalidates_stale_cache(self):
+        bu, config = _make_bu()
+        bu.get_reverse_public_key = mock.AsyncMock(return_value="pk")
+        bu.get_latest_block_async = mock.AsyncMock(
+            return_value={"hash": "tiphash", "index": 10}
+        )
+        cache_doc = {
+            "address": "addr",
+            "balance": 77.5,
+            "last_block_hash": "stale",
+            "last_block_index": 9,
+        }
+        bu._get_wallet_balance_cache = mock.AsyncMock(return_value=cache_doc)
+        bu._wallet_balance_cache_is_valid = mock.AsyncMock(return_value=False)
+        bu._invalidate_wallet_balance_cache = mock.AsyncMock()
+        bu._compute_balance_components = mock.AsyncMock(
+            return_value={
+                "public_key": "pk",
+                "total_spent": 0.0,
+                "received_from_others": 1.0,
+                "received_solo_mining": 2.0,
+            }
+        )
+        bu._save_wallet_balance_cache = mock.AsyncMock(return_value=3.0)
+        result = await bu.get_final_balance("addr")
+        self.assertEqual(result, 3.0)
+        bu._invalidate_wallet_balance_cache.assert_awaited_once()
+        # full recompute path (no from_index)
+        bu._compute_balance_components.assert_awaited_once_with("addr", public_key="pk")
 
     # ------------------------------------------------------------------
     # Lines 354-379: get_reverse_public_key txn_id loop

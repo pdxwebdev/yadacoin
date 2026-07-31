@@ -15,6 +15,7 @@ Full license terms: see LICENSE.txt in this repository.
 Handlers required by the graph operations
 """
 
+import asyncio
 import hashlib
 import json
 import os
@@ -165,30 +166,51 @@ class GraphRIDWalletHandler(BaseGraphHandler):
                 "outputs": [x for x in mempool_txn["outputs"] if x["to"] == address],
             }
 
-        unspent_mempool_txns = list(unspent_mempool_txns.values())
+        # Mempool UTXOs also cannot exceed the per-txn input limit.
+        unspent_mempool_txns = list(unspent_mempool_txns.values())[: CHAIN.MAX_INPUTS]
 
-        if method == "new":
-            self.config.app_log.info("Using NEW method for balance and UTXOs.")
-
-            result = await self.config.BU.get_unspent_outputs(
-                address, amount_needed=amount_needed, min_value=0, max_utxos=100
+        # amount_needed defaults to 0 for balance-only wallet polls; skip UTXO
+        # selection unless the client needs inputs. Balance always uses cache.
+        # max_transferable_value is filled from wallet_unspent_cache when the
+        # tip marker matches (no selection work).
+        if not amount_needed:
+            # Prefer cached max_transferable (no UTXO selection). Falls back to 0
+            # until a spend request warms wallet_unspent_cache.
+            balance, max_transferable_value = await asyncio.gather(
+                self.config.BU.get_wallet_balance(address),
+                self.config.BU.get_cached_max_transferable_value(address),
             )
-            unspent_txns = result["unspent_utxos"]
-            balance = result["balance"]
+            unspent_txns = []
+        elif method == "new":
+            self.config.app_log.info("Using NEW method for UTXOs.")
+            # get_unspent_outputs also resolves balance via wallet_balance_cache.
+            result = await self.config.BU.get_unspent_outputs(
+                address,
+                amount_needed=amount_needed,
+                min_value=0,
+                max_utxos=CHAIN.MAX_INPUTS,
+            )
+            unspent_txns = result["unspent_utxos"][: CHAIN.MAX_INPUTS]
             max_transferable_value = result["max_transferable_value"]
-
+            balance = result.get("balance")
+            if balance is None:
+                balance = await self.config.BU.get_wallet_balance(address)
         else:
-            self.config.app_log.info("Using OLD method for balance and UTXOs.")
-
-            balance = await self.config.BU.get_wallet_balance(address)
-
-            unspent_txns = [
-                x
-                async for x in self.config.BU.get_wallet_unspent_transactions_for_spending(
-                    address, inc_mempool=True, amount_needed=amount_needed
-                )
-            ]
-
+            self.config.app_log.info("Using OLD method for UTXOs.")
+            balance_task = asyncio.create_task(
+                self.config.BU.get_wallet_balance(address)
+            )
+            unspent_txns = []
+            async for x in self.config.BU.get_wallet_unspent_transactions_for_spending(
+                address,
+                inc_mempool=True,
+                amount_needed=amount_needed,
+                limit=CHAIN.MAX_INPUTS,
+            ):
+                unspent_txns.append(x)
+                if len(unspent_txns) >= CHAIN.MAX_INPUTS:
+                    break
+            balance = await balance_task
             max_transferable_value = 0
 
         end_time = time.perf_counter()

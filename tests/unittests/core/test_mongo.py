@@ -531,7 +531,10 @@ class TestMongoInitPaths(AsyncTestCase):
         mock_db = self._make_default_mock_db()
         for coll_name in [
             "blocks",
+            "reversed_public_keys",
             "unspent_cache",
+            "wallet_balance_cache",
+            "wallet_unspent_cache",
             "consensus",
             "shares",
             "share_payout",

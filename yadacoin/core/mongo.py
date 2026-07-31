@@ -241,6 +241,20 @@ class Mongo(object):
             name="__txn_rel_identity_username",
             sparse=True,
         )
+        __public_key_outputs_to = IndexModel(
+            [
+                ("public_key", ASCENDING),
+                ("transactions.outputs.to", ASCENDING),
+            ],
+            name="__public_key_outputs_to",
+        )
+        __txn_public_key_outputs_to = IndexModel(
+            [
+                ("transactions.public_key", ASCENDING),
+                ("transactions.outputs.to", ASCENDING),
+            ],
+            name="__txn_public_key_outputs_to",
+        )
 
         try:
             self.db.blocks.create_indexes(
@@ -287,7 +301,20 @@ class Mongo(object):
                     __txn_inception_public_key_hash_counter,
                     __txn_rel_agent,
                     _txn_rel_identity_username,
+                    __public_key_outputs_to,
+                    __txn_public_key_outputs_to,
                 ]
+            )
+        except:
+            pass
+
+        __rpk_address = IndexModel(
+            [("address", ASCENDING)], name="__address", unique=True
+        )
+        __rpk_public_key = IndexModel([("public_key", ASCENDING)], name="__public_key")
+        try:
+            self.db.reversed_public_keys.create_indexes(
+                [__rpk_address, __rpk_public_key]
             )
         except:
             pass
@@ -297,6 +324,46 @@ class Mongo(object):
         __cache_time = IndexModel([("cache_time", ASCENDING)], name="__cache_time")
         try:
             self.db.unspent_cache.create_indexes([__id, __height, __cache_time])
+        except:
+            pass
+
+        __wb_address = IndexModel(
+            [("address", ASCENDING)], name="__address", unique=True
+        )
+        __wb_public_key = IndexModel([("public_key", ASCENDING)], name="__public_key")
+        __wb_last_block_hash = IndexModel(
+            [("last_block_hash", ASCENDING)], name="__last_block_hash"
+        )
+        __wb_cache_time = IndexModel([("cache_time", ASCENDING)], name="__cache_time")
+        try:
+            self.db.wallet_balance_cache.create_indexes(
+                [
+                    __wb_address,
+                    __wb_public_key,
+                    __wb_last_block_hash,
+                    __wb_cache_time,
+                ]
+            )
+        except:
+            pass
+
+        __wu_address = IndexModel(
+            [("address", ASCENDING)], name="__address", unique=True
+        )
+        __wu_public_key = IndexModel([("public_key", ASCENDING)], name="__public_key")
+        __wu_last_block_hash = IndexModel(
+            [("last_block_hash", ASCENDING)], name="__last_block_hash"
+        )
+        __wu_cache_time = IndexModel([("cache_time", ASCENDING)], name="__cache_time")
+        try:
+            self.db.wallet_unspent_cache.create_indexes(
+                [
+                    __wu_address,
+                    __wu_public_key,
+                    __wu_last_block_hash,
+                    __wu_cache_time,
+                ]
+            )
         except:
             pass
 
