@@ -985,6 +985,7 @@ class TestBlockchainUtilsCoverage(AsyncTestCase):
         bu.get_total_spent_balance = mock.AsyncMock(return_value=30.0)
         bu.get_received_from_others_balance = mock.AsyncMock(return_value=50.0)
         bu.get_received_solo_mining_balance = mock.AsyncMock(return_value=100.0)
+        bu.get_masternode_coinbase_balance = mock.AsyncMock(return_value=0.0)
         bu._save_wallet_balance_cache = mock.AsyncMock(return_value=120.0)
         result = await bu.get_final_balance("addr")
         self.assertEqual(result, 120.0)  # (100 + 50) - 30
@@ -996,6 +997,9 @@ class TestBlockchainUtilsCoverage(AsyncTestCase):
             "addr", "pk", from_index=None
         )
         bu.get_received_solo_mining_balance.assert_awaited_once_with(
+            "addr", "pk", from_index=None
+        )
+        bu.get_masternode_coinbase_balance.assert_awaited_once_with(
             "addr", "pk", from_index=None
         )
         bu._save_wallet_balance_cache.assert_awaited_once()
