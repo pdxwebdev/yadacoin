@@ -1291,7 +1291,7 @@ class ServiceProviders(Nodes):
                         "port": 8000,
                         "http_protocol": "https",
                         "http_port": 443,
-                        "identity_announcement": "MEQCIA2qDFseu4IxcpF0r2iydXonXFtEf982SumyrGG9HSzDAiAcB9Q3lISMmsUgu0iBG1piPkrG9YruD2XR8xgaBizurw==",
+                        "identity_announcement": "MEUCIQDMWqd3q8pDRI7vB8oH4+9bpODuOApipAk/BFbq6paOCgIgDMRxrvnlNgZDNI+O6qQPsdefCTAE2CoJFf0y+WxD/+I=",
                         "seed_gateway": "MEQCID9XaBTbpIl+6wkjGx51glOnqd+fRjDwJcZxV1EuKmi4AiB9k5ciKBjhmryZzVz1tn3oX6ccPvnNmaf6tVEYQcnm9A==",
                         "seed": "MEUCIQDWgCRP62jtLM1XmzIUYc3QA80k0Evz/q8Cz2QLkyRMLQIgdXfQsTsEzTFHXj+aZ7sn1Vdo6lqhxp25TdX7eiQypaM=",
                     }
