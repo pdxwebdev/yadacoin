@@ -790,7 +790,7 @@ class Seeds(Nodes):
                         "http_protocol": "http",
                         "http_port": 80,
                         "identity_announcement": "MEQCIA2qDFseu4IxcpF0r2iydXonXFtEf982SumyrGG9HSzDAiAcB9Q3lISMmsUgu0iBG1piPkrG9YruD2XR8xgaBizurw==",
-                        "seed_gateway": "MEQCIFjx1qJhsDy7gvSla8grUk50Sel8s+MM8hiSbGfcdd6oAiA8T4LHnSYItt0bAJvlaySk7ghXZUtc/af4FhRzspsxMw==",
+                        "seed_gateway": "MEQCIGm+m6vE+/6X/w8XvIvbbFzfOGQ0Eoq5rM69PQN+S+WjAiBO04VgcZPm0ZuXxg9Ik5qUlzW8Ms2Hv05rxJNPbX6CdA==",
                     }
                 ),
             },
@@ -1090,7 +1090,7 @@ class SeedGateways(Nodes):
                         "http_protocol": "http",
                         "http_port": 80,
                         "identity_announcement": "MEQCIFjx1qJhsDy7gvSla8grUk50Sel8s+MM8hiSbGfcdd6oAiA8T4LHnSYItt0bAJvlaySk7ghXZUtc/af4FhRzspsxMw==",
-                        "seed": "MEQCIA2qDFseu4IxcpF0r2iydXonXFtEf982SumyrGG9HSzDAiAcB9Q3lISMmsUgu0iBG1piPkrG9YruD2XR8xgaBizurw==",
+                        "seed": "MEUCIQCRhqjjKwQ2ISW+oTBML3nlm/7YEgeulhYr3XgEKHK6TQIgcrWyMA2ECUfeNE9N6gb8lYRrQhwJXZIf8r+9KiH2e2g=",
                     }
                 ),
             },
@@ -1396,8 +1396,8 @@ class ServiceProviders(Nodes):
                         "http_protocol": "http",
                         "http_port": 80,
                         "identity_announcement": "MEQCIBF2MWFkaRf9L6se4Snou6/phkN14rXE0a986llJu4FuAiB+jOA1q5CLUZeda8mqyXskX5e5E5fnBN4kkclFYMtiHA==",
-                        "seed_gateway": "MEQCIFjx1qJhsDy7gvSla8grUk50Sel8s+MM8hiSbGfcdd6oAiA8T4LHnSYItt0bAJvlaySk7ghXZUtc/af4FhRzspsxMw==",
-                        "seed": "MEQCIA2qDFseu4IxcpF0r2iydXonXFtEf982SumyrGG9HSzDAiAcB9Q3lISMmsUgu0iBG1piPkrG9YruD2XR8xgaBizurw==",
+                        "seed_gateway": "MEQCIGm+m6vE+/6X/w8XvIvbbFzfOGQ0Eoq5rM69PQN+S+WjAiBO04VgcZPm0ZuXxg9Ik5qUlzW8Ms2Hv05rxJNPbX6CdA==",
+                        "seed": "MEUCIQCRhqjjKwQ2ISW+oTBML3nlm/7YEgeulhYr3XgEKHK6TQIgcrWyMA2ECUfeNE9N6gb8lYRrQhwJXZIf8r+9KiH2e2g=",
                     }
                 ),
             },
