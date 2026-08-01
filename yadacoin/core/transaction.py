@@ -833,6 +833,7 @@ class Transaction(object):
                 block_index=_uniq_idx,
                 batch_txns=batch_txns,
                 extra_blocks=extra_blocks,
+                use_mempool=mempool,
             )
 
             if has_kel:
@@ -1341,6 +1342,7 @@ class Transaction(object):
         block_index=None,
         batch_txns=None,
         extra_blocks=None,
+        use_mempool=True,
     ):
         """Reject a second inception for this public_key_hash / inception tag.
 
@@ -1445,6 +1447,10 @@ class Transaction(object):
             )
 
         # Mempool: another pending inception for the same pkh (not us).
+        # Skip during block validation — mempool state is irrelevant once a
+        # txn is in a candidate/confirmed block (mirrors use_mempool elsewhere).
+        if not use_mempool:
+            return
         mem_q = {
             "$or": [
                 {"public_key_hash": pkh},

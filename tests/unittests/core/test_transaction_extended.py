@@ -1454,6 +1454,31 @@ class TestVerifyCoverageGaps(TransactionTestCase):
             with self.assertRaises(InvalidTransactionException):
                 await txn.assert_unique_inception(block_index=700000)
 
+    async def test_assert_unique_inception_skips_mempool_when_disabled(self):
+        """Block validation must not reject on mempool duplicate inceptions."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1PkHash",
+            prev_public_key_hash="",
+            transaction_signature="sig-new",
+            inception_public_key_hash="1PkHash",
+        )
+        mock_db = MagicMock()
+
+        async def _find(_q, _p=None):
+            if False:
+                yield None
+
+        mock_db.blocks.find = MagicMock(side_effect=lambda *a, **k: _find(*a, **k))
+        mock_db.miner_transactions.find_one = AsyncMock(return_value={"id": "other"})
+        with patch.object(txn.config.mongo, "async_db", mock_db):
+            await txn.assert_unique_inception(block_index=700000, use_mempool=False)
+        mock_db.miner_transactions.find_one.assert_not_called()
+
     async def test_assert_unique_inception_skips_no_kel_fields(self):
         txn = Transaction(public_key=self.public_key)
         await txn.assert_unique_inception(block_index=700000)
