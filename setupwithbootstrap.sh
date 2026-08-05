@@ -25,7 +25,7 @@ sudo systemctl start mongod.service
 
 # Download and install blockchain data
 curl https://yadacoin.io/yadacoinstatic/bootstrap.tar.gz | tar -xz
-mongorestore
+mongorestore --drop
 
 # Get and clone repo
 cd /etc
