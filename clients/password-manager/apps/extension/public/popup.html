@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Yada Password</title>
+    <link rel="stylesheet" href="styles/base.css" />
+    <style>
+      html, body { width: 380px; min-height: 520px; }
+      .pm-pre {
+        font-family: ui-monospace, monospace;
+        font-size: 0.75em;
+        word-break: break-all;
+        background: var(--pm-input-bg);
+        border: 1px solid var(--pm-border);
+        border-radius: var(--pm-radius-sm);
+        padding: 0.5rem;
+        max-height: 6rem;
+        overflow: auto;
+      }
+      .pm-tabs { display: flex; gap: 0.35rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+      .pm-tab {
+        border: 1px solid var(--pm-border);
+        background: transparent;
+        color: var(--pm-text);
+        border-radius: var(--pm-radius-sm);
+        padding: 0.35rem 0.6rem;
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.85em;
+      }
+      .pm-tab[aria-selected="true"] {
+        background: var(--pm-primary);
+        color: var(--pm-primary-text);
+        border-color: transparent;
+      }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <div class="pm-app" id="app">
+      <header class="pm-brand">
+        <div class="pm-brand__name" id="brandName">Yada Password</div>
+      </header>
+      <div class="pm-card">
+        <div class="pm-tabs" role="tablist">
+          <button type="button" class="pm-tab" data-tab="site" aria-selected="true">Site</button>
+          <button type="button" class="pm-tab" data-tab="setup">Setup</button>
+          <button type="button" class="pm-tab" data-tab="status">Status</button>
+        </div>
+        <div id="alert" hidden class="pm-alert"></div>
+
+        <section id="panel-site" hidden>
+          <h1 class="pm-title">Per-site branch</h1>
+          <p class="pm-muted">Current page origin · branch + deterministic password</p>
+          <div class="pm-field">
+            <label for="siteId">Site origin (scheme + FQDN + port)</label>
+            <input class="pm-input" id="siteId" type="text" placeholder="https://app.example.com:8443" />
+          </div>
+          <div class="pm-btn-row">
+            <button type="button" class="pm-btn" id="registerSiteBtn">Register site</button>
+            <button type="button" class="pm-btn pm-btn--ghost" id="rotateSiteBtn">Sign in &amp; rotate</button>
+          </div>
+          <div class="pm-field" style="margin-top:0.75rem">
+            <label>Current site password (for next sign-in)</label>
+            <div class="pm-pre" id="sitePassword">—</div>
+          </div>
+        </section>
+
+        <section id="panel-setup" hidden>
+          <h1 class="pm-title">Identity</h1>
+          <p class="pm-muted">Client-owned seed · inception on your node</p>
+          <div class="pm-field">
+            <label for="nodeUrl">Node URL</label>
+            <input class="pm-input" id="nodeUrl" type="url" placeholder="http://127.0.0.1:8101" />
+          </div>
+          <div class="pm-field">
+            <label for="username">Username</label>
+            <input class="pm-input" id="username" type="text" autocomplete="username" placeholder="alice" />
+          </div>
+          <div class="pm-field">
+            <label for="secondFactor">Master password / second factor</label>
+            <input class="pm-input" id="secondFactor" type="password" autocomplete="current-password" />
+          </div>
+          <div class="pm-field">
+            <label for="mnemonic">Seed phrase</label>
+            <textarea class="pm-input" id="mnemonic" rows="3" placeholder="12 or 24 words"></textarea>
+          </div>
+          <div class="pm-btn-row">
+            <button type="button" class="pm-btn pm-btn--ghost" id="genSeedBtn">Generate seed</button>
+            <button type="button" class="pm-btn" id="saveVaultBtn">Save vault</button>
+            <button type="button" class="pm-btn" id="inceptionBtn">Broadcast inception</button>
+          </div>
+        </section>
+
+        
+
+        <section id="panel-status" hidden>
+          <h1 class="pm-title">Status</h1>
+          <div class="pm-field">
+            <label>K0 address</label>
+            <div class="pm-pre" id="k0Addr">—</div>
+          </div>
+          <div class="pm-field">
+            <label>Main depth</label>
+            <div class="pm-pre" id="mainDepth">—</div>
+          </div>
+          <div class="pm-field">
+            <label>Sites</label>
+            <div class="pm-pre" id="siteList">—</div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

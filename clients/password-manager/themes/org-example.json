@@ -1,0 +1,14 @@
+{
+  "id": "acme",
+  "name": "Acme Vault",
+  "mode": "system",
+  "brand": {
+    "name": "Acme Vault",
+    "logoUrl": "https://example.com/acme-logo.svg"
+  },
+  "colors": {
+    "primary": "#6c5ce7",
+    "primaryText": "#ffffff",
+    "focus": "#a29bfe"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+apps/extension/dist/
+apps/mobile/www/js/
+apps/mobile/www/styles/base.css

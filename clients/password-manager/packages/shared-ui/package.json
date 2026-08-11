@@ -1,0 +1,26 @@
+{
+  "name": "@yadacoin/password-shared-ui",
+  "version": "0.1.0",
+  "description": "Theming tokens and shared styles for YadaCoin password manager",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./src/styles/base.css"
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && cp src/styles/base.css dist/base.css",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "license": "YOSL-1.1",
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

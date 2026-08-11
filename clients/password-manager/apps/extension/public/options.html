@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Yada Password · Settings</title>
+    <link rel="stylesheet" href="styles/base.css" />
+    <style>
+      body { max-width: 640px; margin: 0 auto; }
+    </style>
+  </head>
+  <body>
+    <div class="pm-app">
+      <header class="pm-brand">
+        <div class="pm-brand__name" id="brandName">Yada Password</div>
+      </header>
+      <div class="pm-card">
+        <h1 class="pm-title">Appearance</h1>
+        <p class="pm-muted">Themes use design tokens. Free-form CSS is not allowed.</p>
+        <div id="alert" hidden class="pm-alert"></div>
+        <form id="themeForm" class="pm-stack">
+          <div class="pm-field">
+            <label for="preset">Preset</label>
+            <select class="pm-select" id="preset" name="preset">
+              <option value="default">Yada Light</option>
+              <option value="dark">Yada Dark</option>
+              <option value="high-contrast">High Contrast</option>
+            </select>
+          </div>
+          <div class="pm-field">
+            <label for="mode">Mode</label>
+            <select class="pm-select" id="mode" name="mode">
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
+          <div class="pm-field">
+            <label for="primary">Primary color</label>
+            <input class="pm-input" id="primary" name="primary" type="color" value="#0d9488" />
+          </div>
+          <div class="pm-field">
+            <label for="density">Density</label>
+            <select class="pm-select" id="density" name="density">
+              <option value="comfortable">Comfortable</option>
+              <option value="compact">Compact</option>
+            </select>
+          </div>
+          <div class="pm-field">
+            <label for="nodeUrl">Default node URL</label>
+            <input class="pm-input" id="nodeUrl" name="nodeUrl" type="url" placeholder="https://your-node.example" />
+          </div>
+          <div class="pm-field">
+            <label for="themeUrl">Remote theme.json (optional)</label>
+            <input class="pm-input" id="themeUrl" name="themeUrl" type="url" placeholder="https://your-node.example/password-rotation/theme.json" />
+          </div>
+          <div class="pm-field">
+            <label for="brandNameInput">Brand name override</label>
+            <input class="pm-input" id="brandNameInput" name="brandName" type="text" placeholder="Yada Password" />
+          </div>
+          <div class="pm-btn-row">
+            <button type="submit" class="pm-btn">Save</button>
+            <button type="button" class="pm-btn pm-btn--ghost" id="previewBtn">Preview</button>
+            <button type="button" class="pm-btn pm-btn--ghost" id="resetBtn">Reset</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

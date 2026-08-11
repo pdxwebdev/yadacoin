@@ -313,6 +313,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                     check_kel=True,
                     mempool=True,
                     batch_txns=item_txns + mempool_txns,
+                    check_branch_announcement=True,
                 )
 
                 if transaction.are_kel_fields_populated():
@@ -344,26 +345,28 @@ class GraphTransactionHandler(BaseGraphHandler):
                             }
                         )
 
-            except InvalidTransactionException:
+            except InvalidTransactionException as e:
                 exception_raised = True
                 await self.config.mongo.async_db.failed_transactions.insert_one(
                     {
                         "exception": "InvalidTransactionException",
                         "txn": transaction.to_dict(),
+                        "message": str(e),
                     }
                 )
-                print("InvalidTransactionException")
+                self.config.app_log.error(f"InvalidTransactionException: {e}")
                 self.set_status(400)
                 return self.render_as_json(
                     {"status": False, "message": "InvalidTransactionException"}
                 )
-            except InvalidTransactionSignatureException:
+            except InvalidTransactionSignatureException as e:
                 exception_raised = True
-                print("InvalidTransactionSignatureException")
+                self.config.app_log.error(f"InvalidTransactionSignatureException: {e}")
                 await self.config.mongo.async_db.failed_transactions.insert_one(
                     {
                         "exception": "InvalidTransactionSignatureException",
                         "txn": transaction.to_dict(),
+                        "message": str(e),
                     }
                 )
                 self.set_status(400)
@@ -372,7 +375,9 @@ class GraphTransactionHandler(BaseGraphHandler):
                 )
             except DoesNotSpendEntirelyToPrerotatedKeyHashException as e:
                 exception_raised = True
-                print("DoesNotSpendEntirelyToPrerotatedKeyHashException")
+                self.config.app_log.error(
+                    f"DoesNotSpendEntirelyToPrerotatedKeyHashException: {e}"
+                )
                 await self.config.mongo.async_db.failed_transactions.insert_one(
                     {
                         "exception": "DoesNotSpendEntirelyToPrerotatedKeyHashException",

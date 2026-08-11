@@ -1,0 +1,18 @@
+{
+  "name": "@yadacoin/password-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Capacitor-ready web shell for Yada Password (same tokens as extension)",
+  "scripts": {
+    "build": "node ./scripts/build.mjs",
+    "typecheck": "echo 'mobile shell is static html+bundled js'"
+  },
+  "dependencies": {
+    "@yadacoin/password-core": "0.2.0",
+    "@yadacoin/password-shared-ui": "0.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  },
+  "license": "YOSL-1.1"
+}

@@ -1,0 +1,31 @@
+{
+  "name": "@yadacoin/password-core",
+  "version": "0.2.0",
+  "description": "Client-owned YadaCoin password KEL: seed, derive, inception, branch, site ratchet",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.8.1",
+    "@noble/hashes": "^1.7.2",
+    "@scure/bip32": "^1.6.2",
+    "@scure/bip39": "^1.5.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  },
+  "license": "YOSL-1.1"
+}

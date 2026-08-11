@@ -1,0 +1,23 @@
+{
+  "name": "@yadacoin/password-manager",
+  "private": true,
+  "version": "0.1.0",
+  "description": "YadaCoin password manager \u2014 shared core, themed UI, browser extension, mobile shell",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @yadacoin/password-core && npm run build -w @yadacoin/password-shared-ui && npm run build -w @yadacoin/password-extension && npm run build -w @yadacoin/password-mobile",
+    "build:core": "npm run build -w @yadacoin/password-core",
+    "build:ui": "npm run build -w @yadacoin/password-shared-ui",
+    "build:extension": "npm run build -w @yadacoin/password-extension",
+    "dev:extension": "npm run dev -w @yadacoin/password-extension",
+    "typecheck": "npm run typecheck -w @yadacoin/password-core && npm run typecheck -w @yadacoin/password-shared-ui",
+    "build:mobile": "npm run build -w @yadacoin/password-mobile"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "YOSL-1.1"
+}

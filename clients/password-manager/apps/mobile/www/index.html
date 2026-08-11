@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Yada Password</title>
+    <link rel="stylesheet" href="styles/base.css" />
+  </head>
+  <body>
+    <div class="pm-app">
+      <header class="pm-brand"><div class="pm-brand__name" id="brandName">Yada Password</div></header>
+      <div id="alert" hidden class="pm-alert"></div>
+      <div class="pm-card" style="margin-bottom:1rem">
+        <h1 class="pm-title">Vault</h1>
+        <div class="pm-field"><label for="nodeUrl">Node URL</label><input class="pm-input" id="nodeUrl" type="url" /></div>
+        <div class="pm-field"><label for="username">Username</label><input class="pm-input" id="username" /></div>
+        <div class="pm-field"><label for="secondFactor">Master password</label><input class="pm-input" id="secondFactor" type="password" /></div>
+        <div class="pm-field"><label for="mnemonic">Seed</label><textarea class="pm-input" id="mnemonic" rows="3"></textarea></div>
+        <div class="pm-btn-row">
+          <button class="pm-btn pm-btn--ghost" type="button" id="genSeedBtn">Generate seed</button>
+          <button class="pm-btn" type="button" id="inceptionBtn">Inception</button>
+        </div>
+        <div class="pm-field" style="margin-top:1rem"><label for="siteId">Site</label><input class="pm-input" id="siteId" placeholder="example.com" /></div>
+        <button class="pm-btn" type="button" id="registerSiteBtn">Register site</button>
+        <div class="pm-field" style="margin-top:0.75rem"><label>Password</label><div id="sitePassword" class="pm-muted">—</div></div>
+      </div>
+      <div class="pm-card">
+        <h2 class="pm-title">Theme</h2>
+        <form id="themeForm">
+          <div class="pm-field"><label for="preset">Preset</label>
+            <select class="pm-select" id="preset"><option value="default">Light</option><option value="dark">Dark</option><option value="high-contrast">High contrast</option></select>
+          </div>
+          <div class="pm-field"><label for="mode">Mode</label>
+            <select class="pm-select" id="mode"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+          </div>
+          <div class="pm-field"><label for="primary">Primary</label><input class="pm-input" id="primary" type="color" value="#0d9488" /></div>
+          <div class="pm-field"><label for="themeUrl">theme.json</label><input class="pm-input" id="themeUrl" type="url" /></div>
+          <button class="pm-btn" type="submit">Apply theme</button>
+        </form>
+      </div>
+    </div>
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>

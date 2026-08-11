@@ -1,0 +1,21 @@
+{
+  "name": "@yadacoin/password-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node ./scripts/build.mjs --watch",
+    "build": "node ./scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@yadacoin/password-core": "0.2.0",
+    "@yadacoin/password-shared-ui": "0.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0",
+    "@types/chrome": "^0.0.287"
+  },
+  "license": "YOSL-1.1"
+}
