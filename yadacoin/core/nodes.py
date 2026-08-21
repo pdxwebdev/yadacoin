@@ -1549,17 +1549,13 @@ class ServiceProviders(Nodes):
                 "ranges": [(505600, None)],
                 "node": ServiceProvider.from_dict(
                     {
-                        "host": "serviceprovider.rogue-miner.com",
-                        "port": 8003,
+                        "host": "131.241.135.40",
+                        "port": 8000,
                         "http_protocol": "http",
-                        "http_port": "8082",
-                        "identity": {
-                            "username": "",
-                            "username_signature": "MEUCIQDgXK4dHUpOAiqfaItWyweWijHRGez+k071wEvqSKm9rgIgZA7MJEjvHSN1FDrnMVsSKx2j74q4gaUiYcs+WYW261M=",
-                            "public_key": "024321b0dc01c7d200e2d2f5b4f0a15883fb3dc91f7ff1df36daa7a195defcd171",
-                        },
-                        "seed_gateway": "MEUCIQC/PWvXpjny1yDGDPRtBzl6g7Lb9lcUuI0v0Kf6wxYi4AIgeRb5PtNhO2Eks6iiPEBuebKuXSeTM9euU9sWqOZYUec=",
-                        "seed": "MEUCIQD0MsT34TkNpYL5kOhLA/4E4YY+SzFhHtIPWPzHCShVGwIgYlzAQeujWvesmU6ZWrTMRwtLFFtjePZjLJDJjTMEQlc==",
+                        "http_port": "8001",
+                        "identity_announcement": "MEQCIEmHAJbo3JpsoP4s5vAQu3aXNWismBrq1WfNPcxI2A+sAiAkxGo9zPBEJLZ+iqMnqVG4TKhUewo3tUfjmZy3aCJtkA==",
+                        "seed_gateway": "MEQCID9XaBTbpIl+6wkjGx51glOnqd+fRjDwJcZxV1EuKmi4AiB9k5ciKBjhmryZzVz1tn3oX6ccPvnNmaf6tVEYQcnm9A==",
+                        "seed": "MEUCIQDWgCRP62jtLM1XmzIUYc3QA80k0Evz/q8Cz2QLkyRMLQIgdXfQsTsEzTFHXj+aZ7sn1Vdo6lqhxp25TdX7eiQypaM=",
                     }
                 ),
             },
