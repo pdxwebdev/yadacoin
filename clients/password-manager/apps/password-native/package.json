@@ -1,0 +1,28 @@
+{
+  "name": "@yadacoin/password-native",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native Yada Password manager (Capacitor) — vault + deep-link auth provider",
+  "scripts": {
+    "build": "node ./scripts/build.mjs",
+    "cap:sync": "npm run build && npx cap sync",
+    "cap:ios": "npm run cap:sync && npx cap open ios",
+    "cap:android": "npm run cap:sync && npx cap open android",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/ios": "^6.2.0",
+    "@capacitor/preferences": "^6.0.3",
+    "@yadacoin/password-core": "0.2.0",
+    "@yadacoin/password-shared-ui": "0.1.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  },
+  "license": "YOSL-1.1"
+}

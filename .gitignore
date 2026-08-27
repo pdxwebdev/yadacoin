@@ -10,3 +10,4 @@ htmlcov/
 sdk/
 specs/
 docker-compose.yml
+venv*/

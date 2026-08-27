@@ -2260,6 +2260,13 @@
               >
                 ↻ Refresh Balance
               </button>
+              <button
+                type="button"
+                class="btn-refresh"
+                id="resyncRotationsBtn"
+              >
+                ↻ Resync Rotations
+              </button>
             </div>
           </div>
 
@@ -3031,7 +3038,130 @@
         }
       }
 
+      function loadAllRotationsFromStorage() {
+        const out = [];
+        try {
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (!k || !k.startsWith(LS_PREFIX)) continue;
+            const rec = JSON.parse(localStorage.getItem(k) || "null");
+            if (rec && rec.address && rec.pk && rec.cc) out.push(rec);
+          }
+        } catch (_) {}
+        out.sort((a, b) => (a.savedAt || 0) - (b.savedAt || 0));
+        return out;
+      }
+
+      function removeRotationFromStorage(address) {
+        try {
+          localStorage.removeItem(LS_PREFIX + address);
+        } catch (_) {}
+      }
+
+      async function addressIsSpent(address) {
+        const res = await fetch(
+          "/key-rotation/spent?address=" +
+            encodeURIComponent(address),
+        );
+        const data = await res.json();
+        return !!data.spent;
+      }
+
+      function rotationPrivateLink(rec) {
+        return (
+          window.location.origin +
+          window.location.pathname +
+          "#pk=" +
+          encodeURIComponent(rec.pk) +
+          "&cc=" +
+          encodeURIComponent(rec.cc) +
+          "&sf=" +
+          encodeURIComponent(rec.sf || "") +
+          (currentTheme() !== "traditional"
+            ? "&theme=" + encodeURIComponent(currentTheme())
+            : "")
+        );
+      }
+
       // -----------------------------------------------------------------------
+
+
+      document
+        .getElementById("resyncRotationsBtn")
+        .addEventListener("click", async () => {
+          const btn = document.getElementById(
+            "resyncRotationsBtn",
+          );
+          btn.disabled = true;
+          const prevLabel = btn.textContent;
+          btn.textContent = "Resyncing…";
+          try {
+            const stored = loadAllRotationsFromStorage();
+            let removed = 0;
+            let lastValid = null;
+            for (const rec of stored) {
+              const spent = await addressIsSpent(rec.address);
+              if (spent) {
+                lastValid = rec;
+              } else {
+                lastValid = rec;
+                break;
+              }
+            }
+            let past = !lastValid;
+            for (const rec of stored) {
+              if (past) {
+                removeRotationFromStorage(rec.address);
+                removed += 1;
+              }
+              if (
+                lastValid &&
+                rec.address === lastValid.address
+              ) {
+                past = true;
+              }
+            }
+            if (lastValid) {
+              try {
+                localStorage.setItem(LS_LAST, lastValid.address);
+              } catch (_) {}
+            }
+            const currentGone =
+              signingAddr &&
+              !(await addressIsSpent(signingAddr)) &&
+              lastValid &&
+              lastValid.address !== signingAddr;
+            if (currentGone && lastValid.pk) {
+              showMessage(
+                "success",
+                "Resync complete. Removed " +
+                  removed +
+                  " stale rotation(s). Restoring last valid key…",
+              );
+              window.location.href =
+                rotationPrivateLink(lastValid);
+              window.location.reload();
+              return;
+            }
+            showMessage(
+              "success",
+              removed
+                ? "Resync complete. Removed " +
+                    removed +
+                    " stale rotation(s)."
+                : "Resync complete. Local rotations match the chain.",
+            );
+          } catch (err) {
+            showMessage(
+              "error",
+              "Resync failed: " + err.message,
+            );
+          } finally {
+            btn.disabled = false;
+            btn.textContent = prevLabel;
+          }
+        });
+
       // Auto-fetch prev_public_key_hash for rotation mode
       // -----------------------------------------------------------------------
       async function fetchAndSetPrevKeyHash() {

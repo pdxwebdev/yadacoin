@@ -13,21 +13,21 @@ This plugin only:
 """
 
 import base64
-import hashlib
 import json
 import os
 import time
 
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import verify_signature
+from tornado.web import StaticFileHandler
 
 from yadacoin.http.base import BaseHandler
 
 PASSWORD_RELATIONSHIP_KEY = "password"
 
 
-def _hash_password(password: str) -> str:
-    return hashlib.sha256(b"yada-password-v1|" + password.encode("utf-8")).hexdigest()
+from plugins.passwordrotation.phc import is_password_hash
+from plugins.passwordrotation.phc import verify_password as _verify_password
 
 
 def _parse_password_rel(relationship):
@@ -55,11 +55,12 @@ def _parse_password_rel(relationship):
     twice = (pw.get("twice_prerotated_password_hash") or "").strip()
     if not pre or not twice or pre == twice:
         return None
-    if len(pre) != 64 or len(twice) != 64:
+    if not is_password_hash(pre) or not is_password_hash(twice):
         return None
+
     return {
-        "prerotated_password_hash": pre.lower(),
-        "twice_prerotated_password_hash": twice.lower(),
+        "prerotated_password_hash": pre,
+        "twice_prerotated_password_hash": twice,
     }
 
 
@@ -126,11 +127,6 @@ async def _accept_offchain_step(handler, body, *, require_password=None):
         }
 
     pw = _parse_password_rel(txn.get("relationship"))
-    if counter > 0 and pw is None:
-        return 400, {
-            "status": False,
-            "message": "password dual-commit required on ratchet steps (counter > 0)",
-        }
 
     prev = await handler.config.mongo.async_db.key_event_log.find_one(
         {"branch_peer": branch_peer},
@@ -164,9 +160,13 @@ async def _accept_offchain_step(handler, body, *, require_password=None):
             (prev.get("txn") or {}).get("relationship")
         )
 
-        # Once a password tip exists, every advance requires current password
-        # knowledge and a new dual-commit (rotation enforced).
-        if prev_pw and prev_pw.get("prerotated_password_hash"):
+        # Password dual-commit is only enforced on /verify.
+        # /offchain is KEL key-hash ratchet; the relying app verifies passwords.
+        if (
+            require_password is not None
+            and prev_pw
+            and prev_pw.get("prerotated_password_hash")
+        ):
             supplied = (
                 require_password
                 if require_password is not None
@@ -180,7 +180,11 @@ async def _accept_offchain_step(handler, body, *, require_password=None):
                         "use POST /password-rotation/verify (sign-in + rotate)"
                     ),
                 }
-            if _hash_password(supplied) != prev_pw["prerotated_password_hash"]:
+            try:
+                pw_ok = _verify_password(supplied, prev_pw["prerotated_password_hash"])
+            except RuntimeError as exc:
+                return 500, {"status": False, "message": str(exc)}
+            if not pw_ok:
                 return 401, {"status": False, "message": "invalid password"}
             if not pw:
                 return 400, {
@@ -410,6 +414,38 @@ class PasswordOffchainChainHandler(BaseHandler):
         )
 
 
+class PasswordOffchainResetHandler(BaseHandler):
+    """POST /password-rotation/offchain/reset
+
+    Delete all off-chain key_event_log rows for a branch_peer so the client
+    can register a new unique branch from K0.
+    """
+
+    async def post(self):
+        try:
+            body = json.loads(self.request.body or b"{}")
+        except Exception:
+            body = {}
+        branch_peer = (
+            body.get("branch_peer") or self.get_argument("branch_peer", "")
+        ).strip()
+        if not branch_peer:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "message": "branch_peer required"}
+            )
+        result = await self.config.mongo.async_db.key_event_log.delete_many(
+            {"branch_peer": branch_peer}
+        )
+        return self.render_as_json(
+            {
+                "status": True,
+                "deleted": int(result.deleted_count or 0),
+                "branch_peer": branch_peer,
+            }
+        )
+
+
 class PasswordThemeHandler(BaseHandler):
     """GET /password-rotation/theme.json"""
 
@@ -444,6 +480,13 @@ class PasswordThemeHandler(BaseHandler):
         return self.render_as_json(theme)
 
 
+class PasswordMobileDemoHandler(BaseHandler):
+    """GET /password-rotation/mobile — redirect into static demo app index."""
+
+    async def get(self):
+        self.redirect("/password-rotation/mobile/index.html")
+
+
 class PasswordHarnessHandler(BaseHandler):
     """GET /password-rotation|/password-rotation/harness — browser test page."""
 
@@ -454,11 +497,44 @@ class PasswordHarnessHandler(BaseHandler):
         self.render("password_harness.html")
 
 
+class _PasswordDocHandler(BaseHandler):
+    def get_template_path(self):
+        return os.path.join(os.path.dirname(__file__), "templates")
+
+
+class PasswordProtocolHandler(_PasswordDocHandler):
+    """GET /password-rotation-protocol"""
+
+    async def get(self):
+        self.render("password_rotation_protocol.html")
+
+
+class MobilePasswordRotationHandler(_PasswordDocHandler):
+    """GET /mobile-password-rotation — local mobile test setup."""
+
+    async def get(self):
+        self.render("mobile_password_rotation.html")
+
+
+def _passwordrotation_mobile_static_path():
+    return os.path.join(os.path.dirname(__file__), "static", "mobile")
+
+
 HANDLERS = PASSWORD_ROTATION_HANDLERS = [
     (r"/password-rotation/offchain/tip", PasswordOffchainTipHandler),
+    (r"/password-rotation/offchain/reset", PasswordOffchainResetHandler),
     (r"/password-rotation/offchain", PasswordOffchainSubmitHandler),
     (r"/password-rotation/offchain-chain", PasswordOffchainChainHandler),
     (r"/password-rotation/verify", PasswordSigninVerifyHandler),
     (r"/password-rotation/theme\.json", PasswordThemeHandler),
-    (r"/password-rotation|/password-rotation/harness", PasswordHarnessHandler),
+    (r"/password-rotation/mobile", PasswordMobileDemoHandler),
+    (
+        r"/password-rotation/mobile/(.*)",
+        StaticFileHandler,
+        {"path": _passwordrotation_mobile_static_path()},
+    ),
+    (r"/password-rotation-protocol", PasswordProtocolHandler),
+    (r"/mobile-password-rotation", MobilePasswordRotationHandler),
+    (r"/password-rotation/harness", PasswordHarnessHandler),
+    (r"/password-rotation/?$", PasswordHarnessHandler),
 ]

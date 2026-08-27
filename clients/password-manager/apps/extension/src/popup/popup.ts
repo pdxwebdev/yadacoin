@@ -9,6 +9,9 @@ import {
   normalizeSiteId,
   registerSite,
   rotateSitePassword,
+  resyncVaultFromNode,
+  siteAtCounter,
+  siteKeysForOrigin,
   unlockIdentity,
   type SiteRegistration,
   type VaultIdentity,
@@ -310,6 +313,49 @@ async function main() {
     }
   });
 
+  $("resyncBtn").addEventListener("click", async () => {
+    showAlert("");
+    try {
+      const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim();
+      if (!nodeUrl) throw new Error("Node URL required");
+      let v = await loadVault();
+      if (!v) throw new Error("No vault");
+      const identity = identityFromStored(v);
+      const sites: Record<string, SiteRegistration> = {};
+      for (const [k, s] of Object.entries(v.sites || {})) {
+        sites[k] = siteFromStored(s);
+      }
+      const result = await resyncVaultFromNode({ baseUrl: nodeUrl }, identity, sites);
+      const nextSites: Record<string, StoredSite> = {};
+      for (const [k, s] of Object.entries(result.sites)) {
+        nextSites[k] = storeSite(s);
+      }
+      v = {
+        ...v,
+        mainDepth: result.identity.mainDepth,
+        tipPrevPkh: result.identity.tipPrevPkh,
+        inceptionDone: result.kelDepth > 0,
+        sites: nextSites,
+      };
+      await saveVault(v);
+      await refreshStatus();
+      const origin = await getActiveOrigin();
+      await fillSiteFromOrigin(origin, v);
+      const bits = [
+        `KEL depth ${result.kelDepth}`,
+        result.rewoundSites.length
+          ? `rewound ${result.rewoundSites.length} site(s)`
+          : "",
+        result.removedSites.length
+          ? `removed ${result.removedSites.length} stale site(s)`
+          : "",
+      ].filter(Boolean);
+      showAlert("Resync complete · " + bits.join(" · "), "success");
+    } catch (e) {
+      showAlert(e instanceof Error ? e.message : String(e), "error");
+    }
+  });
+
   $("rotateSiteBtn").addEventListener("click", async () => {
     showAlert("");
     try {
@@ -319,10 +365,28 @@ async function main() {
       let v = await loadVault();
       if (!v) throw new Error("No vault");
       const key = normalizeSiteId(siteId);
-      const stored = v.sites[key];
-      if (!stored) throw new Error("Site not registered — register first");
       const identity = identityFromStored(v);
-      const site = siteFromStored(stored);
+      let site;
+      const stored = v.sites[key];
+      if (stored) {
+        site = siteFromStored(stored);
+      } else {
+        const { branchPeer, kp0 } = siteKeysForOrigin(identity, siteId);
+        const tipRes = await fetch(
+          nodeUrl.replace(/\/+$/, "") +
+            "/password-rotation/offchain/tip?branch_peer=" +
+            encodeURIComponent(branchPeer)
+        );
+        const tipData = await tipRes.json();
+        if (!tipRes.ok || !tipData.status || !tipData.tip) {
+          throw new Error("Site not registered — register first");
+        }
+        site = siteAtCounter(
+          identity,
+          { siteId, branchPeer, kp0 },
+          Number(tipData.tip.counter ?? 0)
+        );
+      }
       const result = await rotateSitePassword({ baseUrl: nodeUrl }, identity, site);
       v = {
         ...v,

@@ -51,3 +51,4 @@ validators
 web3
 eth_account
 eth_abi
+argon2-cffi

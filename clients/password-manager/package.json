@@ -14,7 +14,13 @@
     "build:extension": "npm run build -w @yadacoin/password-extension",
     "dev:extension": "npm run dev -w @yadacoin/password-extension",
     "typecheck": "npm run typecheck -w @yadacoin/password-core && npm run typecheck -w @yadacoin/password-shared-ui",
-    "build:mobile": "npm run build -w @yadacoin/password-mobile"
+    "build:mobile": "npm run build -w @yadacoin/password-mobile",
+    "build:native": "npm run build -w @yadacoin/password-core && npm run build -w @yadacoin/password-shared-ui && npm run build -w @yadacoin/password-native && npm run build -w @yadacoin/demo-native",
+    "build:password-native": "npm run build -w @yadacoin/password-native",
+    "build:demo-native": "npm run build -w @yadacoin/demo-native",
+    "build:android": "bash ./scripts/build.sh android",
+    "build:ios": "bash ./scripts/build.sh ios",
+    "build:all": "bash ./scripts/build.sh all"
   },
   "engines": {
     "node": ">=18"

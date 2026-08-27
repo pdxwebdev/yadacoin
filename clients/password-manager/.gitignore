@@ -5,3 +5,9 @@ dist/
 apps/extension/dist/
 apps/mobile/www/js/
 apps/mobile/www/styles/base.css
+apps/*/ios/App/Pods/
+apps/*/ios/App/build/
+apps/*/android/.gradle/
+apps/*/android/app/build/
+apps/*/android/build/
+apps/*/node_modules/

@@ -711,7 +711,6 @@
             <button
               class="btn-secondary"
               id="resyncBtn"
-              style="display: none"
             >
               ↻ Resync from Chain
             </button>
@@ -1094,9 +1093,6 @@
             document.getElementById(
               "initBtn",
             ).style.display = "none";
-            document.getElementById(
-              "resyncBtn",
-            ).style.display = "inline-block";
             const initMsg =
               document.getElementById("initMsg");
             initMsg.className = "msg info";
@@ -1184,7 +1180,9 @@
               );
               msgEl.className = "msg success";
               msgEl.innerHTML =
-                `✅ Resync complete (${d.kel_depth} on-chain entr${d.kel_depth === 1 ? "y" : "ies"}).<br>` +
+                `✅ Resync complete (${d.kel_depth} on-chain entr${d.kel_depth === 1 ? "y" : "ies"}` +
+                (d.removed ? `, removed ${d.removed} stale rotation${d.removed === 1 ? "" : "s"}` : "") +
+                `).<br>` +
                 `<strong>Next signer address:</strong> <code>${d.next_signer_address}</code><br>` +
                 `<strong>Prerotated address:</strong> <code>${d.prerotated_address}</code><br>` +
                 `<em style="font-size:11px;">localStorage updated — key material restored.</em>`;

@@ -6,7 +6,7 @@ declare var Bitcoin;
 
 function makeUrl(url) {
   if (window.location.hostname === "localhost") {
-    return "http://localhost:8005" + url;
+    return "http://localhost:8111" + url;
   }
   return url;
 }
@@ -150,11 +150,15 @@ export class SearchFormComponent implements OnInit {
   }
 
   loadMempoolPage(page: number) {
-    if (page < 1 || page > this.mempoolTotalPages) { return; }
+    if (page < 1 || page > this.mempoolTotalPages) {
+      return;
+    }
     this.mempoolPage = page;
     this.mempoolLoading = true;
     this.http
-      .get(makeUrl(`/get-mempool?page=${page}&page_size=${this.mempoolPageSize}`))
+      .get(
+        makeUrl(`/get-mempool?page=${page}&page_size=${this.mempoolPageSize}`),
+      )
       .subscribe(
         (res: any) => {
           const data = res.json();
@@ -164,7 +168,7 @@ export class SearchFormComponent implements OnInit {
         },
         (err: any) => {
           this.mempoolLoading = false;
-          alert('Failed to load mempool!');
+          alert("Failed to load mempool!");
         },
       );
   }

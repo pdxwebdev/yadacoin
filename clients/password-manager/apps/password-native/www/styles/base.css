@@ -1,0 +1,190 @@
+/* Yada Password Manager — token-driven base styles */
+:root,
+.theme-root {
+  color-scheme: light dark;
+  --pm-bg: #f4f6f8;
+  --pm-surface: #ffffff;
+  --pm-surface-elevated: #ffffff;
+  --pm-text: #0f172a;
+  --pm-text-muted: #64748b;
+  --pm-primary: #0d9488;
+  --pm-primary-text: #ffffff;
+  --pm-danger: #dc2626;
+  --pm-danger-text: #ffffff;
+  --pm-success: #16a34a;
+  --pm-border: #e2e8f0;
+  --pm-focus: #14b8a6;
+  --pm-input-bg: #f8fafc;
+  --pm-overlay: rgba(15, 23, 42, 0.45);
+  --pm-font: Inter, ui-sans-serif, system-ui, sans-serif;
+  --pm-font-size: 14px;
+  --pm-font-weight: 400;
+  --pm-font-weight-bold: 600;
+  --pm-radius-sm: 6px;
+  --pm-radius-md: 10px;
+  --pm-radius-lg: 16px;
+  --pm-space-unit: 1rem;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  font-family: var(--pm-font);
+  font-size: var(--pm-font-size);
+  font-weight: var(--pm-font-weight);
+  color: var(--pm-text);
+  background: var(--pm-bg);
+}
+
+body {
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+.pm-app {
+  min-height: 100%;
+  background: var(--pm-bg);
+  color: var(--pm-text);
+  padding: var(--pm-space-unit);
+}
+
+.pm-card {
+  background: var(--pm-surface);
+  border: 1px solid var(--pm-border);
+  border-radius: var(--pm-radius-md);
+  padding: calc(var(--pm-space-unit) * 1.25);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.pm-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: var(--pm-space-unit);
+}
+
+.pm-brand__logo {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  border-radius: var(--pm-radius-sm);
+}
+
+.pm-brand__name {
+  font-weight: var(--pm-font-weight-bold);
+  font-size: 1.1em;
+  letter-spacing: -0.01em;
+}
+
+.pm-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.25em;
+  font-weight: var(--pm-font-weight-bold);
+}
+
+.pm-muted {
+  color: var(--pm-text-muted);
+  margin: 0 0 var(--pm-space-unit);
+}
+
+.pm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+}
+
+.pm-field label {
+  font-size: 0.85em;
+  font-weight: var(--pm-font-weight-bold);
+  color: var(--pm-text-muted);
+}
+
+.pm-input,
+.pm-select {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--pm-border);
+  border-radius: var(--pm-radius-sm);
+  background: var(--pm-input-bg);
+  color: var(--pm-text);
+  font: inherit;
+}
+
+.pm-input:focus,
+.pm-select:focus,
+.pm-btn:focus-visible {
+  outline: 2px solid var(--pm-focus);
+  outline-offset: 2px;
+}
+
+.pm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: none;
+  border-radius: var(--pm-radius-sm);
+  padding: 0.65rem 1rem;
+  font: inherit;
+  font-weight: var(--pm-font-weight-bold);
+  cursor: pointer;
+  background: var(--pm-primary);
+  color: var(--pm-primary-text);
+}
+
+.pm-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pm-btn--ghost {
+  background: transparent;
+  color: var(--pm-text);
+  border: 1px solid var(--pm-border);
+}
+
+.pm-btn--danger {
+  background: var(--pm-danger);
+  color: var(--pm-danger-text);
+}
+
+.pm-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.pm-alert {
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--pm-radius-sm);
+  border: 1px solid var(--pm-border);
+  background: var(--pm-surface-elevated);
+  margin-bottom: var(--pm-space-unit);
+  font-size: 0.92em;
+}
+
+.pm-alert--error {
+  border-color: var(--pm-danger);
+  color: var(--pm-danger);
+}
+
+.pm-alert--success {
+  border-color: var(--pm-success);
+  color: var(--pm-success);
+}
+
+.pm-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}

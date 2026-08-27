@@ -3,8 +3,8 @@
  *
  * 1. createVaultSeed + user second_factor → K0
  * 2. buildInceptionTxn → IdentityAnnouncement (POST /transaction)
- * 3. registerSite → BranchAnnouncement dual-commit (POST /transaction)
- *    + off-chain counter-0 root + counter-1 password dual-commit
+ * 3. registerSite → unique off-chain branch from K0 + site origin
+ *    (counter-0 root + counter-1 password dual-commit)
  * 4. rotateSitePassword → per-site ratchet 1:1 with password hashes in relationship
  */
 import {
@@ -17,14 +17,9 @@ import {
   walkMain,
   type KeyMaterial,
 } from "./derive.js";
-import { hashPassword, sha256Hex } from "./hash.js";
 import {
-  branchRelationshipDict,
-  branchRelationshipHash,
-  buildPasswordRelationshipJson,
   identityRelationshipDict,
   identityRelationshipHash,
-  type PasswordDualCommit,
 } from "./relationship.js";
 import { buildAndSignTxn, signUsername, type SignedTxn } from "./transaction.js";
 
@@ -64,14 +59,24 @@ async function httpJson(
   init?: RequestInit
 ): Promise<{ ok: boolean; status: number; body: any }> {
   const fetchImpl = api.fetch ?? globalThis.fetch.bind(globalThis);
-  const res = await fetchImpl(api.baseUrl.replace(/\/+$/, "") + path, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...(init?.headers || {}),
-    },
-  });
+  const url = api.baseUrl.replace(/\/+$/, "") + path;
+  let res: Response;
+  try {
+    res = await fetchImpl(url, {
+      ...init,
+      headers: {
+        Accept: "application/json",
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...(init?.headers || {}),
+      },
+    });
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `Failed to reach node ${api.baseUrl} (${path}): ${why}. ` +
+        `On a phone use the computer's LAN IP (not 127.0.0.1). On an emulator use 10.0.2.2.`
+    );
+  }
   const text = await res.text();
   let body: any;
   try {
@@ -164,6 +169,31 @@ export async function broadcastTxns(
   });
 }
 
+export function isAlreadyInceptedError(message: string | undefined): boolean {
+  const m = (message || "").toLowerCase();
+  return (
+    m.includes("already onchain") ||
+    m.includes("already on-chain") ||
+    m.includes("already incepted") ||
+    m.includes("duplicate kel inception") ||
+    m.includes("key event log already exists")
+  );
+}
+
+export async function fetchKelDepth(
+  api: NodeApi,
+  publicKeyHex: string
+): Promise<number> {
+  const kel = await httpJson(
+    api,
+    `/key-event-log?public_key=${encodeURIComponent(publicKeyHex)}`
+  );
+  if (kel.ok && Array.isArray(kel.body?.key_event_log)) {
+    return kel.body.key_event_log.length;
+  }
+  return 0;
+}
+
 /**
  * Canonical per-site branch id = origin (scheme + FQDN + port).
  * Examples: https://example.com , http://localhost:8101 , https://app.example.com:8443
@@ -185,11 +215,17 @@ export function normalizeSiteId(siteId: string): string {
   }
 }
 
+export type PasswordPhcOpts = {
+  passwordPhc?: string;
+  nextPasswordPhc?: string;
+};
+
 export async function registerSite(
   api: NodeApi,
   identity: VaultIdentity,
   siteId: string,
-  time = Math.floor(Date.now() / 1000)
+  time = Math.floor(Date.now() / 1000),
+  _opts?: PasswordPhcOpts
 ): Promise<{
   site: SiteRegistration;
   mainTxns: SignedTxn[];
@@ -199,90 +235,60 @@ export async function registerSite(
 }> {
   const branchPeer = normalizeSiteId(siteId);
   const sf = identity.secondFactor;
-  const kn = identity.tipSigner;
-  const kn1 = deriveMaterial(kn, sf);
-  const kn2 = deriveMaterial(kn1, sf);
-  const kn3 = deriveMaterial(kn2, sf);
-
   const peerFactor = siteFactor(sf, branchPeer);
-  const kp0 = deriveMaterial(kn, peerFactor);
+  // Branch keys are derived from K0 + site origin so each site/app is unique
+  // and does not consume (or collide with) the identity KEL tip.
+  const kp0 = deriveMaterial(identity.k0, peerFactor);
   const kp1 = deriveMaterial(kp0, peerFactor);
   const kp2 = deriveMaterial(kp1, peerFactor);
   const kp3 = deriveMaterial(kp2, peerFactor);
 
-  const branchHash = branchRelationshipHash(kp0.address, kp1.address);
-  const branchRel = branchRelationshipDict(kp0.address, kp1.address);
-
-  const unconfirmed = buildAndSignTxn(kn, {
-    time,
-    outputs: [{ to: kn1.address, value: 0 }],
-    prerotatedKeyHash: kn1.address,
-    twicePrerotatedKeyHash: kn2.address,
-    prevPublicKeyHash: identity.tipPrevPkh || kn.address,
-    relationshipHash: branchHash,
-    relationship: branchRel,
-  });
-
-  const confirming = buildAndSignTxn(kn1, {
-    time: time + 1,
-    outputs: [{ to: kn2.address, value: 0 }],
-    prerotatedKeyHash: kn2.address,
-    twicePrerotatedKeyHash: kn3.address,
-    prevPublicKeyHash: kn.address,
-    relationshipHash: "",
-    relationship: "",
-  });
-
-  const mainRes = await broadcastTxns(api, [unconfirmed, confirming]);
-  if (!mainRes.ok && mainRes.body?.status === false) {
-    throw new Error(
-      mainRes.body?.message || `branch broadcast failed (${mainRes.status})`
-    );
-  }
-
-  const rootTxn = buildAndSignTxn(kp0, {
-    time: time + 2,
-    outputs: [{ to: kp1.address, value: 0 }],
-    prerotatedKeyHash: kp1.address,
-    twicePrerotatedKeyHash: kp2.address,
-    prevPublicKeyHash: kn1.address,
-    relationshipHash: "",
-    relationship: "",
-  });
-
-  const rootRes = await httpJson(api, "/password-rotation/offchain", {
-    method: "POST",
-    body: JSON.stringify({
-      branch_peer: branchPeer,
-      counter: 0,
-      branch_inception_public_key_hash: kp0.address,
-      inception_public_key_hash: identity.inceptionPublicKeyHash,
-      txn: rootTxn,
-    }),
-  });
-  if (!rootRes.ok || rootRes.body?.status === false) {
-    throw new Error(
-      rootRes.body?.message || `offchain root failed (${rootRes.status})`
-    );
+  const existing = await fetchSiteTip(api, branchPeer);
+  if (existing.ok && existing.body?.tip) {
+    await httpJson(api, "/password-rotation/offchain/reset", {
+      method: "POST",
+      body: JSON.stringify({ branch_peer: branchPeer }),
+    });
   }
 
   const pwCurrent = generateSitePassword(kp1, branchPeer, 1);
   const pwNext = generateSitePassword(kp2, branchPeer, 2);
-  const commit: PasswordDualCommit = {
-    prerotated_password_hash: hashPassword(pwCurrent),
-    twice_prerotated_password_hash: hashPassword(pwNext),
-  };
-  const relJson = buildPasswordRelationshipJson(commit);
-  const relHash = sha256Hex(relJson);
+  let rootTxn: SignedTxn | undefined;
+  {
+    rootTxn = buildAndSignTxn(kp0, {
+      time,
+      outputs: [{ to: kp1.address, value: 0 }],
+      prerotatedKeyHash: kp1.address,
+      twicePrerotatedKeyHash: kp2.address,
+      prevPublicKeyHash: identity.k0.address,
+      relationshipHash: "",
+      relationship: "",
+    });
+    const rootRes = await httpJson(api, "/password-rotation/offchain", {
+      method: "POST",
+      body: JSON.stringify({
+        branch_peer: branchPeer,
+        counter: 0,
+        branch_inception_public_key_hash: kp0.address,
+        inception_public_key_hash: identity.inceptionPublicKeyHash,
+        txn: rootTxn,
+      }),
+    });
+    if (!rootRes.ok || rootRes.body?.status === false) {
+      throw new Error(
+        rootRes.body?.message || `offchain root failed (${rootRes.status})`
+      );
+    }
+  }
 
   const step1Txn = buildAndSignTxn(kp1, {
-    time: time + 3,
+    time: time + 1,
     outputs: [{ to: kp2.address, value: 0 }],
     prerotatedKeyHash: kp2.address,
     twicePrerotatedKeyHash: kp3.address,
     prevPublicKeyHash: kp0.address,
-    relationshipHash: relHash,
-    relationship: relJson,
+    relationshipHash: "",
+    relationship: "",
   });
 
   const stepRes = await httpJson(api, "/password-rotation/offchain", {
@@ -301,13 +307,6 @@ export async function registerSite(
     );
   }
 
-  const nextIdentity: VaultIdentity = {
-    ...identity,
-    mainDepth: identity.mainDepth + 2,
-    tipSigner: kn2,
-    tipPrevPkh: kn1.address,
-  };
-
   const site: SiteRegistration = {
     siteId,
     branchPeer,
@@ -322,10 +321,23 @@ export async function registerSite(
 
   return {
     site,
-    mainTxns: [unconfirmed, confirming],
-    offchainRoot: rootTxn,
+    mainTxns: [],
+    offchainRoot: rootTxn || step1Txn,
     offchainPassword: step1Txn,
-    identity: nextIdentity,
+    identity,
+  };
+}
+
+
+
+export function siteKeysForOrigin(
+  identity: VaultIdentity,
+  siteId: string
+): { branchPeer: string; kp0: KeyMaterial } {
+  const branchPeer = normalizeSiteId(siteId);
+  return {
+    branchPeer,
+    kp0: deriveMaterial(identity.k0, siteFactor(identity.secondFactor, branchPeer)),
   };
 }
 
@@ -333,64 +345,82 @@ export async function rotateSitePassword(
   api: NodeApi,
   identity: VaultIdentity,
   site: SiteRegistration,
-  time = Math.floor(Date.now() / 1000)
+  time = Math.floor(Date.now() / 1000),
+  _opts?: PasswordPhcOpts
 ): Promise<{
   site: SiteRegistration;
   txn: SignedTxn;
   password: string;
   authenticated: true;
 }> {
+  const keys = siteKeysForOrigin(identity, site.branchPeer || site.siteId);
+  const tipRes = await fetchSiteTip(api, keys.branchPeer);
+  const tip = tipRes.body?.tip;
+  if (!tipRes.ok || !tip) {
+    throw new Error("site not registered on node");
+  }
+  const tipCounter = Number(tip.counter ?? site.counter ?? 0);
+  const live = siteAtCounter(
+    identity,
+    {
+      siteId: keys.branchPeer,
+      branchPeer: keys.branchPeer,
+      kp0: keys.kp0,
+    },
+    tipCounter
+  );
+  if (tip.prerotated_key_hash && live.tip.address !== tip.prerotated_key_hash) {
+    throw new Error(
+      "branch keys do not match the tip — register this site again"
+    );
+  }
+  const password = live.nextPassword || site.nextPassword || live.currentPassword;
+  if (!password) {
+    throw new Error("no site password available");
+  }
+
   const peerFactor = siteFactor(identity.secondFactor, site.branchPeer);
-  const signer = site.tip;
+  const signer = live.tip;
   const next = deriveMaterial(signer, peerFactor);
   const twice = deriveMaterial(next, peerFactor);
 
   const newTwicePassword = generateSitePassword(
     next,
     site.branchPeer,
-    site.counter + 2
+    tipCounter + 2
   );
-  const commit: PasswordDualCommit = {
-    prerotated_password_hash: hashPassword(site.nextPassword),
-    twice_prerotated_password_hash: hashPassword(newTwicePassword),
-  };
-  const relJson = buildPasswordRelationshipJson(commit);
-  const relHash = sha256Hex(relJson);
-
   const txn = buildAndSignTxn(signer, {
     time,
     outputs: [{ to: next.address, value: 0 }],
     prerotatedKeyHash: next.address,
     twicePrerotatedKeyHash: twice.address,
-    prevPublicKeyHash: site.tipPrevPkh,
-    relationshipHash: relHash,
-    relationship: relJson,
+    prevPublicKeyHash: live.tipPrevPkh,
+    relationshipHash: "",
+    relationship: "",
   });
 
-  const nextCounter = site.counter + 1;
-  // Backend enforces rotation: password must match tip.pre and txn advances dual-commit.
-  const res = await httpJson(api, "/password-rotation/verify", {
+  const nextCounter = tipCounter + 1;
+  const res = await httpJson(api, "/password-rotation/offchain", {
     method: "POST",
     body: JSON.stringify({
       branch_peer: site.branchPeer,
-      password: site.currentPassword,
       counter: nextCounter,
       branch_inception_public_key_hash: site.branchInceptionPkh,
       inception_public_key_hash: identity.inceptionPublicKeyHash,
       txn,
     }),
   });
-  if (!res.ok || res.body?.status === false || !res.body?.authenticated) {
+  if (!res.ok || res.body?.status === false) {
     throw new Error(res.body?.message || `sign-in/rotate failed (${res.status})`);
   }
 
-  const usedPassword = site.currentPassword;
+  const usedPassword = password;
   const updated: SiteRegistration = {
-    ...site,
+    ...live,
     tip: next,
     counter: nextCounter,
     tipPrevPkh: signer.address,
-    currentPassword: site.nextPassword,
+    currentPassword: live.nextPassword,
     nextPassword: newTwicePassword,
   };
 
@@ -403,4 +433,114 @@ export async function fetchSiteTip(api: NodeApi, branchPeer: string) {
     api,
     `/password-rotation/offchain/tip?branch_peer=${encodeURIComponent(branchPeer)}`
   );
+}
+
+/** Rebuild a site registration to match an off-chain tip counter. */
+export function siteAtCounter(
+  identity: VaultIdentity,
+  site: Pick<SiteRegistration, "siteId" | "branchPeer" | "kp0">,
+  counter: number
+): SiteRegistration {
+  const peerFactor = siteFactor(identity.secondFactor, site.branchPeer);
+  let atC = site.kp0;
+  for (let i = 0; i < counter; i++) {
+    atC = deriveMaterial(atC, peerFactor);
+  }
+  const tip = deriveMaterial(atC, peerFactor);
+  return {
+    siteId: site.siteId,
+    branchPeer: site.branchPeer,
+    kp0: site.kp0,
+    tip,
+    counter,
+    tipPrevPkh: atC.address,
+    currentPassword: generateSitePassword(atC, site.branchPeer, counter),
+    nextPassword: generateSitePassword(tip, site.branchPeer, counter + 1),
+    branchInceptionPkh: site.kp0.address,
+  };
+}
+
+export interface VaultResyncResult {
+  identity: VaultIdentity;
+  sites: Record<string, SiteRegistration>;
+  removedSites: string[];
+  rewoundSites: string[];
+  kelDepth: number;
+}
+
+/**
+ * Drop or rewind local rotations that no longer exist on the node
+ * (expired mempool KEL / off-chain branch tips).
+ */
+export async function resyncVaultFromNode(
+  api: NodeApi,
+  identity: VaultIdentity,
+  sites: Record<string, SiteRegistration>
+): Promise<VaultResyncResult> {
+  let kelDepth = identity.mainDepth;
+  const kelRes = await httpJson(
+    api,
+    `/key-event-log?public_key=${encodeURIComponent(identity.k0.publicKeyHex)}`
+  );
+  if (kelRes.ok && Array.isArray(kelRes.body?.key_event_log)) {
+    kelDepth = kelRes.body.key_event_log.length;
+  } else if (kelRes.status === 404 || kelRes.body?.status === false) {
+    kelDepth = 0;
+  }
+
+  const tipSigner = walkMain(identity.k0, identity.secondFactor, kelDepth);
+  const tipPrevPkh =
+    kelDepth === 0
+      ? ""
+      : walkMain(identity.k0, identity.secondFactor, kelDepth - 1).address;
+  const nextIdentity: VaultIdentity = {
+    ...identity,
+    mainDepth: kelDepth,
+    tipSigner,
+    tipPrevPkh,
+  };
+
+  const removedSites: string[] = [];
+  const rewoundSites: string[] = [];
+  const nextSites: Record<string, SiteRegistration> = {};
+  for (const [key, site] of Object.entries(sites)) {
+    const keys = siteKeysForOrigin(nextIdentity, site.branchPeer || site.siteId || key);
+    const tipRes = await fetchSiteTip(api, keys.branchPeer);
+    if (!tipRes.ok || tipRes.body?.status === false || !tipRes.body?.tip) {
+      removedSites.push(key);
+      continue;
+    }
+    const tip = tipRes.body.tip;
+    const counter = Number(tip.counter ?? 0);
+    if (!Number.isFinite(counter) || counter < 0) {
+      removedSites.push(key);
+      continue;
+    }
+    const inception = (tip.branch_inception_public_key_hash as string) || "";
+    if (inception && inception !== keys.kp0.address) {
+      removedSites.push(key);
+      continue;
+    }
+    const rebuilt = siteAtCounter(
+      nextIdentity,
+      { siteId: keys.branchPeer, branchPeer: keys.branchPeer, kp0: keys.kp0 },
+      counter
+    );
+    if (tip.prerotated_key_hash && rebuilt.tip.address !== tip.prerotated_key_hash) {
+      removedSites.push(key);
+      continue;
+    }
+    nextSites[key] = rebuilt;
+    if (counter !== site.counter || site.kp0.address !== keys.kp0.address) {
+      rewoundSites.push(key);
+    }
+  }
+
+  return {
+    identity: nextIdentity,
+    sites: nextSites,
+    removedSites,
+    rewoundSites,
+    kelDepth,
+  };
 }

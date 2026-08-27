@@ -2,8 +2,10 @@
  * MV3 service worker — vault sign-in/rotate for harness pages via content script.
  */
 import {
+  hashPassword,
   hexToBytes,
   materialFromPrivCc,
+  registerSite,
   rotateSitePassword,
   unlockIdentity,
   type SiteRegistration,
@@ -91,6 +93,58 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || typeof message !== "object") return false;
 
+  if (message.type === "YADA_REGISTER_SITE") {
+    void (async () => {
+      try {
+        const origin = String(message.origin || "").toLowerCase();
+        if (!origin.startsWith("http")) {
+          sendResponse({ ok: false, message: "invalid origin" });
+          return;
+        }
+        const baseUrl = await nodeUrl();
+        if (!baseUrl) {
+          sendResponse({ ok: false, message: "set Node URL in extension options" });
+          return;
+        }
+        const v = await loadVault();
+        if (!v?.inceptionDone) {
+          sendResponse({ ok: false, message: "vault not incepted" });
+          return;
+        }
+        const identity: VaultIdentity = unlockIdentity(
+          v.mnemonic,
+          v.secondFactor,
+          v.username,
+          {
+            identityType: v.identityType,
+            mainDepth: v.mainDepth,
+            tipPrevPkh: v.tipPrevPkh,
+          }
+        );
+        const result = await registerSite({ baseUrl }, identity, origin);
+        v.mainDepth = result.identity.mainDepth;
+        v.tipPrevPkh = result.identity.tipPrevPkh;
+        v.sites[result.site.branchPeer] = storeSite(result.site);
+        await saveVault(v);
+        sendResponse({
+          ok: true,
+          registered: true,
+          counter: result.site.counter,
+          password: result.site.currentPassword,
+          passwordHash: hashPassword(result.site.currentPassword),
+          nextPasswordHash: hashPassword(result.site.nextPassword),
+          message: `registered · counter ${result.site.counter}`,
+        });
+      } catch (e) {
+        sendResponse({
+          ok: false,
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
+    })();
+    return true;
+  }
+
   if (message.type === "YADA_SIGNIN_ROTATE") {
     void (async () => {
       try {
@@ -143,7 +197,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           authenticated: true,
           rotated: true,
           counter: result.site.counter,
-          // Do not return plaintext passwords to the page
+          password: result.site.currentPassword,
+          passwordHash: hashPassword(result.site.currentPassword),
+          nextPasswordHash: hashPassword(result.site.nextPassword),
           message: `signed in & rotated to counter ${result.site.counter}`,
         });
       } catch (e) {

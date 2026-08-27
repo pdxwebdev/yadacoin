@@ -1,6 +1,6 @@
 /**
  * Content script — bridges harness page postMessage ↔ extension background.
- * Page never receives private keys or next passwords.
+ * Page receives password + nextPasswordHash for RP-side verify; never private keys.
  */
 const HOST_ID = "yada-password-root";
 
@@ -16,6 +16,29 @@ window.addEventListener("message", (event) => {
   if (event.source !== window) return;
   const data = event.data;
   if (!data || typeof data !== "object") return;
+
+  if (data.type === "YADA_PASSWORD_REGISTER") {
+    const requestId = data.requestId;
+    chrome.runtime.sendMessage(
+      {
+        type: "YADA_REGISTER_SITE",
+        origin: window.location.origin.toLowerCase(),
+      },
+      (response) => {
+        const err = chrome.runtime.lastError;
+        window.postMessage(
+          {
+            type: "YADA_PASSWORD_REGISTER_RESULT",
+            requestId,
+            ...(err
+              ? { ok: false, message: err.message }
+              : response || { ok: false, message: "no response" }),
+          },
+          "*"
+        );
+      }
+    );
+  }
 
   if (data.type === "YADA_PASSWORD_SIGNIN") {
     const requestId = data.requestId;
@@ -63,3 +86,5 @@ window.addEventListener("message", (event) => {
     );
   }
 });
+
+window.postMessage({ type: "YADA_PASSWORD_READY" }, "*");

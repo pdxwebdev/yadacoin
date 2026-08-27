@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Yada Password</title>
+    <link rel="stylesheet" href="styles/base.css" />
+    <link rel="stylesheet" href="styles/app.css" />
+  </head>
+  <body>
+    <div class="pm-app shell">
+      <header class="shell-header">
+        <div class="pm-brand__name" id="brandName">Yada Password</div>
+        <p class="pm-muted">Native vault · deep-link auth provider</p>
+      </header>
+
+      <nav class="tabs">
+        <button type="button" class="tab" data-tab="home" aria-selected="true">Home</button>
+        <button type="button" class="tab" data-tab="vault">Vault</button>
+        <button type="button" class="tab" data-tab="request">Request</button>
+      </nav>
+
+      <div id="alert" hidden class="pm-alert"></div>
+
+      <section id="panel-home" class="pm-card">
+        <h1 class="pm-title">Password manager</h1>
+        <p class="pm-muted">
+          Other apps (e.g. Demo Harness) open this app via
+          <code>yadapass://</code> to register a site or sign-in &amp; rotate.
+        </p>
+        <div class="pm-field">
+          <label>Status</label>
+          <div class="mono" id="homeStatus">—</div>
+        </div>
+        <div class="pm-field">
+          <label>K0</label>
+          <div class="mono" id="homeK0">—</div>
+        </div>
+        <div class="pm-field">
+          <label>Registered sites</label>
+          <div class="mono" id="homeSites">—</div>
+        </div>
+        <div class="pm-btn-row">
+          <button type="button" class="pm-btn pm-btn--ghost" id="resyncBtn">
+            Resync rotations
+          </button>
+        </div>
+      </section>
+
+      <section id="panel-vault" class="pm-card" hidden>
+        <h1 class="pm-title">Vault setup</h1>
+        <div class="pm-field">
+          <label for="nodeUrl">Node URL</label>
+          <input class="pm-input" id="nodeUrl" type="url" placeholder="http://192.168.1.10:8101" />
+        </div>
+        <div class="pm-field">
+          <label for="username">Username</label>
+          <input class="pm-input" id="username" autocomplete="username" />
+        </div>
+        <div class="pm-field">
+          <label for="secondFactor">Master password</label>
+          <input class="pm-input" id="secondFactor" type="password" autocomplete="current-password" />
+        </div>
+        <div class="pm-field">
+          <label for="mnemonic">Seed phrase</label>
+          <textarea class="pm-input" id="mnemonic" rows="3"></textarea>
+        </div>
+        <div class="pm-btn-row">
+          <button type="button" class="pm-btn pm-btn--ghost" id="genSeedBtn">Generate seed</button>
+          <button type="button" class="pm-btn" id="saveVaultBtn">Save vault</button>
+          <button type="button" class="pm-btn" id="inceptionBtn">Broadcast inception</button>
+        </div>
+      </section>
+
+      <section id="panel-request" class="pm-card" hidden>
+        <h1 class="pm-title">Incoming request</h1>
+        <p class="pm-muted" id="reqEmpty">No pending deep-link request.</p>
+        <div id="reqBody" hidden>
+          <div class="pm-field">
+            <label>Action</label>
+            <div class="mono" id="reqAction">—</div>
+          </div>
+          <div class="pm-field">
+            <label>Site</label>
+            <div class="mono" id="reqSite">—</div>
+          </div>
+          <div class="pm-field">
+            <label>Callback</label>
+            <div class="mono" id="reqCallback">—</div>
+          </div>
+          <div class="pm-btn-row">
+            <button type="button" class="pm-btn" id="approveBtn">Approve</button>
+            <button type="button" class="pm-btn pm-btn--ghost" id="denyBtn">Deny</button>
+          </div>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>

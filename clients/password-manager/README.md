@@ -33,3 +33,18 @@ Load `apps/extension/dist` in Chrome as unpacked extension.
 ## Derivation
 
 Root matches node: `BIP32.fromEntropy(mnemonicToEntropy(mnemonic))`, not PBKDF2 mnemonicToSeed.
+
+## Native apps (Capacitor)
+
+See [apps/NATIVE.md](apps/NATIVE.md).
+
+| App | Path | Deep link |
+|-----|------|-----------|
+| Yada Password | `apps/password-native` | `yadapass://` |
+| Yada Auth Demo | `apps/demo-native` | `yadademo://` |
+
+```bash
+npm run build:native
+cd apps/password-native && npx cap add ios && npx cap sync && npx cap open ios
+cd ../demo-native && npx cap add ios && npx cap sync && npx cap open ios
+```

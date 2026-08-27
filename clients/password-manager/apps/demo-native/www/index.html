@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Yada Auth Demo</title>
+    <link rel="stylesheet" href="styles/base.css" />
+    <link rel="stylesheet" href="styles/app.css" />
+  </head>
+  <body>
+    <div class="pm-app shell">
+      <header class="shell-header">
+        <div class="pm-brand__name">Yada Auth Demo</div>
+        <p class="pm-muted">Native harness · uses Yada Password app for rotation</p>
+      </header>
+
+      <div id="alert" hidden class="pm-alert"></div>
+
+      <section class="pm-card">
+        <h1 class="pm-title">Demo app sign-in</h1>
+        <p class="pm-muted">
+          Mirrors the web harness: this app never holds the vault. It opens
+          <strong>Yada Password</strong> via deep link; the manager signs the
+          rotation and calls the node. Result returns here.
+        </p>
+
+        <div class="pm-field">
+          <label>Demo site id (branch_peer)</label>
+          <div class="mono" id="siteId">—</div>
+        </div>
+
+        <div class="pm-field">
+          <label for="nodeUrl">Node URL (tip display only)</label>
+          <input class="pm-input" id="nodeUrl" type="url" placeholder="http://192.168.1.10:8101" />
+        </div>
+
+        <div class="status-row">
+          <span class="pill" id="statusPill">—</span>
+          <span class="pill" id="counterPill">counter —</span>
+          <button type="button" class="pm-btn pm-btn--ghost" id="refreshBtn">Refresh tip</button>
+        </div>
+
+        <div class="hash-grid">
+          <div>
+            <div class="lbl">Tip pre</div>
+            <div class="hash" id="tipPre">—</div>
+          </div>
+          <div>
+            <div class="lbl">Tip twice</div>
+            <div class="hash" id="tipTwice">—</div>
+          </div>
+        </div>
+
+        <div class="pm-btn-row col">
+          <button type="button" class="pm-btn" id="registerBtn">Register via Password app</button>
+          <button type="button" class="pm-btn" id="signinBtn">Sign in &amp; rotate via Password app</button>
+          <button type="button" class="pm-btn pm-btn--ghost" id="statusBtn">Ask registration status</button>
+        </div>
+
+        <ol class="steps">
+          <li>Install &amp; set up <strong>Yada Password</strong> (seed, inception, node URL).</li>
+          <li>Here: set Node URL for tip polling → <strong>Register via Password app</strong>.</li>
+          <li>Approve in Password app → returns here with counter.</li>
+          <li><strong>Sign in &amp; rotate</strong> each time — backend enforces rotation.</li>
+        </ol>
+      </section>
+
+      <section class="pm-card">
+        <h2 class="pm-title" style="font-size:1rem">Result log</h2>
+        <div class="log" id="log">No events yet</div>
+      </section>
+    </div>
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>

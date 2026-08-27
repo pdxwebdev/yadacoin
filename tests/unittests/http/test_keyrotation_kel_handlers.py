@@ -326,3 +326,44 @@ class TestKELReportsHandler(ExtrasHttpTestCase):
         self.assertEqual(response.code, 200)
         data = json.loads(response.body)
         self.assertIsInstance(data["result"], list)
+
+
+# ---------------------------------------------------------------------------
+# KelResyncHandler
+# ---------------------------------------------------------------------------
+
+
+class TestKelResyncHandler(ExtrasHttpTestCase):
+    def setUp(self):
+        super().setUp()
+        self.config.private_key = "node_priv"
+        self.config.seed = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        mock_site = MagicMock()
+        mock_site.derived_keys.update_one = AsyncMock()
+        mock_del = MagicMock()
+        mock_del.deleted_count = 2
+        mock_site.derived_keys.delete_many = AsyncMock(return_value=mock_del)
+        self.config.mongo.async_site_db = mock_site
+        self.mock_site = mock_site
+
+    def test_resync_empty_kel_deletes_stale_rotations(self):
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            response = self.fetch(
+                "/key-rotation/kel-resync",
+                method="POST",
+                body=json.dumps(
+                    {"private_key": "node_priv", "second_factor": "ValidPass1!xx"}
+                ),
+                headers={"Content-Type": "application/json"},
+            )
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertTrue(data["status"])
+        self.assertEqual(data["kel_depth"], 0)
+        self.assertEqual(data["removed"], 2)
+        self.mock_site.derived_keys.update_one.assert_awaited()
+        self.mock_site.derived_keys.delete_many.assert_awaited()

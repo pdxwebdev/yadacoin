@@ -13,9 +13,12 @@ export function buildPasswordRelationshipJson(commit: PasswordDualCommit): strin
   validateDualCommit(commit);
   return JSON.stringify({
     [PASSWORD_RELATIONSHIP_KEY]: {
-      prerotated_password_hash: commit.prerotated_password_hash.toLowerCase(),
-      twice_prerotated_password_hash:
-        commit.twice_prerotated_password_hash.toLowerCase(),
+      prerotated_password_hash: normalizeStoredHash(
+        commit.prerotated_password_hash
+      ),
+      twice_prerotated_password_hash: normalizeStoredHash(
+        commit.twice_prerotated_password_hash
+      ),
     },
   });
 }
@@ -29,11 +32,16 @@ export function validateDualCommit(commit: PasswordDualCommit): void {
   const twice = commit.twice_prerotated_password_hash?.trim() ?? "";
   if (!pre || !twice) throw new Error("both password hashes required");
   if (!isPasswordHash(pre) || !isPasswordHash(twice)) {
-    throw new Error("password hashes must be 64-char hex");
+    throw new Error("password hashes must be PHC strings or legacy 64-char hex");
   }
-  if (pre.toLowerCase() === twice.toLowerCase()) {
+  if (normalizeStoredHash(pre) === normalizeStoredHash(twice)) {
     throw new Error("password hashes must differ");
   }
+}
+
+function normalizeStoredHash(value: string): string {
+  const v = value.trim();
+  return /^[0-9a-f]{64}$/i.test(v) ? v.toLowerCase() : v;
 }
 
 export function identityRelationshipString(

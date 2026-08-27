@@ -1,5 +1,10 @@
 import * as esbuild from "esbuild";
-import { cpSync, mkdirSync, existsSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  existsSync,
+  rmSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,4 +26,19 @@ await esbuild.build({
   sourcemap: true,
   logLevel: "info",
 });
+
+// Publish into node plugin so phones can open http://node/password-rotation/mobile
+const pluginStatic = join(
+  root,
+  "../../../../plugins/passwordrotation/static/mobile"
+);
+try {
+  if (existsSync(pluginStatic)) rmSync(pluginStatic, { recursive: true, force: true });
+  mkdirSync(pluginStatic, { recursive: true });
+  cpSync(www, pluginStatic, { recursive: true });
+  console.log("published → plugins/passwordrotation/static/mobile");
+} catch (e) {
+  console.warn("plugin static publish skipped:", e.message);
+}
+
 console.log("mobile www build ok");

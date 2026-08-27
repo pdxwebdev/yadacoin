@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Yada Password</string>
+    <string name="title_activity_main">Yada Password</string>
+    <string name="package_name">com.yadacoin.password</string>
+    <string name="custom_url_scheme">com.yadacoin.password</string>
+</resources>

@@ -1607,8 +1607,13 @@ class KelResyncHandler(BaseHandler):
 
     Use this when:
     - The mempool was cleared and ``derived_keys`` records were lost.
+    - Branch rotations expired from the mempool and later ``derived_keys``
+      rows still point at missing ``prev_public_key_hash`` events.
     - localStorage contains a stale key several rotations ahead of the
       last confirmed on-chain entry.
+
+    Stale ``derived_keys`` rows for later rotations on this KEL are deleted.
+    If no on-chain KEL remains, the inception (K0) record is restored.
 
     The handler walks the on-chain KEL forward from the inception, finding
     the tail entry whose ``prerotated_key_hash`` is not yet spent (i.e. the
@@ -1699,17 +1704,10 @@ class KelResyncHandler(BaseHandler):
                 {"status": False, "message": f"error building key event log: {exc}"}
             )
 
+        # Empty on-chain KEL (typical after mempool expiry in tests):
+        # treat as depth 0 and rebuild the K0 derived_keys record.
         if not kel:
-            self.set_status(404)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": "no on-chain key event log found for the derived signing key; "
-                    "run /key-rotation/init-derived-child-key first",
-                }
-            )
-
-        # Verify the on-chain KEL inception matches the node's username identity
+            kel = []
 
         # Walk the derivation chain to match the on-chain KEL depth.
         # kel[0] = inception (signed with K0); kel[1] = first confirming (signed with K1), etc.
@@ -1722,39 +1720,42 @@ class KelResyncHandler(BaseHandler):
         #   K2 = derive(K1.priv, K1.cc, sf)
         #   ...
         n = len(kel)  # number of on-chain entries; next signer index = n
-        cur = k0
-        for _ in range(n):
-            cur = derive_secure_path(
-                cur["private_key"], cur["chain_code"], second_factor
-            )
-        # cur is now K_n — the key the on-chain KEL expects as next signer
-        # prev (K_(n-1)) is one step back; we need to recompute it
-        prev = k0
-        for _ in range(n - 1):
-            prev = derive_secure_path(
-                prev["private_key"], prev["chain_code"], second_factor
-            )
-        # After loop: prev = K_(n-1), cur = K_n
+        if n == 0:
+            # No surviving KEL: restore inception record (K0 / K1 / K2).
+            prev = k0
+            cur = derive_secure_path(k0["private_key"], k0["chain_code"], second_factor)
+        else:
+            cur = k0
+            for _ in range(n):
+                cur = derive_secure_path(
+                    cur["private_key"], cur["chain_code"], second_factor
+                )
+            prev = k0
+            for _ in range(n - 1):
+                prev = derive_secure_path(
+                    prev["private_key"], prev["chain_code"], second_factor
+                )
 
         cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
         cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
         cur_pub_hex = cur_pub_bytes.hex()
         cur_address = str(P2PKHBitcoinAddress.from_pubkey(cur_pub_bytes))
 
-        # Verify the derived address matches the latest KEL prerotated_key_hash
-        expected_address = kel[-1].prerotated_key_hash
-        if cur_address != expected_address:
-            self.set_status(500)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": (
-                        f"derived address {cur_address} does not match "
-                        f"on-chain KEL prerotated_key_hash {expected_address}; "
-                        "verify second_factor is correct"
-                    ),
-                }
-            )
+        if kel:
+            # Verify the derived address matches the latest KEL prerotated_key_hash
+            expected_address = kel[-1].prerotated_key_hash
+            if cur_address != expected_address:
+                self.set_status(500)
+                return self.render_as_json(
+                    {
+                        "status": False,
+                        "message": (
+                            f"derived address {cur_address} does not match "
+                            f"on-chain KEL prerotated_key_hash {expected_address}; "
+                            "verify second_factor is correct"
+                        ),
+                    }
+                )
 
         # Compute prev address (K_(n-1)) so we can key the DB record correctly.
         prev_priv_obj = _CoincurvePrivateKey(prev["private_key"])
@@ -1796,10 +1797,51 @@ class KelResyncHandler(BaseHandler):
             upsert=True,
         )
 
+        # Drop derived_keys rows for later rotations on this KEL that no
+        # longer exist on-chain (expired mempool branches).
+        stale_addresses = []
+        walk = child
+        for _ in range(32):
+            walk = derive_secure_path(
+                walk["private_key"], walk["chain_code"], second_factor
+            )
+            walk_addr = str(
+                P2PKHBitcoinAddress.from_pubkey(
+                    _CoincurvePrivateKey(walk["private_key"]).public_key.format(
+                        compressed=True
+                    )
+                )
+            )
+            stale_addresses.append(walk_addr)
+        if n == 0:
+            # Drop K1+ records; keep only the K0 inception row.
+            if cur_address != prev_address:
+                stale_addresses.append(cur_address)
+            if child_address != prev_address:
+                stale_addresses.append(child_address)
+        else:
+            if cur_address != prev_address:
+                stale_addresses.append(cur_address)
+            if child_address not in (prev_address, cur_address):
+                stale_addresses.append(child_address)
+
+        removed = 0
+        if stale_addresses:
+            del_result = await self.config.mongo.async_site_db.derived_keys.delete_many(
+                {
+                    "address": {
+                        "$in": stale_addresses,
+                        "$ne": prev_address,
+                    }
+                }
+            )
+            removed = getattr(del_result, "deleted_count", 0) or 0
+
         return self.render_as_json(
             {
                 "status": True,
                 "kel_depth": n,
+                "removed": removed,
                 # cur_address is the address kel[-1].prerotated_key_hash expects next
                 "next_signer_address": cur_address,
                 "next_signer_public_key": cur_pub_hex,
