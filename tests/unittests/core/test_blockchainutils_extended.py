@@ -1137,6 +1137,40 @@ class TestGetUnspentOutputsMempoolOverlay(BUTestCase):
         self.assertAlmostEqual(result["balance"], 7.0)
         self.assertAlmostEqual(result.get("max_transferable_value", 2.0), 2.0)
 
+    async def test_display_path_overlays_mempool_spends(self):
+        self.bu.get_reverse_public_key = AsyncMock(return_value=self.config.public_key)
+        self.bu.get_latest_block_async = AsyncMock(
+            return_value={"hash": "tip", "index": 10}
+        )
+        self.bu.get_wallet_balance = AsyncMock(return_value=7.0)
+        cache_doc = {
+            "address": self.config.address,
+            "public_key": self.config.public_key,
+            "unspent_utxos": [
+                {
+                    "id": "mempool_spent",
+                    "outputs": [{"to": self.config.address, "value": 5.0}],
+                    "time": 1,
+                },
+                {
+                    "id": "still_good",
+                    "outputs": [{"to": self.config.address, "value": 2.0}],
+                    "time": 2,
+                },
+            ],
+            "max_transferable_value": 7.0,
+            "last_block_hash": "tip",
+            "last_block_index": 10,
+        }
+        self.bu._get_wallet_unspent_cache = AsyncMock(return_value=cache_doc)
+        self.bu._wallet_unspent_cache_is_valid = AsyncMock(return_value=True)
+        self.bu._select_spendable_utxos = AsyncMock()
+        self.bu.get_mempool_spent_inputs = AsyncMock(return_value=["mempool_spent"])
+        result = await self.bu.get_unspent_outputs(self.config.address, amount_needed=0)
+        self.assertEqual(result["unspent_utxos"], [])
+        self.assertAlmostEqual(result["max_transferable_value"], 2.0)
+        self.bu._select_spendable_utxos.assert_not_awaited()
+
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
@@ -1882,6 +1916,8 @@ class TestWalletCacheAndSelectionCoverage(BUTestCase):
         self.bu._save_wallet_unspent_cache = AsyncMock(return_value=3.0)
         result = await self.bu.get_unspent_outputs("addr", amount_needed=1.0)
         self.assertEqual([u["id"] for u in result["unspent_utxos"]], ["keep"])
+        saved_utxos = self.bu._save_wallet_unspent_cache.await_args.args[2]
+        self.assertEqual([u["id"] for u in saved_utxos], ["spent", "keep"])
 
     async def test_spent_among_candidates_empty_and_from_index(self):
         self.assertEqual(await self.bu.get_spent_among_candidates(None, ["a"]), set())

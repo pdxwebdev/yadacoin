@@ -169,13 +169,11 @@ class GraphRIDWalletHandler(BaseGraphHandler):
         # Mempool UTXOs also cannot exceed the per-txn input limit.
         unspent_mempool_txns = list(unspent_mempool_txns.values())[: CHAIN.MAX_INPUTS]
 
-        # amount_needed defaults to 0 for balance-only wallet polls; skip UTXO
-        # selection unless the client needs inputs. Balance always uses cache.
-        # max_transferable_value is filled from wallet_unspent_cache when the
-        # tip marker matches (no selection work).
-        if not amount_needed:
-            # Prefer cached max_transferable (no UTXO selection). Falls back to 0
-            # until a spend request warms wallet_unspent_cache.
+        # method=new uses get_unspent_outputs for both spend (amount_needed)
+        # and display (amount_needed=0) polls. Display hits wallet_unspent_cache
+        # when valid and otherwise selects/warms the cache so max_transferable
+        # is never left at 0 while the wallet has spendable coins.
+        if method != "new" and not amount_needed:
             balance, max_transferable_value = await asyncio.gather(
                 self.config.BU.get_wallet_balance(address),
                 self.config.BU.get_cached_max_transferable_value(address),

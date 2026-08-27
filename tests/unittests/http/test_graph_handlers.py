@@ -162,6 +162,7 @@ class GraphHandlerTestBase(testing.AsyncHTTPTestCase):
             }
         )
         mock_bu.get_wallet_balance = AsyncMock(return_value=0.0)
+        mock_bu.get_cached_max_transferable_value = AsyncMock(return_value=0.0)
         mock_bu.get_wallet_unspent_transactions_for_spending = MagicMock(
             return_value=make_async_iter()
         )
@@ -315,6 +316,13 @@ class TestGraphInfoHandler(GraphHandlerTestBase):
 class TestGraphRIDWalletHandler(GraphHandlerTestBase):
     def test_get_new_method_empty_mempool(self):
         """Lines 137-219 (new method): no mempool items, uses BU.get_unspent_outputs."""
+        self.config.BU.get_unspent_outputs = AsyncMock(
+            return_value={
+                "unspent_utxos": [],
+                "balance": 12.5,
+                "max_transferable_value": 10.25,
+            }
+        )
         response, _ = self._fetch_with_graph(
             "/get-graph-wallet?username_signature=testsig&address=1TestAddr&method=new"
         )
@@ -322,6 +330,9 @@ class TestGraphRIDWalletHandler(GraphHandlerTestBase):
         data = json.loads(response.body)
         self.assertIn("balance", data)
         self.assertIn("unspent_transactions", data)
+        self.assertEqual(data["max_transferable_value"], "10.25000000")
+        self.config.BU.get_unspent_outputs.assert_awaited()
+        self.config.BU.get_cached_max_transferable_value.assert_not_awaited()
 
     def test_get_old_method(self):
         """Lines 192-212 else branch: old method, uses BU.get_wallet_balance."""

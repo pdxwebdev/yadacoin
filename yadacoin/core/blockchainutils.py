@@ -1774,18 +1774,22 @@ class BlockChainUtils(object):
         cache_doc = await self._get_wallet_unspent_cache(address)
 
         # amount_needed=0 is a balance/max_transferable poll. Prefer any
-        # reorg-safe cached max_transferable without running selection.
+        # reorg-safe cached UTXO set without running selection. Mempool spends
+        # are applied to the returned max_transferable only — never persisted.
         if not amount_needed and cache_doc:
             if await self._wallet_unspent_cache_is_valid(
                 cache_doc, latest_block=latest_block
             ):
                 balance = await balance_task
-                max_t = cache_doc.get("max_transferable_value")
-                if max_t is None:
-                    max_t = sum(
-                        self._utxo_value(u)
-                        for u in (cache_doc.get("unspent_utxos") or [])
-                    )
+                cached = list(cache_doc.get("unspent_utxos") or [])[:max_utxos]
+                spent_mp = set(await mempool_spent_task or [])
+                if spent_mp:
+                    cached = [u for u in cached if u.get("id") not in spent_mp]
+                    max_t = sum(self._utxo_value(u) for u in cached)
+                else:
+                    max_t = cache_doc.get("max_transferable_value")
+                    if max_t is None:
+                        max_t = sum(self._utxo_value(u) for u in cached)
                 max_t = self.floor_to_two_decimal_places(float(max_t or 0.0))
                 elapsed = precise_time() - start_time
                 self.config.app_log.info(
@@ -1942,13 +1946,10 @@ class BlockChainUtils(object):
                 )
             else:
                 # Do not early-stop on amount during chain select; mempool may
-                # remove large coins. Collect up to max_utxos then overlay.
+                # remove large coins. Cache the chain UTXO set, then overlay.
                 selectable, _ = await self._select_spendable_utxos(
                     address, public_key, max_utxos, amount_needed=0
                 )
-                spent_mp = set(await mempool_spent_task or [])
-                if spent_mp:
-                    selectable = [u for u in selectable if u.get("id") not in spent_mp]
                 if latest_block:
                     await self._save_wallet_unspent_cache(
                         address,
