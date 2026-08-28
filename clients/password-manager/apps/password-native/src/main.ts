@@ -8,6 +8,7 @@ import {
   bytesToHex,
   createVaultSeed,
   fetchKelDepth,
+  fetchSiteTip,
   hashPassword,
   hexToBytes,
   identityAfterInception,
@@ -18,6 +19,8 @@ import {
   registerSite,
   resyncVaultFromNode,
   rotateSitePassword,
+  siteAtCounter,
+  siteKeysForOrigin,
   unlockIdentity,
   type BridgeRequest,
   type BridgeResult,
@@ -277,7 +280,9 @@ async function handleDeepLink(url: string) {
 async function approvePending() {
   if (!pending) return;
   const req = pending;
-  alertMsg("");
+  const btn = $("approveBtn") as HTMLButtonElement;
+  btn.disabled = true;
+  alertMsg("Working…", "success");
   try {
     let v = await loadVault();
     if (!v) {
@@ -340,14 +345,28 @@ async function approvePending() {
 
     if (req.action === "register") {
       if (v.sites[siteKey]) {
+        const keys = siteKeysForOrigin(identity, siteKey);
+        const tipRes = await fetchSiteTip({ baseUrl: nodeUrl }, keys.branchPeer);
+        const counter = Number(
+          tipRes.body?.tip?.counter ?? v.sites[siteKey]!.counter ?? 0
+        );
+        const live = siteAtCounter(
+          identity,
+          { siteId: siteKey, branchPeer: keys.branchPeer, kp0: keys.kp0 },
+          counter
+        );
+        v.sites[keys.branchPeer] = storeSite(live);
+        await saveVault(v);
         await respond(
           {
             nonce: req.nonce,
             ok: true,
             action: "register",
             registered: true,
-            counter: v.sites[siteKey]!.counter,
-            message: "already registered",
+            counter: live.counter,
+            password: live.currentPassword,
+            nextPasswordHash: hashPassword(live.nextPassword),
+            message: "already registered · next hash synced to tip",
           },
           req.callback
         );
@@ -390,7 +409,13 @@ async function approvePending() {
         return;
       }
       const site = siteFromStored(stored);
-      const result = await rotateSitePassword({ baseUrl: nodeUrl }, identity, site);
+      const result = await rotateSitePassword(
+        { baseUrl: nodeUrl },
+        identity,
+        site,
+        undefined,
+        { expectedHash: req.expectedHash }
+      );
       v.sites[siteKey] = storeSite(result.site);
       await saveVault(v);
       await respond(
@@ -400,8 +425,8 @@ async function approvePending() {
           action: "signin",
           registered: true,
           counter: result.site.counter,
-          password: result.site.currentPassword,
-          nextPasswordHash: hashPassword(result.site.nextPassword),
+          password: result.password,
+          nextPasswordHash: hashPassword(result.nextPassword),
           message: `signed in & rotated · counter ${result.site.counter}`,
         },
         req.callback
@@ -416,6 +441,8 @@ async function approvePending() {
       { nonce: req.nonce, ok: false, action: req.action, message },
       req.callback
     );
+  } finally {
+    btn.disabled = false;
   }
 }
 

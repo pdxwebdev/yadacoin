@@ -22,6 +22,7 @@ import {
   identityRelationshipHash,
 } from "./relationship.js";
 import { buildAndSignTxn, signUsername, type SignedTxn } from "./transaction.js";
+import { parsePhc, phcSaltB64ForPassword, verifyPassword } from "./hash.js";
 
 export interface VaultIdentity {
   mnemonic: string;
@@ -341,16 +342,47 @@ export function siteKeysForOrigin(
   };
 }
 
+
+/** Walk deterministic site passwords until one verifies against the RP next-hash. */
+export function findPasswordMatchingHash(
+  identity: VaultIdentity,
+  siteId: string,
+  expectedHash: string,
+  max = 64
+): { index: number; password: string; nextPassword: string } | null {
+  const { branchPeer, kp0 } = siteKeysForOrigin(identity, siteId);
+  const peerFactor = siteFactor(identity.secondFactor, branchPeer);
+  const expectedSalt = parsePhc(expectedHash)?.salt;
+  let k = kp0;
+  for (let i = 1; i <= max; i++) {
+    k = deriveMaterial(k, peerFactor);
+    const password = generateSitePassword(k, branchPeer, i);
+    if (expectedSalt && phcSaltB64ForPassword(password) !== expectedSalt) {
+      continue;
+    }
+    if (verifyPassword(password, expectedHash)) {
+      const kNext = deriveMaterial(k, peerFactor);
+      return {
+        index: i,
+        password,
+        nextPassword: generateSitePassword(kNext, branchPeer, i + 1),
+      };
+    }
+  }
+  return null;
+}
+
 export async function rotateSitePassword(
   api: NodeApi,
   identity: VaultIdentity,
   site: SiteRegistration,
   time = Math.floor(Date.now() / 1000),
-  _opts?: PasswordPhcOpts
+  opts?: PasswordPhcOpts & { expectedHash?: string }
 ): Promise<{
   site: SiteRegistration;
   txn: SignedTxn;
   password: string;
+  nextPassword: string;
   authenticated: true;
 }> {
   const keys = siteKeysForOrigin(identity, site.branchPeer || site.siteId);
@@ -374,7 +406,22 @@ export async function rotateSitePassword(
       "branch keys do not match the tip — register this site again"
     );
   }
-  const password = live.nextPassword || site.nextPassword || live.currentPassword;
+  let password = live.nextPassword || site.nextPassword || live.currentPassword;
+  let nextReveal = "";
+  if (opts?.expectedHash) {
+    const found = findPasswordMatchingHash(
+      identity,
+      keys.branchPeer,
+      opts.expectedHash
+    );
+    if (!found) {
+      throw new Error(
+        "stored next hash is not in this vault's password chain"
+      );
+    }
+    password = found.password;
+    nextReveal = found.nextPassword;
+  }
   if (!password) {
     throw new Error("no site password available");
   }
@@ -425,7 +472,13 @@ export async function rotateSitePassword(
   };
 
   // password = the one just consumed at sign-in; site.currentPassword is now the next unlock secret
-  return { site: updated, txn, password: usedPassword, authenticated: true as const };
+  return {
+    site: updated,
+    txn,
+    password: usedPassword,
+    nextPassword: nextReveal || newTwicePassword,
+    authenticated: true as const,
+  };
 }
 
 export async function fetchSiteTip(api: NodeApi, branchPeer: string) {

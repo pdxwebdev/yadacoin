@@ -158,6 +158,12 @@ function hashPasswordLegacySha256(password: string): string {
   return bytesToHex(sha256(new TextEncoder().encode("yada-password-v1|" + password)));
 }
 
+export function phcSaltB64ForPassword(password: string): string {
+  return b64encode(
+    sha256(new TextEncoder().encode("yada-phc-salt-v1|" + password)).slice(0, 16)
+  );
+}
+
 export function hashPassword(password: string, phc: string = DEFAULT_PASSWORD_PHC): string {
   const parsed = parsePhc(phc);
   if (!parsed) throw new Error("invalid PHC string");

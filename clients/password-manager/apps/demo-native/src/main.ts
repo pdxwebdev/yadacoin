@@ -70,11 +70,13 @@ async function openManager(url: string) {
 function startBridge(action: "signin" | "register" | "status") {
   const nonce = newNonce();
   sessionStorage.setItem(PENDING_KEY, nonce);
+  const auth = loadAuth();
   const url = buildPasswordManagerUrl({
     action,
     site: siteId(),
     callback: `${DEMO_HARNESS_SCHEME}://result`,
     nonce,
+    expectedHash: action === "signin" ? auth?.nextPasswordHash : undefined,
   });
   alertMsg(`Opening Yada Password… (${action})`, "");
   void openManager(url).catch((e) =>
@@ -135,7 +137,10 @@ function handleResult(result: BridgeResult) {
     }
     if (!verifyPassword(password, auth.nextPasswordHash)) {
       pushLog(false, "password does not match stored next hash", result.counter);
-      alertMsg("Auth failed: password does not match stored next hash", "error");
+      alertMsg(
+        "Auth failed: password does not match stored next hash. Tap Register to resync.",
+        "error"
+      );
       return;
     }
     saveAuth({ nextPasswordHash: nextHash });

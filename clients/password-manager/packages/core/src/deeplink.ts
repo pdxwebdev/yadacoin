@@ -12,6 +12,8 @@ export interface BridgeRequest {
   /** Callback URL base, e.g. yadademo://result */
   callback: string;
   nonce: string;
+  /** RP's stored next password PHC so the authenticator can sync. */
+  expectedHash?: string;
 }
 
 export interface BridgeResult {
@@ -23,7 +25,7 @@ export interface BridgeResult {
   message?: string;
   /** Current site password for the relying app to verify. */
   password?: string;
-  /** PHC (or hex) of the next password. */
+  /** PHC of the next password. */
   nextPasswordHash?: string;
 }
 
@@ -45,6 +47,7 @@ export function buildPasswordManagerUrl(req: BridgeRequest): string {
   q.set("site", req.site);
   q.set("callback", req.callback);
   q.set("nonce", req.nonce);
+  if (req.expectedHash) q.set("expectedHash", req.expectedHash);
   return `${PASSWORD_MANAGER_SCHEME}://auth?${q.toString()}`;
 }
 
@@ -115,7 +118,13 @@ export function parseBridgeRequest(url: string): BridgeRequest | null {
   const nonce = (params.get("nonce") || "").trim();
   if (!site || !callback || !nonce) return null;
 
-  return { action: actionRaw, site, callback, nonce };
+  return {
+    action: actionRaw,
+    site,
+    callback,
+    nonce,
+    expectedHash: params.get("expectedHash") || undefined,
+  };
 }
 
 export function parseBridgeResult(url: string): BridgeResult | null {

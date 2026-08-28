@@ -4244,6 +4244,7 @@ function sha256Hex(data) {
   const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
   return bytesToHex2(sha2562(bytes));
 }
+var HEX64 = /^[0-9a-f]{64}$/i;
 function normalizeId(id) {
   const n = id.toLowerCase();
   if (n === "pbkdf2-hmac-sha256" || n === "pbkdf2-hmac-sha-256")
@@ -4362,6 +4363,12 @@ function bcryptRounds(parts) {
   }
   return t;
 }
+function hashPasswordLegacySha256(password) {
+  return bytesToHex2(sha2562(new TextEncoder().encode("yada-password-v1|" + password)));
+}
+function phcSaltB64ForPassword(password) {
+  return b64encode(sha2562(new TextEncoder().encode("yada-phc-salt-v1|" + password)).slice(0, 16));
+}
 function hashPassword(password, phc = DEFAULT_PASSWORD_PHC) {
   const parsed = parsePhc(phc);
   if (!parsed)
@@ -4369,7 +4376,7 @@ function hashPassword(password, phc = DEFAULT_PASSWORD_PHC) {
   if (parsed.id === "bcrypt") {
     return bcryptjs_default.hashSync(password, bcryptRounds(parsed));
   }
-  const saltBytes = parsed.salt ? b64decode(parsed.salt) : randomBytes(16);
+  const saltBytes = parsed.salt ? b64decode(parsed.salt) : sha2562(new TextEncoder().encode("yada-phc-salt-v1|" + password)).slice(0, 16);
   const hash2 = digestFor(parsed.id, password, parsed, saltBytes);
   return formatPhc({
     id: parsed.id,
@@ -4378,6 +4385,27 @@ function hashPassword(password, phc = DEFAULT_PASSWORD_PHC) {
     salt: b64encode(saltBytes),
     hash: hash2
   });
+}
+function verifyPassword(password, stored) {
+  const s = (stored || "").trim();
+  if (HEX64.test(s)) {
+    return hashPasswordLegacySha256(password).toLowerCase() === s.toLowerCase();
+  }
+  const parsed = parsePhc(s);
+  if (!parsed)
+    return false;
+  try {
+    if (parsed.id === "bcrypt") {
+      const crypt = parsed.hash && BCRYPT_MODULAR.test(parsed.hash) ? parsed.hash : stored;
+      return bcryptjs_default.compareSync(password, crypt);
+    }
+    if (!parsed.hash)
+      return false;
+    const recomputed = hashPassword(password, stored);
+    return recomputed === stored || recomputed === formatPhc(parsed);
+  } catch {
+    return false;
+  }
 }
 
 // ../../node_modules/@noble/curves/esm/utils.js
@@ -9296,30 +9324,16 @@ async function registerSite(api, identity, siteId, time = Math.floor(Date.now() 
   const kp2 = deriveMaterial(kp1, peerFactor);
   const kp3 = deriveMaterial(kp2, peerFactor);
   const existing = await fetchSiteTip(api, branchPeer);
-  let tip = existing.ok ? existing.body?.tip : null;
-  const rebuiltForTip = tip ? siteAtCounter(identity, { siteId, branchPeer, kp0 }, Number(tip.counter ?? 0)) : null;
-  const tipMatches = !!tip && !!rebuiltForTip && (!tip.branch_inception_public_key_hash || tip.branch_inception_public_key_hash === kp0.address) && (!tip.prerotated_key_hash || rebuiltForTip.tip.address === tip.prerotated_key_hash);
-  if (tip && !tipMatches) {
+  if (existing.ok && existing.body?.tip) {
     await httpJson(api, "/password-rotation/offchain/reset", {
       method: "POST",
       body: JSON.stringify({ branch_peer: branchPeer })
     });
-    tip = null;
-  }
-  const tipHasPassword = !!(tip?.password?.prerotated_password_hash || tip?.password?.twice_prerotated_password_hash);
-  if (tip && tipHasPassword && rebuiltForTip) {
-    return {
-      site: rebuiltForTip,
-      mainTxns: [],
-      offchainRoot: tip.txn,
-      offchainPassword: tip.txn,
-      identity
-    };
   }
   const pwCurrent = generateSitePassword(kp1, branchPeer, 1);
   const pwNext = generateSitePassword(kp2, branchPeer, 2);
   let rootTxn;
-  if (!tip) {
+  {
     rootTxn = buildAndSignTxn(kp0, {
       time,
       outputs: [{ to: kp1.address, value: 0 }],
@@ -9391,7 +9405,29 @@ function siteKeysForOrigin(identity, siteId) {
     kp0: deriveMaterial(identity.k0, siteFactor(identity.secondFactor, branchPeer))
   };
 }
-async function rotateSitePassword(api, identity, site, time = Math.floor(Date.now() / 1e3), _opts) {
+function findPasswordMatchingHash(identity, siteId, expectedHash, max = 64) {
+  const { branchPeer, kp0 } = siteKeysForOrigin(identity, siteId);
+  const peerFactor = siteFactor(identity.secondFactor, branchPeer);
+  const expectedSalt = parsePhc(expectedHash)?.salt;
+  let k = kp0;
+  for (let i = 1; i <= max; i++) {
+    k = deriveMaterial(k, peerFactor);
+    const password = generateSitePassword(k, branchPeer, i);
+    if (expectedSalt && phcSaltB64ForPassword(password) !== expectedSalt) {
+      continue;
+    }
+    if (verifyPassword(password, expectedHash)) {
+      const kNext = deriveMaterial(k, peerFactor);
+      return {
+        index: i,
+        password,
+        nextPassword: generateSitePassword(kNext, branchPeer, i + 1)
+      };
+    }
+  }
+  return null;
+}
+async function rotateSitePassword(api, identity, site, time = Math.floor(Date.now() / 1e3), opts) {
   const keys = siteKeysForOrigin(identity, site.branchPeer || site.siteId);
   const tipRes = await fetchSiteTip(api, keys.branchPeer);
   const tip = tipRes.body?.tip;
@@ -9407,7 +9443,16 @@ async function rotateSitePassword(api, identity, site, time = Math.floor(Date.no
   if (tip.prerotated_key_hash && live.tip.address !== tip.prerotated_key_hash) {
     throw new Error("branch keys do not match the tip \u2014 register this site again");
   }
-  const password = live.nextPassword || site.nextPassword || live.currentPassword;
+  let password = live.nextPassword || site.nextPassword || live.currentPassword;
+  let nextReveal = "";
+  if (opts?.expectedHash) {
+    const found = findPasswordMatchingHash(identity, keys.branchPeer, opts.expectedHash);
+    if (!found) {
+      throw new Error("stored next hash is not in this vault's password chain");
+    }
+    password = found.password;
+    nextReveal = found.nextPassword;
+  }
   if (!password) {
     throw new Error("no site password available");
   }
@@ -9448,7 +9493,13 @@ async function rotateSitePassword(api, identity, site, time = Math.floor(Date.no
     currentPassword: live.nextPassword,
     nextPassword: newTwicePassword
   };
-  return { site: updated, txn, password: usedPassword, authenticated: true };
+  return {
+    site: updated,
+    txn,
+    password: usedPassword,
+    nextPassword: nextReveal || newTwicePassword,
+    authenticated: true
+  };
 }
 async function fetchSiteTip(api, branchPeer) {
   return httpJson(api, `/password-rotation/offchain/tip?branch_peer=${encodeURIComponent(branchPeer)}`);
@@ -9593,7 +9644,13 @@ function parseBridgeRequest(url) {
   const nonce = (params.get("nonce") || "").trim();
   if (!site || !callback || !nonce)
     return null;
-  return { action: actionRaw, site, callback, nonce };
+  return {
+    action: actionRaw,
+    site,
+    callback,
+    nonce,
+    expectedHash: params.get("expectedHash") || void 0
+  };
 }
 
 // ../../packages/shared-ui/dist/theme/presets.js
@@ -9995,7 +10052,9 @@ async function handleDeepLink(url) {
 async function approvePending() {
   if (!pending) return;
   const req = pending;
-  alertMsg("");
+  const btn = $("approveBtn");
+  btn.disabled = true;
+  alertMsg("Working\u2026", "success");
   try {
     let v = await loadVault();
     if (!v) {
@@ -10056,14 +10115,28 @@ async function approvePending() {
     }
     if (req.action === "register") {
       if (v.sites[siteKey]) {
+        const keys = siteKeysForOrigin(identity, siteKey);
+        const tipRes = await fetchSiteTip({ baseUrl: nodeUrl }, keys.branchPeer);
+        const counter = Number(
+          tipRes.body?.tip?.counter ?? v.sites[siteKey].counter ?? 0
+        );
+        const live = siteAtCounter(
+          identity,
+          { siteId: siteKey, branchPeer: keys.branchPeer, kp0: keys.kp0 },
+          counter
+        );
+        v.sites[keys.branchPeer] = storeSite(live);
+        await saveVault(v);
         await respond(
           {
             nonce: req.nonce,
             ok: true,
             action: "register",
             registered: true,
-            counter: v.sites[siteKey].counter,
-            message: "already registered"
+            counter: live.counter,
+            password: live.currentPassword,
+            nextPasswordHash: hashPassword(live.nextPassword),
+            message: "already registered \xB7 next hash synced to tip"
           },
           req.callback
         );
@@ -10105,7 +10178,13 @@ async function approvePending() {
         return;
       }
       const site = siteFromStored(stored);
-      const result = await rotateSitePassword({ baseUrl: nodeUrl }, identity, site);
+      const result = await rotateSitePassword(
+        { baseUrl: nodeUrl },
+        identity,
+        site,
+        void 0,
+        { expectedHash: req.expectedHash }
+      );
       v.sites[siteKey] = storeSite(result.site);
       await saveVault(v);
       await respond(
@@ -10115,8 +10194,8 @@ async function approvePending() {
           action: "signin",
           registered: true,
           counter: result.site.counter,
-          password: result.site.currentPassword,
-          nextPasswordHash: hashPassword(result.site.nextPassword),
+          password: result.password,
+          nextPasswordHash: hashPassword(result.nextPassword),
           message: `signed in & rotated \xB7 counter ${result.site.counter}`
         },
         req.callback
@@ -10131,6 +10210,8 @@ async function approvePending() {
       { nonce: req.nonce, ok: false, action: req.action, message },
       req.callback
     );
+  } finally {
+    btn.disabled = false;
   }
 }
 async function main() {

@@ -637,9 +637,6 @@ function add(Ah, Al, Bh, Bl) {
 var add3L = (Al, Bl, Cl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0);
 var add3H = (low, Ah, Bh, Ch) => Ah + Bh + Ch + (low / 2 ** 32 | 0) | 0;
 
-// ../../node_modules/@noble/hashes/esm/crypto.js
-var crypto2 = typeof globalThis === "object" && "crypto" in globalThis ? globalThis.crypto : void 0;
-
 // ../../node_modules/@noble/hashes/esm/utils.js
 function isBytes(a) {
   return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array";
@@ -760,15 +757,6 @@ function createOptHasher(hashCons) {
   hashC.blockLen = tmp.blockLen;
   hashC.create = (opts) => hashCons(opts);
   return hashC;
-}
-function randomBytes(bytesLength = 32) {
-  if (crypto2 && typeof crypto2.getRandomValues === "function") {
-    return crypto2.getRandomValues(new Uint8Array(bytesLength));
-  }
-  if (crypto2 && typeof crypto2.randomBytes === "function") {
-    return Uint8Array.from(crypto2.randomBytes(bytesLength));
-  }
-  throw new Error("crypto.getRandomValues must be defined");
 }
 
 // ../../node_modules/@noble/hashes/esm/_blake.js
@@ -2125,15 +2113,15 @@ function scrypt(password, salt, opts) {
 var sha2562 = sha256;
 
 // ../../node_modules/bcryptjs/index.js
-var import_crypto2 = __toESM(require_crypto(), 1);
+var import_crypto = __toESM(require_crypto(), 1);
 var randomFallback = null;
-function randomBytes2(len) {
+function randomBytes(len) {
   try {
     return crypto.getRandomValues(new Uint8Array(len));
   } catch {
   }
   try {
-    return import_crypto2.default.randomBytes(len);
+    return import_crypto.default.randomBytes(len);
   } catch {
   }
   if (!randomFallback) {
@@ -2159,7 +2147,7 @@ function genSaltSync(rounds, seed_length) {
   if (rounds < 10) salt.push("0");
   salt.push(rounds.toString());
   salt.push("$");
-  salt.push(base64_encode(randomBytes2(BCRYPT_SALT_LEN), BCRYPT_SALT_LEN));
+  salt.push(base64_encode(randomBytes(BCRYPT_SALT_LEN), BCRYPT_SALT_LEN));
   return salt.join("");
 }
 function genSalt(rounds, seed_length, callback) {
@@ -3984,7 +3972,7 @@ function hashPassword(password, phc = DEFAULT_PASSWORD_PHC) {
   if (parsed.id === "bcrypt") {
     return bcryptjs_default.hashSync(password, bcryptRounds(parsed));
   }
-  const saltBytes = parsed.salt ? b64decode(parsed.salt) : randomBytes(16);
+  const saltBytes = parsed.salt ? b64decode(parsed.salt) : sha2562(new TextEncoder().encode("yada-phc-salt-v1|" + password)).slice(0, 16);
   const hash2 = digestFor(parsed.id, password, parsed, saltBytes);
   return formatPhc({
     id: parsed.id,
@@ -6099,6 +6087,8 @@ function buildPasswordManagerUrl(req) {
   q.set("site", req.site);
   q.set("callback", req.callback);
   q.set("nonce", req.nonce);
+  if (req.expectedHash)
+    q.set("expectedHash", req.expectedHash);
   return `${PASSWORD_MANAGER_SCHEME}://auth?${q.toString()}`;
 }
 function parseQueryFromUrl(url) {
@@ -6389,11 +6379,13 @@ async function openManager(url) {
 function startBridge(action) {
   const nonce = newNonce();
   sessionStorage.setItem(PENDING_KEY, nonce);
+  const auth = loadAuth();
   const url = buildPasswordManagerUrl({
     action,
     site: siteId(),
     callback: `${DEMO_HARNESS_SCHEME}://result`,
-    nonce
+    nonce,
+    expectedHash: action === "signin" ? auth?.nextPasswordHash : void 0
   });
   alertMsg(`Opening Yada Password\u2026 (${action})`, "");
   void openManager(url).catch(
@@ -6444,7 +6436,10 @@ function handleResult(result) {
     }
     if (!verifyPassword(password, auth.nextPasswordHash)) {
       pushLog(false, "password does not match stored next hash", result.counter);
-      alertMsg("Auth failed: password does not match stored next hash", "error");
+      alertMsg(
+        "Auth failed: password does not match stored next hash. Tap Register to resync.",
+        "error"
+      );
       return;
     }
     saveAuth({ nextPasswordHash: nextHash });
