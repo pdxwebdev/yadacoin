@@ -36,3 +36,12 @@ code {
   font-family: ui-monospace, monospace;
   font-size: 0.85em;
 }
+
+.pm-verify--ok {
+  border-color: #2e7d32;
+  color: #c8e6c9;
+}
+.pm-verify--bad {
+  border-color: #c62828;
+  color: #ffcdd2;
+}

@@ -22,6 +22,29 @@ Demo                         Password manager                     Node
 
 Demo site id (branch_peer): `yadademo://app`
 
+
+## Android caller verification
+
+The `site` query param on `yadapass://` is attacker-controlled. Yada Password does
+**not** trust it on Android.
+
+1. `AuthRequestActivity` (standard launch) records the OS-attested caller:
+   `PendingIntent.getCreatorPackage()` (demo attaches this extra), else
+   `getLaunchedFromPackage()` (API 31+).
+2. SHA-256 of the caller’s signing certs is read from PackageManager.
+3. Policy (`verifyAndroidCaller`):
+   - `android://<package>` — package must equal the OS caller
+   - `https://…` — Digital Asset Links
+     (`/.well-known/assetlinks.json`) must list that package + cert
+   - custom scheme (e.g. `yadademo://app`) — callback scheme must match;
+     first successful request **pins** package+certs (TOFU)
+4. Later requests for the same site fail if package or certs don’t match the pin.
+5. The password callback is opened with `Intent.setPackage(caller)` so another
+   app that also registered the callback scheme cannot intercept it.
+
+Approve is disabled until the check passes. Web/iOS keep the previous unverified
+deep-link behavior.
+
 ## Prerequisites
 
 - Node 18+

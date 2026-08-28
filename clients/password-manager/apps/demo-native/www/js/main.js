@@ -6328,6 +6328,12 @@ function applyTheme(theme, root = typeof document !== "undefined" ? document.doc
   }
 }
 
+// src/open-password-manager.ts
+init_dist();
+var OpenPasswordManager = registerPlugin(
+  "OpenPasswordManager"
+);
+
 // src/main.ts
 var PENDING_KEY = "yadaDemoPendingNonce";
 var NODE_KEY = "yadaDemoNodeUrl";
@@ -6363,8 +6369,17 @@ function pushLog(ok, note, counter) {
 async function openManager(url) {
   console.info("[yadademo] open manager:", url);
   try {
+    if (Capacitor.getPlatform() === "android") {
+      await OpenPasswordManager.open({ url });
+      return;
+    }
+  } catch (e) {
+    console.warn("OpenPasswordManager failed, falling back", e);
+  }
+  try {
     if (Capacitor.isNativePlatform()) {
-      await App.openUrl({ url });
+      const opener = App;
+      await opener.openUrl({ url });
       return;
     }
   } catch (e) {

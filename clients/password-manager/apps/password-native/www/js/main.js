@@ -9653,6 +9653,174 @@ function parseBridgeRequest(url) {
   };
 }
 
+// ../../packages/core/dist/caller-identity.js
+function normalizeCertSha256(fp) {
+  return (fp || "").replace(/[^0-9a-fA-F]/g, "").toLowerCase();
+}
+function fingerprintsOverlap(a, b) {
+  const set = new Set(a.map(normalizeCertSha256).filter((x) => x.length === 64));
+  for (const fp of b) {
+    const n = normalizeCertSha256(fp);
+    if (n.length === 64 && set.has(n))
+      return true;
+  }
+  return false;
+}
+function formatCertSha256Display(fp) {
+  const n = normalizeCertSha256(fp);
+  if (n.length !== 64)
+    return fp || "\u2014";
+  return (n.match(/.{2}/g) || []).join(":").toUpperCase();
+}
+function androidPackageFromSiteId(site) {
+  const raw = (site || "").trim();
+  const m = /^(?:android:\/\/|android-app:\/\/)([a-zA-Z0-9._]+)(?:[/?#]|$)/i.exec(raw);
+  return m ? m[1].toLowerCase() : null;
+}
+var ASSETLINK_RELATIONS = /* @__PURE__ */ new Set([
+  "delegate_permission/common.handle_all_urls",
+  "delegate_permission/common.get_login_creds",
+  "delegate_permission/common.use_as_origin"
+]);
+function assetLinkMatchesCaller(links, caller) {
+  if (!links || !Array.isArray(links))
+    return false;
+  const pkg = caller.packageName.toLowerCase();
+  for (const entry of links) {
+    const rel = entry?.relation;
+    if (Array.isArray(rel) && rel.length) {
+      const okRel = rel.some((r) => ASSETLINK_RELATIONS.has(r));
+      if (!okRel)
+        continue;
+    }
+    const t = entry?.target;
+    if (!t || t.namespace && t.namespace !== "android_app")
+      continue;
+    if ((t.package_name || "").toLowerCase() !== pkg)
+      continue;
+    const fps = t.sha256_cert_fingerprints || [];
+    if (fingerprintsOverlap(fps, caller.sha256CertFingerprints))
+      return true;
+  }
+  return false;
+}
+async function fetchAndroidAssetLinks(origin, fetchImpl = globalThis.fetch.bind(globalThis)) {
+  const base = origin.replace(/\/+$/, "");
+  const url = `${base}/.well-known/assetlinks.json`;
+  try {
+    const res = await fetchImpl(url, {
+      headers: { Accept: "application/json" }
+    });
+    if (!res.ok)
+      return null;
+    const body = await res.json();
+    return Array.isArray(body) ? body : null;
+  } catch {
+    return null;
+  }
+}
+function pinFromCaller(caller) {
+  return {
+    packageName: caller.packageName.toLowerCase(),
+    sha256CertFingerprints: caller.sha256CertFingerprints.map(normalizeCertSha256).filter((x) => x.length === 64)
+  };
+}
+function pinMatches(pin, caller) {
+  if (pin.packageName.toLowerCase() !== caller.packageName.toLowerCase()) {
+    return false;
+  }
+  return fingerprintsOverlap(pin.sha256CertFingerprints, caller.sha256CertFingerprints);
+}
+function verifyAndroidCaller(opts) {
+  const site = (opts.claimedSite || "").trim();
+  const callback = (opts.callback || "").trim();
+  const siteScheme = schemeOf(site);
+  const cbScheme = schemeOf(callback);
+  if (opts.platform !== "android") {
+    return {
+      ok: true,
+      reason: "non-android-unverified",
+      pin: opts.pin || {
+        packageName: "",
+        sha256CertFingerprints: []
+      },
+      displayName: site
+    };
+  }
+  const caller = opts.caller;
+  if (!caller?.packageName) {
+    return { ok: false, reason: "os-caller-missing" };
+  }
+  const fps = caller.sha256CertFingerprints.map(normalizeCertSha256).filter((x) => x.length === 64);
+  if (!fps.length) {
+    return {
+      ok: false,
+      reason: "os-certs-missing",
+      displayName: caller.appLabel || caller.packageName
+    };
+  }
+  const attested = {
+    ...caller,
+    packageName: caller.packageName.toLowerCase(),
+    sha256CertFingerprints: fps
+  };
+  if (!cbScheme || cbScheme === "http" || cbScheme === "https") {
+    return {
+      ok: false,
+      reason: "callback-not-app-owned",
+      displayName: attested.appLabel || attested.packageName
+    };
+  }
+  const androidPkg = androidPackageFromSiteId(site);
+  if (androidPkg) {
+    if (androidPkg !== attested.packageName) {
+      return {
+        ok: false,
+        reason: "package-site-mismatch",
+        displayName: attested.appLabel || attested.packageName
+      };
+    }
+  } else if (siteScheme === "https") {
+    if (!assetLinkMatchesCaller(opts.assetLinks, attested)) {
+      return {
+        ok: false,
+        reason: "assetlinks-mismatch",
+        displayName: attested.appLabel || attested.packageName
+      };
+    }
+  } else if (siteScheme === "http") {
+    return {
+      ok: false,
+      reason: "http-origin-not-bindable",
+      displayName: attested.appLabel || attested.packageName
+    };
+  } else {
+    if (!siteScheme || siteScheme !== cbScheme) {
+      return {
+        ok: false,
+        reason: "site-callback-scheme-mismatch",
+        displayName: attested.appLabel || attested.packageName
+      };
+    }
+  }
+  if (opts.pin?.packageName && opts.pin.sha256CertFingerprints?.length) {
+    if (!pinMatches(opts.pin, attested)) {
+      return {
+        ok: false,
+        reason: "pinned-caller-mismatch",
+        displayName: attested.appLabel || attested.packageName,
+        pin: opts.pin
+      };
+    }
+  }
+  return {
+    ok: true,
+    reason: androidPkg ? "android-package-site" : siteScheme === "https" ? "assetlinks" : opts.pin?.packageName ? "pinned-tofu" : "tofu-first-seen",
+    pin: pinFromCaller(attested),
+    displayName: attested.appLabel || attested.packageName
+  };
+}
+
 // ../../packages/shared-ui/dist/theme/presets.js
 var baseTypography = {
   fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -9852,9 +10020,48 @@ function applyTheme(theme, root = typeof document !== "undefined" ? document.doc
   }
 }
 
+// src/caller-plugin.ts
+init_dist();
+var web = {
+  async getLastCaller() {
+    return {
+      packageName: null,
+      appLabel: null,
+      sha256CertFingerprints: [],
+      handlesCallback: false
+    };
+  },
+  async openUrlInPackage({ url }) {
+    window.location.href = url;
+  }
+};
+var CallerIdentity = registerPlugin(
+  "CallerIdentity",
+  {
+    web: () => web
+  }
+);
+
 // src/main.ts
 var VAULT_KEY = "yadaPasswordNativeVault";
 var pending = null;
+var pendingCaller = null;
+var pendingVerify = null;
+function pinFromStored(s) {
+  if (!s?.androidPackage || !s.androidCertSha256?.length) return null;
+  return {
+    packageName: s.androidPackage,
+    sha256CertFingerprints: s.androidCertSha256
+  };
+}
+function applyPin(stored, pin) {
+  if (!pin?.packageName || !pin.sha256CertFingerprints?.length) return stored;
+  return {
+    ...stored,
+    androidPackage: pin.packageName,
+    androidCertSha256: pin.sha256CertFingerprints
+  };
+}
 function $(id) {
   const el = document.getElementById(id);
   if (!el) throw new Error(`#${id}`);
@@ -9895,20 +10102,23 @@ async function saveVault(v) {
   }
   localStorage.setItem(VAULT_KEY, raw);
 }
-function storeSite(site) {
-  return {
-    siteId: site.siteId,
-    branchPeer: site.branchPeer,
-    counter: site.counter,
-    tipPrevPkh: site.tipPrevPkh,
-    branchInceptionPkh: site.branchInceptionPkh,
-    tipPriv: bytesToHex(site.tip.privateKey),
-    tipCc: bytesToHex(site.tip.chainCode),
-    currentPassword: site.currentPassword,
-    nextPassword: site.nextPassword,
-    kp0Priv: bytesToHex(site.kp0.privateKey),
-    kp0Cc: bytesToHex(site.kp0.chainCode)
-  };
+function storeSite(site, pin) {
+  return applyPin(
+    {
+      siteId: site.siteId,
+      branchPeer: site.branchPeer,
+      counter: site.counter,
+      tipPrevPkh: site.tipPrevPkh,
+      branchInceptionPkh: site.branchInceptionPkh,
+      tipPriv: bytesToHex(site.tip.privateKey),
+      tipCc: bytesToHex(site.tip.chainCode),
+      currentPassword: site.currentPassword,
+      nextPassword: site.nextPassword,
+      kp0Priv: bytesToHex(site.kp0.privateKey),
+      kp0Cc: bytesToHex(site.kp0.chainCode)
+    },
+    pin
+  );
 }
 function siteFromStored(s) {
   return {
@@ -9954,11 +10164,41 @@ function setTab(name) {
   $("panel-vault").hidden = name !== "vault";
   $("panel-request").hidden = name !== "request";
 }
+function setVerifyUi(v, caller) {
+  const badge = $("reqVerify");
+  const callerEl = $("reqCaller");
+  const certEl = $("reqCert");
+  const approve = $("approveBtn");
+  if (!v) {
+    badge.textContent = "\u2014";
+    badge.className = "mono";
+    callerEl.textContent = "\u2014";
+    certEl.textContent = "\u2014";
+    approve.disabled = true;
+    return;
+  }
+  const who = (caller?.appLabel ? `${caller.appLabel} \xB7 ` : "") + (caller?.packageName || v.displayName || "unknown");
+  callerEl.textContent = who;
+  const fp = caller?.sha256CertFingerprints?.[0];
+  certEl.textContent = fp ? formatCertSha256Display(fp) : "\u2014";
+  if (v.ok) {
+    badge.textContent = `Verified \xB7 ${v.reason}`;
+    badge.className = "mono pm-verify pm-verify--ok";
+    approve.disabled = false;
+  } else {
+    badge.textContent = `Not verified \xB7 ${v.reason}`;
+    badge.className = "mono pm-verify pm-verify--bad";
+    approve.disabled = true;
+  }
+}
 function showPending(req) {
   pending = req;
   if (!req) {
+    pendingCaller = null;
+    pendingVerify = null;
     $("reqEmpty").hidden = false;
     $("reqBody").hidden = true;
+    setVerifyUi(null, null);
     return;
   }
   $("reqEmpty").hidden = true;
@@ -9966,6 +10206,7 @@ function showPending(req) {
   $("reqAction").textContent = req.action;
   $("reqSite").textContent = req.site;
   $("reqCallback").textContent = req.callback;
+  setVerifyUi(pendingVerify, pendingCaller);
   setTab("request");
 }
 async function refreshHome() {
@@ -9986,10 +10227,22 @@ async function refreshHome() {
     $("homeStatus").textContent = e instanceof Error ? e.message : String(e);
   }
 }
-async function openCallback(url) {
+async function capacitorOpenUrl(url) {
+  const opener = App;
+  await opener.openUrl({ url });
+}
+async function openCallback(url, packageName) {
+  const pkg = packageName || pendingCaller?.packageName || pendingVerify?.pin?.packageName;
+  try {
+    if (Capacitor.getPlatform() === "android" && pkg) {
+      await CallerIdentity.openUrlInPackage({ url, packageName: pkg });
+      return;
+    }
+  } catch {
+  }
   try {
     if (Capacitor.isNativePlatform()) {
-      await App.openUrl({ url });
+      await capacitorOpenUrl(url);
       return;
     }
   } catch {
@@ -9998,42 +10251,84 @@ async function openCallback(url) {
 }
 async function respond(result, callback) {
   const url = buildDemoCallbackUrl(callback, result);
+  const pkg = pendingCaller?.packageName || pendingVerify?.pin?.packageName;
   await persistPending(null);
   showPending(null);
   console.info("[yadapass] callback:", url);
-  await openCallback(url);
+  await openCallback(url, pkg);
 }
 var PENDING_PREF = "yadaPendingBridgeRequest";
 async function persistPending(req) {
   try {
+    const payload = req ? { req, caller: pendingCaller } : null;
     if (Capacitor.isNativePlatform()) {
-      if (req) {
+      if (payload) {
         await Preferences.set({
           key: PENDING_PREF,
-          value: JSON.stringify(req)
+          value: JSON.stringify(payload)
         });
       } else {
         await Preferences.remove({ key: PENDING_PREF });
       }
-    } else if (req) {
-      sessionStorage.setItem(PENDING_PREF, JSON.stringify(req));
+    } else if (payload) {
+      sessionStorage.setItem(PENDING_PREF, JSON.stringify(payload));
     } else {
       sessionStorage.removeItem(PENDING_PREF);
     }
   } catch {
   }
 }
+function coercePersisted(raw) {
+  const parsed = JSON.parse(raw);
+  if (parsed && typeof parsed === "object" && "action" in parsed && "site" in parsed) {
+    return { req: parsed, caller: null };
+  }
+  if (parsed && typeof parsed === "object" && "req" in parsed) {
+    return parsed;
+  }
+  return null;
+}
 async function loadPersistedPending() {
   try {
     if (Capacitor.isNativePlatform()) {
       const { value } = await Preferences.get({ key: PENDING_PREF });
-      return value ? JSON.parse(value) : null;
+      return value ? coercePersisted(value) : null;
     }
     const raw = sessionStorage.getItem(PENDING_PREF);
-    return raw ? JSON.parse(raw) : null;
+    return raw ? coercePersisted(raw) : null;
   } catch {
     return null;
   }
+}
+async function snapshotCaller() {
+  if (Capacitor.getPlatform() !== "android") return null;
+  try {
+    const snap = await CallerIdentity.getLastCaller();
+    if (!snap.packageName) return null;
+    return {
+      packageName: snap.packageName,
+      appLabel: snap.appLabel || void 0,
+      sha256CertFingerprints: snap.sha256CertFingerprints || [],
+      handlesCallback: snap.handlesCallback
+    };
+  } catch {
+    return null;
+  }
+}
+async function verifyRequest(req, caller, pin) {
+  let assetLinks = null;
+  const site = req.site || "";
+  if (Capacitor.getPlatform() === "android" && (site.startsWith("https://") || site.startsWith("HTTPS://"))) {
+    assetLinks = await fetchAndroidAssetLinks(site);
+  }
+  return verifyAndroidCaller({
+    platform: Capacitor.getPlatform(),
+    claimedSite: req.site,
+    callback: req.callback,
+    caller,
+    pin,
+    assetLinks
+  });
 }
 async function handleDeepLink(url) {
   console.info("[yadapass] deep link:", url);
@@ -10045,9 +10340,17 @@ async function handleDeepLink(url) {
   if (req.site.startsWith("http://") || req.site.startsWith("https://")) {
     req.site = normalizeSiteId(req.site);
   }
+  const vault = await loadVault();
+  const pin = pinFromStored(vault?.sites?.[req.site]);
+  pendingCaller = await snapshotCaller();
+  pendingVerify = await verifyRequest(req, pendingCaller, pin);
   await persistPending(req);
   showPending(req);
-  alertMsg(`Request: ${req.action} \xB7 ${req.site}`, "success");
+  if (pendingVerify.ok) {
+    alertMsg(`Request: ${req.action} \xB7 ${req.site} \xB7 ${pendingVerify.displayName}`, "success");
+  } else {
+    alertMsg(`Caller not verified: ${pendingVerify.reason}`, "error");
+  }
 }
 async function approvePending() {
   if (!pending) return;
@@ -10056,6 +10359,11 @@ async function approvePending() {
   btn.disabled = true;
   alertMsg("Working\u2026", "success");
   try {
+    if (Capacitor.getPlatform() === "android" && !pendingVerify?.ok) {
+      alertMsg(`Caller not verified: ${pendingVerify?.reason || "unknown"}`, "error");
+      return;
+    }
+    const pin = pendingVerify?.ok ? pendingVerify.pin : null;
     let v = await loadVault();
     if (!v) {
       await respond(
@@ -10125,7 +10433,7 @@ async function approvePending() {
           { siteId: siteKey, branchPeer: keys.branchPeer, kp0: keys.kp0 },
           counter
         );
-        v.sites[keys.branchPeer] = storeSite(live);
+        v.sites[keys.branchPeer] = applyPin(storeSite(live), pin);
         await saveVault(v);
         await respond(
           {
@@ -10145,7 +10453,7 @@ async function approvePending() {
       const result = await registerSite({ baseUrl: nodeUrl }, identity, siteKey);
       v.mainDepth = result.identity.mainDepth;
       v.tipPrevPkh = result.identity.tipPrevPkh;
-      v.sites[result.site.branchPeer] = storeSite(result.site);
+      v.sites[result.site.branchPeer] = applyPin(storeSite(result.site), pin);
       await saveVault(v);
       await respond(
         {
@@ -10185,7 +10493,7 @@ async function approvePending() {
         void 0,
         { expectedHash: req.expectedHash }
       );
-      v.sites[siteKey] = storeSite(result.site);
+      v.sites[siteKey] = applyPin(storeSite(result.site), pin);
       await saveVault(v);
       await respond(
         {
@@ -10361,7 +10669,12 @@ async function main() {
   }
   const restored = await loadPersistedPending();
   if (restored) {
-    showPending(restored);
+    pendingCaller = restored.caller;
+    const vault = await loadVault();
+    const pin = pinFromStored(vault?.sites?.[restored.req.site]);
+    if (!pendingCaller) pendingCaller = await snapshotCaller();
+    pendingVerify = await verifyRequest(restored.req, pendingCaller, pin);
+    showPending(restored.req);
   }
   let launchUrl;
   if (Capacitor.isNativePlatform()) {

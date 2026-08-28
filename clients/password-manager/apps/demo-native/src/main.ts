@@ -11,6 +11,7 @@ import {
   type BridgeResult,
 } from "@yadacoin/password-core";
 import { applyTheme, resolveTheme } from "@yadacoin/password-shared-ui";
+import { OpenPasswordManager } from "./open-password-manager";
 
 const PENDING_KEY = "yadaDemoPendingNonce";
 const NODE_KEY = "yadaDemoNodeUrl";
@@ -51,9 +52,17 @@ function pushLog(ok: boolean, note: string, counter?: number | null) {
 async function openManager(url: string) {
   console.info("[yadademo] open manager:", url);
   try {
+    if (Capacitor.getPlatform() === "android") {
+      await OpenPasswordManager.open({ url });
+      return;
+    }
+  } catch (e) {
+    console.warn("OpenPasswordManager failed, falling back", e);
+  }
+  try {
     if (Capacitor.isNativePlatform()) {
-      // Capacitor App.openUrl → Android ACTION_VIEW / iOS openURL
-      await App.openUrl({ url });
+      const opener = App as unknown as { openUrl: (o: { url: string }) => Promise<void> };
+      await opener.openUrl({ url });
       return;
     }
   } catch (e) {
