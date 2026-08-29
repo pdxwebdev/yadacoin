@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="github-dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }}</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --canvas: #161b22;
+      --canvas-subtle: #21262d;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --success: #3fb950;
+      --danger: #f85149;
+      --attention: #d29922;
+      --btn: #238636;
+      --btn-hover: #2ea043;
+      --header: #010409;
+      --link: #58a6ff;
+      --chip: #1f6feb;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    a { color: var(--link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    header.app {
+      background: var(--header);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    header.app .mark {
+      width: 28px; height: 28px; border-radius: 6px;
+      background: #238636;
+      display: grid; place-items: center;
+      color: #fff; font-weight: 700;
+    }
+    header.app h1 {
+      font-size: 16px; font-weight: 600; margin: 0;
+    }
+    header.app .sub { color: var(--muted); font-size: 12px; }
+    nav.tabs {
+      display: flex; gap: 4px; padding: 12px 24px 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    nav.tabs button {
+      background: none; border: 0; color: var(--muted);
+      padding: 8px 14px; cursor: pointer;
+      border-bottom: 2px solid transparent;
+      font-weight: 600;
+    }
+    nav.tabs button.active {
+      color: var(--text);
+      border-bottom-color: #f78166;
+    }
+    main { padding: 20px 24px 48px; max-width: 1200px; margin: 0 auto; }
+    .card {
+      background: var(--canvas);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .card h2 { margin: 0 0 12px; font-size: 16px; }
+    label { display: block; color: var(--muted); font-weight: 600; margin: 10px 0 4px; }
+    input[type="checkbox"] {
+      width: auto;
+      height: 16px;
+      margin: 0;
+      padding: 0;
+      flex-shrink: 0;
+      accent-color: var(--accent);
+    }
+    label.check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 500;
+      color: var(--text);
+      margin: 14px 0 0;
+      line-height: 1.2;
+    }
+    input, textarea, select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 7px 10px;
+      font: inherit;
+    }
+    .searchbar {
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
+    }
+    .searchbar input {
+      flex: 1 1 auto;
+      width: auto;
+      min-width: 0;
+      font-size: 14px;
+      padding: 10px 12px;
+    }
+    .searchbar select {
+      flex: 0 0 auto;
+      width: auto;
+      max-width: 11rem;
+      padding: 10px 12px;
+    }
+    .searchbar .btn {
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(56,139,253,.15);
+    }
+    textarea { min-height: 80px; resize: vertical; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 720px) { .row { grid-template-columns: 1fr; } }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    button.btn, .btn {
+      background: var(--btn);
+      color: #fff;
+      border: 1px solid rgba(240,246,252,.1);
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.btn:hover { background: var(--btn-hover); }
+    button.btn.secondary {
+      background: var(--canvas-subtle);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    button.btn.danger { background: #da3633; }
+    button.btn.danger:hover { background: #b62324; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-size: 12px; font-weight: 600; }
+    tr:hover td { background: rgba(110,118,129,.1); }
+    .chip {
+      display: inline-block;
+      background: var(--canvas-subtle);
+      border: 1px solid var(--border);
+      border-radius: 2em;
+      padding: 0 8px;
+      margin: 0 4px 4px 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .status {
+      font-size: 12px; font-weight: 600;
+      padding: 2px 8px; border-radius: 2em;
+      border: 1px solid var(--border);
+    }
+    .status.announced { color: var(--success); border-color: #238636; }
+    .status.taken_down { color: var(--danger); border-color: #da3633; }
+    .status.pending, .status.superseded { color: var(--attention); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; }
+    .msg { padding: 10px 12px; border-radius: 6px; margin: 10px 0; }
+    .msg.error { background: rgba(248,81,73,.12); border: 1px solid rgba(248,81,73,.4); color: var(--danger); }
+    .msg.ok { background: rgba(63,185,80,.12); border: 1px solid rgba(63,185,80,.4); color: var(--success); }
+    .hidden { display: none !important; }
+    .muted { color: var(--muted); }
+    .empty { color: var(--muted); padding: 24px; text-align: center; }
+    dialog {
+      background: var(--canvas);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0;
+      width: min(560px, 92vw);
+    }
+    dialog::backdrop { background: rgba(1,4,9,.7); }
+    .dlg-h { padding: 14px 16px; border-bottom: 1px solid var(--border); font-weight: 600; }
+    .dlg-b { padding: 16px; }
+    .dlg-f { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+  </style>
+</head>
+<body>
+  <header class="app">
+    <div class="mark">Y</div>
+    <div>
+      <h1>File Announcements</h1>
+      <div class="sub">Decentralized file metadata on-chain · storage via sia.storage</div>
+    </div>
+  </header>
+  <nav class="tabs">
+    <button class="active" data-tab="files">Files</button>
+    <button data-tab="upload">Upload</button>
+    <button data-tab="history">Upload history</button>
+    <button data-tab="search">Network search</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+  <main>
+    <div id="flash"></div>
+
+    <section id="tab-files">
+      <div class="card">
+        <div class="searchbar">
+          <input id="file-q" placeholder="Search title, description, keywords, or Sia file identifier" />
+          <select id="file-status">
+            <option value="">All statuses</option>
+            <option value="announced">Announced</option>
+            <option value="taken_down">Taken down</option>
+          </select>
+          <button class="btn secondary" id="file-refresh">Search</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Managed files</h2>
+        <div id="file-table"></div>
+      </div>
+    </section>
+
+    <section id="tab-upload" class="hidden">
+      <div class="card">
+        <h2>Upload and announce</h2>
+        <p class="muted">Files are stored on the selected backend. Title, description, and keywords are announced on-chain.</p>
+        <form id="upload-form">
+          <label>File</label>
+          <input type="file" name="file" />
+          <div class="row">
+            <div>
+              <label>Title</label>
+              <input name="title" required placeholder="Human-readable title" />
+            </div>
+            <div>
+              <label>Keywords</label>
+              <input name="keywords" placeholder="comma,separated,keywords" />
+            </div>
+          </div>
+          <label>Description</label>
+          <textarea name="description" placeholder="What this file is"></textarea>
+          <div class="row">
+            <div>
+              <label>Existing Sia file identifier (optional)</label>
+              <input name="file_id" placeholder="Skip upload and announce an existing object id" />
+            </div>
+            <div>
+              <label>Backend</label>
+              <select name="backend" id="upload-backend"></select>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn" type="submit">Upload & announce</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section id="tab-history" class="hidden">
+      <div class="card">
+        <div class="searchbar">
+          <input id="hist-q" placeholder="Search history by title, file id, keywords…" />
+          <button class="btn secondary" id="hist-refresh">Search</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Upload history</h2>
+        <div id="hist-table"></div>
+      </div>
+    </section>
+
+    <section id="tab-search" class="hidden">
+      <div class="card">
+        <h2>Search local + network</h2>
+        <div class="searchbar">
+          <input id="net-q" placeholder="Search title, description, keywords, or Sia object id" />
+          <button class="btn" id="net-go">Search</button>
+        </div>
+        <div id="net-results"></div>
+      </div>
+    </section>
+
+    <section id="tab-settings" class="hidden">
+      <div class="card">
+        <h2>Storage settings</h2>
+        <p class="muted">Connect a <a href="https://sia.storage" target="_blank" rel="noopener">sia.storage</a> account by pasting the 64-character App Key. Additional backends can be registered later.</p>
+        <form id="settings-form">
+          <label>Default backend</label>
+          <select name="backend" id="settings-backend"></select>
+          <label>Sia App Key</label>
+          <input name="sia_app_key" placeholder="64-character hex App Key" autocomplete="off" />
+          <p class="muted" id="settings-key-hint"></p>
+          <label>Indexer URL</label>
+          <input name="sia_indexer_url" value="https://sia.storage" />
+          <div class="actions">
+            <button class="btn" type="submit">Save settings</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="edit-dlg">
+    <div class="dlg-h">Edit announcement</div>
+    <form class="dlg-b" id="edit-form">
+      <input type="hidden" name="record_id" />
+      <label>Title</label>
+      <input name="title" required />
+      <label>Description</label>
+      <textarea name="description"></textarea>
+      <label>Keywords</label>
+      <input name="keywords" />
+    </form>
+    <div class="dlg-f">
+      <button class="btn secondary" type="button" id="edit-cancel">Cancel</button>
+      <button class="btn" type="button" id="edit-save">Save & re-announce</button>
+    </div>
+  </dialog>
+
+  <dialog id="td-dlg">
+    <div class="dlg-h">Generate takedown announcement</div>
+    <form class="dlg-b" id="td-form">
+      <input type="hidden" name="record_id" />
+      <p class="muted">Broadcasts a content takedown so network nodes can remove this announcement automatically.</p>
+      <label>Reason code</label>
+      <select name="reason_code" id="td-reason"></select>
+      <label class="check"><input type="checkbox" name="delete_backend" /> Also delete from storage backend</label>
+    </form>
+    <div class="dlg-f">
+      <button class="btn secondary" type="button" id="td-cancel">Cancel</button>
+      <button class="btn danger" type="button" id="td-go">Announce takedown</button>
+    </div>
+  </dialog>
+
+<script>
+const API = "/file-announcements/api/v1";
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => [...r.querySelectorAll(s)];
+
+function flash(msg, ok=false) {
+  const el = $("#flash");
+  el.innerHTML = `<div class="msg ${ok ? "ok" : "error"}">${esc(msg)}</div>`;
+  setTimeout(() => { if (el.innerHTML.includes(msg)) el.innerHTML = ""; }, 6000);
+}
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[c]));
+}
+function fmtTime(ts) {
+  if (!ts) return "";
+  const d = new Date(Number(ts) * 1000);
+  return isNaN(d) ? String(ts) : d.toISOString().replace("T"," ").slice(0,19);
+}
+function chips(list) {
+  return (list || []).map(k => `<span class="chip">${esc(k)}</span>`).join("");
+}
+
+$$("nav.tabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    $$("nav.tabs button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    $$("main > section").forEach(s => s.classList.add("hidden"));
+    $("#tab-" + btn.dataset.tab).classList.remove("hidden");
+  });
+});
+
+async function api(path, opts={}) {
+  const res = await fetch(API + path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.status === false) {
+    throw new Error(data.error || data.message || res.statusText);
+  }
+  return data;
+}
+
+async function loadFiles() {
+  const q = $("#file-q").value.trim();
+  const status = $("#file-status").value;
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (status) params.set("status", status);
+  const data = await api("/files?" + params.toString());
+  const rows = data.results || [];
+  if (!rows.length) {
+    $("#file-table").innerHTML = `<div class="empty">No files yet. Upload one to announce it on-chain.</div>`;
+    return;
+  }
+  $("#file-table").innerHTML = `<table>
+    <thead><tr>
+      <th>Title</th><th>File ID</th><th>Keywords</th><th>Status</th><th>Updated</th><th></th>
+    </tr></thead>
+    <tbody>${rows.map(r => `
+      <tr>
+        <td>
+          <strong>${esc(r.title)}</strong><br>
+          <span class="muted">${esc(r.description || "")}</span><br>
+          <span class="muted">${esc(r.filename || "")} · ${esc(r.backend || "")} · ${r.size != null ? r.size + " B" : ""}</span>
+        </td>
+        <td class="mono">${esc(r.file_id)}</td>
+        <td>${chips(r.keywords)}</td>
+        <td><span class="status ${esc(r.status)}">${esc(r.status)}</span></td>
+        <td class="muted">${fmtTime(r.updated_at)}</td>
+        <td>
+          <div class="actions">
+            <button class="btn secondary" data-edit="${esc(r.record_id)}">Edit</button>
+            <button class="btn secondary" data-td="${esc(r.record_id)}">Takedown</button>
+            <a class="btn secondary" href="${API}/files/${esc(r.record_id)}/download">Download</a>
+            <button class="btn danger" data-del="${esc(r.record_id)}">Delete</button>
+          </div>
+        </td>
+      </tr>`).join("")}
+    </tbody></table>`;
+  $$("[data-edit]").forEach(b => b.onclick = () => openEdit(b.dataset.edit));
+  $$("[data-td]").forEach(b => b.onclick = () => openTakedown(b.dataset.td));
+  $$("[data-del]").forEach(b => b.onclick = () => delFile(b.dataset.del));
+}
+
+async function loadHistory() {
+  const q = $("#hist-q").value.trim();
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  const data = await api("/history?" + params.toString());
+  const rows = data.results || [];
+  if (!rows.length) {
+    $("#hist-table").innerHTML = `<div class="empty">No upload history yet.</div>`;
+    return;
+  }
+  $("#hist-table").innerHTML = `<table>
+    <thead><tr><th>When</th><th>Action</th><th>Status</th><th>Title / File ID</th><th>Details</th></tr></thead>
+    <tbody>${rows.map(r => `
+      <tr>
+        <td class="muted">${fmtTime(r.timestamp)}</td>
+        <td>${esc(r.action)}</td>
+        <td><span class="status ${r.status === "success" ? "announced" : "taken_down"}">${esc(r.status)}</span></td>
+        <td>${esc(r.title || "")}<br><span class="mono">${esc(r.file_id || "")}</span></td>
+        <td class="muted">${esc(r.error || r.transaction_id || r.reason_code || r.backend || "")}</td>
+      </tr>`).join("")}
+    </tbody></table>`;
+}
+
+async function loadBackends() {
+  const data = await api("/backends");
+  const opts = (data.results || []).filter(b => b.implemented)
+    .map(b => `<option value="${esc(b.name)}">${esc(b.label)}</option>`).join("");
+  $("#upload-backend").innerHTML = opts;
+  $("#settings-backend").innerHTML = opts;
+}
+
+async function loadSettings() {
+  const data = await api("/settings");
+  const s = data.result || {};
+  $("#settings-backend").value = s.backend || "sia";
+  $("[name=sia_indexer_url]", $("#settings-form")).value = s.sia_indexer_url || "https://sia.storage";
+  $("#settings-key-hint").textContent = s.sia_app_key_configured
+    ? `Configured: ${s.sia_app_key}`
+    : "No App Key stored yet.";
+}
+
+async function loadReasons() {
+  const data = await api("/takedown-reasons");
+  $("#td-reason").innerHTML = (data.results || [])
+    .map(r => `<option value="${esc(r.value)}">${esc(r.value)}</option>`).join("");
+}
+
+$("#file-refresh").onclick = () => loadFiles().catch(e => flash(e.message));
+$("#file-q").addEventListener("keydown", e => { if (e.key === "Enter") loadFiles().catch(err => flash(err.message)); });
+$("#hist-refresh").onclick = () => loadHistory().catch(e => flash(e.message));
+
+$("#upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  try {
+    const res = await fetch(API + "/files", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok || data.status === false) throw new Error(data.error || "upload failed");
+    flash("File announced: " + (data.result.file_id || ""), true);
+    e.target.reset();
+    await loadFiles();
+    await loadHistory();
+  } catch (err) { flash(err.message); }
+});
+
+$("#settings-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const body = Object.fromEntries(fd.entries());
+  if (!body.sia_app_key) delete body.sia_app_key;
+  try {
+    await api("/settings", {
+      method: "PUT",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(body),
+    });
+    flash("Settings saved", true);
+    await loadSettings();
+  } catch (err) { flash(err.message); }
+});
+
+$("#net-go").onclick = async () => {
+  const q = $("#net-q").value.trim();
+  try {
+    const data = await api("/files/search?q=" + encodeURIComponent(q));
+    const local = data.local || [];
+    const net = data.network || [];
+    $("#net-results").innerHTML = `
+      <h3>Local (${local.length})</h3>
+      ${local.length ? local.map(r => `<div class="card"><strong>${esc(r.title)}</strong>
+        <div class="mono">${esc(r.file_id)}</div>${chips(r.keywords)}
+        <div class="muted">${esc(r.description || "")}</div></div>`).join("") : `<div class="empty">No local matches</div>`}
+      <h3>Network (${net.length})</h3>
+      ${net.length ? net.map(r => `<div class="card"><span class="chip">${esc(r.source)}</span>
+        <strong>${esc((r.file||{}).title || "")}</strong>
+        <div class="mono">${esc((r.file||{}).file_id || "")}</div>
+        ${chips((r.file||{}).keywords)}
+        <div class="muted">${esc((r.file||{}).description || "")}</div>
+        <div class="mono muted">${esc(r.transaction_id || "")}</div></div>`).join("") : `<div class="empty">No network matches</div>`}`;
+  } catch (err) { flash(err.message); }
+};
+
+async function openEdit(id) {
+  const data = await api("/files/" + id);
+  const r = data.result;
+  const f = $("#edit-form");
+  f.record_id.value = id;
+  f.title.value = r.title || "";
+  f.description.value = r.description || "";
+  f.keywords.value = (r.keywords || []).join(", ");
+  $("#edit-dlg").showModal();
+}
+$("#edit-cancel").onclick = () => $("#edit-dlg").close();
+$("#edit-save").onclick = async () => {
+  const f = $("#edit-form");
+  try {
+    await api("/files/" + f.record_id.value, {
+      method: "PUT",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        title: f.title.value,
+        description: f.description.value,
+        keywords: f.keywords.value,
+      }),
+    });
+    $("#edit-dlg").close();
+    flash("Announcement updated", true);
+    await loadFiles();
+  } catch (err) { flash(err.message); }
+};
+
+function openTakedown(id) {
+  $("#td-form").record_id.value = id;
+  $("#td-dlg").showModal();
+}
+$("#td-cancel").onclick = () => $("#td-dlg").close();
+$("#td-go").onclick = async () => {
+  const f = $("#td-form");
+  try {
+    await api("/files/" + f.record_id.value + "/takedown", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        reason_code: f.reason_code.value,
+        delete_backend: f.delete_backend.checked,
+      }),
+    });
+    $("#td-dlg").close();
+    flash("Takedown announced", true);
+    await loadFiles();
+    await loadHistory();
+  } catch (err) { flash(err.message); }
+};
+
+async function delFile(id) {
+  if (!confirm("Delete this file record? This does not broadcast a takedown.")) return;
+  try {
+    await api("/files/" + id, { method: "DELETE" });
+    flash("Deleted", true);
+    await loadFiles();
+    await loadHistory();
+  } catch (err) { flash(err.message); }
+}
+
+(async () => {
+  try {
+    await loadBackends();
+    await loadSettings();
+    await loadReasons();
+    await loadFiles();
+    await loadHistory();
+  } catch (err) { flash(err.message); }
+})();
+</script>
+</body>
+</html>

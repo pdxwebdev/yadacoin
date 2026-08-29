@@ -1,0 +1,2 @@
+# Optional. Required only when using the sia.storage backend.
+sia-storage
