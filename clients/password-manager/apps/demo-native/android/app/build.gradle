@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "com.yadacoin.passworddemo"
+    namespace "io.yadacoin.passwordrotation.demo"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.yadacoin.passworddemo"
+        applicationId "io.yadacoin.passwordrotation.demo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

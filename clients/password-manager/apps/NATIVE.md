@@ -42,8 +42,25 @@ The `site` query param on `yadapass://` is attacker-controlled. Yada Password do
 5. The password callback is opened with `Intent.setPackage(caller)` so another
    app that also registered the callback scheme cannot intercept it.
 
-Approve is disabled until the check passes. Web/iOS keep the previous unverified
+Approve is disabled until the check passes. Web keeps the previous unverified
 deep-link behavior.
+
+## iOS caller verification
+
+iOS does not expose another app’s code-signing certificate. The password app
+records `UIApplication.OpenURLOptionsKey.sourceApplication` (bundle ID) when
+`yadapass://` is opened and pins that bundle ID (TOFU).
+
+- `ios://<bundle>` — bundle must equal the OS caller
+- `https://…` — `apple-app-site-association` must list that bundle
+- custom scheme — callback scheme must match; pin bundle ID
+
+If `sourceApplication` is missing, the request is **not** verified and Approve
+stays disabled. iOS cannot target a callback at a specific bundle (no
+`setPackage`); the callback still uses the pinned scheme.
+
+`npx cap sync` regenerates `packageClassList`; `npm run cap:sync` in each app
+re-adds the local plugin class names.
 
 ## Prerequisites
 
@@ -136,32 +153,20 @@ cd ../demo-native && npx cap sync
 # then rebuild/run from Android Studio or Xcode
 ```
 
-## Android Studio: "Incompatible JVM" / select JVM 17
+## Android Studio: JDK 17
 
-Capacitor 6 + AGP 8.2 need **JDK 17**. This machine already has:
-
-```
-/Users/matt.vogel/Library/Java/JavaVirtualMachines/jbr-17.0.14/Contents/Home
-```
-
-Both Android projects pin Gradle to that JDK via `android/gradle.properties`
-(`org.gradle.java.home=...`) and `compileOptions` Java 17.
-
-In Android Studio, if prompted:
+Capacitor 6 + AGP 8.2 need **JDK 17**. Do not pin `org.gradle.java.home` in
+`gradle.properties` (that breaks CI and other machines). Set `JAVA_HOME` or
+Android Studio’s Gradle JDK instead.
 
 1. **File → Settings → Build, Execution, Deployment → Build Tools → Gradle**
-2. **Gradle JDK** → pick **jbr-17** (or “Embedded JDK” if it’s 17)
+2. **Gradle JDK** → JDK 17 (Temurin, jbr-17, or Android Studio Embedded JDK 17)
 3. **File → Sync Project with Gradle Files**
 
-Or from the banner: choose **JVM 17** / `jbr-17.0.14`.
-
-Do **not** use JDK 21+ as the Gradle JVM for these projects unless you also
-upgrade AGP.
-
-Verify from terminal:
+Do **not** use JDK 21+ as the Gradle JVM unless you also upgrade AGP.
 
 ```bash
-export JAVA_HOME=/Users/matt.vogel/Library/Java/JavaVirtualMachines/jbr-17.0.14/Contents/Home
+export JAVA_HOME="$(/usr/libexec/java_home -v 17 2>/dev/null || echo "$JAVA_HOME")"
 cd clients/password-manager/apps/password-native/android
 ./gradlew assembleDebug
 ```

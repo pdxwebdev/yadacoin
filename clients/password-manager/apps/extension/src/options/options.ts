@@ -8,6 +8,7 @@ import {
   type UserSettings,
 } from "../shared/settings.js";
 import { bootTheme } from "../shared/theme-boot.js";
+import { requestOriginAccess } from "../shared/permissions.js";
 
 function $(id: string): HTMLElement {
   const el = document.getElementById(id);
@@ -68,6 +69,13 @@ async function main() {
   ($("themeForm") as HTMLFormElement).addEventListener("submit", async (e) => {
     e.preventDefault();
     const next = readForm();
+    if (next.nodeUrl) {
+      const ok = await requestOriginAccess(next.nodeUrl);
+      if (!ok) {
+        showAlert("Permission denied for node URL", "error");
+        return;
+      }
+    }
     await saveSettings(next);
     await preview(next);
     showAlert("Settings saved", "success");

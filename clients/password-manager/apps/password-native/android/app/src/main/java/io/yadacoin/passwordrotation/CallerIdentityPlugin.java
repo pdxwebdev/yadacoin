@@ -1,4 +1,4 @@
-package com.yadacoin.password;
+package io.yadacoin.passwordrotation;
 
 import android.content.Intent;
 import android.net.Uri;

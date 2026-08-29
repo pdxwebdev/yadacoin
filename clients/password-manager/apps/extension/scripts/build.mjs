@@ -19,6 +19,9 @@ function copyStatic() {
     cpSync(sharedUiCss, join(dist, "styles", "base.css"));
   }
   const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8"));
+  if (process.env.EXTENSION_VERSION) {
+    manifest.version = process.env.EXTENSION_VERSION;
+  }
   writeFileSync(join(dist, "manifest.json"), JSON.stringify(manifest, null, 2));
 }
 

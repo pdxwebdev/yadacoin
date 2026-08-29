@@ -18,6 +18,11 @@ import {
 } from "@yadacoin/password-core";
 import { bootTheme } from "../shared/theme-boot.js";
 import { loadSettings, saveSettings } from "../shared/settings.js";
+import {
+  enableSiteAndNode,
+  injectBridgeIntoTab,
+  requestOriginAccess,
+} from "../shared/permissions.js";
 
 const VAULT_KEY = "yadaPasswordVault";
 
@@ -91,6 +96,20 @@ async function fillSiteFromOrigin(origin: string, vault: StoredVault | null) {
   } else {
     $("sitePassword").textContent = "—";
   }
+}
+
+
+async function ensureNodeAccess(nodeUrl: string): Promise<void> {
+  const ok = await requestOriginAccess(nodeUrl);
+  if (!ok) throw new Error("Permission denied for node URL");
+}
+
+async function ensureSiteAccess(siteId: string, nodeUrl: string): Promise<void> {
+  const ok = await enableSiteAndNode(siteId, nodeUrl);
+  if (!ok) throw new Error("Permission denied for this site or node");
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabId = tabs[0]?.id;
+  if (tabId != null) await injectBridgeIntoTab(tabId);
 }
 
 async function loadVault(): Promise<StoredVault | null> {
@@ -213,6 +232,19 @@ async function main() {
     });
   }
 
+  $("allowSiteBtn").addEventListener("click", async () => {
+    showAlert("");
+    try {
+      const origin = await getActiveOrigin();
+      const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim();
+      if (!origin) throw new Error("This tab has no http(s) origin");
+      await ensureSiteAccess(origin, nodeUrl || origin);
+      showAlert("This page can talk to Yada Password. Register or Sign in here.", "success");
+    } catch (e) {
+      showAlert(e instanceof Error ? e.message : String(e), "error");
+    }
+  });
+
   $("genSeedBtn").addEventListener("click", () => {
     ($("mnemonic") as HTMLTextAreaElement).value = createVaultSeed(128);
     showAlert("New seed generated — write it down, then Save vault", "success");
@@ -243,6 +275,7 @@ async function main() {
         stored.inceptionDone = false;
         stored.sites = {};
       }
+      if (nodeUrl) await ensureNodeAccess(nodeUrl);
       await saveVault(stored);
       await saveSettings({ ...settings, nodeUrl });
       showAlert(`Vault saved · K0 ${id.k0.address.slice(0, 12)}…`, "success");
@@ -256,6 +289,7 @@ async function main() {
     try {
       const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim();
       if (!nodeUrl) throw new Error("Node URL required");
+      await ensureNodeAccess(nodeUrl);
       let v = await loadVault();
       if (!v) throw new Error("Save vault first");
       if (v.inceptionDone) throw new Error("Inception already done for this vault");
@@ -289,6 +323,7 @@ async function main() {
       const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim();
       const siteId = ($("siteId") as HTMLInputElement).value.trim();
       if (!nodeUrl || !siteId) throw new Error("Node URL and site required");
+      await ensureSiteAccess(siteId, nodeUrl);
       let v = await loadVault();
       if (!v?.inceptionDone) throw new Error("Broadcast inception first");
       const identity = identityFromStored(v);
@@ -318,6 +353,7 @@ async function main() {
     try {
       const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim();
       if (!nodeUrl) throw new Error("Node URL required");
+      await ensureNodeAccess(nodeUrl);
       let v = await loadVault();
       if (!v) throw new Error("No vault");
       const identity = identityFromStored(v);
@@ -362,6 +398,7 @@ async function main() {
       const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim();
       const siteId = ($("siteId") as HTMLInputElement).value.trim();
       if (!nodeUrl || !siteId) throw new Error("Node URL and site required");
+      await ensureSiteAccess(siteId, nodeUrl);
       let v = await loadVault();
       if (!v) throw new Error("No vault");
       const key = normalizeSiteId(siteId);

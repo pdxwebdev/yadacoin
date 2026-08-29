@@ -2,10 +2,10 @@
   "name": "@yadacoin/demo-native",
   "version": "0.1.0",
   "private": true,
-  "description": "Native demo harness — authenticates via Yada Password app deep links",
+  "description": "Native demo harness \u2014 authenticates via Yada Password app deep links",
   "scripts": {
     "build": "node ./scripts/build.mjs",
-    "cap:sync": "npm run build && npx cap sync",
+    "cap:sync": "npm run build && npx cap sync && node ./scripts/ensure-ios-plugins.mjs",
     "cap:ios": "npm run cap:sync && npx cap open ios",
     "cap:android": "npm run cap:sync && npx cap open android",
     "typecheck": "tsc -p tsconfig.json --noEmit"

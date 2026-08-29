@@ -2,10 +2,10 @@
   "name": "@yadacoin/password-native",
   "version": "0.1.0",
   "private": true,
-  "description": "Native Yada Password manager (Capacitor) — vault + deep-link auth provider",
+  "description": "Native Yada Password manager (Capacitor) \u2014 vault + deep-link auth provider",
   "scripts": {
     "build": "node ./scripts/build.mjs",
-    "cap:sync": "npm run build && npx cap sync",
+    "cap:sync": "npm run build && npx cap sync && node ./scripts/ensure-ios-plugins.mjs",
     "cap:ios": "npm run cap:sync && npx cap open ios",
     "cap:android": "npm run cap:sync && npx cap open android",
     "typecheck": "tsc -p tsconfig.json --noEmit"

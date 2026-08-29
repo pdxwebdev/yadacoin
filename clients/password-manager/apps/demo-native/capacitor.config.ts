@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "com.yadacoin.passworddemo",
+  appId: "io.yadacoin.passwordrotation.demo",
   appName: "Yada Auth Demo",
   webDir: "www",
   server: {

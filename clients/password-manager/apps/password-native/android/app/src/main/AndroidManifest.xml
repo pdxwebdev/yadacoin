@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <queries>
-        <package android:name="com.yadacoin.passworddemo" />
+        <package android:name="io.yadacoin.passwordrotation.demo" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="yadademo" />

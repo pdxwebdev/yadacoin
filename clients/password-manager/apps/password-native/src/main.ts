@@ -8,6 +8,7 @@ import {
   bytesToHex,
   createVaultSeed,
   fetchAndroidAssetLinks,
+  fetchAppleAppSiteAssociation,
   fetchKelDepth,
   fetchSiteTip,
   formatCertSha256Display,
@@ -24,7 +25,7 @@ import {
   siteAtCounter,
   siteKeysForOrigin,
   unlockIdentity,
-  verifyAndroidCaller,
+  verifyNativeCaller,
   type AttestedCaller,
   type BridgeRequest,
   type BridgeResult,
@@ -71,20 +72,25 @@ let pendingCaller: AttestedCaller | null = null;
 let pendingVerify: VerifyCallerResult | null = null;
 
 function pinFromStored(s: StoredSite | undefined): SiteCallerPin | null {
-  if (!s?.androidPackage || !s.androidCertSha256?.length) return null;
+  if (!s?.androidPackage) return null;
   return {
     packageName: s.androidPackage,
-    sha256CertFingerprints: s.androidCertSha256,
+    sha256CertFingerprints: s.androidCertSha256 || [],
   };
 }
 
 function applyPin(stored: StoredSite, pin: SiteCallerPin | null | undefined): StoredSite {
-  if (!pin?.packageName || !pin.sha256CertFingerprints?.length) return stored;
+  if (!pin?.packageName) return stored;
   return {
     ...stored,
     androidPackage: pin.packageName,
-    androidCertSha256: pin.sha256CertFingerprints,
+    androidCertSha256: pin.sha256CertFingerprints || [],
   };
+}
+
+function nativePlatform(): boolean {
+  const p = Capacitor.getPlatform();
+  return p === "android" || p === "ios";
 }
 
 function $(id: string): HTMLElement {
@@ -217,7 +223,13 @@ function setVerifyUi(v: VerifyCallerResult | null, caller: AttestedCaller | null
     (caller?.packageName || v.displayName || "unknown");
   callerEl.textContent = who;
   const fp = caller?.sha256CertFingerprints?.[0];
-  certEl.textContent = fp ? formatCertSha256Display(fp) : "—";
+  certEl.textContent = fp
+    ? formatCertSha256Display(fp)
+    : caller?.packageName
+      ? Capacitor.getPlatform() === "ios"
+        ? "iOS bundle ID (no cert API)"
+        : "—"
+      : "—";
   if (v.ok) {
     badge.textContent = `Verified · ${v.reason}`;
     badge.className = "mono pm-verify pm-verify--ok";
@@ -280,7 +292,7 @@ async function openCallback(url: string, packageName?: string | null) {
     pendingCaller?.packageName ||
     pendingVerify?.pin?.packageName;
   try {
-    if (Capacitor.getPlatform() === "android" && pkg) {
+    if (nativePlatform() && pkg) {
       await CallerIdentity.openUrlInPackage({ url, packageName: pkg });
       return;
     }
@@ -363,7 +375,7 @@ async function loadPersistedPending(): Promise<PersistedPending | null> {
 }
 
 async function snapshotCaller(): Promise<AttestedCaller | null> {
-  if (Capacitor.getPlatform() !== "android") return null;
+  if (!nativePlatform()) return null;
   try {
     const snap = await CallerIdentity.getLastCaller();
     if (!snap.packageName) return null;
@@ -384,20 +396,24 @@ async function verifyRequest(
   pin: SiteCallerPin | null
 ): Promise<VerifyCallerResult> {
   let assetLinks = null;
+  let appleAppSiteAssociation = null;
   const site = req.site || "";
-  if (
-    Capacitor.getPlatform() === "android" &&
-    (site.startsWith("https://") || site.startsWith("HTTPS://"))
-  ) {
+  const https = site.startsWith("https://") || site.startsWith("HTTPS://");
+  const platform = Capacitor.getPlatform();
+  if (https && platform === "android") {
     assetLinks = await fetchAndroidAssetLinks(site);
   }
-  return verifyAndroidCaller({
-    platform: Capacitor.getPlatform(),
+  if (https && platform === "ios") {
+    appleAppSiteAssociation = await fetchAppleAppSiteAssociation(site);
+  }
+  return verifyNativeCaller({
+    platform,
     claimedSite: req.site,
     callback: req.callback,
     caller,
     pin,
     assetLinks,
+    appleAppSiteAssociation,
   });
 }
 
@@ -432,7 +448,7 @@ async function approvePending() {
   btn.disabled = true;
   alertMsg("Working…", "success");
   try {
-    if (Capacitor.getPlatform() === "android" && !pendingVerify?.ok) {
+    if (nativePlatform() && !pendingVerify?.ok) {
       alertMsg(`Caller not verified: ${pendingVerify?.reason || "unknown"}`, "error");
       return;
     }

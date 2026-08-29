@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node ./scripts/build.mjs --watch",
     "build": "node ./scripts/build.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "package": "node ./scripts/package.mjs"
   },
   "dependencies": {
     "@yadacoin/password-core": "0.2.0",

@@ -1,4 +1,4 @@
-package com.yadacoin.password;
+package io.yadacoin.passwordrotation;
 
 import android.app.Activity;
 import android.app.PendingIntent;

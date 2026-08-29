@@ -32,6 +32,13 @@ export function androidPackageFromSiteId(site: string): string | null {
   return m ? m[1]!.toLowerCase() : null;
 }
 
+/** ios://com.example.app */
+export function iosBundleFromSiteId(site: string): string | null {
+  const raw = (site || "").trim();
+  const m = /^(?:ios:\/\/|iphone-app:\/\/)([a-zA-Z0-9.-]+)(?:[/?#]|$)/i.exec(raw);
+  return m ? m[1]!.toLowerCase() : null;
+}
+
 export interface AttestedCaller {
   packageName: string;
   appLabel?: string;
@@ -51,6 +58,18 @@ export interface AssetLinkEntry {
     package_name?: string;
     sha256_cert_fingerprints?: string[];
   };
+}
+
+export interface AppleAppSiteAssociation {
+  applinks?: {
+    apps?: string[];
+    details?: Array<{
+      appID?: string;
+      appIDs?: string[];
+      paths?: string[];
+    }>;
+  };
+  webcredentials?: { apps?: string[] };
 }
 
 export type VerifyCallerResult =
@@ -94,6 +113,25 @@ export function assetLinkMatchesCaller(
   return false;
 }
 
+export function aasaMatchesCaller(
+  aasa: AppleAppSiteAssociation | null | undefined,
+  bundleId: string
+): boolean {
+  if (!aasa || !bundleId) return false;
+  const ids: string[] = [];
+  for (const d of aasa.applinks?.details || []) {
+    if (d.appID) ids.push(d.appID);
+    if (d.appIDs) ids.push(...d.appIDs);
+  }
+  ids.push(...(aasa.applinks?.apps || []));
+  ids.push(...(aasa.webcredentials?.apps || []));
+  const b = bundleId.toLowerCase();
+  return ids.some((id) => {
+    const x = (id || "").toLowerCase();
+    return x === b || x.endsWith("." + b);
+  });
+}
+
 export async function fetchAndroidAssetLinks(
   origin: string,
   fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)
@@ -112,6 +150,32 @@ export async function fetchAndroidAssetLinks(
   }
 }
 
+export async function fetchAppleAppSiteAssociation(
+  origin: string,
+  fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)
+): Promise<AppleAppSiteAssociation | null> {
+  const base = origin.replace(/\/+$/, "");
+  const urls = [
+    `${base}/.well-known/apple-app-site-association`,
+    `${base}/apple-app-site-association`,
+  ];
+  for (const url of urls) {
+    try {
+      const res = await fetchImpl(url, {
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) continue;
+      const body = await res.json();
+      if (body && typeof body === "object") {
+        return body as AppleAppSiteAssociation;
+      }
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
 function pinFromCaller(caller: AttestedCaller): SiteCallerPin {
   return {
     packageName: caller.packageName.toLowerCase(),
@@ -121,33 +185,46 @@ function pinFromCaller(caller: AttestedCaller): SiteCallerPin {
   };
 }
 
-function pinMatches(pin: SiteCallerPin, caller: AttestedCaller): boolean {
+function pinMatches(
+  pin: SiteCallerPin,
+  caller: AttestedCaller,
+  platform: string
+): boolean {
   if (pin.packageName.toLowerCase() !== caller.packageName.toLowerCase()) {
     return false;
   }
-  return fingerprintsOverlap(
-    pin.sha256CertFingerprints,
-    caller.sha256CertFingerprints
-  );
+  const pinFps = (pin.sha256CertFingerprints || [])
+    .map(normalizeCertSha256)
+    .filter((x) => x.length === 64);
+  const callerFps = (caller.sha256CertFingerprints || [])
+    .map(normalizeCertSha256)
+    .filter((x) => x.length === 64);
+  if (platform === "ios") {
+    if (!pinFps.length || !callerFps.length) return true;
+    return fingerprintsOverlap(pinFps, callerFps);
+  }
+  return fingerprintsOverlap(pinFps, callerFps);
 }
 
-export function verifyAndroidCaller(opts: {
+export function verifyNativeCaller(opts: {
   platform: string;
   claimedSite: string;
   callback: string;
   caller: AttestedCaller | null;
   pin?: SiteCallerPin | null;
   assetLinks?: AssetLinkEntry[] | null;
+  appleAppSiteAssociation?: AppleAppSiteAssociation | null;
 }): VerifyCallerResult {
   const site = (opts.claimedSite || "").trim();
   const callback = (opts.callback || "").trim();
   const siteScheme = schemeOf(site);
   const cbScheme = schemeOf(callback);
+  const platform = opts.platform;
 
-  if (opts.platform !== "android") {
+  if (platform !== "android" && platform !== "ios") {
     return {
       ok: true,
-      reason: "non-android-unverified",
+      reason: "non-native-unverified",
       pin: opts.pin || {
         packageName: "",
         sha256CertFingerprints: [],
@@ -163,7 +240,7 @@ export function verifyAndroidCaller(opts: {
   const fps = caller.sha256CertFingerprints.map(normalizeCertSha256).filter(
     (x) => x.length === 64
   );
-  if (!fps.length) {
+  if (platform === "android" && !fps.length) {
     return {
       ok: false,
       reason: "os-certs-missing",
@@ -185,8 +262,17 @@ export function verifyAndroidCaller(opts: {
   }
 
   const androidPkg = androidPackageFromSiteId(site);
+  const iosBundle = iosBundleFromSiteId(site);
   if (androidPkg) {
-    if (androidPkg !== attested.packageName) {
+    if (platform !== "android" || androidPkg !== attested.packageName) {
+      return {
+        ok: false,
+        reason: "package-site-mismatch",
+        displayName: attested.appLabel || attested.packageName,
+      };
+    }
+  } else if (iosBundle) {
+    if (platform !== "ios" || iosBundle !== attested.packageName) {
       return {
         ok: false,
         reason: "package-site-mismatch",
@@ -194,10 +280,18 @@ export function verifyAndroidCaller(opts: {
       };
     }
   } else if (siteScheme === "https") {
-    if (!assetLinkMatchesCaller(opts.assetLinks, attested)) {
+    if (platform === "android") {
+      if (!assetLinkMatchesCaller(opts.assetLinks, attested)) {
+        return {
+          ok: false,
+          reason: "assetlinks-mismatch",
+          displayName: attested.appLabel || attested.packageName,
+        };
+      }
+    } else if (!aasaMatchesCaller(opts.appleAppSiteAssociation, attested.packageName)) {
       return {
         ok: false,
-        reason: "assetlinks-mismatch",
+        reason: "aasa-mismatch",
         displayName: attested.appLabel || attested.packageName,
       };
     }
@@ -217,8 +311,8 @@ export function verifyAndroidCaller(opts: {
     }
   }
 
-  if (opts.pin?.packageName && opts.pin.sha256CertFingerprints?.length) {
-    if (!pinMatches(opts.pin, attested)) {
+  if (opts.pin?.packageName) {
+    if (!pinMatches(opts.pin, attested, platform)) {
       return {
         ok: false,
         reason: "pinned-caller-mismatch",
@@ -228,12 +322,17 @@ export function verifyAndroidCaller(opts: {
     }
   }
 
+  const bound = androidPkg || iosBundle;
   return {
     ok: true,
-    reason: androidPkg
-      ? "android-package-site"
+    reason: bound
+      ? platform === "ios"
+        ? "ios-bundle-site"
+        : "android-package-site"
       : siteScheme === "https"
-        ? "assetlinks"
+        ? platform === "ios"
+          ? "aasa"
+          : "assetlinks"
         : opts.pin?.packageName
           ? "pinned-tofu"
           : "tofu-first-seen",
@@ -241,3 +340,6 @@ export function verifyAndroidCaller(opts: {
     displayName: attested.appLabel || attested.packageName,
   };
 }
+
+/** @deprecated use verifyNativeCaller */
+export const verifyAndroidCaller = verifyNativeCaller;

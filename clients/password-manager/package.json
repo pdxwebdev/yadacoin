@@ -20,7 +20,9 @@
     "build:demo-native": "npm run build -w @yadacoin/demo-native",
     "build:android": "bash ./scripts/build.sh android",
     "build:ios": "bash ./scripts/build.sh ios",
-    "build:all": "bash ./scripts/build.sh all"
+    "build:all": "bash ./scripts/build.sh all",
+    "package:extension": "npm run build:extension && npm run package -w @yadacoin/password-extension",
+    "set-version": "bash ./scripts/set-version.sh"
   },
   "engines": {
     "node": ">=18"

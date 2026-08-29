@@ -1,4 +1,4 @@
-package com.yadacoin.password;
+package io.yadacoin.passwordrotation;
 
 import java.util.ArrayList;
 import java.util.List;

@@ -14,7 +14,7 @@ Usage: $(basename "$0") <target>
   all         core + shared-ui + extension + mobile + native (JS) + demo-native
   core        @yadacoin/password-core
   extension   core + shared-ui + browser extension (dist/)
-  android     core + shared-ui + password-native JS, cap sync, assembleDebug
+  android     core + shared-ui + password-native JS, cap sync, assembleDebug (ANDROID_BUILD=release -> bundleRelease)
   ios         core + shared-ui + password-native JS, cap sync, simulator build
 
 Run from anywhere; script cds to clients/password-manager.
@@ -55,9 +55,15 @@ build_android() {
   build_native_js
   echo "==> capacitor sync android"
   (cd apps/password-native && npx cap sync android)
-  echo "==> gradle assembleDebug"
-  (cd apps/password-native/android && ./gradlew assembleDebug)
-  echo "APK: apps/password-native/android/app/build/outputs/apk/debug/"
+  if [[ "${ANDROID_BUILD:-debug}" == "release" ]]; then
+    echo "==> gradle bundleRelease"
+    (cd apps/password-native/android && ./gradlew bundleRelease)
+    echo "AAB: apps/password-native/android/app/build/outputs/bundle/release/"
+  else
+    echo "==> gradle assembleDebug"
+    (cd apps/password-native/android && ./gradlew assembleDebug)
+    echo "APK: apps/password-native/android/app/build/outputs/apk/debug/"
+  fi
 }
 
 build_ios() {

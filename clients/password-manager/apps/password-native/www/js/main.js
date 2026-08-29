@@ -9677,6 +9677,11 @@ function androidPackageFromSiteId(site) {
   const m = /^(?:android:\/\/|android-app:\/\/)([a-zA-Z0-9._]+)(?:[/?#]|$)/i.exec(raw);
   return m ? m[1].toLowerCase() : null;
 }
+function iosBundleFromSiteId(site) {
+  const raw = (site || "").trim();
+  const m = /^(?:ios:\/\/|iphone-app:\/\/)([a-zA-Z0-9.-]+)(?:[/?#]|$)/i.exec(raw);
+  return m ? m[1].toLowerCase() : null;
+}
 var ASSETLINK_RELATIONS = /* @__PURE__ */ new Set([
   "delegate_permission/common.handle_all_urls",
   "delegate_permission/common.get_login_creds",
@@ -9704,6 +9709,24 @@ function assetLinkMatchesCaller(links, caller) {
   }
   return false;
 }
+function aasaMatchesCaller(aasa, bundleId) {
+  if (!aasa || !bundleId)
+    return false;
+  const ids = [];
+  for (const d of aasa.applinks?.details || []) {
+    if (d.appID)
+      ids.push(d.appID);
+    if (d.appIDs)
+      ids.push(...d.appIDs);
+  }
+  ids.push(...aasa.applinks?.apps || []);
+  ids.push(...aasa.webcredentials?.apps || []);
+  const b = bundleId.toLowerCase();
+  return ids.some((id) => {
+    const x = (id || "").toLowerCase();
+    return x === b || x.endsWith("." + b);
+  });
+}
 async function fetchAndroidAssetLinks(origin, fetchImpl = globalThis.fetch.bind(globalThis)) {
   const base = origin.replace(/\/+$/, "");
   const url = `${base}/.well-known/assetlinks.json`;
@@ -9719,27 +9742,57 @@ async function fetchAndroidAssetLinks(origin, fetchImpl = globalThis.fetch.bind(
     return null;
   }
 }
+async function fetchAppleAppSiteAssociation(origin, fetchImpl = globalThis.fetch.bind(globalThis)) {
+  const base = origin.replace(/\/+$/, "");
+  const urls = [
+    `${base}/.well-known/apple-app-site-association`,
+    `${base}/apple-app-site-association`
+  ];
+  for (const url of urls) {
+    try {
+      const res = await fetchImpl(url, {
+        headers: { Accept: "application/json" }
+      });
+      if (!res.ok)
+        continue;
+      const body = await res.json();
+      if (body && typeof body === "object") {
+        return body;
+      }
+    } catch {
+    }
+  }
+  return null;
+}
 function pinFromCaller(caller) {
   return {
     packageName: caller.packageName.toLowerCase(),
     sha256CertFingerprints: caller.sha256CertFingerprints.map(normalizeCertSha256).filter((x) => x.length === 64)
   };
 }
-function pinMatches(pin, caller) {
+function pinMatches(pin, caller, platform) {
   if (pin.packageName.toLowerCase() !== caller.packageName.toLowerCase()) {
     return false;
   }
-  return fingerprintsOverlap(pin.sha256CertFingerprints, caller.sha256CertFingerprints);
+  const pinFps = (pin.sha256CertFingerprints || []).map(normalizeCertSha256).filter((x) => x.length === 64);
+  const callerFps = (caller.sha256CertFingerprints || []).map(normalizeCertSha256).filter((x) => x.length === 64);
+  if (platform === "ios") {
+    if (!pinFps.length || !callerFps.length)
+      return true;
+    return fingerprintsOverlap(pinFps, callerFps);
+  }
+  return fingerprintsOverlap(pinFps, callerFps);
 }
-function verifyAndroidCaller(opts) {
+function verifyNativeCaller(opts) {
   const site = (opts.claimedSite || "").trim();
   const callback = (opts.callback || "").trim();
   const siteScheme = schemeOf(site);
   const cbScheme = schemeOf(callback);
-  if (opts.platform !== "android") {
+  const platform = opts.platform;
+  if (platform !== "android" && platform !== "ios") {
     return {
       ok: true,
-      reason: "non-android-unverified",
+      reason: "non-native-unverified",
       pin: opts.pin || {
         packageName: "",
         sha256CertFingerprints: []
@@ -9752,7 +9805,7 @@ function verifyAndroidCaller(opts) {
     return { ok: false, reason: "os-caller-missing" };
   }
   const fps = caller.sha256CertFingerprints.map(normalizeCertSha256).filter((x) => x.length === 64);
-  if (!fps.length) {
+  if (platform === "android" && !fps.length) {
     return {
       ok: false,
       reason: "os-certs-missing",
@@ -9772,8 +9825,17 @@ function verifyAndroidCaller(opts) {
     };
   }
   const androidPkg = androidPackageFromSiteId(site);
+  const iosBundle = iosBundleFromSiteId(site);
   if (androidPkg) {
-    if (androidPkg !== attested.packageName) {
+    if (platform !== "android" || androidPkg !== attested.packageName) {
+      return {
+        ok: false,
+        reason: "package-site-mismatch",
+        displayName: attested.appLabel || attested.packageName
+      };
+    }
+  } else if (iosBundle) {
+    if (platform !== "ios" || iosBundle !== attested.packageName) {
       return {
         ok: false,
         reason: "package-site-mismatch",
@@ -9781,10 +9843,18 @@ function verifyAndroidCaller(opts) {
       };
     }
   } else if (siteScheme === "https") {
-    if (!assetLinkMatchesCaller(opts.assetLinks, attested)) {
+    if (platform === "android") {
+      if (!assetLinkMatchesCaller(opts.assetLinks, attested)) {
+        return {
+          ok: false,
+          reason: "assetlinks-mismatch",
+          displayName: attested.appLabel || attested.packageName
+        };
+      }
+    } else if (!aasaMatchesCaller(opts.appleAppSiteAssociation, attested.packageName)) {
       return {
         ok: false,
-        reason: "assetlinks-mismatch",
+        reason: "aasa-mismatch",
         displayName: attested.appLabel || attested.packageName
       };
     }
@@ -9803,8 +9873,8 @@ function verifyAndroidCaller(opts) {
       };
     }
   }
-  if (opts.pin?.packageName && opts.pin.sha256CertFingerprints?.length) {
-    if (!pinMatches(opts.pin, attested)) {
+  if (opts.pin?.packageName) {
+    if (!pinMatches(opts.pin, attested, platform)) {
       return {
         ok: false,
         reason: "pinned-caller-mismatch",
@@ -9813,9 +9883,10 @@ function verifyAndroidCaller(opts) {
       };
     }
   }
+  const bound = androidPkg || iosBundle;
   return {
     ok: true,
-    reason: androidPkg ? "android-package-site" : siteScheme === "https" ? "assetlinks" : opts.pin?.packageName ? "pinned-tofu" : "tofu-first-seen",
+    reason: bound ? platform === "ios" ? "ios-bundle-site" : "android-package-site" : siteScheme === "https" ? platform === "ios" ? "aasa" : "assetlinks" : opts.pin?.packageName ? "pinned-tofu" : "tofu-first-seen",
     pin: pinFromCaller(attested),
     displayName: attested.appLabel || attested.packageName
   };
@@ -10048,19 +10119,23 @@ var pending = null;
 var pendingCaller = null;
 var pendingVerify = null;
 function pinFromStored(s) {
-  if (!s?.androidPackage || !s.androidCertSha256?.length) return null;
+  if (!s?.androidPackage) return null;
   return {
     packageName: s.androidPackage,
-    sha256CertFingerprints: s.androidCertSha256
+    sha256CertFingerprints: s.androidCertSha256 || []
   };
 }
 function applyPin(stored, pin) {
-  if (!pin?.packageName || !pin.sha256CertFingerprints?.length) return stored;
+  if (!pin?.packageName) return stored;
   return {
     ...stored,
     androidPackage: pin.packageName,
-    androidCertSha256: pin.sha256CertFingerprints
+    androidCertSha256: pin.sha256CertFingerprints || []
   };
+}
+function nativePlatform() {
+  const p = Capacitor.getPlatform();
+  return p === "android" || p === "ios";
 }
 function $(id) {
   const el = document.getElementById(id);
@@ -10180,7 +10255,7 @@ function setVerifyUi(v, caller) {
   const who = (caller?.appLabel ? `${caller.appLabel} \xB7 ` : "") + (caller?.packageName || v.displayName || "unknown");
   callerEl.textContent = who;
   const fp = caller?.sha256CertFingerprints?.[0];
-  certEl.textContent = fp ? formatCertSha256Display(fp) : "\u2014";
+  certEl.textContent = fp ? formatCertSha256Display(fp) : caller?.packageName ? Capacitor.getPlatform() === "ios" ? "iOS bundle ID (no cert API)" : "\u2014" : "\u2014";
   if (v.ok) {
     badge.textContent = `Verified \xB7 ${v.reason}`;
     badge.className = "mono pm-verify pm-verify--ok";
@@ -10234,7 +10309,7 @@ async function capacitorOpenUrl(url) {
 async function openCallback(url, packageName) {
   const pkg = packageName || pendingCaller?.packageName || pendingVerify?.pin?.packageName;
   try {
-    if (Capacitor.getPlatform() === "android" && pkg) {
+    if (nativePlatform() && pkg) {
       await CallerIdentity.openUrlInPackage({ url, packageName: pkg });
       return;
     }
@@ -10301,7 +10376,7 @@ async function loadPersistedPending() {
   }
 }
 async function snapshotCaller() {
-  if (Capacitor.getPlatform() !== "android") return null;
+  if (!nativePlatform()) return null;
   try {
     const snap = await CallerIdentity.getLastCaller();
     if (!snap.packageName) return null;
@@ -10317,17 +10392,24 @@ async function snapshotCaller() {
 }
 async function verifyRequest(req, caller, pin) {
   let assetLinks = null;
+  let appleAppSiteAssociation = null;
   const site = req.site || "";
-  if (Capacitor.getPlatform() === "android" && (site.startsWith("https://") || site.startsWith("HTTPS://"))) {
+  const https = site.startsWith("https://") || site.startsWith("HTTPS://");
+  const platform = Capacitor.getPlatform();
+  if (https && platform === "android") {
     assetLinks = await fetchAndroidAssetLinks(site);
   }
-  return verifyAndroidCaller({
-    platform: Capacitor.getPlatform(),
+  if (https && platform === "ios") {
+    appleAppSiteAssociation = await fetchAppleAppSiteAssociation(site);
+  }
+  return verifyNativeCaller({
+    platform,
     claimedSite: req.site,
     callback: req.callback,
     caller,
     pin,
-    assetLinks
+    assetLinks,
+    appleAppSiteAssociation
   });
 }
 async function handleDeepLink(url) {
@@ -10359,7 +10441,7 @@ async function approvePending() {
   btn.disabled = true;
   alertMsg("Working\u2026", "success");
   try {
-    if (Capacitor.getPlatform() === "android" && !pendingVerify?.ok) {
+    if (nativePlatform() && !pendingVerify?.ok) {
       alertMsg(`Caller not verified: ${pendingVerify?.reason || "unknown"}`, "error");
       return;
     }

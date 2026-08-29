@@ -6369,7 +6369,7 @@ function pushLog(ok, note, counter) {
 async function openManager(url) {
   console.info("[yadademo] open manager:", url);
   try {
-    if (Capacitor.getPlatform() === "android") {
+    if (Capacitor.isNativePlatform()) {
       await OpenPasswordManager.open({ url });
       return;
     }

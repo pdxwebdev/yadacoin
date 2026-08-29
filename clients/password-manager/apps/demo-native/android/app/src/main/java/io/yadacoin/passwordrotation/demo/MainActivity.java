@@ -1,4 +1,4 @@
-package com.yadacoin.passworddemo;
+package io.yadacoin.passwordrotation.demo;
 
 import android.os.Bundle;
 
