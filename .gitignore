@@ -11,3 +11,8 @@ sdk/
 specs/
 docker-compose.yml
 venv*/
+*.jks
+*.keystore
+*.p12
+*.p8
+*.mobileprovision

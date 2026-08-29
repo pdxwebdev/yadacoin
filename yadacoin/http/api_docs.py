@@ -21,6 +21,7 @@ HTTP_METHODS = ["get", "post", "put", "delete", "patch"]
 
 TRACKED_PLUGINS = {
     "explorer",
+    "fileannouncement",
     "keyrisk",
     "keyrotation",
     "yadaaiagent",

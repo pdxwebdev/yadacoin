@@ -28,7 +28,7 @@ from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.config import Config
 from yadacoin.core.identity import Identity
-from yadacoin.core.peer import Group, SeedGateway, ServiceProvider, User
+from yadacoin.core.peer import Group, Pool, SeedGateway, ServiceProvider, User
 from yadacoin.core.transaction import Transaction
 from yadacoin.tcpsocket.base import BaseRPC
 
@@ -242,16 +242,24 @@ class RCPWebSocketServer(WebSocketHandler):
             and source == "websocket"
         ):
             if isinstance(self.config.peer, ServiceProvider):
-                for rid, peer_stream in list(
+                for peer_stream in list(
                     self.config.nodeServer.inbound_streams[User.__name__].values()
                 ):
                     await BaseRPC().write_params(peer_stream, "newtxn", params)
 
-                for rid, peer_stream in list(
+                for peer_stream in list(
+                    self.config.nodeServer.inbound_streams[Pool.__name__].values()
+                ):
+                    await BaseRPC().write_params(peer_stream, "newtxn", params)
+
+                for peer_stream in list(
                     self.config.nodeClient.outbound_streams[
                         SeedGateway.__name__
                     ].values()
                 ):
+                    await BaseRPC().write_params(peer_stream, "newtxn", params)
+            elif "node" in getattr(self.config, "modes", []):
+                async for peer_stream in self.config.peer.get_sync_peers():
                     await BaseRPC().write_params(peer_stream, "newtxn", params)
             return
 

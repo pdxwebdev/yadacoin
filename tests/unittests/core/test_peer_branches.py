@@ -753,12 +753,19 @@ class TestServiceProviderRoutePeersAndRequest(AsyncTestCase):
 
     async def test_route_peers_seedgateway_no_txn(self):
         sg_peer = SeedGateway.from_dict(SAMPLE_PEER_DICT)
-        # get_payload_txn returns None when payload has no transaction; but
-        # the ServiceProvider implementation calls it without await so it's a
-        # coroutine that's truthy. Patch get_payload_txn → None directly.
-        with patch.object(self.sp, "get_payload_txn", lambda p: None):
+        s_user, s_pool, s_ws = MagicMock(), MagicMock(), MagicMock()
+        ns = make_node_server_mock(
+            inbound_streams={"User": {"r1": s_user}, "Pool": {"r2": s_pool}}
+        )
+        ws = MagicMock()
+        ws.inbound_streams = {"User": {"r3": s_ws}}
+        with patch.object(self.config, "nodeServer", ns, create=True), patch.object(
+            self.config, "websocketServer", ws, create=True
+        ):
             result = [x async for x in self.sp.get_route_peers(sg_peer, {})]
-        self.assertEqual(result, [])
+        self.assertIn(s_user, result)
+        self.assertIn(s_pool, result)
+        self.assertIn(s_ws, result)
 
     async def test_sp_request_peers_user_branch(self):
         user_peer = User.from_dict(SAMPLE_PEER_DICT)
@@ -779,8 +786,10 @@ class TestServiceProviderRoutePeersAndRequest(AsyncTestCase):
 
     async def test_sp_request_peers_seedgateway_branch(self):
         sg_peer = SeedGateway.from_dict(SAMPLE_PEER_DICT)
-        s1, s2 = MagicMock(), MagicMock()
-        ns = make_node_server_mock(inbound_streams={"User": {"r1": s1}})
+        s1, s2, s3 = MagicMock(), MagicMock(), MagicMock()
+        ns = make_node_server_mock(
+            inbound_streams={"User": {"r1": s1}, "Pool": {"r3": s3}}
+        )
         ws = MagicMock()
         ws.inbound_streams = {"User": {"r2": s2}}
         with patch.object(self.config, "nodeServer", ns, create=True), patch.object(
@@ -791,6 +800,7 @@ class TestServiceProviderRoutePeersAndRequest(AsyncTestCase):
             ]
         self.assertIn(s1, result)
         self.assertIn(s2, result)
+        self.assertIn(s3, result)
 
 
 class TestGroupOutboundPeers(AsyncTestCase):

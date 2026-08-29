@@ -475,26 +475,6 @@ class NodeRPC(BaseRPC):
 
         txn_id = txn.transaction_signature
 
-        if stream.peer.protocol_version > 3:
-            await self.write_result(
-                stream, "newtxn_confirmed", {"transaction_id": txn_id}, body["id"]
-            )
-        elif stream.peer.protocol_version > 2:
-            await self.write_result(
-                stream, "newtxn_confirmed", {"transaction": txn.to_dict()}, body["id"]
-            )
-
-        await self.config.mongo.async_db.txn_tracking.update_one(
-            {"rid": stream.peer.rid},
-            {
-                "$set": {
-                    "host": stream.peer.host,
-                    f"transactions.{txn_id}": int(time.time()),
-                }
-            },
-            upsert=True,
-        )
-
         existing_txn = await self.config.mongo.async_db.miner_transactions.find_one(
             {"id": txn_id}
         )
@@ -502,25 +482,14 @@ class NodeRPC(BaseRPC):
             self.config.app_log.warning(
                 f"Transaction {txn_id} already in mempool! Ignoring."
             )
+            await self._confirm_newtxn(stream, txn, body)
             return
 
-        if txn.are_kel_fields_populated():
-            existing_txn = await self.config.mongo.async_db.miner_transactions.find_one(
-                {
-                    "$or": [
-                        {"twice_prerotated_key_hash": txn.twice_prerotated_key_hash},
-                        {"prerotated_key_hash": txn.prerotated_key_hash},
-                        {"public_key_hash": txn.public_key_hash},
-                        {"prev_public_key_hash": txn.prev_public_key_hash},
-                        {"public_key": txn.public_key},
-                    ]
-                }
+        if txn.are_kel_fields_populated() and await txn.is_already_in_mempool():
+            self.config.app_log.warning(
+                f"KEL Transaction {txn_id} already in mempool! Ignoring."
             )
-            if existing_txn:
-                self.config.app_log.warning(
-                    f"KEL Transaction {txn_id} already in mempool! Ignoring."
-                )
-                return
+            return
 
         input_ids = [input_item.id for input_item in txn.inputs]
         existing_input_txn = (
@@ -562,6 +531,7 @@ class NodeRPC(BaseRPC):
         self.config.processing_queues.transaction_queue.add(
             TransactionProcessingQueueItem(txn, stream)
         )
+        await self._confirm_newtxn(stream, txn, body)
 
         await self.config.notifier.notify_new_transaction(txn)
 
@@ -715,6 +685,7 @@ class NodeRPC(BaseRPC):
             await self.config.mongo.async_db.miner_transactions.replace_one(
                 {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
             )
+            await self._broadcast_newtxn(txn)
             return
         except Exception as e:
             await Transaction.handle_exception(e, txn)
@@ -735,15 +706,36 @@ class NodeRPC(BaseRPC):
             {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
         )
 
+        await self._broadcast_newtxn(txn)
+
+    async def _confirm_newtxn(self, stream, txn, body):
+        txn_id = txn.transaction_signature
+        if stream.peer.protocol_version > 3:
+            await self.write_result(
+                stream, "newtxn_confirmed", {"transaction_id": txn_id}, body["id"]
+            )
+        elif stream.peer.protocol_version > 2:
+            await self.write_result(
+                stream, "newtxn_confirmed", {"transaction": txn.to_dict()}, body["id"]
+            )
+
+        await self.config.mongo.async_db.txn_tracking.update_one(
+            {"rid": stream.peer.rid},
+            {
+                "$set": {
+                    "host": stream.peer.host,
+                    f"transactions.{txn_id}": int(time.time()),
+                }
+            },
+            upsert=True,
+        )
+
+    async def _broadcast_newtxn(self, txn):
         confirmed_peers = await self.config.mongo.async_db.txn_tracking.find(
             {f"transactions.{txn.transaction_signature}": {"$exists": True}}
         ).to_list(length=None)
 
         confirmed_rids = {peer["rid"] for peer in confirmed_peers}
-
-        async def make_gen(streams):
-            for stream in streams:
-                yield stream
 
         payload = {"transaction": txn.to_dict()}
 
@@ -759,9 +751,7 @@ class NodeRPC(BaseRPC):
                     (peer_stream.peer.rid, "newtxn", txn.transaction_signature)
                 ] = payload
 
-        async for peer_stream in make_gen(
-            await self.config.peer.get_outbound_streams()
-        ):
+        for peer_stream in await self.config.peer.get_outbound_streams():
             if peer_stream.peer.rid in confirmed_rids:
                 self.config.app_log.debug(
                     f"Skipping {peer_stream.peer.rid} - already confirmed."
@@ -1008,7 +998,9 @@ class NodeRPC(BaseRPC):
                     check_branch_announcement=check_branch_announcement,
                 )
             except Exception as e:
-                await Transaction.handle_exception(e, txn)
+                self.config.app_log.debug(
+                    f"send_mempool: skipping {txn.transaction_signature}: {e}"
+                )
                 continue
             payload = {"transaction": txn.to_dict()}
             await self.write_params(peer_stream, "newtxn", payload)
@@ -2398,6 +2390,7 @@ class NodeRPC(BaseRPC):
         await self.write_params(stream, "authenticated", {})
         await self.send_block_to_peer(self.config.LatestBlock.block, stream)
         await self.get_next_block(self.config.LatestBlock.block, stream)
+        await self.send_mempool(stream)
 
     # ── end KEL cross-signing helpers ─────────────────────────────────────────
 
@@ -2411,6 +2404,7 @@ class NodeRPC(BaseRPC):
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
             peer_username,
         )
+        await self.send_mempool(stream)
 
     async def get_ws_stream(self, route):
         if MODES.WEB.value not in self.config.modes:

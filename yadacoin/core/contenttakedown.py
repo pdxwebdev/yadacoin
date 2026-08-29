@@ -114,9 +114,7 @@ class TakedownReasonCode(Enum):
     """Removal mandated by a court order."""
 
 
-# Content takedown transactions must include a non-zero fee.
-# This requires the requester to spend an input, which is sufficient friction
-# to deter spam without imposing a hard minimum amount.
+# Content takedown fee floor. 0.0 allows fee-less takedowns for now.
 MINIMUM_TAKEDOWN_FEE: float = 0.0
 
 # Reason codes that nodes auto-comply with by default.

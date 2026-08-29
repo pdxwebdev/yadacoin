@@ -573,10 +573,10 @@ class NodeApplication(Application):
                     continue
                 message.setdefault("retry_attempts", 0)
                 message["retry_attempts"] += 1
+                found = False
                 for peer_cls in list(
                     self.config.nodeServer.inbound_streams.keys()
                 ).copy():
-                    found = False
                     if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
                         found = True
                         if message["retry_attempts"] > 3:
@@ -590,7 +590,7 @@ class NodeApplication(Application):
                             self.config.app_log.debug(
                                 "background_message_sender - continue 2"
                             )
-                            continue
+                            break
                         if len(x) > 3:
                             await self.config.nodeShared.write_result(
                                 self.config.nodeServer.inbound_streams[peer_cls][x[0]],
@@ -604,10 +604,11 @@ class NodeApplication(Application):
                                 x[1],
                                 message,
                             )
-                    if not found:
-                        self.delete_retry_messages(
-                            x[0],
-                        )
+                        break
+                if not found:
+                    self.delete_retry_messages(
+                        x[0],
+                    )
 
             for x in self.config.nodeClient.retry_messages.copy():
                 message = self.config.nodeClient.retry_messages.get(x)
@@ -618,10 +619,10 @@ class NodeApplication(Application):
                     continue
                 message.setdefault("retry_attempts", 0)
                 message["retry_attempts"] += 1
+                found = False
                 for peer_cls in list(
                     self.config.nodeClient.outbound_streams.keys()
                 ).copy():
-                    found = False
                     if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
                         found = True
                         if message["retry_attempts"] > 3:
@@ -632,9 +633,9 @@ class NodeApplication(Application):
                             self.config.app_log.warning(
                                 f"peer removed: background_message_sender nodeClient {x}"
                             )
-                            continue
+                            break
                         if message.get("test"):
-                            continue
+                            break
                         if len(x) > 3:
                             await self.config.nodeShared.write_result(
                                 self.config.nodeClient.outbound_streams[peer_cls][x[0]],
@@ -648,10 +649,11 @@ class NodeApplication(Application):
                                 x[1],
                                 message,
                             )
-                    if not found:
-                        self.delete_retry_messages(
-                            x[0],
-                        )
+                        break
+                if not found:
+                    self.delete_retry_messages(
+                        x[0],
+                    )
 
             self.config.health.message_sender.last_activity = int(time())
 

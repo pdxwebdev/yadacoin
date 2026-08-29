@@ -435,3 +435,167 @@ class TestNewBlockPeerTracking(AsyncTestCase):
         body = {"id": "req5", "result": {"blocks": []}}
         await server.blocksresponse(body, stream)
         self.assertTrue(stream.synced)
+
+
+class TestNewTxnRelay(AsyncTestCase):
+    def _server(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from yadacoin.tcpsocket.node import NodeSocketServer
+
+        server = NodeSocketServer.__new__(NodeSocketServer)
+        server.config = MagicMock()
+        server.config.app_log = MagicMock()
+        server.config.LatestBlock.block.index = 0
+        server.config.mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value=None
+        )
+        server.config.mongo.async_db.txn_tracking.update_one = AsyncMock()
+        server.config.mongo.async_db.txn_tracking.find = MagicMock()
+        server.config.processing_queues = MagicMock()
+        server.config.processing_queues.transaction_queue = MagicMock()
+        server.config.notifier.notify_new_transaction = AsyncMock()
+        server.config.modes = []
+        server.write_result = AsyncMock()
+        server.newtxn_tracker = MagicMock()
+        server.newtxn_tracker.by_host = {}
+        server.retry_messages = {}
+        return server
+
+    async def test_newtxn_confirms_only_after_queue(self):
+        from unittest.mock import MagicMock, patch
+
+        from yadacoin.core.processingqueue import TransactionProcessingQueueItem
+
+        server = self._server()
+        txn = MagicMock()
+        txn.transaction_signature = "sig1"
+        txn.inputs = []
+        txn.outputs = []
+        txn.public_key = "pk"
+        txn.are_kel_fields_populated.return_value = False
+        txn.to_dict.return_value = {"id": "sig1"}
+
+        stream = MagicMock()
+        stream.peer.protocol_version = 4
+        stream.peer.rid = "sender"
+        stream.peer.host = "10.0.0.1"
+
+        body = {"id": "req", "params": {"transaction": {"id": "sig1"}}}
+        with patch("yadacoin.tcpsocket.node.Transaction.from_dict", return_value=txn):
+            await server.newtxn(body, stream)
+
+        server.write_result.assert_awaited()
+        self.assertEqual(server.write_result.await_args[0][1], "newtxn_confirmed")
+        server.config.processing_queues.transaction_queue.add.assert_called_once()
+        queued = server.config.processing_queues.transaction_queue.add.call_args[0][0]
+        self.assertIsInstance(queued, TransactionProcessingQueueItem)
+
+    async def test_newtxn_kel_null_fields_do_not_false_match(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        server = self._server()
+        txn = MagicMock()
+        txn.transaction_signature = "sig-kel"
+        txn.inputs = []
+        txn.outputs = []
+        txn.public_key = "wallet-pk"
+        txn.are_kel_fields_populated.return_value = True
+        txn.is_already_in_mempool = AsyncMock(return_value=False)
+        txn.to_dict.return_value = {"id": "sig-kel"}
+
+        stream = MagicMock()
+        stream.peer.protocol_version = 4
+        stream.peer.rid = "sender"
+        stream.peer.host = "10.0.0.1"
+        body = {"id": "req", "params": {"transaction": {"id": "sig-kel"}}}
+        with patch("yadacoin.tcpsocket.node.Transaction.from_dict", return_value=txn):
+            await server.newtxn(body, stream)
+
+        txn.is_already_in_mempool.assert_awaited()
+        server.config.mongo.async_db.miner_transactions.find_one.assert_awaited()
+        # Must not query mempool with null KEL hashes / public_key $or.
+        for (
+            call
+        ) in server.config.mongo.async_db.miner_transactions.find_one.await_args_list:
+            args = call.args
+            if args and isinstance(args[0], dict) and "$or" in args[0]:
+                self.fail("KEL duplicate used raw $or including possibly-null fields")
+        server.config.processing_queues.transaction_queue.add.assert_called_once()
+
+    async def test_newtxn_does_not_confirm_when_kel_duplicate(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        server = self._server()
+        txn = MagicMock()
+        txn.transaction_signature = "sig-dup"
+        txn.inputs = []
+        txn.outputs = []
+        txn.are_kel_fields_populated.return_value = True
+        txn.is_already_in_mempool = AsyncMock(return_value=True)
+
+        stream = MagicMock()
+        stream.peer.protocol_version = 4
+        stream.peer.rid = "sender"
+        stream.peer.host = "10.0.0.1"
+        body = {"id": "req", "params": {"transaction": {"id": "sig-dup"}}}
+        with patch("yadacoin.tcpsocket.node.Transaction.from_dict", return_value=txn):
+            await server.newtxn(body, stream)
+
+        server.write_result.assert_not_awaited()
+        server.config.processing_queues.transaction_queue.add.assert_not_called()
+
+    async def test_transient_hold_still_broadcasts(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from yadacoin.core.transaction import MissingInputTransactionException
+
+        server = self._server()
+        server.config.LatestBlock.block.index = 0
+        server.config.mongo.async_db.miner_transactions.replace_one = AsyncMock()
+        server._broadcast_newtxn = AsyncMock()
+
+        txn = MagicMock()
+        txn.coinbase = False
+        txn.transaction_signature = "sig-hold"
+        txn.to_dict.return_value = {"id": "sig-hold"}
+        txn.verify = AsyncMock(side_effect=MissingInputTransactionException("missing"))
+
+        item = MagicMock()
+        item.transaction = txn
+        await server.process_transaction_queue_item(item)
+        server.config.mongo.async_db.miner_transactions.replace_one.assert_awaited()
+        server._broadcast_newtxn.assert_awaited_with(txn)
+
+    async def test_send_mempool_skips_invalid_without_deleting(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        server = self._server()
+        server.config.LatestBlock.block.index = 0
+        bad = {"id": "bad"}
+
+        async def gen():
+            yield bad
+
+        server.config.mongo.async_db.miner_transactions.find = MagicMock(
+            return_value=gen()
+        )
+        server.write_params = AsyncMock()
+        txn = MagicMock()
+        txn.transaction_signature = "bad"
+        txn.to_dict.return_value = bad
+        txn.verify = AsyncMock(side_effect=Exception("invalid"))
+        peer_stream = MagicMock()
+        peer_stream.peer.protocol_version = 1
+        peer_stream.peer.rid = "pool1"
+
+        with patch(
+            "yadacoin.tcpsocket.node.Transaction.from_dict", return_value=txn
+        ), patch(
+            "yadacoin.tcpsocket.node.Transaction.handle_exception",
+            new_callable=AsyncMock,
+        ) as handle:
+            await server.send_mempool(peer_stream)
+
+        handle.assert_not_awaited()
+        server.write_params.assert_not_awaited()

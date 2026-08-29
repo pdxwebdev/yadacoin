@@ -30,8 +30,12 @@ from yadacoin.core.branchannouncement import BranchAnnouncement
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.config import Config
-from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
+from yadacoin.core.contenttakedown import (
+    MINIMUM_TAKEDOWN_FEE,
+    ContentTakedownAnnouncement,
+)
 from yadacoin.core.credentialreceipt import CredentialReceipt
+from yadacoin.core.fileannouncement import FileAnnouncement
 from yadacoin.core.identityannouncement import IdentityAnnouncement
 from yadacoin.core.nodeannouncement import NodeAnnouncement
 from yadacoin.core.recoveryannouncement import (
@@ -224,6 +228,11 @@ class Transaction(object):
             )
         elif (
             isinstance(self.relationship, dict)
+            and FileAnnouncement.RELATIONSHIP_KEY in self.relationship
+        ):
+            self.relationship = FileAnnouncement.from_relationship(self.relationship)
+        elif (
+            isinstance(self.relationship, dict)
             and RecoveryAnnouncement.RELATIONSHIP_KEY in self.relationship
             and RecoveryProof.RELATIONSHIP_KEY in self.relationship
         ):
@@ -346,11 +355,18 @@ class Transaction(object):
         cls_inst.time = int(time.time())
         cls_inst.outputs = []
         cls_inst.relationship = relationship
-        cls_inst.relationship_hash = (
-            (hashlib.sha256(relationship.encode()).digest().hex())
-            if relationship
-            else ""
-        )
+        if relationship:
+            if hasattr(relationship, "to_string") and callable(
+                getattr(relationship, "to_string")
+            ):
+                rel_preimage = relationship.to_string()
+            else:
+                rel_preimage = relationship
+            cls_inst.relationship_hash = (
+                hashlib.sha256(rel_preimage.encode()).digest().hex()
+            )
+        else:
+            cls_inst.relationship_hash = ""
         cls_inst.no_relationship = no_relationship
         cls_inst.exact_match = exact_match
         cls_inst.version = version
@@ -938,10 +954,12 @@ class Transaction(object):
                 raise InvalidTransactionException(
                     f"Content takedown transactions not allowed before fork height {CHAIN.CONTENT_TAKEDOWN_FORK}"
                 )
-            if self.fee <= 0.0:
+            if self.fee < MINIMUM_TAKEDOWN_FEE:
                 raise InvalidTransactionException(
-                    "Content takedown transaction must include a non-zero fee"
+                    f"Content takedown transaction fee must be at least {MINIMUM_TAKEDOWN_FEE}"
                 )
+        elif isinstance(self.relationship, FileAnnouncement):
+            relationship = self.relationship.to_string()
         elif isinstance(
             self.relationship, (RecoveryAnnouncement, RecoveryProof, RecoveryTransition)
         ):
@@ -1121,6 +1139,8 @@ class Transaction(object):
         elif isinstance(self.relationship, AgentAnnouncement):
             relationship = self.relationship.to_string()
         elif isinstance(self.relationship, ContentTakedownAnnouncement):
+            relationship = self.relationship.to_string()
+        elif isinstance(self.relationship, FileAnnouncement):
             relationship = self.relationship.to_string()
         elif isinstance(
             self.relationship, (RecoveryAnnouncement, RecoveryProof, RecoveryTransition)
@@ -2198,6 +2218,8 @@ class Transaction(object):
                 relationship = {RotationAnnouncement.RELATIONSHIP_KEY: relationship}
             elif isinstance(self.relationship, BranchAnnouncement):
                 relationship = {BranchAnnouncement.RELATIONSHIP_KEY: relationship}
+            elif isinstance(self.relationship, FileAnnouncement):
+                relationship = {FileAnnouncement.RELATIONSHIP_KEY: relationship}
         ret = {
             "time": int(self.time),
             "rid": self.rid,

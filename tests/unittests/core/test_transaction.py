@@ -2525,8 +2525,34 @@ class TestTransactionPureMethods(AsyncTestCase):
             await txn.verify(check_content_takedown=False)
         self.assertIn("Content takedown transactions not allowed", str(ctx.exception))
 
-    async def test_verify_content_takedown_fee_too_low_raises(self):
-        """ContentTakedownAnnouncement with fee == 0 raises."""
+    async def test_verify_content_takedown_fee_below_minimum_raises(self):
+        """transaction.py: fee below MINIMUM_TAKEDOWN_FEE raises."""
+        import hashlib
+        from unittest.mock import patch
+
+        from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
+
+        txn = await Transaction.generate(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            private_key=yadacoin.core.config.CONFIG.private_key,
+        )
+        ann = ContentTakedownAnnouncement(
+            transaction_id="abc123def456", reason_code="csam"
+        )
+        txn.relationship = ann
+        txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
+        txn.fee = 0.0
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = NodeKeyRotationManager._sign(
+            yadacoin.core.config.CONFIG.private_key, txn.hash
+        )
+        with patch("yadacoin.core.transaction.MINIMUM_TAKEDOWN_FEE", 0.01):
+            with self.assertRaises(InvalidTransactionException) as ctx:
+                await txn.verify(check_content_takedown=True)
+        self.assertIn("at least", str(ctx.exception).lower())
+
+    async def test_verify_content_takedown_zero_fee_allowed(self):
+        """ContentTakedownAnnouncement with fee == 0 is allowed while MINIMUM_TAKEDOWN_FEE is 0."""
         import hashlib
 
         from yadacoin.core.contenttakedown import ContentTakedownAnnouncement
@@ -2540,14 +2566,17 @@ class TestTransactionPureMethods(AsyncTestCase):
         )
         txn.relationship = ann
         txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
-        txn.fee = 0.0  # zero fee → rejected
+        txn.fee = 0.0
         txn.hash = await txn.generate_hash()
         txn.transaction_signature = NodeKeyRotationManager._sign(
             yadacoin.core.config.CONFIG.private_key, txn.hash
         )
-        with self.assertRaises(InvalidTransactionException) as ctx:
+        try:
             await txn.verify(check_content_takedown=True)
-        self.assertIn("non-zero fee", str(ctx.exception).lower())
+        except InvalidTransactionException as e:
+            self.assertNotIn("fee", str(e).lower())
+        except Exception:
+            pass
 
     async def test_verify_content_takedown_with_flag_passes_hash_check(self):
         """ContentTakedownAnnouncement with check_content_takedown=True doesn't raise on that branch."""

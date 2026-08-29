@@ -30,7 +30,16 @@ YadaCoin includes a CLI for node management and configuration. For complete docu
 - **[Quick Start Guide](./cli/QUICKSTART.md)** - One-liner examples and common workflows
 - **[Development Guide](./cli/DEVELOPMENT.md)** - For developers adding new commands
 
+## Client store releases
+
+Node releases stay on `v*` tags (`.github/workflows/release.yml`). Password manager store builds use `password-vX.Y.Z` (`.github/workflows/password-release.yml`): Chrome zip, Play AAB (`io.yadacoin.passwordrotation`), and iOS IPA.
+
+Play uploads go to the **internal** track as **draft**. iOS uploads to App Store Connect (TestFlight). Chrome uploads a draft (not auto-published). Store jobs skip when the corresponding secrets are missing.
+
+See `clients/password-manager/README.md` for secrets.
+
 ## Developer Resources
+
 
 ### Network Simulator
 

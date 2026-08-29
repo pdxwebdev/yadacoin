@@ -930,6 +930,22 @@ class ServiceProvider(Peer):
                     continue
                 yield peer_stream
 
+        elif isinstance(peer, SeedGateway):
+            for peer_stream in list(
+                self.config.nodeServer.inbound_streams[User.__name__].values()
+            ):
+                yield peer_stream
+
+            for peer_stream in list(
+                self.config.nodeServer.inbound_streams[Pool.__name__].values()
+            ):
+                yield peer_stream
+
+            for peer_stream in list(
+                self.config.websocketServer.inbound_streams[User.__name__].values()
+            ):
+                yield peer_stream
+
     async def get_service_provider_request_peers(self, peer, payload):
         if isinstance(peer, User):
             for peer_stream in list(
@@ -952,6 +968,11 @@ class ServiceProvider(Peer):
         elif isinstance(peer, SeedGateway):
             for peer_stream in list(
                 self.config.nodeServer.inbound_streams[User.__name__].values()
+            ):
+                yield peer_stream
+
+            for peer_stream in list(
+                self.config.nodeServer.inbound_streams[Pool.__name__].values()
             ):
                 yield peer_stream
 
