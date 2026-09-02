@@ -1770,6 +1770,82 @@ class TestGetLogEmptyInception(AsyncTestCase):
         self.assertEqual(result, [])
 
 
+class TestCollapseDuplicateInceptions(unittest.TestCase):
+    def test_three_inceptions_count_as_one(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        class T:
+            def __init__(self, prev, name):
+                self.prev_public_key_hash = prev
+                self.name = name
+
+        log = [T("", "i1"), T("", "i2"), T("", "i3"), T("pkh0", "rot")]
+        out = KeyEventLog.collapse_duplicate_inceptions(log)
+        self.assertEqual([x.name for x in out], ["i1", "rot"])
+        self.assertEqual(len(out), 2)
+
+    def test_single_inception_unchanged(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        class T:
+            def __init__(self, prev):
+                self.prev_public_key_hash = prev
+
+        log = [T(""), T("a")]
+        out = KeyEventLog.collapse_duplicate_inceptions(log)
+        self.assertEqual(len(out), 2)
+
+    def test_duplicate_inceptions_distinct_public_key_hash(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        class T:
+            def __init__(self, prev, pkh, name):
+                self.prev_public_key_hash = prev
+                self.public_key_hash = pkh
+                self.name = name
+
+        log = [
+            T("", "k0", "i1"),
+            T("", "k0", "i2"),
+            T("k0", "k1", "rot"),
+            T("k0", "k1", "rot-dup"),
+        ]
+        out = KeyEventLog.collapse_duplicate_inceptions(log)
+        self.assertEqual([x.name for x in out], ["i1", "rot"])
+
+    def test_prefers_rotated_duplicate_inception_chain(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        class T:
+            def __init__(self, prev, pkh, name):
+                self.prev_public_key_hash = prev
+                self.public_key_hash = pkh
+                self.name = name
+
+        log = [
+            T("", "k0a", "orphan"),
+            T("", "k0b", "real"),
+            T("k0b", "k1b", "rot"),
+        ]
+        out = KeyEventLog.collapse_duplicate_inceptions(log)
+        self.assertEqual([x.name for x in out], ["real", "rot"])
+
+    def test_dict_entries_are_collapsed(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        log = [
+            {"prev_public_key_hash": "", "public_key_hash": "k0", "name": "i1"},
+            {"prev_public_key_hash": "", "public_key_hash": "k0", "name": "i2"},
+            {
+                "prev_public_key_hash": "k0",
+                "public_key_hash": "k1",
+                "name": "rot",
+            },
+        ]
+        out = KeyEventLog.collapse_duplicate_inceptions(log)
+        self.assertEqual([x["name"] for x in out], ["i1", "rot"])
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
 
@@ -7827,6 +7903,39 @@ class TestGetOnchainChildForkView(AsyncTestCase):
                 block_index=100,
                 extra_blocks=[eb],
             )
+        self.assertIsNone(result)
+
+    async def test_mongo_row_at_or_above_block_index_skipped_without_fork(self):
+        """Later (or same-height) mongo children must not reject inbound block verify."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        parent = _make_mock_ke(
+            public_key_hash=_VALID_ADDR_A,
+            prerotated_key_hash=_VALID_ADDR_B,
+            twice_prerotated_key_hash=_VALID_ADDR_C,
+        )
+        parent.txn.transaction_signature = "parent_sig"
+
+        later_child_doc = {
+            "index": 610049,
+            "public_key": "pk",
+            "transactions": {
+                **dict(_INCEPTION_TXN_DICT),
+                "id": "later_child",
+                "public_key_hash": _VALID_ADDR_B,
+                "prev_public_key_hash": _VALID_ADDR_A,
+                "prerotated_key_hash": _VALID_ADDR_C,
+                "twice_prerotated_key_hash": "1LaterXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            },
+        }
+        mock_cursor = MagicMock()
+        mock_cursor.to_list = AsyncMock(return_value=[later_child_doc])
+        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
+            mock_cfg = MagicMock()
+            mock_config_cls.return_value = mock_cfg
+            mock_cfg.mongo.async_db.blocks.aggregate.return_value = mock_cursor
+            result = await parent.get_onchain_child(block_index=610048)
+
         self.assertIsNone(result)
 
 

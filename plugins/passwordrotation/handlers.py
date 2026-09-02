@@ -24,6 +24,80 @@ from tornado.web import StaticFileHandler
 from yadacoin.http.base import BaseHandler
 
 PASSWORD_RELATIONSHIP_KEY = "password"
+ADMIN_SESSION_MAX_AGE = 120
+
+
+def request_origin(handler) -> str:
+    proto = (handler.request.protocol or "http").lower()
+    host = (handler.request.host or "").lower()
+    return f"{proto}://{host}"
+
+
+def is_admin_branch_peer(handler, branch_peer: str) -> bool:
+    peer = (branch_peer or "").strip().lower().rstrip("/")
+    origin = request_origin(handler).rstrip("/")
+    if not peer or not origin:
+        return False
+    return peer == origin
+
+
+def _pkh_from_pubhex(pub_hex: str) -> str:
+    if not pub_hex:
+        return ""
+    return str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub_hex)))
+
+
+async def node_inception_pkh(config) -> str:
+    """P2PKH of this node's KEL inception (K0). Empty if unknown."""
+    mgr = getattr(config, "kel_manager", None)
+    k0 = getattr(mgr, "_k0", None) if mgr is not None else None
+    if isinstance(k0, dict) and k0.get("private_key"):
+        try:
+            from coincurve import PrivateKey as CoincurvePrivateKey
+
+            pub = CoincurvePrivateKey(k0["private_key"]).public_key.format(
+                compressed=True
+            )
+            return str(P2PKHBitcoinAddress.from_pubkey(pub))
+        except Exception:
+            pass
+    username = getattr(config, "username", "") or ""
+    if username.strip():
+        try:
+            from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+            identity = await IdentityAnnouncement.get_by_username(username)
+            if identity:
+                pkh = _pkh_from_pubhex(identity.get("public_key") or "")
+                if pkh:
+                    return pkh
+                txn = identity.get("txn") or {}
+                pkh = txn.get("public_key_hash") or ""
+                if pkh:
+                    return pkh
+        except Exception:
+            pass
+    inception = getattr(config, "inception", None)
+    if inception is not None:
+        pkh = getattr(inception, "public_key_hash", None) or ""
+        if pkh:
+            return pkh
+        try:
+            return _pkh_from_pubhex(getattr(inception, "public_key", "") or "")
+        except Exception:
+            pass
+    return ""
+
+
+async def vault_matches_node(handler, claimed_inception_pkh: str):
+    """Return None if the vault KEL is this node, else (status, message)."""
+    node_pkh = await node_inception_pkh(handler.config)
+    if not node_pkh:
+        return 403, "node KEL identity is not initialized"
+    claimed = (claimed_inception_pkh or "").strip()
+    if not claimed or claimed != node_pkh:
+        return 403, "vault identity does not match this node"
+    return None
 
 
 from plugins.passwordrotation.phc import is_password_hash
@@ -110,6 +184,12 @@ async def _accept_offchain_step(handler, body, *, require_password=None):
             "status": False,
             "message": "branch_peer, counter, and txn are required",
         }
+
+    if is_admin_branch_peer(handler, branch_peer):
+        claimed = body.get("inception_public_key_hash") or ""
+        mismatch = await vault_matches_node(handler, claimed)
+        if mismatch:
+            return mismatch[0], {"status": False, "message": mismatch[1]}
 
     if not _verify_txn_sig(txn):
         return 400, {"status": False, "message": "invalid transaction signature"}
@@ -348,6 +428,23 @@ class PasswordSigninVerifyHandler(BaseHandler):
                     "twice_prerotated_password_hash"
                 ),
             }
+            if is_admin_branch_peer(self, body.get("branch_peer") or ""):
+                mismatch = await vault_matches_node(
+                    self,
+                    body.get("inception_public_key_hash")
+                    or payload.get("inception_public_key_hash")
+                    or "",
+                )
+                if mismatch:
+                    code, payload = mismatch[0], {
+                        "status": False,
+                        "authenticated": False,
+                        "rotated": False,
+                        "message": mismatch[1],
+                    }
+                else:
+                    payload["token"] = await self.issue_operator_session()
+                    payload["operator_session"] = True
         else:
             payload["authenticated"] = False
             payload["rotated"] = False
@@ -434,6 +531,13 @@ class PasswordOffchainResetHandler(BaseHandler):
             return self.render_as_json(
                 {"status": False, "message": "branch_peer required"}
             )
+        if is_admin_branch_peer(self, branch_peer):
+            mismatch = await vault_matches_node(
+                self, body.get("inception_public_key_hash") or ""
+            )
+            if mismatch:
+                self.set_status(mismatch[0])
+                return self.render_as_json({"status": False, "message": mismatch[1]})
         result = await self.config.mongo.async_db.key_event_log.delete_many(
             {"branch_peer": branch_peer}
         )
@@ -497,6 +601,89 @@ class PasswordHarnessHandler(BaseHandler):
         self.render("password_harness.html")
 
 
+class PasswordAdminSessionHandler(BaseHandler):
+    """POST /password-rotation/admin-session
+
+    Same-origin login after the extension has rotated this origin's password
+    branch. Issues the operator cookie used by admin dashboards.
+    """
+
+    async def post(self):
+        try:
+            body = json.loads(self.request.body or b"{}")
+        except Exception:
+            body = {}
+        origin = request_origin(self)
+        hdr = (self.request.headers.get("Origin") or "").strip().lower().rstrip("/")
+        if hdr and hdr != origin.rstrip("/"):
+            self.set_status(403)
+            return self.render_as_json({"status": False, "message": "origin mismatch"})
+        branch_peer = (body.get("branch_peer") or origin).strip().lower()
+        if not is_admin_branch_peer(self, branch_peer):
+            self.set_status(403)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": "admin session is only for this node's origin",
+                }
+            )
+        tip = await self.config.mongo.async_db.key_event_log.find_one(
+            {"branch_peer": branch_peer},
+            sort=[("counter", -1)],
+        )
+        if not tip:
+            self.set_status(401)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": "no password branch for this origin — register via the extension",
+                }
+            )
+        mismatch = await vault_matches_node(
+            self, tip.get("inception_public_key_hash") or ""
+        )
+        if mismatch:
+            self.set_status(mismatch[0])
+            return self.render_as_json({"status": False, "message": mismatch[1]})
+        password = body.get("password") or ""
+        if not password:
+            self.set_status(401)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": "sign in with the Yada Password extension first",
+                }
+            )
+        hashes = []
+        current_pre = (tip.get("password") or {}).get("prerotated_password_hash")
+        if current_pre:
+            hashes.append(current_pre)
+        prev = await self.config.mongo.async_db.key_event_log.find_one(
+            {
+                "branch_peer": branch_peer,
+                "counter": int(tip.get("counter") or 0) - 1,
+            }
+        )
+        prev_pre = ((prev or {}).get("password") or {}).get("prerotated_password_hash")
+        if prev_pre:
+            hashes.append(prev_pre)
+        matched = False
+        for stored in hashes:
+            try:
+                if _verify_password(password, stored):
+                    matched = True
+                    break
+            except Exception:
+                continue
+        if not matched:
+            self.set_status(401)
+            return self.render_as_json({"status": False, "message": "invalid password"})
+        token = await self.issue_operator_session()
+        return self.render_as_json(
+            {"status": True, "token": token, "operator_session": True}
+        )
+
+
 class _PasswordDocHandler(BaseHandler):
     def get_template_path(self):
         return os.path.join(os.path.dirname(__file__), "templates")
@@ -526,6 +713,7 @@ HANDLERS = PASSWORD_ROTATION_HANDLERS = [
     (r"/password-rotation/offchain", PasswordOffchainSubmitHandler),
     (r"/password-rotation/offchain-chain", PasswordOffchainChainHandler),
     (r"/password-rotation/verify", PasswordSigninVerifyHandler),
+    (r"/password-rotation/admin-session", PasswordAdminSessionHandler),
     (r"/password-rotation/theme\.json", PasswordThemeHandler),
     (r"/password-rotation/mobile", PasswordMobileDemoHandler),
     (

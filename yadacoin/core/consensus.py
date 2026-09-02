@@ -747,27 +747,31 @@ class Consensus(object):
 
             target_id = takedown.transaction_id
 
+            target_block = await self.mongo.async_db.blocks.find_one(
+                {"transactions.id": target_id},
+                {"index": 1, "transactions": 1},
+            )
+            original_relationship = ""
+            found_target = False
+            if target_block:
+                for stored_txn in target_block.get("transactions", []):
+                    if stored_txn.get("id") == target_id:
+                        original_relationship = stored_txn.get("relationship", "")
+                        found_target = True
+                        break
+
             # If archiving, locate and save the original relationship value first.
-            if should_save:
-                target_block = await self.mongo.async_db.blocks.find_one(
-                    {"transactions.id": target_id},
-                    {"index": 1, "transactions": 1},
+            if should_save and found_target:
+                await self.mongo.async_db.content_takedown_archive.insert_one(
+                    {
+                        "takedown_txn_id": txn.transaction_signature,
+                        "target_txn_id": target_id,
+                        "reason_code": reason,
+                        "original_relationship": original_relationship,
+                        "block_index": target_block["index"],
+                        "takedown_block_index": block.index,
+                    }
                 )
-                if target_block:
-                    for stored_txn in target_block.get("transactions", []):
-                        if stored_txn.get("id") == target_id:
-                            original_relationship = stored_txn.get("relationship", "")
-                            await self.mongo.async_db.content_takedown_archive.insert_one(
-                                {
-                                    "takedown_txn_id": txn.transaction_signature,
-                                    "target_txn_id": target_id,
-                                    "reason_code": reason,
-                                    "original_relationship": original_relationship,
-                                    "block_index": target_block["index"],
-                                    "takedown_block_index": block.index,
-                                }
-                            )
-                            break
 
             # Clear only the relationship field. relationship_hash must NOT be
             # touched — it is part of the transaction hash and clearing it would
@@ -782,4 +786,45 @@ class Consensus(object):
                 f"ContentTakedown: cleared relationship on txn {target_id!r} "
                 f"(reason={reason!r}, takedown_block={block.index}, "
                 f"docs_modified={result.modified_count}, comply_and_save={should_save})"
+            )
+            await self._block_livestream_on_takedown(
+                target_id, original_relationship, reason
+            )
+
+    async def _block_livestream_on_takedown(
+        self, target_id, original_relationship, reason
+    ):
+        """Honor livestream BranchAnnouncement takedowns with a permanent blocklist."""
+        inner = None
+        if (
+            isinstance(original_relationship, dict)
+            and "branch" in original_relationship
+        ):
+            inner = original_relationship.get("branch") or {}
+        elif hasattr(original_relationship, "is_livestream"):
+            inner = original_relationship.to_dict()
+        if not isinstance(inner, dict):
+            return
+        if (inner.get("type") or "").strip().lower() != "livestream":
+            return
+        branch_commit = inner.get("prerotated_key_hash") or ""
+        channel_id = ""
+        try:
+            from plugins.livestreamannouncement import store as livestream_store
+
+            channel_id = await livestream_store.channel_id_for_announcement(
+                self.config, target_id
+            )
+            await livestream_store.upsert_blocked_branch(
+                self.config,
+                channel_id=channel_id,
+                branch_commit=branch_commit,
+                transaction_id=target_id,
+                reason_code=reason,
+            )
+        except Exception as exc:
+            self.app_log.warning(
+                "ContentTakedown: livestream blocklist upsert failed for %s: %s",
+                target_id,
+                exc,
             )

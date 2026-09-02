@@ -382,6 +382,9 @@ async function main() {
         result.rewoundSites.length
           ? `rewound ${result.rewoundSites.length} site(s)`
           : "",
+        result.replacedSites.length
+          ? `rebuilt ${result.replacedSites.length} site branch(es)`
+          : "",
         result.removedSites.length
           ? `removed ${result.removedSites.length} stale site(s)`
           : "",
@@ -435,6 +438,8 @@ async function main() {
         `Signed in & rotated · counter ${result.site.counter} · next password ready`,
         "success"
       );
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) await chrome.tabs.reload(tab.id);
     } catch (e) {
       showAlert(e instanceof Error ? e.message : String(e), "error");
     }

@@ -51,7 +51,16 @@ def jwtauthwallet(handler_class):
                         algorithms=["ES256"],
                         options=handler.config.jwt_options,
                     )
-                    if handler.jwt.get("timestamp", 0) < AUTH_REVOCATION_CUTOFF:
+                    epoch = getattr(
+                        getattr(handler, "config", None),
+                        "operator_session_epoch",
+                        None,
+                    )
+                    cutoff = max(
+                        float(AUTH_REVOCATION_CUTOFF),
+                        float(epoch or 0),
+                    )
+                    if handler.jwt.get("timestamp", 0) < cutoff:
                         return False
 
                 except:

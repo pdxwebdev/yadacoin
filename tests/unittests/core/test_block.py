@@ -1987,6 +1987,30 @@ class TestBlock(AsyncTestCase):
         result = block.get_coinbase()
         self.assertIs(result, mock_txn)
 
+    async def test_is_coinbase_kel_prerotated_without_pkh_match(self):
+        """KEL miner share to prerotated is coinbase even if public_key_hash != block address."""
+        from unittest.mock import Mock
+
+        pub = yadacoin.core.config.CONFIG.public_key
+        block = await Block.init_async(public_key=pub, target=1)
+        prerotated = "13kpmLEktnfyaahRvQ5385EzUBLYa9PU8d"
+        txn = Mock()
+        txn.public_key = pub
+        txn.inputs = []
+        txn.outputs = [Mock(to=prerotated)]
+        txn.public_key_hash = ""
+        txn.prerotated_key_hash = prerotated
+        txn.twice_prerotated_key_hash = ""
+        self.assertTrue(Block.is_coinbase(block, txn))
+        confirming = Mock()
+        confirming.public_key = "02" + "ab" * 32
+        confirming.inputs = []
+        confirming.outputs = [Mock(to="16jUoevhxkMhZYua9w5LuRP2Ntf5WFhcLo")]
+        confirming.public_key_hash = prerotated
+        confirming.prerotated_key_hash = "16jUoevhxkMhZYua9w5LuRP2Ntf5WFhcLo"
+        confirming.twice_prerotated_key_hash = ""
+        self.assertFalse(Block.is_coinbase(block, confirming))
+
     async def test_verify_wrong_version(self):
         """Line 837: verify() raises when block version doesn't match expected."""
         block = await Block.init_async(

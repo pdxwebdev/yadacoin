@@ -233,6 +233,9 @@ class Blockchain(object):
             check_branch_announcement = (
                 block.index >= CHAIN.KEL_BRANCH_ANNOUNCEMENT_FORK
             )
+            check_credential_announcement = (
+                block.index >= CHAIN.CREDENTIAL_ANNOUNCEMENT_FORK
+            )
             try:
                 await transaction.verify(
                     check_max_inputs=check_max_inputs,
@@ -240,6 +243,7 @@ class Blockchain(object):
                     check_kel=check_kel,
                     check_dynamic_nodes=check_dynamic_nodes,
                     check_branch_announcement=check_branch_announcement,
+                    check_credential_announcement=check_credential_announcement,
                     block=block,
                     batch_txns=block.transactions,
                     extra_blocks=extra_blocks,
@@ -430,6 +434,9 @@ class Blockchain(object):
             check_branch_announcement = (
                 block.index >= CHAIN.KEL_BRANCH_ANNOUNCEMENT_FORK
             )
+            check_credential_announcement = (
+                block.index >= CHAIN.CREDENTIAL_ANNOUNCEMENT_FORK
+            )
             for txn in block.transactions:
                 await txn.verify(
                     check_max_inputs=check_max_inputs,
@@ -437,6 +444,7 @@ class Blockchain(object):
                     check_kel=check_kel,
                     check_dynamic_nodes=check_dynamic_nodes,
                     check_branch_announcement=check_branch_announcement,
+                    check_credential_announcement=check_credential_announcement,
                 )
             if last_block:
                 if int(block.index) - int(last_block.index) > 1:

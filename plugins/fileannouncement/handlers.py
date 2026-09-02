@@ -13,7 +13,9 @@ Full license terms: see LICENSE.txt in this repository.
 
 import json
 import os
+import time
 
+from plugins.keyrotation.handlers import KelUnlockHandler
 from yadacoin.core.contenttakedown import TakedownReasonCode
 from yadacoin.http.base import BaseHandler
 
@@ -46,9 +48,51 @@ def _keywords(value):
     return [k.strip() for k in str(value).split(",") if k.strip()]
 
 
+KEL_SESSION_COOKIE = "file_announcement_kel"
+
+
+class FileAnnouncementUnlockHandler(KelUnlockHandler):
+    """POST /file-announcements/api/v1/unlock — KelUnlockHandler plus operator cookie."""
+
+    def render_as_json(self, data, indent=None):
+        if isinstance(data, dict) and data.get("status") is True:
+            self.set_secure_cookie(KEL_SESSION_COOKIE, str(time.time()))
+        return super().render_as_json(data, indent)
+
+
 class BaseFileAnnouncementHandler(BaseHandler):
     def get_template_path(self):
         return os.path.join(os.path.dirname(__file__), "templates")
+
+    async def kel_is_unlocked(self):
+        cookie = self.get_secure_cookie(KEL_SESSION_COOKIE)
+        if not cookie:
+            return False
+        try:
+            ts = float(cookie.decode())
+        except (ValueError, AttributeError, UnicodeDecodeError):
+            return False
+        return ts >= await self.get_auth_cutoff()
+
+    async def prepare(self, exceptions=None):
+        await super().prepare(exceptions=exceptions)
+        if self._finished:
+            return
+        if self.request.method == "OPTIONS":
+            return
+        if await self.kel_is_unlocked() or await self.wallet_is_unlocked():
+            return
+        self.set_status(401)
+        path = self.request.path or ""
+        if path.startswith("/file-announcements/api/"):
+            self.render_as_json({"status": False, "error": "not authorized"})
+        else:
+            self.render(
+                "locked.html",
+                yadacoin=self.yadacoin_vars,
+                title="YadaCoin - File Announcements",
+            )
+            self.finish()
 
     def _error(self, status, message):
         self.set_status(status)
@@ -57,6 +101,8 @@ class BaseFileAnnouncementHandler(BaseHandler):
 
 class FileAnnouncementDashboardHandler(BaseFileAnnouncementHandler):
     async def get(self):
+        if not (await self.kel_is_unlocked() or await self.wallet_is_unlocked()):
+            return
         self.render(
             "dashboard.html",
             yadacoin=self.yadacoin_vars,
@@ -304,6 +350,7 @@ class FileTakedownReasonsHandler(BaseFileAnnouncementHandler):
 
 HANDLERS = [
     (r"/file-announcements", FileAnnouncementDashboardHandler),
+    (r"/file-announcements/api/v1/unlock", FileAnnouncementUnlockHandler),
     (r"/file-announcements/api/v1/files", FileListHandler),
     (r"/file-announcements/api/v1/files/search", FileSearchHandler),
     (r"/file-announcements/api/v1/files/([^/]+)/takedown", FileTakedownHandler),

@@ -178,6 +178,30 @@ export SECOND_FACTOR=your_strong_secret
   - type: string
   - default: user
   - description: The node type that determines when this node will place itself in the network topology. Possible values are user, service_provider, seed_gateway, and seed. If you would like to be a seed node, then you'll need to also run service_provider and seed_gateway nodes for your seed node. You'll also need to submit a pull request, requesting your servers be added to the network.
+- livestream_ingest_url
+  - type: string
+  - default: empty
+  - description: Service-provider RTMP or WHIP ingest URL advertised in `/get-status` `capabilities.livestream`. Empty disables ingest advertisement. OBS publishes here; the user node never terminates RTMP.
+- livestream_playback_url
+  - type: string
+  - default: empty
+  - description: Public playback base URL for live streams on this service provider (returned after watch VP for 18+ channels).
+- age_credential_issuers
+  - type: array of strings
+  - default: []
+  - description: Allowlist of identity-announcement transaction ids permitted to issue `ageOver18` credentials. Empty denies all 18+ publish and watch.
+- obs_websocket_host
+  - type: string
+  - default: 127.0.0.1
+  - description: OBS WebSocket host used by the user node on Go Live / Stop.
+- obs_websocket_port
+  - type: integer
+  - default: 4455
+  - description: OBS WebSocket port (OBS 5 protocol).
+- obs_websocket_password
+  - type: string
+  - default: empty
+  - description: Static OBS WebSocket password. Not rotated per stream start; the OBS stream key is the channel id.
 - serve_host
   - type: string
   - default: 0.0.0.0

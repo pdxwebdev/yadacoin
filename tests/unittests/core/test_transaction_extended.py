@@ -1497,6 +1497,45 @@ class TestVerifyCoverageGaps(TransactionTestCase):
         txn.relationship = RecoveryProof("aa" * 32, "bb" * 32, "cc" * 32)
         await txn.assert_unique_inception(block_index=700000)
 
+    async def test_verify_unique_inception_gated_by_fork(self):
+        """assert_unique_inception runs at/after KEL_UNIQUE_INCEPTION_FORK only."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
+
+        txn = Transaction(
+            public_key=self.public_key,
+            prerotated_key_hash="1Pre",
+            twice_prerotated_key_hash="1Twice",
+            public_key_hash="1PkHash",
+            prev_public_key_hash="",
+            transaction_signature="sig",
+            inception_public_key_hash="1PkHash",
+        )
+        txn.hash = "abc"
+        below = MagicMock()
+        below.index = CHAIN.KEL_UNIQUE_INCEPTION_FORK - 1
+        above = MagicMock()
+        above.index = CHAIN.KEL_UNIQUE_INCEPTION_FORK
+        with patch.object(
+            Transaction, "generate_hash", new=AsyncMock(return_value="abc")
+        ):
+            with patch.object(Transaction, "verify_signature", return_value=None):
+                with patch.object(
+                    txn, "has_key_event_log", new=AsyncMock(return_value=False)
+                ):
+                    with patch.object(
+                        txn, "assert_unique_inception", new=AsyncMock()
+                    ) as uniq:
+                        await txn.verify(
+                            check_kel=True, check_input_spent=False, block=below
+                        )
+                        uniq.assert_not_awaited()
+                        await txn.verify(
+                            check_kel=True, check_input_spent=False, block=above
+                        )
+                        uniq.assert_awaited()
+
     async def test_output_owned_by_kel_spender(self):
         from unittest.mock import AsyncMock, patch
 
@@ -2855,8 +2894,10 @@ class TestCoverageGapsTo100(TransactionTestCase):
     """Fill remaining coverage gaps for 100% line coverage."""
 
     async def test_assert_unique_inception_same_id_revalidation(self):
-        """Lines 1428-1441: same-id inception re-validation is allowed."""
+        """Same-id re-inclusion of an on-chain inception is a duplicate."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.transaction import InvalidTransactionException
 
         txn = Transaction(
             public_key=self.public_key,
@@ -2873,18 +2914,6 @@ class TestCoverageGapsTo100(TransactionTestCase):
             yield {
                 "index": 50,
                 "transactions": [
-                    "not-a-dict",
-                    {
-                        "id": "other-sig",
-                        "public_key_hash": "nope",
-                        "prev_public_key_hash": "",
-                    },
-                    {
-                        "id": "same-sig",
-                        "public_key_hash": "1PkHash",
-                        "prev_public_key_hash": "has-prev-skip",
-                        "inception_public_key_hash": "1PkHash",
-                    },
                     {
                         "id": "same-sig",
                         "public_key_hash": "1PkHash",
@@ -2897,7 +2926,9 @@ class TestCoverageGapsTo100(TransactionTestCase):
         mock_db.blocks.find = MagicMock(side_effect=lambda *a, **k: _find(*a, **k))
         mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
         with patch.object(txn.config.mongo, "async_db", mock_db):
-            await txn.assert_unique_inception(block_index=100)
+            with self.assertRaises(InvalidTransactionException) as ctx:
+                await txn.assert_unique_inception(block_index=100)
+        self.assertIn("Duplicate KEL inception", str(ctx.exception))
 
     async def test_is_already_onchain_txn_matches_branches(self):
         """Lines 1530-1542: _txn_matches non-dict, twice/pre/pkh/prev/false."""

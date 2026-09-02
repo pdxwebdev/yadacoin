@@ -18,11 +18,18 @@ import {
   type KeyMaterial,
 } from "./derive.js";
 import {
+  buildPasswordRelationshipJson,
   identityRelationshipDict,
   identityRelationshipHash,
 } from "./relationship.js";
 import { buildAndSignTxn, signUsername, type SignedTxn } from "./transaction.js";
-import { parsePhc, phcSaltB64ForPassword, verifyPassword } from "./hash.js";
+import {
+  hashPassword,
+  parsePhc,
+  phcSaltB64ForPassword,
+  sha256Hex,
+  verifyPassword,
+} from "./hash.js";
 
 export interface VaultIdentity {
   mnemonic: string;
@@ -65,6 +72,7 @@ async function httpJson(
   try {
     res = await fetchImpl(url, {
       ...init,
+      credentials: init?.credentials ?? "include",
       headers: {
         Accept: "application/json",
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
@@ -181,6 +189,24 @@ export function isAlreadyInceptedError(message: string | undefined): boolean {
   );
 }
 
+/** Derivation steps from a KEL list: one inception, plus real rotations. */
+export function kelRotationDepth(
+  entries: Array<{ prev_public_key_hash?: string }> | undefined | null
+): number {
+  if (!Array.isArray(entries) || !entries.length) return 0;
+  let inception = 0;
+  let rotations = 0;
+  for (const e of entries) {
+    const prev = (e && e.prev_public_key_hash) || "";
+    if (!prev) {
+      if (!inception) inception = 1;
+    } else {
+      rotations += 1;
+    }
+  }
+  return inception + rotations;
+}
+
 export async function fetchKelDepth(
   api: NodeApi,
   publicKeyHex: string
@@ -190,7 +216,7 @@ export async function fetchKelDepth(
     `/key-event-log?public_key=${encodeURIComponent(publicKeyHex)}`
   );
   if (kel.ok && Array.isArray(kel.body?.key_event_log)) {
-    return kel.body.key_event_log.length;
+    return kelRotationDepth(kel.body.key_event_log);
   }
   return 0;
 }
@@ -226,7 +252,7 @@ export async function registerSite(
   identity: VaultIdentity,
   siteId: string,
   time = Math.floor(Date.now() / 1000),
-  _opts?: PasswordPhcOpts
+  _opts?: PasswordPhcOpts & { replaceExisting?: boolean }
 ): Promise<{
   site: SiteRegistration;
   mainTxns: SignedTxn[];
@@ -246,10 +272,23 @@ export async function registerSite(
 
   const existing = await fetchSiteTip(api, branchPeer);
   if (existing.ok && existing.body?.tip) {
-    await httpJson(api, "/password-rotation/offchain/reset", {
+    if (!_opts?.replaceExisting) {
+      throw new Error(
+        "site already has a branch on the node — resync instead of registering again"
+      );
+    }
+    const resetRes = await httpJson(api, "/password-rotation/offchain/reset", {
       method: "POST",
-      body: JSON.stringify({ branch_peer: branchPeer }),
+      body: JSON.stringify({
+        branch_peer: branchPeer,
+        inception_public_key_hash: identity.inceptionPublicKeyHash,
+      }),
     });
+    if (!resetRes.ok || resetRes.body?.status === false) {
+      throw new Error(
+        resetRes.body?.message || "failed to replace existing site branch"
+      );
+    }
   }
 
   const pwCurrent = generateSitePassword(kp1, branchPeer, 1);
@@ -282,14 +321,19 @@ export async function registerSite(
     }
   }
 
+  const step1Commit = {
+    prerotated_password_hash: hashPassword(pwCurrent),
+    twice_prerotated_password_hash: hashPassword(pwNext),
+  };
+  const step1RelJson = buildPasswordRelationshipJson(step1Commit);
   const step1Txn = buildAndSignTxn(kp1, {
     time: time + 1,
     outputs: [{ to: kp2.address, value: 0 }],
     prerotatedKeyHash: kp2.address,
     twicePrerotatedKeyHash: kp3.address,
     prevPublicKeyHash: kp0.address,
-    relationshipHash: "",
-    relationship: "",
+    relationshipHash: sha256Hex(step1RelJson),
+    relationship: JSON.parse(step1RelJson),
   });
 
   const stepRes = await httpJson(api, "/password-rotation/offchain", {
@@ -377,7 +421,7 @@ export async function rotateSitePassword(
   identity: VaultIdentity,
   site: SiteRegistration,
   time = Math.floor(Date.now() / 1000),
-  opts?: PasswordPhcOpts & { expectedHash?: string }
+  opts?: PasswordPhcOpts & { expectedHash?: string; _replaced?: boolean }
 ): Promise<{
   site: SiteRegistration;
   txn: SignedTxn;
@@ -402,9 +446,22 @@ export async function rotateSitePassword(
     tipCounter
   );
   if (tip.prerotated_key_hash && live.tip.address !== tip.prerotated_key_hash) {
-    throw new Error(
-      "branch keys do not match the tip — register this site again"
+    if (opts?._replaced) {
+      throw new Error(
+        "branch keys do not match the tip after rebuild"
+      );
+    }
+    const replaced = await registerSite(
+      api,
+      identity,
+      keys.branchPeer,
+      time,
+      { replaceExisting: true }
     );
+    return rotateSitePassword(api, identity, replaced.site, time, {
+      ...opts,
+      _replaced: true,
+    });
   }
   let password = live.nextPassword || site.nextPassword || live.currentPassword;
   let nextReveal = "";
@@ -436,22 +493,29 @@ export async function rotateSitePassword(
     site.branchPeer,
     tipCounter + 2
   );
+  const consumedPassword = live.currentPassword || password;
+  const newPrePassword = live.nextPassword || newTwicePassword;
+  const rotateRelJson = buildPasswordRelationshipJson({
+    prerotated_password_hash: hashPassword(newPrePassword),
+    twice_prerotated_password_hash: hashPassword(newTwicePassword),
+  });
   const txn = buildAndSignTxn(signer, {
     time,
     outputs: [{ to: next.address, value: 0 }],
     prerotatedKeyHash: next.address,
     twicePrerotatedKeyHash: twice.address,
     prevPublicKeyHash: live.tipPrevPkh,
-    relationshipHash: "",
-    relationship: "",
+    relationshipHash: sha256Hex(rotateRelJson),
+    relationship: JSON.parse(rotateRelJson),
   });
 
   const nextCounter = tipCounter + 1;
-  const res = await httpJson(api, "/password-rotation/offchain", {
+  const res = await httpJson(api, "/password-rotation/verify", {
     method: "POST",
     body: JSON.stringify({
       branch_peer: site.branchPeer,
       counter: nextCounter,
+      password: consumedPassword,
       branch_inception_public_key_hash: site.branchInceptionPkh,
       inception_public_key_hash: identity.inceptionPublicKeyHash,
       txn,
@@ -461,7 +525,7 @@ export async function rotateSitePassword(
     throw new Error(res.body?.message || `sign-in/rotate failed (${res.status})`);
   }
 
-  const usedPassword = password;
+  const usedPassword = consumedPassword;
   const updated: SiteRegistration = {
     ...live,
     tip: next,
@@ -479,6 +543,37 @@ export async function rotateSitePassword(
     nextPassword: nextReveal || newTwicePassword,
     authenticated: true as const,
   };
+}
+
+
+/** Rebuild one site from the node's off-chain tip (counter + password hashes). */
+export async function resyncSiteFromNode(
+  api: NodeApi,
+  identity: VaultIdentity,
+  siteId: string
+): Promise<SiteRegistration> {
+  const keys = siteKeysForOrigin(identity, siteId);
+  const tipRes = await fetchSiteTip(api, keys.branchPeer);
+  if (!tipRes.ok || tipRes.body?.status === false || !tipRes.body?.tip) {
+    throw new Error("site not registered on node — register this origin first");
+  }
+  const tip = tipRes.body.tip;
+  const counter = Number(tip.counter ?? 0);
+  if (!Number.isFinite(counter) || counter < 0) {
+    throw new Error("invalid tip counter on node");
+  }
+  const rebuilt = siteAtCounter(
+    identity,
+    { siteId: keys.branchPeer, branchPeer: keys.branchPeer, kp0: keys.kp0 },
+    counter
+  );
+  if (tip.prerotated_key_hash && rebuilt.tip.address !== tip.prerotated_key_hash) {
+    const replaced = await registerSite(api, identity, keys.branchPeer, undefined, {
+      replaceExisting: true,
+    });
+    return replaced.site;
+  }
+  return rebuilt;
 }
 
 export async function fetchSiteTip(api: NodeApi, branchPeer: string) {
@@ -518,6 +613,7 @@ export interface VaultResyncResult {
   sites: Record<string, SiteRegistration>;
   removedSites: string[];
   rewoundSites: string[];
+  replacedSites: string[];
   kelDepth: number;
 }
 
@@ -536,7 +632,7 @@ export async function resyncVaultFromNode(
     `/key-event-log?public_key=${encodeURIComponent(identity.k0.publicKeyHex)}`
   );
   if (kelRes.ok && Array.isArray(kelRes.body?.key_event_log)) {
-    kelDepth = kelRes.body.key_event_log.length;
+    kelDepth = kelRotationDepth(kelRes.body.key_event_log);
   } else if (kelRes.status === 404 || kelRes.body?.status === false) {
     kelDepth = 0;
   }
@@ -555,6 +651,7 @@ export async function resyncVaultFromNode(
 
   const removedSites: string[] = [];
   const rewoundSites: string[] = [];
+  const replacedSites: string[] = [];
   const nextSites: Record<string, SiteRegistration> = {};
   for (const [key, site] of Object.entries(sites)) {
     const keys = siteKeysForOrigin(nextIdentity, site.branchPeer || site.siteId || key);
@@ -570,17 +667,24 @@ export async function resyncVaultFromNode(
       continue;
     }
     const inception = (tip.branch_inception_public_key_hash as string) || "";
-    if (inception && inception !== keys.kp0.address) {
-      removedSites.push(key);
-      continue;
-    }
     const rebuilt = siteAtCounter(
       nextIdentity,
       { siteId: keys.branchPeer, branchPeer: keys.branchPeer, kp0: keys.kp0 },
       counter
     );
-    if (tip.prerotated_key_hash && rebuilt.tip.address !== tip.prerotated_key_hash) {
-      removedSites.push(key);
+    const keysMismatch =
+      (inception && inception !== keys.kp0.address) ||
+      !!(tip.prerotated_key_hash && rebuilt.tip.address !== tip.prerotated_key_hash);
+    if (keysMismatch) {
+      const replaced = await registerSite(
+        api,
+        nextIdentity,
+        keys.branchPeer,
+        undefined,
+        { replaceExisting: true }
+      );
+      nextSites[key] = replaced.site;
+      replacedSites.push(key);
       continue;
     }
     nextSites[key] = rebuilt;
@@ -594,6 +698,7 @@ export async function resyncVaultFromNode(
     sites: nextSites,
     removedSites,
     rewoundSites,
+    replacedSites,
     kelDepth,
   };
 }

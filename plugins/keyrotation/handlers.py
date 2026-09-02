@@ -26,12 +26,14 @@ DerivedChildKeyHandler is an exception: it manages server-side KEL-authenticated
 child-key derivation backed by the derived_keys collection in yadacoin_site.
 """
 
+import datetime
 import hashlib
 import hmac as _hmac_safe
 import json
 import os
 import time
 
+import jwt
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey as _CoincurvePrivateKey
 
@@ -1341,9 +1343,35 @@ class KelUnlockHandler(BaseHandler):
             upsert=True,
         )
 
+        issued_at = time.time()
+        self.set_secure_cookie("key_or_wif", str(issued_at))
+        max_expires = 86400
+        try:
+            expires_seconds = int(body.get("expires", 23040))
+        except (TypeError, ValueError):
+            expires_seconds = 23040
+        expires_seconds = max(1, min(expires_seconds, max_expires))
+        payload = {
+            "timestamp": issued_at,
+            "key_or_wif": "true",
+            "exp": datetime.datetime.utcnow()
+            + datetime.timedelta(seconds=expires_seconds),
+        }
+        token = None
+        try:
+            token = jwt.encode(payload, self.config.jwt_secret_key, algorithm="ES256")
+            await self.config.mongo.async_db.config.update_one(
+                {"key": "jwt"},
+                {"$set": {"key": "jwt", "value": payload}},
+                upsert=True,
+            )
+        except Exception as exc:
+            self.config.app_log.warning("KelUnlockHandler session token error: %s", exc)
+
         return self.render_as_json(
             {
                 "status": True,
+                "token": token,
                 "rotation": {
                     "new_address": prerot_address,
                     "new_public_key": prerot_pub_hex,
@@ -1409,13 +1437,16 @@ class ListDerivedKeysHandler(BaseHandler):
             )
 
         kel_entries = await KeyEventLog.build_from_public_key(inception_pub_key)
+        kel_entries = KeyEventLog.collapse_duplicate_inceptions(list(kel_entries))
 
         records = []
-        for i, txn in enumerate(kel_entries):
-            # Determine source
+        seen_inception = False
+        for txn in kel_entries:
             source = "mempool" if getattr(txn, "mempool", False) else "blockchain"
-            # Determine flag
             if not txn.prev_public_key_hash:
+                if seen_inception:
+                    continue
+                seen_inception = True
                 flag = "inception"
             elif (
                 not txn.relationship
@@ -1428,7 +1459,7 @@ class ListDerivedKeysHandler(BaseHandler):
 
             records.append(
                 {
-                    "index": i,
+                    "index": len(records),
                     "flag": flag,
                     "source": source,
                     "public_key": txn.public_key,
@@ -1460,7 +1491,7 @@ class DerivedKeyHistoryHandler(BaseHandler):
     """
 
     async def get(self):
-        pass
+        from yadacoin.core.keyeventlog import KeyEventLog
 
         address = self.get_query_argument("address", "").strip()
         if not address:
@@ -1510,7 +1541,9 @@ class DerivedKeyHistoryHandler(BaseHandler):
             doc["source"] = "blockchain"
             chain_entries.append(doc)
 
-        all_entries = mempool_entries + chain_entries
+        all_entries = KeyEventLog.collapse_duplicate_inceptions(
+            mempool_entries + chain_entries
+        )
         total = len(all_entries)
         start = (page - 1) * page_size
         page_entries = all_entries[start : start + page_size]

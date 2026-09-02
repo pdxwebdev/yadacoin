@@ -312,6 +312,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                     mempool=True,
                     batch_txns=item_txns + mempool_txns,
                     check_branch_announcement=True,
+                    check_credential_announcement=True,
                 )
 
                 if transaction.are_kel_fields_populated():

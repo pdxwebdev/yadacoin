@@ -6,6 +6,8 @@ import {
   hexToBytes,
   materialFromPrivCc,
   registerSite,
+  resyncSiteFromNode,
+  resyncVaultFromNode,
   rotateSitePassword,
   unlockIdentity,
   type SiteRegistration,
@@ -166,14 +168,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, message: "vault not incepted" });
           return;
         }
-        const stored = v.sites[origin];
-        if (!stored) {
-          sendResponse({
-            ok: false,
-            message: "site not registered — open extension Site tab and Register",
-          });
-          return;
-        }
         const identity: VaultIdentity = unlockIdentity(
           v.mnemonic,
           v.secondFactor,
@@ -184,7 +178,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             tipPrevPkh: v.tipPrevPkh,
           }
         );
-        const site = siteFromStored(stored);
+        let stored = v.sites[origin];
+        let site: SiteRegistration;
+        if (!stored) {
+          site = await resyncSiteFromNode({ baseUrl }, identity, origin);
+        } else {
+          site = siteFromStored(stored);
+        }
         const result = await rotateSitePassword(
           { baseUrl },
           identity,
@@ -210,6 +210,72 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
     })();
     return true; // async sendResponse
+  }
+
+  if (message.type === "YADA_RESYNC_SITE") {
+    void (async () => {
+      try {
+        const origin = String(message.origin || "").toLowerCase();
+        if (!origin.startsWith("http")) {
+          sendResponse({ ok: false, message: "invalid origin" });
+          return;
+        }
+        const baseUrl = await nodeUrl();
+        if (!baseUrl) {
+          sendResponse({ ok: false, message: "set Node URL in extension options" });
+          return;
+        }
+        const v = await loadVault();
+        if (!v?.inceptionDone) {
+          sendResponse({ ok: false, message: "vault not incepted" });
+          return;
+        }
+        const identity: VaultIdentity = unlockIdentity(
+          v.mnemonic,
+          v.secondFactor,
+          v.username,
+          {
+            identityType: v.identityType,
+            mainDepth: v.mainDepth,
+            tipPrevPkh: v.tipPrevPkh,
+          }
+        );
+        const sites: Record<string, SiteRegistration> = {};
+        for (const [k, s] of Object.entries(v.sites || {})) {
+          sites[k] = siteFromStored(s);
+        }
+        const full = await resyncVaultFromNode({ baseUrl }, identity, sites);
+        let site = full.sites[origin];
+        if (!site) {
+          site = await resyncSiteFromNode({ baseUrl }, full.identity, origin);
+          full.sites[origin] = site;
+        }
+        const nextSites: Record<string, StoredSite> = {};
+        for (const [k, s] of Object.entries(full.sites)) {
+          nextSites[k] = storeSite(s);
+        }
+        const nextVault: StoredVault = {
+          ...v,
+          mainDepth: full.identity.mainDepth,
+          tipPrevPkh: full.identity.tipPrevPkh,
+          inceptionDone: full.kelDepth > 0,
+          sites: nextSites,
+        };
+        await saveVault(nextVault);
+        sendResponse({
+          ok: true,
+          resynced: true,
+          counter: site.counter,
+          message: `resynced · counter ${site.counter}`,
+        });
+      } catch (e) {
+        sendResponse({
+          ok: false,
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
+    })();
+    return true;
   }
 
   if (message.type === "YADA_SITE_STATUS") {

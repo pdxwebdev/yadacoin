@@ -63,6 +63,29 @@ window.addEventListener("message", (event) => {
     );
   }
 
+  if (data.type === "YADA_PASSWORD_RESYNC") {
+    const requestId = data.requestId;
+    chrome.runtime.sendMessage(
+      {
+        type: "YADA_RESYNC_SITE",
+        origin: window.location.origin.toLowerCase(),
+      },
+      (response) => {
+        const err = chrome.runtime.lastError;
+        window.postMessage(
+          {
+            type: "YADA_PASSWORD_RESYNC_RESULT",
+            requestId,
+            ...(err
+              ? { ok: false, message: err.message }
+              : response || { ok: false, message: "no response" }),
+          },
+          "*"
+        );
+      }
+    );
+  }
+
   if (data.type === "YADA_PASSWORD_STATUS") {
     const requestId = data.requestId;
     chrome.runtime.sendMessage(

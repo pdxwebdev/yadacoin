@@ -574,6 +574,24 @@ class TestGetStatus(ConfigTestCase):
             status = await self.config.get_status()
         self.assertEqual(status["pool"], "OK")
 
+    async def test_get_status_includes_capabilities(self):
+        ws, ns, nc = self._make_streams()
+        latest_block = MagicMock()
+        latest_block.block.index = 42
+        self.config.capabilities = {
+            "livestream": {"ingest": True, "protocol": "rtmp", "url": "rtmp://x/live"}
+        }
+        with patch.object(
+            self.config, "websocketServer", ws, create=True
+        ), patch.object(self.config, "nodeServer", ns, create=True), patch.object(
+            self.config, "nodeClient", nc, create=True
+        ), patch.object(
+            self.config, "LatestBlock", latest_block, create=True
+        ):
+            status = await self.config.get_status()
+        self.assertIn("capabilities", status)
+        self.assertEqual(status["capabilities"]["livestream"]["ingest"], True)
+
 
 # ---------------------------------------------------------------------------
 # Config.generate (lines 287-291, 294-302, 305-313, 333, 335-336)

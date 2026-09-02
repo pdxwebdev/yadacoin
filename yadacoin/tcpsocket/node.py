@@ -44,7 +44,11 @@ from yadacoin.core.processingqueue import (
     BlockProcessingQueueItem,
     TransactionProcessingQueueItem,
 )
-from yadacoin.core.transaction import MissingInputTransactionException, Transaction
+from yadacoin.core.transaction import (
+    MissingInputTransactionException,
+    TotalValueMismatchException,
+    Transaction,
+)
 from yadacoin.enums.modes import MODES
 from yadacoin.enums.peertypes import PEER_TYPES
 from yadacoin.tcpsocket.base import (
@@ -221,17 +225,77 @@ class NodeRPC(BaseRPC):
         return [ke.to_dict() for ke in kel]
 
     async def _accept_peer_kel_chain(self, txn_list: list) -> None:
-        """Receive, lightly verify, and store a peer's KEL bootstrap into mempool.
+        """Store a peer's KEL bootstrap into mempool without blocking handshake.
 
-        Handshake path only — must stay fast.  Full KEL graph enforcement
-        (``check_kel=True``) is intentionally skipped here: parents often
-        arrive in the same batch and sequential has_key_event_log / get_latest
-        walks previously stalled mutual auth for tens of seconds.  Crypto
-        (hash + signature) still runs; structural KEL pairing is validated
-        later when txns are mined or via ``_process_ratchet_auth``.
+        Connect/auth run on the same stream read loop. Sequential
+        ``Transaction.verify`` of a full on-chain KEL (including coinbases)
+        stalls that loop: confirmations never arrive, ``retry_attempts > 3``,
+        and ``background_message_sender`` disconnects the peer.
+
+        Parse and persist first so inception/parents are visible immediately.
+        Crypto verify runs in a background task; coinbase KEL rotations
+        (no inputs, no Block to classify them) are stored as-is.
         """
         if not txn_list or not isinstance(txn_list, list):
             return
+        parsed = []
+        for txn_dict in txn_list:
+            if not txn_dict or not isinstance(txn_dict, dict):
+                continue
+            try:
+                parsed.append(Transaction.from_dict(txn_dict))
+            except Exception as exc:
+                self.config.app_log.debug(
+                    "_accept_peer_kel_chain: parse error: %s", exc
+                )
+        if not parsed:
+            return
+        parsed.sort(key=lambda t: (1 if t.prev_public_key_hash else 0, t.time or 0))
+        await self._store_peer_kel_txns(parsed)
+        self.config.app_log.info(
+            "Bootstrap: stored %d peer KEL txn(s) into mempool.",
+            len(parsed),
+        )
+        try:
+            asyncio.get_running_loop().create_task(self._verify_peer_kel_chain(parsed))
+        except RuntimeError:
+            await self._verify_peer_kel_chain(parsed)
+
+    async def _store_peer_kel_txns(self, parsed) -> None:
+        if not parsed:
+            return
+        try:
+            from pymongo import ReplaceOne
+
+            ops = [
+                ReplaceOne(
+                    {"id": t.transaction_signature},
+                    t.to_dict(),
+                    upsert=True,
+                )
+                for t in parsed
+            ]
+            await self.config.mongo.async_db.miner_transactions.bulk_write(
+                ops, ordered=False
+            )
+        except Exception as exc:
+            self.config.app_log.debug(
+                "_accept_peer_kel_chain: bulk_write fallback: %s", exc
+            )
+            for t in parsed:
+                try:
+                    await self.config.mongo.async_db.miner_transactions.replace_one(
+                        {"id": t.transaction_signature},
+                        t.to_dict(),
+                        upsert=True,
+                    )
+                except Exception as exc2:
+                    self.config.app_log.debug(
+                        "_accept_peer_kel_chain: store error: %s", exc2
+                    )
+
+    async def _verify_peer_kel_chain(self, parsed) -> None:
+        """Best-effort crypto check after handshake; never disconnects."""
         check_max_inputs = (
             self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK
         )
@@ -244,76 +308,37 @@ class NodeRPC(BaseRPC):
         check_branch_announcement = (
             self.config.LatestBlock.block.index >= CHAIN.KEL_BRANCH_ANNOUNCEMENT_FORK
         )
-        parsed = []
-        for txn_dict in txn_list:
-            if not txn_dict or not isinstance(txn_dict, dict):
+        check_credential_announcement = (
+            self.config.LatestBlock.block.index >= CHAIN.CREDENTIAL_ANNOUNCEMENT_FORK
+        )
+        for i, txn in enumerate(parsed):
+            if i and i % 25 == 0:
+                await asyncio.sleep(0)
+            if not txn.inputs and txn.are_kel_fields_populated():
                 continue
-            try:
-                parsed.append(Transaction.from_dict(txn_dict))
-            except Exception as exc:
-                self.config.app_log.debug(
-                    "_accept_peer_kel_chain: parse error: %s", exc
-                )
-
-        # Inceptions / no-prev first so later siblings can see parents in batch
-        # and in mempool if any path still does a parent lookup.
-        parsed.sort(key=lambda t: (1 if t.prev_public_key_hash else 0, t.time or 0))
-
-        accepted = []
-        for txn in parsed:
             try:
                 await txn.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
-                    check_kel=False,  # bootstrap: no sequential KEL graph walk
+                    check_kel=False,
                     check_dynamic_nodes=check_dynamic_nodes,
                     check_branch_announcement=check_branch_announcement,
+                    check_credential_announcement=check_credential_announcement,
                     mempool=True,
                     batch_txns=parsed,
                 )
-                accepted.append(txn)
+            except TotalValueMismatchException:
+                continue
             except Exception as exc:
                 self.config.app_log.debug(
                     "_accept_peer_kel_chain: verify error: %s", exc
                 )
-
-        if accepted:
-            try:
-                from pymongo import ReplaceOne
-
-                ops = [
-                    ReplaceOne(
-                        {"id": t.transaction_signature},
-                        t.to_dict(),
-                        upsert=True,
+                try:
+                    await self.config.mongo.async_db.miner_transactions.delete_one(
+                        {"id": txn.transaction_signature}
                     )
-                    for t in accepted
-                ]
-                await self.config.mongo.async_db.miner_transactions.bulk_write(
-                    ops, ordered=False
-                )
-            except Exception as exc:
-                # Fallback: sequential upserts if bulk_write unavailable
-                self.config.app_log.debug(
-                    "_accept_peer_kel_chain: bulk_write fallback: %s", exc
-                )
-                for t in accepted:
-                    try:
-                        await self.config.mongo.async_db.miner_transactions.replace_one(
-                            {"id": t.transaction_signature},
-                            t.to_dict(),
-                            upsert=True,
-                        )
-                    except Exception as exc2:
-                        self.config.app_log.debug(
-                            "_accept_peer_kel_chain: store error: %s", exc2
-                        )
-
-        self.config.app_log.info(
-            "Bootstrap: accepted %d/%d peer KEL txn(s) into mempool.",
-            len(accepted),
-            len(parsed),
-        )
+                except Exception:
+                    pass
 
     # ── KEL "start over" resync ────────────────────────────────────────────
     #
@@ -661,6 +686,9 @@ class NodeRPC(BaseRPC):
         check_branch_announcement = (
             self.config.LatestBlock.block.index >= CHAIN.KEL_BRANCH_ANNOUNCEMENT_FORK
         )
+        check_credential_announcement = (
+            self.config.LatestBlock.block.index >= CHAIN.CREDENTIAL_ANNOUNCEMENT_FORK
+        )
         try:
             await txn.verify(
                 check_input_spent=True,
@@ -669,6 +697,7 @@ class NodeRPC(BaseRPC):
                 check_kel=check_kel,
                 check_dynamic_nodes=check_dynamic_nodes,
                 check_branch_announcement=check_branch_announcement,
+                check_credential_announcement=check_credential_announcement,
                 mempool=True,
             )
         except (
@@ -987,6 +1016,9 @@ class NodeRPC(BaseRPC):
         check_branch_announcement = (
             self.config.LatestBlock.block.index >= CHAIN.KEL_BRANCH_ANNOUNCEMENT_FORK
         )
+        check_credential_announcement = (
+            self.config.LatestBlock.block.index >= CHAIN.CREDENTIAL_ANNOUNCEMENT_FORK
+        )
         async for x in self.config.mongo.async_db.miner_transactions.find({}):
             txn = Transaction.from_dict(x)
             try:
@@ -996,6 +1028,7 @@ class NodeRPC(BaseRPC):
                     check_kel=check_kel,
                     check_dynamic_nodes=check_dynamic_nodes,
                     check_branch_announcement=check_branch_announcement,
+                    check_credential_announcement=check_credential_announcement,
                 )
             except Exception as e:
                 self.config.app_log.debug(
@@ -1067,10 +1100,6 @@ class NodeRPC(BaseRPC):
                 ] = message
         else:
             await self.write_result(stream, "blockresponse", {}, body["id"])
-            if stream.peer.protocol_version > 1:
-                self.retry_messages[
-                    (stream.peer.rid, "blockresponse", "", body["id"])
-                ] = {}
 
     async def blocksresponse(self, body, stream):
         """
@@ -1395,7 +1424,12 @@ class NodeRPC(BaseRPC):
         # Accept the peer's unconfirmed KEL chain if provided.
         kel_chain_list = params.get("kel_chain") or []
         if kel_chain_list:
-            await self._accept_peer_kel_chain(kel_chain_list)
+            try:
+                await self._accept_peer_kel_chain(kel_chain_list)
+            except Exception as e:
+                self.config.app_log.error(
+                    f"Failed to accept peer KEL chain from {stream.peer.host}: {e}"
+                )
         self.config.app_log.info(
             "Connected to {}: {}".format(
                 stream.peer.__class__.__name__,
@@ -1578,6 +1612,9 @@ class NodeRPC(BaseRPC):
         check_branch_announcement = (
             self.config.LatestBlock.block.index >= CHAIN.KEL_BRANCH_ANNOUNCEMENT_FORK
         )
+        check_credential_announcement = (
+            self.config.LatestBlock.block.index >= CHAIN.CREDENTIAL_ANNOUNCEMENT_FORK
+        )
         parsed_ratchet = []
         for txn_dict in ratchet_chain:
             try:
@@ -1634,6 +1671,7 @@ class NodeRPC(BaseRPC):
                     check_kel=False,
                     check_dynamic_nodes=check_dynamic_nodes,
                     check_branch_announcement=check_branch_announcement,
+                    check_credential_announcement=check_credential_announcement,
                     mempool=True,
                     batch_txns=parsed_ratchet,
                 )
@@ -2194,7 +2232,12 @@ class NodeRPC(BaseRPC):
         # Accept server's pending KEL chain
         server_kel_chain = params.get("kel_chain") or []
         if server_kel_chain:
-            await self._accept_peer_kel_chain(server_kel_chain)
+            try:
+                await self._accept_peer_kel_chain(server_kel_chain)
+            except Exception as exc:
+                return await self.remove_peer(
+                    stream, reason=f"request_sig: failed to accept server KEL — {exc}"
+                )
 
         # Verify server's KEL authorization (same key that signed the transcript)
         result = await self._process_ratchet_auth(

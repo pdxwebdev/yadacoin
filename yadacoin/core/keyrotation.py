@@ -358,6 +358,7 @@ class NodeKeyRotationManager:
         # 3b. If a username-based identity announcement already exists on-chain,
         #     verify its public_key matches K0.  A mismatch means the
         #     seed/SECOND_FACTOR combination does not belong to this node.
+        existing_identity = None
         username = getattr(config, "username", "") or ""
         if username.strip():
             from yadacoin.core.identityannouncement import IdentityAnnouncement
@@ -400,6 +401,22 @@ class NodeKeyRotationManager:
             config.app_log.error("NodeKeyRotationManager: error checking KEL: %s", exc)
             inception = None
             latest = None
+
+        if inception is None and existing_identity and existing_identity.get("txn"):
+            from yadacoin.core.transaction import Transaction
+
+            try:
+                inception = Transaction.from_dict(existing_identity["txn"])
+                config.app_log.info(
+                    "NodeKeyRotationManager: using existing identity announcement as inception "
+                    "(get_inception miss, username=%s).",
+                    username,
+                )
+            except Exception as exc:
+                config.app_log.error(
+                    "NodeKeyRotationManager: could not load existing identity txn: %s",
+                    exc,
+                )
 
         if inception is not None:
             self.config.inception = inception
@@ -785,7 +802,9 @@ class NodeKeyRotationManager:
     async def peer_branch_anchor_pub(self, identity_announcement: str) -> str:
         return await self.peer_branch_inception_public_key_hash(identity_announcement)
 
-    async def _ensure_peer_branch_ready(self, identity_announcement: str) -> dict:
+    async def _ensure_peer_branch_ready(
+        self, identity_announcement: str, branch_type: str = ""
+    ) -> dict:
         """Return (initialising/resuming if needed) this peer's branch state.
 
         On first contact with a peer, roots the branch at our *current*
@@ -944,6 +963,7 @@ class NodeKeyRotationManager:
             branch_rel = BranchAnnouncement(
                 prerotated_key_hash=kp0_address,
                 twice_prerotated_key_hash=kp1_address,
+                type=branch_type or "",
             )
             branch_rel_str = branch_rel.to_string()
 
@@ -1192,7 +1212,9 @@ class NodeKeyRotationManager:
         self._peer_branches[identity_announcement] = state
         return state, is_new_branch
 
-    async def advance_peer_auth_ratchet(self, identity_announcement: str):
+    async def advance_peer_auth_ratchet(
+        self, identity_announcement: str, branch_type: str = ""
+    ):
         """Advance the off-chain signing ratchet by one step *within this
         peer's own branch* and return a 6-tuple:
         ``(current_priv_hex, current_pub_hex, next_priv_hex, next_pub_hex, twice_prerotated_key_hash, is_new_branch)``.
@@ -1215,7 +1237,7 @@ class NodeKeyRotationManager:
         config = self.config
         peer_factor = self.peer_branch_factor(identity_announcement)
         state, is_new_branch = await self._ensure_peer_branch_ready(
-            identity_announcement
+            identity_announcement, branch_type=branch_type
         )
 
         prev_key = state["ratchet_key"]
@@ -1603,6 +1625,19 @@ class NodeKeyRotationManager:
         txn.transaction_signature = NodeKeyRotationManager._sign(
             k0["private_key"].hex(), txn.hash
         )
+
+        try:
+            await txn.verify(
+                check_kel=True,
+                mempool=True,
+                check_input_spent=False,
+            )
+        except Exception as exc:
+            config.app_log.error(
+                "NodeKeyRotationManager: inception failed verification, not submitting: %s",
+                exc,
+            )
+            raise
 
         await config.mongo.async_db.miner_transactions.replace_one(
             {"id": txn.transaction_signature},

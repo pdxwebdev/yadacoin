@@ -1306,7 +1306,10 @@ class TestCreateInception(AsyncTestCase):
 
         k0_pub_hex = CK(priv_bytes).public_key.format(compressed=True).hex()
 
-        await mgr._create_inception(k0, "mysecret", k0_pub_hex)
+        from yadacoin.core.transaction import Transaction
+
+        with patch.object(Transaction, "verify", new=AsyncMock()):
+            await mgr._create_inception(k0, "mysecret", k0_pub_hex)
 
         cfg.mongo.async_db.miner_transactions.replace_one.assert_awaited_once()
         self.assertIsNotNone(mgr._inception_txn_id)
@@ -1333,7 +1336,10 @@ class TestCreateInception(AsyncTestCase):
 
         k0_pub_hex = CK(priv_bytes).public_key.format(compressed=True).hex()
 
-        await mgr._create_inception(k0, "mysecret", k0_pub_hex)
+        from yadacoin.core.transaction import Transaction
+
+        with patch.object(Transaction, "verify", new=AsyncMock()):
+            await mgr._create_inception(k0, "mysecret", k0_pub_hex)
 
         cfg.mongo.async_db.miner_transactions.replace_one.assert_awaited_once()
         self.assertIsNotNone(mgr._inception_txn_id)
@@ -1366,7 +1372,10 @@ class TestCreateInception(AsyncTestCase):
 
         k0_pub_hex = CK(priv_bytes).public_key.format(compressed=True).hex()
 
-        await mgr._create_inception(k0, "mysecret", k0_pub_hex)
+        from yadacoin.core.transaction import Transaction
+
+        with patch.object(Transaction, "verify", new=AsyncMock()):
+            await mgr._create_inception(k0, "mysecret", k0_pub_hex)
 
         cfg.nodeShared.write_params.assert_awaited()
 
@@ -1386,7 +1395,10 @@ class TestCreateInception(AsyncTestCase):
 
         k0_pub_hex = CK(priv_bytes).public_key.format(compressed=True).hex()
 
-        await mgr._create_inception(k0, "mysecret", k0_pub_hex)
+        from yadacoin.core.transaction import Transaction
+
+        with patch.object(Transaction, "verify", new=AsyncMock()):
+            await mgr._create_inception(k0, "mysecret", k0_pub_hex)
 
         cfg.app_log.warning.assert_called()
 
@@ -1411,10 +1423,13 @@ class TestCreateInception(AsyncTestCase):
 
         k0_pub_hex = CK(priv_bytes).public_key.format(compressed=True).hex()
 
+        from yadacoin.core.transaction import Transaction
+
         with patch.object(
             IdentityAnnouncement, "__init__", side_effect=Exception("boom")
         ):
-            await mgr._create_inception(k0, "mysecret", k0_pub_hex)
+            with patch.object(Transaction, "verify", new=AsyncMock()):
+                await mgr._create_inception(k0, "mysecret", k0_pub_hex)
 
         cfg.app_log.warning.assert_called()
         # Inception txn is still created despite the announcement failure
@@ -1444,9 +1459,12 @@ class TestCreateInception(AsyncTestCase):
         # singleton (not self.config), so a real kel_anchor_private_key
         # must be present there for it to sign successfully instead of
         # short-circuiting to "".
+        from yadacoin.core.transaction import Transaction
+
         real_config = Config()
         with patch.object(real_config, "kel_anchor_private_key", priv_hex, create=True):
-            await mgr._create_inception(k0, "mysecret", k0_pub_hex)
+            with patch.object(Transaction, "verify", new=AsyncMock()):
+                await mgr._create_inception(k0, "mysecret", k0_pub_hex)
 
         cfg.app_log.warning.assert_not_called()
         cfg.mongo.async_db.miner_transactions.replace_one.assert_awaited_once()
@@ -1457,6 +1475,26 @@ class TestCreateInception(AsyncTestCase):
         ) = cfg.mongo.async_db.miner_transactions.replace_one.call_args.args
         self.assertNotEqual(stored_doc["relationship_hash"], "")
         self.assertEqual(stored_doc["relationship"]["identity"]["username"], "testnode")
+
+    async def test_verify_failure_does_not_insert(self):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+        from yadacoin.core.transaction import Transaction
+
+        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        cfg = _make_config()
+        cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock()
+        mgr = NodeKeyRotationManager(cfg)
+        priv_bytes = bytes.fromhex(priv_hex)
+        k0 = {"private_key": priv_bytes, "chain_code": priv_bytes}
+        from coincurve import PrivateKey as CK
+
+        k0_pub_hex = CK(priv_bytes).public_key.format(compressed=True).hex()
+        with patch.object(
+            Transaction, "verify", new=AsyncMock(side_effect=Exception("dup"))
+        ):
+            with self.assertRaises(Exception):
+                await mgr._create_inception(k0, "mysecret", k0_pub_hex)
+        cfg.mongo.async_db.miner_transactions.replace_one.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

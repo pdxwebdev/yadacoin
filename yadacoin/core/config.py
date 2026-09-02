@@ -45,6 +45,8 @@ class Config:
             return
         self.initialized = True
         self.start_time = int(time())
+        # Operator cookie/JWT issued before this process started is invalid.
+        self.operator_session_epoch = time()
         self.modes = config.get(
             "modes",
             [
@@ -217,6 +219,16 @@ class Config:
             _policy.get("no_comply", list(DEFAULT_NO_COMPLY))
         )
 
+        self.livestream_ingest_url = config.get("livestream_ingest_url", "") or ""
+        self.livestream_playback_url = config.get("livestream_playback_url", "") or ""
+        self.age_credential_issuers = list(config.get("age_credential_issuers") or [])
+        self.obs_websocket_host = (
+            config.get("obs_websocket_host", "127.0.0.1") or "127.0.0.1"
+        )
+        self.obs_websocket_port = int(config.get("obs_websocket_port", 4455) or 4455)
+        self.obs_websocket_password = config.get("obs_websocket_password", "") or ""
+        self.capabilities = config.get("capabilities") or {}
+
         for key, val in config.items():
             if not hasattr(self, key):
                 setattr(self, key, val)
@@ -279,6 +291,7 @@ class Config:
             "pool": pool_status,
             "uptime": "{:d}:{:02d}:{:02d}".format(h, m, s),
             "height": self.LatestBlock.block.index,
+            "capabilities": getattr(self, "capabilities", None) or {},
         }
         return status
 

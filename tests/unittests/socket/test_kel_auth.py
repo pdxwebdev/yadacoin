@@ -1334,5 +1334,37 @@ class TestNodeSocketClientConnectEcdhStorage(AsyncTestCase):
         self.assertEqual(stream._ecdh_pub_sent, fake_pub)
 
 
+class TestAcceptPeerKelChainCoinbase(AsyncTestCase):
+    """connect bootstrap has no Block; coinbase KEL entries still verify."""
+
+    async def test_accepts_coinbase_kel_without_block(self):
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        from yadacoin.core.config import Config
+        from yadacoin.core.transaction import Transaction
+
+        rpc = _make_rpc()
+        pub = Config().public_key
+        priv = Config().private_key
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub)))
+        prerotated = "13kpmLEktnfyaahRvQ5385EzUBLYa9PU8d"
+        txn = await Transaction.generate(
+            public_key=pub,
+            private_key=priv,
+            coinbase=True,
+            outputs=[{"to": prerotated, "value": 12.5}],
+            prerotated_key_hash=prerotated,
+            public_key_hash=address,
+        )
+        raw = txn.to_dict()
+        loaded = Transaction.from_dict(raw)
+        self.assertFalse(loaded.coinbase)
+
+        await rpc._accept_peer_kel_chain([raw])
+
+        mt = rpc.config.mongo.async_db.miner_transactions
+        self.assertTrue(mt.bulk_write.await_count or mt.replace_one.await_count)
+
+
 if __name__ == "__main__":
     unittest.main()

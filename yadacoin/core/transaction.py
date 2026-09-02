@@ -34,6 +34,7 @@ from yadacoin.core.contenttakedown import (
     MINIMUM_TAKEDOWN_FEE,
     ContentTakedownAnnouncement,
 )
+from yadacoin.core.credentialannouncement import CredentialAnnouncement
 from yadacoin.core.credentialreceipt import CredentialReceipt
 from yadacoin.core.fileannouncement import FileAnnouncement
 from yadacoin.core.identityannouncement import IdentityAnnouncement
@@ -44,6 +45,25 @@ from yadacoin.core.recoveryannouncement import (
     RecoveryTransition,
 )
 from yadacoin.core.rotationannouncement import RotationAnnouncement
+
+
+def _relationship_verify_height(block):
+    """Height used for relationship-type fork gates.
+
+    Prefer the verifying block; otherwise LatestBlock.
+    """
+    if block is not None and getattr(block, "index", None) is not None:
+        try:
+            return int(block.index)
+        except (TypeError, ValueError):
+            pass
+    try:
+        latest = Config().LatestBlock
+        if latest is not None and getattr(latest, "block", None) is not None:
+            return int(latest.block.index)
+    except Exception:
+        pass
+    return 0
 
 
 def equal(a, b, epsilon=5e-9):
@@ -231,6 +251,13 @@ class Transaction(object):
             and FileAnnouncement.RELATIONSHIP_KEY in self.relationship
         ):
             self.relationship = FileAnnouncement.from_relationship(self.relationship)
+        elif (
+            isinstance(self.relationship, dict)
+            and CredentialAnnouncement.RELATIONSHIP_KEY in self.relationship
+        ):
+            self.relationship = CredentialAnnouncement.from_relationship(
+                self.relationship
+            )
         elif (
             isinstance(self.relationship, dict)
             and RecoveryAnnouncement.RELATIONSHIP_KEY in self.relationship
@@ -724,6 +751,7 @@ class Transaction(object):
         check_agent_registration=False,
         check_content_takedown=False,
         check_branch_announcement=False,
+        check_credential_announcement=False,
         block=None,
         mempool=False,
         batch_txns=None,
@@ -845,12 +873,13 @@ class Transaction(object):
             # Unique inception: no second KEL root for the same public_key_hash
             # / inception tag (covers re-included identical ids and fresh ids).
             _uniq_idx = block.index if block is not None else None
-            await self.assert_unique_inception(
-                block_index=_uniq_idx,
-                batch_txns=batch_txns,
-                extra_blocks=extra_blocks,
-                use_mempool=mempool,
-            )
+            if _uniq_idx is None or _uniq_idx >= CHAIN.KEL_UNIQUE_INCEPTION_FORK:
+                await self.assert_unique_inception(
+                    block_index=_uniq_idx,
+                    batch_txns=batch_txns,
+                    extra_blocks=extra_blocks,
+                    use_mempool=mempool,
+                )
 
             if has_kel:
                 if block is not None:
@@ -948,6 +977,13 @@ class Transaction(object):
                     "Branch announcement is only valid for subsequent rotations, "
                     "not inception (prev_public_key_hash is empty)"
                 )
+            if self.relationship.branch_type:
+                height = _relationship_verify_height(block)
+                if height < CHAIN.KEL_BRANCH_TYPE_FORK:
+                    raise InvalidTransactionException(
+                        f"Typed branch announcement transactions not allowed before "
+                        f"fork height {CHAIN.KEL_BRANCH_TYPE_FORK}"
+                    )
         elif isinstance(self.relationship, ContentTakedownAnnouncement):
             relationship = self.relationship.to_string()
             if not check_content_takedown:
@@ -960,6 +996,24 @@ class Transaction(object):
                 )
         elif isinstance(self.relationship, FileAnnouncement):
             relationship = self.relationship.to_string()
+        elif isinstance(self.relationship, CredentialAnnouncement):
+            relationship = self.relationship.to_string()
+            if not check_credential_announcement:
+                height = _relationship_verify_height(block)
+                check_credential_announcement = (
+                    height >= CHAIN.CREDENTIAL_ANNOUNCEMENT_FORK
+                )
+            if not check_credential_announcement:
+                raise InvalidTransactionException(
+                    f"Credential announcement transactions not allowed before fork "
+                    f"height {CHAIN.CREDENTIAL_ANNOUNCEMENT_FORK}"
+                )
+            await self.assert_unique_credential_issuance(
+                block_index=block.index if block is not None else None,
+                batch_txns=batch_txns,
+                extra_blocks=extra_blocks,
+                use_mempool=mempool,
+            )
         elif isinstance(
             self.relationship, (RecoveryAnnouncement, RecoveryProof, RecoveryTransition)
         ):
@@ -1070,6 +1124,10 @@ class Transaction(object):
                     "using inputs from a transaction where you were not one of the recipients."
                 )
 
+        if block is not None and not self.coinbase:
+            from yadacoin.core.block import Block
+
+            self.coinbase = Block.is_coinbase(block, self)
         if self.coinbase:
             return
         # Only skip input/output balance validation for contract-generated
@@ -1141,6 +1199,8 @@ class Transaction(object):
         elif isinstance(self.relationship, ContentTakedownAnnouncement):
             relationship = self.relationship.to_string()
         elif isinstance(self.relationship, FileAnnouncement):
+            relationship = self.relationship.to_string()
+        elif isinstance(self.relationship, CredentialAnnouncement):
             relationship = self.relationship.to_string()
         elif isinstance(
             self.relationship, (RecoveryAnnouncement, RecoveryProof, RecoveryTransition)
@@ -1443,24 +1503,6 @@ class Transaction(object):
             idx = doc.get("index")
             if idx is not None and int(idx) in fork_indices:
                 continue
-            # Same-id re-inclusion / re-validation of this inception is OK.
-            if my_sig:
-                same = False
-                for t in doc.get("transactions") or []:
-                    if not isinstance(t, dict):
-                        continue
-                    if t.get("id") != my_sig:
-                        continue
-                    t_pkh = t.get("public_key_hash") or ""
-                    t_inc = t.get("inception_public_key_hash") or ""
-                    t_prev = t.get("prev_public_key_hash") or ""
-                    if t_prev:
-                        continue
-                    if t_pkh == pkh or t_inc == inception_tag or t_pkh == inception_tag:
-                        same = True
-                        break
-                if same:
-                    continue
             raise InvalidTransactionException(
                 f"Duplicate KEL inception for public_key_hash={pkh}: "
                 f"KEL already exists on-chain (block {doc.get('index')})"
@@ -1486,6 +1528,118 @@ class Transaction(object):
             raise InvalidTransactionException(
                 f"Duplicate KEL inception for public_key_hash={pkh}: "
                 f"another inception is already in the mempool"
+            )
+
+    @staticmethod
+    def _credential_issuance_combo(rel):
+        """(issuer, claim, subject) or None."""
+        if isinstance(rel, CredentialAnnouncement):
+            issuer = rel.issuer_username_signature
+            claim = rel.claim
+            subject = rel.subject_username_signature
+        elif isinstance(rel, dict):
+            inner = rel.get(CredentialAnnouncement.RELATIONSHIP_KEY, rel)
+            if not isinstance(inner, dict):
+                return None
+            issuer = inner.get("issuer_username_signature") or ""
+            claim = inner.get("claim") or ""
+            subject = inner.get("subject_username_signature") or ""
+        else:
+            return None
+        if not issuer or not claim or not subject:
+            return None
+        return (issuer, claim, subject)
+
+    async def assert_unique_credential_issuance(
+        self,
+        block_index=None,
+        batch_txns=None,
+        extra_blocks=None,
+        use_mempool=True,
+    ):
+        """One issuer may issue a given claim to a given recipient only once."""
+        combo = Transaction._credential_issuance_combo(self.relationship)
+        if not combo:
+            return
+        issuer, claim, subject = combo
+        my_sig = self.transaction_signature or ""
+
+        def _other_same(txn):
+            if not txn:
+                return False
+            if getattr(txn, "transaction_signature", None) == my_sig:
+                return False
+            rel = getattr(txn, "relationship", None)
+            if rel is None and isinstance(txn, dict):
+                rel = txn.get("relationship")
+                oid = txn.get("id") or txn.get("transaction_signature") or ""
+                if oid == my_sig:
+                    return False
+            other = Transaction._credential_issuance_combo(rel)
+            return other == combo
+
+        for txn in batch_txns or []:
+            if _other_same(txn):
+                raise InvalidTransactionException(
+                    "Duplicate credential issuance: this issuer already issued "
+                    f"{claim!r} to this recipient in the same block/batch"
+                )
+
+        fork_indices = set()
+        for eb in extra_blocks or []:
+            eb_idx = getattr(eb, "index", None)
+            if eb_idx is not None:
+                fork_indices.add(int(eb_idx))
+            if block_index is not None and eb_idx is not None and eb_idx >= block_index:
+                continue
+            for txn in getattr(eb, "transactions", None) or []:
+                if _other_same(txn):
+                    raise InvalidTransactionException(
+                        "Duplicate credential issuance: this issuer already issued "
+                        f"{claim!r} to this recipient in the candidate chain"
+                    )
+
+        match = {
+            "transactions.relationship.credential.issuer_username_signature": issuer,
+            "transactions.relationship.credential.claim": claim,
+            "transactions.relationship.credential.subject_username_signature": subject,
+        }
+        if block_index is not None:
+            match["index"] = {"$lt": int(block_index)}
+        cursor = self.config.mongo.async_db.blocks.find(
+            match, {"index": 1, "transactions": 1}
+        )
+        async for doc in cursor:
+            idx = doc.get("index")
+            if idx is not None and int(idx) in fork_indices:
+                continue
+            for stored in doc.get("transactions") or []:
+                if stored.get("id") == my_sig:
+                    continue
+                if (
+                    Transaction._credential_issuance_combo(stored.get("relationship"))
+                    == combo
+                ):
+                    raise InvalidTransactionException(
+                        "Duplicate credential issuance: this issuer already issued "
+                        f"{claim!r} to this recipient on-chain "
+                        f"(block {doc.get('index')})"
+                    )
+
+        if not use_mempool:
+            return
+        mem_q = {
+            "relationship.credential.issuer_username_signature": issuer,
+            "relationship.credential.claim": claim,
+            "relationship.credential.subject_username_signature": subject,
+        }
+        if my_sig:
+            mem_q["id"] = {"$ne": my_sig}
+        mem = await self.config.mongo.async_db.miner_transactions.find_one(mem_q)
+        if mem:
+            raise InvalidTransactionException(
+                "Duplicate credential issuance: this issuer already issued "
+                f"{claim!r} to this recipient in the mempool"
             )
 
     async def is_already_onchain(self, block_index=None, extra_blocks=None):
@@ -2220,6 +2374,8 @@ class Transaction(object):
                 relationship = {BranchAnnouncement.RELATIONSHIP_KEY: relationship}
             elif isinstance(self.relationship, FileAnnouncement):
                 relationship = {FileAnnouncement.RELATIONSHIP_KEY: relationship}
+            elif isinstance(self.relationship, CredentialAnnouncement):
+                relationship = {CredentialAnnouncement.RELATIONSHIP_KEY: relationship}
         ret = {
             "time": int(self.time),
             "rid": self.rid,

@@ -1479,7 +1479,27 @@
             return;
           }
 
-          d.records.forEach((rec) => {
+          const seenPkh = new Set();
+          let seenInception = false;
+          const records = [];
+          (d.records || []).forEach((rec) => {
+            const pkh = rec.public_key_hash || "";
+            if (pkh && seenPkh.has(pkh)) {
+              return;
+            }
+            if (rec.flag === "inception") {
+              if (seenInception) {
+                return;
+              }
+              seenInception = true;
+            }
+            if (pkh) {
+              seenPkh.add(pkh);
+            }
+            records.push(rec);
+          });
+          records.forEach((rec, i) => {
+            rec.index = i;
             const li =
               document.createElement("li");
             li.className = "key-item";
@@ -1526,11 +1546,11 @@
             listEl.appendChild(li);
           });
 
-          if (d.total > 0) {
+          if (records.length > 0) {
             document.getElementById(
               "pageInfo",
             ).textContent =
-              `${d.total} entr${d.total === 1 ? "y" : "ies"}`;
+              `${records.length} entr${records.length === 1 ? "y" : "ies"}`;
           }
         } catch (e) {
           loading.style.display = "none";

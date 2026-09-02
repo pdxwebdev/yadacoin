@@ -136,9 +136,16 @@ class CHAIN(object):
     # Placeholder height — set before mainnet activation.
     KEL_BRANCH_ANNOUNCEMENT_FORK = 605000
     # Reject a second KEL inception for the same public_key_hash / inception
-    # tag even when the transaction id differs (or when username uniqueness
-    # is bypassed by exclude_txn_sig on a re-included identical id).
-    KEL_UNIQUE_INCEPTION_FORK = 606000
+    # tag even when the transaction id is identical (same-id re-inclusion) or
+    # when username uniqueness is bypassed by exclude_txn_sig. Last duplicate
+    # inception on yadacoin_local_B is at 608351.
+    KEL_UNIQUE_INCEPTION_FORK = 608352
+    # Typed BranchAnnouncement.type (e.g. livestream) is included in the
+    # relationship_hash preimage. Untyped / peer branches keep the historical
+    # pre+twice preimage. Below this height, a non-empty branch type is rejected.
+    KEL_BRANCH_TYPE_FORK = 610000
+    # On-chain CredentialAnnouncement (W3C VC + recovery Schnorr ZKP).
+    CREDENTIAL_ANNOUNCEMENT_FORK = 610000
 
     @classmethod
     def target_block_time(cls, network: str):

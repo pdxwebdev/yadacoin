@@ -836,6 +836,18 @@ class KeyEvent:
             raise KeyEventException(
                 "branch announcement commit collides with a main-line key hash"
             )
+        from yadacoin.core.branchannouncement import normalize_branch_type
+
+        branch_type = getattr(self.txn.relationship, "branch_type", "") or ""
+        if getattr(self.txn.relationship, "to_dict", None):
+            raw_type = (self.txn.relationship.to_dict() or {}).get("type")
+            if raw_type:
+                branch_type = raw_type
+        if branch_type:
+            try:
+                normalize_branch_type(branch_type)
+            except ValueError as exc:
+                raise KeyEventException(str(exc)) from exc
 
     def verify_confirming(self, latest_entry, onchain=False):
         self.verify_fields(prev_public_key_hash_required=True)
@@ -1323,11 +1335,11 @@ class KeyEvent:
             if (
                 block_index is not None
                 and row.get("index") is not None
-                and row["index"] > block_index
-                and fork_indices
+                and row["index"] >= block_index
             ):
-                # Only apply this bound when verifying a fork batch; normal
-                # mempool tip checks still see the full chain.
+                # Same-height children are batch_txns; later heights are not
+                # yet committed relative to the block under verification.
+                # Mempool (block_index is None) still sees the full chain.
                 continue
 
             txn = Transaction.from_dict(row["transactions"])
@@ -2268,6 +2280,8 @@ class KeyEventLog:
     @staticmethod
     async def build_from_public_key(
         public_key,
+        onchain_only=False,
+        follow_recovery=True,
     ):
         """Build the ordered KEL for *public_key*.
 
@@ -2288,6 +2302,8 @@ class KeyEventLog:
 
         log = await KeyEventLog.get_log(
             public_key,
+            onchain_only=onchain_only,
+            follow_recovery=follow_recovery,
         )
 
         result = KELResult(log)
@@ -2303,10 +2319,14 @@ class KeyEventLog:
     @staticmethod
     async def get_log(
         public_key,
+        onchain_only=False,
+        follow_recovery=True,
     ):
         """Return the ordered KEL for *public_key* and a given username"""
         config = Config()
-        latest = await KeyEventLog.get_latest(public_key=public_key, onchain_only=False)
+        latest = await KeyEventLog.get_latest(
+            public_key=public_key, onchain_only=onchain_only
+        )
         if latest is None:
             return []
         inception_pkh = getattr(latest, "inception_public_key_hash", None) or getattr(
@@ -2325,13 +2345,109 @@ class KeyEventLog:
         rows = await cursor.to_list(length=None)
         log = [Transaction.from_dict(row["transactions"]) for row in rows]
 
-        mempool_cursor = config.mongo.async_db.miner_transactions.find(
-            {"inception_public_key_hash": inception_pkh}
-        )
-        async for doc in mempool_cursor:
-            log.append(Transaction.from_dict(doc))
+        if not onchain_only:
+            mempool_cursor = config.mongo.async_db.miner_transactions.find(
+                {"inception_public_key_hash": inception_pkh}
+            )
+            async for doc in mempool_cursor:
+                log.append(Transaction.from_dict(doc))
 
-        return log
+        return KeyEventLog.collapse_duplicate_inceptions(log)
+
+    @staticmethod
+    def collapse_duplicate_inceptions(log):
+        """Return a distinct KEL, ignoring historical duplicate inceptions.
+
+        Pre-fork chain data accepted multiple empty-prev inceptions for the
+        same identity. Extra roots are not rotations; consumers that used
+        ``len(log)`` as derivation depth then walked once per duplicate.
+        Real rotations still have a ``prev_public_key_hash``.
+
+        Prefer the longest hash-linked chain from an empty-prev root so
+        each ``public_key_hash`` appears once. Fall back to first-inception
+        plus distinct hashes when links cannot be reconstructed.
+        """
+        if not log:
+            return log
+
+        def _field(txn, name):
+            if isinstance(txn, dict):
+                val = txn.get(name)
+            else:
+                val = getattr(txn, name, None)
+            return val or ""
+
+        def _prev(txn):
+            return _field(txn, "prev_public_key_hash")
+
+        def _pkh(txn):
+            return _field(txn, "public_key_hash")
+
+        collapsed_simple = []
+        seen_inception = False
+        seen_pkh = set()
+        for txn in log:
+            if not _prev(txn):
+                if seen_inception:
+                    continue
+                seen_inception = True
+            k = _pkh(txn)
+            if k:
+                if k in seen_pkh:
+                    continue
+                seen_pkh.add(k)
+            collapsed_simple.append(txn)
+
+        roots = []
+        seen_root_pkh = set()
+        children = {}
+        for txn in log:
+            prev = _prev(txn)
+            pkh = _pkh(txn)
+            if not prev:
+                if pkh and pkh in seen_root_pkh:
+                    continue
+                if pkh:
+                    seen_root_pkh.add(pkh)
+                roots.append(txn)
+                continue
+            children.setdefault(prev, []).append(txn)
+
+        def walk(start):
+            chain = [start]
+            seen = set()
+            start_pkh = _pkh(start)
+            if start_pkh:
+                seen.add(start_pkh)
+            cur = start
+            while True:
+                nxts = children.get(_pkh(cur)) or []
+                chosen = None
+                for n in nxts:
+                    npkh = _pkh(n)
+                    if npkh and npkh in seen:
+                        continue
+                    chosen = n
+                    break
+                if chosen is None:
+                    break
+                chain.append(chosen)
+                npkh = _pkh(chosen)
+                if npkh:
+                    seen.add(npkh)
+                cur = chosen
+            return chain
+
+        if roots and any(_pkh(r) for r in roots):
+            best = []
+            for root in roots:
+                chain = walk(root)
+                if len(chain) > len(best):
+                    best = chain
+            if len(best) > 1 or len(collapsed_simple) <= 1:
+                return best
+
+        return collapsed_simple
 
     @staticmethod
     def _inception_tag(value):

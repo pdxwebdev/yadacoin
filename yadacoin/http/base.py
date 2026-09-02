@@ -15,9 +15,12 @@ Full license terms: see LICENSE.txt in this repository.
 Base handler ancestor, factorize common functions
 """
 
+import datetime
 import json
 import logging
+import time
 
+import jwt
 from bson import json_util
 from tornado.ioloop import IOLoop
 from tornado.web import RequestHandler
@@ -60,12 +63,14 @@ class BaseHandler(RequestHandler):
     async def get_auth_cutoff(self):
         """Revocation cutoff: sessions issued before this timestamp are invalid.
 
-        Hardcoded to AUTH_REVOCATION_CUTOFF so every cookie/JWT issued before
-        the deploy is rejected without needing an unlock to write a cutoff into
-        Mongo. A legitimate unlock issues a fresh session (timestamp > cutoff)
-        that keeps working; bump the constant to force another revocation.
+        The later of AUTH_REVOCATION_CUTOFF and this process's
+        ``operator_session_epoch`` (set at Config init). Cookies/JWTs from a
+        previous node process are rejected after restart.
         """
-        return AUTH_REVOCATION_CUTOFF
+        epoch = getattr(self.config, "operator_session_epoch", None)
+        if epoch is None:
+            epoch = getattr(self.config, "start_time", 0) or 0
+        return max(float(AUTH_REVOCATION_CUTOFF), float(epoch))
 
     async def wallet_is_unlocked(self):
         """Return True if the request carries a still-valid wallet session.
@@ -76,7 +81,11 @@ class BaseHandler(RequestHandler):
         it predates the revocation cutoff.
         """
         if self.jwt.get("key_or_wif") == "true":
-            return True
+            try:
+                ts = float(self.jwt.get("timestamp") or 0)
+            except (TypeError, ValueError):
+                return False
+            return ts >= await self.get_auth_cutoff()
         cookie = self.get_secure_cookie("key_or_wif")
         if not cookie:
             return False
@@ -85,6 +94,38 @@ class BaseHandler(RequestHandler):
         except (ValueError, AttributeError, UnicodeDecodeError):
             return False
         return cookie_ts >= await self.get_auth_cutoff()
+
+    async def issue_operator_session(self, expires=23040):
+        """Issue the key_or_wif cookie/JWT used by wallet_is_unlocked()."""
+        issued_at = time.time()
+        self.set_secure_cookie("key_or_wif", str(issued_at))
+        max_expires = 86400
+        try:
+            expires_seconds = int(expires)
+        except (TypeError, ValueError):
+            expires_seconds = 23040
+        expires_seconds = max(1, min(expires_seconds, max_expires))
+        payload = {
+            "timestamp": issued_at,
+            "key_or_wif": "true",
+            "exp": datetime.datetime.utcnow()
+            + datetime.timedelta(seconds=expires_seconds),
+        }
+        token = None
+        try:
+            secret = getattr(self.config, "jwt_secret_key", None)
+            if secret:
+                token = jwt.encode(payload, secret, algorithm="ES256")
+            await self.config.mongo.async_db.config.update_one(
+                {"key": "jwt"},
+                {"$set": {"key": "jwt", "value": payload}},
+                upsert=True,
+            )
+        except Exception as exc:
+            logging.getLogger("tornado.application").warning(
+                "issue_operator_session token error: %s", exc
+            )
+        return token
 
     async def prepare(self, exceptions=None):
         if (

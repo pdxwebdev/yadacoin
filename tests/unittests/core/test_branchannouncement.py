@@ -140,5 +140,52 @@ class TestBranchAnnouncementInit(unittest.TestCase):
         self.assertIn(_TWICE, repr(ba))
 
 
+class TestBranchAnnouncementType(unittest.TestCase):
+    def test_untyped_to_string_is_pre_plus_twice(self):
+        ba = BranchAnnouncement(
+            prerotated_key_hash=_PRE, twice_prerotated_key_hash=_TWICE
+        )
+        self.assertEqual(ba.to_string(), _PRE + _TWICE)
+        self.assertEqual(ba.branch_type, "")
+        self.assertNotIn("type", ba.to_dict())
+
+    def test_peer_type_omitted_from_hash_and_dict(self):
+        ba = BranchAnnouncement(
+            prerotated_key_hash=_PRE,
+            twice_prerotated_key_hash=_TWICE,
+            type="peer",
+        )
+        self.assertEqual(ba.to_string(), _PRE + _TWICE)
+        self.assertEqual(ba.branch_type, "")
+        self.assertNotIn("type", ba.to_dict())
+
+    def test_livestream_type_appended_to_hash(self):
+        ba = BranchAnnouncement(
+            prerotated_key_hash=_PRE,
+            twice_prerotated_key_hash=_TWICE,
+            type="livestream",
+        )
+        self.assertEqual(ba.to_string(), _PRE + _TWICE + "livestream")
+        self.assertTrue(ba.is_livestream())
+        self.assertEqual(ba.to_dict()["type"], "livestream")
+
+    def test_unknown_type_raises(self):
+        with self.assertRaises(ValueError):
+            BranchAnnouncement(
+                prerotated_key_hash=_PRE,
+                twice_prerotated_key_hash=_TWICE,
+                type="unknown",
+            )
+
+    def test_to_dict_omits_type_when_empty(self):
+        ba = BranchAnnouncement(
+            prerotated_key_hash=_PRE, twice_prerotated_key_hash=_TWICE
+        )
+        self.assertEqual(
+            set(ba.to_dict()),
+            {"prerotated_key_hash", "twice_prerotated_key_hash"},
+        )
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

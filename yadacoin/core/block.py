@@ -1100,6 +1100,9 @@ class Block(object):
 
                 check_content_takedown = index >= CHAIN.CONTENT_TAKEDOWN_FORK
                 check_branch_announcement = index >= CHAIN.KEL_BRANCH_ANNOUNCEMENT_FORK
+                check_credential_announcement = (
+                    index >= CHAIN.CREDENTIAL_ANNOUNCEMENT_FORK
+                )
 
                 await transaction_obj.verify(
                     check_max_inputs=check_max_inputs,
@@ -1108,6 +1111,7 @@ class Block(object):
                     check_dynamic_nodes=check_dynamic_nodes,
                     check_content_takedown=check_content_takedown,
                     check_branch_announcement=check_branch_announcement,
+                    check_credential_announcement=check_credential_announcement,
                     block=block,
                     mempool=False,
                     batch_txns=txns,

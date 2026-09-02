@@ -1405,6 +1405,29 @@ class TestTransactionPureMethods(AsyncTestCase):
         # Should complete without raising
         await txn.verify()
 
+    async def test_verify_kel_coinbase_redetected_from_block(self):
+        """Payout-to-prerotated coinbase is recognized even if coinbase flag is False."""
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        from yadacoin.core.block import Block
+
+        pub = yadacoin.core.config.CONFIG.public_key
+        priv = yadacoin.core.config.CONFIG.private_key
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub)))
+        prerotated = "13kpmLEktnfyaahRvQ5385EzUBLYa9PU8d"
+        txn = await Transaction.generate(
+            public_key=pub,
+            private_key=priv,
+            coinbase=True,
+            outputs=[{"to": prerotated, "value": 12.5}],
+            prerotated_key_hash=prerotated,
+            public_key_hash=address,
+        )
+        txn.coinbase = False
+        block = await Block.init_async(public_key=pub, target=1)
+        await txn.verify(check_masternode_fee=True, block=block)
+        self.assertTrue(txn.coinbase)
+
     async def test_verify_miner_sig_contract_generated_returns(self):
         """Line 914: miner_signature + contract_generated=True returns early."""
         txn = await Transaction.generate(

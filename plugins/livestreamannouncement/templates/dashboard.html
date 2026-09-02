@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ title }}</title>
+  <style>
+    :root { --bg:#0d1117; --canvas:#161b22; --border:#30363d; --text:#c9d1d9; --muted:#8b949e; --btn:#238636; }
+    html, body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    header { background:#010409; border-bottom:1px solid var(--border); padding:12px 24px; font-weight:600; }
+    main { max-width:960px; margin:0 auto; padding:20px 24px 48px; }
+    .card { background:var(--canvas); border:1px solid var(--border); border-radius:6px; padding:16px; margin-bottom:16px; }
+    label { display:block; color:var(--muted); font-weight:600; margin:10px 0 4px; }
+    input, textarea { width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:7px 10px; font:inherit; box-sizing:border-box; }
+    label.check { display:flex; align-items:center; gap:8px; width:auto; font-weight:600; margin:12px 0; }
+    label.check input[type="checkbox"] { width:auto; margin:0; padding:0; flex:none; accent-color:var(--btn); }
+    button { background:var(--btn); color:#fff; border:0; border-radius:6px; padding:6px 14px; font-weight:600; cursor:pointer; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { text-align:left; padding:8px; border-bottom:1px solid var(--border); }
+    .err { color:#f85149; }
+  </style>
+</head>
+<body>
+  <header>Livestream</header>
+  <main>
+    <div class="card">
+      <h2>Create channel</h2>
+      <label>Title</label><input id="title" />
+      <label>Description</label><textarea id="description"></textarea>
+      <label>Service provider URL</label><input id="sp_host" placeholder="https://sp.example:8001" />
+      <label class="check"><input type="checkbox" id="age" /> Age restricted (18+)</label>
+      <p><button onclick="createChannel()">Create</button></p>
+      <div id="createErr" class="err"></div>
+    </div>
+    <div class="card">
+      <h2>OBS WebSocket</h2>
+      <label>Host</label><input id="obs_host" />
+      <label>Port</label><input id="obs_port" />
+      <label>Password (static)</label><input id="obs_password" type="password" />
+      <p><button onclick="saveSettings()">Save</button></p>
+    </div>
+    <div class="card">
+      <h2>Channels</h2>
+      <table>
+        <thead><tr><th>Title</th><th>Status</th><th>18+</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </main>
+  <script>
+    async function api(path, method, body) {
+      const opt = { method, headers: { "Content-Type": "application/json" }, credentials: "same-origin" };
+      if (body) opt.body = JSON.stringify(body);
+      const res = await fetch(path, opt);
+      return res.json();
+    }
+    async function load() {
+      const data = await api("/livestream-announcements/api/v1/channels", "GET");
+      const rows = document.getElementById("rows");
+      rows.innerHTML = "";
+      (data.results || []).forEach(ch => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${ch.title}</td><td>${ch.status}</td><td>${ch.age_restricted ? "yes" : "no"}</td>
+          <td><button onclick="live('${ch.channel_id}')">Go Live</button>
+          <button onclick="stop('${ch.channel_id}')">Stop</button></td>`;
+        rows.appendChild(tr);
+      });
+      const s = await api("/livestream-announcements/api/v1/settings", "GET");
+      const r = s.result || {};
+      document.getElementById("obs_host").value = r.obs_websocket_host || "";
+      document.getElementById("obs_port").value = r.obs_websocket_port || 4455;
+    }
+    async function createChannel() {
+      const data = await api("/livestream-announcements/api/v1/channels", "POST", {
+        title: document.getElementById("title").value,
+        description: document.getElementById("description").value,
+        sp_host: document.getElementById("sp_host").value,
+        age_restricted: document.getElementById("age").checked,
+      });
+      document.getElementById("createErr").textContent = data.error || "";
+      load();
+    }
+    async function saveSettings() {
+      await api("/livestream-announcements/api/v1/settings", "PUT", {
+        obs_websocket_host: document.getElementById("obs_host").value,
+        obs_websocket_port: parseInt(document.getElementById("obs_port").value || "4455", 10),
+        obs_websocket_password: document.getElementById("obs_password").value,
+      });
+    }
+    async function live(id) { await api("/livestream-announcements/api/v1/channels/" + id + "/live", "POST", {}); load(); }
+    async function stop(id) { await api("/livestream-announcements/api/v1/channels/" + id + "/stop", "POST", {}); load(); }
+    load();
+  </script>
+</body>
+</html>
