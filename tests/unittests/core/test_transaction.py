@@ -2805,6 +2805,37 @@ class TestTransactionIdentityAnnouncement(AsyncTestCase):
         except Exception:
             pass
 
+    async def test_verify_typed_branch_rejected_before_fork(self):
+        import hashlib
+
+        from yadacoin.core.branchannouncement import BranchAnnouncement
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        txn = await Transaction.generate(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            private_key=yadacoin.core.config.CONFIG.private_key,
+        )
+        pre = "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC"
+        twice = "1NDTiygBwjhUwsK9n9qJqrKitDURg4csxP"
+        ann = BranchAnnouncement(
+            prerotated_key_hash=pre,
+            twice_prerotated_key_hash=twice,
+            type="livestream",
+        )
+        txn.relationship = ann
+        txn.prev_public_key_hash = "1PrevAddressXXXXXXXXXXXXXXXXXXX"
+        txn.relationship_hash = hashlib.sha256(ann.to_string().encode()).digest().hex()
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = NodeKeyRotationManager._sign(
+            yadacoin.core.config.CONFIG.private_key, txn.hash
+        )
+        block = MagicMock()
+        block.index = CHAIN.KEL_BRANCH_TYPE_FORK - 1
+        with self.assertRaises(InvalidTransactionException) as ctx:
+            await txn.verify(check_branch_announcement=True, block=block)
+        self.assertIn("Typed branch announcement", str(ctx.exception))
+
     async def test_init_invalid_identity_falls_through(self):
         """Transaction.__init__ raises when the identity value is not a dict."""
         raw = {

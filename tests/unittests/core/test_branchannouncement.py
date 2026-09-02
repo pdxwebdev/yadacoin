@@ -169,6 +169,17 @@ class TestBranchAnnouncementType(unittest.TestCase):
         self.assertTrue(ba.is_livestream())
         self.assertEqual(ba.to_dict()["type"], "livestream")
 
+    def test_none_type_normalizes_to_untyped(self):
+        from yadacoin.core.branchannouncement import normalize_branch_type
+
+        ba = BranchAnnouncement(
+            prerotated_key_hash=_PRE,
+            twice_prerotated_key_hash=_TWICE,
+            type=None,
+        )
+        self.assertEqual(ba.branch_type, "")
+        self.assertEqual(normalize_branch_type(None), "")
+
     def test_unknown_type_raises(self):
         with self.assertRaises(ValueError):
             BranchAnnouncement(
@@ -176,6 +187,14 @@ class TestBranchAnnouncementType(unittest.TestCase):
                 twice_prerotated_key_hash=_TWICE,
                 type="unknown",
             )
+
+    def test_livestream_repr_includes_type(self):
+        ba = BranchAnnouncement(
+            prerotated_key_hash=_PRE,
+            twice_prerotated_key_hash=_TWICE,
+            type="livestream",
+        )
+        self.assertIn("type='livestream'", repr(ba))
 
     def test_to_dict_omits_type_when_empty(self):
         ba = BranchAnnouncement(

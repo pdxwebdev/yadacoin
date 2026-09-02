@@ -512,6 +512,109 @@ class TestStartupCheckSuccess(AsyncTestCase):
                                 await mgr.startup_check()
         cfg.app_log.info.assert_called()
 
+    async def test_existing_identity_used_as_inception(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        cfg = _make_config(
+            seed="able able able able able able able able able able able able",
+            username="mynode",
+        )
+        mgr = NodeKeyRotationManager(cfg)
+        mock_inception = MagicMock()
+        mock_inception.transaction_signature = "IDTXN"
+        mock_inception.public_key_hash = "1abc"
+        mock_inception.mempool = False
+        mock_inception.relationship.username = "mynode"
+        mock_inception.relationship.username_signature = "usig"
+
+        with patch.dict(os.environ, {"SECOND_FACTOR": "mysecret"}):
+            with patch("bip32utils.BIP32Key", self._make_bip32_mock()):
+                with patch("mnemonic.Mnemonic") as mock_mn_cls:
+                    mock_mn = MagicMock()
+                    mock_mn.to_entropy.return_value = b"\x00" * 16
+                    mock_mn_cls.return_value = mock_mn
+                    from coincurve import PrivateKey as CK
+
+                    from yadacoin.core.keyrotation import derive_secure_path
+
+                    k0 = derive_secure_path(bytes(32), bytes(32), "mysecret")
+                    k0_pub_hex = (
+                        CK(k0["private_key"]).public_key.format(compressed=True).hex()
+                    )
+                    with patch.object(
+                        IdentityAnnouncement,
+                        "get_by_username",
+                        new=AsyncMock(
+                            return_value={
+                                "public_key": k0_pub_hex,
+                                "txn": {"id": "raw"},
+                            }
+                        ),
+                    ):
+                        with patch(
+                            "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                            new=AsyncMock(return_value=None),
+                        ):
+                            with patch(
+                                "yadacoin.core.transaction.Transaction.from_dict",
+                                return_value=mock_inception,
+                            ):
+                                with patch.object(
+                                    mgr, "_try_finalise", new=AsyncMock()
+                                ) as mock_fin:
+                                    await mgr.startup_check()
+        mock_fin.assert_awaited_once()
+
+    async def test_existing_identity_txn_load_error(self):
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        cfg = _make_config(
+            seed="able able able able able able able able able able able able",
+            username="mynode",
+        )
+        mgr = NodeKeyRotationManager(cfg)
+
+        with patch.dict(os.environ, {"SECOND_FACTOR": "mysecret"}):
+            with patch("bip32utils.BIP32Key", self._make_bip32_mock()):
+                with patch("mnemonic.Mnemonic") as mock_mn_cls:
+                    mock_mn = MagicMock()
+                    mock_mn.to_entropy.return_value = b"\x00" * 16
+                    mock_mn_cls.return_value = mock_mn
+                    from coincurve import PrivateKey as CK
+
+                    from yadacoin.core.keyrotation import derive_secure_path
+
+                    k0 = derive_secure_path(bytes(32), bytes(32), "mysecret")
+                    k0_pub_hex = (
+                        CK(k0["private_key"]).public_key.format(compressed=True).hex()
+                    )
+                    with patch.object(
+                        IdentityAnnouncement,
+                        "get_by_username",
+                        new=AsyncMock(
+                            return_value={
+                                "public_key": k0_pub_hex,
+                                "txn": {"id": "raw"},
+                            }
+                        ),
+                    ):
+                        with patch(
+                            "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                            new=AsyncMock(return_value=None),
+                        ):
+                            with patch(
+                                "yadacoin.core.transaction.Transaction.from_dict",
+                                side_effect=Exception("bad txn"),
+                            ):
+                                with patch.object(
+                                    mgr, "_create_inception", new=AsyncMock()
+                                ) as mock_create:
+                                    await mgr.startup_check()
+        mock_create.assert_awaited_once()
+        cfg.app_log.error.assert_called()
+
 
 # ---------------------------------------------------------------------------
 # background_kel_checker

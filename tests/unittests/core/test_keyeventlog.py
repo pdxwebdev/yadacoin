@@ -1845,6 +1845,23 @@ class TestCollapseDuplicateInceptions(unittest.TestCase):
         out = KeyEventLog.collapse_duplicate_inceptions(log)
         self.assertEqual([x["name"] for x in out], ["i1", "rot"])
 
+    def test_walk_skips_already_seen_child_hash(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        class T:
+            def __init__(self, prev, pkh, name):
+                self.prev_public_key_hash = prev
+                self.public_key_hash = pkh
+                self.name = name
+
+        log = [
+            T("", "k0", "root"),
+            T("k0", "k0", "cycle"),
+            T("k0", "k1", "rot"),
+        ]
+        out = KeyEventLog.collapse_duplicate_inceptions(log)
+        self.assertEqual([x.name for x in out], ["root", "rot"])
+
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
@@ -2408,6 +2425,42 @@ class TestKeyEventSendsAndParent(AsyncTestCase):
 
         self.assertIsNotNone(result)
         self.assertIsInstance(result, KeyEvent)
+
+    async def test_get_onchain_parent_is_coinbase_exception(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        block_doc = {"transactions": dict(_INCEPTION_TXN_DICT), "public_key": ""}
+        ke = _make_mock_ke(
+            public_key_hash=_VALID_ADDR_PKR2,
+            prerotated_key_hash=_VALID_ADDR_TPKR2,
+        )
+        mock_cursor = MagicMock()
+        mock_cursor.to_list = AsyncMock(return_value=[block_doc])
+        with patch("yadacoin.core.keyeventlog.Config") as mock_config_cls:
+            mock_cfg = MagicMock()
+            mock_config_cls.return_value = mock_cfg
+            mock_cfg.mongo.async_db.blocks.aggregate.return_value = mock_cursor
+            with patch(
+                "yadacoin.core.block.Block.is_coinbase",
+                side_effect=Exception("bad"),
+            ):
+                result = await ke.get_onchain_parent()
+        self.assertFalse(result["key_event"].txn.coinbase)
+
+    def test_key_event_from_child_txn_is_coinbase_exception(self):
+        from unittest.mock import patch
+
+        from yadacoin.core.keyeventlog import KeyEvent
+        from yadacoin.core.transaction import Transaction
+
+        ke = KeyEvent.__new__(KeyEvent)
+        txn = Transaction.from_dict(dict(_INCEPTION_TXN_DICT))
+        with patch(
+            "yadacoin.core.block.Block.is_coinbase",
+            side_effect=Exception("bad"),
+        ):
+            ke._key_event_from_child_txn(txn)
+        self.assertFalse(txn.coinbase)
 
 
 # ---------------------------------------------------------------------------
@@ -6641,6 +6694,30 @@ class TestBranchAnnouncementHelpers(unittest.TestCase):
         with patch("yadacoin.core.keyeventlog.Config") as mock_cfg:
             mock_cfg.return_value.address_is_valid.return_value = True
             ke.verify_branch_announcement_payload()  # no raise
+
+    def test_verify_branch_payload_typed_and_unknown(self):
+        from yadacoin.core.branchannouncement import BranchAnnouncement
+        from yadacoin.core.keyeventlog import KeyEvent, KeyEventException
+
+        pre = "1CommitPreXXXXXXXXXXXXXXXXXXXXX"
+        twice = "1CommitTwiceXXXXXXXXXXXXXXXXXXX"
+        txn = MagicMock()
+        txn.relationship = BranchAnnouncement(
+            prerotated_key_hash=pre,
+            twice_prerotated_key_hash=twice,
+            type="livestream",
+        )
+        txn.public_key_hash = "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC"
+        txn.prerotated_key_hash = "1OtherAddressAAAAAAAAAAAAAAAAxxxx"
+        txn.twice_prerotated_key_hash = "1OtherAddressBBBBBBBBBBBBBBBBByyyy"
+        ke = KeyEvent.__new__(KeyEvent)
+        ke.txn = txn
+        with patch("yadacoin.core.keyeventlog.Config") as mock_cfg:
+            mock_cfg.return_value.address_is_valid.return_value = True
+            ke.verify_branch_announcement_payload()
+            txn.relationship.to_dict = lambda: {"type": "bogus"}
+            with self.assertRaises(KeyEventException):
+                ke.verify_branch_announcement_payload()
 
     def test_verify_branch_payload_missing_commit_raises(self):
         from yadacoin.core.keyeventlog import KeyEvent, KeyEventException

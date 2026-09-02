@@ -1797,3 +1797,30 @@ class TestApplyContentTakedowns(ConsensusBase):
         await self.consensus._apply_content_takedowns(block)
 
         self.consensus.mongo.async_db.blocks.update_many.assert_not_called()
+
+    async def test_livestream_takedown_blocklist_paths(self):
+        livestream = {
+            "branch": {
+                "type": "livestream",
+                "prerotated_key_hash": "1Pre",
+            }
+        }
+        with patch(
+            "plugins.livestreamannouncement.store.channel_id_for_announcement",
+            new=AsyncMock(return_value="chan"),
+        ), patch(
+            "plugins.livestreamannouncement.store.upsert_blocked_branch",
+            new=AsyncMock(),
+        ) as upsert:
+            await self.consensus._block_livestream_on_takedown(
+                "tid", livestream, "csam"
+            )
+            upsert.assert_awaited()
+            ba = MagicMock()
+            ba.to_dict.return_value = {"type": "peer"}
+            await self.consensus._block_livestream_on_takedown("tid", ba, "csam")
+            upsert.side_effect = Exception("fail")
+            await self.consensus._block_livestream_on_takedown(
+                "tid", livestream, "csam"
+            )
+            self.consensus.app_log.warning.assert_called()

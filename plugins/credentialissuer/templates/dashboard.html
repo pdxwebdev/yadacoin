@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>{{ title }}</title>
+<style>
+html,body{margin:0;background:#0d1117;color:#c9d1d9;font-family:-apple-system,sans-serif}
+header{background:#010409;border-bottom:1px solid #30363d;padding:12px 24px;font-weight:600}
+main{max-width:960px;margin:0 auto;padding:20px 24px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:16px;margin-bottom:16px}
+label{display:block;color:#8b949e;font-weight:600;margin:10px 0 4px}
+input{width:100%;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;border-radius:6px;padding:7px 10px;box-sizing:border-box}
+button{background:#238636;color:#fff;border:0;border-radius:6px;padding:6px 14px;font-weight:600;cursor:pointer}
+table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:8px;border-bottom:1px solid #30363d}
+.err{color:#f85149}
+</style></head>
+<body>
+<header>Credential Issuer</header>
+<main>
+<div class="card">
+  <h2>Issue ageOver18 credential</h2>
+  <p>Operator attestation only. This form does not parse mDL.</p>
+  <label>Subject username</label>
+  <input id="subject" />
+  <label>Claim</label>
+  <input id="claim" value="ageOver18" />
+  <p><button onclick="issue()">Issue</button></p>
+  <div id="err" class="err"></div>
+</div>
+<div class="card">
+  <h2>Issued</h2>
+  <table><thead><tr><th>Username</th><th>Claim</th><th>Txn</th></tr></thead>
+  <tbody id="rows"></tbody></table>
+</div>
+</main>
+<script>
+async function api(path, method, body) {
+  const opt = {method, headers:{"Content-Type":"application/json"}, credentials:"same-origin"};
+  if (body) opt.body = JSON.stringify(body);
+  return (await fetch(path, opt)).json();
+}
+async function load() {
+  const data = await api("/credential-issuer/api/v1/credentials", "GET");
+  const rows = document.getElementById("rows");
+  rows.innerHTML = "";
+  (data.results||[]).forEach(r => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${r.username||r.subject_username_signature||""}</td><td>${r.claim||""}</td><td>${(r.transaction_id||"").slice(0,16)}</td>`;
+    rows.appendChild(tr);
+  });
+}
+async function issue() {
+  const data = await api("/credential-issuer/api/v1/credentials", "POST", {
+    username: document.getElementById("subject").value,
+    claim: document.getElementById("claim").value || "ageOver18",
+  });
+  document.getElementById("err").textContent = data.error || "";
+  load();
+}
+load();
+</script>
+</body></html>

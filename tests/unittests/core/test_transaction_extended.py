@@ -2781,6 +2781,19 @@ class TestNewCodeCoverageFinal(TransactionTestCase):
                 await txn.verify(check_input_spent=True, check_kel=False, block=None)
                 self.assertEqual(spent2.await_args.kwargs.get("from_index"), 99)
 
+    def test_relationship_verify_height_fallbacks(self):
+        from yadacoin.core.transaction import _relationship_verify_height
+
+        bad = MagicMock()
+        bad.index = object()
+        with patch("yadacoin.core.transaction.Config") as mock_cfg:
+            mock_cfg.return_value.LatestBlock.block.index = 42
+            self.assertEqual(_relationship_verify_height(bad), 42)
+            mock_cfg.return_value.LatestBlock = None
+            self.assertEqual(_relationship_verify_height(None), 0)
+            mock_cfg.side_effect = Exception("no config")
+            self.assertEqual(_relationship_verify_height(None), 0)
+
 
 class TestKelCrossRemainingLines(TransactionTestCase):
     async def test_empty_cand_continue(self):

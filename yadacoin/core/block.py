@@ -1369,18 +1369,19 @@ class Block(object):
 
     @staticmethod
     def is_coinbase(block, txn):
-        block_address = str(
-            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.public_key))
-        )
+        try:
+            block_address = str(
+                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.public_key))
+            )
+        except Exception:
+            return False
+        output_tos = [x.to for x in txn.outputs]
+        prerotated = getattr(txn, "prerotated_key_hash", None) or ""
         return (
             block.public_key == txn.public_key
             and len(txn.inputs) == 0
             and (
-                block_address in [x.to for x in txn.outputs]
-                or (
-                    block_address == txn.public_key_hash
-                    and txn.prerotated_key_hash in [x.to for x in txn.outputs]
-                )
+                block_address in output_tos or (prerotated and prerotated in output_tos)
             )
         )
 
