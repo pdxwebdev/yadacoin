@@ -254,12 +254,16 @@ class NodeApplication(Application):
             self.init_pool()
         self.init_ioloop()
 
-    async def remove_peer(self, stream, reason=None):
+    async def remove_peer(self, stream, close=True, reason=None):
         if reason:
             await self.config.nodeShared.write_params(
                 stream, "disconnect", {"reason": reason}
             )
-        stream.close()
+        if close:
+            try:
+                stream.close()
+            except Exception:
+                pass
         if not hasattr(stream, "peer"):
             return
         from yadacoin.tcpsocket.base import _stream_peer_key

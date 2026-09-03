@@ -836,6 +836,85 @@ class NodeKeyRotationManager:
     async def peer_branch_anchor_pub(self, identity_announcement: str) -> str:
         return await self.peer_branch_inception_public_key_hash(identity_announcement)
 
+    async def _peer_branch_tip_by_hash_link(self, branch_inception_pkh: str):
+        """Return the tip key_event_log doc for a peer branch via hash-links.
+
+        Does not use max(counter) — re-imported peer chains can inflate
+        counters and point "tip" at a stale / foreign entry.
+        """
+        if not branch_inception_pkh:
+            return None
+        cursor = self.config.mongo.async_db.key_event_log.find(
+            {"branch_inception_public_key_hash": branch_inception_pkh}
+        )
+        docs = await cursor.to_list(length=None)
+        if not docs:
+            return None
+
+        def _pkh(d):
+            return (
+                d.get("public_key_hash")
+                or (d.get("txn") or {}).get("public_key_hash")
+                or ""
+            )
+
+        def _pre(d):
+            return (
+                d.get("prerotated_key_hash")
+                or (d.get("txn") or {}).get("prerotated_key_hash")
+                or ""
+            )
+
+        def _prev(d):
+            return (
+                (d.get("txn") or {}).get("prev_public_key_hash")
+                or d.get("prev_public_key_hash")
+                or ""
+            )
+
+        def _ctr(d):
+            try:
+                return int(d.get("counter") or 0)
+            except Exception:
+                return 0
+
+        by_pkh = {}
+        for d in docs:
+            p = _pkh(d)
+            if p:
+                by_pkh.setdefault(p, []).append(d)
+
+        roots = [d for d in docs if not _prev(d) or _ctr(d) == 0]
+        if not roots:
+            roots = [min(docs, key=_ctr)]
+
+        best, best_depth = None, -1
+        for root in roots:
+            cur, depth, seen = root, 0, set()
+            while cur is not None:
+                depth += 1
+                cid = cur.get("id") or id(cur)
+                if cid in seen:
+                    break
+                seen.add(cid)
+                nxt_pkh = _pre(cur)
+                nxt = None
+                if nxt_pkh and nxt_pkh in by_pkh:
+                    cur_pkh = _pkh(cur)
+                    for cand in by_pkh[nxt_pkh]:
+                        if _prev(cand) in ("", cur_pkh):
+                            nxt = cand
+                            break
+                    if nxt is None:
+                        nxt = max(by_pkh[nxt_pkh], key=_ctr)
+                if nxt is None:
+                    break
+                cur = nxt
+            if depth >= best_depth:
+                best_depth = depth
+                best = cur
+        return best
+
     async def _ensure_peer_branch_ready(
         self, identity_announcement: str, branch_type: str = ""
     ) -> dict:
@@ -1210,24 +1289,82 @@ class NodeKeyRotationManager:
             if not branch_inception_pkh:
                 branch_inception_pkh = kp0_address
 
-            tip = await config.mongo.async_db.key_event_log.find_one(
-                {"branch_inception_public_key_hash": branch_inception_pkh},
-                sort=[("counter", -1)],
-            )
+            # Tip by hash-link walk — never max(counter).  Inflated counters
+            # from peer re-import made resume derive thousands of wrong steps
+            # so we signed with tip.prerotated without ever writing that tip
+            # entry for the peer (sign == their tip_pre, entry missing).
+            tip = await self._peer_branch_tip_by_hash_link(branch_inception_pkh)
             # Legacy resume: docs written with anchor_public_key = full pub
             if tip is None and bridge_doc.get("anchor_public_key"):
                 tip = await config.mongo.async_db.key_event_log.find_one(
                     {"anchor_public_key": bridge_doc["anchor_public_key"]},
                     sort=[("counter", -1)],
                 )
-            counter = tip.get("counter", 0) if tip else 0
             if tip and not main_inception_pkh:
                 main_inception_pkh = tip.get("inception_public_key_hash") or ""
-            cur = kp0
-            for _ in range(counter):
-                cur = derive_secure_path(
-                    cur["private_key"], cur["chain_code"], peer_factor
+
+            tip_pkh = (tip or {}).get("public_key_hash") or ""
+            tip_pre = (tip or {}).get("prerotated_key_hash") or ""
+            tip_counter = int((tip or {}).get("counter") or 0)
+
+            def _addr(key_dict):
+                return str(
+                    P2PKHBitcoinAddress.from_pubkey(
+                        _CoincurvePrivateKey(key_dict["private_key"]).public_key.format(
+                            compressed=True
+                        )
+                    )
                 )
+
+            # Root-only (counter 0): next handshake signs as Kp0.
+            # After an advance tip: state is the *next* hop (tip.prerotated).
+            if not tip or tip_counter == 0 or not tip_pkh:
+                cur = kp0
+                counter = 0
+                prev_pkh = (
+                    (tip or {}).get("prev_pkh")
+                    or ((tip or {}).get("txn") or {}).get("prev_public_key_hash")
+                    or kp0_address
+                )
+                if tip and tip_pkh == kp0_address:
+                    prev_pkh = tip_pkh
+            else:
+                cur = kp0
+                matched = False
+                for _ in range(10000):
+                    if _addr(cur) == tip_pkh:
+                        matched = True
+                        break
+                    cur = derive_secure_path(
+                        cur["private_key"], cur["chain_code"], peer_factor
+                    )
+                if not matched:
+                    config.app_log.warning(
+                        "NodeKeyRotationManager: peer branch resume could not "
+                        "match tip pkh=%s under branch=%s — starting at Kp0",
+                        tip_pkh,
+                        branch_inception_pkh,
+                    )
+                    cur = kp0
+                    counter = 0
+                    prev_pkh = kp0_address
+                else:
+                    # One hop past tip signer = committed prerotated key.
+                    cur = derive_secure_path(
+                        cur["private_key"], cur["chain_code"], peer_factor
+                    )
+                    if tip_pre and _addr(cur) != tip_pre:
+                        config.app_log.warning(
+                            "NodeKeyRotationManager: resume next-hop addr %s "
+                            "!= tip.prerotated %s (branch=%s)",
+                            _addr(cur),
+                            tip_pre,
+                            branch_inception_pkh,
+                        )
+                    # Next write counter must exceed tip; prefer hash depth.
+                    counter = tip_counter
+                    prev_pkh = tip_pkh
+
             cur_pub_hex = (
                 _CoincurvePrivateKey(cur["private_key"])
                 .public_key.format(compressed=True)
@@ -1237,7 +1374,7 @@ class NodeKeyRotationManager:
                 "ratchet_key": cur,
                 "ratchet_pub": cur_pub_hex,
                 "counter": counter,
-                "prev_pkh": (tip or {}).get("public_key_hash", kp0_address),
+                "prev_pkh": prev_pkh,
                 "branch_inception_public_key_hash": branch_inception_pkh,
                 "inception_public_key_hash": main_inception_pkh,
             }

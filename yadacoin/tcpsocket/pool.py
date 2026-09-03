@@ -118,10 +118,15 @@ class StratumServer(RPCSocketServer):
         )
 
     @classmethod
-    async def remove_peer(cls, stream, reason=None):
+    async def remove_peer(cls, stream, close=True, reason=None):
+        # close= accepted for RPCSocketServer.handle_stream compatibility
         if reason:
             Config().app_log.warning(f"remove_peer: {reason}")
-        stream.close()
+        if close:
+            try:
+                stream.close()
+            except Exception:
+                pass
         if not hasattr(stream, "peer"):
             return
         if stream.peer.address_only in StratumServer.inbound_streams[Miner.__name__]:
