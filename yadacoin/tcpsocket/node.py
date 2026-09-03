@@ -997,6 +997,12 @@ class NodeRPC(BaseRPC):
         )
 
     async def send_mempool(self, peer_stream):
+        # Mempool verify needs a complete local chain; skip until we are synced
+        # with outbound peers so we do not reject valid tip-state transactions.
+        if not await Peer.is_synced():
+            self.config.app_log.debug("send_mempool: skipping, node not synced yet")
+            return
+
         check_max_inputs = False
         if self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
             check_max_inputs = True
@@ -1041,6 +1047,13 @@ class NodeRPC(BaseRPC):
                 self.retry_messages[
                     (peer_stream.peer.rid, "newtxn", txn.transaction_signature)
                 ] = payload
+
+    async def send_mempool_to_sync_peers(self):
+        """Push mempool once the node is fully synced with outbound peers."""
+        if not await Peer.is_synced():
+            return
+        async for peer_stream in self.config.peer.get_sync_peers():
+            await self.send_mempool(peer_stream)
 
     async def send_block_to_peers(self, block):
         async for peer_stream in self.config.peer.get_sync_peers():
@@ -1135,7 +1148,11 @@ class NodeRPC(BaseRPC):
                 peer_ahead = peer_index is not None and int(peer_index) > int(our_index)
             except (TypeError, ValueError):
                 peer_ahead = False
+            was_synced = bool(getattr(stream, "synced", False))
             stream.synced = not peer_ahead
+            # Auth-time send_mempool is deferred until sync; push once caught up.
+            if stream.synced and not was_synced:
+                await self.send_mempool_to_sync_peers()
             return
 
         self.config.consensus.syncing = True

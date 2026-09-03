@@ -208,6 +208,7 @@ class TestBlocksResponseForkAssembly(AsyncTestCase):
         server.config.consensus.syncing = True
         server.config.LatestBlock.block.index = 100
         server.write_result = AsyncMock()
+        server.send_mempool_to_sync_peers = AsyncMock()
 
         stream = MagicMock()
         stream.peer.protocol_version = 1
@@ -220,6 +221,7 @@ class TestBlocksResponseForkAssembly(AsyncTestCase):
 
         self.assertFalse(server.config.consensus.syncing)
         self.assertTrue(stream.synced)
+        server.send_mempool_to_sync_peers.assert_awaited_once()
 
     async def test_blocksresponse_no_blocks_keeps_unsynced_when_peer_ahead(self):
         from unittest.mock import AsyncMock, MagicMock
@@ -233,6 +235,7 @@ class TestBlocksResponseForkAssembly(AsyncTestCase):
         server.config.consensus.syncing = True
         server.config.LatestBlock.block.index = 100
         server.write_result = AsyncMock()
+        server.send_mempool_to_sync_peers = AsyncMock()
 
         stream = MagicMock()
         stream.peer.protocol_version = 1
@@ -245,6 +248,7 @@ class TestBlocksResponseForkAssembly(AsyncTestCase):
         await server.blocksresponse(body, stream)
 
         self.assertFalse(stream.synced)
+        server.send_mempool_to_sync_peers.assert_not_awaited()
 
     async def test_blocksresponse_protocol_v2_confirms(self):
         from unittest.mock import AsyncMock, MagicMock, patch
@@ -424,6 +428,7 @@ class TestNewBlockPeerTracking(AsyncTestCase):
         server.config.consensus.syncing = True
         server.config.LatestBlock.block.index = 100
         server.write_result = AsyncMock()
+        server.send_mempool_to_sync_peers = AsyncMock()
 
         stream = MagicMock()
         stream.peer.protocol_version = 1
@@ -435,6 +440,7 @@ class TestNewBlockPeerTracking(AsyncTestCase):
         body = {"id": "req5", "result": {"blocks": []}}
         await server.blocksresponse(body, stream)
         self.assertTrue(stream.synced)
+        server.send_mempool_to_sync_peers.assert_awaited_once()
 
 
 class TestNewTxnRelay(AsyncTestCase):
@@ -594,8 +600,30 @@ class TestNewTxnRelay(AsyncTestCase):
         ), patch(
             "yadacoin.tcpsocket.node.Transaction.handle_exception",
             new_callable=AsyncMock,
-        ) as handle:
+        ) as handle, patch(
+            "yadacoin.tcpsocket.node.Peer.is_synced",
+            new_callable=AsyncMock,
+            return_value=True,
+        ):
             await server.send_mempool(peer_stream)
 
         handle.assert_not_awaited()
+        server.write_params.assert_not_awaited()
+
+    async def test_send_mempool_skips_when_not_synced(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        server = self._server()
+        server.config.mongo.async_db.miner_transactions.find = MagicMock()
+        server.write_params = AsyncMock()
+        peer_stream = MagicMock()
+
+        with patch(
+            "yadacoin.tcpsocket.node.Peer.is_synced",
+            new_callable=AsyncMock,
+            return_value=False,
+        ):
+            await server.send_mempool(peer_stream)
+
+        server.config.mongo.async_db.miner_transactions.find.assert_not_called()
         server.write_params.assert_not_awaited()
