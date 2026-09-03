@@ -1427,6 +1427,82 @@ class TestNodeSocketClientConnectEcdhStorage(AsyncTestCase):
         self.assertEqual(stream._ecdh_pub_sent, fake_pub)
 
 
+class TestPeerBranchRatchetDelta(AsyncTestCase):
+    """Hash-link deltas must include the signing tip despite bad counters."""
+
+    async def test_delta_includes_tip_when_counter_corrupted(self):
+        rpc = _make_rpc()
+        branch = "branch0"
+        # tip has low counter; stale junk has huge counter and different pkh
+        docs = [
+            {
+                "id": "root",
+                "counter": 0,
+                "public_key_hash": "A",
+                "prerotated_key_hash": "B",
+                "txn": {
+                    "id": "root",
+                    "public_key_hash": "A",
+                    "prerotated_key_hash": "B",
+                    "prev_public_key_hash": "",
+                },
+            },
+            {
+                "id": "mid",
+                "counter": 1,
+                "public_key_hash": "B",
+                "prerotated_key_hash": "C",
+                "txn": {
+                    "id": "mid",
+                    "public_key_hash": "B",
+                    "prerotated_key_hash": "C",
+                    "prev_public_key_hash": "A",
+                },
+            },
+            {
+                "id": "tip",
+                "counter": 2,
+                "public_key_hash": "C",
+                "prerotated_key_hash": "D",
+                "txn": {
+                    "id": "tip",
+                    "public_key_hash": "C",
+                    "prerotated_key_hash": "D",
+                    "prev_public_key_hash": "B",
+                },
+            },
+            {
+                "id": "junk",
+                "counter": 99999,
+                "public_key_hash": "Z",
+                "prerotated_key_hash": "Y",
+                "txn": {
+                    "id": "junk",
+                    "public_key_hash": "Z",
+                    "prerotated_key_hash": "Y",
+                    "prev_public_key_hash": "X",
+                },
+            },
+        ]
+
+        class _Cursor:
+            def __init__(self, items):
+                self._items = items
+
+            async def to_list(self, length=None):
+                return list(self._items)
+
+        rpc.config.mongo.async_db.key_event_log.find = MagicMock(
+            return_value=_Cursor(docs)
+        )
+
+        full = await rpc._peer_branch_ratchet_delta(branch, tip_pkh="C")
+        self.assertEqual([t["id"] for t in full], ["root", "mid", "tip"])
+
+        delta = await rpc._peer_branch_ratchet_delta(branch, after_pkh="B", tip_pkh="C")
+        self.assertEqual([t["id"] for t in delta], ["tip"])
+
+
 class TestAcceptPeerKelChainCoinbase(AsyncTestCase):
     """Coinbases must never enter mempool; classify via containing block."""
 

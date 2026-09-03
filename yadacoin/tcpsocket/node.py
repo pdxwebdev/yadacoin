@@ -682,6 +682,125 @@ class NodeRPC(BaseRPC):
                 await self._purge_mempool_txn(txn)
                 await self._purge_peer_kel_cache_txn(txn)
 
+    async def _peer_branch_ratchet_delta(
+        self,
+        branch_inception_pkh: str,
+        after_pkh: str = "",
+        tip_pkh: str = "",
+    ) -> list:
+        """Ordered peer-branch ratchet txns by hash-link (not counter).
+
+        Corrupted / renumbered counters previously dropped the current signing
+        tip from handshake deltas (sign matched tip_pre of an older entry).
+        Walk ``prev_public_key_hash`` / ``prerotated_key_hash`` instead.
+
+        *after_pkh*: peer already has this tip — successors only (exclusive).
+        *tip_pkh*: prefer this address as tip (usually addr of signing key).
+        """
+        if not branch_inception_pkh:
+            return []
+        cursor = self.config.mongo.async_db.key_event_log.find(
+            {"branch_inception_public_key_hash": branch_inception_pkh},
+            {"_id": 0},
+        )
+        docs = await cursor.to_list(length=None)
+        if not docs:
+            return []
+
+        def _pkh(d):
+            return (
+                d.get("public_key_hash")
+                or (d.get("txn") or {}).get("public_key_hash")
+                or ""
+            )
+
+        def _pre(d):
+            return (
+                d.get("prerotated_key_hash")
+                or (d.get("txn") or {}).get("prerotated_key_hash")
+                or ""
+            )
+
+        def _prev(d):
+            return (d.get("txn") or {}).get("prev_public_key_hash") or ""
+
+        def _ctr(d):
+            try:
+                return int(d.get("counter") or 0)
+            except Exception:
+                return 0
+
+        by_pkh = {}
+        for d in docs:
+            p = _pkh(d)
+            if p:
+                by_pkh.setdefault(p, []).append(d)
+
+        tip_doc = None
+        if tip_pkh and tip_pkh in by_pkh:
+            tip_doc = max(by_pkh[tip_pkh], key=_ctr)
+
+        if tip_doc is None:
+            roots = [d for d in docs if not _prev(d) or _ctr(d) == 0]
+            if not roots:
+                roots = [min(docs, key=_ctr)]
+            best, best_depth = None, -1
+            for root in roots:
+                cur, depth, seen = root, 0, set()
+                while cur is not None:
+                    depth += 1
+                    cid = cur.get("id") or id(cur)
+                    if cid in seen:
+                        break
+                    seen.add(cid)
+                    nxt_pkh = _pre(cur)
+                    nxt = None
+                    if nxt_pkh and nxt_pkh in by_pkh:
+                        cur_pkh = _pkh(cur)
+                        for cand in by_pkh[nxt_pkh]:
+                            if _prev(cand) in ("", cur_pkh):
+                                nxt = cand
+                                break
+                        if nxt is None:
+                            nxt = max(by_pkh[nxt_pkh], key=_ctr)
+                    if nxt is None:
+                        break
+                    cur = nxt
+                if depth >= best_depth:
+                    best_depth = depth
+                    best = cur
+            tip_doc = best
+
+        if tip_doc is None:
+            return []
+
+        chain_rev = []
+        cur, seen = tip_doc, set()
+        while cur is not None:
+            cid = cur.get("id") or id(cur)
+            if cid in seen:
+                break
+            seen.add(cid)
+            pkh = _pkh(cur)
+            if after_pkh and pkh == after_pkh:
+                break
+            txn = cur.get("txn")
+            if txn:
+                chain_rev.append(txn)
+            prev_pkh = _prev(cur)
+            if not prev_pkh or prev_pkh not in by_pkh:
+                break
+            parent = None
+            for cand in by_pkh[prev_pkh]:
+                if _pre(cand) == pkh:
+                    parent = cand
+                    break
+            if parent is None:
+                parent = max(by_pkh[prev_pkh], key=_ctr)
+            cur = parent
+
+        return list(reversed(chain_rev))
+
     # ── KEL compact resync ─────────────────────────────────────────────────
     #
     # Handshake only exchanges tip deltas / K_n anchors.  If a peer's
@@ -2473,20 +2592,11 @@ class NodeRPC(BaseRPC):
                 if _anchor_pub:
                     _peer_k0 = _anchor_pub
 
-        # Determine client's current branch tip (what we'll put in the nonce)
+        # Client tip from the chain they just sent (hash order), not max counter
+        # — corrupted counters previously selected a stale foreign tip.
         _client_kel_tip_pkh = ""
         if parsed_ratchet:
             _client_kel_tip_pkh = parsed_ratchet[-1].public_key_hash or ""
-            _branch_tip_pkh = parsed_ratchet[0].public_key_hash
-            if _branch_tip_pkh:
-                _tip = await self.config.mongo.async_db.key_event_log.find_one(
-                    {"branch_inception_public_key_hash": _branch_tip_pkh},
-                    sort=[("counter", -1)],
-                )
-                if _tip:
-                    _client_kel_tip_pkh = (
-                        _tip.get("public_key_hash", "") or _client_kel_tip_pkh
-                    )
 
         # Generate server ECDH keypair
         _ecdh_priv, _ecdh_pub = SessionCipher.generate_keypair()
@@ -2534,20 +2644,17 @@ class NodeRPC(BaseRPC):
         ) = await self.config.kel_manager.advance_peer_auth_ratchet(_peer_branch_key)
 
         # Mutual-auth transcript: both ECDH pubs + both branch tips + challenge.
-        # Server tip is this peer's branch position (Kp0-anchored, not global).
+        # Server tip is addr(signing key) after advance — never max(counter).
+        from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH_tip
+
         _branch_inception_pkh = (
             await self.config.kel_manager.peer_branch_inception_public_key_hash(
                 _peer_branch_key
             )
         )
-        _server_kel_tip_pkh = ""
-        if _branch_inception_pkh:
-            _srv_tip = await self.config.mongo.async_db.key_event_log.find_one(
-                {"branch_inception_public_key_hash": _branch_inception_pkh},
-                sort=[("counter", -1)],
-            )
-            if _srv_tip:
-                _server_kel_tip_pkh = _srv_tip.get("public_key_hash", "")
+        _server_kel_tip_pkh = (
+            str(_P2PKH_tip.from_pubkey(bytes.fromhex(_auth_pub))) if _auth_pub else ""
+        )
 
         _auth_challenge = secrets.token_hex(16)
         _auth_transcript = self._auth_transcript(
@@ -2564,55 +2671,27 @@ class NodeRPC(BaseRPC):
             else None
         )
 
-        # Build server's ratchet_chain delta (client told us what they have via latest_ratchet_pkh)
-        _srv_ratchet_chain = []
-        if _branch_inception_pkh:
-            skip_after_counter = -1
-            if latest_ratchet_pkh:
-                _tip = await self.config.mongo.async_db.key_event_log.find_one(
-                    {
-                        "branch_inception_public_key_hash": _branch_inception_pkh,
-                        "public_key_hash": latest_ratchet_pkh,
-                    }
-                )
-                if _tip:
-                    skip_after_counter = _tip.get("counter") or (
-                        await self.config.mongo.async_db.key_event_log.count_documents(
-                            {
-                                "branch_inception_public_key_hash": _branch_inception_pkh,
-                                "_id": {"$lte": _tip["_id"]},
-                            }
-                        )
-                    )
-            _cursor = self.config.mongo.async_db.key_event_log.find(
+        # Hash-link delta ending at the signing tip (includes bridge on new branch).
+        _srv_ratchet_chain = await self._peer_branch_ratchet_delta(
+            _branch_inception_pkh,
+            after_pkh=latest_ratchet_pkh or "",
+            tip_pkh=_server_kel_tip_pkh,
+        )
+        if _is_new_branch and _branch_inception_pkh:
+            bridge = await self.config.mongo.async_db.key_event_log.find_one(
                 {
                     "branch_inception_public_key_hash": _branch_inception_pkh,
-                    "counter": {"$gt": skip_after_counter},
-                },
-                {"_id": 0, "txn": 1},
-            ).sort("counter", 1)
-            _srv_ratchet_chain = [
-                e["txn"] for e in await _cursor.to_list(length=None) if "txn" in e
-            ]
-
-            if _is_new_branch:
-                # Root entry is keyed by branch inception pkh (= addr of first signer)
-                from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH
-
-                _auth_pkh = (
-                    str(_P2PKH.from_pubkey(bytes.fromhex(_auth_pub)))
-                    if _auth_pub
-                    else ""
-                )
-                bridge = await self.config.mongo.async_db.key_event_log.find_one(
-                    {
-                        "branch_inception_public_key_hash": _auth_pkh
-                        or _branch_inception_pkh,
-                        "counter": 0,
-                    }
-                )
-                if bridge and "txn" in bridge:
-                    _srv_ratchet_chain.insert(0, bridge["txn"])
+                    "counter": 0,
+                }
+            )
+            if bridge and bridge.get("txn"):
+                _bridge_txn = bridge["txn"]
+                _bridge_id = _bridge_txn.get("id") or bridge.get("id")
+                if _bridge_id and not any(
+                    (t.get("id") if isinstance(t, dict) else None) == _bridge_id
+                    for t in _srv_ratchet_chain
+                ):
+                    _srv_ratchet_chain.insert(0, _bridge_txn)
 
         # Store state needed by sig_response handler
         stream._peer_ecdh_pub = peer_ecdh_pub
@@ -2827,42 +2906,22 @@ class NodeRPC(BaseRPC):
             else None
         )
 
-        # Build our ratchet chain for the server, scoped to this peer's
-        # branch (server told us what it already has via latest_ratchet_pkh)
+        # Hash-link delta ending at our signing tip for this handshake.
+        from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH_cli
+
         _branch_inception_pkh = (
             await self.config.kel_manager.peer_branch_inception_public_key_hash(
                 _peer_branch_key
             )
         )
-        _client_ratchet_chain = []
-        if _branch_inception_pkh:
-            skip_after_counter = 0
-            if latest_ratchet_pkh:
-                _tip = await self.config.mongo.async_db.key_event_log.find_one(
-                    {
-                        "branch_inception_public_key_hash": _branch_inception_pkh,
-                        "public_key_hash": latest_ratchet_pkh,
-                    }
-                )
-                if _tip:
-                    skip_after_counter = _tip.get("counter") or (
-                        await self.config.mongo.async_db.key_event_log.count_documents(
-                            {
-                                "branch_inception_public_key_hash": _branch_inception_pkh,
-                                "_id": {"$lte": _tip["_id"]},
-                            }
-                        )
-                    )
-            _rc = self.config.mongo.async_db.key_event_log.find(
-                {
-                    "branch_inception_public_key_hash": _branch_inception_pkh,
-                    "counter": {"$gt": skip_after_counter},
-                },
-                {"_id": 0, "txn": 1},
-            ).sort("counter", 1)
-            _client_ratchet_chain = [
-                e["txn"] for e in await _rc.to_list(length=None) if "txn" in e
-            ]
+        _client_sign_pkh = (
+            str(_P2PKH_cli.from_pubkey(bytes.fromhex(_auth_pub))) if _auth_pub else ""
+        )
+        _client_ratchet_chain = await self._peer_branch_ratchet_delta(
+            _branch_inception_pkh,
+            after_pkh=latest_ratchet_pkh or "",
+            tip_pkh=_client_sign_pkh,
+        )
 
         # Compact main KEL for the server: K_n anchor on first branch contact,
         # otherwise pending + delta after the server's reported tip of our KEL.
@@ -3084,20 +3143,17 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
             )
             _is_first_contact = bool(_peer_branch_key) and not _branch_inception_pkh
             if _branch_inception_pkh:
-                _rc = self.config.mongo.async_db.key_event_log.find(
-                    {"branch_inception_public_key_hash": _branch_inception_pkh},
-                    {"_id": 0, "txn": 1},
-                ).sort("counter", 1)
-                connect_payload["ratchet_chain"] = [
-                    e["txn"] for e in await _rc.to_list(length=None) if "txn" in e
-                ]
-                # Tip of this peer's branch we already have — server sends delta
-                _tip = await self.config.mongo.async_db.key_event_log.find_one(
-                    {"branch_inception_public_key_hash": _branch_inception_pkh},
-                    sort=[("counter", -1)],
+                _full = await self._peer_branch_ratchet_delta(
+                    _branch_inception_pkh, after_pkh="", tip_pkh=""
                 )
-                if _tip and _tip.get("public_key_hash"):
-                    connect_payload["latest_ratchet_pkh"] = _tip["public_key_hash"]
+                connect_payload["ratchet_chain"] = _full
+                if _full:
+                    _last = _full[-1]
+                    _tip_pkh = (
+                        _last.get("public_key_hash") if isinstance(_last, dict) else ""
+                    )
+                    if _tip_pkh:
+                        connect_payload["latest_ratchet_pkh"] = _tip_pkh
 
             # Tip of the server's main KEL we already hold so they never send
             # their entire history on reconnect.
