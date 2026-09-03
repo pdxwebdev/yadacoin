@@ -605,11 +605,15 @@ class NodeRPC(BaseRPC):
             pass
 
     async def _verify_peer_kel_chain(self, parsed) -> None:
-        """Best-effort crypto check after handshake; never disconnects.
+        """Best-effort crypto/KEL check after handshake; never disconnects.
 
         Resolves each txn against local blocks so coinbases classify correctly
-        via ``verify(..., block=)``.  Confirmed / coinbase / invalid entries
-        are purged from mempool and from the main-KEL cache.
+        via ``verify(..., block=)``.  Confirmed / coinbase / clearly-invalid
+        entries are purged from mempool and from the main-KEL cache.
+
+        Missing inputs or KEL predecessors are *not* purged: either side may
+        lag the chain, and full UTXO resolution is not useful for bootstrap
+        cache.  Keep the entry for handshake until block sync catches up.
         """
         check_max_inputs = (
             self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK
@@ -617,6 +621,7 @@ class NodeRPC(BaseRPC):
         check_masternode_fee = (
             self.config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK
         )
+        check_kel = self.config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK
         check_dynamic_nodes = (
             self.config.LatestBlock.block.index >= CHAIN.DYNAMIC_NODES_FORK
         )
@@ -645,7 +650,7 @@ class NodeRPC(BaseRPC):
                 await txn.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
-                    check_kel=False,
+                    check_kel=check_kel,
                     check_dynamic_nodes=check_dynamic_nodes,
                     check_branch_announcement=check_branch_announcement,
                     check_credential_announcement=check_credential_announcement,
@@ -653,6 +658,19 @@ class NodeRPC(BaseRPC):
                     batch_txns=parsed,
                     block=block,
                 )
+            except (
+                MissingInputTransactionException,
+                KELExceptionPredecessorNotYetInMempool,
+                KELExceptionPreviousKeyHashReferenceMissing,
+                KELLogUnbuildableException,
+            ) as exc:
+                # Peer/local may be unsynced — input/parent not on our chain yet.
+                self.config.app_log.debug(
+                    "_accept_peer_kel_chain: verify deferred (missing chain "
+                    "context): %s",
+                    exc,
+                )
+                continue
             except TotalValueMismatchException:
                 await self._purge_mempool_txn(txn)
                 await self._purge_peer_kel_cache_txn(txn)

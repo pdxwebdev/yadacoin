@@ -1479,6 +1479,30 @@ class TestAcceptPeerKelChainCoinbase(AsyncTestCase):
         mt = rpc.config.mongo.async_db.miner_transactions
         self.assertTrue(mt.bulk_write.await_count or mt.replace_one.await_count)
 
+    async def test_verify_keeps_cache_when_input_missing(self):
+        """Unsynced chain context must not purge peer main-KEL cache."""
+        from yadacoin.core.transaction import MissingInputTransactionException
+
+        rpc = _make_rpc()
+        txn = MagicMock()
+        txn.transaction_signature = "sig-missing-input"
+        txn.coinbase = False
+        txn.prev_public_key_hash = "prev"
+        txn.verify = AsyncMock(
+            side_effect=MissingInputTransactionException("Input not found")
+        )
+        rpc._resolve_block_for_txn = AsyncMock(return_value=None)
+        rpc._is_coinbase_shaped = MagicMock(return_value=False)
+        rpc._purge_mempool_txn = AsyncMock()
+        rpc._purge_peer_kel_cache_txn = AsyncMock()
+
+        await rpc._verify_peer_kel_chain([txn])
+
+        rpc._purge_mempool_txn.assert_not_awaited()
+        rpc._purge_peer_kel_cache_txn.assert_not_awaited()
+        txn.verify.assert_awaited()
+        self.assertTrue(txn.verify.await_args.kwargs.get("check_kel"))
+
 
 if __name__ == "__main__":
     unittest.main()
