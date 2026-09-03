@@ -223,6 +223,14 @@ class BaseRPC:
             )
             return
 
+        if getattr(stream, "_removing", False) is True:
+            return
+
+        closed_fn = getattr(stream, "closed", None)
+        if callable(closed_fn) and closed_fn() is True:
+            await self.remove_peer(stream, close=False)
+            return
+
         if not hasattr(stream, "peer"):
             self.config.app_log.warning("Stream has no peer, closing connection.")
             stream.close()
@@ -271,7 +279,8 @@ class BaseRPC:
             return
 
         except StreamClosedError:
-            self.config.app_log.warning(
+            # Expected race: peer dropped while concurrent writes were in flight.
+            self.config.app_log.debug(
                 f"StreamClosedError: Peer {peer_host} is already disconnected."
             )
             await self.remove_peer(stream)
@@ -288,10 +297,21 @@ class BaseRPC:
             )
 
     async def remove_peer(self, stream, close=True, reason=None):
-        if reason:
-            await self.write_params(stream, "disconnect", {"reason": reason})
+        if getattr(stream, "_removing", False) is True:
+            return
+        stream._removing = True
+        closed_fn = getattr(stream, "closed", None)
+        already_closed = callable(closed_fn) and closed_fn() is True
+        if reason and not already_closed:
+            try:
+                await self.write_params(stream, "disconnect", {"reason": reason})
+            except Exception:
+                pass
         if close:
-            stream.close()
+            try:
+                stream.close()
+            except Exception:
+                pass
         if not hasattr(stream, "peer"):
             return
         id_attr = getattr(stream.peer, stream.peer.id_attribute)
@@ -365,9 +385,10 @@ class RPCSocketServer(TCPServer, BaseRPC):
             try:
                 data = await stream.read_until(b"\n")
             except StreamClosedError:
-                self.config.app_log.warning(
+                self.config.app_log.debug(
                     f"Stream closed: {getattr(getattr(stream, 'peer', None), 'host', 'Unknown')}"
                 )
+                await self.remove_peer(stream, close=False)
                 break
             stream.last_activity = int(time.time())
             self.config.health.tcp_server.last_activity = time.time()
@@ -462,10 +483,21 @@ class RPCSocketServer(TCPServer, BaseRPC):
         await self.write_result(stream, "keepalive", {"ok": True}, body["id"])
 
     async def remove_peer(self, stream, close=True, reason=None):
-        if reason:
-            await self.write_params(stream, "disconnect", {"reason": reason})
+        if getattr(stream, "_removing", False) is True:
+            return
+        stream._removing = True
+        closed_fn = getattr(stream, "closed", None)
+        already_closed = callable(closed_fn) and closed_fn() is True
+        if reason and not already_closed:
+            try:
+                await self.write_params(stream, "disconnect", {"reason": reason})
+            except Exception:
+                pass
         if close:
-            stream.close()
+            try:
+                stream.close()
+            except Exception:
+                pass
         if not hasattr(stream, "peer"):
             return
         id_attr = getattr(stream.peer, stream.peer.id_attribute)
@@ -496,8 +528,13 @@ class DummyStream:
 
     def __init__(self, peer):
         self.peer = peer
+        self._closed = True
+
+    def closed(self):
+        return self._closed
 
     def close(self):
+        self._closed = True
         return
 
 
@@ -804,13 +841,21 @@ class RPCSocketClient(TCPClient):
                 break
 
     async def remove_peer(self, stream, close=True, reason=None):
-        if reason:
+        if getattr(stream, "_removing", False) is True:
+            return
+        stream._removing = True
+        closed_fn = getattr(stream, "closed", None)
+        already_closed = callable(closed_fn) and closed_fn() is True
+        if reason and not already_closed:
             try:
                 await self.write_params(stream, "disconnect", {"reason": reason})
-            except:
-                self.config.app_log.warning("{}".format(format_exc()))
+            except Exception:
+                pass
         if close:
-            stream.close()
+            try:
+                stream.close()
+            except Exception:
+                pass
         if not hasattr(stream, "peer"):
             return
         if stream.peer.rid in self.outbound_streams[stream.peer.__class__.__name__]:

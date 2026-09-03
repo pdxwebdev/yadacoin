@@ -14,6 +14,8 @@ Full license terms: see LICENSE.txt in this repository.
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from tornado.iostream import StreamClosedError
+
 from yadacoin.tcpsocket.base import (
     REQUEST_ONLY,
     REQUEST_RESPONSE_MAP,
@@ -142,11 +144,91 @@ class TestBaseRPC(unittest.TestCase):
         rpc = BaseRPC()
         stream = MagicMock()  # no 'peer' attribute
         del stream.peer  # ensure peer is absent
+        stream.closed.return_value = False
+        stream._removing = False
         import asyncio
 
         asyncio.run(rpc.write_as_json(stream, "method", {}, "params"))
         mock_cfg.app_log.warning.assert_called()
         stream.close.assert_called()
+
+    @patch("yadacoin.tcpsocket.base.Config")
+    def test_write_as_json_skips_closed_stream(self, mock_config_cls):
+        mock_cfg = MagicMock()
+        mock_config_cls.return_value = mock_cfg
+        rpc = BaseRPC()
+        rpc.remove_peer = AsyncMock()
+        stream = MagicMock()
+        stream._removing = False
+        stream.closed.return_value = True
+        stream.peer = MagicMock()
+        stream.peer.host = "pool.yadacoin.io"
+        import asyncio
+
+        asyncio.run(rpc.write_as_json(stream, "newtxn", {}, "params"))
+        stream.write.assert_not_called()
+        rpc.remove_peer.assert_called_once_with(stream, close=False)
+        mock_cfg.app_log.warning.assert_not_called()
+
+    @patch("yadacoin.tcpsocket.base.Config")
+    def test_write_as_json_skips_removing_stream(self, mock_config_cls):
+        mock_cfg = MagicMock()
+        mock_config_cls.return_value = mock_cfg
+        rpc = BaseRPC()
+        rpc.remove_peer = AsyncMock()
+        stream = MagicMock()
+        stream._removing = True
+        stream.closed.return_value = False
+        stream.peer = MagicMock()
+        import asyncio
+
+        asyncio.run(rpc.write_as_json(stream, "newtxn", {}, "params"))
+        stream.write.assert_not_called()
+        rpc.remove_peer.assert_not_called()
+
+    @patch("yadacoin.tcpsocket.base.Config")
+    def test_write_as_json_stream_closed_error_is_debug(self, mock_config_cls):
+        mock_cfg = MagicMock()
+        mock_config_cls.return_value = mock_cfg
+        rpc = BaseRPC()
+        rpc.remove_peer = AsyncMock()
+        stream = MagicMock()
+        stream._removing = False
+        stream.closed.return_value = False
+        stream.peer = MagicMock()
+        stream.peer.host = "pool.yadacoin.io"
+        stream.message_queue = {}
+        stream.write = AsyncMock(side_effect=StreamClosedError())
+        import asyncio
+
+        asyncio.run(rpc.write_as_json(stream, "newtxn", {}, "params"))
+        mock_cfg.app_log.debug.assert_called()
+        mock_cfg.app_log.warning.assert_not_called()
+        rpc.remove_peer.assert_called_once_with(stream)
+
+    @patch("yadacoin.tcpsocket.base.Config")
+    def test_remove_peer_is_idempotent(self, mock_config_cls):
+        mock_cfg = MagicMock()
+        mock_config_cls.return_value = mock_cfg
+        mock_cfg.nodeServer.inbound_streams = {"Peer": {}}
+        mock_cfg.nodeServer.inbound_pending = {"Peer": {}}
+        mock_cfg.nodeClient.outbound_streams = {"Peer": {}}
+        mock_cfg.nodeClient.outbound_pending = {"Peer": {}}
+        mock_cfg.nodeServer.retry_messages = {}
+        mock_cfg.nodeClient.retry_messages = {}
+        rpc = BaseRPC()
+        stream = MagicMock()
+        stream._removing = False
+        stream.closed.return_value = True
+        stream.peer = MagicMock()
+        stream.peer.id_attribute = "rid"
+        stream.peer.rid = "abc"
+        stream.peer.__class__.__name__ = "Peer"
+        import asyncio
+
+        asyncio.run(rpc.remove_peer(stream))
+        asyncio.run(rpc.remove_peer(stream))
+        stream.close.assert_called_once()
 
 
 class TestRPCSocketServerKeepalive(unittest.TestCase):
