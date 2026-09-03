@@ -224,17 +224,63 @@ class NodeRPC(BaseRPC):
             return []
         return [ke.to_dict() for ke in kel]
 
+    async def _resolve_block_for_txn(self, txn, block_cache=None):
+        """Load the local Block that contains *txn*, if any.
+
+        ``Transaction.from_dict`` always clears ``coinbase``; only
+        ``Block.is_coinbase(block, txn)`` (via verify with ``block=``) can
+        reclassify a mined coinbase.  Results are cached by block hash when
+        *block_cache* is provided (KEL chains often share one block).
+        """
+        try:
+            block_doc = await self.config.mongo.async_db.blocks.find_one(
+                {"transactions.id": txn.transaction_signature},
+                {"_id": 0},
+            )
+        except Exception:
+            return None
+        if not block_doc:
+            return None
+        cache_key = block_doc.get("hash") or block_doc.get("index")
+        if block_cache is not None and cache_key in block_cache:
+            return block_cache[cache_key]
+        try:
+            block = await Block.from_dict(block_doc)
+        except Exception as exc:
+            self.config.app_log.debug(
+                "_resolve_block_for_txn: Block.from_dict failed: %s", exc
+            )
+            return None
+        if block_cache is not None and cache_key is not None:
+            block_cache[cache_key] = block
+        return block
+
+    @staticmethod
+    def _is_coinbase_shaped(txn) -> bool:
+        """True when a txn looks like a coinbase without a Block to prove it.
+
+        Coinbases never belong in the mempool.  Without a containing block we
+        still refuse input-less value-bearing KEL steps so they cannot pollute
+        miner_transactions.
+        """
+        if txn.inputs:
+            return False
+        try:
+            return any(float(o.value) > 0 for o in (txn.outputs or []))
+        except Exception:
+            return not txn.inputs
+
     async def _accept_peer_kel_chain(self, txn_list: list) -> None:
-        """Store a peer's KEL bootstrap into mempool without blocking handshake.
+        """Ingest a peer's KEL bootstrap without blocking handshake.
 
         Connect/auth run on the same stream read loop. Sequential
-        ``Transaction.verify`` of a full on-chain KEL (including coinbases)
-        stalls that loop: confirmations never arrive, ``retry_attempts > 3``,
-        and ``background_message_sender`` disconnects the peer.
+        ``Transaction.verify`` of a full on-chain KEL stalls that loop.
 
-        Parse and persist first so inception/parents are visible immediately.
-        Crypto verify runs in a background task; coinbase KEL rotations
-        (no inputs, no Block to classify them) are stored as-is.
+        For each entry, resolve the containing local block when present and
+        classify coinbases via ``Block.is_coinbase``.  Coinbases and already
+        confirmed txns are never written to ``miner_transactions``.  Only
+        unconfirmed non-coinbase KEL steps are stored; crypto verify runs in
+        a background task with the resolved block when available.
         """
         if not txn_list or not isinstance(txn_list, list):
             return
@@ -251,15 +297,33 @@ class NodeRPC(BaseRPC):
         if not parsed:
             return
         parsed.sort(key=lambda t: (1 if t.prev_public_key_hash else 0, t.time or 0))
-        await self._store_peer_kel_txns(parsed)
+        to_store = await self._filter_peer_kel_for_mempool(parsed)
+        await self._store_peer_kel_txns(to_store)
         self.config.app_log.info(
-            "Bootstrap: stored %d peer KEL txn(s) into mempool.",
+            "Bootstrap: stored %d/%d peer KEL txn(s) into mempool.",
+            len(to_store),
             len(parsed),
         )
         try:
             asyncio.get_running_loop().create_task(self._verify_peer_kel_chain(parsed))
         except RuntimeError:
             await self._verify_peer_kel_chain(parsed)
+
+    async def _filter_peer_kel_for_mempool(self, parsed) -> list:
+        """Return only unconfirmed non-coinbase KEL txns safe for mempool."""
+        to_store = []
+        block_cache = {}
+        for t in parsed:
+            block = await self._resolve_block_for_txn(t, block_cache)
+            if block is not None:
+                t.coinbase = Block.is_coinbase(block, t)
+                # Confirmed (coinbase or otherwise): blocks collection is source
+                continue
+            if t.coinbase or self._is_coinbase_shaped(t):
+                t.coinbase = True
+                continue
+            to_store.append(t)
+        return to_store
 
     async def _store_peer_kel_txns(self, parsed) -> None:
         if not parsed:
@@ -294,8 +358,21 @@ class NodeRPC(BaseRPC):
                         "_accept_peer_kel_chain: store error: %s", exc2
                     )
 
+    async def _purge_mempool_txn(self, txn) -> None:
+        try:
+            await self.config.mongo.async_db.miner_transactions.delete_one(
+                {"id": txn.transaction_signature}
+            )
+        except Exception:
+            pass
+
     async def _verify_peer_kel_chain(self, parsed) -> None:
-        """Best-effort crypto check after handshake; never disconnects."""
+        """Best-effort crypto check after handshake; never disconnects.
+
+        Resolves each txn against local blocks so coinbases classify correctly
+        via ``verify(..., block=)``.  Coinbases are purged from mempool if
+        present and are never re-verified as ordinary spends.
+        """
         check_max_inputs = (
             self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK
         )
@@ -311,10 +388,21 @@ class NodeRPC(BaseRPC):
         check_credential_announcement = (
             self.config.LatestBlock.block.index >= CHAIN.CREDENTIAL_ANNOUNCEMENT_FORK
         )
+        block_cache = {}
         for i, txn in enumerate(parsed):
             if i and i % 25 == 0:
                 await asyncio.sleep(0)
-            if not txn.inputs and txn.are_kel_fields_populated():
+            block = await self._resolve_block_for_txn(txn, block_cache)
+            if block is not None:
+                txn.coinbase = Block.is_coinbase(block, txn)
+                if txn.coinbase:
+                    await self._purge_mempool_txn(txn)
+                    continue
+                # Already on-chain non-coinbase: keep out of mempool.
+                await self._purge_mempool_txn(txn)
+            elif self._is_coinbase_shaped(txn):
+                txn.coinbase = True
+                await self._purge_mempool_txn(txn)
                 continue
             try:
                 await txn.verify(
@@ -324,21 +412,18 @@ class NodeRPC(BaseRPC):
                     check_dynamic_nodes=check_dynamic_nodes,
                     check_branch_announcement=check_branch_announcement,
                     check_credential_announcement=check_credential_announcement,
-                    mempool=True,
+                    mempool=block is None,
                     batch_txns=parsed,
+                    block=block,
                 )
             except TotalValueMismatchException:
+                await self._purge_mempool_txn(txn)
                 continue
             except Exception as exc:
                 self.config.app_log.debug(
                     "_accept_peer_kel_chain: verify error: %s", exc
                 )
-                try:
-                    await self.config.mongo.async_db.miner_transactions.delete_one(
-                        {"id": txn.transaction_signature}
-                    )
-                except Exception:
-                    pass
+                await self._purge_mempool_txn(txn)
 
     # ── KEL "start over" resync ────────────────────────────────────────────
     #
@@ -655,16 +740,19 @@ class NodeRPC(BaseRPC):
         """
         txn = item.transaction
 
-        # Reject any externally-submitted transaction claiming to be a coinbase.
-        # Coinbase transactions are generated exclusively by the block builder and
-        # must never enter the mempool.  Allowing them in would let a malicious
-        # peer bypass Transaction.verify()'s input/output balance check (which
-        # returns early for coinbase) and pollute the mempool, causing miners to
-        # build invalid blocks (coinbase_count != 1 failure in Block.verify()).
+        # from_dict clears coinbase; resolve containing block to classify.
+        block = await self._resolve_block_for_txn(txn)
+        if block is not None:
+            txn.coinbase = Block.is_coinbase(block, txn)
+        elif self._is_coinbase_shaped(txn):
+            txn.coinbase = True
+
+        # Coinbases are block-only.  Never enter miner_transactions.
         if txn.coinbase:
             self.config.app_log.warning(
                 f"Rejecting coinbase transaction submitted to mempool: {txn.transaction_signature}"
             )
+            await self._purge_mempool_txn(txn)
             return
 
         check_max_inputs = False
@@ -699,6 +787,7 @@ class NodeRPC(BaseRPC):
                 check_branch_announcement=check_branch_announcement,
                 check_credential_announcement=check_credential_announcement,
                 mempool=True,
+                block=block,
             )
         except (
             MissingInputTransactionException,
@@ -1025,8 +1114,18 @@ class NodeRPC(BaseRPC):
         check_credential_announcement = (
             self.config.LatestBlock.block.index >= CHAIN.CREDENTIAL_ANNOUNCEMENT_FORK
         )
+        block_cache = {}
         async for x in self.config.mongo.async_db.miner_transactions.find({}):
             txn = Transaction.from_dict(x)
+            block = await self._resolve_block_for_txn(txn, block_cache)
+            if block is not None:
+                txn.coinbase = Block.is_coinbase(block, txn)
+                # Confirmed txns never belong in mempool / newtxn relay.
+                await self._purge_mempool_txn(txn)
+                continue
+            if txn.coinbase or self._is_coinbase_shaped(txn):
+                await self._purge_mempool_txn(txn)
+                continue
             try:
                 await txn.verify(
                     check_max_inputs=check_max_inputs,

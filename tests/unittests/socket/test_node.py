@@ -586,9 +586,12 @@ class TestNewTxnRelay(AsyncTestCase):
         server.config.mongo.async_db.miner_transactions.find = MagicMock(
             return_value=gen()
         )
+        server.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
         server.write_params = AsyncMock()
         txn = MagicMock()
         txn.transaction_signature = "bad"
+        txn.inputs = [MagicMock()]
+        txn.are_kel_fields_populated = MagicMock(return_value=False)
         txn.to_dict.return_value = bad
         txn.verify = AsyncMock(side_effect=Exception("invalid"))
         peer_stream = MagicMock()
@@ -608,6 +611,51 @@ class TestNewTxnRelay(AsyncTestCase):
             await server.send_mempool(peer_stream)
 
         handle.assert_not_awaited()
+        server.write_params.assert_not_awaited()
+
+    async def test_send_mempool_drops_onchain_and_coinbase(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        server = self._server()
+        server.config.LatestBlock.block.index = 0
+        doc = {"id": "coinbase_id"}
+
+        async def gen():
+            yield doc
+
+        server.config.mongo.async_db.miner_transactions.find = MagicMock(
+            return_value=gen()
+        )
+        server.config.mongo.async_db.miner_transactions.delete_one = AsyncMock()
+        server.write_params = AsyncMock()
+        txn = MagicMock()
+        txn.transaction_signature = "coinbase_id"
+        txn.inputs = []
+        txn.outputs = [MagicMock(value=12.5)]
+        txn.coinbase = False
+        txn.verify = AsyncMock()
+        peer_stream = MagicMock()
+        peer_stream.peer.protocol_version = 1
+
+        fake_block = MagicMock()
+        with patch(
+            "yadacoin.tcpsocket.node.Transaction.from_dict", return_value=txn
+        ), patch.object(
+            server,
+            "_resolve_block_for_txn",
+            new_callable=AsyncMock,
+            return_value=fake_block,
+        ), patch(
+            "yadacoin.tcpsocket.node.Block.is_coinbase", return_value=True
+        ), patch(
+            "yadacoin.tcpsocket.node.Peer.is_synced",
+            new_callable=AsyncMock,
+            return_value=True,
+        ):
+            await server.send_mempool(peer_stream)
+
+        server.config.mongo.async_db.miner_transactions.delete_one.assert_awaited()
+        txn.verify.assert_not_awaited()
         server.write_params.assert_not_awaited()
 
     async def test_send_mempool_skips_when_not_synced(self):

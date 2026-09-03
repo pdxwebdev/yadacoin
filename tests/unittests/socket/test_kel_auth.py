@@ -1335,9 +1335,76 @@ class TestNodeSocketClientConnectEcdhStorage(AsyncTestCase):
 
 
 class TestAcceptPeerKelChainCoinbase(AsyncTestCase):
-    """connect bootstrap has no Block; coinbase KEL entries still verify."""
+    """Coinbases must never enter mempool; classify via containing block."""
 
-    async def test_accepts_coinbase_kel_without_block(self):
+    async def _coinbase_raw(self):
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        from yadacoin.core.config import Config
+        from yadacoin.core.transaction import Transaction
+
+        pub = Config().public_key
+        priv = Config().private_key
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub)))
+        prerotated = "13kpmLEktnfyaahRvQ5385EzUBLYa9PU8d"
+        txn = await Transaction.generate(
+            public_key=pub,
+            private_key=priv,
+            coinbase=True,
+            outputs=[{"to": prerotated, "value": 12.5}],
+            prerotated_key_hash=prerotated,
+            public_key_hash=address,
+        )
+        return txn, txn.to_dict(), pub, address, prerotated
+
+    async def test_coinbase_shaped_without_block_not_stored(self):
+        """Input-less value txn with no local block is treated as coinbase."""
+        from yadacoin.core.transaction import Transaction
+
+        rpc = _make_rpc()
+        _txn, raw, _pub, _address, _pre = await self._coinbase_raw()
+        loaded = Transaction.from_dict(raw)
+        self.assertFalse(loaded.coinbase)
+
+        await rpc._accept_peer_kel_chain([raw])
+
+        mt = rpc.config.mongo.async_db.miner_transactions
+        self.assertFalse(mt.bulk_write.await_count)
+        self.assertFalse(mt.replace_one.await_count)
+
+    async def test_onchain_coinbase_classified_via_block_not_stored(self):
+        """Resolve containing block, classify as coinbase, skip mempool."""
+        from yadacoin.core.block import Block
+        from yadacoin.core.transaction import Transaction
+
+        rpc = _make_rpc()
+        txn, raw, pub, address, prerotated = await self._coinbase_raw()
+        block_doc = {
+            "index": 1,
+            "hash": "abc",
+            "public_key": pub,
+            "prevHash": "0" * 64,
+            "nonce": "1",
+            "id": "sig",
+            "merkleRoot": "0" * 64,
+            "target": "f" * 64,
+            "time": int(txn.time or 1),
+            "version": 5,
+            "transactions": [raw],
+        }
+        rpc.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=block_doc)
+
+        real_block = await Block.from_dict(block_doc)
+        self.assertTrue(Block.is_coinbase(real_block, Transaction.from_dict(raw)))
+
+        await rpc._accept_peer_kel_chain([raw])
+
+        mt = rpc.config.mongo.async_db.miner_transactions
+        self.assertFalse(mt.bulk_write.await_count)
+        self.assertFalse(mt.replace_one.await_count)
+
+    async def test_pending_non_coinbase_kel_is_stored(self):
+        """Zero-value input-less KEL rotation may stay in mempool."""
         from bitcoin.wallet import P2PKHBitcoinAddress
 
         from yadacoin.core.config import Config
@@ -1351,14 +1418,13 @@ class TestAcceptPeerKelChainCoinbase(AsyncTestCase):
         txn = await Transaction.generate(
             public_key=pub,
             private_key=priv,
-            coinbase=True,
-            outputs=[{"to": prerotated, "value": 12.5}],
+            outputs=[{"to": prerotated, "value": 0}],
             prerotated_key_hash=prerotated,
             public_key_hash=address,
+            prev_public_key_hash=address,
         )
         raw = txn.to_dict()
-        loaded = Transaction.from_dict(raw)
-        self.assertFalse(loaded.coinbase)
+        self.assertFalse(Transaction.from_dict(raw).coinbase)
 
         await rpc._accept_peer_kel_chain([raw])
 
