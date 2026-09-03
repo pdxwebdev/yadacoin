@@ -1263,7 +1263,7 @@ class NodeKeyRotationManager:
         ``is_new_branch`` is True only on the very first call ever made for
         this peer (the one that mints the BranchAnnouncement) — callers should
         use it to decide whether the peer also needs the single KEL entry that
-        establishes K_n (see NodeRPC._get_kel_anchor_chain in
+        establishes K_n (see NodeRPC._get_kel_chain_for_peer in
         tcpsocket/node.py), since a brand-new peer relationship has no other
         way to validate the announcement's on-chain parent before block sync
         has even started.

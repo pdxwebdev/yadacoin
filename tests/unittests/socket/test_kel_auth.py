@@ -72,6 +72,13 @@ def _make_config():
     config.LatestBlock.block.index = 999_999
 
     # mock Mongo async collections
+    class _EmptyAsyncIter:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
     db = MagicMock()
     for col in (
         "key_event_log",
@@ -83,8 +90,11 @@ def _make_config():
         coll = AsyncMock()
         coll.find_one = AsyncMock(return_value=None)
         coll.replace_one = AsyncMock(return_value=None)
+        coll.delete_one = AsyncMock(return_value=None)
         coll.delete_many = AsyncMock(return_value=None)
         coll.count_documents = AsyncMock(return_value=0)
+        coll.bulk_write = AsyncMock(return_value=None)
+        coll.aggregate = MagicMock(return_value=_EmptyAsyncIter())
         # find() chain: .sort().to_list()
         find_mock = MagicMock()
         to_list_mock = AsyncMock(return_value=[])
@@ -420,19 +430,24 @@ class TestKelResync(AsyncTestCase):
         stream = _make_stream()
         rpc.write_params = AsyncMock()
 
-        fake_txn_older = MagicMock()
-        fake_txn_older.to_dict = MagicMock(return_value={"id": "older_entry"})
         fake_txn_anchor = MagicMock()
         fake_txn_anchor.to_dict = MagicMock(return_value={"id": "anchor_entry"})
+        fake_txn_anchor.mempool = False
+        fake_txn_anchor.transaction_signature = "anchor_entry"
+        fake_txn_anchor.public_key_hash = "tip_pkh"
 
         with patch(
             "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username",
             new_callable=AsyncMock,
             return_value={"public_key": "abc123"},
         ), patch(
-            "yadacoin.core.keyeventlog.KeyEventLog.build_from_public_key",
+            "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
             new_callable=AsyncMock,
-            return_value=[fake_txn_older, fake_txn_anchor],
+            return_value=None,
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new_callable=AsyncMock,
+            return_value=fake_txn_anchor,
         ):
             await rpc.request_kel_resync({"params": {"id": "req1"}}, stream)
 
@@ -1149,6 +1164,7 @@ class TestSigResponse(AsyncTestCase):
         rpc.remove_peer = AsyncMock(return_value=None)
         rpc.send_block_to_peer = AsyncMock()
         rpc.get_next_block = AsyncMock()
+        rpc.send_mempool = AsyncMock()
 
         _auth_priv, _auth_pub = _real_keys()
 
@@ -1205,6 +1221,7 @@ class TestSigResponse(AsyncTestCase):
         rpc.remove_peer = AsyncMock(return_value=None)
         rpc.send_block_to_peer = AsyncMock()
         rpc.get_next_block = AsyncMock()
+        rpc.send_mempool = AsyncMock()
 
         _auth_priv, _auth_pub = _real_keys()
 
@@ -1242,6 +1259,7 @@ class TestSigResponse(AsyncTestCase):
         rpc.remove_peer = AsyncMock(return_value=None)
         rpc.send_block_to_peer = AsyncMock()
         rpc.get_next_block = AsyncMock()
+        rpc.send_mempool = AsyncMock()
 
         _auth_priv, _auth_pub = _real_keys()
 
@@ -1403,8 +1421,8 @@ class TestAcceptPeerKelChainCoinbase(AsyncTestCase):
         self.assertFalse(mt.bulk_write.await_count)
         self.assertFalse(mt.replace_one.await_count)
 
-    async def test_pending_non_coinbase_kel_is_stored(self):
-        """Zero-value input-less KEL rotation may stay in mempool."""
+    async def test_pending_non_coinbase_kel_is_cached_not_mempool(self):
+        """Non-inception peer KEL rotations cache in key_event_log, not mempool."""
         from bitcoin.wallet import P2PKHBitcoinAddress
 
         from yadacoin.core.config import Config
@@ -1425,6 +1443,36 @@ class TestAcceptPeerKelChainCoinbase(AsyncTestCase):
         )
         raw = txn.to_dict()
         self.assertFalse(Transaction.from_dict(raw).coinbase)
+
+        await rpc._accept_peer_kel_chain([raw])
+
+        mt = rpc.config.mongo.async_db.miner_transactions
+        self.assertFalse(mt.bulk_write.await_count)
+        self.assertFalse(mt.replace_one.await_count)
+        kel = rpc.config.mongo.async_db.key_event_log
+        self.assertTrue(kel.replace_one.await_count)
+
+    async def test_peer_inception_goes_to_mempool(self):
+        """Brand-new peer inception may enter mempool for on-chain announce."""
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        from yadacoin.core.config import Config
+        from yadacoin.core.transaction import Transaction
+
+        rpc = _make_rpc()
+        pub = Config().public_key
+        priv = Config().private_key
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub)))
+        prerotated = "13kpmLEktnfyaahRvQ5385EzUBLYa9PU8d"
+        txn = await Transaction.generate(
+            public_key=pub,
+            private_key=priv,
+            outputs=[{"to": prerotated, "value": 0}],
+            prerotated_key_hash=prerotated,
+            public_key_hash=address,
+            prev_public_key_hash="",
+        )
+        raw = txn.to_dict()
 
         await rpc._accept_peer_kel_chain([raw])
 

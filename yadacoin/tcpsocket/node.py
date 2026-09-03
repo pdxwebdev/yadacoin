@@ -114,6 +114,20 @@ class NodeRPC(BaseRPC):
 
     config = None
 
+    async def _own_main_kel_k0(self) -> str:
+        """Return this node's main-KEL K0 public key, or ""."""
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        username = getattr(self.config, "username", "") or ""
+        own_identity = await IdentityAnnouncement.get_by_username(
+            username, include_mempool=True
+        )
+        return (
+            (own_identity or {}).get("public_key")
+            or getattr(self.config, "kel_anchor_public_key", None)
+            or ""
+        )
+
     async def _get_pending_kel_chain(self) -> list:
         """Return pending *main-KEL* mempool transactions for this node only.
 
@@ -128,16 +142,9 @@ class NodeRPC(BaseRPC):
 
         from bitcoin.wallet import P2PKHBitcoinAddress
 
-        from yadacoin.core.identityannouncement import IdentityAnnouncement
         from yadacoin.core.keyeventlog import KeyEventLog
 
-        username = getattr(self.config, "username", "") or ""
-        own_identity = await IdentityAnnouncement.get_by_username(
-            username, include_mempool=True
-        )
-        k0_pub = (own_identity or {}).get("public_key") or getattr(
-            self.config, "kel_anchor_public_key", None
-        )
+        k0_pub = await self._own_main_kel_k0()
         if not k0_pub:
             return []
 
@@ -192,26 +199,98 @@ class NodeRPC(BaseRPC):
             out.append(d)
         return out
 
-    async def _get_kel_anchor_chain(self) -> list:
-        """Return our complete KEL chain as a list of raw txn dicts (or
-        empty if we have no resolvable K0 yet).
+    async def _main_kel_tip_pkh_for_public_key(self, k0_pub: str) -> str:
+        """Latest main-KEL ``public_key_hash`` we know for *k0_pub*.
 
-        The full chain is needed because a peer who cannot find our inception
-        needs every entry from the inception onwards — the inception (with
-        ``prev_public_key_hash == ""``) is what satisfies their ``_has_kel``
-        check, and subsequent entries establish the chain of trust up to our
-        current signing key.
+        Prefers the blockchain (+ own mempool via ``get_latest``).  Falls
+        back to the peer main-KEL cache in ``key_event_log`` for entries
+        not yet present on our local chain.
         """
-        from yadacoin.core.identityannouncement import IdentityAnnouncement
+        if not k0_pub:
+            return ""
         from yadacoin.core.keyeventlog import KeyEventLog
 
-        username = getattr(self.config, "username", "") or ""
-        own_identity = await IdentityAnnouncement.get_by_username(
-            username, include_mempool=True
-        )
-        k0_pub = (own_identity or {}).get("public_key") or getattr(
-            self.config, "kel_anchor_public_key", None
-        )
+        try:
+            latest = await KeyEventLog.get_latest(k0_pub, onchain_only=False)
+            if latest is not None and getattr(latest, "public_key_hash", None):
+                return latest.public_key_hash
+        except Exception:
+            pass
+
+        try:
+            from bitcoin.wallet import P2PKHBitcoinAddress
+
+            inception_pkh = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(k0_pub)))
+        except Exception:
+            inception_pkh = ""
+        if not inception_pkh:
+            return ""
+        try:
+            cached = await self.config.mongo.async_db.key_event_log.find_one(
+                {
+                    "main_kel_cache": True,
+                    "inception_public_key_hash": inception_pkh,
+                },
+                sort=[("counter", -1)],
+            )
+            if cached and cached.get("public_key_hash"):
+                return cached["public_key_hash"]
+            # Untagged cache tip: highest time / insertion order fallback
+            cached = await self.config.mongo.async_db.key_event_log.find_one(
+                {
+                    "main_kel_cache": True,
+                    "inception_public_key_hash": inception_pkh,
+                },
+                sort=[("timestamp", -1)],
+            )
+            if cached and cached.get("public_key_hash"):
+                return cached["public_key_hash"]
+        except Exception:
+            pass
+        return ""
+
+    async def _peer_main_kel_tip_pkh(self, stream=None, peer=None) -> str:
+        """Latest main-KEL tip pkh we already hold for the remote peer."""
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        peer = peer or (getattr(stream, "peer", None) if stream is not None else None)
+        if peer is None:
+            return ""
+        try:
+            k0 = getattr(stream, "_peer_k0", None) if stream is not None else None
+            if not k0:
+                _ia_id = getattr(peer, "identity_announcement", None)
+                if _ia_id:
+                    try:
+                        _doc = await IdentityAnnouncement.get_by_transaction_id(_ia_id)
+                        k0 = (_doc or {}).get("public_key")
+                    except Exception:
+                        k0 = None
+                if not k0:
+                    username = (
+                        getattr(getattr(peer, "identity", None), "username", "") or ""
+                    )
+                    if username:
+                        try:
+                            _doc = await IdentityAnnouncement.get_by_username(
+                                username, include_mempool=True
+                            )
+                            k0 = (_doc or {}).get("public_key")
+                        except Exception:
+                            k0 = None
+            return await self._main_kel_tip_pkh_for_public_key(k0 or "")
+        except Exception:
+            return ""
+
+    async def _get_kel_anchor_chain(self) -> list:
+        """Return our complete main KEL (rare — explicit full resync only).
+
+        Handshake must not call this.  Use ``_get_kel_chain_for_peer`` so
+        peers receive a tip delta instead of tens of thousands of entries.
+        """
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        k0_pub = await self._own_main_kel_k0()
         if not k0_pub:
             return []
 
@@ -223,6 +302,91 @@ class NodeRPC(BaseRPC):
         if not kel:
             return []
         return [ke.to_dict() for ke in kel]
+
+    async def _get_kel_chain_for_peer(
+        self,
+        latest_kel_pkh: str = "",
+        *,
+        need_anchor: bool = False,
+        full: bool = False,
+    ) -> list:
+        """Main-KEL payload for handshake / resync — never the full history
+        unless *full* (rare recovery).
+
+        * ``latest_kel_pkh`` — tip the remote already has of *our* main KEL;
+          only entries after that tip are sent (plus our mempool pending).
+        * ``need_anchor`` — first contact / new peer branch: include the
+          single tip entry that establishes K_n (and mempool inception if
+          still unconfirmed).  Does **not** dump the entire on-chain walk.
+        * ``full`` — last-resort complete chain (explicit resync when the
+          peer cannot locate inception any other way).
+        """
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        if full:
+            return await self._get_kel_anchor_chain()
+
+        k0_pub = await self._own_main_kel_k0()
+        if not k0_pub:
+            return await self._get_pending_kel_chain()
+
+        pending = await self._get_pending_kel_chain()
+        seen = {d.get("id") for d in pending if d.get("id")}
+        out = list(pending)
+
+        def _append_txn(txn) -> None:
+            if txn is None:
+                return
+            raw = txn.to_dict() if hasattr(txn, "to_dict") else txn
+            if not isinstance(raw, dict):
+                return
+            tid = raw.get("id")
+            if not tid or tid in seen:
+                return
+            seen.add(tid)
+            out.append(raw)
+
+        # Peer already has a tip of our chain — send only successors.
+        if latest_kel_pkh:
+            try:
+                kel = await KeyEventLog.build_from_public_key(k0_pub)
+            except Exception as exc:
+                self.config.app_log.debug(
+                    "_get_kel_chain_for_peer: KEL build error: %s", exc
+                )
+                kel = None
+            if kel:
+                found = False
+                for ke in kel:
+                    pkh = getattr(ke, "public_key_hash", None) or ""
+                    if not found:
+                        if pkh == latest_kel_pkh:
+                            found = True
+                        continue
+                    _append_txn(ke)
+                if found:
+                    return out
+                # Unknown tip — fall through to compact anchor rather than
+                # dumping the entire history (peer may be on a fork/stale).
+
+        if need_anchor:
+            try:
+                inception = await KeyEventLog.get_inception(k0_pub, onchain_only=False)
+            except Exception:
+                inception = None
+            # Always include inception on first-contact / resync so the peer
+            # can satisfy _has_kel before block sync.  One txn, not the full
+            # history.
+            if inception is not None:
+                _append_txn(inception)
+            try:
+                tip = await KeyEventLog.get_latest(k0_pub, onchain_only=False)
+            except Exception:
+                tip = None
+            if tip is not None:
+                _append_txn(tip)
+
+        return out
 
     async def _resolve_block_for_txn(self, txn, block_cache=None):
         """Load the local Block that contains *txn*, if any.
@@ -271,16 +435,14 @@ class NodeRPC(BaseRPC):
             return not txn.inputs
 
     async def _accept_peer_kel_chain(self, txn_list: list) -> None:
-        """Ingest a peer's KEL bootstrap without blocking handshake.
+        """Reconcile a peer's main-KEL bootstrap without blocking handshake.
 
-        Connect/auth run on the same stream read loop. Sequential
-        ``Transaction.verify`` of a full on-chain KEL stalls that loop.
-
-        For each entry, resolve the containing local block when present and
-        classify coinbases via ``Block.is_coinbase``.  Coinbases and already
-        confirmed txns are never written to ``miner_transactions``.  Only
-        unconfirmed non-coinbase KEL steps are stored; crypto verify runs in
-        a background task with the resolved block when available.
+        Blockchain is authoritative.  Already-confirmed and coinbase entries
+        are ignored.  Only a brand-new peer *inception* (empty
+        ``prev_public_key_hash``) may enter ``miner_transactions`` so it can
+        be mined.  Every other unconfirmed main-KEL step is cached in
+        ``key_event_log`` (``main_kel_cache=True``) for handshake resolution
+        until block sync catches up.  Crypto verify runs in the background.
         """
         if not txn_list or not isinstance(txn_list, list):
             return
@@ -297,11 +459,15 @@ class NodeRPC(BaseRPC):
         if not parsed:
             return
         parsed.sort(key=lambda t: (1 if t.prev_public_key_hash else 0, t.time or 0))
-        to_store = await self._filter_peer_kel_for_mempool(parsed)
-        await self._store_peer_kel_txns(to_store)
+        to_mempool, to_cache = await self._reconcile_peer_kel(parsed)
+        await self._store_peer_kel_inceptions(to_mempool)
+        await self._store_peer_kel_cache(to_cache)
         self.config.app_log.info(
-            "Bootstrap: stored %d/%d peer KEL txn(s) into mempool.",
-            len(to_store),
+            "Bootstrap: reconciled peer KEL — mempool_inception=%d "
+            "cache=%d skipped=%d (of %d).",
+            len(to_mempool),
+            len(to_cache),
+            len(parsed) - len(to_mempool) - len(to_cache),
             len(parsed),
         )
         try:
@@ -309,23 +475,32 @@ class NodeRPC(BaseRPC):
         except RuntimeError:
             await self._verify_peer_kel_chain(parsed)
 
-    async def _filter_peer_kel_for_mempool(self, parsed) -> list:
-        """Return only unconfirmed non-coinbase KEL txns safe for mempool."""
-        to_store = []
+    async def _reconcile_peer_kel(self, parsed):
+        """Split peer KEL into (mempool inceptions, key_event_log cache).
+
+        Skips anything already on our local chain or coinbase-shaped.
+        """
+        to_mempool = []
+        to_cache = []
         block_cache = {}
         for t in parsed:
             block = await self._resolve_block_for_txn(t, block_cache)
             if block is not None:
                 t.coinbase = Block.is_coinbase(block, t)
-                # Confirmed (coinbase or otherwise): blocks collection is source
                 continue
             if t.coinbase or self._is_coinbase_shaped(t):
                 t.coinbase = True
                 continue
-            to_store.append(t)
-        return to_store
+            # Brand-new identity: only empty-prev inception belongs in mempool
+            # so the network can mine the peer's identity announcement.
+            if not t.prev_public_key_hash:
+                to_mempool.append(t)
+            else:
+                to_cache.append(t)
+        return to_mempool, to_cache
 
-    async def _store_peer_kel_txns(self, parsed) -> None:
+    async def _store_peer_kel_inceptions(self, parsed) -> None:
+        """Persist brand-new peer inceptions into the mempool only."""
         if not parsed:
             return
         try:
@@ -344,7 +519,7 @@ class NodeRPC(BaseRPC):
             )
         except Exception as exc:
             self.config.app_log.debug(
-                "_accept_peer_kel_chain: bulk_write fallback: %s", exc
+                "_accept_peer_kel_chain: mempool bulk_write fallback: %s", exc
             )
             for t in parsed:
                 try:
@@ -355,8 +530,60 @@ class NodeRPC(BaseRPC):
                     )
                 except Exception as exc2:
                     self.config.app_log.debug(
-                        "_accept_peer_kel_chain: store error: %s", exc2
+                        "_accept_peer_kel_chain: mempool store error: %s", exc2
                     )
+
+    async def _store_peer_kel_cache(self, parsed) -> None:
+        """Cache unconfirmed non-inception peer main-KEL steps in key_event_log.
+
+        Preferred resolution order elsewhere is blocks → this cache.  Never
+        writes peer rotations into ``miner_transactions``.
+        """
+        if not parsed:
+            return
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        for i, t in enumerate(parsed):
+            try:
+                inception_pkh = getattr(t, "inception_public_key_hash", None) or ""
+                if not inception_pkh and t.public_key and not t.prev_public_key_hash:
+                    inception_pkh = t.public_key_hash or str(
+                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(t.public_key))
+                    )
+                if not inception_pkh and t.public_key:
+                    try:
+                        inception_pkh = str(
+                            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(t.public_key))
+                        )
+                    except Exception:
+                        inception_pkh = t.public_key_hash or ""
+                counter = getattr(t, "counter", None)
+                if counter is None:
+                    counter = i
+                doc = {
+                    "main_kel_cache": True,
+                    "id": t.transaction_signature,
+                    "inception_public_key_hash": inception_pkh or "",
+                    "public_key": t.public_key,
+                    "public_key_hash": t.public_key_hash,
+                    "prev_public_key_hash": t.prev_public_key_hash or "",
+                    "prerotated_key_hash": t.prerotated_key_hash,
+                    "counter": counter,
+                    "txn": t.to_dict(),
+                    "timestamp": time.time(),
+                }
+                await self.config.mongo.async_db.key_event_log.replace_one(
+                    {
+                        "main_kel_cache": True,
+                        "public_key_hash": t.public_key_hash,
+                    },
+                    doc,
+                    upsert=True,
+                )
+            except Exception as exc:
+                self.config.app_log.debug(
+                    "_accept_peer_kel_chain: cache store error: %s", exc
+                )
 
     async def _purge_mempool_txn(self, txn) -> None:
         try:
@@ -366,12 +593,23 @@ class NodeRPC(BaseRPC):
         except Exception:
             pass
 
+    async def _purge_peer_kel_cache_txn(self, txn) -> None:
+        try:
+            await self.config.mongo.async_db.key_event_log.delete_one(
+                {
+                    "main_kel_cache": True,
+                    "id": txn.transaction_signature,
+                }
+            )
+        except Exception:
+            pass
+
     async def _verify_peer_kel_chain(self, parsed) -> None:
         """Best-effort crypto check after handshake; never disconnects.
 
         Resolves each txn against local blocks so coinbases classify correctly
-        via ``verify(..., block=)``.  Coinbases are purged from mempool if
-        present and are never re-verified as ordinary spends.
+        via ``verify(..., block=)``.  Confirmed / coinbase / invalid entries
+        are purged from mempool and from the main-KEL cache.
         """
         check_max_inputs = (
             self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK
@@ -395,14 +633,13 @@ class NodeRPC(BaseRPC):
             block = await self._resolve_block_for_txn(txn, block_cache)
             if block is not None:
                 txn.coinbase = Block.is_coinbase(block, txn)
-                if txn.coinbase:
-                    await self._purge_mempool_txn(txn)
-                    continue
-                # Already on-chain non-coinbase: keep out of mempool.
                 await self._purge_mempool_txn(txn)
-            elif self._is_coinbase_shaped(txn):
+                await self._purge_peer_kel_cache_txn(txn)
+                continue
+            if self._is_coinbase_shaped(txn):
                 txn.coinbase = True
                 await self._purge_mempool_txn(txn)
+                await self._purge_peer_kel_cache_txn(txn)
                 continue
             try:
                 await txn.verify(
@@ -412,39 +649,34 @@ class NodeRPC(BaseRPC):
                     check_dynamic_nodes=check_dynamic_nodes,
                     check_branch_announcement=check_branch_announcement,
                     check_credential_announcement=check_credential_announcement,
-                    mempool=block is None,
+                    mempool=True,
                     batch_txns=parsed,
                     block=block,
                 )
             except TotalValueMismatchException:
                 await self._purge_mempool_txn(txn)
+                await self._purge_peer_kel_cache_txn(txn)
                 continue
             except Exception as exc:
                 self.config.app_log.debug(
                     "_accept_peer_kel_chain: verify error: %s", exc
                 )
                 await self._purge_mempool_txn(txn)
+                await self._purge_peer_kel_cache_txn(txn)
 
-    # ── KEL "start over" resync ────────────────────────────────────────────
+    # ── KEL compact resync ─────────────────────────────────────────────────
     #
-    # The normal handshake only ever sends KEL data opportunistically
-    # (whatever _get_pending_kel_chain()/the off-chain delta happen to
-    # contain at that instant). If a peer's inception hasn't propagated to
-    # us yet — e.g. a startup race, or it's already been mined into a block
-    # we haven't synced — _process_ratchet_auth has nothing to fall back on
-    # and the handshake fails with "no KEL inception found" even though the
-    # peer is perfectly legitimate. These three methods let either side
-    # actively ask the other, over the same live stream, to resend its
-    # complete KEL (on-chain + mempool) from scratch and retry once — the
-    # same "actively re-request what's missing" pattern fill_gap() already
-    # uses for block gaps.
+    # Handshake only exchanges tip deltas / K_n anchors.  If a peer's
+    # inception still cannot be found locally, either side may ask for a
+    # compact resync (inception + tip + pending, optionally sliced after
+    # latest_kel_pkh).  Full history is last-resort only.
 
     async def _request_peer_kel_resync(self, stream, reauth_cb=None) -> None:
-        """Ask the peer to resend its full KEL.  Non-blocking — sends the
-        request and returns immediately so the stream's read loop stays
+        """Ask the peer to resend a compact main KEL.  Non-blocking — sends
+        the request and returns immediately so the stream's read loop stays
         free to dispatch the peer's response.  When the response arrives,
         ``kel_resync_response`` ingests it and fires *reauth_cb* (if any)
-        to re-run the handshake with the freshly-populated mempool.
+        to re-run the handshake.
 
         This must NOT await the response inline: ``handle_stream`` dispatches
         handlers via ``await getattr(self, method)(body, stream)``
@@ -456,20 +688,37 @@ class NodeRPC(BaseRPC):
         self._kel_resync_waiters[req_id] = True
         if reauth_cb:
             self._resync_reauth[req_id] = reauth_cb
-        await self.write_params(stream, "request_kel_resync", {"id": req_id})
+        latest_kel_pkh = await self._peer_main_kel_tip_pkh(stream=stream)
+        await self.write_params(
+            stream,
+            "request_kel_resync",
+            {"id": req_id, "latest_kel_pkh": latest_kel_pkh},
+        )
 
     async def request_kel_resync(self, body, stream):
-        """Peer is asking us to resend our complete KEL (on-chain + mempool)
-        from scratch, because they couldn't find our inception locally."""
+        """Peer could not find our inception — send compact main KEL.
+
+        Prefer delta after their ``latest_kel_pkh``; otherwise inception
+        (if still mempool) + K_n tip + our pending.  Full history only when
+        they explicitly set ``full=True`` (legacy recovery).
+        """
         params = body.get("params", {})
         req_id = params.get("id", "")
-        kel_chain = await self._get_kel_anchor_chain()
+        latest_kel_pkh = params.get("latest_kel_pkh", "") or ""
+        full = bool(params.get("full"))
+        kel_chain = await self._get_kel_chain_for_peer(
+            latest_kel_pkh,
+            need_anchor=True,
+            full=full,
+        )
 
         await self.write_params(
             stream, "kel_resync_response", {"id": req_id, "kel_chain": kel_chain}
         )
         self.config.app_log.info(
-            "  [>]   kel_resync_response sent (%d entries)", len(kel_chain)
+            "  [>]   kel_resync_response sent (%d entries, full=%s)",
+            len(kel_chain),
+            full,
         )
 
     async def kel_resync_response(self, body, stream):
@@ -1538,7 +1787,9 @@ class NodeRPC(BaseRPC):
         # Store the latest ratchet PKH the connecting peer reports having for
         # our chain so challenge can send only the delta they're missing.
         stream._client_latest_ratchet_pkh = params.get("latest_ratchet_pkh", "")
-        # Accept the peer's unconfirmed KEL chain if provided.
+        # Tip of *our* main KEL the client already has — compact kel_chain delta.
+        stream._client_latest_kel_pkh = params.get("latest_kel_pkh", "") or ""
+        # Accept the peer's compact main-KEL bootstrap if provided.
         kel_chain_list = params.get("kel_chain") or []
         if kel_chain_list:
             try:
@@ -1912,11 +2163,30 @@ class NodeRPC(BaseRPC):
                 )
             )
 
+        if not _has_kel and _peer_k0:
+            # Main-KEL cache may hold inception before block sync / mempool.
+            _has_kel = bool(
+                await self.config.mongo.async_db.key_event_log.find_one(
+                    {
+                        "main_kel_cache": True,
+                        "public_key": _peer_k0,
+                        "prev_public_key_hash": "",
+                    }
+                )
+                or await self.config.mongo.async_db.key_event_log.find_one(
+                    {
+                        "main_kel_cache": True,
+                        "txn.public_key": _peer_k0,
+                        "txn.prev_public_key_hash": "",
+                    }
+                )
+            )
+
         if not _has_kel:
             if not _retried and _peer_k0:
                 self.config.app_log.warning(
                     "ratchet: no local KEL inception for %s — requesting a "
-                    "full KEL resync before giving up  (peer=%s)",
+                    "compact KEL resync before giving up  (peer=%s)",
                     _peer_k0,
                     peer_username,
                 )
@@ -2205,6 +2475,15 @@ class NodeRPC(BaseRPC):
         stream._connect_ratchet_chain = ratchet_chain
         stream._connect_latest_ratchet_pkh = latest_ratchet_pkh
 
+        # Tip of the client's main KEL we already hold — client sends only delta.
+        _client_main_kel_tip = await self._peer_main_kel_tip_pkh(stream=stream)
+        # Tip of *our* main KEL the client reported on connect.
+        _client_latest_kel_pkh = (
+            getattr(stream, "_client_latest_kel_pkh", "")
+            or params.get("latest_kel_pkh", "")
+            or ""
+        )
+
         # Send encrypted 'request_sig'
         request_payload = {
             # Server proves its identity over the mutual transcript before
@@ -2218,20 +2497,17 @@ class NodeRPC(BaseRPC):
             "server_ecdh_pub": _ecdh_pub,
             "client_kel_tip_pkh": _client_kel_tip_pkh,
             "auth_challenge": _auth_challenge,
-            # What we now have of client's chain (tip hint for next connect)
+            # What we now have of client's off-chain branch (tip hint)
             "latest_ratchet_pkh": _client_kel_tip_pkh,
+            # What we have of client's *main* KEL so they send only the delta
+            "latest_kel_pkh": _client_main_kel_tip,
         }
-        # A brand-new peer relationship has no other way to validate the
-        # bridge entry's on-chain parent (K_n) — they likely haven't synced
-        # our blocks yet, since block sync only starts after this handshake
-        # completes. Send the single transaction that establishes K_n (the
-        # inception itself, or our latest on-chain/mempool re-anchor) this
-        # one time; every later reconnect only needs the small
-        # mempool-pending slice, same as before.
-        kel_chain = (
-            await self._get_kel_anchor_chain()
-            if _is_new_branch
-            else await self._get_pending_kel_chain()
+        # Compact main KEL: K_n anchor on first branch contact, otherwise
+        # pending + anything after the client's reported tip — never the
+        # full on-chain history.
+        kel_chain = await self._get_kel_chain_for_peer(
+            _client_latest_kel_pkh,
+            need_anchor=_is_new_branch,
         )
         if kel_chain:
             request_payload["kel_chain"] = kel_chain
@@ -2436,22 +2712,21 @@ class NodeRPC(BaseRPC):
                 e["txn"] for e in await _rc.to_list(length=None) if "txn" in e
             ]
 
-        # A brand-new peer relationship has no other way to validate our
-        # bridge entry's on-chain parent (K_n) — the server likely hasn't
-        # synced our blocks yet. Send the single transaction that
-        # establishes K_n this one time; every later reconnect only needs
-        # the small mempool-pending slice, same as before.
+        # Compact main KEL for the server: K_n anchor on first branch contact,
+        # otherwise pending + delta after the server's reported tip of our KEL.
+        _server_latest_kel_pkh = params.get("latest_kel_pkh", "") or ""
         sig_response_payload = {
             "client_signed": _client_signed,
             "client_confirming_signed": _client_conf_signed,
             "ratchet_public_key": _auth_pub,
             "confirming_public_key": _conf_pub,
             "ratchet_chain": _client_ratchet_chain,
+            # Tip of server's main KEL we hold — server can delta next time
+            "latest_kel_pkh": await self._peer_main_kel_tip_pkh(stream=stream),
         }
-        kel_chain = (
-            await self._get_kel_anchor_chain()
-            if _is_new_branch
-            else await self._get_pending_kel_chain()
+        kel_chain = await self._get_kel_chain_for_peer(
+            _server_latest_kel_pkh,
+            need_anchor=_is_new_branch,
         )
         if kel_chain:
             sig_response_payload["kel_chain"] = kel_chain
@@ -2664,17 +2939,25 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
                 connect_payload["ratchet_chain"] = [
                     e["txn"] for e in await _rc.to_list(length=None) if "txn" in e
                 ]
+                # Tip of this peer's branch we already have — server sends delta
+                _tip = await self.config.mongo.async_db.key_event_log.find_one(
+                    {"branch_inception_public_key_hash": _branch_inception_pkh},
+                    sort=[("counter", -1)],
+                )
+                if _tip and _tip.get("public_key_hash"):
+                    connect_payload["latest_ratchet_pkh"] = _tip["public_key_hash"]
 
-            # A brand-new peer relationship has no other way to validate our
-            # bridge entry's on-chain parent (K_n) before block sync has even
-            # started, so send the single transaction that establishes K_n
-            # (the inception itself, or our latest on-chain/mempool
-            # re-anchor) this one time; every later reconnect only needs the
-            # small mempool-pending slice, same as before.
-            kel_chain = (
-                await self._get_kel_anchor_chain()
-                if _is_first_contact
-                else await self._get_pending_kel_chain()
+            # Tip of the server's main KEL we already hold so they never send
+            # their entire history on reconnect.
+            _server_main_kel_tip = await self._peer_main_kel_tip_pkh(peer=peer)
+            if _server_main_kel_tip:
+                connect_payload["latest_kel_pkh"] = _server_main_kel_tip
+
+            # Compact main KEL: K_n anchor on first contact, else pending /
+            # delta only — never the full on-chain walk.
+            kel_chain = await self._get_kel_chain_for_peer(
+                "",
+                need_anchor=_is_first_contact,
             )
             if kel_chain:
                 connect_payload["kel_chain"] = kel_chain
