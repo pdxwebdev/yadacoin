@@ -2081,41 +2081,66 @@ class NodeRPC(BaseRPC):
                 )
                 return None
 
-        # Peer branch keyspace: branch_inception_public_key_hash = first public
-        # branch signer address (addr(Kp0) of the peer's branch toward us).
-        # Prefer an existing tip's field; else lowest-counter entry in the
-        # incoming chain; else first parsed txn's public_key_hash.
+        # Peer branch keyspace: branch_inception_public_key_hash = addr(Kp0).
+        # Resolve from the incoming chain / known tip of *this* peer branch only.
+        # Never take branch_inception from a bare public_key_hash lookup of
+        # ``latest_ratchet_pkh`` alone — that field is often the *local* side's
+        # tip hint and would merge foreign branches (signing key "not authorized").
+        from yadacoin.core.keyeventlog import is_branch_announcement as _is_branch_ann
+
         _branch_inception_pkh = None
         if parsed_ratchet:
-            # Prefer counter-0 style root (lowest index in ordered chain)
-            _branch_inception_pkh = parsed_ratchet[0].public_key_hash
-        if latest_ratchet_pkh:
+            for t in parsed_ratchet:
+                _is_bridge = _is_branch_ann(t) or (
+                    getattr(t, "relationship", "") == "peer-kel-branch"
+                )
+                if _is_bridge or not t.prev_public_key_hash:
+                    _branch_inception_pkh = t.public_key_hash
+                    break
+            if not _branch_inception_pkh:
+                first = parsed_ratchet[0]
+                # Delta-only: recover branch via parent or self already on disk.
+                for _pkh in (
+                    first.prev_public_key_hash,
+                    first.public_key_hash,
+                ):
+                    if not _pkh:
+                        continue
+                    _hit = await self.config.mongo.async_db.key_event_log.find_one(
+                        {
+                            "public_key_hash": _pkh,
+                            "branch_inception_public_key_hash": {
+                                "$exists": True,
+                                "$ne": "",
+                            },
+                        }
+                    )
+                    if _hit and _hit.get("branch_inception_public_key_hash"):
+                        _branch_inception_pkh = _hit["branch_inception_public_key_hash"]
+                        break
+                if not _branch_inception_pkh:
+                    _branch_inception_pkh = first.public_key_hash
+        if not _branch_inception_pkh and latest_ratchet_pkh:
+            # Tip hint only when it already sits on a stored peer branch.
             _existing_by_tip = await self.config.mongo.async_db.key_event_log.find_one(
-                {"public_key_hash": latest_ratchet_pkh}
+                {
+                    "public_key_hash": latest_ratchet_pkh,
+                    "branch_inception_public_key_hash": {"$exists": True, "$ne": ""},
+                }
             )
             if _existing_by_tip:
-                _branch_inception_pkh = (
-                    _existing_by_tip.get("branch_inception_public_key_hash")
-                    or _branch_inception_pkh
+                _branch_inception_pkh = _existing_by_tip.get(
+                    "branch_inception_public_key_hash"
                 )
 
-        # Assign counters and store entries
+        # Next counter only for brand-new ids — never renumber existing entries.
         _existing_tip = None
         if _branch_inception_pkh:
-            if latest_ratchet_pkh:
-                _existing_tip = await self.config.mongo.async_db.key_event_log.find_one(
-                    {
-                        "branch_inception_public_key_hash": _branch_inception_pkh,
-                        "public_key_hash": latest_ratchet_pkh,
-                    }
-                )
-            if not _existing_tip:
-                _existing_tip = await self.config.mongo.async_db.key_event_log.find_one(
-                    {"branch_inception_public_key_hash": _branch_inception_pkh},
-                    sort=[("counter", -1)],
-                )
+            _existing_tip = await self.config.mongo.async_db.key_event_log.find_one(
+                {"branch_inception_public_key_hash": _branch_inception_pkh},
+                sort=[("counter", -1)],
+            )
         if _existing_tip:
-            # Trust the stored counter field — avoid count_documents scans.
             _next_counter = int(_existing_tip.get("counter") or 0) + 1
         else:
             _next_counter = 0 if parsed_ratchet else 1
@@ -2132,8 +2157,6 @@ class NodeRPC(BaseRPC):
             except Exception:
                 _peer_main_inception_pkh = ""
 
-        from yadacoin.core.keyeventlog import is_branch_announcement as _is_branch_ann
-
         for txn in parsed_ratchet:
             # BranchAnnouncement (or legacy peer-kel-branch string) marks the
             # off-chain branch root / bridge; keep it in key_event_log rather
@@ -2148,14 +2171,46 @@ class NodeRPC(BaseRPC):
             else:
                 if not _branch_inception_pkh:
                     _branch_inception_pkh = txn.public_key_hash
+                _sig = txn.transaction_signature
+                _prior = None
+                if _sig:
+                    _prior = await self.config.mongo.async_db.key_event_log.find_one(
+                        {
+                            "branch_inception_public_key_hash": _branch_inception_pkh,
+                            "id": _sig,
+                        }
+                    )
+                if _prior is not None:
+                    # Already stored — refresh payload, keep durable counter.
+                    await self.config.mongo.async_db.key_event_log.replace_one(
+                        {
+                            "branch_inception_public_key_hash": _branch_inception_pkh,
+                            "id": _sig,
+                        },
+                        {
+                            "counter": _prior.get("counter", 0),
+                            "id": _sig,
+                            "branch_inception_public_key_hash": _branch_inception_pkh,
+                            "inception_public_key_hash": _peer_main_inception_pkh
+                            or _prior.get("inception_public_key_hash")
+                            or "",
+                            "public_key": txn.public_key,
+                            "public_key_hash": txn.public_key_hash,
+                            "prerotated_key_hash": txn.prerotated_key_hash,
+                            "txn": txn.to_dict(),
+                            "timestamp": time.time(),
+                        },
+                        upsert=True,
+                    )
+                    continue
                 await self.config.mongo.async_db.key_event_log.replace_one(
                     {
                         "branch_inception_public_key_hash": _branch_inception_pkh,
-                        "public_key_hash": txn.public_key_hash,
+                        "id": _sig,
                     },
                     {
                         "counter": _next_counter,
-                        "id": txn.transaction_signature,
+                        "id": _sig,
                         "branch_inception_public_key_hash": _branch_inception_pkh,
                         "inception_public_key_hash": _peer_main_inception_pkh,
                         "public_key": txn.public_key,
@@ -2168,16 +2223,70 @@ class NodeRPC(BaseRPC):
                 )
                 _next_counter += 1
 
-        # Find ratchet tip within this peer branch
+        # Tip for auth: prefer entry matching signing (+ confirming) key;
+        # else last incoming chain entry; else max-counter on the branch.
         _anchor_key_event = None
         _anchor_counter = 0
-        if _branch_inception_pkh:
+        try:
+            _signing_pkh_probe = str(
+                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ratchet_public_key))
+            )
+        except Exception:
+            _signing_pkh_probe = ""
+        _conf_pkh_probe = ""
+        if confirming_public_key:
+            try:
+                _conf_pkh_probe = str(
+                    P2PKHBitcoinAddress.from_pubkey(
+                        bytes.fromhex(confirming_public_key)
+                    )
+                )
+            except Exception:
+                _conf_pkh_probe = ""
+
+        if _branch_inception_pkh and _signing_pkh_probe:
+            _q = {
+                "branch_inception_public_key_hash": _branch_inception_pkh,
+                "public_key_hash": _signing_pkh_probe,
+            }
+            if _conf_pkh_probe:
+                _q["prerotated_key_hash"] = _conf_pkh_probe
+            _doc = await self.config.mongo.async_db.key_event_log.find_one(
+                _q, {"_id": 0}, sort=[("counter", -1)]
+            )
+            if _doc is None and _conf_pkh_probe:
+                _doc = await self.config.mongo.async_db.key_event_log.find_one(
+                    {
+                        "branch_inception_public_key_hash": _branch_inception_pkh,
+                        "public_key_hash": _signing_pkh_probe,
+                    },
+                    {"_id": 0},
+                    sort=[("counter", -1)],
+                )
+            if _doc and _doc.get("txn"):
+                _anchor_key_event = _KE(_Txn.from_dict(_doc["txn"]))
+                _anchor_counter = _doc.get("counter", 0)
+
+        if _anchor_key_event is None and parsed_ratchet:
+            _match = None
+            if _signing_pkh_probe:
+                for t in reversed(parsed_ratchet):
+                    if t.public_key_hash == _signing_pkh_probe:
+                        if (
+                            not _conf_pkh_probe
+                            or (t.prerotated_key_hash or "") == _conf_pkh_probe
+                        ):
+                            _match = t
+                            break
+            _anchor_key_event = _KE(_match or parsed_ratchet[-1])
+
+        if _anchor_key_event is None and _branch_inception_pkh:
             _doc = await self.config.mongo.async_db.key_event_log.find_one(
                 {"branch_inception_public_key_hash": _branch_inception_pkh},
                 {"_id": 0},
                 sort=[("counter", -1)],
             )
-            if _doc:
+            if _doc and _doc.get("txn"):
                 _anchor_key_event = _KE(_Txn.from_dict(_doc["txn"]))
                 _anchor_counter = _doc.get("counter", 0)
 
@@ -2260,7 +2369,7 @@ class NodeRPC(BaseRPC):
         #   addr(ratchet_public_key) == tip.public_key_hash
         # When a confirming/next key is also presented, it must match the tip's
         # prerotated commitment (not an alternate signing identity).
-        signing_address = str(
+        signing_address = _signing_pkh_probe or str(
             P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ratchet_public_key))
         )
         tip_txn = getattr(_anchor_key_event, "txn", None) if _anchor_key_event else None
@@ -2269,20 +2378,29 @@ class NodeRPC(BaseRPC):
         authenticated = bool(
             tip_txn is not None and signing_address and signing_address == tip_pkh
         )
+        conf_address = _conf_pkh_probe
         if authenticated and confirming_public_key:
-            try:
-                conf_address = str(
-                    P2PKHBitcoinAddress.from_pubkey(
-                        bytes.fromhex(confirming_public_key)
+            if not conf_address:
+                try:
+                    conf_address = str(
+                        P2PKHBitcoinAddress.from_pubkey(
+                            bytes.fromhex(confirming_public_key)
+                        )
                     )
-                )
-            except Exception:
-                conf_address = ""
+                except Exception:
+                    conf_address = ""
             if not conf_address or conf_address != tip_pre:
                 authenticated = False
         if not authenticated:
             await self.remove_peer(
-                stream, reason="ratchet: signing key not authorized by KEL"
+                stream,
+                reason=(
+                    "ratchet: signing key not authorized by KEL "
+                    f"(sign={signing_address} tip={tip_pkh} "
+                    f"conf={conf_address or '-'} tip_pre={tip_pre or '-'} "
+                    f"branch={_branch_inception_pkh or '-'} "
+                    f"chain_n={len(parsed_ratchet)})"
+                ),
             )
             return None
 
@@ -2672,12 +2790,14 @@ class NodeRPC(BaseRPC):
                     stream, reason=f"request_sig: failed to accept server KEL — {exc}"
                 )
 
-        # Verify server's KEL authorization (same key that signed the transcript)
+        # Verify server's KEL authorization (same key that signed the transcript).
+        # Use server_kel_tip_pkh — NOT latest_ratchet_pkh (that is our tip hint
+        # back to the server for the response delta).
         result = await self._process_ratchet_auth(
             stream,
             ratchet_chain,
             ratchet_public_key,
-            latest_ratchet_pkh,
+            server_kel_tip_pkh,
             confirming_public_key=confirming_public_key,
         )
         if result is None:
