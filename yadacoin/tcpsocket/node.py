@@ -2061,6 +2061,20 @@ class NodeRPC(BaseRPC):
                     mempool=True,
                     batch_txns=parsed_ratchet,
                 )
+            except (
+                MissingInputTransactionException,
+                KELExceptionPredecessorNotYetInMempool,
+                KELExceptionPreviousKeyHashReferenceMissing,
+                KELLogUnbuildableException,
+            ) as exc:
+                # Off-chain ratchet / peer KEL may spend outs we have not
+                # synced yet.  Signature + batch structure still matter;
+                # full UTXO resolution is not required to authorize the tip.
+                self.config.app_log.debug(
+                    "ratchet: txn [%d] verify deferred (missing chain " "context): %s",
+                    i,
+                    exc,
+                )
             except Exception as exc:
                 await self.remove_peer(
                     stream, reason=f"ratchet: invalid txn [{i}] — {exc}"

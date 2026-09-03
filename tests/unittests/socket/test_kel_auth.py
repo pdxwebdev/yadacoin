@@ -640,6 +640,81 @@ class TestProcessRatchetAuthMalformedTxn(AsyncTestCase):
         # From-dict succeeds for simple dicts; verify() raises — check remove was called
         self.assertIn("ratchet:", reason)
 
+    async def test_missing_input_does_not_remove_peer(self):
+        """Unsynced UTXOs on ratchet entries must not abort auth."""
+        from yadacoin.core.transaction import MissingInputTransactionException
+
+        rpc = _make_rpc()
+        stream = _make_stream()
+        rpc.remove_peer = AsyncMock(return_value=None)
+        rpc._request_peer_kel_resync = AsyncMock()
+
+        fake_txn = MagicMock()
+        fake_txn.public_key = (
+            "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+        )
+        fake_txn.public_key_hash = "addr0"
+        fake_txn.prev_public_key_hash = "prev"
+        fake_txn.prerotated_key_hash = "pre"
+        fake_txn.transaction_signature = "sig"
+        fake_txn.to_dict.return_value = {"id": "sig"}
+        fake_txn.relationship = "peer-kel-branch"
+        fake_txn.verify = AsyncMock(
+            side_effect=MissingInputTransactionException("Input not found")
+        )
+
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username",
+            new_callable=AsyncMock,
+            return_value=None,
+        ), patch(
+            "yadacoin.core.transaction.Transaction.from_dict",
+            return_value=fake_txn,
+        ), patch(
+            "yadacoin.core.keyeventlog.is_branch_announcement",
+            return_value=True,
+        ):
+            # tip matches signing key so auth can succeed past verify deferral
+            tip_txn = MagicMock()
+            tip_txn.public_key_hash = (
+                "1BgGZ9tcN4rm9KBzDn7T2PLhf8L6bUj8f"  # addr of secp k*G
+            )
+            tip_txn.prerotated_key_hash = ""
+            # Use real P2PKH of the test pubkey
+            from bitcoin.wallet import P2PKHBitcoinAddress
+
+            tip_txn.public_key_hash = str(
+                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(fake_txn.public_key))
+            )
+            kel_doc = {
+                "counter": 1,
+                "txn": {"id": "tip"},
+                "branch_inception_public_key_hash": "addr0",
+            }
+            rpc.config.mongo.async_db.key_event_log.find_one = AsyncMock(
+                return_value=kel_doc
+            )
+            rpc.config.mongo.async_db.key_event_log.replace_one = AsyncMock()
+            with patch(
+                "yadacoin.core.keyeventlog.KeyEvent",
+                return_value=MagicMock(txn=tip_txn),
+            ), patch(
+                "yadacoin.core.transaction.Transaction.from_dict",
+                side_effect=[fake_txn, tip_txn],
+            ):
+                result = await rpc._process_ratchet_auth(
+                    stream,
+                    ratchet_chain=[{"id": "sig"}],
+                    ratchet_public_key=fake_txn.public_key,
+                )
+
+        # Must not disconnect solely for missing inputs
+        for call in rpc.remove_peer.await_args_list:
+            reason = (call.kwargs or {}).get("reason") or (
+                call[1].get("reason") if len(call) > 1 else ""
+            )
+            self.assertNotIn("invalid txn", str(reason))
+
 
 # ─── _handle_kel_connect ──────────────────────────────────────────────────────
 

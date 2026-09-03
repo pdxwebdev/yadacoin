@@ -304,6 +304,9 @@ class BaseRPC:
         stream._removing = True
         closed_fn = getattr(stream, "closed", None)
         already_closed = callable(closed_fn) and closed_fn() is True
+        peer_host = getattr(getattr(stream, "peer", None), "host", "Unknown")
+        if reason:
+            self.config.app_log.warning("remove_peer %s: %s", peer_host, reason)
         if reason and not already_closed:
             try:
                 await self.write_params(stream, "disconnect", {"reason": reason})
@@ -488,6 +491,9 @@ class RPCSocketServer(TCPServer, BaseRPC):
         stream._removing = True
         closed_fn = getattr(stream, "closed", None)
         already_closed = callable(closed_fn) and closed_fn() is True
+        peer_host = getattr(getattr(stream, "peer", None), "host", "Unknown")
+        if reason:
+            self.config.app_log.warning("remove_peer %s: %s", peer_host, reason)
         if reason and not already_closed:
             try:
                 await self.write_params(stream, "disconnect", {"reason": reason})
@@ -854,6 +860,9 @@ class RPCSocketClient(TCPClient):
         stream._removing = True
         closed_fn = getattr(stream, "closed", None)
         already_closed = callable(closed_fn) and closed_fn() is True
+        peer_host = getattr(getattr(stream, "peer", None), "host", "Unknown")
+        if reason:
+            self.config.app_log.warning("remove_peer %s: %s", peer_host, reason)
         if reason and not already_closed:
             try:
                 await self.write_params(stream, "disconnect", {"reason": reason})
