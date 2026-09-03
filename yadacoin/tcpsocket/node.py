@@ -1529,8 +1529,9 @@ class NodeRPC(BaseRPC):
             stream.close()
             return {}
 
+        stream._peer_key = stream.peer.rid
         self.config.nodeServer.inbound_streams[peerCls.__name__][
-            stream.peer.rid
+            stream._peer_key
         ] = stream
         # Store the peer's ECDH public key for session cipher derivation
         stream._peer_ecdh_pub = params.get("ecdh_public_key", "")
@@ -2096,7 +2097,13 @@ class NodeRPC(BaseRPC):
         # Advances *this peer's own branch* of our off-chain ratchet — not
         # the global chain — so nothing generated for other peers is ever
         # exposed here, and nothing generated here leaks to other peers.
-        _peer_identity_announcement = stream.peer.identity_announcement
+        # Prefer identity_announcement (KEL-anchored peers); fall back to the
+        # inline username_signature for legacy peers without an IA id.
+        _peer_branch_key = stream.peer.identity_announcement or (
+            stream.peer.identity.username_signature
+            if stream.peer.identity is not None
+            else ""
+        )
         (
             _auth_priv,
             _auth_pub,
@@ -2104,15 +2111,13 @@ class NodeRPC(BaseRPC):
             _conf_pub,
             tpkh,
             _is_new_branch,
-        ) = await self.config.kel_manager.advance_peer_auth_ratchet(
-            _peer_identity_announcement
-        )
+        ) = await self.config.kel_manager.advance_peer_auth_ratchet(_peer_branch_key)
 
         # Mutual-auth transcript: both ECDH pubs + both branch tips + challenge.
         # Server tip is this peer's branch position (Kp0-anchored, not global).
         _branch_inception_pkh = (
             await self.config.kel_manager.peer_branch_inception_public_key_hash(
-                _peer_identity_announcement
+                _peer_branch_key
             )
         )
         _server_kel_tip_pkh = ""
@@ -2269,11 +2274,15 @@ class NodeRPC(BaseRPC):
             {"id": identity_announcement["id"]}, identity_announcement, upsert=True
         )
         identity = params["identity_announcement"]["relationship"]["identity"]
+        # Keep stream._peer_key (set at TCP connect) as the outbound map key —
+        # do not let a post-handshake identity refresh change rid-based lookup.
         stream.peer.identity = Identity(
             public_key=params["identity_announcement"]["public_key"],
             username=identity["username"],
             username_signature=identity["username_signature"],
         )
+        if identity_announcement.get("id"):
+            stream.peer.identity_announcement = identity_announcement["id"]
         peer_username = getattr(stream.peer.identity, "username") or stream.peer.host
         self.config.app_log.info(
             "  [>]   session cipher derived, awaiting encrypted request_sig  (%s)",
@@ -2368,7 +2377,13 @@ class NodeRPC(BaseRPC):
 
         # Client signs the same mutual transcript with its ratchet key —
         # advanced within *this server's own branch* of our off-chain ratchet.
-        _peer_username_sig = stream.peer.identity.username_signature
+        # Must match NodeSocketClient.connect / server _handle_kel_connect:
+        # identity_announcement when present, else username_signature.
+        _peer_branch_key = stream.peer.identity_announcement or (
+            stream.peer.identity.username_signature
+            if stream.peer.identity is not None
+            else ""
+        )
         (
             _auth_priv,
             _auth_pub,
@@ -2376,7 +2391,7 @@ class NodeRPC(BaseRPC):
             _conf_pub,
             tpkh,
             _is_new_branch,
-        ) = await self.config.kel_manager.advance_peer_auth_ratchet(_peer_username_sig)
+        ) = await self.config.kel_manager.advance_peer_auth_ratchet(_peer_branch_key)
         _client_signed = NodeKeyRotationManager._sign(_auth_priv, _auth_transcript)
         _client_conf_signed = (
             NodeKeyRotationManager._sign(_conf_priv, _auth_transcript)
@@ -2388,7 +2403,7 @@ class NodeRPC(BaseRPC):
         # branch (server told us what it already has via latest_ratchet_pkh)
         _branch_inception_pkh = (
             await self.config.kel_manager.peer_branch_inception_public_key_hash(
-                _peer_username_sig
+                _peer_branch_key
             )
         )
         _client_ratchet_chain = []
@@ -2632,15 +2647,15 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
             # entry, this is bounded by how many times we've connected to
             # this specific peer — never the global handshake history shared
             # with every other peer.
-
+            _peer_branch_key = peer.identity_announcement or (
+                peer.identity.username_signature if peer.identity is not None else ""
+            )
             _branch_inception_pkh = (
                 await self.config.kel_manager.peer_branch_inception_public_key_hash(
-                    peer.identity_announcement
+                    _peer_branch_key
                 )
             )
-            _is_first_contact = (
-                bool(peer.identity_announcement) and not _branch_inception_pkh
-            )
+            _is_first_contact = bool(_peer_branch_key) and not _branch_inception_pkh
             if _branch_inception_pkh:
                 _rc = self.config.mongo.async_db.key_event_log.find(
                     {"branch_inception_public_key_hash": _branch_inception_pkh},

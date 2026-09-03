@@ -260,7 +260,9 @@ class BaseRPC:
             # negligible ~6-byte zlib header/checksum overhead.
             plain = json.dumps(rpc_data).encode("utf-8")
             compressed = zlib.compress(plain)
-            if cipher and method in PRE_AUTH_METHODS:
+            # PRE_AUTH_METHODS stay plaintext; encrypt everything else once the
+            # session cipher is active (request_sig, sig_response, gossip, …).
+            if cipher and method not in PRE_AUTH_METHODS:
                 ct = cipher.encrypt(compressed)
                 line = (
                     json.dumps({"enc": base64.b64encode(ct).decode()}) + "\n"
@@ -314,38 +316,19 @@ class BaseRPC:
                 pass
         if not hasattr(stream, "peer"):
             return
-        id_attr = getattr(stream.peer, stream.peer.id_attribute)
-        if (
-            id_attr
-            in self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__]
-        ):
-            del self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__][
-                id_attr
-            ]
+        id_attr = _stream_peer_key(stream)
+        peer_cls = stream.peer.__class__.__name__
+        if id_attr in self.config.nodeServer.inbound_streams.get(peer_cls, {}):
+            del self.config.nodeServer.inbound_streams[peer_cls][id_attr]
 
-        if (
-            id_attr
-            in self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__]
-        ):
-            del self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__][
-                id_attr
-            ]
+        if id_attr in self.config.nodeServer.inbound_pending.get(peer_cls, {}):
+            del self.config.nodeServer.inbound_pending[peer_cls][id_attr]
 
-        if (
-            id_attr
-            in self.config.nodeClient.outbound_streams[stream.peer.__class__.__name__]
-        ):
-            del self.config.nodeClient.outbound_streams[stream.peer.__class__.__name__][
-                id_attr
-            ]
+        if id_attr in self.config.nodeClient.outbound_streams.get(peer_cls, {}):
+            del self.config.nodeClient.outbound_streams[peer_cls][id_attr]
 
-        if (
-            id_attr
-            in self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__]
-        ):
-            del self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__][
-                id_attr
-            ]
+        if id_attr in self.config.nodeClient.outbound_pending.get(peer_cls, {}):
+            del self.config.nodeClient.outbound_pending[peer_cls][id_attr]
         try:
             for y in self.config.nodeServer.retry_messages.copy():
                 if y[0] == id_attr:
@@ -358,6 +341,23 @@ class BaseRPC:
                     del self.config.nodeClient.retry_messages[y]
         except:
             pass
+
+
+def _stream_peer_key(stream):
+    """Stable map key for a stream's peer.
+
+    ``Peer.rid`` is derived from ``identity.username_signature``.  Handshake
+    handlers may replace ``stream.peer.identity`` after the stream is already
+    registered under the pre-handshake rid; always prefer the key captured at
+    registration time so remove/reconnect cannot leave zombie entries.
+    """
+    key = getattr(stream, "_peer_key", None)
+    if key is not None:
+        return key
+    peer = getattr(stream, "peer", None)
+    if peer is None:
+        return None
+    return getattr(peer, getattr(peer, "id_attribute", "rid"), None)
 
 
 class RPCSocketServer(TCPServer, BaseRPC):
@@ -500,21 +500,12 @@ class RPCSocketServer(TCPServer, BaseRPC):
                 pass
         if not hasattr(stream, "peer"):
             return
-        id_attr = getattr(stream.peer, stream.peer.id_attribute)
-        if (
-            id_attr
-            in self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__]
-        ):
-            del self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__][
-                id_attr
-            ]
-        if (
-            id_attr
-            in self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__]
-        ):
-            del self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__][
-                id_attr
-            ]
+        id_attr = _stream_peer_key(stream)
+        peer_cls = stream.peer.__class__.__name__
+        if id_attr in self.config.nodeServer.inbound_streams.get(peer_cls, {}):
+            del self.config.nodeServer.inbound_streams[peer_cls][id_attr]
+        if id_attr in self.config.nodeServer.inbound_pending.get(peer_cls, {}):
+            del self.config.nodeServer.inbound_pending[peer_cls][id_attr]
         try:
             for y in self.config.nodeServer.retry_messages.copy():
                 if y[0] == id_attr:
@@ -549,7 +540,13 @@ class RPCSocketClient(TCPClient):
         try:
             stream = None
             id_attr = getattr(peer, peer.id_attribute)
-            if id_attr in self.outbound_ignore[peer.__class__.__name__]:
+            ignore_map = self.outbound_ignore[peer.__class__.__name__]
+            usig = (
+                peer.identity.username_signature if peer.identity is not None else None
+            )
+            # outbound_ignore is keyed by username_signature (see exception
+            # paths / capacity); also accept rid for callers that store that.
+            if id_attr in ignore_map or (usig and usig in ignore_map):
                 self.config.app_log.info(
                     "connect: skipping %s %s — in outbound_ignore",
                     peer.__class__.__name__,
@@ -614,6 +611,7 @@ class RPCSocketClient(TCPClient):
                 return
             stream = DummyStream(peer)
             stream.last_activity = int(time.time())
+            stream._peer_key = id_attr
             self.outbound_pending[peer.__class__.__name__][id_attr] = stream
             stream = await super(RPCSocketClient, self).connect(
                 peer.host, peer.port, timeout=timedelta(seconds=3)
@@ -623,6 +621,7 @@ class RPCSocketClient(TCPClient):
             stream.syncing = False
             stream.message_queue = {}
             stream.peer = peer
+            stream._peer_key = id_attr
             self.config.health.tcp_client.last_activity = time.time()
             stream.last_activity = int(time.time())
             try:
@@ -665,6 +664,7 @@ class RPCSocketClient(TCPClient):
         except StreamClosedError:
             if not stream:
                 stream = DummyStream(peer)
+                stream._peer_key = id_attr
 
             await self.remove_peer(stream)
             self.config.app_log.warning(
@@ -672,12 +672,14 @@ class RPCSocketClient(TCPClient):
                     peer.__class__.__name__, peer.to_json()
                 )
             )
-            self.outbound_ignore[peer.__class__.__name__][
-                peer.identity.username_signature
-            ] = time.time()
+            if peer.identity is not None:
+                self.outbound_ignore[peer.__class__.__name__][
+                    peer.identity.username_signature
+                ] = time.time()
         except TimeoutError:
             if not stream:
                 stream = DummyStream(peer)
+                stream._peer_key = id_attr
 
             await self.remove_peer(
                 stream, reason="RPCSocketClient: unhandled exception 1"
@@ -687,12 +689,14 @@ class RPCSocketClient(TCPClient):
                     peer.__class__.__name__, peer.to_json()
                 )
             )
-            self.outbound_ignore[peer.__class__.__name__][
-                peer.identity.username_signature
-            ] = time.time()
+            if peer.identity is not None:
+                self.outbound_ignore[peer.__class__.__name__][
+                    peer.identity.username_signature
+                ] = time.time()
         except socket.gaierror:
             if not stream:
                 stream = DummyStream(peer)
+                stream._peer_key = id_attr
 
             await self.remove_peer(
                 stream, reason="RPCSocketClient: unhandled exception 1"
@@ -702,18 +706,22 @@ class RPCSocketClient(TCPClient):
                     peer.__class__.__name__, peer.to_json()
                 )
             )
-            self.outbound_ignore[peer.__class__.__name__][
-                peer.identity.username_signature
-            ] = time.time()
+            if peer.identity is not None:
+                self.outbound_ignore[peer.__class__.__name__][
+                    peer.identity.username_signature
+                ] = time.time()
         except:
-            if hasattr(stream, "peer"):
+            if stream is not None and hasattr(stream, "peer"):
                 self.config.app_log.warning(
                     "Unhandled exception from {}: {}".format(
                         stream.peer.__class__.__name__, stream.peer.to_json()
                     )
                 )
 
-            await self.remove_peer(stream, reason=f"RPCSocketClient: {format_exc()}")
+            if stream is not None:
+                await self.remove_peer(
+                    stream, reason=f"RPCSocketClient: {format_exc()}"
+                )
             self.config.app_log.warning("{}".format(format_exc()))
         finally:
             peer_label_var.reset(token)
@@ -858,13 +866,15 @@ class RPCSocketClient(TCPClient):
                 pass
         if not hasattr(stream, "peer"):
             return
-        if stream.peer.rid in self.outbound_streams[stream.peer.__class__.__name__]:
-            del self.outbound_streams[stream.peer.__class__.__name__][stream.peer.rid]
-        if stream.peer.rid in self.outbound_pending[stream.peer.__class__.__name__]:
-            del self.outbound_pending[stream.peer.__class__.__name__][stream.peer.rid]
+        id_attr = _stream_peer_key(stream)
+        peer_cls = stream.peer.__class__.__name__
+        if id_attr in self.outbound_streams.get(peer_cls, {}):
+            del self.outbound_streams[peer_cls][id_attr]
+        if id_attr in self.outbound_pending.get(peer_cls, {}):
+            del self.outbound_pending[peer_cls][id_attr]
         try:
             for y in self.config.nodeClient.retry_messages.copy():
-                if y[0] == stream.peer.rid:
+                if y[0] == id_attr:
                     del self.config.nodeClient.retry_messages[y]
         except:
             pass

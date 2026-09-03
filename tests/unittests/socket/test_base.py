@@ -17,12 +17,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from tornado.iostream import StreamClosedError
 
 from yadacoin.tcpsocket.base import (
+    PRE_AUTH_METHODS,
     REQUEST_ONLY,
     REQUEST_RESPONSE_MAP,
     BaseRPC,
     DummyStream,
     RPCSocketClient,
     RPCSocketServer,
+    _stream_peer_key,
 )
 
 
@@ -198,6 +200,7 @@ class TestBaseRPC(unittest.TestCase):
         stream.peer = MagicMock()
         stream.peer.host = "pool.yadacoin.io"
         stream.message_queue = {}
+        stream.session_cipher = None
         stream.write = AsyncMock(side_effect=StreamClosedError())
         import asyncio
 
@@ -229,6 +232,127 @@ class TestBaseRPC(unittest.TestCase):
         asyncio.run(rpc.remove_peer(stream))
         asyncio.run(rpc.remove_peer(stream))
         stream.close.assert_called_once()
+
+    @patch("yadacoin.tcpsocket.base.Config")
+    def test_remove_peer_uses_stable_peer_key_after_identity_change(
+        self, mock_config_cls
+    ):
+        """Handshake may refresh peer.identity (and thus rid); cleanup must
+        still hit the key used when the stream was registered."""
+        mock_cfg = MagicMock()
+        mock_config_cls.return_value = mock_cfg
+        mock_cfg.nodeServer.inbound_streams = {"ServiceProvider": {}}
+        mock_cfg.nodeServer.inbound_pending = {"ServiceProvider": {}}
+        mock_cfg.nodeClient.outbound_streams = {
+            "ServiceProvider": {"rid-at-connect": MagicMock()}
+        }
+        mock_cfg.nodeClient.outbound_pending = {"ServiceProvider": {}}
+        mock_cfg.nodeServer.retry_messages = {}
+        mock_cfg.nodeClient.retry_messages = {}
+        rpc = BaseRPC()
+        stream = MagicMock()
+        stream._removing = False
+        stream.closed.return_value = True
+        stream._peer_key = "rid-at-connect"
+        stream.peer = MagicMock()
+        stream.peer.id_attribute = "rid"
+        stream.peer.rid = "rid-after-identity-refresh"
+        stream.peer.__class__.__name__ = "ServiceProvider"
+        import asyncio
+
+        asyncio.run(rpc.remove_peer(stream))
+        self.assertNotIn(
+            "rid-at-connect", mock_cfg.nodeClient.outbound_streams["ServiceProvider"]
+        )
+
+    @patch("yadacoin.tcpsocket.base.Config")
+    def test_write_as_json_encrypts_post_auth_methods(self, mock_config_cls):
+        """Once session_cipher is set, non-PRE_AUTH methods must be encrypted."""
+        import asyncio
+        import base64
+        import json
+        import zlib
+
+        mock_cfg = MagicMock()
+        mock_config_cls.return_value = mock_cfg
+        rpc = BaseRPC()
+        stream = MagicMock()
+        stream._removing = False
+        stream.closed.return_value = False
+        stream.peer = MagicMock()
+        stream.peer.host = "sp.example"
+        stream.message_queue = {}
+        cipher = MagicMock()
+        cipher.encrypt.return_value = b"ciphertext"
+        stream.session_cipher = cipher
+        written = []
+
+        async def capture_write(line):
+            written.append(line)
+
+        stream.write = capture_write
+
+        asyncio.run(rpc.write_as_json(stream, "request_sig", {"k": 1}, "params"))
+        self.assertEqual(len(written), 1)
+        outer = json.loads(written[0].decode().strip())
+        self.assertIn("enc", outer)
+        self.assertNotIn("z", outer)
+        cipher.encrypt.assert_called_once()
+        payload = json.loads(zlib.decompress(cipher.encrypt.call_args[0][0]))
+        self.assertEqual(payload["method"], "request_sig")
+        self.assertEqual(payload["params"], {"k": 1})
+        self.assertNotIn("request_sig", PRE_AUTH_METHODS)
+        self.assertEqual(outer["enc"], base64.b64encode(b"ciphertext").decode())
+
+    @patch("yadacoin.tcpsocket.base.Config")
+    def test_write_as_json_keeps_pre_auth_plaintext(self, mock_config_cls):
+        import asyncio
+        import json
+        import zlib
+
+        mock_cfg = MagicMock()
+        mock_config_cls.return_value = mock_cfg
+        rpc = BaseRPC()
+        stream = MagicMock()
+        stream._removing = False
+        stream.closed.return_value = False
+        stream.peer = MagicMock()
+        stream.peer.host = "sp.example"
+        stream.message_queue = {}
+        stream.session_cipher = MagicMock()
+        written = []
+
+        async def capture_write(line):
+            written.append(line)
+
+        stream.write = capture_write
+
+        asyncio.run(rpc.write_as_json(stream, "connect", {"k": 1}, "params"))
+        outer = json.loads(written[0].decode().strip())
+        self.assertIn("z", outer)
+        self.assertNotIn("enc", outer)
+        stream.session_cipher.encrypt.assert_not_called()
+        payload = json.loads(
+            zlib.decompress(__import__("base64").b64decode(outer["z"]))
+        )
+        self.assertEqual(payload["method"], "connect")
+
+
+class TestStreamPeerKey(unittest.TestCase):
+    def test_prefers_captured_peer_key(self):
+        stream = MagicMock()
+        stream._peer_key = "stable"
+        stream.peer = MagicMock()
+        stream.peer.id_attribute = "rid"
+        stream.peer.rid = "changed"
+        self.assertEqual(_stream_peer_key(stream), "stable")
+
+    def test_falls_back_to_peer_id_attribute(self):
+        stream = MagicMock(spec=["peer"])
+        stream.peer = MagicMock()
+        stream.peer.id_attribute = "rid"
+        stream.peer.rid = "from-rid"
+        self.assertEqual(_stream_peer_key(stream), "from-rid")
 
 
 class TestRPCSocketServerKeepalive(unittest.TestCase):

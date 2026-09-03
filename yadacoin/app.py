@@ -262,44 +262,29 @@ class NodeApplication(Application):
         stream.close()
         if not hasattr(stream, "peer"):
             return
-        id_attr = getattr(stream.peer, stream.peer.id_attribute)
-        if (
-            id_attr
-            in self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__]
-        ):
-            del self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__][
-                id_attr
-            ]
+        from yadacoin.tcpsocket.base import _stream_peer_key
 
-        if (
-            id_attr
-            in self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__]
-        ):
-            del self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__][
-                id_attr
-            ]
+        id_attr = _stream_peer_key(stream)
+        peer_cls = stream.peer.__class__.__name__
+        if id_attr in self.config.nodeServer.inbound_streams.get(peer_cls, {}):
+            del self.config.nodeServer.inbound_streams[peer_cls][id_attr]
 
-        if (
-            id_attr
-            in self.config.nodeClient.outbound_streams[stream.peer.__class__.__name__]
-        ):
-            del self.config.nodeClient.outbound_streams[stream.peer.__class__.__name__][
-                id_attr
-            ]
-            self.config.nodeClient.outbound_ignore[stream.peer.__class__.__name__][
-                stream.peer.identity.username_signature
-            ] = int(time())
+        if id_attr in self.config.nodeServer.inbound_pending.get(peer_cls, {}):
+            del self.config.nodeServer.inbound_pending[peer_cls][id_attr]
 
-        if (
-            id_attr
-            in self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__]
-        ):
-            del self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__][
-                id_attr
-            ]
-            self.config.nodeClient.outbound_ignore[stream.peer.__class__.__name__][
-                stream.peer.identity.username_signature
-            ] = int(time())
+        if id_attr in self.config.nodeClient.outbound_streams.get(peer_cls, {}):
+            del self.config.nodeClient.outbound_streams[peer_cls][id_attr]
+            if stream.peer.identity is not None:
+                self.config.nodeClient.outbound_ignore[peer_cls][
+                    stream.peer.identity.username_signature
+                ] = int(time())
+
+        if id_attr in self.config.nodeClient.outbound_pending.get(peer_cls, {}):
+            del self.config.nodeClient.outbound_pending[peer_cls][id_attr]
+            if stream.peer.identity is not None:
+                self.config.nodeClient.outbound_ignore[peer_cls][
+                    stream.peer.identity.username_signature
+                ] = int(time())
 
         self.delete_retry_messages(id_attr)
 
