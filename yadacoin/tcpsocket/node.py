@@ -3021,18 +3021,29 @@ class NodeRPC(BaseRPC):
         # Full KEL auth verification — authorize the key that signed the
         # transcript (ratchet_public_key = current tip signer), not the
         # confirming/next hop alone.
-        _connect_ratchet_chain = (
-            getattr(stream, "_connect_ratchet_chain", []) or ratchet_chain
-        )
+        #
+        # Merge connect-time chain with sig_response delta.  Client advances
+        # *after* connect and puts the new tip only in sig_response; using
+        # connect alone left sign == tip_pre of the stale tip.
         _connect_latest_ratchet_pkh = getattr(stream, "_connect_latest_ratchet_pkh", "")
-        # Prefer chain from this response when connect had no branch entries
-        # (first contact): already handled by `or ratchet_chain` above when
-        # _connect_ratchet_chain is empty.
-        if ratchet_chain and not getattr(stream, "_connect_ratchet_chain", None):
-            _connect_ratchet_chain = ratchet_chain
+        _merged_ratchet = []
+        _seen_ids = set()
+        for _src in (
+            getattr(stream, "_connect_ratchet_chain", None) or [],
+            ratchet_chain or [],
+        ):
+            for _txn in _src:
+                if not isinstance(_txn, dict):
+                    continue
+                _tid = _txn.get("id") or _txn.get("hash") or ""
+                if _tid and _tid in _seen_ids:
+                    continue
+                if _tid:
+                    _seen_ids.add(_tid)
+                _merged_ratchet.append(_txn)
         result = await self._process_ratchet_auth(
             stream,
-            _connect_ratchet_chain,
+            _merged_ratchet,
             ratchet_public_key,
             _connect_latest_ratchet_pkh,
             confirming_public_key=confirming_public_key,

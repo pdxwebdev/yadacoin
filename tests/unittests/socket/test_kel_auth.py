@@ -1287,10 +1287,9 @@ class TestSigResponse(AsyncTestCase):
         self.assertFalse(stream.peer.authenticated)
         rpc.send_block_to_peer.assert_not_awaited()
 
-    async def test_uses_connect_ratchet_chain_not_response_chain(self):
-        """sig_response should use the ratchet_chain stored from the original
-        'connect' message (stream._connect_ratchet_chain), not what the client
-        sends in sig_response itself."""
+    async def test_merges_connect_and_response_ratchet_chains(self):
+        """sig_response must merge connect chain + response delta so the
+        post-connect advance tip is authorized (not connect tip alone)."""
         rpc = _make_rpc()
         stream = _make_stream()
         rpc.remove_peer = AsyncMock(return_value=None)
@@ -1310,7 +1309,7 @@ class TestSigResponse(AsyncTestCase):
         body = self._body(
             client_signed=valid_sig,
             ratchet_pub=_auth_pub,
-            ratchet_chain=[{"id": "response_txn"}],  # should be ignored
+            ratchet_chain=[{"id": "response_txn"}],
         )
 
         rpc._process_ratchet_auth = AsyncMock(
@@ -1320,15 +1319,13 @@ class TestSigResponse(AsyncTestCase):
         await rpc.sig_response(body=body, stream=stream)
 
         call_kwargs = rpc._process_ratchet_auth.call_args
-        # first positional arg after stream is ratchet_chain
         passed_chain = call_kwargs[0][1]
-        self.assertEqual(passed_chain, stored_chain)
+        self.assertEqual(passed_chain, [{"id": "stored_txn"}, {"id": "response_txn"}])
 
     async def test_falls_back_to_sig_response_chain_on_first_contact(self):
         """When stream._connect_ratchet_chain is empty (first contact),
-        sig_response must fall back to the ratchet_chain sent by the client
-        in this very message, so _process_ratchet_auth receives the actual
-        branch entries instead of an empty list."""
+        sig_response must use the ratchet_chain sent by the client
+        in this very message."""
         rpc = _make_rpc()
         stream = _make_stream()
         rpc.remove_peer = AsyncMock(return_value=None)
