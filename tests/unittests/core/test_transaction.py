@@ -2221,9 +2221,10 @@ class TestTransactionPureMethods(AsyncTestCase):
                     )  # block=None → UTXO check runs
 
     async def test_verify_kel_output_rules_utxo_check_mismatch_raises(self):
-        """Lines 1302-1308: UTXO mismatch raises KELDoesNotSpendAllUTXOsException."""
+        """Pre-cross-key: UTXO mismatch raises KELDoesNotSpendAllUTXOsException."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
+        from yadacoin.core.chain import CHAIN
         from yadacoin.core.keyeventlog import (
             KELDoesNotSpendAllUTXOsException,
             KeyEventLog,
@@ -2252,14 +2253,9 @@ class TestTransactionPureMethods(AsyncTestCase):
             Input(signature="input2"),
         ]  # 2 inputs but 1 UTXO unspent
 
-        mock_entry = MagicMock()
-        mock_entry.mempool = False
-        mock_entry.public_key_hash = "different_hash"
-        mock_entry.transaction_signature = "other_sig"
-        mock_entry.prerotated_key_hash = "1CorrectDest"
-
         mock_block_lb = MagicMock()
-        mock_block_lb.block.index = 6000000
+        # Legacy spend-all path (before cross-key fork)
+        mock_block_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK - 2
 
         mock_mongo = MagicMock()
         mock_mongo.async_db.blocks.aggregate = async_iter_one  # 1 UTXO
@@ -2288,17 +2284,14 @@ class TestTransactionPureMethods(AsyncTestCase):
                         await txn.verify_kel_output_rules(block=None)
 
     async def test_verify_kel_output_rules_utxo_missing_parent_raises(self):
-        """Lines 1309-1315: inputs > 0 but no on-chain UTXOs → KELMissingParentUTXOException."""
+        """Cross-key path: unresolved input id → KELMissingParentUTXOException."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
+        from yadacoin.core.chain import CHAIN
         from yadacoin.core.keyeventlog import KELMissingParentUTXOException, KeyEventLog
 
-        async def async_iter_empty(pipeline):
-            return
-            yield
-
         inp = Input(signature="missing_utxo_input")
-        inp.input_txn = None  # no parent UTXO on-chain
+        inp.input_txn = None
 
         txn = Transaction(
             public_key=yadacoin.core.config.CONFIG.public_key,
@@ -2308,21 +2301,17 @@ class TestTransactionPureMethods(AsyncTestCase):
         txn.transaction_signature = "new_sig"
         txn.inputs = [inp]
 
-        mock_entry = MagicMock()
-        mock_entry.mempool = False
-        mock_entry.public_key_hash = "different_hash"
-        mock_entry.transaction_signature = "other_sig"
-        mock_entry.prerotated_key_hash = "1CorrectDest"
-
         mock_block_lb = MagicMock()
-        mock_block_lb.block.index = 6000000
+        mock_block_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK + 1000
 
         mock_mongo = MagicMock()
-        mock_mongo.async_db.blocks.aggregate = async_iter_empty
-        mock_mongo.async_db.miner_transactions.aggregate = async_iter_empty
+        mock_mongo.async_db.miner_transactions.find_one = AsyncMock(return_value=None)
+
+        mock_bu = AsyncMock()
+        mock_bu.get_transaction_by_id = AsyncMock(return_value=None)
 
         txn.config.mongo = mock_mongo
-        txn.config.BU = MagicMock()
+        txn.config.BU = mock_bu
 
         with patch.object(
             yadacoin.core.config.CONFIG, "LatestBlock", create=True, new=mock_block_lb
@@ -2338,10 +2327,55 @@ class TestTransactionPureMethods(AsyncTestCase):
                     with self.assertRaises(KELMissingParentUTXOException):
                         await txn.verify_kel_output_rules(block=None)
 
-    async def test_verify_kel_output_rules_utxo_transactions_branch(self):
-        """Line 1293-1294: item has 'transactions' key → Transaction.from_dict(x['transactions'])."""
+    async def test_verify_kel_output_rules_cross_key_resolves_parent(self):
+        """Cross-key: parent on prior tip address is OK when input id resolves."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        inp = Input(signature="parent_on_prior_tip")
+        inp.input_txn = None
+
+        txn = Transaction(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            public_key_hash="later_tip_pkh",
+            outputs=[Output(to="1CorrectDest", value=1.0)],
+        )
+        txn.transaction_signature = "new_sig"
+        txn.inputs = [inp]
+
+        mock_block_lb = MagicMock()
+        mock_block_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK + 1000
+
+        mock_mongo = MagicMock()
+        mock_bu = AsyncMock()
+        mock_bu.get_transaction_by_id = AsyncMock(
+            return_value={"id": "parent_on_prior_tip", "outputs": []}
+        )
+
+        txn.config.mongo = mock_mongo
+        txn.config.BU = mock_bu
+
+        with patch.object(
+            yadacoin.core.config.CONFIG, "LatestBlock", create=True, new=mock_block_lb
+        ):
+            with patch.object(
+                txn, "has_key_event_log", new=AsyncMock(return_value=True)
+            ):
+                with patch.object(
+                    KeyEventLog,
+                    "get_latest",
+                    new=AsyncMock(return_value=None),
+                ):
+                    await txn.verify_kel_output_rules(block=None)
+        mock_bu.get_transaction_by_id.assert_awaited_once_with("parent_on_prior_tip")
+
+    async def test_verify_kel_output_rules_utxo_transactions_branch(self):
+        """Pre-cross-key: item has 'transactions' key → Transaction.from_dict(x['transactions'])."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from yadacoin.core.chain import CHAIN
         from yadacoin.core.keyeventlog import KeyEventLog
 
         txn_dict = {
@@ -2367,14 +2401,8 @@ class TestTransactionPureMethods(AsyncTestCase):
             Input(signature="inp1")
         ]  # 1 input, 1 UTXO unspent → count matches
 
-        mock_entry = MagicMock()
-        mock_entry.mempool = False
-        mock_entry.public_key_hash = "different_hash"
-        mock_entry.transaction_signature = "other_sig"
-        mock_entry.prerotated_key_hash = "1CorrectDest"
-
         mock_block_lb = MagicMock()
-        mock_block_lb.block.index = 6000000
+        mock_block_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK - 2
 
         mock_mongo = MagicMock()
         mock_mongo.async_db.blocks.aggregate = async_iter_one  # wrapped item
@@ -2403,9 +2431,10 @@ class TestTransactionPureMethods(AsyncTestCase):
     async def test_verify_kel_output_rules_utxo_input_spent_increments_total_spent(
         self,
     ):
-        """Line 1236: is_input_spent returns True → total_spent += 1 → no mismatch as all UTXOs spent."""
+        """Pre-cross-key: is_input_spent True → total_spent += 1 → no mismatch."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
+        from yadacoin.core.chain import CHAIN
         from yadacoin.core.keyeventlog import KeyEventLog
 
         utxo_item = {
@@ -2430,14 +2459,8 @@ class TestTransactionPureMethods(AsyncTestCase):
             []
         )  # 0 inputs, 1 UTXO but all spent → mempool_chain_input_sum - total_spent = 1 - 1 = 0 == len(inputs)
 
-        mock_entry = MagicMock()
-        mock_entry.mempool = False
-        mock_entry.public_key_hash = "different_hash"
-        mock_entry.transaction_signature = "other_sig"
-        mock_entry.prerotated_key_hash = "1CorrectDest"
-
         mock_block_lb = MagicMock()
-        mock_block_lb.block.index = 6000000
+        mock_block_lb.block.index = CHAIN.KEL_CROSS_KEY_SPENDING_FORK - 2
 
         mock_mongo = MagicMock()
         mock_mongo.async_db.blocks.aggregate = async_iter_one  # 1 UTXO

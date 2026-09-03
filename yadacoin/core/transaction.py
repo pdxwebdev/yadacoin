@@ -2296,6 +2296,33 @@ class Transaction(object):
         if block is not None:
             return
 
+        if mempool:
+            effective_index = self.config.LatestBlock.block.index + 1
+        else:
+            effective_index = self.config.LatestBlock.block.index
+
+        # After cross-key spending: value may sit on earlier same-KEL tip
+        # addresses. Tip-local "spend all UTXOs at public_key_hash" is no longer
+        # required. Only ensure each declared input resolves to a real parent;
+        # ownership / same-KEL auth is enforced in normal input verification.
+        if effective_index >= CHAIN.KEL_CROSS_KEY_SPENDING_FORK:
+            for inputx in self.inputs:
+                if getattr(inputx, "input_txn", None):
+                    continue
+                parent = await self.config.BU.get_transaction_by_id(inputx.id)
+                if not parent:
+                    parent = (
+                        await self.config.mongo.async_db.miner_transactions.find_one(
+                            {"id": inputx.id}
+                        )
+                    )
+                if not parent:
+                    raise KELMissingParentUTXOException(
+                        f"Key event tx input {inputx.id!r} not found on-chain or in mempool "
+                        f"(spender public_key_hash={self.public_key_hash})."
+                    )
+            return
+
         all_inputs = [
             x
             async for x in self.config.mongo.async_db.blocks.aggregate(
