@@ -2509,6 +2509,90 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         self.assertEqual(cfg.mongo.async_db.key_event_log.replace_one.await_count, 2)
         self.assertEqual(mgr._peer_branches["peerA_username_signature"]["counter"], 1)
 
+    async def test_repair_kel_pkh_drop_and_create_failures_are_logged(self):
+        """_repair_kel_pkh_unique_index swallows drop/create errors."""
+        from yadacoin.core.keyrotation import _repair_kel_pkh_unique_index
+
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        cfg.mongo.async_db.key_event_log.drop_index = AsyncMock(
+            side_effect=Exception("index missing")
+        )
+        cfg.mongo.async_db.key_event_log.create_index = AsyncMock(
+            side_effect=Exception("create failed")
+        )
+        cfg.app_log = MagicMock()
+
+        await _repair_kel_pkh_unique_index(cfg)
+
+        cfg.app_log.debug.assert_called()
+        cfg.app_log.warning.assert_called()
+        self.assertTrue(
+            any(
+                "failed to recreate" in str(c)
+                for c in cfg.app_log.warning.call_args_list
+            )
+        )
+
+    async def test_kel_pkh_repair_retry_still_fails_raises(self):
+        """After __kel_pkh repair, a second write failure still raises."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        self._seed_peer_branch(mgr)
+        dup = Exception(
+            "E11000 duplicate key error collection: yadacoin.key_event_log "
+            'index: __kel_pkh dup key: { public_key_hash: "1PKH" }'
+        )
+        cfg.mongo.async_db.key_event_log.replace_one = AsyncMock(
+            side_effect=[dup, RuntimeError("still broken")]
+        )
+        cfg.mongo.async_db.key_event_log.drop_index = AsyncMock()
+        cfg.mongo.async_db.key_event_log.create_index = AsyncMock()
+        cfg.app_log = MagicMock()
+
+        with patch("yadacoin.core.transaction.Config", return_value=cfg):
+            with self.assertRaises(RuntimeError) as ctx:
+                await mgr.advance_peer_auth_ratchet("peerA_username_signature")
+        self.assertIn("still broken", str(ctx.exception))
+        self.assertEqual(mgr._peer_branches["peerA_username_signature"]["counter"], 0)
+        self.assertTrue(
+            any(
+                "after __kel_pkh repair" in str(c)
+                for c in cfg.app_log.warning.call_args_list
+            )
+        )
+
+    async def test_peer_branch_root_write_error_is_swallowed(self):
+        """First-contact branch root write failures are logged, not fatal."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        cfg.app_log = MagicMock()
+
+        root_calls = {"n": 0}
+        real_replace = cfg.mongo.async_db.key_event_log.replace_one
+
+        async def flaky_replace(filt, doc, upsert=False):
+            # Fail only the counter-0 branch_peer root upsert
+            if filt.get("counter") == 0 and "branch_peer" in filt:
+                root_calls["n"] += 1
+                raise RuntimeError("root write failed")
+            return await real_replace(filt, doc, upsert=upsert)
+
+        cfg.mongo.async_db.key_event_log.replace_one = flaky_replace
+
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            result = await mgr.advance_peer_auth_ratchet("peerRootFail_sig")
+
+        self.assertTrue(result[0])
+        self.assertEqual(root_calls["n"], 1)
+        self.assertTrue(
+            any(
+                "peer branch root write error" in str(c)
+                for c in cfg.app_log.debug.call_args_list
+            )
+        )
+
     async def test_peer_branch_inception_from_mongo_without_cache(self):
         """Read path returns branch_inception_public_key_hash from bridge doc."""
         cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())

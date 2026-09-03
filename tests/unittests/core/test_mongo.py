@@ -682,6 +682,39 @@ class TestMongoInitPaths(AsyncTestCase):
                 m = Mongo()
         self.assertIsNotNone(m)
 
+    def test_key_event_log_unique_pkh_index_probe_exception_suppressed(self):
+        """index_information/drop of legacy unique __kel_pkh errors are ignored."""
+        mock_db = self._make_default_mock_db()
+        mock_db.key_event_log = MagicMock()
+        mock_db.key_event_log.index_information.side_effect = Exception(
+            "index_information failed"
+        )
+        mock_client = MagicMock()
+        mock_client.__getitem__.return_value = mock_db
+        with mock.patch("yadacoin.core.mongo.MongoClient", return_value=mock_client):
+            with mock.patch(
+                "yadacoin.core.mongo.MotorClient", return_value=MagicMock()
+            ):
+                m = Mongo()
+        self.assertIsNotNone(m)
+
+    def test_key_event_log_drops_legacy_unique_pkh_index(self):
+        """Unique __kel_pkh is dropped before non-unique recreate."""
+        mock_db = self._make_default_mock_db()
+        mock_db.key_event_log = MagicMock()
+        mock_db.key_event_log.index_information.return_value = {
+            "__kel_pkh": {"unique": True, "key": [("public_key_hash", 1)]}
+        }
+        mock_client = MagicMock()
+        mock_client.__getitem__.return_value = mock_db
+        with mock.patch("yadacoin.core.mongo.MongoClient", return_value=mock_client):
+            with mock.patch(
+                "yadacoin.core.mongo.MotorClient", return_value=MagicMock()
+            ):
+                m = Mongo()
+        self.assertIsNotNone(m)
+        mock_db.key_event_log.drop_index.assert_called_with("__kel_pkh")
+
 
 class TestBackfillKelTags(AsyncTestCase):
     async def asyncSetUp(self):
