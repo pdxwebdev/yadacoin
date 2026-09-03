@@ -123,6 +123,40 @@ _CURVE_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD036414
 DERIVE_TIP_SIGNER_MAX_STEPS = 100000
 
 
+def _is_kel_pkh_unique_violation(exc) -> bool:
+    """True when Mongo rejects a key_event_log write due to unique __kel_pkh."""
+    msg = str(exc)
+    return "E11000" in msg and "__kel_pkh" in msg and "public_key_hash" in msg
+
+
+async def _repair_kel_pkh_unique_index(config) -> None:
+    """Drop legacy unique __kel_pkh and recreate it non-unique.
+
+    Peer-branch root (counter 0) and first advance (counter 1) both use
+    public_key_hash=addr(Kp0).  Early KEL rollout created a unique index that
+    still lives on many nodes; create_indexes cannot change uniqueness in place.
+    """
+    try:
+        await config.mongo.async_db.key_event_log.drop_index("__kel_pkh")
+    except Exception as exc:
+        config.app_log.debug(
+            "NodeKeyRotationManager: drop __kel_pkh (may already be gone): %s", exc
+        )
+    try:
+        await config.mongo.async_db.key_event_log.create_index(
+            [("public_key_hash", 1)], name="__kel_pkh"
+        )
+        config.app_log.warning(
+            "NodeKeyRotationManager: repaired key_event_log.__kel_pkh "
+            "(was unique; now non-unique so branch root + first advance can share Kp0)"
+        )
+    except Exception as exc:
+        config.app_log.warning(
+            "NodeKeyRotationManager: failed to recreate non-unique __kel_pkh: %s",
+            exc,
+        )
+
+
 def _bip32_hardened_child(
     parent_priv: bytes, parent_chain_code: bytes, index: int
 ) -> dict:
@@ -1290,33 +1324,58 @@ class NodeKeyRotationManager:
         branch_inception_pkh = state["branch_inception_public_key_hash"]
         main_inception_pkh = state.get("inception_public_key_hash") or ""
 
+        entry_filter = {
+            "branch_inception_public_key_hash": branch_inception_pkh,
+            "counter": next_counter,
+        }
+        entry_doc = {
+            "counter": next_counter,
+            "branch_inception_public_key_hash": branch_inception_pkh,
+            "inception_public_key_hash": main_inception_pkh,
+            "branch_peer": identity_announcement,
+            "id": ratchet_txn.transaction_signature,
+            "public_key": prev_pub_hex,
+            "public_key_hash": prev_address,
+            "prerotated_key_hash": next_address,
+            "txn": ratchet_txn.to_dict(),
+            "timestamp": time.time(),
+        }
+        # Include counter so the Kp0 root (counter 0) is not overwritten when
+        # the first advance also signs as addr(Kp0).  Both docs share
+        # public_key_hash=addr(Kp0); __kel_pkh must be non-unique.
         try:
-            # Include counter so the Kp0 root (counter 0) is not overwritten when
-            # the first advance also signs as addr(Kp0).
             await config.mongo.async_db.key_event_log.replace_one(
-                {
-                    "branch_inception_public_key_hash": branch_inception_pkh,
-                    "counter": next_counter,
-                },
-                {
-                    "counter": next_counter,
-                    "branch_inception_public_key_hash": branch_inception_pkh,
-                    "inception_public_key_hash": main_inception_pkh,
-                    "branch_peer": identity_announcement,
-                    "id": ratchet_txn.transaction_signature,
-                    "public_key": prev_pub_hex,
-                    "public_key_hash": prev_address,
-                    "prerotated_key_hash": next_address,
-                    "txn": ratchet_txn.to_dict(),
-                    "timestamp": time.time(),
-                },
-                upsert=True,
+                entry_filter, entry_doc, upsert=True
             )
         except Exception as exc:
-            config.app_log.debug(
-                "NodeKeyRotationManager: peer branch key_event_log write error: %s",
-                exc,
-            )
+            if _is_kel_pkh_unique_violation(exc):
+                await _repair_kel_pkh_unique_index(config)
+                try:
+                    await config.mongo.async_db.key_event_log.replace_one(
+                        entry_filter, entry_doc, upsert=True
+                    )
+                except Exception as retry_exc:
+                    config.app_log.warning(
+                        "NodeKeyRotationManager: peer branch key_event_log write "
+                        "error after __kel_pkh repair (branch=%s counter=%s pkh=%s): %s",
+                        branch_inception_pkh,
+                        next_counter,
+                        prev_address,
+                        retry_exc,
+                    )
+                    raise
+            else:
+                config.app_log.warning(
+                    "NodeKeyRotationManager: peer branch key_event_log write error "
+                    "(branch=%s counter=%s pkh=%s): %s",
+                    branch_inception_pkh,
+                    next_counter,
+                    prev_address,
+                    exc,
+                )
+                # Do not advance in-memory tip if the durable log write failed —
+                # otherwise ratchet_chain deltas omit the step the peer must verify.
+                raise
 
         self._peer_branches[identity_announcement] = {
             "ratchet_key": next_key,

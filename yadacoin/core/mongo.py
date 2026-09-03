@@ -567,7 +567,19 @@ class Mongo(object):
             [("inception_public_key_hash", ASCENDING), ("counter", ASCENDING)],
             name="__kel_main_inception_counter",
         )
-        # public_key_hash lookups (not unique: branch root + first advance share Kp0)
+        # public_key_hash lookups — MUST NOT be unique: peer-branch root
+        # (counter 0) and the first advance (counter 1) both sign as addr(Kp0)
+        # and therefore share the same public_key_hash.  An older unique
+        # __kel_pkh from early KEL rollout still exists on many nodes and
+        # silently rejects the first advance (E11000), leaving auth state
+        # half-written. Drop the unique form before recreating.
+        try:
+            kel_idx = self.db.key_event_log.index_information()
+            pkh_idx = kel_idx.get("__kel_pkh")
+            if pkh_idx and pkh_idx.get("unique"):
+                self.db.key_event_log.drop_index("__kel_pkh")
+        except Exception:
+            pass
         __kel_pkh = IndexModel(
             [("public_key_hash", ASCENDING)],
             name="__kel_pkh",
