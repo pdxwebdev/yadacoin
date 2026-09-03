@@ -757,12 +757,37 @@ class NodeRPC(BaseRPC):
                     nxt = None
                     if nxt_pkh and nxt_pkh in by_pkh:
                         cur_pkh = _pkh(cur)
+                        cur_id = cur.get("id")
                         for cand in by_pkh[nxt_pkh]:
-                            if _prev(cand) in ("", cur_pkh):
+                            if cand is cur or (
+                                cur_id and cand.get("id") and cand.get("id") == cur_id
+                            ):
+                                continue
+                            if _prev(cand) == cur_pkh:
                                 nxt = cand
                                 break
                         if nxt is None:
-                            nxt = max(by_pkh[nxt_pkh], key=_ctr)
+                            for cand in by_pkh[nxt_pkh]:
+                                if cand is cur or (
+                                    cur_id
+                                    and cand.get("id")
+                                    and cand.get("id") == cur_id
+                                ):
+                                    continue
+                                if _prev(cand) in ("", cur_pkh):
+                                    nxt = cand
+                                    break
+                        if nxt is None:
+                            others = [
+                                c
+                                for c in by_pkh[nxt_pkh]
+                                if c is not cur
+                                and not (
+                                    cur_id and c.get("id") and c.get("id") == cur_id
+                                )
+                            ]
+                            if others:
+                                nxt = max(others, key=_ctr)
                     if nxt is None:
                         break
                     cur = nxt
@@ -869,6 +894,64 @@ class NodeRPC(BaseRPC):
         reauth_cb = self._resync_reauth.pop(req_id, None)
         if reauth_cb:
             await reauth_cb(kel_chain)
+
+    # ── identity-announcement pull ─────────────────────────────────────────
+
+    async def _request_peer_identity_announcement(
+        self, stream, txn_id: str, reauth_cb=None
+    ) -> None:
+        """Ask peer for a missing identity-announcement txn. Non-blocking."""
+        req_id = str(uuid4())
+        self._ia_resync_waiters[req_id] = True
+        if reauth_cb:
+            self._resync_reauth[req_id] = reauth_cb
+        await self.write_params(
+            stream,
+            "request_identity_announcement",
+            {"id": req_id, "txn_id": txn_id or ""},
+        )
+
+    async def request_identity_announcement(self, body, stream):
+        """Peer is missing our IA — look up by txn_id and respond."""
+        params = body.get("params", {}) or {}
+        req_id = params.get("id", "")
+        txn_id = params.get("txn_id", "") or ""
+        txn = None
+        if txn_id:
+            txn = await self.config.mongo.async_db.miner_transactions.find_one(
+                {"id": txn_id}, {"_id": 0}
+            )
+            if not txn:
+                async for doc in self.config.mongo.async_db.blocks.aggregate(
+                    [
+                        {"$match": {"transactions.id": txn_id}},
+                        {"$unwind": "$transactions"},
+                        {"$match": {"transactions.id": txn_id}},
+                        {"$replaceRoot": {"newRoot": "$transactions"}},
+                        {"$limit": 1},
+                    ]
+                ):
+                    txn = doc
+                    break
+        await self.write_params(
+            stream,
+            "identity_announcement_response",
+            {"id": req_id, "txn": txn or {}},
+        )
+
+    async def identity_announcement_response(self, body, stream):
+        """Ingest peer IA txn and fire pending re-auth callback."""
+        params = body.get("params", {}) or {}
+        req_id = params.get("id", "")
+        txn = params.get("txn") or {}
+        if req_id not in self._ia_resync_waiters and req_id not in self._resync_reauth:
+            return
+        self._ia_resync_waiters.pop(req_id, None)
+        if txn and txn.get("id"):
+            await self._accept_peer_kel_chain([txn])
+        reauth_cb = self._resync_reauth.pop(req_id, None)
+        if reauth_cb:
+            await reauth_cb(txn)
 
     # ── end identity-announcement pull ─────────────────────────────────────
 
@@ -2156,6 +2239,20 @@ class NodeRPC(BaseRPC):
                         peer_username,
                     )
 
+                    async def _ia_reauth(_txn, _stream=stream):
+                        await self._process_ratchet_auth(
+                            _stream,
+                            ratchet_chain,
+                            ratchet_public_key,
+                            latest_ratchet_pkh,
+                            confirming_public_key=confirming_public_key,
+                            _retried=True,
+                        )
+
+                    await self._request_peer_identity_announcement(
+                        stream, _ia_id, reauth_cb=_ia_reauth
+                    )
+                    return None
                 await self.remove_peer(
                     stream, reason="ratchet: identity_announcement txn not found"
                 )

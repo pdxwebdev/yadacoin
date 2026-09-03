@@ -873,9 +873,10 @@ class NodeKeyRotationManager:
             )
 
         def _ctr(d):
+            raw = d.get("counter", 0)
             try:
-                return int(d.get("counter") or 0)
-            except Exception:
+                return int(raw) if raw is not None else 0
+            except (TypeError, ValueError):
                 return 0
 
         by_pkh = {}
@@ -901,12 +902,35 @@ class NodeKeyRotationManager:
                 nxt = None
                 if nxt_pkh and nxt_pkh in by_pkh:
                     cur_pkh = _pkh(cur)
+                    cur_id = cur.get("id")
+                    # Prefer a distinct child whose prev links to us; never
+                    # select the current doc as its own successor (same pkh).
                     for cand in by_pkh[nxt_pkh]:
-                        if _prev(cand) in ("", cur_pkh):
+                        if cand is cur or (
+                            cur_id and cand.get("id") and cand.get("id") == cur_id
+                        ):
+                            continue
+                        if _prev(cand) == cur_pkh:
                             nxt = cand
                             break
                     if nxt is None:
-                        nxt = max(by_pkh[nxt_pkh], key=_ctr)
+                        for cand in by_pkh[nxt_pkh]:
+                            if cand is cur or (
+                                cur_id and cand.get("id") and cand.get("id") == cur_id
+                            ):
+                                continue
+                            if _prev(cand) in ("", cur_pkh):
+                                nxt = cand
+                                break
+                    if nxt is None:
+                        others = [
+                            c
+                            for c in by_pkh[nxt_pkh]
+                            if c is not cur
+                            and not (cur_id and c.get("id") and c.get("id") == cur_id)
+                        ]
+                        if others:
+                            nxt = max(others, key=_ctr)
                 if nxt is None:
                     break
                 cur = nxt

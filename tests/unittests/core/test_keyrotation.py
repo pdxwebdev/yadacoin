@@ -1988,6 +1988,14 @@ class TestGenerateSignature(AsyncTestCase):
 # ---------------------------------------------------------------------------
 
 
+class _FakeFindCursor:
+    def __init__(self, docs):
+        self._docs = list(docs)
+
+    async def to_list(self, length=None):
+        return list(self._docs)
+
+
 class _FakeKeyEventLogCollection:
     """Minimal in-memory stand-in for the ``key_event_log`` Mongo collection,
     sufficient for exercising the peer-branch upsert/tip-lookup logic without
@@ -1996,7 +2004,7 @@ class _FakeKeyEventLogCollection:
     def __init__(self):
         self.docs = []
 
-    async def find_one(self, filt, sort=None):
+    async def find_one(self, filt, sort=None, projection=None):
         matches = [d for d in self.docs if self._matches(d, filt)]
         if not matches:
             return None
@@ -2004,6 +2012,11 @@ class _FakeKeyEventLogCollection:
             key, direction = sort[0]
             matches.sort(key=lambda d: d.get(key, 0), reverse=(direction == -1))
         return matches[0]
+
+    def find(self, filt=None, projection=None):
+        filt = filt or {}
+        matches = [d for d in self.docs if self._matches(d, filt)]
+        return _FakeFindCursor(matches)
 
     async def replace_one(self, filt, doc, upsert=False):
         for i, d in enumerate(self.docs):
@@ -2765,6 +2778,23 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
                 )
             )
         )
+        # Real tip after two advances: pkh=addr(Kp1), pre=addr(Kp2)
+        kp1 = derive_secure_path(kp0["private_key"], kp0["chain_code"], peer_factor)
+        kp1_address = str(
+            P2PKHBitcoinAddress.from_pubkey(
+                _CoincurvePrivateKey(kp1["private_key"]).public_key.format(
+                    compressed=True
+                )
+            )
+        )
+        kp2 = derive_secure_path(kp1["private_key"], kp1["chain_code"], peer_factor)
+        kp2_address = str(
+            P2PKHBitcoinAddress.from_pubkey(
+                _CoincurvePrivateKey(kp2["private_key"]).public_key.format(
+                    compressed=True
+                )
+            )
+        )
         tip_main_inception = "1TipMainInceptionXXXXXXXXXXXXXXX"
         # Bridge without branch_inception / inception tags (legacy shape)
         cfg.mongo.async_db.key_event_log.docs.append(
@@ -2778,12 +2808,13 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
                 # branch_commit, inception_public_key_hash
             }
         )
-        # Tip only matchable via legacy anchor_public_key
+        # Tip only matchable via legacy anchor_public_key (no branch field)
         cfg.mongo.async_db.key_event_log.docs.append(
             {
                 "anchor_public_key": kp0_pub,
                 "counter": 2,
-                "public_key_hash": "1TipPKH",
+                "public_key_hash": kp1_address,
+                "prerotated_key_hash": kp2_address,
                 "inception_public_key_hash": tip_main_inception,
             }
         )
@@ -2793,6 +2824,390 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         self.assertEqual(state["branch_inception_public_key_hash"], kp0_address)
         self.assertEqual(state["inception_public_key_hash"], tip_main_inception)
         self.assertEqual(state["counter"], 2)
+        self.assertEqual(state["prev_pkh"], kp1_address)
+        self.assertEqual(
+            str(
+                P2PKHBitcoinAddress.from_pubkey(
+                    _CoincurvePrivateKey(
+                        state["ratchet_key"]["private_key"]
+                    ).public_key.format(compressed=True)
+                )
+            ),
+            kp2_address,
+        )
+
+    async def test_peer_branch_tip_by_hash_link_empty_and_walk(self):
+        """Hash-link tip: empty branch, empty docs, walk, cycle, no-roots."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        kel = cfg.mongo.async_db.key_event_log
+
+        self.assertIsNone(await mgr._peer_branch_tip_by_hash_link(""))
+        self.assertIsNone(await mgr._peer_branch_tip_by_hash_link("branchX"))
+
+        # Linear chain A→B→C via prerotated
+        kel.docs = [
+            {
+                "id": "a",
+                "counter": 0,
+                "public_key_hash": "A",
+                "prerotated_key_hash": "B",
+                "txn": {
+                    "public_key_hash": "A",
+                    "prerotated_key_hash": "B",
+                    "prev_public_key_hash": "",
+                },
+            },
+            {
+                "id": "b",
+                "counter": 1,
+                "public_key_hash": "B",
+                "prerotated_key_hash": "C",
+                "txn": {
+                    "public_key_hash": "B",
+                    "prerotated_key_hash": "C",
+                    "prev_public_key_hash": "A",
+                },
+            },
+            {
+                "id": "c",
+                "counter": 2,
+                "public_key_hash": "C",
+                "prerotated_key_hash": "D",
+                "txn": {
+                    "public_key_hash": "C",
+                    "prerotated_key_hash": "D",
+                    "prev_public_key_hash": "B",
+                },
+            },
+            # junk high counter — must not win tip
+            {
+                "id": "junk",
+                "counter": 9999,
+                "public_key_hash": "Z",
+                "prerotated_key_hash": "Y",
+                "txn": {
+                    "public_key_hash": "Z",
+                    "prerotated_key_hash": "Y",
+                    "prev_public_key_hash": "X",
+                },
+            },
+        ]
+        # Restrict filter: only docs with matching branch field
+        for d in kel.docs:
+            d["branch_inception_public_key_hash"] = "br"
+        tip = await mgr._peer_branch_tip_by_hash_link("br")
+        self.assertEqual(tip["id"], "c")
+
+        # Cycle: A→B→A
+        kel.docs = [
+            {
+                "id": "a",
+                "counter": 0,
+                "branch_inception_public_key_hash": "cyc",
+                "public_key_hash": "A",
+                "prerotated_key_hash": "B",
+                "txn": {"prev_public_key_hash": ""},
+            },
+            {
+                "id": "b",
+                "counter": 1,
+                "branch_inception_public_key_hash": "cyc",
+                "public_key_hash": "B",
+                "prerotated_key_hash": "A",
+                "txn": {"prev_public_key_hash": "A"},
+            },
+        ]
+        tip = await mgr._peer_branch_tip_by_hash_link("cyc")
+        self.assertIn(tip["id"], ("a", "b"))
+
+        # No empty-prev roots — fall back to min counter
+        kel.docs = [
+            {
+                "id": "m1",
+                "counter": 5,
+                "branch_inception_public_key_hash": "nr",
+                "public_key_hash": "M1",
+                "prerotated_key_hash": "",
+                "txn": {"prev_public_key_hash": "P"},
+            },
+            {
+                "id": "m0",
+                "counter": 3,
+                "branch_inception_public_key_hash": "nr",
+                "public_key_hash": "M0",
+                "prerotated_key_hash": "",
+                "txn": {"prev_public_key_hash": "P"},
+            },
+        ]
+        tip = await mgr._peer_branch_tip_by_hash_link("nr")
+        self.assertEqual(tip["id"], "m0")
+
+        # Bad counter field exercises _ctr except path (prev set so
+        # short-circuit does not skip _ctr in the roots filter).
+        kel.docs = [
+            {
+                "id": "badc",
+                "counter": "not-an-int",
+                "branch_inception_public_key_hash": "bc",
+                "public_key_hash": "BC",
+                "prerotated_key_hash": "",
+                "txn": {"prev_public_key_hash": "PARENT"},
+            },
+            {
+                "id": "badc2",
+                "counter": "also-bad",
+                "branch_inception_public_key_hash": "bc",
+                "public_key_hash": "BD",
+                "prerotated_key_hash": "",
+                "txn": {"prev_public_key_hash": "PARENT2"},
+            },
+        ]
+        tip = await mgr._peer_branch_tip_by_hash_link("bc")
+        self.assertIsNotNone(tip)
+
+        # Same-id / self-skip + others fallback when prev does not match
+        kel.docs = [
+            {
+                "id": "r",
+                "counter": 0,
+                "branch_inception_public_key_hash": "fb",
+                "public_key_hash": "R",
+                "prerotated_key_hash": "N",
+                "txn": {"prev_public_key_hash": ""},
+            },
+            {
+                "id": "n1",
+                "counter": 1,
+                "branch_inception_public_key_hash": "fb",
+                "public_key_hash": "N",
+                "prerotated_key_hash": "",
+                "txn": {"prev_public_key_hash": "OTHER"},
+            },
+            {
+                "id": "n2",
+                "counter": 5,
+                "branch_inception_public_key_hash": "fb",
+                "public_key_hash": "N",
+                "prerotated_key_hash": "",
+                "txn": {"prev_public_key_hash": "ALSO"},
+            },
+        ]
+        tip = await mgr._peer_branch_tip_by_hash_link("fb")
+        self.assertEqual(tip["id"], "n2")
+
+        # Duplicate id on same pkh exercises continue-self branches
+        kel.docs = [
+            {
+                "id": "dup",
+                "counter": 0,
+                "branch_inception_public_key_hash": "dupb",
+                "public_key_hash": "D",
+                "prerotated_key_hash": "D",
+                "txn": {"prev_public_key_hash": ""},
+            },
+            {
+                "id": "dup",
+                "counter": 1,
+                "branch_inception_public_key_hash": "dupb",
+                "public_key_hash": "D",
+                "prerotated_key_hash": "",
+                "txn": {"prev_public_key_hash": "D"},
+            },
+        ]
+        tip = await mgr._peer_branch_tip_by_hash_link("dupb")
+        self.assertIsNotNone(tip)
+
+    async def test_resume_root_only_sets_prev_to_tip_pkh(self):
+        """Counter-0 tip with pkh==kp0 sets prev_pkh to tip pkh."""
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        from yadacoin.core.keyrotation import _CoincurvePrivateKey, derive_secure_path
+
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        second_factor = "mysecret"
+        peer_sig = "rootOnly_sig"
+        peer_factor = mgr.peer_branch_factor(peer_sig)
+        root_depth = self.KEL_DEPTH
+        cur_root = {
+            "private_key": bytes.fromhex(self.PRIV_HEX),
+            "chain_code": bytes.fromhex(self._cc_hex()),
+        }
+        for _ in range(root_depth):
+            cur_root = derive_secure_path(
+                cur_root["private_key"], cur_root["chain_code"], second_factor
+            )
+        kp0 = derive_secure_path(
+            cur_root["private_key"], cur_root["chain_code"], peer_factor
+        )
+        kp0_address = str(
+            P2PKHBitcoinAddress.from_pubkey(
+                _CoincurvePrivateKey(kp0["private_key"]).public_key.format(
+                    compressed=True
+                )
+            )
+        )
+        cfg.mongo.async_db.key_event_log.docs.append(
+            {
+                "branch_peer": peer_sig,
+                "counter": 0,
+                "root_depth": root_depth,
+                "branch_inception_public_key_hash": kp0_address,
+                "public_key_hash": kp0_address,
+                "prerotated_key_hash": "1NextOnly",
+                "txn": {
+                    "public_key_hash": kp0_address,
+                    "prerotated_key_hash": "1NextOnly",
+                    "prev_public_key_hash": "1SomeParent",
+                },
+            }
+        )
+        state, is_new = await mgr._ensure_peer_branch_ready(peer_sig)
+        self.assertFalse(is_new)
+        self.assertEqual(state["counter"], 0)
+        self.assertEqual(state["prev_pkh"], kp0_address)
+
+    async def test_resume_unmatched_tip_pkh_falls_back_to_kp0(self):
+        """If tip.public_key_hash is not on the derived path, resume at Kp0."""
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        from yadacoin.core.keyrotation import _CoincurvePrivateKey, derive_secure_path
+
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        second_factor = "mysecret"
+        peer_sig = "unmatchedTip_sig"
+        peer_factor = mgr.peer_branch_factor(peer_sig)
+        root_depth = self.KEL_DEPTH
+        cur_root = {
+            "private_key": bytes.fromhex(self.PRIV_HEX),
+            "chain_code": bytes.fromhex(self._cc_hex()),
+        }
+        for _ in range(root_depth):
+            cur_root = derive_secure_path(
+                cur_root["private_key"], cur_root["chain_code"], second_factor
+            )
+        kp0 = derive_secure_path(
+            cur_root["private_key"], cur_root["chain_code"], peer_factor
+        )
+        kp0_address = str(
+            P2PKHBitcoinAddress.from_pubkey(
+                _CoincurvePrivateKey(kp0["private_key"]).public_key.format(
+                    compressed=True
+                )
+            )
+        )
+        foreign = "1NotOnPathXXXXXXXXXXXXXXXXXXXXXX"
+        cfg.mongo.async_db.key_event_log.docs.extend(
+            [
+                {
+                    "branch_peer": peer_sig,
+                    "counter": 0,
+                    "root_depth": root_depth,
+                    "branch_inception_public_key_hash": kp0_address,
+                    "public_key_hash": kp0_address,
+                    "prerotated_key_hash": foreign,
+                    "txn": {
+                        "public_key_hash": kp0_address,
+                        "prerotated_key_hash": foreign,
+                        "prev_public_key_hash": "",
+                    },
+                },
+                {
+                    "branch_inception_public_key_hash": kp0_address,
+                    "counter": 3,
+                    "public_key_hash": foreign,
+                    "prerotated_key_hash": "1AlsoNotOnPathXXXXXXXXXXXXXXXXX",
+                    "txn": {
+                        "public_key_hash": foreign,
+                        "prerotated_key_hash": "1AlsoNotOnPathXXXXXXXXXXXXXXXXX",
+                        "prev_public_key_hash": kp0_address,
+                    },
+                },
+            ]
+        )
+        state, is_new = await mgr._ensure_peer_branch_ready(peer_sig)
+        self.assertFalse(is_new)
+        self.assertEqual(state["counter"], 0)
+        self.assertEqual(state["prev_pkh"], kp0_address)
+        self.assertTrue(
+            any(
+                "could not match tip pkh" in str(c)
+                for c in cfg.app_log.warning.call_args_list
+            )
+        )
+
+    async def test_resume_tip_pre_mismatch_logs_warning(self):
+        """When derived next hop != tip.prerotated, warn but still resume."""
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        from yadacoin.core.keyrotation import _CoincurvePrivateKey, derive_secure_path
+
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        second_factor = "mysecret"
+        peer_sig = "preMismatch_sig"
+        peer_factor = mgr.peer_branch_factor(peer_sig)
+        root_depth = self.KEL_DEPTH
+        cur_root = {
+            "private_key": bytes.fromhex(self.PRIV_HEX),
+            "chain_code": bytes.fromhex(self._cc_hex()),
+        }
+        for _ in range(root_depth):
+            cur_root = derive_secure_path(
+                cur_root["private_key"], cur_root["chain_code"], second_factor
+            )
+        kp0 = derive_secure_path(
+            cur_root["private_key"], cur_root["chain_code"], peer_factor
+        )
+        kp0_address = str(
+            P2PKHBitcoinAddress.from_pubkey(
+                _CoincurvePrivateKey(kp0["private_key"]).public_key.format(
+                    compressed=True
+                )
+            )
+        )
+        wrong_pre = "1WrongPreXXXXXXXXXXXXXXXXXXXXXX"
+        cfg.mongo.async_db.key_event_log.docs.extend(
+            [
+                {
+                    "branch_peer": peer_sig,
+                    "counter": 0,
+                    "root_depth": root_depth,
+                    "branch_inception_public_key_hash": kp0_address,
+                    "public_key_hash": kp0_address,
+                    "prerotated_key_hash": kp0_address,
+                    "id": "root",
+                    "txn": {
+                        "public_key_hash": kp0_address,
+                        "prerotated_key_hash": kp0_address,
+                        "prev_public_key_hash": "",
+                    },
+                },
+                {
+                    "branch_inception_public_key_hash": kp0_address,
+                    "counter": 1,
+                    "public_key_hash": kp0_address,
+                    "prerotated_key_hash": wrong_pre,
+                    "id": "adv1",
+                    "txn": {
+                        "public_key_hash": kp0_address,
+                        "prerotated_key_hash": wrong_pre,
+                        "prev_public_key_hash": kp0_address,
+                    },
+                },
+            ]
+        )
+        state, is_new = await mgr._ensure_peer_branch_ready(peer_sig)
+        self.assertFalse(is_new)
+        self.assertEqual(state["counter"], 1)
+        self.assertTrue(
+            any(
+                "tip.prerotated" in str(c) or "next-hop" in str(c)
+                for c in cfg.app_log.warning.call_args_list
+            )
+        )
 
 
 # ---------------------------------------------------------------------------
