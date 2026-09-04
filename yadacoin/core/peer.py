@@ -23,6 +23,7 @@ from yadacoin.core.config import Config
 from yadacoin.core.identity import Identity
 from yadacoin.core.transaction import Transaction
 from yadacoin.enums.peertypes import PEER_TYPES
+from yadacoin.tcpsocket.base import OUTBOUND_IGNORE_TTL, is_outbound_ignored
 
 
 def _peer_key(peer):
@@ -329,9 +330,10 @@ class Peer:
                 return gw.identity.username_signature
             return getattr(gw, "identity_announcement", None)
 
-        while (
-            _gw_ignore_key(self.config.seed_gateways[username_signatures[seed_select]])
-            in self.config.nodeClient.outbound_ignore[SeedGateway.__name__]
+        ignore_map = self.config.nodeClient.outbound_ignore[SeedGateway.__name__]
+        while is_outbound_ignored(
+            ignore_map,
+            _gw_ignore_key(self.config.seed_gateways[username_signatures[seed_select]]),
         ):
             seed_select += 1
             if num_reset and seed_select >= first_number:
@@ -395,13 +397,12 @@ class Peer:
             **self.config.nodeServer.inbound_streams[outbound_class.__name__],
             **self.config.nodeServer.inbound_pending[outbound_class.__name__],
         }
-        outbound_ignored = {
-            self.config.peer.identity.generate_rid(k): v
-            for k, v in self.config.nodeClient.outbound_ignore[
-                outbound_class.__name__
-            ].items()
-            if (time.time() - v) < 120
-        }
+        ignore_map = self.config.nodeClient.outbound_ignore[outbound_class.__name__]
+        now = time.time()
+        outbound_ignored = {}
+        for k, v in list(ignore_map.items()):
+            if is_outbound_ignored(ignore_map, k, now=now, ttl=OUTBOUND_IGNORE_TTL):
+                outbound_ignored[self.config.peer.identity.generate_rid(k)] = v
         self.config.app_log.info(
             "ensure_peers_connected: outbound_class=%s limit=%s stream_collection=%d outbound_ignored=%d",
             outbound_class.__name__,

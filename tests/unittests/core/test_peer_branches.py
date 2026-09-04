@@ -2,6 +2,7 @@
 Coverage for previously-untested branches in yadacoin/core/peer.py.
 """
 
+import time
 from collections import OrderedDict
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -156,7 +157,9 @@ class TestPeerCalculateSeedGatewayBranches(AsyncTestCase):
         sg1 = MagicMock()
         sg1.identity.username_signature = "sg_sig_1"
         sgs = OrderedDict([("sg_sig_1", sg1)])
-        nc = make_node_client_mock(outbound_ignore={"SeedGateway": {"sg_sig_1": True}})
+        nc = make_node_client_mock(
+            outbound_ignore={"SeedGateway": {"sg_sig_1": time.time()}}
+        )
         with patch.object(self.config, "seed_gateways", sgs, create=True), patch.object(
             self.config, "nodeClient", nc, create=True
         ):
@@ -244,6 +247,43 @@ class TestPeerEnsurePeersConnected(AsyncTestCase):
 
             with patch.object(tornado.ioloop.IOLoop.current(), "spawn_callback"):
                 await user.ensure_peers_connected()
+
+    async def test_with_active_outbound_ignore(self):
+        """Cover ensure_peers_connected building outbound_ignored from TTL map."""
+        user = User.from_dict(SAMPLE_PEER_DICT)
+        mock_sp = MagicMock()
+        mock_sp.identity.username_signature = "sp_sig"
+        mock_sp.identity.public_key = "03other"
+        mock_sp.id_attribute = "rid"
+        mock_sp.rid = "sp-rid"
+        mock_sp.identity_announcement = None
+        mock_peer = MagicMock()
+        mock_peer.identity.generate_rid = MagicMock(return_value="generated_rid")
+        mock_peer.identity.username_signature = "usig"
+        mock_peer.identity.public_key = "03self"
+        nc = make_node_client_mock(
+            outbound_streams={"ServiceProvider": {}},
+            outbound_pending={"ServiceProvider": {}},
+            outbound_ignore={"ServiceProvider": {"sp_sig": time.time()}},
+        )
+        ns = make_node_server_mock(
+            inbound_streams={"ServiceProvider": {}},
+            inbound_pending={"ServiceProvider": {}},
+        )
+        with patch.object(
+            self.config, "service_providers", {"sp_sig": mock_sp}, create=True
+        ), patch.object(self.config, "peer", mock_peer, create=True), patch.object(
+            self.config, "nodeClient", nc, create=True
+        ), patch.object(
+            self.config, "nodeServer", ns, create=True
+        ), patch.object(
+            self.config, "app_log", MagicMock(), create=True
+        ):
+            import tornado.ioloop
+
+            with patch.object(tornado.ioloop.IOLoop.current(), "spawn_callback"):
+                await user.ensure_peers_connected()
+            mock_peer.identity.generate_rid.assert_any_call("sp_sig")
 
 
 class TestPeerConnectBranches(AsyncTestCase):
@@ -866,8 +906,9 @@ class TestExtraBranches(AsyncTestCase):
         sg2 = MagicMock()
         sg2.identity.username_signature = "sg_b"
         sgs = OrderedDict([("sg_a", sg1), ("sg_b", sg2)])
+        now = time.time()
         nc = make_node_client_mock(
-            outbound_ignore={"SeedGateway": {"sg_a": True, "sg_b": True}}
+            outbound_ignore={"SeedGateway": {"sg_a": now, "sg_b": now}}
         )
         with patch.object(self.config, "seed_gateways", sgs, create=True), patch.object(
             self.config, "nodeClient", nc, create=True

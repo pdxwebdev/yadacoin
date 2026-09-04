@@ -535,6 +535,26 @@ class DummyStream:
         return
 
 
+# Seconds a peer stays in outbound_ignore after disconnect/timeout/capacity.
+OUTBOUND_IGNORE_TTL = 120
+
+
+def is_outbound_ignored(ignore_map, key, now=None, ttl=OUTBOUND_IGNORE_TTL):
+    """Return True if key is still ignored; drop expired entries in place."""
+    if key is None or key not in ignore_map:
+        return False
+    ts = ignore_map[key]
+    now = time.time() if now is None else now
+    try:
+        age = now - float(ts)
+    except (TypeError, ValueError):
+        return True
+    if age >= ttl:
+        del ignore_map[key]
+        return False
+    return True
+
+
 class RPCSocketClient(TCPClient):
     outbound_streams = {}
     outbound_pending = {}
@@ -552,7 +572,10 @@ class RPCSocketClient(TCPClient):
             )
             # outbound_ignore is keyed by username_signature (see exception
             # paths / capacity); also accept rid for callers that store that.
-            if id_attr in ignore_map or (usig and usig in ignore_map):
+            # Entries expire after OUTBOUND_IGNORE_TTL (same as ensure_peers_connected).
+            if is_outbound_ignored(ignore_map, id_attr) or is_outbound_ignored(
+                ignore_map, usig
+            ):
                 self.config.app_log.info(
                     "connect: skipping %s %s — in outbound_ignore",
                     peer.__class__.__name__,
