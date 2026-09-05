@@ -57,7 +57,7 @@ GitHub Release, and uploads when secrets are present:
 
 | Target | Track | Secrets |
 |--------|--------|---------|
-| Chrome Web Store | draft upload | `CHROME_EXTENSION_ID`, `CHROME_CLIENT_ID`, `CHROME_CLIENT_SECRET`, `CHROME_REFRESH_TOKEN` |
+| Chrome Web Store | upload + submit for review | `CHROME_EXTENSION_ID`, `CHROME_CLIENT_ID`, `CHROME_CLIENT_SECRET`, `CHROME_REFRESH_TOKEN` |
 | Google Play | `internal`, status `draft` | `PASSWORD_ANDROID_KEYSTORE_BASE64`, `PASSWORD_ANDROID_KEYSTORE_PASSWORD`, `PASSWORD_ANDROID_KEY_ALIAS`, `PASSWORD_ANDROID_KEY_PASSWORD`, `PLAY_SERVICE_ACCOUNT_JSON` |
 | App Store Connect | TestFlight / processing | `BUILD_CERTIFICATE_BASE64`, `P12_PASSWORD`, `PASSWORD_BUILD_PROVISION_PROFILE_BASE64`, `PASSWORD_PROVISIONING_PROFILE_NAME`, `KEYCHAIN_PASSWORD`, `APPLE_TEAM_ID`, plus `APP_STORE_CONNECT_API_KEY` + `APP_STORE_CONNECT_KEY_ID` + `APP_STORE_CONNECT_ISSUER_ID` (or username/app-specific password) |
 
