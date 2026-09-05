@@ -21,7 +21,7 @@
     "build:android": "bash ./scripts/build.sh android",
     "build:ios": "bash ./scripts/build.sh ios",
     "build:all": "bash ./scripts/build.sh all",
-    "package:extension": "npm run build:extension && npm run package -w @yadacoin/password-extension",
+    "package:extension": "npm run build:core && npm run build:ui && npm run build:extension && npm run package -w @yadacoin/password-extension",
     "set-version": "bash ./scripts/set-version.sh"
   },
   "engines": {
