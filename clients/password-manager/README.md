@@ -65,4 +65,8 @@ Create the store listings and first manual upload once. CI then ships updates.
 Bump versions locally with `npm run set-version -- 1.2.3` before tagging if you
 want the commit to match the tag. CI also applies the tag version at build time.
 
+**Google Play listing copy, Data safety answers, privacy policy, graphics:**
+`apps/password-native/android/store/` (`PLAY_LISTING.md`, `DATA_SAFETY.md`,
+`privacy-policy.html`, `play-icon-512.png`, `play-feature-graphic-1024x500.png`).
+
 
