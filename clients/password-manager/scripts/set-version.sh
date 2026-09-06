@@ -25,25 +25,32 @@ bump_json(root / "package.json")
 bump_json(root / "apps/extension/package.json")
 bump_json(root / "apps/extension/manifest.json")
 bump_json(root / "apps/password-native/package.json")
+bump_json(root / "apps/demo-native/package.json")
 
-gradle = root / "apps/password-native/android/app/build.gradle"
-g = gradle.read_text()
-g = re.sub(
-    r'versionName \(System\.getenv\("ANDROID_VERSION_NAME"\) \?: "[^"]+"\)',
-    'versionName (System.getenv("ANDROID_VERSION_NAME") ?: "%s")' % version,
-    g,
-)
-g = re.sub(
-    r'versionCode \(System\.getenv\("ANDROID_VERSION_CODE"\) \? System\.getenv\("ANDROID_VERSION_CODE"\)\.toInteger\(\) : \d+\)',
-    'versionCode (System.getenv("ANDROID_VERSION_CODE") ? System.getenv("ANDROID_VERSION_CODE").toInteger() : %s)' % version_code,
-    g,
-)
-gradle.write_text(g)
+def bump_gradle(path):
+    g = path.read_text()
+    g = re.sub(
+        r'versionName \(System\.getenv\("ANDROID_VERSION_NAME"\) \?: "[^"]+"\)',
+        'versionName (System.getenv("ANDROID_VERSION_NAME") ?: "%s")' % version,
+        g,
+    )
+    g = re.sub(
+        r'versionCode \(System\.getenv\("ANDROID_VERSION_CODE"\) \? System\.getenv\("ANDROID_VERSION_CODE"\)\.toInteger\(\) : \d+\)',
+        'versionCode (System.getenv("ANDROID_VERSION_CODE") ? System.getenv("ANDROID_VERSION_CODE").toInteger() : %s)' % version_code,
+        g,
+    )
+    path.write_text(g)
 
-pbx = root / "apps/password-native/ios/App/App.xcodeproj/project.pbxproj"
-p = pbx.read_text()
-p = re.sub(r"MARKETING_VERSION = [^;]+;", "MARKETING_VERSION = %s;" % version, p)
-p = re.sub(r"CURRENT_PROJECT_VERSION = [^;]+;", "CURRENT_PROJECT_VERSION = %s;" % version_code, p)
-pbx.write_text(p)
+bump_gradle(root / "apps/password-native/android/app/build.gradle")
+bump_gradle(root / "apps/demo-native/android/app/build.gradle")
+
+def bump_pbx(path):
+    p = path.read_text()
+    p = re.sub(r"MARKETING_VERSION = [^;]+;", "MARKETING_VERSION = %s;" % version, p)
+    p = re.sub(r"CURRENT_PROJECT_VERSION = [^;]+;", "CURRENT_PROJECT_VERSION = %s;" % version_code, p)
+    path.write_text(p)
+
+bump_pbx(root / "apps/password-native/ios/App/App.xcodeproj/project.pbxproj")
+bump_pbx(root / "apps/demo-native/ios/App/App.xcodeproj/project.pbxproj")
 print("set password-manager version %s (%s)" % (version, version_code))
 PY

@@ -52,18 +52,21 @@ cd ../demo-native && npx cap add ios && npx cap sync && npx cap open ios
 ## Store release
 
 Push a tag `password-vX.Y.Z` (for example `password-v0.1.0`). GitHub Actions
-builds the Chrome zip, signed Android AAB, and iOS IPA, attaches them to a
-GitHub Release, and uploads when secrets are present:
+builds the Chrome zip, Yada Password + Yada Auth Demo Android AABs and iOS IPAs,
+attaches them to a GitHub Release, and uploads when secrets are present:
 
-| Target | Track | Secrets |
-|--------|--------|---------|
-| Chrome Web Store | upload + submit for review | `CHROME_EXTENSION_ID`, `CHROME_CLIENT_ID`, `CHROME_CLIENT_SECRET`, `CHROME_REFRESH_TOKEN` |
-| Google Play | `internal`, status `draft` | `PASSWORD_ANDROID_KEYSTORE_BASE64`, `PASSWORD_ANDROID_KEYSTORE_PASSWORD`, `PASSWORD_ANDROID_KEY_ALIAS`, `PASSWORD_ANDROID_KEY_PASSWORD`, `PLAY_SERVICE_ACCOUNT_JSON` |
-| App Store Connect | TestFlight / processing | `BUILD_CERTIFICATE_BASE64`, `P12_PASSWORD`, `PASSWORD_BUILD_PROVISION_PROFILE_BASE64`, `PASSWORD_PROVISIONING_PROFILE_NAME`, `KEYCHAIN_PASSWORD`, `APPLE_TEAM_ID`, plus `APP_STORE_CONNECT_API_KEY` + `APP_STORE_CONNECT_KEY_ID` + `APP_STORE_CONNECT_ISSUER_ID` (or username/app-specific password) |
+| Target | Package / app | Track | Secrets |
+|--------|---------------|--------|---------|
+| Chrome Web Store | extension | upload + submit for review | `CHROME_EXTENSION_ID`, `CHROME_CLIENT_ID`, `CHROME_CLIENT_SECRET`, `CHROME_REFRESH_TOKEN` |
+| Google Play (Password) | `io.yadacoin.passwordrotation` | `internal`, status `draft` | `PASSWORD_ANDROID_KEYSTORE_*`, `PLAY_SERVICE_ACCOUNT_JSON` |
+| Google Play (Auth Demo) | `io.yadacoin.passwordrotation.demo` | `internal`, status `draft` | same Android keystore + Play service account |
+| App Store Connect (Password) | `io.yadacoin.passwordrotation` | TestFlight / processing | `BUILD_CERTIFICATE_BASE64`, `P12_PASSWORD`, `PASSWORD_BUILD_PROVISION_PROFILE_BASE64`, `PASSWORD_PROVISIONING_PROFILE_NAME`, `KEYCHAIN_PASSWORD`, `APPLE_TEAM_ID`, plus App Store Connect API key (or username/app-specific password) |
+| App Store Connect (Auth Demo) | `io.yadacoin.passwordrotation.demo` | TestFlight / processing | same cert/team + `DEMO_BUILD_PROVISION_PROFILE_BASE64`, `DEMO_PROVISIONING_PROFILE_NAME` |
 
 Create the store listings and first manual upload once. CI then ships updates.
 Bump versions locally with `npm run set-version -- 1.2.3` before tagging if you
-want the commit to match the tag. CI also applies the tag version at build time.
+want the commit to match the tag (extension, password-native, and demo-native).
+CI also applies the tag version at build time.
 
 **Google Play listing copy, Data safety answers, privacy policy, graphics:**
 `apps/password-native/android/store/` (`PLAY_LISTING.md`, `DATA_SAFETY.md`,
