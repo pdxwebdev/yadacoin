@@ -4245,6 +4245,12 @@ function sha256Hex(data) {
   return bytesToHex2(sha2562(bytes));
 }
 var HEX64 = /^[0-9a-f]{64}$/i;
+function isPasswordHash(value) {
+  const v = (value || "").trim();
+  if (HEX64.test(v))
+    return true;
+  return parsePhc(v) !== null;
+}
 function normalizeId(id) {
   const n = id.toLowerCase();
   if (n === "pbkdf2-hmac-sha256" || n === "pbkdf2-hmac-sha-256")
@@ -9120,6 +9126,32 @@ function generateSitePassword(branchKey, siteId, counter) {
 }
 
 // ../../packages/core/dist/relationship.js
+var PASSWORD_RELATIONSHIP_KEY = "password";
+function buildPasswordRelationshipJson(commit) {
+  validateDualCommit(commit);
+  return JSON.stringify({
+    [PASSWORD_RELATIONSHIP_KEY]: {
+      prerotated_password_hash: normalizeStoredHash(commit.prerotated_password_hash),
+      twice_prerotated_password_hash: normalizeStoredHash(commit.twice_prerotated_password_hash)
+    }
+  });
+}
+function validateDualCommit(commit) {
+  const pre = commit.prerotated_password_hash?.trim() ?? "";
+  const twice = commit.twice_prerotated_password_hash?.trim() ?? "";
+  if (!pre || !twice)
+    throw new Error("both password hashes required");
+  if (!isPasswordHash(pre) || !isPasswordHash(twice)) {
+    throw new Error("password hashes must be PHC strings or legacy 64-char hex");
+  }
+  if (normalizeStoredHash(pre) === normalizeStoredHash(twice)) {
+    throw new Error("password hashes must differ");
+  }
+}
+function normalizeStoredHash(value) {
+  const v = value.trim();
+  return /^[0-9a-f]{64}$/i.test(v) ? v.toLowerCase() : v;
+}
 function identityRelationshipString(username, usernameSignature, identityType = "social") {
   return username + usernameSignature + identityType;
 }
@@ -9210,6 +9242,7 @@ async function httpJson(api, path, init) {
   try {
     res = await fetchImpl(url, {
       ...init,
+      credentials: init?.credentials ?? "include",
       headers: {
         Accept: "application/json",
         ...init?.body ? { "Content-Type": "application/json" } : {},
@@ -9293,10 +9326,26 @@ function isAlreadyInceptedError(message) {
   const m = (message || "").toLowerCase();
   return m.includes("already onchain") || m.includes("already on-chain") || m.includes("already incepted") || m.includes("duplicate kel inception") || m.includes("key event log already exists");
 }
+function kelRotationDepth(entries) {
+  if (!Array.isArray(entries) || !entries.length)
+    return 0;
+  let inception = 0;
+  let rotations = 0;
+  for (const e of entries) {
+    const prev = e && e.prev_public_key_hash || "";
+    if (!prev) {
+      if (!inception)
+        inception = 1;
+    } else {
+      rotations += 1;
+    }
+  }
+  return inception + rotations;
+}
 async function fetchKelDepth(api, publicKeyHex) {
   const kel = await httpJson(api, `/key-event-log?public_key=${encodeURIComponent(publicKeyHex)}`);
   if (kel.ok && Array.isArray(kel.body?.key_event_log)) {
-    return kel.body.key_event_log.length;
+    return kelRotationDepth(kel.body.key_event_log);
   }
   return 0;
 }
@@ -9325,10 +9374,19 @@ async function registerSite(api, identity, siteId, time = Math.floor(Date.now() 
   const kp3 = deriveMaterial(kp2, peerFactor);
   const existing = await fetchSiteTip(api, branchPeer);
   if (existing.ok && existing.body?.tip) {
-    await httpJson(api, "/password-rotation/offchain/reset", {
+    if (!_opts?.replaceExisting) {
+      throw new Error("site already has a branch on the node \u2014 resync instead of registering again");
+    }
+    const resetRes = await httpJson(api, "/password-rotation/offchain/reset", {
       method: "POST",
-      body: JSON.stringify({ branch_peer: branchPeer })
+      body: JSON.stringify({
+        branch_peer: branchPeer,
+        inception_public_key_hash: identity.inceptionPublicKeyHash
+      })
     });
+    if (!resetRes.ok || resetRes.body?.status === false) {
+      throw new Error(resetRes.body?.message || "failed to replace existing site branch");
+    }
   }
   const pwCurrent = generateSitePassword(kp1, branchPeer, 1);
   const pwNext = generateSitePassword(kp2, branchPeer, 2);
@@ -9357,14 +9415,19 @@ async function registerSite(api, identity, siteId, time = Math.floor(Date.now() 
       throw new Error(rootRes.body?.message || `offchain root failed (${rootRes.status})`);
     }
   }
+  const step1Commit = {
+    prerotated_password_hash: hashPassword(pwCurrent),
+    twice_prerotated_password_hash: hashPassword(pwNext)
+  };
+  const step1RelJson = buildPasswordRelationshipJson(step1Commit);
   const step1Txn = buildAndSignTxn(kp1, {
     time: time + 1,
     outputs: [{ to: kp2.address, value: 0 }],
     prerotatedKeyHash: kp2.address,
     twicePrerotatedKeyHash: kp3.address,
     prevPublicKeyHash: kp0.address,
-    relationshipHash: "",
-    relationship: ""
+    relationshipHash: sha256Hex(step1RelJson),
+    relationship: JSON.parse(step1RelJson)
   });
   const stepRes = await httpJson(api, "/password-rotation/offchain", {
     method: "POST",
@@ -9441,7 +9504,14 @@ async function rotateSitePassword(api, identity, site, time = Math.floor(Date.no
     kp0: keys.kp0
   }, tipCounter);
   if (tip.prerotated_key_hash && live.tip.address !== tip.prerotated_key_hash) {
-    throw new Error("branch keys do not match the tip \u2014 register this site again");
+    if (opts?._replaced) {
+      throw new Error("branch keys do not match the tip after rebuild");
+    }
+    const replaced = await registerSite(api, identity, keys.branchPeer, time, { replaceExisting: true });
+    return rotateSitePassword(api, identity, replaced.site, time, {
+      ...opts,
+      _replaced: true
+    });
   }
   let password = live.nextPassword || site.nextPassword || live.currentPassword;
   let nextReveal = "";
@@ -9461,21 +9531,28 @@ async function rotateSitePassword(api, identity, site, time = Math.floor(Date.no
   const next = deriveMaterial(signer, peerFactor);
   const twice = deriveMaterial(next, peerFactor);
   const newTwicePassword = generateSitePassword(next, site.branchPeer, tipCounter + 2);
+  const consumedPassword = live.currentPassword || password;
+  const newPrePassword = live.nextPassword || newTwicePassword;
+  const rotateRelJson = buildPasswordRelationshipJson({
+    prerotated_password_hash: hashPassword(newPrePassword),
+    twice_prerotated_password_hash: hashPassword(newTwicePassword)
+  });
   const txn = buildAndSignTxn(signer, {
     time,
     outputs: [{ to: next.address, value: 0 }],
     prerotatedKeyHash: next.address,
     twicePrerotatedKeyHash: twice.address,
     prevPublicKeyHash: live.tipPrevPkh,
-    relationshipHash: "",
-    relationship: ""
+    relationshipHash: sha256Hex(rotateRelJson),
+    relationship: JSON.parse(rotateRelJson)
   });
   const nextCounter = tipCounter + 1;
-  const res = await httpJson(api, "/password-rotation/offchain", {
+  const res = await httpJson(api, "/password-rotation/verify", {
     method: "POST",
     body: JSON.stringify({
       branch_peer: site.branchPeer,
       counter: nextCounter,
+      password: consumedPassword,
       branch_inception_public_key_hash: site.branchInceptionPkh,
       inception_public_key_hash: identity.inceptionPublicKeyHash,
       txn
@@ -9484,7 +9561,7 @@ async function rotateSitePassword(api, identity, site, time = Math.floor(Date.no
   if (!res.ok || res.body?.status === false) {
     throw new Error(res.body?.message || `sign-in/rotate failed (${res.status})`);
   }
-  const usedPassword = password;
+  const usedPassword = consumedPassword;
   const updated = {
     ...live,
     tip: next,
@@ -9500,6 +9577,26 @@ async function rotateSitePassword(api, identity, site, time = Math.floor(Date.no
     nextPassword: nextReveal || newTwicePassword,
     authenticated: true
   };
+}
+async function resyncSiteFromNode(api, identity, siteId) {
+  const keys = siteKeysForOrigin(identity, siteId);
+  const tipRes = await fetchSiteTip(api, keys.branchPeer);
+  if (!tipRes.ok || tipRes.body?.status === false || !tipRes.body?.tip) {
+    throw new Error("site not registered on node \u2014 register this origin first");
+  }
+  const tip = tipRes.body.tip;
+  const counter = Number(tip.counter ?? 0);
+  if (!Number.isFinite(counter) || counter < 0) {
+    throw new Error("invalid tip counter on node");
+  }
+  const rebuilt = siteAtCounter(identity, { siteId: keys.branchPeer, branchPeer: keys.branchPeer, kp0: keys.kp0 }, counter);
+  if (tip.prerotated_key_hash && rebuilt.tip.address !== tip.prerotated_key_hash) {
+    const replaced = await registerSite(api, identity, keys.branchPeer, void 0, {
+      replaceExisting: true
+    });
+    return replaced.site;
+  }
+  return rebuilt;
 }
 async function fetchSiteTip(api, branchPeer) {
   return httpJson(api, `/password-rotation/offchain/tip?branch_peer=${encodeURIComponent(branchPeer)}`);
@@ -9527,7 +9624,7 @@ async function resyncVaultFromNode(api, identity, sites) {
   let kelDepth = identity.mainDepth;
   const kelRes = await httpJson(api, `/key-event-log?public_key=${encodeURIComponent(identity.k0.publicKeyHex)}`);
   if (kelRes.ok && Array.isArray(kelRes.body?.key_event_log)) {
-    kelDepth = kelRes.body.key_event_log.length;
+    kelDepth = kelRotationDepth(kelRes.body.key_event_log);
   } else if (kelRes.status === 404 || kelRes.body?.status === false) {
     kelDepth = 0;
   }
@@ -9541,6 +9638,7 @@ async function resyncVaultFromNode(api, identity, sites) {
   };
   const removedSites = [];
   const rewoundSites = [];
+  const replacedSites = [];
   const nextSites = {};
   for (const [key, site] of Object.entries(sites)) {
     const keys = siteKeysForOrigin(nextIdentity, site.branchPeer || site.siteId || key);
@@ -9556,13 +9654,12 @@ async function resyncVaultFromNode(api, identity, sites) {
       continue;
     }
     const inception = tip.branch_inception_public_key_hash || "";
-    if (inception && inception !== keys.kp0.address) {
-      removedSites.push(key);
-      continue;
-    }
     const rebuilt = siteAtCounter(nextIdentity, { siteId: keys.branchPeer, branchPeer: keys.branchPeer, kp0: keys.kp0 }, counter);
-    if (tip.prerotated_key_hash && rebuilt.tip.address !== tip.prerotated_key_hash) {
-      removedSites.push(key);
+    const keysMismatch = inception && inception !== keys.kp0.address || !!(tip.prerotated_key_hash && rebuilt.tip.address !== tip.prerotated_key_hash);
+    if (keysMismatch) {
+      const replaced = await registerSite(api, nextIdentity, keys.branchPeer, void 0, { replaceExisting: true });
+      nextSites[key] = replaced.site;
+      replacedSites.push(key);
       continue;
     }
     nextSites[key] = rebuilt;
@@ -9575,6 +9672,7 @@ async function resyncVaultFromNode(api, identity, sites) {
     sites: nextSites,
     removedSites,
     rewoundSites,
+    replacedSites,
     kelDepth
   };
 }
@@ -10125,6 +10223,21 @@ function pinFromStored(s) {
     sha256CertFingerprints: s.androidCertSha256 || []
   };
 }
+function lookupStoredSite(sites, siteKey) {
+  if (!sites) return null;
+  if (sites[siteKey]) return { key: siteKey, site: sites[siteKey] };
+  const norm = normalizeSiteId(siteKey);
+  if (norm && sites[norm]) return { key: norm, site: sites[norm] };
+  for (const [k, s] of Object.entries(sites)) {
+    if (s.siteId === siteKey || s.siteId === norm || s.branchPeer === siteKey || s.branchPeer === norm) {
+      return { key: k, site: s };
+    }
+  }
+  return null;
+}
+function storeKeyForSite(site, fallbackSiteKey) {
+  return site.branchPeer || normalizeSiteId(site.siteId || fallbackSiteKey) || fallbackSiteKey;
+}
 function applyPin(stored, pin) {
   if (!pin?.packageName) return stored;
   return {
@@ -10488,15 +10601,29 @@ async function approvePending() {
     const identity = identityFromVault(v);
     const siteKey = req.site;
     if (req.action === "status") {
-      const stored = v.sites[siteKey];
+      let hit = lookupStoredSite(v.sites, siteKey);
+      if (!hit) {
+        try {
+          const imported = await resyncSiteFromNode(
+            { baseUrl: nodeUrl },
+            identity,
+            siteKey
+          );
+          const sk = storeKeyForSite(imported, siteKey);
+          v.sites[sk] = applyPin(storeSite(imported), pin);
+          await saveVault(v);
+          hit = { key: sk, site: v.sites[sk] };
+        } catch {
+        }
+      }
       await respond(
         {
           nonce: req.nonce,
           ok: true,
           action: "status",
-          registered: !!stored,
-          counter: stored?.counter ?? null,
-          message: stored ? "registered" : "not registered"
+          registered: !!hit,
+          counter: hit?.site.counter ?? null,
+          message: hit ? "registered" : "not registered"
         },
         req.callback
       );
@@ -10504,18 +10631,29 @@ async function approvePending() {
       return;
     }
     if (req.action === "register") {
-      if (v.sites[siteKey]) {
-        const keys = siteKeysForOrigin(identity, siteKey);
-        const tipRes = await fetchSiteTip({ baseUrl: nodeUrl }, keys.branchPeer);
-        const counter = Number(
-          tipRes.body?.tip?.counter ?? v.sites[siteKey].counter ?? 0
-        );
-        const live = siteAtCounter(
-          identity,
-          { siteId: siteKey, branchPeer: keys.branchPeer, kp0: keys.kp0 },
-          counter
-        );
-        v.sites[keys.branchPeer] = applyPin(storeSite(live), pin);
+      const keys = siteKeysForOrigin(identity, siteKey);
+      const local = lookupStoredSite(v.sites, siteKey);
+      const tipRes = await fetchSiteTip({ baseUrl: nodeUrl }, keys.branchPeer);
+      const tipOnNode = !!(tipRes.ok && tipRes.body?.tip);
+      if (local || tipOnNode) {
+        let live;
+        if (tipOnNode) {
+          live = await resyncSiteFromNode({ baseUrl: nodeUrl }, identity, siteKey);
+        } else {
+          const counter = Number(local.site.counter ?? 0);
+          live = siteAtCounter(
+            identity,
+            {
+              siteId: keys.branchPeer,
+              branchPeer: keys.branchPeer,
+              kp0: keys.kp0
+            },
+            counter
+          );
+        }
+        const sk2 = storeKeyForSite(live, siteKey);
+        if (local && local.key !== sk2) delete v.sites[local.key];
+        v.sites[sk2] = applyPin(storeSite(live), pinFromStored(local?.site) || pin);
         await saveVault(v);
         await respond(
           {
@@ -10525,17 +10663,20 @@ async function approvePending() {
             registered: true,
             counter: live.counter,
             password: live.currentPassword,
-            nextPasswordHash: hashPassword(live.nextPassword),
-            message: "already registered \xB7 next hash synced to tip"
+            // Hash the RP must check on the next sign-in (= tip prerotated).
+            nextPasswordHash: hashPassword(live.currentPassword),
+            message: tipOnNode ? "branch on node \xB7 vault restored from tip" : "already registered \xB7 tip synced"
           },
           req.callback
         );
+        await refreshHome();
         return;
       }
       const result = await registerSite({ baseUrl: nodeUrl }, identity, siteKey);
       v.mainDepth = result.identity.mainDepth;
       v.tipPrevPkh = result.identity.tipPrevPkh;
-      v.sites[result.site.branchPeer] = applyPin(storeSite(result.site), pin);
+      const sk = storeKeyForSite(result.site, siteKey);
+      v.sites[sk] = applyPin(storeSite(result.site), pin);
       await saveVault(v);
       await respond(
         {
@@ -10545,7 +10686,7 @@ async function approvePending() {
           registered: true,
           counter: result.site.counter,
           password: result.site.currentPassword,
-          nextPasswordHash: hashPassword(result.site.nextPassword),
+          nextPasswordHash: hashPassword(result.site.currentPassword),
           message: `registered \xB7 counter ${result.site.counter}`
         },
         req.callback
@@ -10554,20 +10695,17 @@ async function approvePending() {
       return;
     }
     if (req.action === "signin") {
-      const stored = v.sites[siteKey];
-      if (!stored) {
-        await respond(
-          {
-            nonce: req.nonce,
-            ok: false,
-            action: "signin",
-            message: "site not registered \u2014 register first"
-          },
-          req.callback
-        );
-        return;
+      const local = lookupStoredSite(v.sites, siteKey);
+      let site;
+      try {
+        site = await resyncSiteFromNode({ baseUrl: nodeUrl }, identity, siteKey);
+      } catch (e) {
+        if (local) {
+          site = siteFromStored(local.site);
+        } else {
+          throw e instanceof Error ? e : new Error(String(e) || "site not registered on node");
+        }
       }
-      const site = siteFromStored(stored);
       const result = await rotateSitePassword(
         { baseUrl: nodeUrl },
         identity,
@@ -10575,7 +10713,12 @@ async function approvePending() {
         void 0,
         { expectedHash: req.expectedHash }
       );
-      v.sites[siteKey] = applyPin(storeSite(result.site), pin);
+      const sk = storeKeyForSite(result.site, siteKey);
+      if (local && local.key !== sk) delete v.sites[local.key];
+      v.sites[sk] = applyPin(
+        storeSite(result.site),
+        pinFromStored(local?.site) || pin
+      );
       await saveVault(v);
       await respond(
         {
@@ -10585,7 +10728,8 @@ async function approvePending() {
           registered: true,
           counter: result.site.counter,
           password: result.password,
-          nextPasswordHash: hashPassword(result.nextPassword),
+          // Hash of the password that will unlock the *next* sign-in (new tip pre).
+          nextPasswordHash: hashPassword(result.site.currentPassword),
           message: `signed in & rotated \xB7 counter ${result.site.counter}`
         },
         req.callback
@@ -10632,26 +10776,46 @@ async function main() {
       const mnemonic = $("mnemonic").value.trim();
       const id = unlockIdentity(mnemonic, secondFactor, username);
       const prev = await loadVault();
-      const stored = {
+      const sameIdentity = !!prev && prev.mnemonic === mnemonic && prev.secondFactor === secondFactor && prev.username === username;
+      let stored = {
         nodeUrl,
         mnemonic,
         secondFactor,
         username,
         identityType: "social",
-        mainDepth: prev?.mainDepth ?? 0,
-        tipPrevPkh: prev?.tipPrevPkh ?? "",
-        inceptionDone: prev?.inceptionDone ?? false,
-        sites: prev?.sites ?? {}
+        mainDepth: sameIdentity ? prev.mainDepth ?? 0 : 0,
+        tipPrevPkh: sameIdentity ? prev.tipPrevPkh ?? "" : "",
+        inceptionDone: sameIdentity ? prev.inceptionDone ?? false : false,
+        // Site material is derived from vault + node tip; keep only when identity matches.
+        sites: sameIdentity ? prev.sites ?? {} : {}
       };
-      if (!prev || prev.mnemonic !== mnemonic) {
-        stored.mainDepth = 0;
-        stored.tipPrevPkh = "";
-        stored.inceptionDone = false;
-        stored.sites = {};
-      }
       await saveVault(stored);
-      alertMsg(`Vault saved \xB7 ${id.k0.address.slice(0, 12)}\u2026`, "success");
+      if (nodeUrl) {
+        stored = await ensureIncepted(stored);
+        if (!stored.inceptionDone) {
+          try {
+            let identity = identityFromVault(stored);
+            const txn = buildInceptionTxn(identity);
+            const res = await broadcastTxns({ baseUrl: nodeUrl }, txn);
+            const already = isAlreadyInceptedError(res.body?.message);
+            if (res.ok || already || res.body?.status !== false) {
+              identity = identityAfterInception(identity);
+              stored = {
+                ...stored,
+                mainDepth: identity.mainDepth,
+                tipPrevPkh: identity.tipPrevPkh,
+                inceptionDone: true
+              };
+              await saveVault(stored);
+            }
+          } catch {
+          }
+        }
+      }
+      const ready = stored.inceptionDone ? "ready \xB7 sign-in will auto-sync sites" : "saved \xB7 inception still needed";
+      alertMsg(`Vault saved \xB7 ${id.k0.address.slice(0, 12)}\u2026 \xB7 ${ready}`, "success");
       await refreshHome();
+      if (stored.inceptionDone) setTab(pending ? "request" : "home");
     } catch (e) {
       alertMsg(e instanceof Error ? e.message : String(e), "error");
     }
@@ -10709,7 +10873,8 @@ async function main() {
       const result = await resyncVaultFromNode({ baseUrl: nodeUrl }, identity, sites);
       const nextSites = {};
       for (const [k, s] of Object.entries(result.sites)) {
-        nextSites[k] = storeSite(s);
+        const prev = v.sites?.[k];
+        nextSites[k] = applyPin(storeSite(s), pinFromStored(prev));
       }
       v = {
         ...v,
@@ -10721,10 +10886,18 @@ async function main() {
       };
       await saveVault(v);
       await refreshHome();
+      if (Object.keys(sites).length === 0) {
+        alertMsg(
+          `Resync complete \xB7 KEL depth ${result.kelDepth} \xB7 no local sites yet \u2014 use Register or Sign-in once to import the site branch from the node`,
+          "success"
+        );
+        return;
+      }
       const bits = [
         `KEL depth ${result.kelDepth}`,
         result.rewoundSites.length ? `rewound ${result.rewoundSites.length} site(s)` : "",
-        result.removedSites.length ? `removed ${result.removedSites.length} stale site(s)` : ""
+        result.removedSites.length ? `removed ${result.removedSites.length} stale site(s)` : "",
+        result.replacedSites.length ? `replaced ${result.replacedSites.length} site(s)` : ""
       ].filter(Boolean);
       alertMsg("Resync complete \xB7 " + bits.join(" \xB7 "), "success");
     } catch (e) {

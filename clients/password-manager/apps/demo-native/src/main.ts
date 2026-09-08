@@ -14,6 +14,7 @@ import { applyTheme, resolveTheme } from "@yadacoin/password-shared-ui";
 import { OpenPasswordManager } from "./open-password-manager";
 
 const PENDING_KEY = "yadaDemoPendingNonce";
+const VERIFY_HASH_KEY = "yadaDemoVerifyHash";
 const NODE_KEY = "yadaDemoNodeUrl";
 const AUTH_KEY = "yadaDemoAuth";
 
@@ -38,6 +39,14 @@ function alertMsg(msg: string, kind: "" | "error" | "success" = "") {
 
 function siteId(): string {
   return normalizeSiteId(DEMO_APP_SITE_ID);
+}
+
+function resolveNodeUrl(url: string): string {
+  let u = (url || "").trim().replace(/\/+$/, "");
+  if (Capacitor.getPlatform() === "android") {
+    u = u.replace(/127\.0\.0\.1/g, "10.0.2.2").replace(/localhost/gi, "10.0.2.2");
+  }
+  return u;
 }
 
 function pushLog(ok: boolean, note: string, counter?: number | null) {
@@ -76,24 +85,8 @@ async function openManager(url: string) {
   window.location.href = url;
 }
 
-function startBridge(action: "signin" | "register" | "status") {
-  const nonce = newNonce();
-  sessionStorage.setItem(PENDING_KEY, nonce);
-  const auth = loadAuth();
-  const url = buildPasswordManagerUrl({
-    action,
-    site: siteId(),
-    callback: `${DEMO_HARNESS_SCHEME}://result`,
-    nonce,
-    expectedHash: action === "signin" ? auth?.nextPasswordHash : undefined,
-  });
-  alertMsg(`Opening Yada Password… (${action})`, "");
-  void openManager(url).catch((e) =>
-    alertMsg(e instanceof Error ? e.message : String(e), "error")
-  );
-}
-
 interface DemoAuth {
+  /** Hash of the password expected on the next sign-in (tip prerotated). */
   nextPasswordHash: string;
 }
 
@@ -108,6 +101,68 @@ function loadAuth(): DemoAuth | null {
 
 function saveAuth(auth: DemoAuth) {
   localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
+}
+
+/** Tip password hashes from the node (source of truth across devices). */
+async function fetchTipPasswordHashes(
+  nodeUrl: string
+): Promise<{ pre: string; twice: string; counter: number } | null> {
+  const origin = siteId();
+  const res = await fetch(
+    nodeUrl +
+      "/password-rotation/offchain/tip?branch_peer=" +
+      encodeURIComponent(origin),
+    { headers: { Accept: "application/json" } }
+  );
+  const data = await res.json();
+  if (!res.ok || !data.status || !data.tip) return null;
+  const pw = data.tip.password || {};
+  return {
+    pre: String(pw.prerotated_password_hash || ""),
+    twice: String(pw.twice_prerotated_password_hash || ""),
+    counter: Number(data.tip.counter ?? 0),
+  };
+}
+
+async function startBridge(action: "signin" | "register" | "status") {
+  const nonce = newNonce();
+  sessionStorage.setItem(PENDING_KEY, nonce);
+  sessionStorage.removeItem(VERIFY_HASH_KEY);
+
+  const nodeUrl = resolveNodeUrl(($("nodeUrl") as HTMLInputElement).value);
+  localStorage.setItem(NODE_KEY, nodeUrl);
+
+  let expectedHash: string | undefined;
+  if (action === "signin") {
+    // Prefer node tip prerotated hash so a fresh device never needs local register state.
+    try {
+      if (nodeUrl) {
+        const tip = await fetchTipPasswordHashes(nodeUrl);
+        if (tip?.pre) {
+          expectedHash = tip.pre;
+          sessionStorage.setItem(VERIFY_HASH_KEY, tip.pre);
+        }
+      }
+    } catch {
+      /* fall through to local cache */
+    }
+    if (!expectedHash) {
+      expectedHash = loadAuth()?.nextPasswordHash;
+      if (expectedHash) sessionStorage.setItem(VERIFY_HASH_KEY, expectedHash);
+    }
+  }
+
+  const url = buildPasswordManagerUrl({
+    action,
+    site: siteId(),
+    callback: `${DEMO_HARNESS_SCHEME}://result`,
+    nonce,
+    expectedHash: action === "signin" ? expectedHash : undefined,
+  });
+  alertMsg(`Opening Yada Password… (${action})`, "");
+  void openManager(url).catch((e) =>
+    alertMsg(e instanceof Error ? e.message : String(e), "error")
+  );
 }
 
 function handleResult(result: BridgeResult) {
@@ -126,36 +181,35 @@ function handleResult(result: BridgeResult) {
 
   const nextHash = result.nextPasswordHash || "";
   const password = result.password || "";
+  const verifyHash = sessionStorage.getItem(VERIFY_HASH_KEY) || "";
+  sessionStorage.removeItem(VERIFY_HASH_KEY);
 
   if (result.action === "register" && password && nextHash) {
+    // After register, tip.pre is current; next sign-in consumes current then advances.
+    // nextPasswordHash from vault is hash(new tip current) after register = hash(next at register).
+    // For first sign-in, node tip.pre is authoritative — cache nextHash only as a hint.
     saveAuth({ nextPasswordHash: nextHash });
-    pushLog(true, "registered · stored next password hash", result.counter);
-    alertMsg("Registered. Next password hash stored locally.", "success");
-    $("tipPre").textContent = "(local) current password received";
-    $("tipTwice").textContent = nextHash;
+    pushLog(true, "registered · vault restored/created", result.counter);
+    alertMsg("Registered / restored. Sign-in uses the node tip (no local-only gate).", "success");
     void refreshTip();
     return;
   }
 
-  if (result.action === "signin" && password && nextHash) {
-    const auth = loadAuth();
-    if (!auth?.nextPasswordHash) {
-      pushLog(false, "no stored next hash — register first", result.counter);
-      alertMsg("No stored next password hash — register first", "error");
-      return;
-    }
-    if (!verifyPassword(password, auth.nextPasswordHash)) {
-      pushLog(false, "password does not match stored next hash", result.counter);
+  if (result.action === "signin" && password) {
+    // Verify against tip.pre captured before rotate (multi-device safe). Local cache is optional.
+    if (verifyHash && !verifyPassword(password, verifyHash)) {
+      pushLog(false, "password does not match tip prerotated hash", result.counter);
       alertMsg(
-        "Auth failed: password does not match stored next hash. Tap Register to resync.",
+        "Auth failed: password does not match node tip. Check vault seed/2FA or re-save vault.",
         "error"
       );
+      void refreshTip();
       return;
     }
-    saveAuth({ nextPasswordHash: nextHash });
-    pushLog(true, "signed in · next hash rotated", result.counter);
-    alertMsg("Signed in. Password matched; next hash updated.", "success");
-    $("tipTwice").textContent = nextHash;
+    if (nextHash) saveAuth({ nextPasswordHash: nextHash });
+    pushLog(true, "signed in · tip verified", result.counter);
+    alertMsg("Signed in. Password matched node tip; local cache updated.", "success");
+    if (nextHash) $("tipTwice").textContent = nextHash;
     void refreshTip();
     return;
   }
@@ -177,7 +231,7 @@ async function refreshTip() {
   $("statusPill").textContent = "checking…";
   $("statusPill").className = "pill";
 
-  const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim().replace(/\/+$/, "");
+  const nodeUrl = resolveNodeUrl(($("nodeUrl") as HTMLInputElement).value);
   localStorage.setItem(NODE_KEY, nodeUrl);
   if (!nodeUrl) {
     $("statusPill").textContent = "set node URL";
@@ -186,14 +240,8 @@ async function refreshTip() {
   }
 
   try {
-    const res = await fetch(
-      nodeUrl +
-        "/password-rotation/offchain/tip?branch_peer=" +
-        encodeURIComponent(origin),
-      { headers: { Accept: "application/json" } }
-    );
-    const data = await res.json();
-    if (!res.ok || !data.status) {
+    const tip = await fetchTipPasswordHashes(nodeUrl);
+    if (!tip) {
       $("statusPill").textContent = "not registered";
       $("statusPill").className = "pill warn";
       $("counterPill").textContent = "counter —";
@@ -201,13 +249,13 @@ async function refreshTip() {
       $("tipTwice").textContent = "—";
       return;
     }
-    const tip = data.tip || {};
-    const pw = tip.password || {};
     $("statusPill").textContent = "registered on node";
     $("statusPill").className = "pill ok";
-    $("counterPill").textContent = "counter " + (tip.counter ?? "—");
-    $("tipPre").textContent = pw.prerotated_password_hash || "—";
-    $("tipTwice").textContent = pw.twice_prerotated_password_hash || "—";
+    $("counterPill").textContent = "counter " + tip.counter;
+    $("tipPre").textContent = tip.pre || "—";
+    $("tipTwice").textContent = tip.twice || "—";
+    // Keep local cache aligned with tip so a cold start can still pass expectedHash.
+    if (tip.pre) saveAuth({ nextPasswordHash: tip.pre });
   } catch (e) {
     $("statusPill").textContent = "unreachable";
     $("statusPill").className = "pill bad";
@@ -220,9 +268,9 @@ async function main() {
   $("siteId").textContent = siteId();
   ($("nodeUrl") as HTMLInputElement).value = localStorage.getItem(NODE_KEY) || "";
 
-  $("registerBtn").addEventListener("click", () => startBridge("register"));
-  $("signinBtn").addEventListener("click", () => startBridge("signin"));
-  $("statusBtn").addEventListener("click", () => startBridge("status"));
+  $("registerBtn").addEventListener("click", () => void startBridge("register"));
+  $("signinBtn").addEventListener("click", () => void startBridge("signin"));
+  $("statusBtn").addEventListener("click", () => void startBridge("status"));
   $("refreshBtn").addEventListener("click", () => {
     alertMsg("");
     void refreshTip();

@@ -20,6 +20,7 @@ import {
   normalizeSiteId,
   parseBridgeRequest,
   registerSite,
+  resyncSiteFromNode,
   resyncVaultFromNode,
   rotateSitePassword,
   siteAtCounter,
@@ -77,6 +78,27 @@ function pinFromStored(s: StoredSite | undefined): SiteCallerPin | null {
     packageName: s.androidPackage,
     sha256CertFingerprints: s.androidCertSha256 || [],
   };
+}
+
+/** Resolve local site under siteId or branchPeer (register used to key by branch only). */
+function lookupStoredSite(
+  sites: Record<string, StoredSite> | undefined,
+  siteKey: string
+): { key: string; site: StoredSite } | null {
+  if (!sites) return null;
+  if (sites[siteKey]) return { key: siteKey, site: sites[siteKey]! };
+  const norm = normalizeSiteId(siteKey);
+  if (norm && sites[norm]) return { key: norm, site: sites[norm]! };
+  for (const [k, s] of Object.entries(sites)) {
+    if (s.siteId === siteKey || s.siteId === norm || s.branchPeer === siteKey || s.branchPeer === norm) {
+      return { key: k, site: s };
+    }
+  }
+  return null;
+}
+
+function storeKeyForSite(site: SiteRegistration, fallbackSiteKey: string): string {
+  return site.branchPeer || normalizeSiteId(site.siteId || fallbackSiteKey) || fallbackSiteKey;
 }
 
 function applyPin(stored: StoredSite, pin: SiteCallerPin | null | undefined): StoredSite {
@@ -496,15 +518,30 @@ async function approvePending() {
     const siteKey = req.site;
 
     if (req.action === "status") {
-      const stored = v.sites[siteKey];
+      let hit = lookupStoredSite(v.sites, siteKey);
+      if (!hit) {
+        try {
+          const imported = await resyncSiteFromNode(
+            { baseUrl: nodeUrl },
+            identity,
+            siteKey
+          );
+          const sk = storeKeyForSite(imported, siteKey);
+          v.sites[sk] = applyPin(storeSite(imported), pin);
+          await saveVault(v);
+          hit = { key: sk, site: v.sites[sk]! };
+        } catch {
+          /* still not on node */
+        }
+      }
       await respond(
         {
           nonce: req.nonce,
           ok: true,
           action: "status",
-          registered: !!stored,
-          counter: stored?.counter ?? null,
-          message: stored ? "registered" : "not registered",
+          registered: !!hit,
+          counter: hit?.site.counter ?? null,
+          message: hit ? "registered" : "not registered",
         },
         req.callback
       );
@@ -513,18 +550,31 @@ async function approvePending() {
     }
 
     if (req.action === "register") {
-      if (v.sites[siteKey]) {
-        const keys = siteKeysForOrigin(identity, siteKey);
-        const tipRes = await fetchSiteTip({ baseUrl: nodeUrl }, keys.branchPeer);
-        const counter = Number(
-          tipRes.body?.tip?.counter ?? v.sites[siteKey]!.counter ?? 0
-        );
-        const live = siteAtCounter(
-          identity,
-          { siteId: siteKey, branchPeer: keys.branchPeer, kp0: keys.kp0 },
-          counter
-        );
-        v.sites[keys.branchPeer] = applyPin(storeSite(live), pin);
+      const keys = siteKeysForOrigin(identity, siteKey);
+      const local = lookupStoredSite(v.sites, siteKey);
+      const tipRes = await fetchSiteTip({ baseUrl: nodeUrl }, keys.branchPeer);
+      const tipOnNode = !!(tipRes.ok && tipRes.body?.tip);
+
+      // Local and/or node already has this branch — import/sync tip (new device restore).
+      if (local || tipOnNode) {
+        let live: SiteRegistration;
+        if (tipOnNode) {
+          live = await resyncSiteFromNode({ baseUrl: nodeUrl }, identity, siteKey);
+        } else {
+          const counter = Number(local!.site.counter ?? 0);
+          live = siteAtCounter(
+            identity,
+            {
+              siteId: keys.branchPeer,
+              branchPeer: keys.branchPeer,
+              kp0: keys.kp0,
+            },
+            counter
+          );
+        }
+        const sk = storeKeyForSite(live, siteKey);
+        if (local && local.key !== sk) delete v.sites[local.key];
+        v.sites[sk] = applyPin(storeSite(live), pinFromStored(local?.site) || pin);
         await saveVault(v);
         await respond(
           {
@@ -534,17 +584,23 @@ async function approvePending() {
             registered: true,
             counter: live.counter,
             password: live.currentPassword,
-            nextPasswordHash: hashPassword(live.nextPassword),
-            message: "already registered · next hash synced to tip",
+            // Hash the RP must check on the next sign-in (= tip prerotated).
+            nextPasswordHash: hashPassword(live.currentPassword),
+            message: tipOnNode
+              ? "branch on node · vault restored from tip"
+              : "already registered · tip synced",
           },
           req.callback
         );
+        await refreshHome();
         return;
       }
+
       const result = await registerSite({ baseUrl: nodeUrl }, identity, siteKey);
       v.mainDepth = result.identity.mainDepth;
       v.tipPrevPkh = result.identity.tipPrevPkh;
-      v.sites[result.site.branchPeer] = applyPin(storeSite(result.site), pin);
+      const sk = storeKeyForSite(result.site, siteKey);
+      v.sites[sk] = applyPin(storeSite(result.site), pin);
       await saveVault(v);
       await respond(
         {
@@ -554,7 +610,7 @@ async function approvePending() {
           registered: true,
           counter: result.site.counter,
           password: result.site.currentPassword,
-          nextPasswordHash: hashPassword(result.site.nextPassword),
+          nextPasswordHash: hashPassword(result.site.currentPassword),
           message: `registered · counter ${result.site.counter}`,
         },
         req.callback
@@ -564,20 +620,20 @@ async function approvePending() {
     }
 
     if (req.action === "signin") {
-      const stored = v.sites[siteKey];
-      if (!stored) {
-        await respond(
-          {
-            nonce: req.nonce,
-            ok: false,
-            action: "signin",
-            message: "site not registered — register first",
-          },
-          req.callback
-        );
-        return;
+      const local = lookupStoredSite(v.sites, siteKey);
+      // Always rebuild from node tip so a restored vault needs no re-register.
+      let site: SiteRegistration;
+      try {
+        site = await resyncSiteFromNode({ baseUrl: nodeUrl }, identity, siteKey);
+      } catch (e) {
+        if (local) {
+          site = siteFromStored(local.site);
+        } else {
+          throw e instanceof Error
+            ? e
+            : new Error(String(e) || "site not registered on node");
+        }
       }
-      const site = siteFromStored(stored);
       const result = await rotateSitePassword(
         { baseUrl: nodeUrl },
         identity,
@@ -585,7 +641,12 @@ async function approvePending() {
         undefined,
         { expectedHash: req.expectedHash }
       );
-      v.sites[siteKey] = applyPin(storeSite(result.site), pin);
+      const sk = storeKeyForSite(result.site, siteKey);
+      if (local && local.key !== sk) delete v.sites[local.key];
+      v.sites[sk] = applyPin(
+        storeSite(result.site),
+        pinFromStored(local?.site) || pin
+      );
       await saveVault(v);
       await respond(
         {
@@ -595,7 +656,8 @@ async function approvePending() {
           registered: true,
           counter: result.site.counter,
           password: result.password,
-          nextPasswordHash: hashPassword(result.nextPassword),
+          // Hash of the password that will unlock the *next* sign-in (new tip pre).
+          nextPasswordHash: hashPassword(result.site.currentPassword),
           message: `signed in & rotated · counter ${result.site.counter}`,
         },
         req.callback
@@ -647,26 +709,52 @@ async function main() {
       const mnemonic = ($("mnemonic") as HTMLTextAreaElement).value.trim();
       const id = unlockIdentity(mnemonic, secondFactor, username);
       const prev = await loadVault();
-      const stored: StoredVault = {
+      const sameIdentity =
+        !!prev &&
+        prev.mnemonic === mnemonic &&
+        prev.secondFactor === secondFactor &&
+        prev.username === username;
+      let stored: StoredVault = {
         nodeUrl,
         mnemonic,
         secondFactor,
         username,
         identityType: "social",
-        mainDepth: prev?.mainDepth ?? 0,
-        tipPrevPkh: prev?.tipPrevPkh ?? "",
-        inceptionDone: prev?.inceptionDone ?? false,
-        sites: prev?.sites ?? {},
+        mainDepth: sameIdentity ? prev!.mainDepth ?? 0 : 0,
+        tipPrevPkh: sameIdentity ? prev!.tipPrevPkh ?? "" : "",
+        inceptionDone: sameIdentity ? prev!.inceptionDone ?? false : false,
+        // Site material is derived from vault + node tip; keep only when identity matches.
+        sites: sameIdentity ? prev!.sites ?? {} : {},
       };
-      if (!prev || prev.mnemonic !== mnemonic) {
-        stored.mainDepth = 0;
-        stored.tipPrevPkh = "";
-        stored.inceptionDone = false;
-        stored.sites = {};
-      }
       await saveVault(stored);
-      alertMsg(`Vault saved · ${id.k0.address.slice(0, 12)}…`, "success");
+      // Auto-detect KEL on node so a restored vault does not need a separate inception tap.
+      if (nodeUrl) {
+        stored = await ensureIncepted(stored);
+        if (!stored.inceptionDone) {
+          try {
+            let identity = identityFromVault(stored);
+            const txn = buildInceptionTxn(identity);
+            const res = await broadcastTxns({ baseUrl: nodeUrl }, txn);
+            const already = isAlreadyInceptedError(res.body?.message);
+            if (res.ok || already || res.body?.status !== false) {
+              identity = identityAfterInception(identity);
+              stored = {
+                ...stored,
+                mainDepth: identity.mainDepth,
+                tipPrevPkh: identity.tipPrevPkh,
+                inceptionDone: true,
+              };
+              await saveVault(stored);
+            }
+          } catch {
+            /* user can tap Broadcast inception if node unreachable */
+          }
+        }
+      }
+      const ready = stored.inceptionDone ? "ready · sign-in will auto-sync sites" : "saved · inception still needed";
+      alertMsg(`Vault saved · ${id.k0.address.slice(0, 12)}… · ${ready}`, "success");
       await refreshHome();
+      if (stored.inceptionDone) setTab(pending ? "request" : "home");
     } catch (e) {
       alertMsg(e instanceof Error ? e.message : String(e), "error");
     }
@@ -726,7 +814,8 @@ async function main() {
       const result = await resyncVaultFromNode({ baseUrl: nodeUrl }, identity, sites);
       const nextSites: Record<string, StoredSite> = {};
       for (const [k, s] of Object.entries(result.sites)) {
-        nextSites[k] = storeSite(s);
+        const prev = v.sites?.[k];
+        nextSites[k] = applyPin(storeSite(s), pinFromStored(prev));
       }
       v = {
         ...v,
@@ -738,10 +827,18 @@ async function main() {
       };
       await saveVault(v);
       await refreshHome();
+      if (Object.keys(sites).length === 0) {
+        alertMsg(
+          `Resync complete · KEL depth ${result.kelDepth} · no local sites yet — use Register or Sign-in once to import the site branch from the node`,
+          "success"
+        );
+        return;
+      }
       const bits = [
         `KEL depth ${result.kelDepth}`,
         result.rewoundSites.length ? `rewound ${result.rewoundSites.length} site(s)` : "",
         result.removedSites.length ? `removed ${result.removedSites.length} stale site(s)` : "",
+        result.replacedSites.length ? `replaced ${result.replacedSites.length} site(s)` : "",
       ].filter(Boolean);
       alertMsg("Resync complete · " + bits.join(" · "), "success");
     } catch (e) {

@@ -6336,6 +6336,7 @@ var OpenPasswordManager = registerPlugin(
 
 // src/main.ts
 var PENDING_KEY = "yadaDemoPendingNonce";
+var VERIFY_HASH_KEY = "yadaDemoVerifyHash";
 var NODE_KEY = "yadaDemoNodeUrl";
 var AUTH_KEY = "yadaDemoAuth";
 function $(id) {
@@ -6357,6 +6358,13 @@ function alertMsg(msg, kind = "") {
 }
 function siteId() {
   return normalizeSiteId(DEMO_APP_SITE_ID);
+}
+function resolveNodeUrl(url) {
+  let u = (url || "").trim().replace(/\/+$/, "");
+  if (Capacitor.getPlatform() === "android") {
+    u = u.replace(/127\.0\.0\.1/g, "10.0.2.2").replace(/localhost/gi, "10.0.2.2");
+  }
+  return u;
 }
 function pushLog(ok, note, counter) {
   const box = $("log");
@@ -6391,22 +6399,6 @@ async function openManager(url) {
   }
   window.location.href = url;
 }
-function startBridge(action) {
-  const nonce = newNonce();
-  sessionStorage.setItem(PENDING_KEY, nonce);
-  const auth = loadAuth();
-  const url = buildPasswordManagerUrl({
-    action,
-    site: siteId(),
-    callback: `${DEMO_HARNESS_SCHEME}://result`,
-    nonce,
-    expectedHash: action === "signin" ? auth?.nextPasswordHash : void 0
-  });
-  alertMsg(`Opening Yada Password\u2026 (${action})`, "");
-  void openManager(url).catch(
-    (e) => alertMsg(e instanceof Error ? e.message : String(e), "error")
-  );
-}
 function loadAuth() {
   try {
     const raw = localStorage.getItem(AUTH_KEY);
@@ -6417,6 +6409,56 @@ function loadAuth() {
 }
 function saveAuth(auth) {
   localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
+}
+async function fetchTipPasswordHashes(nodeUrl) {
+  const origin = siteId();
+  const res = await fetch(
+    nodeUrl + "/password-rotation/offchain/tip?branch_peer=" + encodeURIComponent(origin),
+    { headers: { Accept: "application/json" } }
+  );
+  const data = await res.json();
+  if (!res.ok || !data.status || !data.tip) return null;
+  const pw = data.tip.password || {};
+  return {
+    pre: String(pw.prerotated_password_hash || ""),
+    twice: String(pw.twice_prerotated_password_hash || ""),
+    counter: Number(data.tip.counter ?? 0)
+  };
+}
+async function startBridge(action) {
+  const nonce = newNonce();
+  sessionStorage.setItem(PENDING_KEY, nonce);
+  sessionStorage.removeItem(VERIFY_HASH_KEY);
+  const nodeUrl = resolveNodeUrl($("nodeUrl").value);
+  localStorage.setItem(NODE_KEY, nodeUrl);
+  let expectedHash;
+  if (action === "signin") {
+    try {
+      if (nodeUrl) {
+        const tip = await fetchTipPasswordHashes(nodeUrl);
+        if (tip?.pre) {
+          expectedHash = tip.pre;
+          sessionStorage.setItem(VERIFY_HASH_KEY, tip.pre);
+        }
+      }
+    } catch {
+    }
+    if (!expectedHash) {
+      expectedHash = loadAuth()?.nextPasswordHash;
+      if (expectedHash) sessionStorage.setItem(VERIFY_HASH_KEY, expectedHash);
+    }
+  }
+  const url = buildPasswordManagerUrl({
+    action,
+    site: siteId(),
+    callback: `${DEMO_HARNESS_SCHEME}://result`,
+    nonce,
+    expectedHash: action === "signin" ? expectedHash : void 0
+  });
+  alertMsg(`Opening Yada Password\u2026 (${action})`, "");
+  void openManager(url).catch(
+    (e) => alertMsg(e instanceof Error ? e.message : String(e), "error")
+  );
 }
 function handleResult(result) {
   const expected = sessionStorage.getItem(PENDING_KEY);
@@ -6433,34 +6475,29 @@ function handleResult(result) {
   }
   const nextHash = result.nextPasswordHash || "";
   const password = result.password || "";
+  const verifyHash = sessionStorage.getItem(VERIFY_HASH_KEY) || "";
+  sessionStorage.removeItem(VERIFY_HASH_KEY);
   if (result.action === "register" && password && nextHash) {
     saveAuth({ nextPasswordHash: nextHash });
-    pushLog(true, "registered \xB7 stored next password hash", result.counter);
-    alertMsg("Registered. Next password hash stored locally.", "success");
-    $("tipPre").textContent = "(local) current password received";
-    $("tipTwice").textContent = nextHash;
+    pushLog(true, "registered \xB7 vault restored/created", result.counter);
+    alertMsg("Registered / restored. Sign-in uses the node tip (no local-only gate).", "success");
     void refreshTip();
     return;
   }
-  if (result.action === "signin" && password && nextHash) {
-    const auth = loadAuth();
-    if (!auth?.nextPasswordHash) {
-      pushLog(false, "no stored next hash \u2014 register first", result.counter);
-      alertMsg("No stored next password hash \u2014 register first", "error");
-      return;
-    }
-    if (!verifyPassword(password, auth.nextPasswordHash)) {
-      pushLog(false, "password does not match stored next hash", result.counter);
+  if (result.action === "signin" && password) {
+    if (verifyHash && !verifyPassword(password, verifyHash)) {
+      pushLog(false, "password does not match tip prerotated hash", result.counter);
       alertMsg(
-        "Auth failed: password does not match stored next hash. Tap Register to resync.",
+        "Auth failed: password does not match node tip. Check vault seed/2FA or re-save vault.",
         "error"
       );
+      void refreshTip();
       return;
     }
-    saveAuth({ nextPasswordHash: nextHash });
-    pushLog(true, "signed in \xB7 next hash rotated", result.counter);
-    alertMsg("Signed in. Password matched; next hash updated.", "success");
-    $("tipTwice").textContent = nextHash;
+    if (nextHash) saveAuth({ nextPasswordHash: nextHash });
+    pushLog(true, "signed in \xB7 tip verified", result.counter);
+    alertMsg("Signed in. Password matched node tip; local cache updated.", "success");
+    if (nextHash) $("tipTwice").textContent = nextHash;
     void refreshTip();
     return;
   }
@@ -6478,7 +6515,7 @@ async function refreshTip() {
   $("siteId").textContent = origin;
   $("statusPill").textContent = "checking\u2026";
   $("statusPill").className = "pill";
-  const nodeUrl = $("nodeUrl").value.trim().replace(/\/+$/, "");
+  const nodeUrl = resolveNodeUrl($("nodeUrl").value);
   localStorage.setItem(NODE_KEY, nodeUrl);
   if (!nodeUrl) {
     $("statusPill").textContent = "set node URL";
@@ -6486,12 +6523,8 @@ async function refreshTip() {
     return;
   }
   try {
-    const res = await fetch(
-      nodeUrl + "/password-rotation/offchain/tip?branch_peer=" + encodeURIComponent(origin),
-      { headers: { Accept: "application/json" } }
-    );
-    const data = await res.json();
-    if (!res.ok || !data.status) {
+    const tip = await fetchTipPasswordHashes(nodeUrl);
+    if (!tip) {
       $("statusPill").textContent = "not registered";
       $("statusPill").className = "pill warn";
       $("counterPill").textContent = "counter \u2014";
@@ -6499,13 +6532,12 @@ async function refreshTip() {
       $("tipTwice").textContent = "\u2014";
       return;
     }
-    const tip = data.tip || {};
-    const pw = tip.password || {};
     $("statusPill").textContent = "registered on node";
     $("statusPill").className = "pill ok";
-    $("counterPill").textContent = "counter " + (tip.counter ?? "\u2014");
-    $("tipPre").textContent = pw.prerotated_password_hash || "\u2014";
-    $("tipTwice").textContent = pw.twice_prerotated_password_hash || "\u2014";
+    $("counterPill").textContent = "counter " + tip.counter;
+    $("tipPre").textContent = tip.pre || "\u2014";
+    $("tipTwice").textContent = tip.twice || "\u2014";
+    if (tip.pre) saveAuth({ nextPasswordHash: tip.pre });
   } catch (e) {
     $("statusPill").textContent = "unreachable";
     $("statusPill").className = "pill bad";
@@ -6516,9 +6548,9 @@ async function main() {
   applyTheme(resolveTheme({ preset: "dark", user: { mode: "dark" } }));
   $("siteId").textContent = siteId();
   $("nodeUrl").value = localStorage.getItem(NODE_KEY) || "";
-  $("registerBtn").addEventListener("click", () => startBridge("register"));
-  $("signinBtn").addEventListener("click", () => startBridge("signin"));
-  $("statusBtn").addEventListener("click", () => startBridge("status"));
+  $("registerBtn").addEventListener("click", () => void startBridge("register"));
+  $("signinBtn").addEventListener("click", () => void startBridge("signin"));
+  $("statusBtn").addEventListener("click", () => void startBridge("status"));
   $("refreshBtn").addEventListener("click", () => {
     alertMsg("");
     void refreshTip();
