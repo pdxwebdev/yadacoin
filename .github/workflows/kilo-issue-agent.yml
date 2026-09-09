@@ -61,7 +61,7 @@ jobs:
           gh issue edit "${{ github.event.issue.number }}" --add-label "ai-triage" || true
 
       - name: Run Kilo triage
-        uses: Kilo-Org/kilocode/github@latest
+        uses: Kilo-Org/kilocode/github@v7.5.16
         with:
           model: ${{ env.KILO_MODEL }}
           kilo_api_key: ${{ secrets.KILO_API_KEY }}
@@ -106,7 +106,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Kilo implement
-        uses: Kilo-Org/kilocode/github@latest
+        uses: Kilo-Org/kilocode/github@v7.5.16
         with:
           model: ${{ env.KILO_MODEL }}
           kilo_api_key: ${{ secrets.KILO_API_KEY }}
@@ -146,7 +146,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Kilo
-        uses: Kilo-Org/kilocode/github@latest
+        uses: Kilo-Org/kilocode/github@v7.5.16
         with:
           model: ${{ env.KILO_MODEL }}
           kilo_api_key: ${{ secrets.KILO_API_KEY }}
