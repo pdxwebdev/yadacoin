@@ -1,18 +1,22 @@
-# Kilo issue agent: clarify first, implement only when approved.
+# Kilo issue agent — maintainer-only.
 #
-# Triage uses the Kilo Gateway chat API directly (no agent tools → no hang).
-# Implement/adhoc use Kilo GitHub Action with permission: allow for CI.
+# Who can trigger: repo write/maintain/admin, or logins in vars.KILO_MAINTAINERS.
+# Comment jobs also require author_association OWNER|MEMBER|COLLABORATOR.
+#
+# Commands (maintainers only):
+#   /triage or label ai-triage     → clarifying comment
+#   /implement or label ai-implement → code + draft PR
+#   /kilo or /kc                   → ad-hoc agent
 #
 # Setup:
-# 1. Secret: KILO_API_KEY (required), KILO_ORG_ID (optional)
-# 2. Optional variable: KILO_MODEL (default x-ai/grok-4.5 for gateway;
-#    implement uses kilo/x-ai/grok-4.5)
+# 1. Secret KILO_API_KEY (required), KILO_ORG_ID (optional)
+# 2. Optional vars: KILO_MODEL, KILO_GATEWAY_MODEL, KILO_MAINTAINERS (comma logins)
 
 name: kilo-issue-agent
 
 on:
   issues:
-    types: [opened, labeled]
+    types: [labeled]
   issue_comment:
     types: [created]
   pull_request_review_comment:
@@ -35,27 +39,43 @@ jobs:
   triage:
     name: Clarify issue
     if: |
-      (github.event_name == 'issues' && (
-        github.event.action == 'opened' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'ai-triage')
-      )) ||
+      (github.event_name == 'issues' &&
+        github.event.action == 'labeled' &&
+        github.event.label.name == 'ai-triage') ||
       (github.event_name == 'issue_comment' &&
         github.event.issue.pull_request == null &&
         (contains(github.event.comment.body, '/triage') ||
-         startsWith(github.event.comment.body, '/triage')))
+         startsWith(github.event.comment.body, '/triage')) &&
+        (github.event.comment.author_association == 'OWNER' ||
+         github.event.comment.author_association == 'MEMBER' ||
+         github.event.comment.author_association == 'COLLABORATOR'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Ensure labels
-        if: github.event_name == 'issues' && github.event.action == 'opened'
+      - name: Require maintainer
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          ALLOWLIST: ${{ vars.KILO_MAINTAINERS }}
         run: |
-          gh label create ai-triage --description "Kilo clarifying questions" --color 0E8A16 2>/dev/null || true
-          gh label create ai-implement --description "Kilo implement + draft PR" --color 1D76DB 2>/dev/null || true
-          gh label create ai-generated --description "AI-generated work" --color 5319E7 2>/dev/null || true
-          gh issue edit "${{ github.event.issue.number }}" --add-label "ai-triage" || true
+          set -euo pipefail
+          if [ -n "${ALLOWLIST:-}" ]; then
+            if echo "$ALLOWLIST" | tr ', ' '\n' | grep -Fxq "$ACTOR"; then
+              echo "Allowlisted maintainer: $ACTOR"
+              exit 0
+            fi
+          fi
+          PERM=$(gh api "repos/${GH_REPO}/collaborators/${ACTOR}/permission" --jq .permission 2>/dev/null || echo none)
+          case "$PERM" in
+            admin|maintain|write)
+              echo "Maintainer permission: $PERM ($ACTOR)"
+              ;;
+            *)
+              echo "::error::Refusing AI triage: $ACTOR is not a maintainer (permission=$PERM)"
+              exit 1
+              ;;
+          esac
 
       - name: Triage via Kilo Gateway
         env:
@@ -125,7 +145,7 @@ jobs:
             echo "$REPLY"
             echo
             echo "---"
-            echo "_Model: \`${MODEL}\`. Comment \`/triage\` to re-run, or \`/implement\` / label \`ai-implement\` when ready._"
+            echo "_Maintainer-only. Comment \`/triage\` to re-run, or \`/implement\` / label \`ai-implement\` when ready._"
           } > /tmp/triage.md
 
           gh issue comment "$ISSUE_NUMBER" --body-file /tmp/triage.md
@@ -139,10 +159,38 @@ jobs:
       (github.event_name == 'issue_comment' &&
         github.event.issue.pull_request == null &&
         (contains(github.event.comment.body, '/implement') ||
-         startsWith(github.event.comment.body, '/implement')))
+         startsWith(github.event.comment.body, '/implement')) &&
+        (github.event.comment.author_association == 'OWNER' ||
+         github.event.comment.author_association == 'MEMBER' ||
+         github.event.comment.author_association == 'COLLABORATOR'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - name: Require maintainer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          ALLOWLIST: ${{ vars.KILO_MAINTAINERS }}
+        run: |
+          set -euo pipefail
+          if [ -n "${ALLOWLIST:-}" ]; then
+            if echo "$ALLOWLIST" | tr ', ' '\n' | grep -Fxq "$ACTOR"; then
+              echo "Allowlisted maintainer: $ACTOR"
+              exit 0
+            fi
+          fi
+          PERM=$(gh api "repos/${GH_REPO}/collaborators/${ACTOR}/permission" --jq .permission 2>/dev/null || echo none)
+          case "$PERM" in
+            admin|maintain|write)
+              echo "Maintainer permission: $PERM ($ACTOR)"
+              ;;
+            *)
+              echo "::error::Refusing AI implement: $ACTOR is not a maintainer (permission=$PERM)"
+              exit 1
+              ;;
+          esac
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -199,9 +247,37 @@ jobs:
         startsWith(github.event.comment.body, '/kc')
       ) && !contains(github.event.comment.body, '/implement')
         && !contains(github.event.comment.body, '/triage')
+        && (github.event.comment.author_association == 'OWNER' ||
+            github.event.comment.author_association == 'MEMBER' ||
+            github.event.comment.author_association == 'COLLABORATOR')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - name: Require maintainer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          ALLOWLIST: ${{ vars.KILO_MAINTAINERS }}
+        run: |
+          set -euo pipefail
+          if [ -n "${ALLOWLIST:-}" ]; then
+            if echo "$ALLOWLIST" | tr ', ' '\n' | grep -Fxq "$ACTOR"; then
+              echo "Allowlisted maintainer: $ACTOR"
+              exit 0
+            fi
+          fi
+          PERM=$(gh api "repos/${GH_REPO}/collaborators/${ACTOR}/permission" --jq .permission 2>/dev/null || echo none)
+          case "$PERM" in
+            admin|maintain|write)
+              echo "Maintainer permission: $PERM ($ACTOR)"
+              ;;
+            *)
+              echo "::error::Refusing AI adhoc: $ACTOR is not a maintainer (permission=$PERM)"
+              exit 1
+              ;;
+          esac
+
       - name: Checkout
         uses: actions/checkout@v4
         with:

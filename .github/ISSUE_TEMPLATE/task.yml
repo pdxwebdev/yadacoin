@@ -1,7 +1,7 @@
 name: Implementation task
 description: Well-specified work ready for AI-assisted implementation
 title: "[task] "
-labels: ["ai-triage"]
+labels: []
 body:
   - type: markdown
     attributes:

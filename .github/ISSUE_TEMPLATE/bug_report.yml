@@ -1,7 +1,7 @@
 name: Bug report
 description: Something is broken or behaves incorrectly
 title: "[bug] "
-labels: ["bug", "ai-triage"]
+labels: ["bug"]
 body:
   - type: markdown
     attributes:
