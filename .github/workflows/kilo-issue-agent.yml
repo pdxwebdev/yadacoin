@@ -1,0 +1,154 @@
+# Kilo issue agent: clarify first, implement only when approved.
+# Uses KiloConnect bot via OIDC (falls back not needed).
+#
+# Setup:
+# 1. KiloConnect / Kilo Code Bot installed on this repo
+# 2. Secret: KILO_API_KEY (required), KILO_ORG_ID (optional)
+# 3. Optional variable: KILO_MODEL (default kilo/x-ai/grok-4.5)
+#
+# Flow:
+# - Issue opened → triage (clarifying questions only, no code/PR)
+# - Label ai-triage → re-run triage
+# - Label ai-implement OR comment "/implement" → implement + draft PR
+# - Comment "/kilo …" or "/kc …" → ad-hoc agent
+
+name: kilo-issue-agent
+
+on:
+  issues:
+    types: [opened, labeled]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+concurrency:
+  group: kilo-issue-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+  issues: write
+
+env:
+  KILO_MODEL: ${{ vars.KILO_MODEL || 'kilo/x-ai/grok-4.5' }}
+
+jobs:
+  triage:
+    name: Clarify issue
+    if: |
+      github.event_name == 'issues' && (
+        github.event.action == 'opened' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'ai-triage')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Ensure labels
+        if: github.event.action == 'opened'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create ai-triage --description "Kilo clarifying questions" --color 0E8A16 2>/dev/null || true
+          gh label create ai-implement --description "Kilo implement + draft PR" --color 1D76DB 2>/dev/null || true
+          gh label create ai-generated --description "AI-generated work" --color 5319E7 2>/dev/null || true
+          gh issue edit "${{ github.event.issue.number }}" --add-label "ai-triage" || true
+
+      - name: Run Kilo triage
+        uses: Kilo-Org/kilocode/github@latest
+        with:
+          model: ${{ env.KILO_MODEL }}
+          kilo_api_key: ${{ secrets.KILO_API_KEY }}
+          kilo_org_id: ${{ secrets.KILO_ORG_ID }}
+          prompt: |
+            You are triaging GitHub issue #${{ github.event.issue.number }}.
+
+            Goal: ask clarifying questions so we do not waste implementation cycles.
+
+            Rules:
+            - Do NOT write, edit, or delete any files.
+            - Do NOT create branches, commits, or pull requests.
+            - Do NOT run mutating git commands.
+            - Read the issue title, body, and comments only as needed.
+
+            If the issue is ambiguous or incomplete:
+            - Post a single concise comment with at most 5 numbered clarifying questions.
+            - Prefer questions that unblock implementation (scope, acceptance criteria, edge cases, APIs, env).
+            - End with: "When ready, reply with answers and add the label `ai-implement` (or comment `/implement`)."
+
+            If the issue is already fully specified:
+            - Post a short comment starting with `READY`.
+            - List assumptions you will follow.
+            - End with: "Add the label `ai-implement` or comment `/implement` to start implementation."
+
+  implement:
+    name: Implement + draft PR
+    if: |
+      (github.event_name == 'issues' &&
+        github.event.action == 'labeled' &&
+        github.event.label.name == 'ai-implement') ||
+      (github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request == null &&
+        (contains(github.event.comment.body, '/implement') ||
+         startsWith(github.event.comment.body, '/implement')))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Run Kilo implement
+        uses: Kilo-Org/kilocode/github@latest
+        with:
+          model: ${{ env.KILO_MODEL }}
+          kilo_api_key: ${{ secrets.KILO_API_KEY }}
+          kilo_org_id: ${{ secrets.KILO_ORG_ID }}
+          mentions: /implement
+          prompt: |
+            Implement a fix/feature for this GitHub issue.
+
+            Requirements:
+            - Use the full issue thread (title, body, and all comments) as the spec.
+            - Prefer answers from the author over guesses; state assumptions if still needed.
+            - Make minimal, focused code changes that match existing project style.
+            - Do not commit secrets or credentials.
+            - Create a new branch, commit your changes, and open a DRAFT pull request.
+            - PR title should be clear; PR body must include:
+              - Summary of changes
+              - Test plan
+              - `Closes #<issue-number>`
+            - Do NOT merge the PR. Leave it as draft for human review/approval.
+            - After opening the PR, comment on the issue with the PR link.
+
+  adhoc:
+    name: Ad-hoc /kilo
+    if: |
+      (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') && (
+        contains(github.event.comment.body, '/kilo') ||
+        contains(github.event.comment.body, '/kc') ||
+        startsWith(github.event.comment.body, '/kilo') ||
+        startsWith(github.event.comment.body, '/kc')
+      ) && !contains(github.event.comment.body, '/implement')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Run Kilo
+        uses: Kilo-Org/kilocode/github@latest
+        with:
+          model: ${{ env.KILO_MODEL }}
+          kilo_api_key: ${{ secrets.KILO_API_KEY }}
+          kilo_org_id: ${{ secrets.KILO_ORG_ID }}
+          mentions: /kilo,/kc
