@@ -1,17 +1,12 @@
 # Kilo issue agent: clarify first, implement only when approved.
 #
-# Uses GITHUB_TOKEN (use_github_token: true) because KiloConnect OIDC
-# exchange currently fails with "Failed to parse JSON" on many repos.
+# Triage uses the Kilo Gateway chat API directly (no agent tools → no hang).
+# Implement/adhoc use Kilo GitHub Action with permission: allow for CI.
 #
 # Setup:
 # 1. Secret: KILO_API_KEY (required), KILO_ORG_ID (optional)
-# 2. Optional variable: KILO_MODEL (default kilo/x-ai/grok-4.5)
-#
-# Flow:
-# - Issue opened → triage (clarifying questions only, no code/PR)
-# - Label ai-triage → re-run triage
-# - Label ai-implement OR comment "/implement" → implement + draft PR
-# - Comment "/kilo …" or "/kc …" → ad-hoc agent
+# 2. Optional variable: KILO_MODEL (default x-ai/grok-4.5 for gateway;
+#    implement uses kilo/x-ai/grok-4.5)
 
 name: kilo-issue-agent
 
@@ -25,7 +20,7 @@ on:
 
 concurrency:
   group: kilo-issue-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -34,61 +29,106 @@ permissions:
 
 env:
   KILO_MODEL: ${{ vars.KILO_MODEL || 'kilo/x-ai/grok-4.5' }}
+  KILO_GATEWAY_MODEL: ${{ vars.KILO_GATEWAY_MODEL || 'x-ai/grok-4.5' }}
 
 jobs:
   triage:
     name: Clarify issue
     if: |
-      github.event_name == 'issues' && (
+      (github.event_name == 'issues' && (
         github.event.action == 'opened' ||
         (github.event.action == 'labeled' && github.event.label.name == 'ai-triage')
-      )
+      )) ||
+      (github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request == null &&
+        (contains(github.event.comment.body, '/triage') ||
+         startsWith(github.event.comment.body, '/triage')))
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          token: ${{ github.token }}
-
       - name: Ensure labels
-        if: github.event.action == 'opened'
+        if: github.event_name == 'issues' && github.event.action == 'opened'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           gh label create ai-triage --description "Kilo clarifying questions" --color 0E8A16 2>/dev/null || true
           gh label create ai-implement --description "Kilo implement + draft PR" --color 1D76DB 2>/dev/null || true
           gh label create ai-generated --description "AI-generated work" --color 5319E7 2>/dev/null || true
           gh issue edit "${{ github.event.issue.number }}" --add-label "ai-triage" || true
 
-      - name: Run Kilo triage
-        uses: Kilo-Org/kilocode/github@v7.5.16
+      - name: Triage via Kilo Gateway
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-        with:
-          model: ${{ env.KILO_MODEL }}
-          kilo_api_key: ${{ secrets.KILO_API_KEY }}
-          kilo_org_id: ${{ secrets.KILO_ORG_ID }}
-          use_github_token: "true"
-          prompt: |
-            You are triaging GitHub issue #${{ github.event.issue.number }}.
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
+          KILO_ORG_ID: ${{ secrets.KILO_ORG_ID }}
+          MODEL: ${{ env.KILO_GATEWAY_MODEL }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KILO_API_KEY:-}" ]; then
+            echo "KILO_API_KEY secret is missing"
+            exit 1
+          fi
 
-            Goal: ask clarifying questions so we do not waste implementation cycles.
+          ISSUE_JSON=$(gh issue view "$ISSUE_NUMBER" --json title,body,author,labels,comments)
+          TITLE=$(echo "$ISSUE_JSON" | jq -r .title)
+          BODY=$(echo "$ISSUE_JSON" | jq -r '.body // ""')
+          COMMENTS=$(echo "$ISSUE_JSON" | jq -r '
+            [.comments[]? | "- @" + .author.login + ": " + .body] | join("\n\n")
+          ')
 
-            Rules:
-            - Do NOT write, edit, or delete any files.
-            - Do NOT create branches, commits, or pull requests.
-            - Do NOT run mutating git commands.
-            - Read the issue title, body, and comments only as needed.
+          SYSTEM=$'You triage GitHub issues before any code is written.\n\nRules:\n- Reply with plain markdown only (no tool calls).\n- If ambiguous: at most 5 numbered clarifying questions, then tell the user to reply and add label ai-implement or comment /implement.\n- If fully specified: start with READY, list assumptions, tell them to add ai-implement or /implement.\n- Prefer questions about scope, acceptance criteria, edge cases, APIs, and environment.'
 
-            If the issue is ambiguous or incomplete:
-            - Post a single concise comment with at most 5 numbered clarifying questions.
-            - Prefer questions that unblock implementation (scope, acceptance criteria, edge cases, APIs, env).
-            - End with: "When ready, reply with answers and add the label `ai-implement` (or comment `/implement`)."
+          USER_CONTENT=$(jq -n \
+            --arg title "$TITLE" \
+            --arg body "$BODY" \
+            --arg comments "$COMMENTS" \
+            --arg n "$ISSUE_NUMBER" \
+            '"Issue #\($n)\nTitle: \($title)\n\nBody:\n\($body)\n\nComments:\n\($comments)"')
 
-            If the issue is already fully specified:
-            - Post a short comment starting with `READY`.
-            - List assumptions you will follow.
-            - End with: "Add the label `ai-implement` or comment `/implement` to start implementation."
+          HEADERS=(-H "Authorization: Bearer ${KILO_API_KEY}" -H "Content-Type: application/json")
+          if [ -n "${KILO_ORG_ID:-}" ]; then
+            HEADERS+=(-H "X-KiloCode-OrganizationId: ${KILO_ORG_ID}")
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg model "$MODEL" \
+            --arg system "$SYSTEM" \
+            --arg user "$USER_CONTENT" \
+            '{
+              model: $model,
+              temperature: 0.2,
+              max_tokens: 1200,
+              messages: [
+                {role: "system", content: $system},
+                {role: "user", content: $user}
+              ]
+            }')
+
+          RESP=$(curl -sS --fail-with-body \
+            "${HEADERS[@]}" \
+            -d "$PAYLOAD" \
+            "https://api.kilo.ai/api/gateway/chat/completions")
+
+          REPLY=$(echo "$RESP" | jq -r '.choices[0].message.content // empty')
+          if [ -z "$REPLY" ]; then
+            echo "Empty model response:"
+            echo "$RESP" | jq . || echo "$RESP"
+            exit 1
+          fi
+
+          {
+            echo "## Kilo triage"
+            echo
+            echo "$REPLY"
+            echo
+            echo "---"
+            echo "_Model: \`${MODEL}\`. Comment \`/triage\` to re-run, or \`/implement\` / label \`ai-implement\` when ready._"
+          } > /tmp/triage.md
+
+          gh issue comment "$ISSUE_NUMBER" --body-file /tmp/triage.md
 
   implement:
     name: Implement + draft PR
@@ -101,12 +141,28 @@ jobs:
         (contains(github.event.comment.body, '/implement') ||
          startsWith(github.event.comment.body, '/implement')))
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           token: ${{ github.token }}
           fetch-depth: 0
+
+      - name: Configure Kilo CI permissions
+        run: |
+          mkdir -p "$HOME/.config/kilo" .kilo
+          cat > "$HOME/.config/kilo/kilo.json" <<'EOF'
+          {
+            "$schema": "https://app.kilo.ai/config.json",
+            "permission": {
+              "*": "allow",
+              "question": "deny",
+              "suggest": "deny"
+            }
+          }
+          EOF
+          cp "$HOME/.config/kilo/kilo.json" .kilo/kilo.json
 
       - name: Run Kilo implement
         uses: Kilo-Org/kilocode/github@v7.5.16
@@ -126,17 +182,12 @@ jobs:
             - Prefer answers from the author over guesses; state assumptions if still needed.
             - Make minimal, focused code changes that match existing project style.
             - Do not commit secrets or credentials.
+            - Tool use is pre-approved in CI; do not wait for human approval.
             - Create a new branch, commit your changes, and open a DRAFT pull request
               (gh pr create --draft).
-            - PR title should be clear; PR body must include:
-              - Summary of changes
-              - Test plan
-              - `Closes #<issue-number>`
-            - Do NOT merge the PR. Leave it as draft for human review/approval.
-            - After opening the PR, comment on the issue with the PR link.
-            - Configure git if needed:
-              git config user.name "github-actions[bot]"
-              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            - PR body must include summary, test plan, and `Closes #<issue-number>`.
+            - Do NOT merge the PR.
+            - Configure git if needed as github-actions[bot].
 
   adhoc:
     name: Ad-hoc /kilo
@@ -147,13 +198,30 @@ jobs:
         startsWith(github.event.comment.body, '/kilo') ||
         startsWith(github.event.comment.body, '/kc')
       ) && !contains(github.event.comment.body, '/implement')
+        && !contains(github.event.comment.body, '/triage')
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           token: ${{ github.token }}
           fetch-depth: 0
+
+      - name: Configure Kilo CI permissions
+        run: |
+          mkdir -p "$HOME/.config/kilo" .kilo
+          cat > "$HOME/.config/kilo/kilo.json" <<'EOF'
+          {
+            "$schema": "https://app.kilo.ai/config.json",
+            "permission": {
+              "*": "allow",
+              "question": "deny",
+              "suggest": "deny"
+            }
+          }
+          EOF
+          cp "$HOME/.config/kilo/kilo.json" .kilo/kilo.json
 
       - name: Run Kilo
         uses: Kilo-Org/kilocode/github@v7.5.16
