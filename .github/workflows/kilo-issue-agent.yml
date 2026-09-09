@@ -1,10 +1,11 @@
 # Kilo issue agent: clarify first, implement only when approved.
-# Uses KiloConnect bot via OIDC (falls back not needed).
+#
+# Uses GITHUB_TOKEN (use_github_token: true) because KiloConnect OIDC
+# exchange currently fails with "Failed to parse JSON" on many repos.
 #
 # Setup:
-# 1. KiloConnect / Kilo Code Bot installed on this repo
-# 2. Secret: KILO_API_KEY (required), KILO_ORG_ID (optional)
-# 3. Optional variable: KILO_MODEL (default kilo/x-ai/grok-4.5)
+# 1. Secret: KILO_API_KEY (required), KILO_ORG_ID (optional)
+# 2. Optional variable: KILO_MODEL (default kilo/x-ai/grok-4.5)
 #
 # Flow:
 # - Issue opened → triage (clarifying questions only, no code/PR)
@@ -27,7 +28,6 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  id-token: write
   contents: write
   pull-requests: write
   issues: write
@@ -48,7 +48,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          token: ${{ github.token }}
 
       - name: Ensure labels
         if: github.event.action == 'opened'
@@ -62,10 +62,13 @@ jobs:
 
       - name: Run Kilo triage
         uses: Kilo-Org/kilocode/github@v7.5.16
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           model: ${{ env.KILO_MODEL }}
           kilo_api_key: ${{ secrets.KILO_API_KEY }}
           kilo_org_id: ${{ secrets.KILO_ORG_ID }}
+          use_github_token: "true"
           prompt: |
             You are triaging GitHub issue #${{ github.event.issue.number }}.
 
@@ -102,15 +105,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          token: ${{ github.token }}
           fetch-depth: 0
 
       - name: Run Kilo implement
         uses: Kilo-Org/kilocode/github@v7.5.16
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           model: ${{ env.KILO_MODEL }}
           kilo_api_key: ${{ secrets.KILO_API_KEY }}
           kilo_org_id: ${{ secrets.KILO_ORG_ID }}
+          use_github_token: "true"
           mentions: /implement
           prompt: |
             Implement a fix/feature for this GitHub issue.
@@ -120,13 +126,17 @@ jobs:
             - Prefer answers from the author over guesses; state assumptions if still needed.
             - Make minimal, focused code changes that match existing project style.
             - Do not commit secrets or credentials.
-            - Create a new branch, commit your changes, and open a DRAFT pull request.
+            - Create a new branch, commit your changes, and open a DRAFT pull request
+              (gh pr create --draft).
             - PR title should be clear; PR body must include:
               - Summary of changes
               - Test plan
               - `Closes #<issue-number>`
             - Do NOT merge the PR. Leave it as draft for human review/approval.
             - After opening the PR, comment on the issue with the PR link.
+            - Configure git if needed:
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
   adhoc:
     name: Ad-hoc /kilo
@@ -142,13 +152,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          token: ${{ github.token }}
           fetch-depth: 0
 
       - name: Run Kilo
         uses: Kilo-Org/kilocode/github@v7.5.16
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           model: ${{ env.KILO_MODEL }}
           kilo_api_key: ${{ secrets.KILO_API_KEY }}
           kilo_org_id: ${{ secrets.KILO_ORG_ID }}
+          use_github_token: "true"
           mentions: /kilo,/kc
