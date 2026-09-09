@@ -1,0 +1,97 @@
+name: Feature request
+description: Propose a new capability or improvement
+title: "[feat] "
+labels: ["enhancement", "ai-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Be concrete about the problem, users, and done definition. Vague ideas will get clarifying questions first.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What pain does this solve? Who hits it?
+      placeholder: When I … I cannot … because …
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should be built? Include UX/API sketches if relevant.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: Other approaches and why they are worse.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: In scope / out of scope
+      description: Bound the work so implementation stays focused.
+      placeholder: |
+        In scope:
+        - …
+        Out of scope:
+        - …
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Core node / consensus
+        - Wallet / keys
+        - Pool / mining
+        - Web UI / yadacoinweb
+        - Password manager / rotation
+        - Plugins / integrations
+        - Docs / ops
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Testable checklist for “done”.
+      placeholder: |
+        - [ ] …
+        - [ ] …
+        - [ ] Docs updated if user-facing
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority (your view)
+      options:
+        - Critical
+        - High
+        - Medium
+        - Nice to have
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues/PRs for related work
+          required: true
+        - label: Acceptance criteria are specific enough to implement without guessing
+          required: true

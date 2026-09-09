@@ -1,0 +1,78 @@
+name: Implementation task
+description: Well-specified work ready for AI-assisted implementation
+title: "[task] "
+labels: ["ai-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when you already know what to build. Incomplete tasks will still get clarifying questions before code.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: One paragraph: what to change and why.
+    validations:
+      required: true
+
+  - type: textarea
+    id: files
+    attributes:
+      label: Likely files / modules
+      description: Paths or areas of the codebase to touch (best effort).
+      placeholder: |
+        - yadacoin/…
+        - plugins/…
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Required. Implementation will target these.
+      placeholder: |
+        - [ ] …
+        - [ ] …
+        - [ ] Tests or manual verification steps listed below pass
+    validations:
+      required: true
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: Explicitly what not to do.
+    validations:
+      required: true
+
+  - type: textarea
+    id: test_plan
+    attributes:
+      label: Test plan
+      placeholder: |
+        Commands to run and/or manual steps.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk
+      options:
+        - Low (docs / isolated UI)
+        - Medium (feature logic)
+        - High (consensus, keys, funds, auth)
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: Spec is complete enough that an implementer should not need more than minor clarifications
+          required: true
+        - label: No secrets or private keys are included in this issue
+          required: true
