@@ -3128,6 +3128,87 @@ class TestBlock(AsyncTestCase):
         finally:
             NodesTester.successful_nodes = saved
 
+    async def test_pay_masternodes_empty_triplet_uses_fallback_address(self):
+        """Empty KEL triplet (coinbase_prerotated=None) must not crash pool init."""
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.keyrotation import ReanchorTriplet
+
+        block = await Block.init_async(
+            version=CHAIN.get_version_for_height(CHAIN.PAY_MASTER_NODES_FORK),
+            block_index=CHAIN.PAY_MASTER_NODES_FORK,
+            target=1,
+        )
+        saved = NodesTester.successful_nodes
+        NodesTester.successful_nodes = []
+        try:
+            triplet = ReanchorTriplet(
+                coinbase_confirming=None,
+                signer_private_key=None,
+                signer_public_key=None,
+                coinbase_prerotated=None,
+                coinbase_twice_prerotated=None,
+                coinbase_public_key_hash=None,
+                coinbase_prev_public_key_hash=None,
+            )
+            with mock.patch(
+                "yadacoin.core.block.NodeKeyRotationManager._sign",
+                return_value="sig",
+            ):
+                coinbase = await block.pay_masternodes([], triplet, 5.0)
+            self.assertIsNotNone(coinbase)
+            self.assertEqual(len(coinbase.outputs), 1)
+            self.assertIsNotNone(coinbase.outputs[0].to)
+            self.assertTrue(len(coinbase.outputs[0].to) > 0)
+            self.assertAlmostEqual(float(coinbase.outputs[0].value), 5.0)
+            # generate_hash path must not raise on None .lower()
+            self.assertTrue(coinbase.hash)
+        finally:
+            NodesTester.successful_nodes = saved
+
+    async def test_pay_masternodes_skips_invalid_masternode_pubkey(self):
+        """Invalid MN public keys must not produce coinbase outputs with to=None."""
+        from yadacoin.core.chain import CHAIN
+
+        block = await Block.init_async(
+            version=CHAIN.get_version_for_height(CHAIN.PAY_MASTER_NODES_FORK),
+            block_index=CHAIN.PAY_MASTER_NODES_FORK,
+            target=1,
+        )
+        bad = Mock()
+        bad.identity = Mock()
+        bad.identity.public_key = "not-hex"
+        good = Mock()
+        good.identity = Mock()
+        good.identity.public_key = (
+            "02cd94b54fa5ec2431013e047e3d609d385e40c73538639acb77f6d1b0f2b46c4a"
+        )
+        saved = NodesTester.successful_nodes
+        NodesTester.successful_nodes = [bad, good]
+        try:
+            triplet = Mock()
+            triplet.coinbase_prerotated = "1MinerPrerotated"
+            triplet.coinbase_twice_prerotated = "1MinerTwice"
+            triplet.coinbase_public_key_hash = "1MinerPKH"
+            triplet.coinbase_prev_public_key_hash = ""
+            triplet.signer_public_key = (
+                "02cd94b54fa5ec2431013e047e3d609d385e40c73538639acb77f6d1b0f2b46c4a"
+            )
+            triplet.signer_private_key = "11" * 32
+            with mock.patch(
+                "yadacoin.core.block.NodeKeyRotationManager._sign",
+                return_value="sig",
+            ), mock.patch(
+                "yadacoin.core.block.Transaction.generate_hash",
+                new=AsyncMock(return_value="c" * 64),
+            ):
+                coinbase = await block.pay_masternodes([], triplet, 5.0)
+            self.assertEqual(len(coinbase.outputs), 2)
+            for out in coinbase.outputs:
+                self.assertIsNotNone(out.to)
+                self.assertTrue(out.to)
+        finally:
+            NodesTester.successful_nodes = saved
+
     @mock.patch(
         "yadacoin.core.block.Block.generate_hash_from_header",
         new=mock_generate_hash_from_header,

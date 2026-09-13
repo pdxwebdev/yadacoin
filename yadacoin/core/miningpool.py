@@ -51,7 +51,18 @@ class MiningPool(object):
         # Block rebuilds at that height until LatestBlock catches up.
         self.pending_won_index = None
         self.excluded = []
-        await self.refresh()
+        try:
+            await self.refresh()
+        except Exception:
+            from traceback import format_exc
+
+            # Keep the pool object so stratum can accept miners and retry
+            # template build on the next login/block_checker cycle.
+            self.app_log.error(
+                "MiningPool initial refresh failed (will retry): {}".format(
+                    format_exc()
+                )
+            )
         return self
 
     def get_status(self):

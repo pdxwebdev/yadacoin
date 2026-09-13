@@ -1396,9 +1396,12 @@ class Transaction(object):
 
     def get_output_hashes(self):
         outputs_sorted = sorted(
-            [x.to_dict() for x in self.outputs], key=lambda x: x["to"].lower()
+            [x.to_dict() for x in self.outputs],
+            key=lambda x: (x.get("to") or "").lower(),
         )
-        return "".join([x["to"] + "{0:.8f}".format(x["value"]) for x in outputs_sorted])
+        return "".join(
+            [(x.get("to") or "") + "{0:.8f}".format(x["value"]) for x in outputs_sorted]
+        )
 
     async def recover_missing_transaction(self, txn_id, exclude_ids=[]):
         return False
@@ -2467,10 +2470,12 @@ class Output(object):
 
     @classmethod
     def from_dict(cls, txn):
-        return cls(to=txn.get("to", ""), value=txn.get("value", ""))
+        # Explicit None must not become a payment address (dict.get only
+        # defaults when the key is missing).
+        return cls(to=txn.get("to") or "", value=txn.get("value", ""))
 
     def to_dict(self):
-        return {"to": self.to, "value": self.value}
+        return {"to": self.to if self.to is not None else "", "value": self.value}
 
 
 class Relationship(object):

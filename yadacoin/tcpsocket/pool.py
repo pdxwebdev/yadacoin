@@ -204,11 +204,59 @@ class StratumServer(RPCSocketServer):
         peer_id = str(uuid.uuid4())
         await StratumServer.block_checker()
         if not StratumServer.config.mp:
+            await stream.write(
+                "{}\n".format(
+                    json.dumps(
+                        {
+                            "id": body.get("id"),
+                            "method": body.get("method"),
+                            "jsonrpc": body.get("jsonrpc"),
+                            "error": {
+                                "message": "Pool not ready; mining template unavailable"
+                            },
+                        }
+                    )
+                ).encode()
+            )
             await StratumServer.remove_peer(stream)
             return
-        job = await StratumServer.config.mp.block_template(
-            body["params"].get("agent"), peer_id
-        )
+        try:
+            job = await StratumServer.config.mp.block_template(
+                body["params"].get("agent"), peer_id
+            )
+        except Exception:
+            self.config.app_log.warning(traceback.format_exc())
+            await stream.write(
+                "{}\n".format(
+                    json.dumps(
+                        {
+                            "id": body.get("id"),
+                            "method": body.get("method"),
+                            "jsonrpc": body.get("jsonrpc"),
+                            "error": {
+                                "message": "Pool template unavailable; retry shortly"
+                            },
+                        }
+                    )
+                ).encode()
+            )
+            return
+        if job is None or StratumServer.config.mp.block_factory is None:
+            await stream.write(
+                "{}\n".format(
+                    json.dumps(
+                        {
+                            "id": body.get("id"),
+                            "method": body.get("method"),
+                            "jsonrpc": body.get("jsonrpc"),
+                            "error": {
+                                "message": "Pool template unavailable; retry shortly"
+                            },
+                        }
+                    )
+                ).encode()
+            )
+            return
         if not hasattr(stream, "jobs"):
             stream.jobs = {}
         stream.jobs[job.id] = job

@@ -252,6 +252,16 @@ class Block(object):
 
         triplet = await config.kel_manager.advance_block_ratchet(block=block)
 
+        # Empty KEL triplets leave block.public_key unset; fall back so header
+        # and coinbase signing still have a node key when the ratchet is not ready.
+        if not getattr(block, "public_key", None):
+            if triplet is not None and getattr(triplet, "signer_public_key", None):
+                block.public_key = triplet.signer_public_key
+                block.private_key = triplet.signer_private_key
+            else:
+                block.public_key = config.public_key
+                block.private_key = config.private_key
+
         # Template-only coinbase confirming KEL step (no preceding block-reanchor
         # U/C pair). Parent must be the on-chain KEL tip (see advance_block_ratchet).
         if (
@@ -344,6 +354,62 @@ class Block(object):
                     )
                     self.transactions.remove(txn)
 
+    @staticmethod
+    def _resolve_coinbase_miner_payment(triplet):
+        """Return (miner_to, signer_public_key, signer_private_key) for coinbase.
+
+        Empty KEL reanchor triplets intentionally leave ``coinbase_prerotated``
+        as None.  Pool/block generation must still produce outputs with a valid
+        ``to`` so ``get_output_hashes`` / ``generate_hash`` do not crash and the
+        stratum pool can come up.
+        """
+        config = Config()
+        miner_to = None
+        signer_public_key = None
+        signer_private_key = None
+        if triplet is not None:
+            miner_to = getattr(triplet, "coinbase_prerotated", None) or None
+            signer_public_key = getattr(triplet, "signer_public_key", None) or None
+            signer_private_key = getattr(triplet, "signer_private_key", None) or None
+
+        if not miner_to and signer_public_key:
+            try:
+                miner_to = str(
+                    P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(signer_public_key))
+                )
+            except Exception:
+                miner_to = None
+
+        if not signer_public_key:
+            signer_public_key = config.public_key
+        if not signer_private_key:
+            signer_private_key = config.private_key
+        if not miner_to:
+            try:
+                miner_to = str(
+                    P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(signer_public_key))
+                )
+            except Exception:
+                miner_to = config.address
+
+        return miner_to, signer_public_key, signer_private_key
+
+    @staticmethod
+    def _masternode_payment_address(successful_node):
+        """Derive a masternode coinbase address or None if identity is unusable."""
+        identity = getattr(successful_node, "identity", None)
+        if identity is None:
+            return None
+        public_key = getattr(identity, "public_key", None)
+        if not public_key:
+            return None
+        try:
+            return str(
+                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
+            )
+        except Exception:
+            return None
+
     async def pay_masternodes(self, tranaction_objs, triplet, block_reward):
         """Build the coinbase transaction.
 
@@ -359,6 +425,12 @@ class Block(object):
         # too large.  Recompute from the surviving non-coinbase transactions and
         # rebuild the coinbase in-place.
         if index >= CHAIN.PAY_MASTER_NODES_FORK:
+            (
+                miner_to,
+                signer_public_key,
+                signer_private_key,
+            ) = self._resolve_coinbase_miner_payment(triplet)
+
             non_coinbase = [t for t in tranaction_objs if not t.coinbase]
             fee_sum = sum(float(t.fee) for t in non_coinbase)
             masternode_fee_sum = 0.0
@@ -370,37 +442,33 @@ class Block(object):
             # NodesTester.successful_nodes with identity=None must not shrink
             # the divisor or leave the miner at 90% with zero MN outputs
             # (verify then sees coinbase_sum+masternode_sum = 0.9*reward).
-            reward_nodes = [
-                n
-                for n in (NodesTester.successful_nodes or [])
-                if getattr(n, "identity", None) is not None
-                and getattr(n.identity, "public_key", None)
-            ]
+            # Also skip identities whose public_key cannot yield a payment
+            # address — a None ``to`` crashes generate_hash / get_output_hashes.
+            mn_addresses = []
+            for n in NodesTester.successful_nodes or []:
+                addr = self._masternode_payment_address(n)
+                if addr:
+                    mn_addresses.append(addr)
+
             self_output = None
             updated_outputs = []
-            if reward_nodes:
+            if mn_addresses:
                 self_output = Output.from_dict(
                     {
                         "value": (block_reward * 0.9) + fee_sum,
-                        "to": triplet.coinbase_prerotated,
+                        "to": miner_to,
                     }
                 )
 
                 masternode_reward_divided = (
                     block_reward * 0.1 + masternode_fee_sum
-                ) / len(reward_nodes)
-                for successful_node in reward_nodes:
+                ) / len(mn_addresses)
+                for mn_address in mn_addresses:
                     updated_outputs.append(
                         Output.from_dict(
                             {
                                 "value": float(masternode_reward_divided),
-                                "to": str(
-                                    P2PKHBitcoinAddress.from_pubkey(
-                                        bytes.fromhex(
-                                            successful_node.identity.public_key
-                                        )
-                                    )
-                                ),
+                                "to": mn_address,
                             }
                         )
                     )
@@ -408,7 +476,7 @@ class Block(object):
                 self_output = Output.from_dict(
                     {
                         "value": block_reward + fee_sum + masternode_fee_sum,
-                        "to": triplet.coinbase_prerotated,
+                        "to": miner_to,
                     }
                 )
 
@@ -423,22 +491,38 @@ class Block(object):
         else:
             return
 
-        new_coinbase.public_key = triplet.signer_public_key
-        new_coinbase.prerotated_key_hash = triplet.coinbase_prerotated
-        new_coinbase.twice_prerotated_key_hash = triplet.coinbase_twice_prerotated
-        new_coinbase.public_key_hash = triplet.coinbase_public_key_hash
-        new_coinbase.prev_public_key_hash = triplet.coinbase_prev_public_key_hash
-        if getattr(triplet, "coinbase_counter", None) is not None:
+        new_coinbase.public_key = signer_public_key
+        # generate_hash v7 concatenates KEL fields as strings; None crashes.
+        new_coinbase.prerotated_key_hash = (
+            (getattr(triplet, "coinbase_prerotated", None) if triplet else None)
+            or miner_to
+            or ""
+        )
+        new_coinbase.twice_prerotated_key_hash = (
+            (getattr(triplet, "coinbase_twice_prerotated", None) if triplet else None)
+            or ""
+        )
+        new_coinbase.public_key_hash = (
+            (getattr(triplet, "coinbase_public_key_hash", None) if triplet else None)
+            or ""
+        )
+        new_coinbase.prev_public_key_hash = (
+            (getattr(triplet, "coinbase_prev_public_key_hash", None) if triplet else None)
+            or ""
+        )
+        if triplet is not None and getattr(triplet, "coinbase_counter", None) is not None:
             new_coinbase.counter = triplet.coinbase_counter
-        if getattr(triplet, "coinbase_inception_public_key_hash", None):
+        if triplet is not None and getattr(
+            triplet, "coinbase_inception_public_key_hash", None
+        ):
             new_coinbase.inception_public_key_hash = (
                 triplet.coinbase_inception_public_key_hash
             )
-        self_output.to = triplet.coinbase_prerotated
+        self_output.to = miner_to
 
         new_coinbase.hash = await new_coinbase.generate_hash()
         new_coinbase.transaction_signature = NodeKeyRotationManager._sign(
-            triplet.signer_private_key, new_coinbase.hash
+            signer_private_key, new_coinbase.hash
         )
         new_coinbase.template_kel = True
         return new_coinbase
