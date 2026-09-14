@@ -385,8 +385,8 @@ class Peer:
                     )
                 except Exception:
                     pass
-                continue
-            cleaned[key] = peer
+            else:
+                cleaned[key] = peer
         # Never fall back to a pool-only map (that forced home → pool.yadacoin.io)
         return cleaned
 

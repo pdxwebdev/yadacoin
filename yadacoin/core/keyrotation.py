@@ -245,8 +245,10 @@ class NodeKeyRotationManager:
         # {address: {"utxos": [...], "block_height": int, "block_hash": str}}
         self._kel_balance_cache: dict = {}
         # Serialize legacy sweeps so PeriodicCallback overlap cannot double-spend
-        # the same UTXO into miner_transactions.
-        self._legacy_sweep_lock = asyncio.Lock()
+        # the same UTXO into miner_transactions. Lazy: asyncio.Lock() requires a
+        # current event loop on Python 3.9, and sync unit tests may construct the
+        # manager after another AsyncTestCase closed the loop.
+        self._legacy_sweep_lock = None
         # Cached after first derivation so background_kel_checker avoids repeating it
         self._k0: dict | None = None
         self._second_factor: str = ""
@@ -2026,6 +2028,9 @@ class NodeKeyRotationManager:
 
         if legacy_address == sweep_target:
             return  # nothing to move
+
+        if self._legacy_sweep_lock is None:
+            self._legacy_sweep_lock = asyncio.Lock()
 
         if self._legacy_sweep_lock.locked():
             return  # another sweep attempt is already in progress
