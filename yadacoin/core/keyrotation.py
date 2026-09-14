@@ -468,7 +468,54 @@ class NodeKeyRotationManager:
             self._inception_txn_id = inception.transaction_signature
 
             self.config.username = inception.relationship.username
-            self.config.username_signature = inception.relationship.username_signature
+            # Always align to derived K0 (not BIP32 master). Master pubkey +
+            # K0 username_signature is the usual cause of
+            # "invalid peer identity signature" on /websocket.
+            try:
+                import base64 as _b64
+
+                k0_pub = k0_pub_hex
+                self.config.public_key = k0_pub
+                k0_addr = str(P2PKHBitcoinAddress.from_pubkey(k0_pub_bytes))
+                self.config.address = k0_addr
+                usig = getattr(inception.relationship, "username_signature", None) or ""
+                uname = (self.config.username or "").strip()
+                ok = False
+                if usig and uname:
+                    try:
+                        from coincurve import verify_signature as _vs
+
+                        ok = bool(
+                            _vs(
+                                _b64.b64decode(usig),
+                                uname.encode("utf-8"),
+                                bytes.fromhex(k0_pub),
+                            )
+                        )
+                    except Exception:
+                        ok = False
+                if ok:
+                    self.config.username_signature = usig
+                else:
+                    # Re-sign with K0 so get_identity / WS clients always verify
+                    self.config.username_signature = _b64.b64encode(
+                        _CoincurvePrivateKey(k0["private_key"]).sign(
+                            uname.encode("utf-8")
+                        )
+                    ).decode("utf-8")
+                    config.app_log.warning(
+                        "NodeKeyRotationManager: realigned username_signature to K0 "
+                        "(was not valid for derived K0 public key)"
+                    )
+            except Exception as exc:
+                config.app_log.warning(
+                    "NodeKeyRotationManager: could not align identity to K0: %s",
+                    exc,
+                )
+                self.config.username_signature = (
+                    getattr(inception.relationship, "username_signature", None)
+                    or self.config.username_signature
+                )
 
             # If already on-chain, finalise immediately
             inception_onchain = not getattr(inception, "mempool", False)

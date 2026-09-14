@@ -111,6 +111,7 @@ export function unlockIdentity(
   if (!username?.trim()) throw new Error("username required");
 
   const k0 = deriveK0(mnemonic, secondFactor);
+  // K0 signature is the stable on-chain identity announcement signature
   const usernameSignature = signUsername(username.trim(), k0.privateKey);
   const mainDepth = opts?.mainDepth ?? 0;
   const tipSigner = walkMain(k0, secondFactor, mainDepth);
@@ -125,6 +126,24 @@ export function unlockIdentity(
     tipSigner,
     tipPrevPkh: opts?.tipPrevPkh ?? "",
     inceptionPublicKeyHash: k0.address,
+  };
+}
+
+/**
+ * Live peer identity for /websocket connect.
+ * Nodes verify username_signature against the presented public_key; after KEL
+ * advance that must be the tip key (Kn), not K0.
+ */
+export function websocketPeerIdentity(identity: VaultIdentity): {
+  public_key: string;
+  username: string;
+  username_signature: string;
+} {
+  const tip = identity.tipSigner;
+  return {
+    public_key: tip.publicKeyHex,
+    username: identity.username,
+    username_signature: signUsername(identity.username, tip.privateKey),
   };
 }
 
@@ -463,21 +482,38 @@ export async function rotateSitePassword(
       _replaced: true,
     });
   }
-  let password = live.nextPassword || site.nextPassword || live.currentPassword;
-  let nextReveal = "";
+  let password = live.currentPassword || site.currentPassword || "";
+  let nextReveal = live.nextPassword || site.nextPassword || "";
   if (opts?.expectedHash) {
     const found = findPasswordMatchingHash(
       identity,
       keys.branchPeer,
       opts.expectedHash
     );
-    if (!found) {
-      throw new Error(
-        "stored next hash is not in this vault's password chain"
-      );
+    if (found) {
+      password = found.password;
+      nextReveal = found.nextPassword;
+    } else {
+      // RP localStorage / callback hash is often stale after vault restore or
+      // a different device registered the branch. Prefer the node tip dual-commit.
+      const tipPre =
+        (tip.password && tip.password.prerotated_password_hash) ||
+        tip.prerotated_password_hash ||
+        "";
+      const fromTip = tipPre
+        ? findPasswordMatchingHash(identity, keys.branchPeer, tipPre)
+        : null;
+      if (fromTip) {
+        password = fromTip.password;
+        nextReveal = fromTip.nextPassword;
+      } else if (!password) {
+        throw new Error(
+          "stored next hash is not in this vault's password chain — " +
+            "clear the RP next-hash or Register again with this vault"
+        );
+      }
+      // else: keep tip-derived live.currentPassword
     }
-    password = found.password;
-    nextReveal = found.nextPassword;
   }
   if (!password) {
     throw new Error("no site password available");

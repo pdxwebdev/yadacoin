@@ -296,10 +296,82 @@ class Config:
         return status
 
     def get_identity(self):
+        """Stable public identity for clients / WebSocket connect.
+
+        Must be a verifying (username, username_signature, public_key) tuple.
+        Prefer KEL K0 when available; never mix BIP32 master pubkey with a
+        K0-signed username_signature (that breaks /websocket connect).
+        """
+        import base64
+
+        from bitcoin.wallet import P2PKHBitcoinAddress
+        from coincurve import PrivateKey as CcPrivateKey
+        from coincurve import verify_signature
+
+        username = (self.username or "").strip()
+        username_signature = self.username_signature or ""
+        public_key = self.public_key or ""
+        address = self.address or ""
+
+        inception = getattr(self, "inception", None)
+        if inception is not None:
+            rel = getattr(inception, "relationship", None)
+            if rel is not None:
+                uname = getattr(rel, "username", None) or (
+                    rel.get("username") if isinstance(rel, dict) else None
+                )
+                usig = getattr(rel, "username_signature", None) or (
+                    rel.get("username_signature") if isinstance(rel, dict) else None
+                )
+                if uname:
+                    username = uname
+                if usig:
+                    username_signature = usig
+            ipub = getattr(inception, "public_key", None)
+            if ipub:
+                public_key = ipub
+            ipkh = getattr(inception, "public_key_hash", None)
+            if ipkh:
+                address = ipkh
+
+        # Prefer derived K0 from kel_manager when present (authoritative)
+        kel_manager = getattr(self, "kel_manager", None)
+        k0 = getattr(kel_manager, "_k0", None) if kel_manager is not None else None
+        if isinstance(k0, dict) and k0.get("private_key") is not None:
+            try:
+                pk = CcPrivateKey(k0["private_key"])
+                k0_pub = pk.public_key.format(compressed=True).hex()
+                public_key = k0_pub
+                address = str(
+                    P2PKHBitcoinAddress.from_pubkey(
+                        pk.public_key.format(compressed=True)
+                    )
+                )
+                # Ensure signature verifies against K0; re-sign if stale/mismatched
+                ok = False
+                if username and username_signature:
+                    try:
+                        ok = bool(
+                            verify_signature(
+                                base64.b64decode(username_signature),
+                                username.encode("utf-8"),
+                                bytes.fromhex(k0_pub),
+                            )
+                        )
+                    except Exception:
+                        ok = False
+                if not ok and username:
+                    username_signature = base64.b64encode(
+                        pk.sign(username.encode("utf-8"))
+                    ).decode("utf-8")
+            except Exception:
+                pass
+
         return {
-            "username": self.username,
-            "username_signature": self.username_signature,
-            "public_key": self.public_key,
+            "username": username,
+            "username_signature": username_signature,
+            "public_key": public_key,
+            "address": address,
         }
 
     @classmethod

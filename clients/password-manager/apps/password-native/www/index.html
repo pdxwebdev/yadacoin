@@ -26,12 +26,16 @@
       <section id="panel-home" class="pm-card">
         <h1 class="pm-title">Password manager</h1>
         <p class="pm-muted">
-          Other apps (e.g. Demo Harness) open this app via
-          <code>yadapass://</code> to register a site or sign-in &amp; rotate.
+          Other apps open this app via <code>yadapass://</code>, or a WebView
+          can route by your Yada username while this app stays online on your node.
         </p>
         <div class="pm-field">
           <label>Status</label>
           <div class="mono" id="homeStatus">—</div>
+        </div>
+        <div class="pm-field">
+          <label>Network presence</label>
+          <div class="mono" id="homePresence">offline</div>
         </div>
         <div class="pm-field">
           <label>K0</label>
@@ -75,7 +79,7 @@
 
       <section id="panel-request" class="pm-card" hidden>
         <h1 class="pm-title">Incoming request</h1>
-        <p class="pm-muted" id="reqEmpty">No pending deep-link request.</p>
+        <p class="pm-muted" id="reqEmpty">No pending deep-link or remote request.</p>
         <div id="reqBody" hidden>
           <div class="pm-field">
             <label>Action</label>
@@ -86,7 +90,7 @@
             <div class="mono" id="reqSite">—</div>
           </div>
           <div class="pm-field">
-            <label>Callback</label>
+            <label>Callback / session</label>
             <div class="mono" id="reqCallback">—</div>
           </div>
           <div class="pm-field">
@@ -108,6 +112,6 @@
         </div>
       </section>
     </div>
-    <script type="module" src="js/main.js"></script>
+    <script type="module" src="js/main.js?v=local-node-3"></script>
   </body>
 </html>

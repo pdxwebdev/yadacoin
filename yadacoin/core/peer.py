@@ -347,6 +347,116 @@ class Peer:
         ]
         return seed_gateway
 
+    @staticmethod
+    def _service_providers_map():
+        """OrderedDict of configured / network service providers.
+
+        Drops entries that are clearly not SPs (e.g. bare pool hosts mis-listed
+        under network_service_providers).
+        """
+        config = Config()
+        sps = getattr(config, "service_providers", None)
+        if not sps:
+            sps = Peers.get_config_service_providers() or Peers.get_service_providers()
+        if not sps:
+            return sps
+
+        def _looks_like_pool_only(peer) -> bool:
+            host = getattr(peer, "host", None) or getattr(peer, "http_host", None) or ""
+            host = str(host).lower()
+            pt = (getattr(peer, "peer_type", None) or "").lower()
+            if pt == PEER_TYPES.POOL.value:
+                return True
+            # Common misconfig: pool.yadacoin.io under network_service_providers
+            if host.startswith("pool.") or host.endswith(".pool") or "/pool" in host:
+                return True
+            if "pool.yadacoin" in host:
+                return True
+            return False
+
+        cleaned = OrderedDict()
+        for key, peer in sps.items():
+            if _looks_like_pool_only(peer):
+                try:
+                    config.app_log.warning(
+                        "Ignoring non-SP entry in service_providers map: %s (%s)",
+                        key,
+                        getattr(peer, "host", None),
+                    )
+                except Exception:
+                    pass
+                continue
+            cleaned[key] = peer
+        # Never fall back to a pool-only map (that forced home → pool.yadacoin.io)
+        return cleaned
+
+    @staticmethod
+    def select_service_provider(
+        username_signature: str,
+        *,
+        rotate: bool = True,
+        skip_ignored: bool = False,
+    ):
+        """Pick one service provider from ``username_signature`` (deterministic).
+
+        Same index math as ``calculate_seed_gateway`` when *rotate* is True::
+
+            idx = (int(sha256(username_signature), 16) * seed_time) % n
+
+        When *rotate* is False (password-home / tip locality), *seed_time* is
+        fixed at 1 so the assignment does not drift every ``Peer.ttl`` window.
+        """
+        if not username_signature:
+            return None
+        config = Config()
+        providers = Peer._service_providers_map()
+        if not providers:
+            return None
+        username_signature_hash = hashlib.sha256(
+            username_signature.encode()
+        ).hexdigest()
+        keys = list(providers)
+        n = len(keys)
+        if rotate:
+            seed_time = int((time.time() - Peer.epoch) / Peer.ttl) + 1
+        else:
+            seed_time = 1
+        seed_select = (int(username_signature_hash, 16) * seed_time) % n
+        first_number = seed_select
+        num_reset = False
+
+        def _sp_ignore_key(sp):
+            if getattr(sp, "identity", None) is not None:
+                return sp.identity.username_signature
+            return getattr(sp, "identity_announcement", None)
+
+        if skip_ignored:
+            try:
+                ignore_map = config.nodeClient.outbound_ignore[ServiceProvider.__name__]
+            except Exception:
+                ignore_map = {}
+            while is_outbound_ignored(
+                ignore_map, _sp_ignore_key(providers[keys[seed_select]])
+            ):
+                seed_select += 1
+                if num_reset and seed_select >= first_number:
+                    return None
+                if seed_select >= n:
+                    seed_select = 0
+                    num_reset = True
+
+        return providers[keys[seed_select]]
+
+    async def calculate_service_provider(self, nonce=None):
+        """Deterministic SP for a Group (mirrors ``calculate_seed_gateway``)."""
+        if self.identity is None:
+            return None
+        return Peer.select_service_provider(
+            self.identity.username_signature,
+            rotate=True,
+            skip_ignored=True,
+        )
+
     async def ensure_peers_connected(self):
         if (
             getattr(self.config, "peer", None) is None

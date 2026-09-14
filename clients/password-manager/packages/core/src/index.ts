@@ -7,3 +7,4 @@ export * from "./vault.js";
 export * from "./client.js";
 export * from "./deeplink.js";
 export * from "./caller-identity.js";
+export * from "./auth-session.js";

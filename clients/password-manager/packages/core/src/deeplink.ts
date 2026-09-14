@@ -3,17 +3,23 @@
 export const PASSWORD_MANAGER_SCHEME = "yadapass";
 export const DEMO_HARNESS_SCHEME = "yadademo";
 
-export type BridgeAction = "signin" | "register" | "status";
+export type BridgeAction = "signin" | "register" | "status" | "operator";
 
 export interface BridgeRequest {
   action: BridgeAction;
   /** Full origin / site id (scheme + FQDN + port or app id) */
   site: string;
-  /** Callback URL base, e.g. yadademo://result */
+  /** Callback URL base, e.g. yadademo://result — empty for remote session handoff */
   callback: string;
   nonce: string;
   /** RP's stored next password PHC so the authenticator can sync. */
   expectedHash?: string;
+  /** Remote webview session id (username handoff). */
+  sessionId?: string;
+  /** Token required to POST the session result (from WS push). */
+  resultToken?: string;
+  /** Source of the request for UI. */
+  source?: "deeplink" | "remote";
 }
 
 export interface BridgeResult {
@@ -29,7 +35,7 @@ export interface BridgeResult {
   nextPasswordHash?: string;
 }
 
-const ACTIONS = new Set<BridgeAction>(["signin", "register", "status"]);
+const ACTIONS = new Set<BridgeAction>(["signin", "register", "status", "operator"]);
 
 function isAction(v: string | null | undefined): v is BridgeAction {
   return !!v && ACTIONS.has(v as BridgeAction);

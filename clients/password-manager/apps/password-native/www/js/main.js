@@ -5012,15 +5012,15 @@ var wNAF = class {
     const { windows, windowSize } = calcWOpts(W, this.bits);
     const points = [];
     let p = point;
-    let base = p;
+    let base2 = p;
     for (let window2 = 0; window2 < windows; window2++) {
-      base = p;
-      points.push(base);
+      base2 = p;
+      points.push(base2);
       for (let i = 1; i < windowSize; i++) {
-        base = base.add(p);
-        points.push(base);
+        base2 = base2.add(p);
+        points.push(base2);
       }
-      p = base.double();
+      p = base2.double();
     }
     return points;
   }
@@ -9196,6 +9196,17 @@ function signUsername(username, privateKey) {
   const sig = secp256k1.sign(digest, privateKey);
   return bytesToBase64(sig.toDERRawBytes());
 }
+function signMessage(message, privateKey) {
+  const digest = sha2562(new TextEncoder().encode(message));
+  const sig = secp256k1.sign(digest, privateKey);
+  return bytesToBase64(sig.toDERRawBytes());
+}
+function passwordHomeMessage(nodeHttpBase, username, timestamp) {
+  return `password-home|${nodeHttpBase}|${username}|${timestamp}`;
+}
+function signPasswordHomeClaim(nodeHttpBase, username, timestamp, privateKey) {
+  return signMessage(passwordHomeMessage(nodeHttpBase, username, timestamp), privateKey);
+}
 function buildAndSignTxn(signer, fields) {
   const publicKey = fields.publicKey ?? signer.publicKeyHex;
   const publicKeyHash = fields.publicKeyHash ?? signer.address;
@@ -9287,6 +9298,14 @@ function unlockIdentity(mnemonic, secondFactor, username, opts) {
     tipSigner,
     tipPrevPkh: opts?.tipPrevPkh ?? "",
     inceptionPublicKeyHash: k0.address
+  };
+}
+function websocketPeerIdentity(identity) {
+  const tip = identity.tipSigner;
+  return {
+    public_key: tip.publicKeyHex,
+    username: identity.username,
+    username_signature: signUsername(identity.username, tip.privateKey)
   };
 }
 function buildInceptionTxn(identity, time = Math.floor(Date.now() / 1e3)) {
@@ -9513,15 +9532,23 @@ async function rotateSitePassword(api, identity, site, time = Math.floor(Date.no
       _replaced: true
     });
   }
-  let password = live.nextPassword || site.nextPassword || live.currentPassword;
-  let nextReveal = "";
+  let password = live.currentPassword || site.currentPassword || "";
+  let nextReveal = live.nextPassword || site.nextPassword || "";
   if (opts?.expectedHash) {
     const found = findPasswordMatchingHash(identity, keys.branchPeer, opts.expectedHash);
-    if (!found) {
-      throw new Error("stored next hash is not in this vault's password chain");
+    if (found) {
+      password = found.password;
+      nextReveal = found.nextPassword;
+    } else {
+      const tipPre = tip.password && tip.password.prerotated_password_hash || tip.prerotated_password_hash || "";
+      const fromTip = tipPre ? findPasswordMatchingHash(identity, keys.branchPeer, tipPre) : null;
+      if (fromTip) {
+        password = fromTip.password;
+        nextReveal = fromTip.nextPassword;
+      } else if (!password) {
+        throw new Error("stored next hash is not in this vault's password chain \u2014 clear the RP next-hash or Register again with this vault");
+      }
     }
-    password = found.password;
-    nextReveal = found.nextPassword;
   }
   if (!password) {
     throw new Error("no site password available");
@@ -9680,12 +9707,12 @@ async function resyncVaultFromNode(api, identity, sites) {
 // ../../packages/core/dist/deeplink.js
 var PASSWORD_MANAGER_SCHEME = "yadapass";
 var DEMO_HARNESS_SCHEME = "yadademo";
-var ACTIONS = /* @__PURE__ */ new Set(["signin", "register", "status"]);
+var ACTIONS = /* @__PURE__ */ new Set(["signin", "register", "status", "operator"]);
 function isAction(v) {
   return !!v && ACTIONS.has(v);
 }
 function buildDemoCallbackUrl(callbackBase, result) {
-  const base = callbackBase.includes("://") ? callbackBase : `${DEMO_HARNESS_SCHEME}://${callbackBase}`;
+  const base2 = callbackBase.includes("://") ? callbackBase : `${DEMO_HARNESS_SCHEME}://${callbackBase}`;
   const q = new URLSearchParams();
   q.set("nonce", result.nonce);
   q.set("ok", result.ok ? "1" : "0");
@@ -9703,8 +9730,8 @@ function buildDemoCallbackUrl(callbackBase, result) {
     q.set("password", result.password);
   if (result.nextPasswordHash)
     q.set("nextPasswordHash", result.nextPasswordHash);
-  const join2 = base.includes("?") ? "&" : "?";
-  return `${base}${join2}${q.toString()}`;
+  const join2 = base2.includes("?") ? "&" : "?";
+  return `${base2}${join2}${q.toString()}`;
 }
 function parseQueryFromUrl(url) {
   const qIndex = url.indexOf("?");
@@ -9826,8 +9853,8 @@ function aasaMatchesCaller(aasa, bundleId) {
   });
 }
 async function fetchAndroidAssetLinks(origin, fetchImpl = globalThis.fetch.bind(globalThis)) {
-  const base = origin.replace(/\/+$/, "");
-  const url = `${base}/.well-known/assetlinks.json`;
+  const base2 = origin.replace(/\/+$/, "");
+  const url = `${base2}/.well-known/assetlinks.json`;
   try {
     const res = await fetchImpl(url, {
       headers: { Accept: "application/json" }
@@ -9841,10 +9868,10 @@ async function fetchAndroidAssetLinks(origin, fetchImpl = globalThis.fetch.bind(
   }
 }
 async function fetchAppleAppSiteAssociation(origin, fetchImpl = globalThis.fetch.bind(globalThis)) {
-  const base = origin.replace(/\/+$/, "");
+  const base2 = origin.replace(/\/+$/, "");
   const urls = [
-    `${base}/.well-known/apple-app-site-association`,
-    `${base}/apple-app-site-association`
+    `${base2}/.well-known/apple-app-site-association`,
+    `${base2}/apple-app-site-association`
   ];
   for (const url of urls) {
     try {
@@ -9990,6 +10017,69 @@ function verifyNativeCaller(opts) {
   };
 }
 
+// ../../packages/core/dist/auth-session.js
+function base(url) {
+  return (url || "").replace(/\/+$/, "");
+}
+async function jsonFetch(url, init) {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      Accept: "application/json",
+      ...init?.body ? { "Content-Type": "application/json" } : {},
+      ...init?.headers || {}
+    }
+  });
+  const text = await res.text();
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    body = { raw: text };
+  }
+  return { ok: res.ok, status: res.status, body };
+}
+async function postAuthSessionResult(nodeUrl, sessionId, result) {
+  const { body } = await jsonFetch(base(nodeUrl) + "/password-rotation/auth-session/" + encodeURIComponent(sessionId) + "/result", {
+    method: "POST",
+    body: JSON.stringify(result)
+  });
+  return body;
+}
+async function fetchPendingAuthSessions(nodeUrl, q) {
+  const params = new URLSearchParams();
+  if (q.username)
+    params.set("username", q.username);
+  if (q.username_signature)
+    params.set("username_signature", q.username_signature);
+  if (q.public_key)
+    params.set("public_key", q.public_key);
+  if (q.inception_pkh)
+    params.set("inception_pkh", q.inception_pkh);
+  const { body } = await jsonFetch(base(nodeUrl) + "/password-rotation/auth-session/pending?" + params.toString());
+  return body?.pending || [];
+}
+async function publishPasswordHome(nodeUrl, claim) {
+  const { body } = await jsonFetch(base(nodeUrl) + "/password-rotation/home", {
+    method: "POST",
+    body: JSON.stringify(claim)
+  });
+  return body;
+}
+function nodeUrlToWebSocketUrl(nodeUrl) {
+  const u = base(nodeUrl);
+  if (!u)
+    return "";
+  if (u.startsWith("https://"))
+    return "wss://" + u.slice("https://".length) + "/websocket";
+  if (u.startsWith("http://"))
+    return "ws://" + u.slice("http://".length) + "/websocket";
+  if (u.startsWith("wss://") || u.startsWith("ws://")) {
+    return u.endsWith("/websocket") ? u : u + "/websocket";
+  }
+  return "ws://" + u + "/websocket";
+}
+
 // ../../packages/shared-ui/dist/theme/presets.js
 var baseTypography = {
   fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -10101,17 +10191,17 @@ function prefersDark() {
     return false;
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
-function deepMergeTheme(base, overlay) {
+function deepMergeTheme(base2, overlay) {
   if (!overlay)
-    return base;
+    return base2;
   return {
-    id: overlay.id ?? base.id,
-    name: overlay.name ?? base.name,
-    mode: overlay.mode ?? base.mode,
-    brand: { ...base.brand, ...overlay.brand },
-    colors: { ...base.colors, ...overlay.colors },
-    typography: { ...base.typography, ...overlay.typography },
-    shape: { ...base.shape, ...overlay.shape }
+    id: overlay.id ?? base2.id,
+    name: overlay.name ?? base2.name,
+    mode: overlay.mode ?? base2.mode,
+    brand: { ...base2.brand, ...overlay.brand },
+    colors: { ...base2.colors, ...overlay.colors },
+    typography: { ...base2.typography, ...overlay.typography },
+    shape: { ...base2.shape, ...overlay.shape }
   };
 }
 function resolveMode(mode, systemPrefersDark) {
@@ -10121,13 +10211,13 @@ function resolveMode(mode, systemPrefersDark) {
   return dark ? "dark" : "light";
 }
 function resolveTheme(input = {}) {
-  let base = DEFAULT_THEME;
+  let base2 = DEFAULT_THEME;
   if (typeof input.preset === "string") {
-    base = PRESETS[input.preset] ?? DEFAULT_THEME;
+    base2 = PRESETS[input.preset] ?? DEFAULT_THEME;
   } else if (input.preset) {
-    base = input.preset;
+    base2 = input.preset;
   }
-  let merged = deepMergeTheme(base, input.remote);
+  let merged = deepMergeTheme(base2, input.remote);
   merged = deepMergeTheme(merged, input.user);
   const resolvedMode = resolveMode(merged.mode, input.systemPrefersDark);
   if (merged.mode === "system") {
@@ -10216,6 +10306,10 @@ var VAULT_KEY = "yadaPasswordNativeVault";
 var pending = null;
 var pendingCaller = null;
 var pendingVerify = null;
+var authWs = null;
+var authWsTimer = null;
+var authWsIdentityKey = "";
+var presenceStatus = "offline";
 function pinFromStored(s) {
   if (!s?.androidPackage) return null;
   return {
@@ -10267,8 +10361,41 @@ function alertMsg(msg, kind = "") {
   el.textContent = msg;
   el.className = `pm-alert${kind ? ` pm-alert--${kind}` : ""}`;
 }
+function defaultNodeUrl() {
+  try {
+    if (typeof window !== "undefined" && window.location?.origin) {
+      const o = window.location.origin;
+      if (o && o !== "null" && o.startsWith("http")) return o.replace(/\/+$/, "");
+    }
+  } catch {
+  }
+  return "";
+}
+function isLocalHttpHost(url) {
+  try {
+    const u = new URL(url.includes("://") ? url : `http://${url}`);
+    const h = (u.hostname || "").toLowerCase();
+    return h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0" || h === "10.0.2.2" || h.startsWith("192.168.") || h.startsWith("10.") || /^172\.(1[6-9]|2\d|3[0-1])\./.test(h);
+  } catch {
+    return false;
+  }
+}
+function pageServedFromNode() {
+  try {
+    const path = window.location?.pathname || "";
+    return path.includes("/password-rotation/app");
+  } catch {
+    return false;
+  }
+}
 function resolveNodeUrl(url) {
   let u = (url || "").trim().replace(/\/+$/, "");
+  const origin = defaultNodeUrl();
+  if (pageServedFromNode() && origin && isLocalHttpHost(origin)) {
+    u = origin;
+  } else if (!u) {
+    u = origin;
+  }
   if (Capacitor.getPlatform() === "android") {
     u = u.replace(/127\.0\.0\.1/g, "10.0.2.2").replace(/localhost/gi, "10.0.2.2");
   }
@@ -10357,6 +10484,14 @@ function setVerifyUi(v, caller) {
   const callerEl = $("reqCaller");
   const certEl = $("reqCert");
   const approve = $("approveBtn");
+  if (pending?.source === "remote") {
+    badge.textContent = "Remote session \xB7 confirm site origin below";
+    badge.className = "mono pm-verify pm-verify--ok";
+    callerEl.textContent = "WebView / network handoff";
+    certEl.textContent = pending.sessionId || "\u2014";
+    approve.disabled = false;
+    return;
+  }
   if (!v) {
     badge.textContent = "\u2014";
     badge.className = "mono";
@@ -10391,11 +10526,22 @@ function showPending(req) {
   }
   $("reqEmpty").hidden = true;
   $("reqBody").hidden = false;
-  $("reqAction").textContent = req.action;
+  $("reqAction").textContent = req.source === "remote" ? `${req.action} (remote)` : req.action;
   $("reqSite").textContent = req.site;
-  $("reqCallback").textContent = req.callback;
+  $("reqCallback").textContent = req.source === "remote" ? `session ${req.sessionId || "\u2014"}` : req.callback;
   setVerifyUi(pendingVerify, pendingCaller);
   setTab("request");
+  try {
+    if (typeof document !== "undefined") {
+      document.title = `Yada Password \xB7 ${req.action}`;
+    }
+  } catch {
+  }
+}
+function setPresenceUi(status) {
+  presenceStatus = status;
+  const el = document.getElementById("homePresence");
+  if (el) el.textContent = status;
 }
 async function refreshHome() {
   const v = await loadVault();
@@ -10411,6 +10557,8 @@ async function refreshHome() {
     $("homeStatus").textContent = v.inceptionDone ? `Ready \xB7 main depth ${v.mainDepth}` : "Vault saved \xB7 inception pending";
     const keys = Object.keys(v.sites || {});
     $("homeSites").textContent = keys.length ? keys.join("\n") : "(none)";
+    setPresenceUi(presenceStatus);
+    if (v.inceptionDone) void ensureAuthWs();
   } catch (e) {
     $("homeStatus").textContent = e instanceof Error ? e.message : String(e);
   }
@@ -10438,12 +10586,299 @@ async function openCallback(url, packageName) {
   window.location.href = url;
 }
 async function respond(result, callback) {
+  const req = pending;
+  if (req?.source === "remote" && req.sessionId && req.resultToken) {
+    const v = await loadVault();
+    const nodeUrl = resolveNodeUrl(v?.nodeUrl || "");
+    if (!nodeUrl) throw new Error("node URL not configured");
+    await postAuthSessionResult(nodeUrl, req.sessionId, {
+      result_token: req.resultToken,
+      ok: result.ok,
+      deny: !result.ok,
+      action: result.action,
+      nonce: result.nonce,
+      message: result.message,
+      password: result.password,
+      nextPasswordHash: result.nextPasswordHash,
+      counter: result.counter,
+      registered: result.registered
+    });
+    await persistPending(null);
+    showPending(null);
+    alertMsg(
+      result.ok ? "Approved \xB7 result sent to the web session" : result.message || "Denied",
+      result.ok ? "success" : "error"
+    );
+    try {
+      document.title = "Yada Password";
+    } catch {
+    }
+    return;
+  }
   const url = buildDemoCallbackUrl(callback, result);
   const pkg = pendingCaller?.packageName || pendingVerify?.pin?.packageName;
   await persistPending(null);
   showPending(null);
   console.info("[yadapass] callback:", url);
   await openCallback(url, pkg);
+}
+function remotePayloadToRequest(p) {
+  let site = (p.site || "").trim();
+  if (site.startsWith("http://") || site.startsWith("https://")) {
+    site = normalizeSiteId(site);
+  }
+  return {
+    action: p.action,
+    site,
+    callback: "",
+    nonce: p.nonce,
+    expectedHash: p.expectedHash || void 0,
+    sessionId: p.session_id,
+    resultToken: p.result_token,
+    source: "remote"
+  };
+}
+async function ingestRemoteAuth(p) {
+  if (!p?.session_id || !p?.result_token || !p?.site || !p?.nonce) return;
+  if (pending && pending.source !== "remote") return;
+  if (pending?.sessionId === p.session_id) return;
+  const req = remotePayloadToRequest(p);
+  pendingCaller = null;
+  pendingVerify = {
+    ok: true,
+    reason: "remote-session",
+    displayName: "Web handoff",
+    pin: { packageName: "webview", sha256CertFingerprints: [] }
+  };
+  await persistPending(req);
+  showPending(req);
+  alertMsg(`Remote ${req.action} \xB7 ${req.site} \u2014 approve in Request tab`, "success");
+}
+async function publishHomeClaim(v) {
+  const entry = resolveNodeUrl(v.nodeUrl || defaultNodeUrl());
+  if (!entry || !v.inceptionDone) return;
+  try {
+    const id = identityFromVault(v);
+    if (resolveNodeUrl(v.nodeUrl || "") !== entry) {
+      const next = { ...v, nodeUrl: entry };
+      await saveVault(next);
+      $("nodeUrl").value = entry;
+    }
+    const ts = Math.floor(Date.now() / 1e3);
+    const signature = signPasswordHomeClaim(
+      entry,
+      id.username,
+      ts,
+      id.k0.privateKey
+    );
+    await publishPasswordHome(entry, {
+      username: id.username,
+      node_http_base: entry,
+      public_key: id.k0.publicKeyHex,
+      timestamp: ts,
+      signature
+    });
+  } catch (e) {
+    console.warn("[yadapass] home claim failed", e);
+  }
+}
+async function drainPendingRemote(v) {
+  const nodeUrl = resolveNodeUrl(v.nodeUrl || "");
+  if (!nodeUrl || !v.inceptionDone) return;
+  try {
+    const id = identityFromVault(v);
+    const rows = await fetchPendingAuthSessions(nodeUrl, {
+      username: id.username,
+      username_signature: id.usernameSignature,
+      public_key: id.k0.publicKeyHex,
+      inception_pkh: id.k0.address
+    });
+    for (const row of rows) {
+      await ingestRemoteAuth(row);
+      break;
+    }
+  } catch (e) {
+    console.warn("[yadapass] pending drain failed", e);
+  }
+}
+function stopAuthWs() {
+  if (authWsTimer) {
+    clearTimeout(authWsTimer);
+    authWsTimer = null;
+  }
+  if (authWs) {
+    try {
+      authWs.onclose = null;
+      authWs.onerror = null;
+      authWs.onmessage = null;
+      authWs.close();
+    } catch {
+    }
+    authWs = null;
+  }
+  authWsIdentityKey = "";
+  setPresenceUi("offline");
+}
+var authWsBackoffMs = 4e3;
+var authWsFailCount = 0;
+function scheduleAuthWsReconnect(delayMs) {
+  if (authWsTimer) clearTimeout(authWsTimer);
+  const wait = delayMs ?? authWsBackoffMs;
+  authWsTimer = setTimeout(() => {
+    void ensureAuthWs();
+  }, wait);
+}
+async function ensureAuthWs() {
+  let v = await loadVault();
+  if (!v) {
+    if (authWs) stopAuthWs();
+    setPresenceUi("offline \xB7 open Vault and save");
+    return;
+  }
+  if (!v.inceptionDone) {
+    if (authWs) stopAuthWs();
+    setPresenceUi("offline \xB7 broadcast inception first");
+    return;
+  }
+  const nodeUrl = resolveNodeUrl(v.nodeUrl || "");
+  if (!nodeUrl) {
+    if (authWs) stopAuthWs();
+    setPresenceUi("offline \xB7 set Node URL");
+    return;
+  }
+  try {
+    let idProbe = identityFromVault(v);
+    const depth = await fetchKelDepth(
+      { baseUrl: nodeUrl },
+      idProbe.k0.publicKeyHex
+    );
+    if (depth >= 1 && depth !== (v.mainDepth || 0)) {
+      v = {
+        ...v,
+        mainDepth: depth,
+        tipPrevPkh: v.tipPrevPkh || idProbe.k0.address
+      };
+      await saveVault(v);
+      console.info("[yadapass] synced mainDepth \u2192", depth);
+    }
+  } catch (e) {
+    console.warn("[yadapass] kel depth sync failed", e);
+  }
+  let id;
+  try {
+    id = identityFromVault(v);
+  } catch (e) {
+    if (authWs) stopAuthWs();
+    setPresenceUi(
+      "offline \xB7 " + (e instanceof Error ? e.message : "bad vault")
+    );
+    return;
+  }
+  if ((id.mainDepth || 0) < 1) {
+    setPresenceUi("offline \xB7 KEL depth 0 \u2014 resync or broadcast inception");
+  }
+  const peerId = websocketPeerIdentity(id);
+  const identityKey = `${nodeUrl}|${id.username}|${peerId.public_key}|${id.mainDepth}`;
+  if (authWs && (authWs.readyState === WebSocket.CONNECTING || authWs.readyState === WebSocket.OPEN) && authWsIdentityKey === identityKey) {
+    return;
+  }
+  if (authWs) {
+    try {
+      authWs.onclose = null;
+      authWs.close();
+    } catch {
+    }
+    authWs = null;
+  }
+  const wsUrl = nodeUrlToWebSocketUrl(nodeUrl);
+  if (!wsUrl) {
+    setPresenceUi("offline \xB7 bad Node URL");
+    return;
+  }
+  authWsIdentityKey = identityKey;
+  setPresenceUi(`connecting\u2026 ${wsUrl}`);
+  console.info("[yadapass] ws \u2192", wsUrl);
+  try {
+    const ws = new WebSocket(wsUrl);
+    authWs = ws;
+    let rpcId = 1;
+    let confirmed = false;
+    const send = (method, params = {}) => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      ws.send(
+        JSON.stringify({
+          id: rpcId++,
+          jsonrpc: "2.0",
+          method,
+          params
+        })
+      );
+    };
+    ws.onopen = () => {
+      setPresenceUi("connected \xB7 authenticating");
+      console.info("[yadapass] connect identity (KEL tip)", {
+        username: peerId.username,
+        public_key: peerId.public_key.slice(0, 18) + "\u2026",
+        mainDepth: id.mainDepth
+      });
+      send("connect", {
+        identity: peerId
+      });
+    };
+    ws.onmessage = (ev) => {
+      let msg;
+      try {
+        msg = JSON.parse(String(ev.data || ""));
+      } catch {
+        return;
+      }
+      const method = msg?.method || "";
+      const params = msg?.params || msg?.result || {};
+      if (method === "connect_confirm") {
+        confirmed = true;
+        authWsFailCount = 0;
+        authWsBackoffMs = 4e3;
+        setPresenceUi("online");
+        send("join_password_auth", {});
+        void publishHomeClaim(v);
+        void drainPendingRemote(v);
+        return;
+      }
+      if (method === "join_password_auth_confirm") {
+        const pendingRows = params?.pending || [];
+        for (const row of pendingRows) {
+          void ingestRemoteAuth(row);
+          break;
+        }
+        return;
+      }
+      if (method === "password_auth_request") {
+        void ingestRemoteAuth(params);
+      }
+    };
+    ws.onerror = () => {
+      console.warn("[yadapass] ws error", wsUrl);
+      setPresenceUi("error \xB7 check Node URL / WS");
+    };
+    ws.onclose = () => {
+      authWs = null;
+      if (!confirmed) {
+        authWsFailCount += 1;
+        authWsBackoffMs = Math.min(6e4, 4e3 * Math.pow(2, Math.min(authWsFailCount, 4)));
+        setPresenceUi(
+          "offline \xB7 identity rejected or WS closed \xB7 retry " + Math.round(authWsBackoffMs / 1e3) + "s (use vault seed+password that match this username)"
+        );
+      } else {
+        setPresenceUi("offline \xB7 retrying");
+        authWsBackoffMs = 4e3;
+      }
+      scheduleAuthWsReconnect();
+    };
+  } catch (e) {
+    console.warn("[yadapass] ws connect failed", e);
+    setPresenceUi("offline \xB7 retrying");
+    scheduleAuthWsReconnect();
+  }
 }
 var PENDING_PREF = "yadaPendingBridgeRequest";
 async function persistPending(req) {
@@ -10554,11 +10989,12 @@ async function approvePending() {
   btn.disabled = true;
   alertMsg("Working\u2026", "success");
   try {
-    if (nativePlatform() && !pendingVerify?.ok) {
+    const isRemote = req.source === "remote";
+    if (nativePlatform() && !isRemote && !pendingVerify?.ok) {
       alertMsg(`Caller not verified: ${pendingVerify?.reason || "unknown"}`, "error");
       return;
     }
-    const pin = pendingVerify?.ok ? pendingVerify.pin : null;
+    const pin = !isRemote && pendingVerify?.ok ? pendingVerify.pin : null;
     let v = await loadVault();
     if (!v) {
       await respond(
@@ -10694,7 +11130,7 @@ async function approvePending() {
       await refreshHome();
       return;
     }
-    if (req.action === "signin") {
+    if (req.action === "signin" || req.action === "operator") {
       const local = lookupStoredSite(v.sites, siteKey);
       let site;
       try {
@@ -10702,6 +11138,11 @@ async function approvePending() {
       } catch (e) {
         if (local) {
           site = siteFromStored(local.site);
+        } else if (req.action === "operator") {
+          const reg = await registerSite({ baseUrl: nodeUrl }, identity, siteKey);
+          v.mainDepth = reg.identity.mainDepth;
+          v.tipPrevPkh = reg.identity.tipPrevPkh;
+          site = reg.site;
         } else {
           throw e instanceof Error ? e : new Error(String(e) || "site not registered on node");
         }
@@ -10724,13 +11165,13 @@ async function approvePending() {
         {
           nonce: req.nonce,
           ok: true,
-          action: "signin",
+          action: req.action === "operator" ? "operator" : "signin",
           registered: true,
           counter: result.site.counter,
           password: result.password,
           // Hash of the password that will unlock the *next* sign-in (new tip pre).
           nextPasswordHash: hashPassword(result.site.currentPassword),
-          message: `signed in & rotated \xB7 counter ${result.site.counter}`
+          message: req.action === "operator" ? `operator approved \xB7 counter ${result.site.counter}` : `signed in & rotated \xB7 counter ${result.site.counter}`
         },
         req.callback
       );
@@ -10757,11 +11198,20 @@ async function main() {
     });
   }
   const v0 = await loadVault();
+  const originDefault = defaultNodeUrl();
   if (v0) {
-    $("nodeUrl").value = v0.nodeUrl || "";
+    let nodeField = v0.nodeUrl || originDefault || "";
+    if (pageServedFromNode() && originDefault && isLocalHttpHost(originDefault) && nodeField && !isLocalHttpHost(nodeField)) {
+      nodeField = originDefault;
+      await saveVault({ ...v0, nodeUrl: originDefault });
+      console.info("[yadapass] nodeUrl pinned to page origin", originDefault);
+    }
+    $("nodeUrl").value = nodeField;
     $("username").value = v0.username || "";
     $("secondFactor").value = v0.secondFactor || "";
     $("mnemonic").value = v0.mnemonic || "";
+  } else if (originDefault) {
+    $("nodeUrl").value = originDefault;
   }
   $("genSeedBtn").addEventListener("click", () => {
     $("mnemonic").value = createVaultSeed(128);
@@ -10770,7 +11220,10 @@ async function main() {
   $("saveVaultBtn").addEventListener("click", async () => {
     alertMsg("");
     try {
-      const nodeUrl = resolveNodeUrl($("nodeUrl").value);
+      const nodeUrl = resolveNodeUrl(
+        $("nodeUrl").value || defaultNodeUrl()
+      );
+      if (nodeUrl) $("nodeUrl").value = nodeUrl;
       const username = $("username").value.trim();
       const secondFactor = $("secondFactor").value;
       const mnemonic = $("mnemonic").value.trim();
@@ -10926,10 +11379,20 @@ async function main() {
   if (restored) {
     pendingCaller = restored.caller;
     const vault = await loadVault();
-    const pin = pinFromStored(vault?.sites?.[restored.req.site]);
-    if (!pendingCaller) pendingCaller = await snapshotCaller();
-    pendingVerify = await verifyRequest(restored.req, pendingCaller, pin);
-    showPending(restored.req);
+    if (restored.req.source === "remote") {
+      pendingVerify = {
+        ok: true,
+        reason: "remote-session",
+        displayName: "Web handoff",
+        pin: { packageName: "webview", sha256CertFingerprints: [] }
+      };
+      showPending(restored.req);
+    } else {
+      const pin = pinFromStored(vault?.sites?.[restored.req.site]);
+      if (!pendingCaller) pendingCaller = await snapshotCaller();
+      pendingVerify = await verifyRequest(restored.req, pendingCaller, pin);
+      showPending(restored.req);
+    }
   }
   let launchUrl;
   if (Capacitor.isNativePlatform()) {
@@ -10947,6 +11410,13 @@ async function main() {
     await handleDeepLink(launchUrl);
   }
   await refreshHome();
+  void ensureAuthWs();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void ensureAuthWs();
+  });
+  window.addEventListener("focus", () => {
+    void ensureAuthWs();
+  });
   if (pending) {
     setTab("request");
   } else {

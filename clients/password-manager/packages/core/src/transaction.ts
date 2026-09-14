@@ -113,6 +113,34 @@ export function signUsername(username: string, privateKey: Uint8Array): string {
   return bytesToBase64(sig.toDERRawBytes());
 }
 
+/** Sign utf8 message the same way as username / tx hash (sha256 then DER). */
+export function signMessage(message: string, privateKey: Uint8Array): string {
+  const digest = sha256(new TextEncoder().encode(message));
+  const sig = secp256k1.sign(digest, privateKey);
+  return bytesToBase64(sig.toDERRawBytes());
+}
+
+/** password-home claim message: password-home|{node}|{username}|{ts} */
+export function passwordHomeMessage(
+  nodeHttpBase: string,
+  username: string,
+  timestamp: number
+): string {
+  return `password-home|${nodeHttpBase}|${username}|${timestamp}`;
+}
+
+export function signPasswordHomeClaim(
+  nodeHttpBase: string,
+  username: string,
+  timestamp: number,
+  privateKey: Uint8Array
+): string {
+  return signMessage(
+    passwordHomeMessage(nodeHttpBase, username, timestamp),
+    privateKey
+  );
+}
+
 export function buildAndSignTxn(
   signer: KeyMaterial,
   fields: Omit<TxFields, "publicKey" | "publicKeyHash"> & {

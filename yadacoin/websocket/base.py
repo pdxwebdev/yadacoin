@@ -36,12 +36,15 @@ from yadacoin.tcpsocket.base import BaseRPC
 class RCPWebSocketServer(WebSocketHandler):
     inbound_streams = {}
     inbound_pending = {}
+    # username / username_signature / inception_pkh → live password-auth WS
+    password_auth_streams = {}
     config = None
 
     def __init__(self, application, request):
         super(RCPWebSocketServer, self).__init__(application, request)
         self.config = Config()
         self.peer = None
+        self._password_auth_keys = []
 
     async def open(self):
         pass
@@ -61,7 +64,22 @@ class RCPWebSocketServer(WebSocketHandler):
             )
 
     def on_close(self):
+        self._clear_password_auth()
         self.remove_peer(self.peer)
+
+    def _clear_password_auth(self):
+        for key in list(getattr(self, "_password_auth_keys", []) or []):
+            if RCPWebSocketServer.password_auth_streams.get(key) is self:
+                del RCPWebSocketServer.password_auth_streams[key]
+        self._password_auth_keys = []
+
+    def _register_password_auth_keys(self, *keys):
+        for key in keys:
+            if not key:
+                continue
+            RCPWebSocketServer.password_auth_streams[key] = self
+            if key not in self._password_auth_keys:
+                self._password_auth_keys.append(key)
 
     def check_origin(self, origin):
         return True
@@ -120,6 +138,88 @@ class RCPWebSocketServer(WebSocketHandler):
             self.config.app_log.error("invalid peer identity signature")
             self.close()
             return {}
+
+        # Auto-register password-auth presence for identity-bearing clients
+        try:
+            await self._bind_password_auth_presence()
+        except Exception:
+            pass
+
+    async def _bind_password_auth_presence(self):
+        if not self.peer or not self.peer.identity:
+            return
+        ident = self.peer.identity
+        pkh = ""
+        try:
+            pkh = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ident.public_key)))
+        except Exception:
+            pkh = ""
+        self._register_password_auth_keys(
+            ident.username_signature,
+            ident.username,
+            pkh,
+            ident.public_key,
+        )
+        # Drain pending password auth sessions for this identity
+        try:
+            from plugins.passwordrotation import auth_session as asess
+
+            rows = await asess.list_pending_for_identity(
+                inception_pkh=pkh,
+                username_signature=ident.username_signature or "",
+                username=ident.username or "",
+            )
+            for doc in rows:
+                try:
+                    await self.write_params(
+                        "password_auth_request", asess.push_payload_from_session(doc)
+                    )
+                    if doc.get("status") == "pending":
+                        await asess.update_session(
+                            doc["session_id"],
+                            {"status": "delivered", "delivered_at": asess._now()},
+                        )
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    async def join_password_auth(self, body):
+        """Explicit password-app presence registration + pending drain."""
+        if not self.peer or not self.peer.identity:
+            await self.write_result(
+                "join_password_auth_confirm",
+                {"status": False, "message": "not connected"},
+                body=body,
+            )
+            return
+        await self._bind_password_auth_presence()
+        pending = []
+        try:
+            from plugins.passwordrotation import auth_session as asess
+
+            ident = self.peer.identity
+            pkh = ""
+            try:
+                pkh = str(
+                    P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ident.public_key))
+                )
+            except Exception:
+                pkh = ""
+            rows = await asess.list_pending_for_identity(
+                inception_pkh=pkh,
+                username_signature=ident.username_signature or "",
+                username=ident.username or "",
+            )
+            for doc in rows:
+                pending.append(asess.push_payload_from_session(doc))
+        except Exception:
+            pass
+        await self.write_result(
+            "join_password_auth_confirm",
+            {"status": True, "pending": pending},
+            body=body,
+        )
 
     async def chat_history(self, body):
         results = (
