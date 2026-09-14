@@ -128,6 +128,16 @@ async def get_file_by_file_id(config, file_id: str) -> Optional[dict]:
     return doc
 
 
+async def get_file_by_transaction_id(config, transaction_id: str) -> Optional[dict]:
+    tid = (transaction_id or "").strip()
+    if not tid:
+        return None
+    doc = await _db(config)[FILES_COLLECTION].find_one(
+        {"transaction_id": tid}, {"_id": 0}
+    )
+    return doc
+
+
 async def delete_file(config, record_id: str) -> bool:
     result = await _db(config)[FILES_COLLECTION].delete_one({"record_id": record_id})
     return bool(getattr(result, "deleted_count", 0))
@@ -201,33 +211,58 @@ async def list_history(
     return await cursor.to_list(length=int(limit))
 
 
+VIDEO_EXT_RE = re.compile(r"\.(mp4|webm|mov|m4v|mkv|ogv)$", re.I)
+VIDEO_MIME_RE = re.compile(r"^video/", re.I)
+
+
+def is_video_file(file_doc: dict) -> bool:
+    """True when announcement metadata indicates video content."""
+    if not file_doc:
+        return False
+    mime = (file_doc.get("mime_type") or "").strip()
+    if VIDEO_MIME_RE.match(mime):
+        return True
+    filename = file_doc.get("filename") or ""
+    if VIDEO_EXT_RE.search(filename):
+        return True
+    return False
+
+
+def _text_match_clauses(prefix: str, regex):
+    return [
+        {f"{prefix}.title": regex},
+        {f"{prefix}.description": regex},
+        {f"{prefix}.keywords": regex},
+        {f"{prefix}.file_id": regex},
+        {f"{prefix}.filename": regex},
+    ]
+
+
+def _video_match_clauses(prefix: str):
+    return [
+        {f"{prefix}.mime_type": {"$regex": r"^video/", "$options": "i"}},
+        {
+            f"{prefix}.filename": {
+                "$regex": r"\.(mp4|webm|mov|m4v|mkv|ogv)$",
+                "$options": "i",
+            }
+        },
+    ]
+
+
 async def search_chain(config, query: str, limit: int = 50) -> list:
     """Search confirmed + mempool file announcements by title/description/keywords/file_id."""
     q = (query or "").strip()
     escaped = re.escape(q) if q else None
     regex = {"$regex": escaped, "$options": "i"} if escaped else {"$exists": True}
-    match = {
-        "$or": [
-            {"transactions.relationship.file.title": regex},
-            {"transactions.relationship.file.description": regex},
-            {"transactions.relationship.file.keywords": regex},
-            {"transactions.relationship.file.file_id": regex},
-            {"transactions.relationship.file.filename": regex},
-        ]
-    }
+    match = {"$or": _text_match_clauses("transactions.relationship.file", regex)}
     results = []
     pipeline = [
         {"$match": match},
         {"$unwind": "$transactions"},
         {
             "$match": {
-                "$or": [
-                    {"transactions.relationship.file.title": regex},
-                    {"transactions.relationship.file.description": regex},
-                    {"transactions.relationship.file.keywords": regex},
-                    {"transactions.relationship.file.file_id": regex},
-                    {"transactions.relationship.file.filename": regex},
-                ]
+                "$or": _text_match_clauses("transactions.relationship.file", regex)
             }
         },
         {"$sort": {"index": -1}},
@@ -255,15 +290,7 @@ async def search_chain(config, query: str, limit: int = 50) -> list:
     except Exception:
         pass
 
-    mem_filt = {
-        "$or": [
-            {"relationship.file.title": regex},
-            {"relationship.file.description": regex},
-            {"relationship.file.keywords": regex},
-            {"relationship.file.file_id": regex},
-            {"relationship.file.filename": regex},
-        ]
-    }
+    mem_filt = {"$or": _text_match_clauses("relationship.file", regex)}
     try:
         async for txn in (
             _db(config)
@@ -283,3 +310,128 @@ async def search_chain(config, query: str, limit: int = 50) -> list:
     except Exception:
         pass
     return results
+
+
+async def search_videos(
+    config, query: str = "", limit: int = 50, skip: int = 0
+) -> list:
+    """Discover video file announcements from local index, chain, and mempool."""
+    limit = max(1, min(int(limit), 200))
+    skip = max(0, int(skip))
+    fetch_n = limit + skip + 50
+    q = (query or "").strip()
+    escaped = re.escape(q) if q else None
+    text_regex = {"$regex": escaped, "$options": "i"} if escaped else {"$exists": True}
+
+    seen = set()
+    results = []
+
+    def _add(item: dict):
+        f = item.get("file") or {}
+        if not f or not f.get("file_id"):
+            return
+        if not is_video_file(f):
+            return
+        key = f"{f.get('backend') or 'sia'}:{f.get('file_id')}"
+        if key in seen:
+            return
+        seen.add(key)
+        results.append(item)
+
+    local = await list_files(
+        config, query=query, status="announced", limit=fetch_n, skip=0
+    )
+    for doc in local:
+        if not is_video_file(doc):
+            continue
+        _add(
+            {
+                "source": "local",
+                "block_index": None,
+                "transaction_id": doc.get("transaction_id") or "",
+                "file": {
+                    "backend": doc.get("backend") or "sia",
+                    "file_id": doc.get("file_id") or "",
+                    "title": doc.get("title") or "",
+                    "description": doc.get("description") or "",
+                    "keywords": list(doc.get("keywords") or []),
+                    "filename": doc.get("filename") or "",
+                    "mime_type": doc.get("mime_type") or "",
+                    "size": doc.get("size") or 0,
+                },
+            }
+        )
+
+    text_or = _text_match_clauses("transactions.relationship.file", text_regex)
+    video_or = _video_match_clauses("transactions.relationship.file")
+    if q:
+        txn_match = {"$and": [{"$or": text_or}, {"$or": video_or}]}
+        block_match = {
+            "$and": [
+                {
+                    "$or": _text_match_clauses(
+                        "transactions.relationship.file", text_regex
+                    )
+                },
+                {"$or": video_or},
+            ]
+        }
+    else:
+        txn_match = {"$or": video_or}
+        block_match = {"$or": video_or}
+
+    pipeline = [
+        {"$match": block_match},
+        {"$unwind": "$transactions"},
+        {"$match": txn_match},
+        {"$sort": {"index": -1}},
+        {"$limit": int(fetch_n)},
+        {
+            "$project": {
+                "_id": 0,
+                "block_index": "$index",
+                "transaction": "$transactions",
+            }
+        },
+    ]
+    try:
+        async for doc in _db(config).blocks.aggregate(pipeline):
+            txn = doc.get("transaction") or {}
+            rel = (txn.get("relationship") or {}).get("file") or {}
+            _add(
+                {
+                    "source": "chain",
+                    "block_index": doc.get("block_index"),
+                    "transaction_id": txn.get("id") or "",
+                    "file": rel,
+                }
+            )
+    except Exception:
+        pass
+
+    mem_text = _text_match_clauses("relationship.file", text_regex)
+    mem_video = _video_match_clauses("relationship.file")
+    if q:
+        mem_filt = {"$and": [{"$or": mem_text}, {"$or": mem_video}]}
+    else:
+        mem_filt = {"$or": mem_video}
+    try:
+        async for txn in (
+            _db(config)
+            .miner_transactions.find(mem_filt, {"_id": 0})
+            .sort([("time", -1)])
+            .limit(int(fetch_n))
+        ):
+            rel = (txn.get("relationship") or {}).get("file") or {}
+            _add(
+                {
+                    "source": "mempool",
+                    "block_index": None,
+                    "transaction_id": txn.get("id") or "",
+                    "file": rel,
+                }
+            )
+    except Exception:
+        pass
+
+    return results[skip : skip + limit]

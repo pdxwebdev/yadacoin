@@ -14,6 +14,7 @@ Full license terms: see LICENSE.txt in this repository.
 import hashlib
 import time
 from logging import getLogger
+from typing import Optional
 
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey as CoincurvePrivateKey
@@ -155,23 +156,180 @@ def _walk_to_address(start_key, second_factor, target_addr, max_steps=512):
     return None, None, None
 
 
+async def _find_confirming_for(config, unconfirmed_txn) -> Optional[object]:
+    """Find CONFIRMING sibling of *unconfirmed_txn* on-chain or in mempool."""
+    tip_pkh = getattr(unconfirmed_txn, "public_key_hash", None) or ""
+    tip_prerot = getattr(unconfirmed_txn, "prerotated_key_hash", None) or ""
+    if not tip_pkh or not tip_prerot:
+        return None
+    query = {
+        "prev_public_key_hash": tip_pkh,
+        "public_key_hash": tip_prerot,
+    }
+    try:
+        doc = await config.mongo.async_db.miner_transactions.find_one(query)
+        if doc:
+            txn = Transaction.from_dict(doc)
+            if classify_key_event_flag(txn) == KeyEventFlag.CONFIRMING:
+                return txn
+    except Exception:
+        pass
+    try:
+        pipeline = [
+            {"$match": {"transactions.prev_public_key_hash": tip_pkh}},
+            {"$unwind": "$transactions"},
+            {
+                "$match": {
+                    "transactions.prev_public_key_hash": tip_pkh,
+                    "transactions.public_key_hash": tip_prerot,
+                }
+            },
+            {"$limit": 1},
+        ]
+        async for row in config.mongo.async_db.blocks.aggregate(pipeline):
+            txn = Transaction.from_dict(row["transactions"])
+            if classify_key_event_flag(txn) == KeyEventFlag.CONFIRMING:
+                return txn
+    except Exception:
+        pass
+    return None
+
+
+async def _broadcast_confirming_only(config, confirming: Transaction):
+    await config.mongo.async_db.miner_transactions.replace_one(
+        {"id": confirming.transaction_signature}, confirming.to_dict(), upsert=True
+    )
+    peer = getattr(config, "peer", None)
+    node_shared = getattr(config, "nodeShared", None)
+    node_client = getattr(config, "nodeClient", None)
+    if not peer or not node_shared:
+        return
+    try:
+        async for peer_stream in peer.get_sync_peers():
+            payload = {"transaction": confirming.to_dict()}
+            await node_shared.write_params(peer_stream, "newtxn", payload)
+            if node_client and getattr(peer_stream.peer, "protocol_version", 1) > 1:
+                node_client.retry_messages[
+                    (
+                        peer_stream.peer.rid,
+                        "newtxn",
+                        confirming.transaction_signature,
+                    )
+                ] = payload
+    except Exception as exc:
+        app_log.warning("confirming KEL broadcast failed: %s", exc)
+
+
+async def _synthesize_confirming(config, unconfirmed, k0, second_factor):
+    """Build+broadcast CONFIRMING sibling for a stuck UNCONFIRMED tip."""
+    child_addr = getattr(unconfirmed, "prerotated_key_hash", None) or ""
+    gc_addr = getattr(unconfirmed, "twice_prerotated_key_hash", None) or ""
+    tip_pkh = getattr(unconfirmed, "public_key_hash", None) or ""
+    if not child_addr or not gc_addr or not tip_pkh:
+        raise FileAnnouncementServiceError(
+            "UNCONFIRMED KEL tip is missing rotation hashes; cannot auto-confirm"
+        )
+    child, child_pub, child_got = _walk_to_address(k0, second_factor, child_addr)
+    if child is None or child_got != child_addr:
+        raise FileAnnouncementServiceError(
+            "cannot derive confirming signer for UNCONFIRMED KEL tip"
+        )
+    grandchild = derive_secure_path(
+        child["private_key"], child["chain_code"], second_factor
+    )
+    _gpub, g_got = _key_pub_addr(grandchild)
+    if g_got != gc_addr:
+        raise FileAnnouncementServiceError(
+            "derived grandchild does not match UNCONFIRMED twice_prerotated_key_hash"
+        )
+    great_grandchild = derive_secure_path(
+        grandchild["private_key"], grandchild["chain_code"], second_factor
+    )
+    _ggc_pub, ggc_addr = _key_pub_addr(great_grandchild)
+    inception_pkh = getattr(unconfirmed, "inception_public_key_hash", None) or tip_pkh
+    counter = int(getattr(unconfirmed, "counter", 0) or 0) + 1
+    confirming = Transaction(
+        txn_time=int(time.time()),
+        public_key=child_pub,
+        outputs=[{"to": gc_addr, "value": 0.0}],
+        inputs=[],
+        fee=0.0,
+        masternode_fee=0.0,
+        version=7,
+        prerotated_key_hash=gc_addr,
+        twice_prerotated_key_hash=ggc_addr,
+        public_key_hash=child_addr,
+        prev_public_key_hash=tip_pkh,
+        relationship="",
+        relationship_hash="",
+        rid="",
+        dh_public_key="",
+        counter=counter,
+        inception_public_key_hash=inception_pkh,
+    )
+    await _sign_kel_txn(confirming, child["private_key"], fee=0.0)
+    await _broadcast_confirming_only(config, confirming)
+    app_log.info(
+        "fileannouncement: auto-broadcast CONFIRMING KEL for stuck tip %s → %s",
+        tip_pkh[:16],
+        confirming.transaction_signature[:24]
+        if confirming.transaction_signature
+        else "",
+    )
+    return confirming
+
+
+async def _ordered_kel(config, k0_pub):
+    kel = await KeyEventLog.build_from_public_key(k0_pub)
+    if not kel:
+        return []
+    # build_from_public_key may append mempool out of counter order
+    try:
+        return sorted(
+            list(kel),
+            key=lambda t: (
+                int(getattr(t, "counter", 0) or 0),
+                0 if classify_key_event_flag(t) == KeyEventFlag.CONFIRMING else 1,
+            ),
+        )
+    except Exception:
+        return list(kel)
+
+
 async def _next_kel_signer(config):
-    """Return K_{n+1} material that must sign the next UNCONFIRMED KEL event."""
+    """Return K_{n+1} material that must sign the next UNCONFIRMED KEL event.
+
+    If the tip is UNCONFIRMED (confirming sibling missing or not yet visible),
+    locate or synthesize the CONFIRMING rotation so announcements can continue
+    without waiting for the user to mine/retry.
+    """
     k0, second_factor = _kel_material(config)
     seeded = _k0_from_seed(config, second_factor)
     if seeded is not None:
         k0 = seeded
     k0_pub, _k0_addr = _key_pub_addr(k0)
-    kel = await KeyEventLog.build_from_public_key(k0_pub)
+    kel = await _ordered_kel(config, k0_pub)
     if not kel:
         raise FileAnnouncementServiceError(
             "no key event log found for this node; cannot rotate for continuity"
         )
     latest = kel[-1]
     if classify_key_event_flag(latest) == KeyEventFlag.UNCONFIRMED:
+        confirming = await _find_confirming_for(config, latest)
+        if confirming is None:
+            confirming = await _synthesize_confirming(config, latest, k0, second_factor)
+        latest = confirming
+        # Re-read ordered KEL so counter/prev hashes stay consistent when possible
+        kel2 = await _ordered_kel(config, k0_pub)
+        if kel2 and classify_key_event_flag(kel2[-1]) != KeyEventFlag.UNCONFIRMED:
+            latest = kel2[-1]
+
+    if classify_key_event_flag(latest) == KeyEventFlag.UNCONFIRMED:
         raise FileAnnouncementServiceError(
-            "KEL tip is UNCONFIRMED; wait for the confirming rotation before announcing"
+            "KEL tip is still UNCONFIRMED after auto-confirm attempt; "
+            "wait for the confirming rotation to propagate, then retry"
         )
+
     target = latest.prerotated_key_hash
     signer, signer_pub, signer_addr = None, None, None
 
@@ -446,6 +604,105 @@ async def update_file(
     return updated
 
 
+async def announce_content_takedown(
+    config,
+    transaction_id: str,
+    reason_code: str,
+    delete_backend: bool = False,
+):
+    """Broadcast a ContentTakedownAnnouncement for any file announcement txn id."""
+    txn_id = (transaction_id or "").strip()
+    if not txn_id:
+        raise FileAnnouncementServiceError("transaction_id is required")
+    try:
+        reason = TakedownReasonCode(reason_code)
+    except ValueError:
+        valid = [r.value for r in TakedownReasonCode]
+        raise FileAnnouncementServiceError(
+            f"invalid reason_code {reason_code!r}. Must be one of: {valid}"
+        )
+    ann = ContentTakedownAnnouncement(transaction_id=txn_id, reason_code=reason)
+    txn = await _generate_txn(config, ann, fee=0.0)
+    await _broadcast(config, txn)
+
+    local = await store.get_file_by_transaction_id(config, txn_id)
+    result = {
+        "ok": True,
+        "target_transaction_id": txn_id,
+        "reason_code": reason.value,
+        "takedown_transaction_id": txn.transaction_signature,
+        "takedown_transaction": txn.to_dict(),
+    }
+    if getattr(txn, "confirming_txn", None) is not None:
+        result[
+            "takedown_confirming_transaction_id"
+        ] = txn.confirming_txn.transaction_signature
+
+    if local:
+        if delete_backend and local.get("file_id"):
+            try:
+                backend, _name, _s = await _backend_from_settings(
+                    config, local.get("backend")
+                )
+                await backend.delete(local["file_id"])
+            except Exception as exc:
+                app_log.warning("backend delete during takedown failed: %s", exc)
+        updated = await store.update_file(
+            config,
+            local["record_id"],
+            {
+                "status": "taken_down",
+                "takedown_transaction_id": txn.transaction_signature,
+                "takedown_reason_code": reason.value,
+                **(
+                    {
+                        "takedown_confirming_transaction_id": txn.confirming_txn.transaction_signature
+                    }
+                    if getattr(txn, "confirming_txn", None) is not None
+                    else {}
+                ),
+            },
+        )
+        await store.add_history(
+            config,
+            {
+                "record_id": local["record_id"],
+                "action": "takedown",
+                "status": "success",
+                "file_id": local.get("file_id") or "",
+                "filename": local.get("filename") or "",
+                "backend": local.get("backend") or "",
+                "title": local.get("title") or "",
+                "transaction_id": txn.transaction_signature,
+                "reason_code": reason.value,
+                "target_transaction_id": txn_id,
+            },
+        )
+        result["local_record"] = updated
+        # Preserve shape expected by operator dashboard takedown handler
+        if isinstance(updated, dict):
+            updated = dict(updated)
+            updated["takedown_transaction"] = txn.to_dict()
+            result["local_record"] = updated
+    else:
+        await store.add_history(
+            config,
+            {
+                "record_id": "",
+                "action": "takedown",
+                "status": "success",
+                "file_id": "",
+                "filename": "",
+                "backend": "",
+                "title": "",
+                "transaction_id": txn.transaction_signature,
+                "reason_code": reason.value,
+                "target_transaction_id": txn_id,
+            },
+        )
+    return result
+
+
 async def takedown_file(
     config, record_id: str, reason_code: str, delete_backend: bool = False
 ):
@@ -457,56 +714,19 @@ async def takedown_file(
         raise FileAnnouncementServiceError(
             "file has no announcement transaction to take down"
         )
-    try:
-        reason = TakedownReasonCode(reason_code)
-    except ValueError:
-        valid = [r.value for r in TakedownReasonCode]
-        raise FileAnnouncementServiceError(
-            f"invalid reason_code {reason_code!r}. Must be one of: {valid}"
-        )
-    ann = ContentTakedownAnnouncement(transaction_id=txn_id, reason_code=reason)
-    txn = await _generate_txn(config, ann, fee=0.0)
-    await _broadcast(config, txn)
-    if delete_backend:
-        try:
-            backend, _name, _s = await _backend_from_settings(
-                config, existing.get("backend")
-            )
-            await backend.delete(existing["file_id"])
-        except Exception as exc:
-            app_log.warning("backend delete during takedown failed: %s", exc)
-    updated = await store.update_file(
+    result = await announce_content_takedown(
         config,
-        record_id,
-        {
-            "status": "taken_down",
-            "takedown_transaction_id": txn.transaction_signature,
-            "takedown_reason_code": reason.value,
-            **(
-                {
-                    "takedown_confirming_transaction_id": txn.confirming_txn.transaction_signature
-                }
-                if getattr(txn, "confirming_txn", None) is not None
-                else {}
-            ),
-        },
+        transaction_id=txn_id,
+        reason_code=reason_code,
+        delete_backend=delete_backend,
     )
-    await store.add_history(
-        config,
-        {
-            "record_id": record_id,
-            "action": "takedown",
-            "status": "success",
-            "file_id": existing["file_id"],
-            "filename": existing.get("filename") or "",
-            "backend": existing.get("backend") or "",
-            "title": existing.get("title") or "",
-            "transaction_id": txn.transaction_signature,
-            "reason_code": reason.value,
-        },
-    )
-    updated["takedown_transaction"] = txn.to_dict()
-    return updated
+    # Dashboard expects the updated local record at top level
+    local = result.get("local_record") or existing
+    out = dict(local) if isinstance(local, dict) else {"record_id": record_id}
+    out["takedown_transaction"] = result.get("takedown_transaction")
+    out["takedown_transaction_id"] = result.get("takedown_transaction_id")
+    out["takedown_reason_code"] = result.get("reason_code")
+    return out
 
 
 async def delete_file(config, record_id: str, delete_backend: bool = True):
@@ -545,4 +765,31 @@ async def download_file(config, record_id: str) -> dict:
     result = await backend.download(existing["file_id"])
     result["filename"] = existing.get("filename") or existing.get("title") or "download"
     result["mime_type"] = existing.get("mime_type") or "application/octet-stream"
+    return result
+
+
+async def download_by_backend_file_id(
+    config,
+    backend_name: str,
+    file_id: str,
+    filename: str = "",
+    mime_type: str = "",
+) -> dict:
+    """Download content by backend + file_id (network announcements / public stream)."""
+    file_id = (file_id or "").strip()
+    if not file_id:
+        raise FileAnnouncementServiceError("file_id is required")
+    backend, name, _s = await _backend_from_settings(config, backend_name)
+    try:
+        result = await backend.download(file_id)
+    except StorageBackendError as exc:
+        raise FileAnnouncementServiceError(str(exc)) from exc
+    except Exception as exc:
+        raise FileAnnouncementServiceError(str(exc)) from exc
+    meta = result.get("metadata") or {}
+    result["filename"] = filename or meta.get("filename") or file_id[:16] or "download"
+    result["mime_type"] = (
+        mime_type or meta.get("mime_type") or "application/octet-stream"
+    )
+    result["backend"] = name
     return result

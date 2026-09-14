@@ -142,8 +142,10 @@ class SiaStorageBackend(StorageBackend):
         sdk = await builder.connected(AppKey(seed))
         if sdk is None:
             raise StorageBackendError(
-                "Sia App Key not recognized by the indexer. "
-                "Register at https://sia.storage and export a fresh App Key."
+                "Sia App Key not recognized for YadaCoin File Announcements. "
+                "App Keys are per-app (not a generic account key). Run: "
+                "python -m plugins.fileannouncement.onboard "
+                "then paste the printed 64-char hex into Settings."
             )
         return sdk
 

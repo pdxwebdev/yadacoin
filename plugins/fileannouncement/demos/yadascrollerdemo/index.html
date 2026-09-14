@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#000000" />
+  <title>Yada Scroller Demo</title>
+  <base href="/file-announcements/demo/yadascroller/" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="top-bar">
+      <div class="brand">YadaScroller</div>
+      <div class="top-actions">
+        <input id="search" type="search" placeholder="Search videos…" autocomplete="off" />
+        <button type="button" id="refresh" title="Reload feed">↻</button>
+      </div>
+    </header>
+
+    <div id="status" class="status" hidden></div>
+
+    <main id="feed" class="feed" aria-label="Video feed"></main>
+
+    <div id="empty" class="empty" hidden>
+      <h2>No videos yet</h2>
+      <p>
+        Upload videos via the
+        <a href="/file-announcements">File Announcements</a>
+        plugin (<code>video/mp4</code> or similar). This demo only plays
+        content discovered from on-chain file announcements.
+      </p>
+    </div>
+
+    <div class="hint" id="hint">Swipe or scroll · report · mute</div>
+    <button type="button" id="mute-btn" class="mute-btn" aria-label="Toggle mute">🔇</button>
+
+    <dialog id="report-dlg" class="report-dlg">
+      <form method="dialog" id="report-form">
+        <h2>Report content</h2>
+        <p class="report-sub">Creates an on-chain content takedown announcement for this video’s file announcement transaction.</p>
+        <p class="report-title" id="report-title"></p>
+        <label for="report-reason">Reason</label>
+        <select id="report-reason" name="reason_code" required></select>
+        <p class="report-err" id="report-err" hidden></p>
+        <div class="report-actions">
+          <button type="button" class="btn ghost" id="report-cancel">Cancel</button>
+          <button type="submit" class="btn danger" id="report-submit">Submit report</button>
+        </div>
+      </form>
+    </dialog>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

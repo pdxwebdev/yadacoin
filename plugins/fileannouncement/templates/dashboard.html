@@ -206,6 +206,9 @@
       <h1>File Announcements</h1>
       <div class="sub">Decentralized file metadata on-chain · storage via sia.storage</div>
     </div>
+    <div style="margin-left:auto">
+      <a class="btn secondary" href="/file-announcements/demo/yadascroller/" target="_blank" rel="noopener">YadaScroller demo</a>
+    </div>
   </header>
   <nav class="tabs">
     <button class="active" data-tab="files">Files</button>
@@ -298,12 +301,16 @@
     <section id="tab-settings" class="hidden">
       <div class="card">
         <h2>Storage settings</h2>
-        <p class="muted">Connect a <a href="https://sia.storage" target="_blank" rel="noopener">sia.storage</a> account by pasting the 64-character App Key. Additional backends can be registered later.</p>
+        <p class="muted">
+          Connect <a href="https://sia.storage" target="_blank" rel="noopener">sia.storage</a> with an App Key
+          registered for <strong>this</strong> plugin (not AI Agent or a generic account secret).
+          Generate one: <code>python -m plugins.fileannouncement.onboard</code>
+        </p>
         <form id="settings-form">
           <label>Default backend</label>
           <select name="backend" id="settings-backend"></select>
           <label>Sia App Key</label>
-          <input name="sia_app_key" placeholder="64-character hex App Key" autocomplete="off" />
+          <input name="sia_app_key" placeholder="64-character hex App Key from onboard" autocomplete="off" />
           <p class="muted" id="settings-key-hint"></p>
           <label>Indexer URL</label>
           <input name="sia_indexer_url" value="https://sia.storage" />
