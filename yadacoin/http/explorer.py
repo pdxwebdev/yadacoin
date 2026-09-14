@@ -304,6 +304,50 @@ class ExplorerSearchHandler(BaseHandler):
             pass
 
         try:
+            res = await self.config.mongo.async_db.blocks.count_documents(
+                {"transactions.relationship.identity.username": term}
+            )
+            if res:
+                return self.render_as_json(
+                    {
+                        "resultType": "txn_identity_username",
+                        "result": [
+                            changetime(x)
+                            async for x in self.config.mongo.async_db.blocks.find(
+                                {"transactions.relationship.identity.username": term},
+                                {"_id": 0},
+                            ).limit(10)
+                        ],
+                    }
+                )
+        except:
+            pass
+
+        try:
+            identity_sig = term.replace(" ", "+")
+            base64.b64decode(identity_sig)
+            res = await self.config.mongo.async_db.blocks.count_documents(
+                {"transactions.relationship.identity.username_signature": identity_sig}
+            )
+            if res:
+                return self.render_as_json(
+                    {
+                        "resultType": "txn_identity_username_signature",
+                        "result": [
+                            changetime(x)
+                            async for x in self.config.mongo.async_db.blocks.find(
+                                {
+                                    "transactions.relationship.identity.username_signature": identity_sig
+                                },
+                                {"_id": 0},
+                            ).limit(10)
+                        ],
+                    }
+                )
+        except:
+            pass
+
+        try:
             res = await self.get_wallet_balance(term)
             if res:
                 return res
@@ -403,6 +447,49 @@ class ExplorerSearchHandler(BaseHandler):
                             changetime(x)
                             async for x in self.config.mongo.async_db.miner_transactions.find(
                                 {"rid": term}, {"_id": 0}
+                            )
+                        ],
+                    }
+                )
+        except:
+            pass
+
+        try:
+            res = await self.config.mongo.async_db.miner_transactions.count_documents(
+                {"relationship.identity.username": term}
+            )
+            if res:
+                return self.render_as_json(
+                    {
+                        "resultType": "mempool_identity_username",
+                        "result": [
+                            changetime(x)
+                            async for x in self.config.mongo.async_db.miner_transactions.find(
+                                {"relationship.identity.username": term}, {"_id": 0}
+                            )
+                        ],
+                    }
+                )
+        except:
+            pass
+
+        try:
+            identity_sig = term.replace(" ", "+")
+            base64.b64decode(identity_sig)
+            res = await self.config.mongo.async_db.miner_transactions.count_documents(
+                {"relationship.identity.username_signature": identity_sig}
+            )
+            if res:
+                return self.render_as_json(
+                    {
+                        "resultType": "mempool_identity_username_signature",
+                        "result": [
+                            changetime(x)
+                            async for x in self.config.mongo.async_db.miner_transactions.find(
+                                {
+                                    "relationship.identity.username_signature": identity_sig
+                                },
+                                {"_id": 0},
                             )
                         ],
                     }

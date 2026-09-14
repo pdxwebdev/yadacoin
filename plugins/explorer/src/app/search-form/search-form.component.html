@@ -26,7 +26,7 @@
       class="form-control"
       [(ngModel)]="model.term"
       name="term"
-      placeholder="Wallet address, Txn Id, Block height..."
+      placeholder="Wallet address, Txn Id, Block height, Username, Username signature..."
     />
     <button
       style="margin-top: 15px; margin-bottom: 15px"
@@ -113,6 +113,29 @@
           transaction.relationship_hash
         }}</a>
       </p>
+      <div *ngIf="transaction.relationship && transaction.relationship.identity">
+        <h4>Identity announcement</h4>
+        <p *ngIf="transaction.relationship.identity.username">
+          <strong>username: </strong
+          ><a
+            href="/explorer?term={{ transaction.relationship.identity.username }}"
+            >{{ transaction.relationship.identity.username }}</a
+          >
+        </p>
+        <p *ngIf="transaction.relationship.identity.username_signature">
+          <strong>username_signature: </strong
+          ><a
+            href="/explorer?term={{
+              transaction.relationship.identity.username_signature
+            }}"
+            >{{ transaction.relationship.identity.username_signature }}</a
+          >
+        </p>
+        <p *ngIf="transaction.relationship.identity.identity_type">
+          <strong>identity_type: </strong
+          >{{ transaction.relationship.identity.identity_type }}
+        </p>
+      </div>
       <p>
         <strong>relationship data: </strong
         ><textarea class="form-control">{{
@@ -232,6 +255,29 @@
           transaction.relationship_hash
         }}</a>
       </p>
+      <div *ngIf="transaction.relationship && transaction.relationship.identity">
+        <h4>Identity announcement</h4>
+        <p *ngIf="transaction.relationship.identity.username">
+          <strong>username: </strong
+          ><a
+            href="/explorer?term={{ transaction.relationship.identity.username }}"
+            >{{ transaction.relationship.identity.username }}</a
+          >
+        </p>
+        <p *ngIf="transaction.relationship.identity.username_signature">
+          <strong>username_signature: </strong
+          ><a
+            href="/explorer?term={{
+              transaction.relationship.identity.username_signature
+            }}"
+            >{{ transaction.relationship.identity.username_signature }}</a
+          >
+        </p>
+        <p *ngIf="transaction.relationship.identity.identity_type">
+          <strong>identity_type: </strong
+          >{{ transaction.relationship.identity.identity_type }}
+        </p>
+      </div>
       <p>
         <strong>relationship data: </strong
         ><textarea class="form-control">{{
@@ -329,6 +375,29 @@
             </li>
           </ul>
         </div>
+      </div>
+      <div *ngIf="transaction.relationship && transaction.relationship.identity">
+        <h4>Identity announcement</h4>
+        <p *ngIf="transaction.relationship.identity.username">
+          <strong>username: </strong
+          ><a
+            href="/explorer?term={{ transaction.relationship.identity.username }}"
+            >{{ transaction.relationship.identity.username }}</a
+          >
+        </p>
+        <p *ngIf="transaction.relationship.identity.username_signature">
+          <strong>username_signature: </strong
+          ><a
+            href="/explorer?term={{
+              transaction.relationship.identity.username_signature
+            }}"
+            >{{ transaction.relationship.identity.username_signature }}</a
+          >
+        </p>
+        <p *ngIf="transaction.relationship.identity.identity_type">
+          <strong>identity_type: </strong
+          >{{ transaction.relationship.identity.identity_type }}
+        </p>
       </div>
     </li>
   </ul>
@@ -431,6 +500,31 @@
               transaction.relationship_hash
             }}</a>
           </p>
+          <div *ngIf="transaction.relationship && transaction.relationship.identity">
+            <h4>Identity announcement</h4>
+            <p *ngIf="transaction.relationship.identity.username">
+              <strong>username: </strong
+              ><a
+                href="/explorer?term={{
+                  transaction.relationship.identity.username
+                }}"
+                >{{ transaction.relationship.identity.username }}</a
+              >
+            </p>
+            <p *ngIf="transaction.relationship.identity.username_signature">
+              <strong>username_signature: </strong
+              ><a
+                href="/explorer?term={{
+                  transaction.relationship.identity.username_signature
+                }}"
+                >{{ transaction.relationship.identity.username_signature }}</a
+              >
+            </p>
+            <p *ngIf="transaction.relationship.identity.identity_type">
+              <strong>identity_type: </strong
+              >{{ transaction.relationship.identity.identity_type }}
+            </p>
+          </div>
           <p>
             <strong>relationship data: </strong
             ><textarea class="form-control">{{
@@ -543,6 +637,31 @@
                 </li>
               </ul>
             </div>
+          </div>
+          <div *ngIf="transaction.relationship && transaction.relationship.identity">
+            <h4>Identity announcement</h4>
+            <p *ngIf="transaction.relationship.identity.username">
+              <strong>username: </strong
+              ><a
+                href="/explorer?term={{
+                  transaction.relationship.identity.username
+                }}"
+                >{{ transaction.relationship.identity.username }}</a
+              >
+            </p>
+            <p *ngIf="transaction.relationship.identity.username_signature">
+              <strong>username_signature: </strong
+              ><a
+                href="/explorer?term={{
+                  transaction.relationship.identity.username_signature
+                }}"
+                >{{ transaction.relationship.identity.username_signature }}</a
+              >
+            </p>
+            <p *ngIf="transaction.relationship.identity.identity_type">
+              <strong>identity_type: </strong
+              >{{ transaction.relationship.identity.identity_type }}
+            </p>
           </div>
         </div>
       </div>

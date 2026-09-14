@@ -241,6 +241,16 @@ class Mongo(object):
             name="__txn_rel_identity_username",
             sparse=True,
         )
+        _txn_rel_identity_username_signature = IndexModel(
+            [
+                (
+                    "transactions.relationship.identity.username_signature",
+                    ASCENDING,
+                ),
+            ],
+            name="__txn_rel_identity_username_signature",
+            sparse=True,
+        )
         __public_key_outputs_to = IndexModel(
             [
                 ("public_key", ASCENDING),
@@ -301,6 +311,7 @@ class Mongo(object):
                     __txn_inception_public_key_hash_counter,
                     __txn_rel_agent,
                     _txn_rel_identity_username,
+                    _txn_rel_identity_username_signature,
                     __public_key_outputs_to,
                     __txn_public_key_outputs_to,
                 ]

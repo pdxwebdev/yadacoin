@@ -547,6 +547,117 @@ class TestExplorerSearchHandlerFoundPaths(ExplorerHttpTestCase):
         data = json.loads(response.body)
         self.assertEqual(data["resultType"], "txn_id")
 
+    def test_found_by_identity_username(self):
+        term = "alice.example.com"
+
+        async def side_effect(query, *args, **kwargs):
+            if isinstance(query, dict) and list(query.keys()) == [
+                "transactions.relationship.identity.username"
+            ]:
+                return 1
+            return 0
+
+        self.mock_db.blocks.count_documents = AsyncMock(side_effect=side_effect)
+        self.mock_db.blocks.find = MagicMock(
+            return_value=make_async_iter_cursor(
+                [
+                    {
+                        "index": 42,
+                        "time": 1000,
+                        "transactions": [
+                            {
+                                "relationship": {
+                                    "identity": {
+                                        "username": term,
+                                        "username_signature": "sig",
+                                        "identity_type": "dns",
+                                    }
+                                }
+                            }
+                        ],
+                    }
+                ]
+            )
+        )
+        response = self.fetch(f"/explorer-search?term={term}")
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertEqual(data["resultType"], "txn_identity_username")
+
+    def test_found_by_identity_username_signature(self):
+        import base64 as b64_mod
+
+        term = b64_mod.b64encode(b"identity_username_sig").decode()
+
+        async def side_effect(query, *args, **kwargs):
+            if isinstance(query, dict) and list(query.keys()) == [
+                "transactions.relationship.identity.username_signature"
+            ]:
+                return 1
+            return 0
+
+        self.mock_db.blocks.count_documents = AsyncMock(side_effect=side_effect)
+        self.mock_db.blocks.find = MagicMock(
+            return_value=make_async_iter_cursor(
+                [
+                    {
+                        "index": 43,
+                        "time": 1000,
+                        "transactions": [
+                            {
+                                "relationship": {
+                                    "identity": {
+                                        "username": "bob",
+                                        "username_signature": term,
+                                    }
+                                }
+                            }
+                        ],
+                    }
+                ]
+            )
+        )
+        response = self.fetch(f"/explorer-search?term={term}")
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertEqual(data["resultType"], "txn_identity_username_signature")
+
+    def test_found_in_mempool_by_identity_username(self):
+        term = "mempool-user.example.com"
+
+        async def mempool_side_effect(query, *args, **kwargs):
+            if isinstance(query, dict) and list(query.keys()) == [
+                "relationship.identity.username"
+            ]:
+                return 1
+            return 0
+
+        self.mock_db.blocks.count_documents = AsyncMock(return_value=0)
+        self.mock_db.miner_transactions.count_documents = AsyncMock(
+            side_effect=mempool_side_effect
+        )
+        self.mock_db.miner_transactions.find = MagicMock(
+            return_value=make_async_iter_cursor(
+                [
+                    {
+                        "time": 1000,
+                        "relationship": {
+                            "identity": {
+                                "username": term,
+                                "username_signature": "sig",
+                            }
+                        },
+                        "inputs": [],
+                        "outputs": [],
+                    }
+                ]
+            )
+        )
+        response = self.fetch(f"/explorer-search?term={term}")
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertEqual(data["resultType"], "mempool_identity_username")
+
     def test_found_by_txn_field(self):
         """Covers fields loop result path (approx lines 309-311)"""
         term = "f" * 64  # 64-char hex; int("ff..f") raises ValueError (not base-10)

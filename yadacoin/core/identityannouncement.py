@@ -315,6 +315,58 @@ class IdentityAnnouncement:
         return None
 
     @staticmethod
+    async def get_by_username_signature(
+        username_signature: str, include_mempool: bool = True, config=None
+    ) -> Optional[dict]:
+        """Return the inception transaction for a username_signature, or None.
+
+        Searches confirmed blocks first, then the mempool if
+        ``include_mempool`` is True.  Result shape matches ``get_by_username``.
+        """
+        from yadacoin.core.config import Config
+
+        if config is None:
+            config = Config()
+
+        sig = (username_signature or "").replace(" ", "+")
+        query = {
+            "transactions.relationship.identity.username_signature": sig,
+        }
+
+        pipeline = [
+            {"$match": query},
+            {"$unwind": "$transactions"},
+            {"$match": {"transactions.relationship.identity.username_signature": sig}},
+            {"$replaceRoot": {"newRoot": "$transactions"}},
+            {"$limit": 1},
+        ]
+        async for doc in config.mongo.async_db.blocks.aggregate(pipeline):
+            identity_data = (doc.get("relationship") or {}).get("identity") or {}
+            return {
+                "public_key": doc.get("public_key", ""),
+                "identity": identity_data,
+                "source": "blockchain",
+                "txn": doc,
+            }
+
+        if not include_mempool:
+            return None
+
+        doc = await config.mongo.async_db.miner_transactions.find_one(
+            {"relationship.identity.username_signature": sig}, {"_id": 0}
+        )
+        if doc:
+            identity_data = (doc.get("relationship") or {}).get("identity") or {}
+            return {
+                "public_key": doc.get("public_key", ""),
+                "identity": identity_data,
+                "source": "mempool",
+                "txn": doc,
+            }
+
+        return None
+
+    @staticmethod
     def _txn_claims_username(txn, username: str, exclude_txn_sig: str = "") -> bool:
         if (
             exclude_txn_sig

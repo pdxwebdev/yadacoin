@@ -10,12 +10,20 @@ This endpoint takes a search term and responds with a block for the given hash i
 
 `term`: `required` : `string`
 
+Search matches (first hit wins): block height, public key, block/txn hash or id, rid, KEL hashes, **identity announcement `username`**, **identity announcement `username_signature`**, wallet address, then mempool and failed-transaction equivalents.
+
 `result_type`: `optional` : `string` : `get_wallet_balance`
+
+Identity result types include `txn_identity_username`, `txn_identity_username_signature`, `mempool_identity_username`, and `mempool_identity_username_signature`.
 
 **Example URL** :
 
 ```
 /explorer-search?term=0dd0ec9ab91e9defe535841a4c70225e3f97b7447e5358250c2dc898b8bd3139
+```
+
+```
+/explorer-search?term=alice.example.com
 ```
 
 ## Success Response
