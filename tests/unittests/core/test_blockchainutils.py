@@ -1069,9 +1069,28 @@ class TestBlockchainUtilsCoverage(AsyncTestCase):
     async def test_get_wallet_balance_delegates_to_final(self):
         bu, _ = _make_bu()
         bu.get_final_balance = mock.AsyncMock(return_value=42.0)
-        result = await bu.get_wallet_balance("addr")
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_kel_addresses",
+            new=mock.AsyncMock(return_value=frozenset({"addr"})),
+        ):
+            result = await bu.get_wallet_balance("addr")
         self.assertEqual(result, 42.0)
         bu.get_final_balance.assert_awaited_once_with("addr")
+
+    async def test_get_wallet_balance_sums_kel_addresses(self):
+        bu, _ = _make_bu()
+
+        async def final_balance(address):
+            return {"a1": 10.0, "a2": 5.5, "a3": 2.25}[address]
+
+        bu.get_final_balance = mock.AsyncMock(side_effect=final_balance)
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_kel_addresses",
+            new=mock.AsyncMock(return_value=frozenset({"a1", "a2", "a3"})),
+        ):
+            result = await bu.get_wallet_balance("a2")
+        self.assertAlmostEqual(result, 17.75)
+        self.assertEqual(bu.get_final_balance.await_count, 3)
 
     async def test_wallet_balance_cache_is_valid_happy_path(self):
         bu, config = _make_bu()

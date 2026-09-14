@@ -44,11 +44,35 @@
       </header>
       <div class="pm-card">
         <div class="pm-tabs" role="tablist">
-          <button type="button" class="pm-tab" data-tab="site" aria-selected="true">Site</button>
+          <button type="button" class="pm-tab" data-tab="request" aria-selected="true">Request</button>
+          <button type="button" class="pm-tab" data-tab="site">Site</button>
           <button type="button" class="pm-tab" data-tab="setup">Setup</button>
           <button type="button" class="pm-tab" data-tab="status">Status</button>
         </div>
         <div id="alert" hidden class="pm-alert"></div>
+
+        <section id="panel-request" hidden>
+          <h1 class="pm-title">Auth requests</h1>
+          <p class="pm-muted">
+            Open this popup to pull pending approve/reject requests from your node
+            (wallet operator unlock, site sign-in handoff).
+          </p>
+          <div class="pm-field">
+            <label>Pending</label>
+            <div class="pm-pre" id="requestSummary">No pending request</div>
+          </div>
+          <div class="pm-btn-row">
+            <button type="button" class="pm-btn pm-btn--ghost" id="refreshRequestBtn">
+              Refresh
+            </button>
+            <button type="button" class="pm-btn" id="approveRequestBtn" disabled>
+              Approve
+            </button>
+            <button type="button" class="pm-btn pm-btn--ghost" id="denyRequestBtn" disabled>
+              Deny
+            </button>
+          </div>
+        </section>
 
         <section id="panel-site" hidden>
           <h1 class="pm-title">Per-site branch</h1>

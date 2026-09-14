@@ -3,16 +3,21 @@ import {
   buildInceptionTxn,
   bytesToHex,
   createVaultSeed,
+  fetchPendingAuthSessions,
+  hashPassword,
   hexToBytes,
   identityAfterInception,
   materialFromPrivCc,
   normalizeSiteId,
+  postAuthSessionResult,
   registerSite,
   rotateSitePassword,
+  resyncSiteFromNode,
   resyncVaultFromNode,
   siteAtCounter,
   siteKeysForOrigin,
   unlockIdentity,
+  type PasswordAuthRequestPayload,
   type SiteRegistration,
   type VaultIdentity,
 } from "@yadacoin/password-core";
@@ -171,9 +176,178 @@ function setTab(name: string) {
   for (const btn of document.querySelectorAll<HTMLButtonElement>(".pm-tab")) {
     btn.setAttribute("aria-selected", btn.dataset.tab === name ? "true" : "false");
   }
+  $("panel-request").hidden = name !== "request";
   $("panel-setup").hidden = name !== "setup";
   $("panel-site").hidden = name !== "site";
   $("panel-status").hidden = name !== "status";
+}
+
+let pendingRemote: PasswordAuthRequestPayload | null = null;
+
+function renderPendingRequest(p: PasswordAuthRequestPayload | null) {
+  pendingRemote = p;
+  const summary = $("requestSummary");
+  const approve = $("approveRequestBtn") as HTMLButtonElement;
+  const deny = $("denyRequestBtn") as HTMLButtonElement;
+  if (!p) {
+    summary.textContent = "No pending request";
+    approve.disabled = true;
+    deny.disabled = true;
+    return;
+  }
+  summary.textContent = [
+    `action: ${p.action}`,
+    `site: ${p.site}`,
+    `user: ${p.username || "—"}`,
+    `session: ${p.session_id}`,
+    p.home_node ? `home: ${p.home_node}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  approve.disabled = false;
+  deny.disabled = false;
+}
+
+async function drainPendingRequests(): Promise<void> {
+  const v = await loadVault();
+  if (!v || !v.inceptionDone) {
+    renderPendingRequest(null);
+    showAlert("Save vault and broadcast inception first.", "error");
+    return;
+  }
+  const settings = await loadSettings();
+  const nodeUrl = (settings.nodeUrl || ($("nodeUrl") as HTMLInputElement).value || "").trim();
+  if (!nodeUrl) {
+    renderPendingRequest(null);
+    showAlert("Set Node URL under Setup.", "error");
+    return;
+  }
+  await ensureNodeAccess(nodeUrl);
+  const id = identityFromStored(v);
+  const rows = await fetchPendingAuthSessions(nodeUrl, {
+    username: id.username,
+    username_signature: id.usernameSignature,
+    public_key: id.k0.publicKeyHex,
+    inception_pkh: id.k0.address,
+  });
+  const first = rows && rows.length ? rows[0]! : null;
+  renderPendingRequest(first);
+  if (first) {
+    showAlert(`Pending ${first.action} for ${first.site}`, "success");
+    setTab("request");
+  } else {
+    showAlert("No pending auth requests on this node.", "success");
+  }
+}
+
+async function approvePendingRequest(): Promise<void> {
+  if (!pendingRemote) return;
+  const p = pendingRemote;
+  const v = await loadVault();
+  if (!v) throw new Error("no vault");
+  const settings = await loadSettings();
+  const nodeUrl = (settings.nodeUrl || ($("nodeUrl") as HTMLInputElement).value || "").trim();
+  if (!nodeUrl) throw new Error("node URL required");
+  await ensureNodeAccess(nodeUrl);
+  const identity = identityFromStored(v);
+  let siteKey = p.site || "";
+  if (siteKey.startsWith("http://") || siteKey.startsWith("https://")) {
+    siteKey = normalizeSiteId(siteKey);
+  }
+  const action = (p.action || "signin").toLowerCase();
+  let password = "";
+  let nextPasswordHash = "";
+  let counter: number | null = null;
+
+  if (action === "status") {
+    await postAuthSessionResult(nodeUrl, p.session_id, {
+      result_token: p.result_token,
+      ok: true,
+      action: "status",
+      nonce: p.nonce,
+      message: "status ok",
+      registered: !!v.sites?.[siteKey],
+      counter: v.sites?.[siteKey]?.counter ?? null,
+    });
+    renderPendingRequest(null);
+    showAlert("Status approved", "success");
+    return;
+  }
+
+  // register / signin / operator: ensure branch + rotate
+  let siteReg: SiteRegistration;
+  const local = v.sites?.[siteKey];
+  try {
+    siteReg = await resyncSiteFromNode({ baseUrl: nodeUrl }, identity, siteKey);
+  } catch {
+    if (local) {
+      siteReg = siteFromStored(local);
+    } else {
+      const reg = await registerSite({ baseUrl: nodeUrl }, identity, siteKey);
+      v.mainDepth = reg.identity.mainDepth;
+      v.tipPrevPkh = reg.identity.tipPrevPkh;
+      siteReg = reg.site;
+    }
+  }
+  if (action === "register" && !local) {
+    // already registered above if needed
+  }
+  const rotated = await rotateSitePassword(
+    { baseUrl: nodeUrl },
+    identity,
+    siteReg,
+    undefined,
+    { expectedHash: p.expectedHash || undefined }
+  );
+  v.sites[siteKey] = storeSite(rotated.site);
+  await saveVault(v);
+  password = rotated.password;
+  counter = rotated.site.counter;
+  const nextHash = hashPassword(
+    rotated.nextPassword || rotated.site.currentPassword || password
+  );
+
+  await postAuthSessionResult(nodeUrl, p.session_id, {
+    result_token: p.result_token,
+    ok: true,
+    action: action === "operator" ? "operator" : action === "register" ? "register" : "signin",
+    nonce: p.nonce,
+    password,
+    nextPasswordHash: nextHash,
+    counter,
+    registered: true,
+    message:
+      action === "operator"
+        ? `operator approved · counter ${counter}`
+        : `approved · counter ${counter}`,
+  });
+  renderPendingRequest(null);
+  await fillSiteFromOrigin(siteKey, v);
+  showAlert(
+    action === "operator"
+      ? "Operator request approved — wallet can finish unlock"
+      : "Request approved",
+    "success"
+  );
+}
+
+async function denyPendingRequest(): Promise<void> {
+  if (!pendingRemote) return;
+  const p = pendingRemote;
+  const settings = await loadSettings();
+  const nodeUrl = (settings.nodeUrl || ($("nodeUrl") as HTMLInputElement).value || "").trim();
+  if (!nodeUrl) throw new Error("node URL required");
+  await ensureNodeAccess(nodeUrl);
+  await postAuthSessionResult(nodeUrl, p.session_id, {
+    result_token: p.result_token,
+    ok: false,
+    deny: true,
+    action: p.action,
+    nonce: p.nonce,
+    message: "denied by user",
+  });
+  renderPendingRequest(null);
+  showAlert("Request denied", "success");
 }
 
 async function refreshStatus() {
@@ -211,10 +385,12 @@ async function main() {
   const activeOrigin = await getActiveOrigin();
   await fillSiteFromOrigin(activeOrigin, vault);
 
-  // After inception, Site is the primary tab (current page origin prefilled).
-  setTab(vault?.inceptionDone ? "site" : "setup");
+  // Prefer Request tab so opening the extension drains pending operator unlocks.
+  setTab(vault?.inceptionDone ? "request" : "setup");
   if (vault?.inceptionDone) {
-    // ensure status cache warm when switching later
+    void drainPendingRequests().catch(() => {
+      /* ignore drain errors on open */
+    });
   }
 
   for (const btn of document.querySelectorAll<HTMLButtonElement>(".pm-tab")) {
@@ -223,6 +399,7 @@ async function main() {
         const tab = btn.dataset.tab || "setup";
         setTab(tab);
         if (tab === "status") await refreshStatus();
+        if (tab === "request") await drainPendingRequests();
         if (tab === "site") {
           const origin = (await getActiveOrigin()) || activeOrigin;
           const v = await loadVault();
@@ -231,6 +408,22 @@ async function main() {
       })();
     });
   }
+
+  $("refreshRequestBtn").addEventListener("click", () => {
+    void drainPendingRequests().catch((e) =>
+      showAlert(e instanceof Error ? e.message : String(e), "error")
+    );
+  });
+  $("approveRequestBtn").addEventListener("click", () => {
+    void approvePendingRequest().catch((e) =>
+      showAlert(e instanceof Error ? e.message : String(e), "error")
+    );
+  });
+  $("denyRequestBtn").addEventListener("click", () => {
+    void denyPendingRequest().catch((e) =>
+      showAlert(e instanceof Error ? e.message : String(e), "error")
+    );
+  });
 
   $("allowSiteBtn").addEventListener("click", async () => {
     showAlert("");

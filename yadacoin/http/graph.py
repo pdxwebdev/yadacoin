@@ -129,8 +129,22 @@ class GraphRIDWalletHandler(BaseGraphHandler):
         if amount_needed:
             amount_needed = float(amount_needed)
 
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        try:
+            kel_addresses = await KeyEventLog.get_kel_addresses(
+                address=address, onchain_only=True
+            )
+        except Exception:
+            kel_addresses = frozenset({address})
+        if not kel_addresses:
+            kel_addresses = frozenset({address})
+        # Full KEL identity: pending mempool credits may land on any entry address.
+        wallet_addresses = set(kel_addresses)
+        wallet_addresses.add(address)
+
         mempool_txns = self.config.mongo.async_db.miner_transactions.find(
-            {"outputs.to": address}
+            {"outputs.to": {"$in": list(wallet_addresses)}}
         )
 
         start_time = time.perf_counter()
@@ -147,24 +161,30 @@ class GraphRIDWalletHandler(BaseGraphHandler):
                     bytes.fromhex(mempool_txn["public_key"])
                 )
             )
-            if address == xaddress and mempool_txn.get("inputs"):
+            if xaddress in wallet_addresses and mempool_txn.get("inputs"):
                 for x in mempool_txn.get("inputs"):
                     pending_used_inputs[x["id"]] = mempool_txn
                     if x["id"] in unspent_mempool_txns:
                         for y in mempool_txn.get("outputs"):
-                            if y["to"] == address:
+                            if y["to"] in wallet_addresses:
                                 pending_balance -= float(y["value"])
                         del unspent_mempool_txns[x["id"]]
 
             if mempool_txn.get("outputs"):
                 for x in mempool_txn.get("outputs"):
-                    if x["to"] == address:
+                    if x["to"] in wallet_addresses:
                         pending_balance += float(x["value"])
-            unspent_mempool_txns[mempool_txn["id"]] = {
-                "_id": mempool_txn["id"],
-                "id": mempool_txn["id"],
-                "outputs": [x for x in mempool_txn["outputs"] if x["to"] == address],
-            }
+            matching_outputs = [
+                x
+                for x in mempool_txn.get("outputs") or []
+                if x["to"] in wallet_addresses
+            ]
+            if matching_outputs:
+                unspent_mempool_txns[mempool_txn["id"]] = {
+                    "_id": mempool_txn["id"],
+                    "id": mempool_txn["id"],
+                    "outputs": matching_outputs,
+                }
 
         # Mempool UTXOs also cannot exceed the per-txn input limit.
         unspent_mempool_txns = list(unspent_mempool_txns.values())[: CHAIN.MAX_INPUTS]
@@ -173,11 +193,19 @@ class GraphRIDWalletHandler(BaseGraphHandler):
         # and display (amount_needed=0) polls. Display hits wallet_unspent_cache
         # when valid and otherwise selects/warms the cache so max_transferable
         # is never left at 0 while the wallet has spendable coins.
+        # get_wallet_balance / get_unspent_outputs already sum the full KEL.
         if method != "new" and not amount_needed:
-            balance, max_transferable_value = await asyncio.gather(
-                self.config.BU.get_wallet_balance(address),
-                self.config.BU.get_cached_max_transferable_value(address),
+            balance_task = asyncio.create_task(
+                self.config.BU.get_wallet_balance(address)
             )
+            max_parts = await asyncio.gather(
+                *[
+                    self.config.BU.get_cached_max_transferable_value(a)
+                    for a in wallet_addresses
+                ]
+            )
+            balance = await balance_task
+            max_transferable_value = float(sum(float(m or 0.0) for m in max_parts))
             unspent_txns = []
         elif method == "new":
             self.config.app_log.info("Using NEW method for UTXOs.")
@@ -199,13 +227,22 @@ class GraphRIDWalletHandler(BaseGraphHandler):
                 self.config.BU.get_wallet_balance(address)
             )
             unspent_txns = []
-            async for x in self.config.BU.get_wallet_unspent_transactions_for_spending(
-                address,
-                inc_mempool=True,
-                amount_needed=amount_needed,
-                limit=CHAIN.MAX_INPUTS,
-            ):
-                unspent_txns.append(x)
+            seen_ids = set()
+            for kel_addr in wallet_addresses:
+                async for x in self.config.BU.get_wallet_unspent_transactions_for_spending(
+                    kel_addr,
+                    inc_mempool=True,
+                    amount_needed=amount_needed,
+                    limit=CHAIN.MAX_INPUTS,
+                ):
+                    uid = x.get("id")
+                    if uid and uid in seen_ids:
+                        continue
+                    if uid:
+                        seen_ids.add(uid)
+                    unspent_txns.append(x)
+                    if len(unspent_txns) >= CHAIN.MAX_INPUTS:
+                        break
                 if len(unspent_txns) >= CHAIN.MAX_INPUTS:
                     break
             balance = await balance_task

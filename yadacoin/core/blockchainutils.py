@@ -922,8 +922,40 @@ class BlockChainUtils(object):
         return final_balance
 
     async def get_wallet_balance(self, address, amount_needed=None):
-        total_balance = await self.get_final_balance(address)
-        return total_balance
+        """Return spendable chain balance for *address*.
+
+        When *address* belongs to a KEL, sums ``get_final_balance`` across every
+        address that has appeared in that KEL (cached per address). Cross-key
+        spending lets the tip unlock prior entries, so wallets must show the
+        full identity total rather than a single entry.
+        """
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        try:
+            kel_addresses = await KeyEventLog.get_kel_addresses(
+                address=address, onchain_only=True
+            )
+        except Exception:
+            kel_addresses = frozenset({address}) if address else frozenset()
+
+        if not kel_addresses:
+            return await self.get_final_balance(address)
+
+        if len(kel_addresses) == 1:
+            only = next(iter(kel_addresses))
+            return await self.get_final_balance(only)
+
+        parts = await asyncio.gather(
+            *[self.get_final_balance(a) for a in kel_addresses]
+        )
+        total = float(sum(float(p or 0.0) for p in parts))
+        self.config.app_log.info(
+            "KEL wallet balance for %s: %.8f across %s addresses",
+            address,
+            total,
+            len(kel_addresses),
+        )
+        return total
 
     async def get_public_key_address_pairs(self, address):
         pipeline = [
@@ -1745,6 +1777,7 @@ class BlockChainUtils(object):
         min_value=0,
         max_utxos=None,
         from_index=None,
+        _kel_expanded=False,
     ):
         """
         Retrieves unspent transaction outputs (UTXOs) for the given address.
@@ -1755,16 +1788,98 @@ class BlockChainUtils(object):
         Chain UTXO selection is cached in wallet_unspent_cache (address +
         last_block_hash marker). Balance comes from wallet_balance_cache via
         get_wallet_balance — this method does not rescan the full receive history.
+
+        When *address* is part of a KEL and ``_kel_expanded`` is False, UTXOs and
+        max_transferable are aggregated across every address in that KEL while
+        balance is the full identity total from ``get_wallet_balance``.
         """
         if max_utxos is None or max_utxos > CHAIN.MAX_INPUTS:
             max_utxos = CHAIN.MAX_INPUTS
+
+        if not _kel_expanded:
+            from yadacoin.core.keyeventlog import KeyEventLog
+
+            try:
+                kel_addresses = await KeyEventLog.get_kel_addresses(
+                    address=address, onchain_only=True
+                )
+            except Exception:
+                kel_addresses = frozenset({address}) if address else frozenset()
+
+            if len(kel_addresses) > 1:
+                start_time = precise_time()
+                balance_task = asyncio.create_task(self.get_wallet_balance(address))
+                parts = await asyncio.gather(
+                    *[
+                        self.get_unspent_outputs(
+                            a,
+                            amount_needed=amount_needed,
+                            min_value=min_value,
+                            max_utxos=max_utxos,
+                            from_index=from_index,
+                            _kel_expanded=True,
+                        )
+                        for a in kel_addresses
+                    ]
+                )
+                balance = await balance_task
+                merged = []
+                seen = set()
+                max_transferable_value = 0.0
+                for part in parts:
+                    max_transferable_value += float(
+                        part.get("max_transferable_value") or 0.0
+                    )
+                    for utxo in part.get("unspent_utxos") or []:
+                        uid = utxo.get("id")
+                        if uid and uid not in seen:
+                            seen.add(uid)
+                            merged.append(utxo)
+                merged = sorted(
+                    merged,
+                    key=lambda x: (-self._utxo_value(x), x.get("time") or 0),
+                )[:max_utxos]
+                if amount_needed:
+                    collected = []
+                    total = 0.0
+                    for utxo in merged:
+                        collected.append(utxo)
+                        total += self._utxo_value(utxo)
+                        if total >= float(amount_needed):
+                            break
+                    unspent_utxos = collected
+                else:
+                    unspent_utxos = []
+                max_transferable_value = self.floor_to_two_decimal_places(
+                    float(max_transferable_value)
+                )
+                elapsed = precise_time() - start_time
+                self.config.app_log.info(
+                    "Unspent KEL aggregate for %s: balance=%.8f addresses=%s "
+                    "utxos=%s max_transferable=%.8f (%.2fs)",
+                    address,
+                    balance,
+                    len(kel_addresses),
+                    len(unspent_utxos) if amount_needed else len(merged),
+                    max_transferable_value,
+                    elapsed,
+                )
+                return {
+                    "unspent_utxos": unspent_utxos,
+                    "balance": balance,
+                    "max_transferable_value": max_transferable_value,
+                }
 
         public_key = await self.get_reverse_public_key(address)
         latest_block = await self.get_latest_block_async()
         start_time = precise_time()
 
         # Balance is maintained separately (and cheaply once cached).
-        balance_task = asyncio.create_task(self.get_wallet_balance(address))
+        # Per-address expansion path uses get_final_balance to avoid N full KEL sums.
+        if _kel_expanded:
+            balance_task = asyncio.create_task(self.get_final_balance(address))
+        else:
+            balance_task = asyncio.create_task(self.get_wallet_balance(address))
         # Fetch mempool spends early so selection does not early-stop on
         # coins that will be filtered out by the mempool overlay.
         mempool_spent_task = asyncio.create_task(

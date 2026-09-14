@@ -65,9 +65,38 @@ class TU(object):  # Transaction Utilities
         if not inputs:
             inputs = []
 
+        public_key = getattr(config, "public_key", None) or ""
+        private_key = getattr(config, "private_key", None) or ""
+        spend_from = from_address
+        if spend_from is True or spend_from is None or spend_from is False:
+            spend_from = getattr(config, "address", None)
+        if (
+            spend_from
+            and spend_from != getattr(config, "address", None)
+            and hasattr(config, "mongo")
+            and config.mongo is not None
+        ):
+            try:
+                child = await config.mongo.async_db.child_keys.find_one(
+                    {"address": spend_from}
+                )
+            except Exception:
+                child = None
+            if child and child.get("public_key") and child.get("private_key"):
+                public_key = child["public_key"]
+                private_key = child["private_key"]
+
+        if not public_key or not private_key:
+            return {
+                "status": "error",
+                "message": "node signing keys are not configured",
+            }
+
         try:
             transaction = await Transaction.generate(
                 fee=0.00,
+                public_key=public_key,
+                private_key=private_key,
                 inputs=inputs,
                 outputs=outputs,
                 exact_match=exact_match,

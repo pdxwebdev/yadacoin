@@ -454,12 +454,32 @@ var BulletinSecretService = /** @class */ (function () {
         this.keykeys = null;
         this.username = null;
         this.public_key = null;
+        this.address = null;
+        this.identityType = "local";
+        this.operatorHost = null;
         this.identity = {
             username: "",
             username_signature: "",
             public_key: "",
+            address: "",
+            type: "local",
         };
     }
+    BulletinSecretService.prototype.isOperator = function () {
+        return this.identityType === "operator" || (this.keyname || "").indexOf("operator-") === 0;
+    };
+    BulletinSecretService.prototype.hasSession = function () {
+        return !!(this.key || this.isOperator());
+    };
+    BulletinSecretService.prototype.operatorStorageKey = function (username, host) {
+        var safeHost = (host || "")
+            .toString()
+            .trim()
+            .toLowerCase()
+            .replace(/\/+$/, "")
+            .replace(/^https?:\/\//, "");
+        return "operator-" + (username || "").trim() + "@" + safeHost;
+    };
     BulletinSecretService.prototype.shared_encrypt = function (shared_secret, message) {
         var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(shared_secret).digest().toHex(), "salt", 400, 32);
         var cipher = forge.cipher.createCipher("AES-CBC", key);
@@ -508,19 +528,122 @@ var BulletinSecretService = /** @class */ (function () {
     BulletinSecretService.prototype.setKey = function () {
         var _this = this;
         return new Promise(function (resolve, reject) {
-            _this.storage.get(_this.keyname).then(function (key) {
-                _this.key = foobar.bitcoin.ECPair.fromWIF(key);
+            _this.storage.get(_this.keyname).then(function (stored) {
+                if (_this.keyname && _this.keyname.indexOf("operator-") === 0) {
+                    return _this.applyOperatorRecord(stored).then(resolve).catch(reject);
+                }
+                _this.identityType = "local";
+                _this.operatorHost = null;
+                _this.key = foobar.bitcoin.ECPair.fromWIF(stored);
                 _this.username = _this.keyname.substr("usernames-".length);
                 _this.public_key = _this.key.getPublicKeyBuffer().toString("hex");
+                _this.address = _this.key.getAddress();
+                _this.username_signature = _this.generate_username_signature();
                 _this.identity = {
                     username: _this.username,
                     username_signature: _this.username_signature,
                     public_key: _this.public_key,
+                    address: _this.address,
+                    type: "local",
                 };
-                _this.username_signature = _this.generate_username_signature();
                 return resolve(null);
             });
         });
+    };
+    BulletinSecretService.prototype.applyOperatorRecord = function (stored) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            var record = stored;
+            if (typeof stored === "string") {
+                try {
+                    record = JSON.parse(stored);
+                }
+                catch (e) {
+                    return reject("invalid operator identity");
+                }
+            }
+            if (!record || record.type !== "operator") {
+                return reject("invalid operator identity");
+            }
+            _this.identityType = "operator";
+            _this.key = null;
+            _this.username = record.username || "";
+            _this.public_key = record.public_key || "";
+            _this.address = record.address || "";
+            _this.operatorHost = record.host || record.baseUrl || "";
+            _this.username_signature = record.username_signature || "";
+            _this.identity = {
+                username: _this.username,
+                username_signature: _this.username_signature,
+                public_key: _this.public_key,
+                address: _this.address,
+                type: "operator",
+                host: _this.operatorHost,
+                baseUrl: record.baseUrl || _this.operatorHost,
+            };
+            return resolve(null);
+        });
+    };
+    BulletinSecretService.prototype.importOperator = function (opts) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            var username = (opts && opts.username) || "";
+            var host = (opts && opts.host) || "";
+            var baseUrl = (opts && opts.baseUrl) || host;
+            if (!username)
+                return reject("username missing");
+            if (!host && !baseUrl)
+                return reject("node host missing");
+            _this.keyname = _this.operatorStorageKey(username, baseUrl || host);
+            var record = {
+                type: "operator",
+                username: username,
+                host: host || baseUrl,
+                baseUrl: baseUrl || host,
+                public_key: (opts && opts.public_key) || "",
+                address: (opts && opts.address) || "",
+                username_signature: (opts && opts.username_signature) || "",
+            };
+            _this.storage
+                .set("last-keyname", _this.keyname)
+                .then(function () { return _this.storage.set(_this.keyname, record); })
+                .then(function () { return _this.applyOperatorRecord(record); })
+                .then(function () { return resolve(record); })
+                .catch(reject);
+        });
+    };
+    BulletinSecretService.prototype.updateOperatorIdentity = function (fields) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            if (!_this.isOperator() || !_this.keyname)
+                return reject("not operator");
+            _this.storage.get(_this.keyname).then(function (stored) {
+                var record = stored;
+                if (typeof stored === "string") {
+                    try {
+                        record = JSON.parse(stored);
+                    }
+                    catch (e) {
+                        record = {};
+                    }
+                }
+                record = Object.assign({}, record || {}, fields || {}, { type: "operator" });
+                _this.storage
+                    .set(_this.keyname, record)
+                    .then(function () { return _this.applyOperatorRecord(record); })
+                    .then(function () { return resolve(record); })
+                    .catch(reject);
+            });
+        });
+    };
+    BulletinSecretService.prototype.getSpendAddress = function () {
+        if (this.isOperator()) {
+            return this.address || (this.identity && this.identity.address) || "";
+        }
+        if (this.key && this.key.getAddress) {
+            return this.key.getAddress();
+        }
+        return this.address || "";
     };
     BulletinSecretService.prototype.cloneIdentity = function () {
         return JSON.parse(this.identityJson());
@@ -529,6 +652,9 @@ var BulletinSecretService = /** @class */ (function () {
         return JSON.stringify(this.identity, null, 4);
     };
     BulletinSecretService.prototype.generate_username_signature = function () {
+        if (!this.key) {
+            return this.username_signature || "";
+        }
         return foobar.base64.fromByteArray(this.key.sign(foobar.bitcoin.crypto.sha256(this.username)).toDER());
     };
     BulletinSecretService.prototype.set = function (key) {
@@ -588,11 +714,30 @@ var BulletinSecretService = /** @class */ (function () {
     };
     BulletinSecretService.prototype.keyToIdentity = function (key) {
         return __awaiter(this, void 0, void 0, function () {
-            var privkey, username, public_key;
+            var record, privkey, username, public_key;
             var _a;
             return __generator(this, function (_b) {
                 switch (_b.label) {
                     case 0:
+                        if (key.idx && key.idx.indexOf("operator-") === 0) {
+                            record = key.key;
+                            if (typeof record === "string") {
+                                try {
+                                    record = JSON.parse(record);
+                                }
+                                catch (e) {
+                                    record = {};
+                                }
+                            }
+                            return [2 /*return*/, {
+                                    username: (record && record.username) || key.idx.substr("operator-".length),
+                                    username_signature: (record && record.username_signature) || "",
+                                    public_key: (record && record.public_key) || "",
+                                    address: (record && record.address) || "",
+                                    type: "operator",
+                                    host: (record && record.host) || "",
+                                }];
+                        }
                         privkey = foobar.bitcoin.ECPair.fromWIF(key.key);
                         username = key.idx.substr("usernames-".length);
                         public_key = privkey.getPublicKeyBuffer().toString("hex");
@@ -604,6 +749,7 @@ var BulletinSecretService = /** @class */ (function () {
                         return [4 /*yield*/, this.publicKeyToAddress(public_key)];
                     case 1: return [2 /*return*/, (_a.address = _b.sent(),
                             _a.wif = key.key,
+                            _a.type = "local",
                             _a)];
                 }
             });
@@ -616,7 +762,10 @@ var BulletinSecretService = /** @class */ (function () {
             _this.storage
                 .forEach(function (value, key) {
                 if (key.substr(0, "usernames-".length) === "usernames-") {
-                    keykeys.push({ key: value, idx: key });
+                    keykeys.push({ key: value, idx: key, type: "local" });
+                }
+                else if (key.substr(0, "operator-".length) === "operator-") {
+                    keykeys.push({ key: value, idx: key, type: "operator" });
                 }
             })
                 .then(function () {
@@ -632,10 +781,15 @@ var BulletinSecretService = /** @class */ (function () {
         this.keykeys = null;
         this.username = null;
         this.public_key = null;
+        this.address = null;
+        this.identityType = "local";
+        this.operatorHost = null;
         this.identity = {
             username: "",
             username_signature: "",
             public_key: "",
+            address: "",
+            type: "local",
         };
     };
     BulletinSecretService.prototype.publicKeyToAddress = function (public_key) {
@@ -677,6 +831,763 @@ var BulletinSecretService = /** @class */ (function () {
 /***/ }),
 
 /***/ 136:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SendReceive; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(24);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(12);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__ = __webpack_require__(401);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__ = __webpack_require__(104);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(67);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(15);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __generator = (this && this.__generator) || function (thisArg, body) {
+    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g;
+    return g = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    function verb(n) { return function (v) { return step([n, v]); }; }
+    function step(op) {
+        if (f) throw new TypeError("Generator is already executing.");
+        while (_) try {
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
+            switch (op[0]) {
+                case 0: case 1: t = op; break;
+                case 4: _.label++; return { value: op[1], done: false };
+                case 5: _.label++; y = op[1]; op = [0]; continue;
+                case 7: op = _.ops.pop(); _.trys.pop(); continue;
+                default:
+                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+                    if (t[2]) _.ops.pop();
+                    _.trys.pop(); continue;
+            }
+            op = body.call(thisArg, _);
+        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+    }
+};
+
+
+
+
+
+
+
+
+
+
+
+var SendReceive = /** @class */ (function () {
+    function SendReceive(navCtrl, navParams, qrScanner, transactionService, alertCtrl, bulletinSecretService, walletService, socialSharing, loadingCtrl, ahttp, settingsService) {
+        var _this = this;
+        this.navCtrl = navCtrl;
+        this.navParams = navParams;
+        this.qrScanner = qrScanner;
+        this.transactionService = transactionService;
+        this.alertCtrl = alertCtrl;
+        this.bulletinSecretService = bulletinSecretService;
+        this.walletService = walletService;
+        this.socialSharing = socialSharing;
+        this.loadingCtrl = loadingCtrl;
+        this.ahttp = ahttp;
+        this.settingsService = settingsService;
+        this.value = null;
+        this.createdCode = null;
+        this.address = null;
+        this.balance = null;
+        this.isDevice = null;
+        if (this.navParams.get("identity")) {
+            this.identity = this.navParams.get("identity");
+            this.bulletinSecretService
+                .publicKeyToAddress(this.identity.public_key)
+                .then(function (address) {
+                _this.address = address;
+            });
+        }
+        this.recipients = [
+            {
+                to: "",
+                value: 0,
+            },
+        ];
+        this.value = 0;
+        this.createdCode = bulletinSecretService.getSpendAddress() || "";
+        if (this.bulletinSecretService.isOperator()) {
+            this.transactionService.ensureOperatorAuth().then(function () { return _this.refresh(); });
+        }
+        else {
+            this.refresh();
+        }
+        this.sentPage = 1;
+        this.receivedPage = 1;
+        this.sentPendingPage = 1;
+        this.receivedPendingPage = 1;
+        this.past_sent_transactions = [];
+        this.past_sent_pending_transactions = [];
+        this.past_received_transactions = [];
+        this.past_received_pending_transactions = [];
+        this.sentPendingLoading = false;
+        this.receivedPendingLoading = false;
+        this.sentLoading = false;
+        this.receivedLoading = false;
+        this.past_sent_page_cache = {};
+        this.past_sent_pending_page_cache = {};
+        this.past_received_page_cache = {};
+        this.past_received_pending_page_cache = {};
+        this.fee = 0;
+        this.masternode_fee = 0;
+        this.bulletinSecretService.all().then(function (keys) {
+            _this.keys = keys.filter(function (item) {
+                if (item.idx === _this.bulletinSecretService.keyname)
+                    return false;
+                var username = item.idx.substr("username-".length + 1);
+                item.username = username;
+                return true;
+            });
+        });
+        this.isCrossChain = false;
+        this.bscAddress = "";
+        this.wrapAmount = 0;
+    }
+    SendReceive.prototype.toggleIsCrossChain = function () {
+        return __awaiter(this, void 0, void 0, function () {
+            return __generator(this, function (_a) {
+                this.isCrossChain = !this.isCrossChain;
+                if (this.isCrossChain) {
+                    this.recipients = [
+                        {
+                            to: "16U1gAmHazqqEkbRE9KFPShAperjJreMRA",
+                            value: 0,
+                        },
+                    ];
+                }
+                else {
+                    this.recipients = [
+                        {
+                            to: "",
+                            value: 0,
+                        },
+                    ];
+                }
+                return [2 /*return*/];
+            });
+        });
+    };
+    SendReceive.prototype.selectMasterNodeFeeDelegate = function (key) {
+        return __awaiter(this, void 0, void 0, function () {
+            var identity;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0: return [4 /*yield*/, this.bulletinSecretService.keyToIdentity(key)];
+                    case 1:
+                        identity = _a.sent();
+                        this.selected_masernode_fee_delegate = identity;
+                        return [2 /*return*/];
+                }
+            });
+        });
+    };
+    SendReceive.prototype.scan = function () {
+        var _this = this;
+        if (!document.URL.startsWith("http") ||
+            document.URL.startsWith("http://localhost:8080")) {
+            this.isDevice = true;
+        }
+        else {
+            this.isDevice = false;
+        }
+        this.qrScanner.prepare().then(function (status) {
+            console.log(status);
+            if (status.authorized) {
+                // start scanning
+                var scanSub_1 = _this.qrScanner.scan().subscribe(function (text) {
+                    console.log("Scanned address", text);
+                    _this.address = text;
+                    _this.qrScanner.hide(); // hide camera preview
+                    scanSub_1.unsubscribe(); // stop scanning
+                    window.document
+                        .querySelector("ion-app")
+                        .classList.remove("transparentBody");
+                });
+            }
+        });
+        this.qrScanner.resumePreview();
+        // show camera preview
+        this.qrScanner.show();
+        window.document.querySelector("ion-app").classList.add("transparentBody");
+    };
+    SendReceive.prototype.addRecipient = function () {
+        this.recipients.push({
+            address: "",
+            value: 0,
+        });
+    };
+    SendReceive.prototype.removeRecipient = function (index) {
+        this.recipients.splice(index, 1);
+    };
+    SendReceive.prototype.submit = function () {
+        var _this = this;
+        if (this.bulletinSecretService.isOperator()) {
+            return this.submitOperator();
+        }
+        var fee = parseFloat(this.fee) || 0;
+        var masternode_fee = parseFloat(this.masternode_fee) || 0;
+        var alert = this.alertCtrl.create();
+        if (!this.isCrossChain && !this.recipients[0].to && masternode_fee === 0) {
+            alert.setTitle("Enter an address");
+            alert.addButton("Ok");
+            alert.present();
+            return;
+        }
+        if (!this.isCrossChain &&
+            !this.recipients[0].value &&
+            masternode_fee === 0) {
+            alert.setTitle("Enter an amount");
+            alert.addButton("Ok");
+            alert.present();
+            return;
+        }
+        if (this.isCrossChain && !this.bscAddress.includes("0x")) {
+            alert.setTitle("Enter a valid BSC Address");
+            alert.addButton("Ok");
+            alert.present();
+            return;
+        }
+        if (this.isCrossChain && parseFloat(this.wrapAmount) <= 0) {
+            alert.setTitle("Enter an amount of yada to wrap");
+            alert.addButton("Ok");
+            alert.present();
+            return;
+        }
+        if (this.masternode_fee > 0 && !this.selected_masernode_fee_delegate) {
+            alert.setTitle("You must select a masternode fee delegate from the list.");
+            alert.addButton("Ok");
+            alert.present();
+            return;
+        }
+        if (this.isCrossChain) {
+            this.recipients = [
+                {
+                    to: "16U1gAmHazqqEkbRE9KFPShAperjJreMRA",
+                    value: parseFloat(this.wrapAmount),
+                },
+            ];
+        }
+        var total = fee + masternode_fee;
+        this.recipients.map(function (output, i) {
+            _this.recipients[i].value = parseFloat(output.value);
+            total += parseFloat(output.value);
+        });
+        alert.setTitle("Approve Transaction");
+        alert.setSubTitle("You are about to " +
+            (this.isCrossChain ? "wrap " : "spend ") +
+            total +
+            " coins");
+        alert.addButton("Cancel");
+        alert.addButton({
+            text: "Confirm",
+            handler: function (data) {
+                _this.loadingModal = _this.loadingCtrl.create({
+                    content: "Please wait...",
+                });
+                _this.loadingModal.present();
+                _this.walletService
+                    .get(total)
+                    .then(function () {
+                    var maxTransferable = _this.walletService.wallet.max_transferable_value != null
+                        ? _this.walletService.wallet.max_transferable_value
+                        : _this.walletService.wallet.balance;
+                    if (maxTransferable < total) {
+                        var title = "Insufficient Funds";
+                        var message = "Not enough transferable YadaCoins for transaction. Max transferable: " +
+                            maxTransferable +
+                            " YADA";
+                        var alert = _this.alertCtrl.create();
+                        alert.setTitle(title);
+                        alert.setSubTitle(message);
+                        alert.addButton("Ok");
+                        alert.present();
+                        _this.value = "0";
+                        _this.address = "";
+                        _this.refresh();
+                        _this.loadingModal.dismiss().catch(function () { });
+                        throw "insufficient funds";
+                    }
+                    if (_this.walletService.wallet.unspent_transactions.length > 100) {
+                        var title = "Too many inputs";
+                        var message = "This transaction requires too many inputs. Send a smaller amount.";
+                        var alert = _this.alertCtrl.create();
+                        alert.setTitle(title);
+                        alert.setSubTitle(message);
+                        alert.addButton("Ok");
+                        alert.present();
+                        _this.loadingModal.dismiss().catch(function () { });
+                        throw "Too many inputs, try a smaller amount";
+                    }
+                    var clonedRecipients = JSON.parse(JSON.stringify(_this.recipients));
+                    if (clonedRecipients.length === 1 &&
+                        clonedRecipients[0].to === "") {
+                        clonedRecipients = [];
+                    }
+                    return _this.transactionService.generateTransaction({
+                        outputs: clonedRecipients,
+                        fee: _this.fee,
+                        masternode_fee: _this.masternode_fee,
+                        masternode_fee_delegate: _this.selected_masernode_fee_delegate
+                            ? _this.selected_masernode_fee_delegate.address
+                            : "",
+                        isCrossChain: _this.isCrossChain,
+                        bscAddress: _this.bscAddress,
+                    });
+                })
+                    .then(function (txn) {
+                    return _this.transactionService.sendTransaction(txn);
+                })
+                    .then(function (txn) {
+                    var title = "Transaction Sent";
+                    var message = "Your transaction has been sent succefully.";
+                    var alert = _this.alertCtrl.create();
+                    alert.setTitle(title);
+                    alert.setSubTitle(message);
+                    alert.addButton("Ok");
+                    alert.present();
+                    _this.value = "0";
+                    _this.address = "";
+                    _this.refresh();
+                    _this.loadingModal.dismiss().catch(function () { });
+                })
+                    .catch(function (err) {
+                    var alert = _this.alertCtrl.create();
+                    alert.setTitle("Error");
+                    alert.setSubTitle(err);
+                    alert.addButton("Ok");
+                    alert.present();
+                    console.log(err);
+                    try {
+                        _this.loadingModal.dismiss().catch(function () { });
+                    }
+                    catch (err) { }
+                });
+            },
+        });
+        alert.present();
+    };
+    SendReceive.prototype.submitOperator = function () {
+        var _this = this;
+        var alert = this.alertCtrl.create();
+        if (!this.recipients[0].to) {
+            alert.setTitle("Enter an address");
+            alert.addButton("Ok");
+            alert.present();
+            return;
+        }
+        if (!this.recipients[0].value) {
+            alert.setTitle("Enter an amount");
+            alert.addButton("Ok");
+            alert.present();
+            return;
+        }
+        var total = 0;
+        this.recipients.map(function (output, i) {
+            _this.recipients[i].value = parseFloat(output.value);
+            total += parseFloat(output.value);
+        });
+        alert.setTitle("Approve node spend");
+        alert.setSubTitle("Node will sign and broadcast " + total + " YDA (no WIF on this device)");
+        alert.addButton("Cancel");
+        alert.addButton({
+            text: "Confirm",
+            handler: function () {
+                _this.loadingModal = _this.loadingCtrl.create({
+                    content: "Please wait...",
+                });
+                _this.loadingModal.present();
+                _this.walletService
+                    .get(total)
+                    .then(function () {
+                    var maxTransferable = _this.walletService.wallet.max_transferable_value != null
+                        ? _this.walletService.wallet.max_transferable_value
+                        : _this.walletService.wallet.balance;
+                    if (maxTransferable < total) {
+                        throw ("Not enough transferable YadaCoins. Max transferable: " +
+                            maxTransferable);
+                    }
+                    var outputs = JSON.parse(JSON.stringify(_this.recipients));
+                    return _this.transactionService.sendOperatorTransaction({
+                        outputs: outputs,
+                        to: outputs[0].to,
+                        value: total,
+                        from: _this.bulletinSecretService.getSpendAddress(),
+                    });
+                })
+                    .then(function () {
+                    var ok = _this.alertCtrl.create();
+                    ok.setTitle("Transaction Sent");
+                    ok.setSubTitle("Node signed and broadcast the spend.");
+                    ok.addButton("Ok");
+                    ok.present();
+                    _this.value = "0";
+                    _this.address = "";
+                    _this.refresh();
+                    _this.loadingModal.dismiss().catch(function () { });
+                })
+                    .catch(function (err) {
+                    var fail = _this.alertCtrl.create();
+                    fail.setTitle("Error");
+                    fail.setSubTitle(err);
+                    fail.addButton("Ok");
+                    fail.present();
+                    try {
+                        _this.loadingModal.dismiss().catch(function () { });
+                    }
+                    catch (e) { }
+                });
+            },
+        });
+        alert.present();
+    };
+    SendReceive.prototype.refresh = function () {
+        var _this = this;
+        this.loadingBalance = true;
+        return this.walletService
+            .get(this.value)
+            .then(function () {
+            _this.loadingBalance = false;
+            _this.balance = _this.walletService.wallet.balance;
+        })
+            .then(function () {
+            _this.getSentHistory();
+        })
+            .then(function () {
+            _this.getSentPendingHistory();
+        })
+            .then(function () {
+            _this.getReceivedHistory();
+        })
+            .then(function () {
+            _this.getReceivedPendingHistory();
+        })
+            .catch(function (err) {
+            console.log(err);
+        });
+    };
+    SendReceive.prototype.convertDateTime = function (timestamp) {
+        var a = new Date(timestamp * 1000);
+        var months = [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+        ];
+        var year = a.getFullYear();
+        var month = months[a.getMonth()];
+        var date = a.getDate();
+        var hour = "0" + a.getHours();
+        var min = "0" + a.getMinutes();
+        var time = date +
+            "-" +
+            month +
+            "-" +
+            year +
+            " " +
+            hour.substr(-2) +
+            ":" +
+            min.substr(-2);
+        return time;
+    };
+    SendReceive.prototype.getSentPendingHistory = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.sentPendingLoading = true;
+            var options = new __WEBPACK_IMPORTED_MODULE_9__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
+            _this.ahttp
+                .get(_this.settingsService.remoteSettings["baseUrl"] +
+                "/get-past-pending-sent-txns?page=" +
+                _this.sentPendingPage +
+                "&public_key=" +
+                _this.bulletinSecretService.key
+                    .getPublicKeyBuffer()
+                    .toString("hex") +
+                "&origin=" +
+                encodeURIComponent(window.location.origin), options)
+                .subscribe(function (res) {
+                _this.sentPendingLoading = false;
+                _this.past_sent_pending_transactions = res
+                    .json()["past_pending_transactions"].sort(_this.sortFunc);
+                _this.getSentOutputValue(_this.past_sent_pending_transactions);
+                _this.past_sent_pending_page_cache[_this.sentPendingPage] =
+                    _this.past_sent_pending_transactions;
+                resolve(res);
+            }, function (err) {
+                return reject("cannot unlock wallet");
+            });
+        });
+    };
+    SendReceive.prototype.getSentHistory = function (public_key) {
+        var _this = this;
+        if (public_key === void 0) { public_key = null; }
+        return new Promise(function (resolve, reject) {
+            _this.sentLoading = true;
+            var options = new __WEBPACK_IMPORTED_MODULE_9__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
+            _this.ahttp
+                .get(_this.settingsService.remoteSettings["baseUrl"] +
+                "/get-past-sent-txns?page=" +
+                _this.sentPage +
+                "&public_key=" +
+                (public_key ||
+                    _this.bulletinSecretService.key
+                        .getPublicKeyBuffer()
+                        .toString("hex")) +
+                "&origin=" +
+                encodeURIComponent(window.location.origin), options)
+                .subscribe(function (res) {
+                _this.sentLoading = false;
+                _this.past_sent_transactions = res
+                    .json()["past_transactions"].sort(_this.sortFunc);
+                _this.getSentOutputValue(_this.past_sent_transactions);
+                _this.past_sent_page_cache[_this.sentPage] =
+                    _this.past_sent_transactions;
+                resolve(res);
+            }, function (err) {
+                return reject("cannot unlock wallet");
+            });
+        });
+    };
+    SendReceive.prototype.getReceivedPendingHistory = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.receivedPendingLoading = true;
+            var options = new __WEBPACK_IMPORTED_MODULE_9__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
+            _this.ahttp
+                .get(_this.settingsService.remoteSettings["baseUrl"] +
+                "/get-past-pending-received-txns?page=" +
+                _this.receivedPendingPage +
+                "&public_key=" +
+                _this.bulletinSecretService.key
+                    .getPublicKeyBuffer()
+                    .toString("hex") +
+                "&origin=" +
+                encodeURIComponent(window.location.origin), options)
+                .subscribe(function (res) {
+                _this.receivedPendingLoading = false;
+                _this.past_received_pending_transactions = res
+                    .json()["past_pending_transactions"].sort(_this.sortFunc);
+                _this.getReceivedOutputValue(_this.past_received_pending_transactions);
+                _this.past_received_pending_page_cache[_this.receivedPendingPage] =
+                    _this.past_received_pending_transactions;
+                resolve(res);
+            }, function (err) {
+                return reject("cannot unlock wallet");
+            });
+        });
+    };
+    SendReceive.prototype.getReceivedHistory = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.receivedLoading = true;
+            var options = new __WEBPACK_IMPORTED_MODULE_9__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
+            _this.ahttp
+                .get(_this.settingsService.remoteSettings["baseUrl"] +
+                "/get-past-received-txns?page=" +
+                _this.receivedPage +
+                "&public_key=" +
+                _this.bulletinSecretService.key
+                    .getPublicKeyBuffer()
+                    .toString("hex") +
+                "&origin=" +
+                encodeURIComponent(window.location.origin), options)
+                .subscribe(function (res) {
+                _this.receivedLoading = false;
+                _this.past_received_transactions = res
+                    .json()["past_transactions"].sort(_this.sortFunc);
+                _this.getReceivedOutputValue(_this.past_received_transactions);
+                _this.past_received_page_cache[_this.receivedPage] =
+                    _this.past_received_transactions;
+                resolve(res);
+            }, function (err) {
+                return reject("cannot unlock wallet");
+            });
+        });
+    };
+    SendReceive.prototype.getReceivedOutputValue = function (array) {
+        for (var i = 0; i < array.length; i++) {
+            var txn = array[i];
+            if (!array[i]["value"]) {
+                array[i]["value"] = 0;
+            }
+            for (var j = 0; j < txn["outputs"].length; j++) {
+                var output = txn["outputs"][j];
+                if (this.bulletinSecretService.getSpendAddress() === output.to) {
+                    array[i]["value"] += parseFloat(output.value);
+                }
+            }
+            array[i]["value"] = array[i]["value"].toFixed(8);
+        }
+    };
+    SendReceive.prototype.getSentOutputValue = function (array) {
+        for (var i = 0; i < array.length; i++) {
+            var txn = array[i];
+            if (!array[i]["value"]) {
+                array[i]["value"] = 0;
+            }
+            for (var j = 0; j < txn["outputs"].length; j++) {
+                var output = txn["outputs"][j];
+                if (this.bulletinSecretService.getSpendAddress() !== output.to) {
+                    array[i]["value"] += parseFloat(output.value);
+                }
+            }
+            array[i]["value"] = array[i]["value"].toFixed(8);
+        }
+    };
+    SendReceive.prototype.sortFunc = function (a, b) {
+        if (parseInt(a.time) < parseInt(b.time))
+            return 1;
+        if (parseInt(a.time) > parseInt(b.time))
+            return -1;
+        return 0;
+    };
+    SendReceive.prototype.prevReceivedPage = function () {
+        this.receivedPage--;
+        var result = this.past_received_page_cache[this.receivedPage] || [];
+        if (result.length > 0) {
+            this.past_received_transactions = result;
+            return;
+        }
+        return this.getReceivedHistory();
+    };
+    SendReceive.prototype.nextReceivedPage = function () {
+        this.receivedPage++;
+        var result = this.past_received_page_cache[this.receivedPage] || [];
+        if (result.length > 0) {
+            this.past_received_transactions = result;
+            return;
+        }
+        return this.getReceivedHistory();
+    };
+    SendReceive.prototype.prevReceivedPendingPage = function () {
+        this.receivedPendingPage--;
+        var result = this.past_received_pending_page_cache[this.receivedPendingPage] || [];
+        if (result.length > 0) {
+            this.past_received_pending_transactions = result;
+            return;
+        }
+        return this.getReceivedPendingHistory();
+    };
+    SendReceive.prototype.nextReceivedPendingPage = function () {
+        this.receivedPendingPage++;
+        var result = (this.past_received_pending_transactions =
+            this.past_received_pending_page_cache[this.receivedPendingPage] || []);
+        if (result.length > 0) {
+            this.past_sent_transactions = result;
+            return;
+        }
+        return this.getReceivedPendingHistory();
+    };
+    SendReceive.prototype.prevSentPage = function () {
+        this.sentPage--;
+        var result = (this.past_sent_transactions =
+            this.past_sent_page_cache[this.sentPage] || []);
+        if (result.length > 0) {
+            this.past_sent_transactions = result;
+            return;
+        }
+        return this.getSentHistory();
+    };
+    SendReceive.prototype.nextSentPage = function () {
+        this.sentPage++;
+        var result = this.past_sent_page_cache[this.sentPage] || [];
+        if (result.length > 0) {
+            this.past_sent_transactions = result;
+            return;
+        }
+        return this.getSentHistory();
+    };
+    SendReceive.prototype.prevSentPendingPage = function () {
+        this.sentPendingPage--;
+        var result = (this.past_sent_pending_transactions =
+            this.past_sent_pending_page_cache[this.sentPendingPage] || []);
+        if (result.length > 0) {
+            this.past_sent_pending_transactions = result;
+            return;
+        }
+        return this.getSentPendingHistory();
+    };
+    SendReceive.prototype.nextSentPendingPage = function () {
+        this.sentPendingPage++;
+        var result = this.past_sent_pending_page_cache[this.sentPendingPage] || [];
+        if (result.length > 0) {
+            this.past_sent_pending_transactions = result;
+            return;
+        }
+        return this.getSentPendingHistory();
+    };
+    SendReceive.prototype.shareAddress = function () {
+        this.socialSharing.share(this.bulletinSecretService.getSpendAddress(), "Send Yada Coin to this address!");
+    };
+    SendReceive.prototype.showChat = function () {
+        var item = { pageTitle: { title: "Chat" } };
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
+    };
+    SendReceive.prototype.showFriendRequests = function () {
+        var item = { pageTitle: { title: "Friend Requests" } };
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
+    };
+    SendReceive = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: "page-sendreceive",template:/*ion-inline-start:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h4>Balance</h4>\n  <ion-item> {{walletService.wallet.balance}} YADA </ion-item>\n  <h4>Pending Balance</h4>\n  <ion-note\n    >(including funds to be returned to you from your transactions)</ion-note\n  >\n  <ion-item> {{walletService.wallet.pending_balance}} YADA </ion-item>\n  <h4>Max Transferable</h4>\n  <ion-note\n    >(maximum you can send in a single transaction)</ion-note\n  >\n  <ion-item> {{walletService.wallet.max_transferable_value}} YADA </ion-item>\n\n  <h4>Wrap on Binance Smart Chain</h4>\n  <button\n    ion-button\n    menuToggle\n    [color]="isCrossChain === true ? \'secondary\' : \'primary\'"\n    (click)="toggleIsCrossChain($event)"\n  >\n    Wrap on BSC\n  </button>\n  <h4 *ngIf="!isCrossChain">Send YadaCoins</h4>\n  <button *ngIf="isDevice" ion-button color="secondary" (click)="scan()" full>\n    Scan Address\n  </button>\n  <ion-item *ngIf="identity && !isCrossChain" title="Verified" class="sender"\n    >Recipient: {{identity.username}}\n    <ion-icon\n      *ngIf="graphService.isAdded(identity)"\n      name="checkmark-circle"\n      class="success"\n    ></ion-icon\n  ></ion-item>\n  <ion-list *ngIf="!isCrossChain">\n    <ion-row *ngFor="let recipient of recipients; let i = index">\n      <ion-col col-12 col-lg-6>\n        <ion-item>\n          <ion-label color="primary" stacked>Address</ion-label>\n          <ion-input\n            type="text"\n            placeholder="Recipient address..."\n            [(ngModel)]="recipients[i].to"\n            class="addressinput"\n          >\n          </ion-input>\n        </ion-item>\n        <ion-item>\n          <ion-label color="primary" fixed>Amount</ion-label>\n          <ion-input\n            type="number"\n            placeholder="Amount..."\n            [(ngModel)]="recipients[i].value"\n          ></ion-input>\n        </ion-item>\n      </ion-col>\n      <ion-col>\n        <button ion-button secondary (click)="removeRecipient(i)" *ngIf="i > 0">\n          <ion-icon name="trash"></ion-icon>\n        </button>\n      </ion-col>\n    </ion-row>\n  </ion-list>\n  <button *ngIf="!isCrossChain" ion-button secondary (click)="addRecipient()">\n    <ion-icon name="add"></ion-icon>&nbsp;Add recipient\n  </button>\n  <h4 *ngIf="isCrossChain === true">Cross-bridge Address</h4>\n  <p *ngIf="isCrossChain === true">\n    Enter the address where you\'d like your new coins minted on the Binanace\n    Smart Chain.\n  </p>\n  <ion-label color="primary" fixed *ngIf="isCrossChain === true"\n    >BSC Address</ion-label\n  >\n  <ion-item *ngIf="isCrossChain === true">\n    <ion-input\n      type="text"\n      placeholder="BSC address..."\n      [(ngModel)]="bscAddress"\n      class="addressinput"\n    >\n    </ion-input>\n  </ion-item>\n  <ion-item *ngIf="isCrossChain === true">\n    <ion-input\n      type="number"\n      placeholder="YDA amount to wrap"\n      [(ngModel)]="wrapAmount"\n    >\n    </ion-input>\n  </ion-item>\n  <h4>Fee</h4>\n  <p>\n    Enter a fee amount to give your transaction higher priority or to support\n    the miners.\n  </p>\n  <ion-item>\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input\n      type="number"\n      placeholder="Amount..."\n      [(ngModel)]="fee"\n    ></ion-input>\n  </ion-item>\n  <h4 *ngIf="!isCrossChain">Masternode Fee</h4>\n  <p *ngIf="!isCrossChain">\n    Enter a masternode fee if you intend to use p2p communication services. If\n    you enter a value you do not need to send coins to anyone. However, you can\n    pay masternode fees and send coins to recipients.\n  </p>\n  <ion-item *ngIf="!isCrossChain">\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input\n      type="number"\n      placeholder="Amount..."\n      [(ngModel)]="masternode_fee"\n    ></ion-input>\n  </ion-item>\n  <ion-item *ngIf="!isCrossChain">\n    <ion-label color="primary" stacked\n      >Deligate masternode fee to another identity</ion-label\n    >\n    <ion-checkbox\n      [(ngModel)]="delegate_masternode_fee"\n      [disabled]="masternode_fee <= 0"\n    ></ion-checkbox>\n  </ion-item>\n  <ion-list *ngIf="delegate_masternode_fee && keys.length > 0">\n    <button\n      *ngFor="let key of keys"\n      ion-item\n      (click)="selectMasterNodeFeeDelegate(key)"\n      [color]="selected_masernode_fee_delegate && key.key === selected_masernode_fee_delegate.wif ? \'primary\' : \'dark\'"\n    >\n      <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n      {{key.username}}\n    </button>\n  </ion-list>\n  <ion-item *ngIf="delegate_masternode_fee && keys.length <= 0"\n    >No identities to delegate to. Create a new identity on the identity\n    tab.</ion-item\n  >\n  <button ion-button secondary (click)="submit()" style="margin-top: 15px">\n    {{isCrossChain ? \'wrap\': \'send\'}}&nbsp;<ion-icon name="send"></ion-icon>\n  </button>\n  <h4>Receive YadaCoins</h4>\n  <ion-item>\n    <ion-label color="primary" stacked>Your Address:</ion-label>\n    <ion-input type="text" [(ngModel)]="createdCode"></ion-input>\n  </ion-item>\n  <ion-item mt-5>\n    <button\n      *ngIf="isDevice"\n      ion-button\n      outline\n      item-end\n      (click)="shareAddress()"\n    >\n      share address&nbsp;<ion-icon name="share"></ion-icon>\n    </button>\n  </ion-item>\n  <ion-card>\n    <ion-card-content>\n      <ngx-qrcode [qrc-value]="createdCode"></ngx-qrcode>\n    </ion-card-content>\n  </ion-card>\n  <h4>Pending Transactions</h4>\n  <strong>Received</strong><br />\n  <button\n    ion-button\n    small\n    (click)="prevReceivedPendingPage()"\n    [disabled]="receivedPendingPage <= 1"\n  >\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextReceivedPendingPage()"\n    [disabled]="past_received_pending_transactions.length === 0 || past_received_pending_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_received_pending_transactions.length === 0">No more results</p>\n  <span *ngIf="receivedPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br />\n  <button\n    ion-button\n    small\n    (click)="prevSentPendingPage()"\n    [disabled]="sentPendingPage <= 1"\n  >\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextSentPendingPage()"\n    [disabled]="past_sent_pending_transactions.length === 0 || past_sent_pending_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_sent_pending_transactions.length === 0">No more results</p>\n  <span *ngIf="sentPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <h4>Transaction history</h4>\n  <strong>Received</strong><br />\n  <button\n    ion-button\n    small\n    (click)="prevReceivedPage()"\n    [disabled]="receivedPage <= 1"\n  >\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextReceivedPage()"\n    [disabled]="past_received_transactions.length === 0 || past_received_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_received_transactions.length === 0">No more results</p>\n  <span *ngIf="receivedLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br />\n  <button ion-button small (click)="prevSentPage()" [disabled]="sentPage <= 1">\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextSentPage()"\n    [disabled]="past_sent_transactions.length === 0 || past_sent_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_sent_transactions.length === 0">No more results</p>\n  <span *ngIf="sentLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n</ion-content>\n'/*ion-inline-end:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/,
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__["a" /* QRScanner */],
+            __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
+            __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__["a" /* WalletService */],
+            __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__["a" /* SocialSharing */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["f" /* LoadingController */],
+            __WEBPACK_IMPORTED_MODULE_9__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_6__app_settings_service__["a" /* SettingsService */]])
+    ], SendReceive);
+    return SendReceive;
+}());
+
+//# sourceMappingURL=sendreceive.js.map
+
+/***/ }),
+
+/***/ 137:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -806,7 +1717,7 @@ var MailItemPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 137:
+/***/ 138:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -1240,7 +2151,7 @@ var MarketItemPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 138:
+/***/ 139:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -4182,6 +5093,111 @@ var TransactionService = /** @class */ (function () {
         };
         return Array.from(byteArray, callback).join("");
     };
+    /**
+     * Node-signed spend. Auth is operator JWT (Bearer) and/or the secure
+     * operator cookie from admin-session / auth-session approve.
+     */
+    TransactionService.prototype.sendOperatorTransaction = function (info) {
+        var _this = this;
+        return this.ensureOperatorAuth().then(function (token) {
+            return new Promise(function (resolve, reject) {
+                var baseUrl = (_this.settingsService.remoteSettings &&
+                    _this.settingsService.remoteSettings.baseUrl) ||
+                    _this.settingsService.remoteSettingsUrl;
+                if (!baseUrl) {
+                    return reject("node URL not set");
+                }
+                var headers = new __WEBPACK_IMPORTED_MODULE_4__angular_http__["a" /* Headers */]();
+                headers.append("Content-Type", "application/json");
+                headers.append("Accept", "application/json");
+                if (token) {
+                    headers.append("Authorization", "Bearer " + token);
+                }
+                var options = new __WEBPACK_IMPORTED_MODULE_4__angular_http__["d" /* RequestOptions */]({
+                    headers: headers,
+                    withCredentials: true,
+                });
+                var body = {
+                    address: info.to ||
+                        (info.outputs && info.outputs[0] && info.outputs[0].to),
+                    value: info.value != null
+                        ? parseFloat(info.value)
+                        : info.outputs && info.outputs[0]
+                            ? parseFloat(info.outputs[0].value)
+                            : 0,
+                    from: info.from || _this.bulletinSecretService.getSpendAddress(),
+                    dry_run: !!info.dry_run,
+                    exact_match: !!info.exact_match,
+                };
+                if (info.outputs && info.outputs.length) {
+                    body.outputs = info.outputs;
+                }
+                if (info.inputs && info.inputs.length) {
+                    body.inputs = info.inputs;
+                }
+                _this.ahttp
+                    .post(baseUrl + "/send-transaction", body, options)
+                    .subscribe(function (res) {
+                    var data = {};
+                    try {
+                        data = res.json();
+                    }
+                    catch (e) {
+                        data = {};
+                    }
+                    if (data && data.status === "error") {
+                        return reject(data.message || "send failed");
+                    }
+                    if (data && data.error) {
+                        return reject(data.error === "not authorized"
+                            ? "operator session required — authenticate first"
+                            : data.error || data.message || "send failed");
+                    }
+                    resolve(data);
+                }, function (err) {
+                    var message = "send failed";
+                    try {
+                        var body_1 = err.json && err.json();
+                        message =
+                            (body_1 && (body_1.message || body_1.error)) ||
+                                err.statusText ||
+                                message;
+                        if (message === "not authorized" ||
+                            (err && err.status === 401)) {
+                            message = "operator session required — authenticate first";
+                        }
+                    }
+                    catch (e) { }
+                    reject(message);
+                });
+            });
+        });
+    };
+    /** Load persisted operator JWT if any; cookie may still authorize without it. */
+    TransactionService.prototype.ensureOperatorAuth = function () {
+        var _this = this;
+        return new Promise(function (resolve) {
+            var keyname = _this.bulletinSecretService.keyname;
+            if (!keyname) {
+                return resolve(null);
+            }
+            var existing = _this.settingsService.tokens[keyname];
+            if (existing) {
+                return resolve(existing);
+            }
+            var storageKey = "operator-jwt-" + keyname;
+            try {
+                var ls = window.localStorage.getItem(storageKey);
+                if (ls) {
+                    _this.settingsService.tokens[keyname] = ls;
+                    return resolve(ls);
+                }
+            }
+            catch (e) { }
+            // Cookie-only session (extension admin-session / same-origin) is fine.
+            resolve(null);
+        });
+    };
     TransactionService.prototype.encrypt = function () {
         var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.key.toWIF()).digest().toHex(), "salt", 400, 32);
         var cipher = forge.cipher.createCipher("AES-CBC", key);
@@ -4242,7 +5258,7 @@ var TransactionService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 224:
+/***/ 225:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -4255,10 +5271,10 @@ var TransactionService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(24);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_graph_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_transaction_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_peer_service__ = __webpack_require__(225);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_peer_service__ = __webpack_require__(226);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__list_list__ = __webpack_require__(67);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_opengraphparser_service__ = __webpack_require__(138);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_opengraphparser_service__ = __webpack_require__(139);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__ionic_native_social_sharing__ = __webpack_require__(104);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_firebase_service__ = __webpack_require__(230);
@@ -4841,7 +5857,7 @@ var HomePage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 225:
+/***/ 226:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -4884,49 +5900,95 @@ var PeerService = /** @class */ (function () {
         this.failedSeedPeers = new Set();
         this.failedConfigPeers = new Set();
     }
-    PeerService.prototype.go = function () {
+    PeerService.prototype.normalizeHost = function (host) {
+        if (!host)
+            return "";
+        var h = host.toString().trim();
+        if (!h)
+            return "";
+        if (h.indexOf("://") < 0) {
+            h = "http://" + h;
+        }
+        return h.replace(/\/+$/, "");
+    };
+    PeerService.prototype.applyDomain = function (domain) {
+        this.settingsService.remoteSettingsUrl = domain;
+        this.settingsService.remoteSettings = {
+            baseUrl: domain,
+            transactionUrl: domain + "/transaction",
+            fastgraphUrl: domain + "/post-fastgraph-transaction",
+            graphUrl: domain,
+            walletUrl: domain + "/get-graph-wallet",
+            websocketUrl: domain + "/websocket",
+            loginUrl: domain + "/login",
+            registerUrl: domain + "/create-relationship",
+            authenticatedUrl: domain + "/authenticated",
+            logoData: "",
+            identity: {},
+        };
+    };
+    PeerService.prototype.go = function (host, force) {
         var _this = this;
-        if (this.peerLocked)
+        if (host === void 0) { host = null; }
+        if (force === void 0) { force = false; }
+        if (this.peerLocked && !force && !host)
             return new Promise(function (resolve, reject) {
                 return resolve(null);
             });
         return new Promise(function (resolve, reject) {
-            var domain = window.location.origin === "http://localhost:8100"
-                ? "http://".concat(window.location.hostname, ":8005")
-                : window.location.origin;
-            _this.settingsService.remoteSettingsUrl = domain;
-            _this.settingsService.remoteSettings = {
-                baseUrl: domain,
-                transactionUrl: domain + "/transaction",
-                fastgraphUrl: domain + "/post-fastgraph-transaction",
-                graphUrl: domain,
-                walletUrl: domain + "/get-graph-wallet",
-                websocketUrl: domain + "/websocket",
-                loginUrl: domain + "/login",
-                registerUrl: domain + "/create-relationship",
-                authenticatedUrl: domain + "/authenticated",
-                logoData: "",
-                identity: {},
-            };
+            var domain = _this.normalizeHost(host);
+            if (!domain) {
+                domain =
+                    window.location.origin === "http://localhost:8100"
+                        ? "http://".concat(window.location.hostname, ":8005")
+                        : window.location.origin;
+            }
+            _this.applyDomain(domain);
             return resolve(null);
         })
             .then(function () {
-            return _this.getConfig();
+            return _this.getConfig(!!host);
         })
             .then(function () {
             _this.peerLocked = true;
             return _this.storage.set("node", _this.settingsService.remoteSettingsUrl);
         });
     };
-    PeerService.prototype.getConfig = function () {
+    PeerService.prototype.getConfig = function (preserveHost) {
         var _this = this;
+        if (preserveHost === void 0) { preserveHost = false; }
         return new Promise(function (resolve, reject) {
+            var configuredBase = _this.settingsService.remoteSettingsUrl;
             _this.ahttp
-                .get(_this.settingsService.remoteSettingsUrl + "/yada-config")
-                .pipe(Object(__WEBPACK_IMPORTED_MODULE_3_rxjs_operators__["timeout"])(1000))
+                .get(configuredBase + "/yada-config")
+                .pipe(Object(__WEBPACK_IMPORTED_MODULE_3_rxjs_operators__["timeout"])(preserveHost ? 5000 : 1000))
                 .subscribe(function (res) {
                 _this.loading = false;
                 var remoteSettings = res.json();
+                if (preserveHost) {
+                    // Keep explicit operator host; only fill missing non-URL fields.
+                    var base = configuredBase;
+                    _this.settingsService.remoteSettings = Object.assign({}, _this.settingsService.remoteSettings || {}, {
+                        baseUrl: base,
+                        transactionUrl: base + "/transaction",
+                        fastgraphUrl: base + "/post-fastgraph-transaction",
+                        graphUrl: base,
+                        walletUrl: base + "/get-graph-wallet",
+                        websocketUrl: (remoteSettings && remoteSettings.websocketUrl) ||
+                            base + "/websocket",
+                        loginUrl: base + "/login",
+                        registerUrl: base + "/create-relationship",
+                        authenticatedUrl: base + "/authenticated",
+                        logoData: (remoteSettings && remoteSettings.logoData) || "",
+                        identity: (remoteSettings && remoteSettings.identity) || {},
+                        restricted: remoteSettings && remoteSettings.restricted
+                            ? remoteSettings.restricted
+                            : false,
+                    });
+                    _this.settingsService.remoteSettingsUrl = base;
+                    resolve(remoteSettings);
+                    return;
+                }
                 for (var i = 0; i < Object.keys(remoteSettings).length; i++) {
                     try {
                         var url = new URL(remoteSettings[Object.keys(remoteSettings)[i]]);
@@ -4943,7 +6005,7 @@ var PeerService = /** @class */ (function () {
                     }
                 }
                 _this.settingsService.remoteSettings = remoteSettings;
-                resolve(null);
+                resolve(remoteSettings);
             }, function (err) {
                 _this.failedConfigPeers.add(_this.settingsService.remoteSettingsUrl);
                 _this.loading = false;
@@ -4981,7 +6043,7 @@ var PeerService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 226:
+/***/ 227:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5348,681 +6410,6 @@ var ChatPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 227:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SendReceive; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(24);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(12);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__ = __webpack_require__(401);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_settings_service__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__ = __webpack_require__(104);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(67);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(15);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __generator = (this && this.__generator) || function (thisArg, body) {
-    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g;
-    return g = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
-    function verb(n) { return function (v) { return step([n, v]); }; }
-    function step(op) {
-        if (f) throw new TypeError("Generator is already executing.");
-        while (_) try {
-            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
-            if (y = 0, t) op = [op[0] & 2, t.value];
-            switch (op[0]) {
-                case 0: case 1: t = op; break;
-                case 4: _.label++; return { value: op[1], done: false };
-                case 5: _.label++; y = op[1]; op = [0]; continue;
-                case 7: op = _.ops.pop(); _.trys.pop(); continue;
-                default:
-                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
-                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
-                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
-                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
-                    if (t[2]) _.ops.pop();
-                    _.trys.pop(); continue;
-            }
-            op = body.call(thisArg, _);
-        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
-        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
-    }
-};
-
-
-
-
-
-
-
-
-
-
-
-var SendReceive = /** @class */ (function () {
-    function SendReceive(navCtrl, navParams, qrScanner, transactionService, alertCtrl, bulletinSecretService, walletService, socialSharing, loadingCtrl, ahttp, settingsService) {
-        var _this = this;
-        this.navCtrl = navCtrl;
-        this.navParams = navParams;
-        this.qrScanner = qrScanner;
-        this.transactionService = transactionService;
-        this.alertCtrl = alertCtrl;
-        this.bulletinSecretService = bulletinSecretService;
-        this.walletService = walletService;
-        this.socialSharing = socialSharing;
-        this.loadingCtrl = loadingCtrl;
-        this.ahttp = ahttp;
-        this.settingsService = settingsService;
-        this.value = null;
-        this.createdCode = null;
-        this.address = null;
-        this.balance = null;
-        this.isDevice = null;
-        if (this.navParams.get("identity")) {
-            this.identity = this.navParams.get("identity");
-            this.bulletinSecretService
-                .publicKeyToAddress(this.identity.public_key)
-                .then(function (address) {
-                _this.address = address;
-            });
-        }
-        this.recipients = [
-            {
-                to: "",
-                value: 0,
-            },
-        ];
-        this.value = 0;
-        this.createdCode = bulletinSecretService.key.getAddress();
-        this.refresh();
-        this.sentPage = 1;
-        this.receivedPage = 1;
-        this.sentPendingPage = 1;
-        this.receivedPendingPage = 1;
-        this.past_sent_transactions = [];
-        this.past_sent_pending_transactions = [];
-        this.past_received_transactions = [];
-        this.past_received_pending_transactions = [];
-        this.sentPendingLoading = false;
-        this.receivedPendingLoading = false;
-        this.sentLoading = false;
-        this.receivedLoading = false;
-        this.past_sent_page_cache = {};
-        this.past_sent_pending_page_cache = {};
-        this.past_received_page_cache = {};
-        this.past_received_pending_page_cache = {};
-        this.fee = 0;
-        this.masternode_fee = 0;
-        this.bulletinSecretService.all().then(function (keys) {
-            _this.keys = keys.filter(function (item) {
-                if (item.idx === _this.bulletinSecretService.keyname)
-                    return false;
-                var username = item.idx.substr("username-".length + 1);
-                item.username = username;
-                return true;
-            });
-        });
-        this.isCrossChain = false;
-        this.bscAddress = "";
-        this.wrapAmount = 0;
-    }
-    SendReceive.prototype.toggleIsCrossChain = function () {
-        return __awaiter(this, void 0, void 0, function () {
-            return __generator(this, function (_a) {
-                this.isCrossChain = !this.isCrossChain;
-                if (this.isCrossChain) {
-                    this.recipients = [
-                        {
-                            to: "16U1gAmHazqqEkbRE9KFPShAperjJreMRA",
-                            value: 0,
-                        },
-                    ];
-                }
-                else {
-                    this.recipients = [
-                        {
-                            to: "",
-                            value: 0,
-                        },
-                    ];
-                }
-                return [2 /*return*/];
-            });
-        });
-    };
-    SendReceive.prototype.selectMasterNodeFeeDelegate = function (key) {
-        return __awaiter(this, void 0, void 0, function () {
-            var identity;
-            return __generator(this, function (_a) {
-                switch (_a.label) {
-                    case 0: return [4 /*yield*/, this.bulletinSecretService.keyToIdentity(key)];
-                    case 1:
-                        identity = _a.sent();
-                        this.selected_masernode_fee_delegate = identity;
-                        return [2 /*return*/];
-                }
-            });
-        });
-    };
-    SendReceive.prototype.scan = function () {
-        var _this = this;
-        if (!document.URL.startsWith("http") ||
-            document.URL.startsWith("http://localhost:8080")) {
-            this.isDevice = true;
-        }
-        else {
-            this.isDevice = false;
-        }
-        this.qrScanner.prepare().then(function (status) {
-            console.log(status);
-            if (status.authorized) {
-                // start scanning
-                var scanSub_1 = _this.qrScanner.scan().subscribe(function (text) {
-                    console.log("Scanned address", text);
-                    _this.address = text;
-                    _this.qrScanner.hide(); // hide camera preview
-                    scanSub_1.unsubscribe(); // stop scanning
-                    window.document
-                        .querySelector("ion-app")
-                        .classList.remove("transparentBody");
-                });
-            }
-        });
-        this.qrScanner.resumePreview();
-        // show camera preview
-        this.qrScanner.show();
-        window.document.querySelector("ion-app").classList.add("transparentBody");
-    };
-    SendReceive.prototype.addRecipient = function () {
-        this.recipients.push({
-            address: "",
-            value: 0,
-        });
-    };
-    SendReceive.prototype.removeRecipient = function (index) {
-        this.recipients.splice(index, 1);
-    };
-    SendReceive.prototype.submit = function () {
-        var _this = this;
-        var fee = parseFloat(this.fee) || 0;
-        var masternode_fee = parseFloat(this.masternode_fee) || 0;
-        var alert = this.alertCtrl.create();
-        if (!this.isCrossChain && !this.recipients[0].to && masternode_fee === 0) {
-            alert.setTitle("Enter an address");
-            alert.addButton("Ok");
-            alert.present();
-            return;
-        }
-        if (!this.isCrossChain &&
-            !this.recipients[0].value &&
-            masternode_fee === 0) {
-            alert.setTitle("Enter an amount");
-            alert.addButton("Ok");
-            alert.present();
-            return;
-        }
-        if (this.isCrossChain && !this.bscAddress.includes("0x")) {
-            alert.setTitle("Enter a valid BSC Address");
-            alert.addButton("Ok");
-            alert.present();
-            return;
-        }
-        if (this.isCrossChain && parseFloat(this.wrapAmount) <= 0) {
-            alert.setTitle("Enter an amount of yada to wrap");
-            alert.addButton("Ok");
-            alert.present();
-            return;
-        }
-        if (this.masternode_fee > 0 && !this.selected_masernode_fee_delegate) {
-            alert.setTitle("You must select a masternode fee delegate from the list.");
-            alert.addButton("Ok");
-            alert.present();
-            return;
-        }
-        if (this.isCrossChain) {
-            this.recipients = [
-                {
-                    to: "16U1gAmHazqqEkbRE9KFPShAperjJreMRA",
-                    value: parseFloat(this.wrapAmount),
-                },
-            ];
-        }
-        var total = fee + masternode_fee;
-        this.recipients.map(function (output, i) {
-            _this.recipients[i].value = parseFloat(output.value);
-            total += parseFloat(output.value);
-        });
-        alert.setTitle("Approve Transaction");
-        alert.setSubTitle("You are about to " +
-            (this.isCrossChain ? "wrap " : "spend ") +
-            total +
-            " coins");
-        alert.addButton("Cancel");
-        alert.addButton({
-            text: "Confirm",
-            handler: function (data) {
-                _this.loadingModal = _this.loadingCtrl.create({
-                    content: "Please wait...",
-                });
-                _this.loadingModal.present();
-                _this.walletService
-                    .get(total)
-                    .then(function () {
-                    var maxTransferable = _this.walletService.wallet.max_transferable_value != null
-                        ? _this.walletService.wallet.max_transferable_value
-                        : _this.walletService.wallet.balance;
-                    if (maxTransferable < total) {
-                        var title = "Insufficient Funds";
-                        var message = "Not enough transferable YadaCoins for transaction. Max transferable: " +
-                            maxTransferable +
-                            " YADA";
-                        var alert = _this.alertCtrl.create();
-                        alert.setTitle(title);
-                        alert.setSubTitle(message);
-                        alert.addButton("Ok");
-                        alert.present();
-                        _this.value = "0";
-                        _this.address = "";
-                        _this.refresh();
-                        _this.loadingModal.dismiss().catch(function () { });
-                        throw "insufficient funds";
-                    }
-                    if (_this.walletService.wallet.unspent_transactions.length > 100) {
-                        var title = "Too many inputs";
-                        var message = "This transaction requires too many inputs. Send a smaller amount.";
-                        var alert = _this.alertCtrl.create();
-                        alert.setTitle(title);
-                        alert.setSubTitle(message);
-                        alert.addButton("Ok");
-                        alert.present();
-                        _this.loadingModal.dismiss().catch(function () { });
-                        throw "Too many inputs, try a smaller amount";
-                    }
-                    var clonedRecipients = JSON.parse(JSON.stringify(_this.recipients));
-                    if (clonedRecipients.length === 1 &&
-                        clonedRecipients[0].to === "") {
-                        clonedRecipients = [];
-                    }
-                    return _this.transactionService.generateTransaction({
-                        outputs: clonedRecipients,
-                        fee: _this.fee,
-                        masternode_fee: _this.masternode_fee,
-                        masternode_fee_delegate: _this.selected_masernode_fee_delegate
-                            ? _this.selected_masernode_fee_delegate.address
-                            : "",
-                        isCrossChain: _this.isCrossChain,
-                        bscAddress: _this.bscAddress,
-                    });
-                })
-                    .then(function (txn) {
-                    return _this.transactionService.sendTransaction(txn);
-                })
-                    .then(function (txn) {
-                    var title = "Transaction Sent";
-                    var message = "Your transaction has been sent succefully.";
-                    var alert = _this.alertCtrl.create();
-                    alert.setTitle(title);
-                    alert.setSubTitle(message);
-                    alert.addButton("Ok");
-                    alert.present();
-                    _this.value = "0";
-                    _this.address = "";
-                    _this.refresh();
-                    _this.loadingModal.dismiss().catch(function () { });
-                })
-                    .catch(function (err) {
-                    var alert = _this.alertCtrl.create();
-                    alert.setTitle("Error");
-                    alert.setSubTitle(err);
-                    alert.addButton("Ok");
-                    alert.present();
-                    console.log(err);
-                    try {
-                        _this.loadingModal.dismiss().catch(function () { });
-                    }
-                    catch (err) { }
-                });
-            },
-        });
-        alert.present();
-    };
-    SendReceive.prototype.refresh = function () {
-        var _this = this;
-        this.loadingBalance = true;
-        return this.walletService
-            .get(this.value)
-            .then(function () {
-            _this.loadingBalance = false;
-            _this.balance = _this.walletService.wallet.balance;
-        })
-            .then(function () {
-            _this.getSentHistory();
-        })
-            .then(function () {
-            _this.getSentPendingHistory();
-        })
-            .then(function () {
-            _this.getReceivedHistory();
-        })
-            .then(function () {
-            _this.getReceivedPendingHistory();
-        })
-            .catch(function (err) {
-            console.log(err);
-        });
-    };
-    SendReceive.prototype.convertDateTime = function (timestamp) {
-        var a = new Date(timestamp * 1000);
-        var months = [
-            "Jan",
-            "Feb",
-            "Mar",
-            "Apr",
-            "May",
-            "Jun",
-            "Jul",
-            "Aug",
-            "Sep",
-            "Oct",
-            "Nov",
-            "Dec",
-        ];
-        var year = a.getFullYear();
-        var month = months[a.getMonth()];
-        var date = a.getDate();
-        var hour = "0" + a.getHours();
-        var min = "0" + a.getMinutes();
-        var time = date +
-            "-" +
-            month +
-            "-" +
-            year +
-            " " +
-            hour.substr(-2) +
-            ":" +
-            min.substr(-2);
-        return time;
-    };
-    SendReceive.prototype.getSentPendingHistory = function () {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            _this.sentPendingLoading = true;
-            var options = new __WEBPACK_IMPORTED_MODULE_9__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
-            _this.ahttp
-                .get(_this.settingsService.remoteSettings["baseUrl"] +
-                "/get-past-pending-sent-txns?page=" +
-                _this.sentPendingPage +
-                "&public_key=" +
-                _this.bulletinSecretService.key
-                    .getPublicKeyBuffer()
-                    .toString("hex") +
-                "&origin=" +
-                encodeURIComponent(window.location.origin), options)
-                .subscribe(function (res) {
-                _this.sentPendingLoading = false;
-                _this.past_sent_pending_transactions = res
-                    .json()["past_pending_transactions"].sort(_this.sortFunc);
-                _this.getSentOutputValue(_this.past_sent_pending_transactions);
-                _this.past_sent_pending_page_cache[_this.sentPendingPage] =
-                    _this.past_sent_pending_transactions;
-                resolve(res);
-            }, function (err) {
-                return reject("cannot unlock wallet");
-            });
-        });
-    };
-    SendReceive.prototype.getSentHistory = function (public_key) {
-        var _this = this;
-        if (public_key === void 0) { public_key = null; }
-        return new Promise(function (resolve, reject) {
-            _this.sentLoading = true;
-            var options = new __WEBPACK_IMPORTED_MODULE_9__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
-            _this.ahttp
-                .get(_this.settingsService.remoteSettings["baseUrl"] +
-                "/get-past-sent-txns?page=" +
-                _this.sentPage +
-                "&public_key=" +
-                (public_key ||
-                    _this.bulletinSecretService.key
-                        .getPublicKeyBuffer()
-                        .toString("hex")) +
-                "&origin=" +
-                encodeURIComponent(window.location.origin), options)
-                .subscribe(function (res) {
-                _this.sentLoading = false;
-                _this.past_sent_transactions = res
-                    .json()["past_transactions"].sort(_this.sortFunc);
-                _this.getSentOutputValue(_this.past_sent_transactions);
-                _this.past_sent_page_cache[_this.sentPage] =
-                    _this.past_sent_transactions;
-                resolve(res);
-            }, function (err) {
-                return reject("cannot unlock wallet");
-            });
-        });
-    };
-    SendReceive.prototype.getReceivedPendingHistory = function () {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            _this.receivedPendingLoading = true;
-            var options = new __WEBPACK_IMPORTED_MODULE_9__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
-            _this.ahttp
-                .get(_this.settingsService.remoteSettings["baseUrl"] +
-                "/get-past-pending-received-txns?page=" +
-                _this.receivedPendingPage +
-                "&public_key=" +
-                _this.bulletinSecretService.key
-                    .getPublicKeyBuffer()
-                    .toString("hex") +
-                "&origin=" +
-                encodeURIComponent(window.location.origin), options)
-                .subscribe(function (res) {
-                _this.receivedPendingLoading = false;
-                _this.past_received_pending_transactions = res
-                    .json()["past_pending_transactions"].sort(_this.sortFunc);
-                _this.getReceivedOutputValue(_this.past_received_pending_transactions);
-                _this.past_received_pending_page_cache[_this.receivedPendingPage] =
-                    _this.past_received_pending_transactions;
-                resolve(res);
-            }, function (err) {
-                return reject("cannot unlock wallet");
-            });
-        });
-    };
-    SendReceive.prototype.getReceivedHistory = function () {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            _this.receivedLoading = true;
-            var options = new __WEBPACK_IMPORTED_MODULE_9__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
-            _this.ahttp
-                .get(_this.settingsService.remoteSettings["baseUrl"] +
-                "/get-past-received-txns?page=" +
-                _this.receivedPage +
-                "&public_key=" +
-                _this.bulletinSecretService.key
-                    .getPublicKeyBuffer()
-                    .toString("hex") +
-                "&origin=" +
-                encodeURIComponent(window.location.origin), options)
-                .subscribe(function (res) {
-                _this.receivedLoading = false;
-                _this.past_received_transactions = res
-                    .json()["past_transactions"].sort(_this.sortFunc);
-                _this.getReceivedOutputValue(_this.past_received_transactions);
-                _this.past_received_page_cache[_this.receivedPage] =
-                    _this.past_received_transactions;
-                resolve(res);
-            }, function (err) {
-                return reject("cannot unlock wallet");
-            });
-        });
-    };
-    SendReceive.prototype.getReceivedOutputValue = function (array) {
-        for (var i = 0; i < array.length; i++) {
-            var txn = array[i];
-            if (!array[i]["value"]) {
-                array[i]["value"] = 0;
-            }
-            for (var j = 0; j < txn["outputs"].length; j++) {
-                var output = txn["outputs"][j];
-                if (this.bulletinSecretService.key.getAddress() === output.to) {
-                    array[i]["value"] += parseFloat(output.value);
-                }
-            }
-            array[i]["value"] = array[i]["value"].toFixed(8);
-        }
-    };
-    SendReceive.prototype.getSentOutputValue = function (array) {
-        for (var i = 0; i < array.length; i++) {
-            var txn = array[i];
-            if (!array[i]["value"]) {
-                array[i]["value"] = 0;
-            }
-            for (var j = 0; j < txn["outputs"].length; j++) {
-                var output = txn["outputs"][j];
-                if (this.bulletinSecretService.key.getAddress() !== output.to) {
-                    array[i]["value"] += parseFloat(output.value);
-                }
-            }
-            array[i]["value"] = array[i]["value"].toFixed(8);
-        }
-    };
-    SendReceive.prototype.sortFunc = function (a, b) {
-        if (parseInt(a.time) < parseInt(b.time))
-            return 1;
-        if (parseInt(a.time) > parseInt(b.time))
-            return -1;
-        return 0;
-    };
-    SendReceive.prototype.prevReceivedPage = function () {
-        this.receivedPage--;
-        var result = this.past_received_page_cache[this.receivedPage] || [];
-        if (result.length > 0) {
-            this.past_received_transactions = result;
-            return;
-        }
-        return this.getReceivedHistory();
-    };
-    SendReceive.prototype.nextReceivedPage = function () {
-        this.receivedPage++;
-        var result = this.past_received_page_cache[this.receivedPage] || [];
-        if (result.length > 0) {
-            this.past_received_transactions = result;
-            return;
-        }
-        return this.getReceivedHistory();
-    };
-    SendReceive.prototype.prevReceivedPendingPage = function () {
-        this.receivedPendingPage--;
-        var result = this.past_received_pending_page_cache[this.receivedPendingPage] || [];
-        if (result.length > 0) {
-            this.past_received_pending_transactions = result;
-            return;
-        }
-        return this.getReceivedPendingHistory();
-    };
-    SendReceive.prototype.nextReceivedPendingPage = function () {
-        this.receivedPendingPage++;
-        var result = (this.past_received_pending_transactions =
-            this.past_received_pending_page_cache[this.receivedPendingPage] || []);
-        if (result.length > 0) {
-            this.past_sent_transactions = result;
-            return;
-        }
-        return this.getReceivedPendingHistory();
-    };
-    SendReceive.prototype.prevSentPage = function () {
-        this.sentPage--;
-        var result = (this.past_sent_transactions =
-            this.past_sent_page_cache[this.sentPage] || []);
-        if (result.length > 0) {
-            this.past_sent_transactions = result;
-            return;
-        }
-        return this.getSentHistory();
-    };
-    SendReceive.prototype.nextSentPage = function () {
-        this.sentPage++;
-        var result = this.past_sent_page_cache[this.sentPage] || [];
-        if (result.length > 0) {
-            this.past_sent_transactions = result;
-            return;
-        }
-        return this.getSentHistory();
-    };
-    SendReceive.prototype.prevSentPendingPage = function () {
-        this.sentPendingPage--;
-        var result = (this.past_sent_pending_transactions =
-            this.past_sent_pending_page_cache[this.sentPendingPage] || []);
-        if (result.length > 0) {
-            this.past_sent_pending_transactions = result;
-            return;
-        }
-        return this.getSentPendingHistory();
-    };
-    SendReceive.prototype.nextSentPendingPage = function () {
-        this.sentPendingPage++;
-        var result = this.past_sent_pending_page_cache[this.sentPendingPage] || [];
-        if (result.length > 0) {
-            this.past_sent_pending_transactions = result;
-            return;
-        }
-        return this.getSentPendingHistory();
-    };
-    SendReceive.prototype.shareAddress = function () {
-        this.socialSharing.share(this.bulletinSecretService.key.getAddress(), "Send Yada Coin to this address!");
-    };
-    SendReceive.prototype.showChat = function () {
-        var item = { pageTitle: { title: "Chat" } };
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
-    };
-    SendReceive.prototype.showFriendRequests = function () {
-        var item = { pageTitle: { title: "Friend Requests" } };
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
-    };
-    SendReceive = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: "page-sendreceive",template:/*ion-inline-start:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h4>Balance</h4>\n  <ion-item> {{walletService.wallet.balance}} YADA </ion-item>\n  <h4>Pending Balance</h4>\n  <ion-note\n    >(including funds to be returned to you from your transactions)</ion-note\n  >\n  <ion-item> {{walletService.wallet.pending_balance}} YADA </ion-item>\n  <h4>Max Transferable</h4>\n  <ion-note\n    >(maximum you can send in a single transaction)</ion-note\n  >\n  <ion-item> {{walletService.wallet.max_transferable_value}} YADA </ion-item>\n\n  <h4>Wrap on Binance Smart Chain</h4>\n  <button\n    ion-button\n    menuToggle\n    [color]="isCrossChain === true ? \'secondary\' : \'primary\'"\n    (click)="toggleIsCrossChain($event)"\n  >\n    Wrap on BSC\n  </button>\n  <h4 *ngIf="!isCrossChain">Send YadaCoins</h4>\n  <button *ngIf="isDevice" ion-button color="secondary" (click)="scan()" full>\n    Scan Address\n  </button>\n  <ion-item *ngIf="identity && !isCrossChain" title="Verified" class="sender"\n    >Recipient: {{identity.username}}\n    <ion-icon\n      *ngIf="graphService.isAdded(identity)"\n      name="checkmark-circle"\n      class="success"\n    ></ion-icon\n  ></ion-item>\n  <ion-list *ngIf="!isCrossChain">\n    <ion-row *ngFor="let recipient of recipients; let i = index">\n      <ion-col col-12 col-lg-6>\n        <ion-item>\n          <ion-label color="primary" stacked>Address</ion-label>\n          <ion-input\n            type="text"\n            placeholder="Recipient address..."\n            [(ngModel)]="recipients[i].to"\n            class="addressinput"\n          >\n          </ion-input>\n        </ion-item>\n        <ion-item>\n          <ion-label color="primary" fixed>Amount</ion-label>\n          <ion-input\n            type="number"\n            placeholder="Amount..."\n            [(ngModel)]="recipients[i].value"\n          ></ion-input>\n        </ion-item>\n      </ion-col>\n      <ion-col>\n        <button ion-button secondary (click)="removeRecipient(i)" *ngIf="i > 0">\n          <ion-icon name="trash"></ion-icon>\n        </button>\n      </ion-col>\n    </ion-row>\n  </ion-list>\n  <button *ngIf="!isCrossChain" ion-button secondary (click)="addRecipient()">\n    <ion-icon name="add"></ion-icon>&nbsp;Add recipient\n  </button>\n  <h4 *ngIf="isCrossChain === true">Cross-bridge Address</h4>\n  <p *ngIf="isCrossChain === true">\n    Enter the address where you\'d like your new coins minted on the Binanace\n    Smart Chain.\n  </p>\n  <ion-label color="primary" fixed *ngIf="isCrossChain === true"\n    >BSC Address</ion-label\n  >\n  <ion-item *ngIf="isCrossChain === true">\n    <ion-input\n      type="text"\n      placeholder="BSC address..."\n      [(ngModel)]="bscAddress"\n      class="addressinput"\n    >\n    </ion-input>\n  </ion-item>\n  <ion-item *ngIf="isCrossChain === true">\n    <ion-input\n      type="number"\n      placeholder="YDA amount to wrap"\n      [(ngModel)]="wrapAmount"\n    >\n    </ion-input>\n  </ion-item>\n  <h4>Fee</h4>\n  <p>\n    Enter a fee amount to give your transaction higher priority or to support\n    the miners.\n  </p>\n  <ion-item>\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input\n      type="number"\n      placeholder="Amount..."\n      [(ngModel)]="fee"\n    ></ion-input>\n  </ion-item>\n  <h4 *ngIf="!isCrossChain">Masternode Fee</h4>\n  <p *ngIf="!isCrossChain">\n    Enter a masternode fee if you intend to use p2p communication services. If\n    you enter a value you do not need to send coins to anyone. However, you can\n    pay masternode fees and send coins to recipients.\n  </p>\n  <ion-item *ngIf="!isCrossChain">\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input\n      type="number"\n      placeholder="Amount..."\n      [(ngModel)]="masternode_fee"\n    ></ion-input>\n  </ion-item>\n  <ion-item *ngIf="!isCrossChain">\n    <ion-label color="primary" stacked\n      >Deligate masternode fee to another identity</ion-label\n    >\n    <ion-checkbox\n      [(ngModel)]="delegate_masternode_fee"\n      [disabled]="masternode_fee <= 0"\n    ></ion-checkbox>\n  </ion-item>\n  <ion-list *ngIf="delegate_masternode_fee && keys.length > 0">\n    <button\n      *ngFor="let key of keys"\n      ion-item\n      (click)="selectMasterNodeFeeDelegate(key)"\n      [color]="selected_masernode_fee_delegate && key.key === selected_masernode_fee_delegate.wif ? \'primary\' : \'dark\'"\n    >\n      <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n      {{key.username}}\n    </button>\n  </ion-list>\n  <ion-item *ngIf="delegate_masternode_fee && keys.length <= 0"\n    >No identities to delegate to. Create a new identity on the identity\n    tab.</ion-item\n  >\n  <button ion-button secondary (click)="submit()" style="margin-top: 15px">\n    {{isCrossChain ? \'wrap\': \'send\'}}&nbsp;<ion-icon name="send"></ion-icon>\n  </button>\n  <h4>Receive YadaCoins</h4>\n  <ion-item>\n    <ion-label color="primary" stacked>Your Address:</ion-label>\n    <ion-input type="text" [(ngModel)]="createdCode"></ion-input>\n  </ion-item>\n  <ion-item mt-5>\n    <button\n      *ngIf="isDevice"\n      ion-button\n      outline\n      item-end\n      (click)="shareAddress()"\n    >\n      share address&nbsp;<ion-icon name="share"></ion-icon>\n    </button>\n  </ion-item>\n  <ion-card>\n    <ion-card-content>\n      <ngx-qrcode [qrc-value]="createdCode"></ngx-qrcode>\n    </ion-card-content>\n  </ion-card>\n  <h4>Pending Transactions</h4>\n  <strong>Received</strong><br />\n  <button\n    ion-button\n    small\n    (click)="prevReceivedPendingPage()"\n    [disabled]="receivedPendingPage <= 1"\n  >\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextReceivedPendingPage()"\n    [disabled]="past_received_pending_transactions.length === 0 || past_received_pending_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_received_pending_transactions.length === 0">No more results</p>\n  <span *ngIf="receivedPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br />\n  <button\n    ion-button\n    small\n    (click)="prevSentPendingPage()"\n    [disabled]="sentPendingPage <= 1"\n  >\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextSentPendingPage()"\n    [disabled]="past_sent_pending_transactions.length === 0 || past_sent_pending_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_sent_pending_transactions.length === 0">No more results</p>\n  <span *ngIf="sentPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <h4>Transaction history</h4>\n  <strong>Received</strong><br />\n  <button\n    ion-button\n    small\n    (click)="prevReceivedPage()"\n    [disabled]="receivedPage <= 1"\n  >\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextReceivedPage()"\n    [disabled]="past_received_transactions.length === 0 || past_received_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_received_transactions.length === 0">No more results</p>\n  <span *ngIf="receivedLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br />\n  <button ion-button small (click)="prevSentPage()" [disabled]="sentPage <= 1">\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextSentPage()"\n    [disabled]="past_sent_transactions.length === 0 || past_sent_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_sent_transactions.length === 0">No more results</p>\n  <span *ngIf="sentLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n</ion-content>\n'/*ion-inline-end:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/,
-        }),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
-            __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__["a" /* QRScanner */],
-            __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__["a" /* TransactionService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
-            __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__["a" /* WalletService */],
-            __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__["a" /* SocialSharing */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["f" /* LoadingController */],
-            __WEBPACK_IMPORTED_MODULE_9__angular_http__["b" /* Http */],
-            __WEBPACK_IMPORTED_MODULE_6__app_settings_service__["a" /* SettingsService */]])
-    ], SendReceive);
-    return SendReceive;
-}());
-
-//# sourceMappingURL=sendreceive.js.map
-
-/***/ }),
-
 /***/ 228:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
@@ -6034,7 +6421,7 @@ var SendReceive = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__mail_compose__ = __webpack_require__(105);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__mail_mailitem__ = __webpack_require__(136);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__mail_mailitem__ = __webpack_require__(137);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -6354,7 +6741,7 @@ var FirebaseService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__compose__ = __webpack_require__(105);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__mailitem__ = __webpack_require__(136);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__mailitem__ = __webpack_require__(137);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -6728,6 +7115,24 @@ var WalletService = /** @class */ (function () {
             });
         });
     };
+    WalletService.prototype.resolveOperatorToken = function () {
+        var keyname = this.bulletinSecretService.keyname;
+        if (!keyname) {
+            return null;
+        }
+        if (this.settingsService.tokens[keyname]) {
+            return this.settingsService.tokens[keyname];
+        }
+        try {
+            var ls = window.localStorage.getItem("operator-jwt-" + keyname);
+            if (ls) {
+                this.settingsService.tokens[keyname] = ls;
+                return ls;
+            }
+        }
+        catch (e) { }
+        return null;
+    };
     WalletService.prototype.walletPromise = function (amount_needed, address) {
         var _this = this;
         if (amount_needed === void 0) { amount_needed = 0; }
@@ -6736,66 +7141,68 @@ var WalletService = /** @class */ (function () {
             if (!_this.settingsService.remoteSettings["walletUrl"]) {
                 return reject("no wallet url");
             }
-            if (_this.bulletinSecretService.username) {
-                var headers = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["a" /* Headers */]();
-                headers.append("Authorization", "Bearer " +
-                    _this.settingsService.tokens[_this.bulletinSecretService.keyname]);
-                var options = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["d" /* RequestOptions */]({
-                    headers: headers,
-                    withCredentials: true,
-                });
-                return _this.ahttp
-                    .get(_this.settingsService.remoteSettings["walletUrl"] +
-                    "?amount_needed=" +
-                    amount_needed +
-                    "&address=" +
-                    (address || _this.bulletinSecretService.key.getAddress()) +
-                    "&username_signature=" +
-                    _this.bulletinSecretService.username_signature +
-                    "&origin=" +
-                    window.location.origin, options)
-                    .pipe(Object(__WEBPACK_IMPORTED_MODULE_4_rxjs_operators__["timeout"])(30000))
-                    .subscribe(function (data) { return __awaiter(_this, void 0, void 0, function () {
-                    var wallet;
-                    return __generator(this, function (_a) {
-                        switch (_a.label) {
-                            case 0:
-                                if (!data["_body"]) return [3 /*break*/, 2];
-                                return [4 /*yield*/, data.json()];
-                            case 1:
-                                wallet = _a.sent();
-                                if (!address) {
-                                    this.walletError = false;
-                                    this.wallet = wallet;
-                                    this.wallet.balance = parseFloat(this.wallet.balance); //pasefloat
-                                    this.wallet.pending_balance = parseFloat(this.wallet.pending_balance); //pasefloat
-                                    this.wallet.max_transferable_value = parseFloat(this.wallet.max_transferable_value || 0);
-                                    this.wallet.balancePretty = this.wallet.balance.toFixed(2);
-                                    this.wallet.pendingBalancePretty =
-                                        this.wallet.pending_balance.toFixed(2);
-                                    this.wallet.maxTransferableValuePretty =
-                                        this.wallet.max_transferable_value.toFixed(2);
-                                }
-                                return [2 /*return*/, resolve(wallet)];
-                            case 2:
-                                this.walletError = true;
-                                this.wallet = {};
-                                this.wallet.balancePretty = 0;
-                                this.wallet.pendingBalancePretty = 0;
-                                this.wallet.maxTransferableValuePretty = 0;
-                                this.wallet.max_transferable_value = 0;
-                                return [2 /*return*/, reject("no data returned")];
-                        }
-                    });
-                }); }, function (err) {
-                    _this.walletError = true;
-                    return reject("data or server error");
-                });
-            }
-            else {
+            if (!(_this.bulletinSecretService.username ||
+                _this.bulletinSecretService.isOperator())) {
                 _this.walletError = true;
                 return reject("username not set");
             }
+            var headers = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["a" /* Headers */]();
+            var token = _this.resolveOperatorToken();
+            if (token) {
+                headers.append("Authorization", "Bearer " + token);
+            }
+            var options = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["d" /* RequestOptions */]({
+                headers: headers,
+                withCredentials: true,
+            });
+            var spendAddress = address || _this.bulletinSecretService.getSpendAddress() || "";
+            return _this.ahttp
+                .get(_this.settingsService.remoteSettings["walletUrl"] +
+                "?amount_needed=" +
+                amount_needed +
+                "&address=" +
+                encodeURIComponent(spendAddress) +
+                "&username_signature=" +
+                encodeURIComponent(_this.bulletinSecretService.username_signature || "") +
+                "&origin=" +
+                encodeURIComponent(window.location.origin), options)
+                .pipe(Object(__WEBPACK_IMPORTED_MODULE_4_rxjs_operators__["timeout"])(30000))
+                .subscribe(function (data) { return __awaiter(_this, void 0, void 0, function () {
+                var wallet;
+                return __generator(this, function (_a) {
+                    switch (_a.label) {
+                        case 0:
+                            if (!data["_body"]) return [3 /*break*/, 2];
+                            return [4 /*yield*/, data.json()];
+                        case 1:
+                            wallet = _a.sent();
+                            if (!address) {
+                                this.walletError = false;
+                                this.wallet = wallet;
+                                this.wallet.balance = parseFloat(this.wallet.balance);
+                                this.wallet.pending_balance = parseFloat(this.wallet.pending_balance);
+                                this.wallet.max_transferable_value = parseFloat(this.wallet.max_transferable_value || 0);
+                                this.wallet.balancePretty = this.wallet.balance.toFixed(2);
+                                this.wallet.pendingBalancePretty =
+                                    this.wallet.pending_balance.toFixed(2);
+                                this.wallet.maxTransferableValuePretty =
+                                    this.wallet.max_transferable_value.toFixed(2);
+                            }
+                            return [2 /*return*/, resolve(wallet)];
+                        case 2:
+                            this.walletError = true;
+                            this.wallet = {};
+                            this.wallet.balancePretty = 0;
+                            this.wallet.pendingBalancePretty = 0;
+                            this.wallet.maxTransferableValuePretty = 0;
+                            this.wallet.max_transferable_value = 0;
+                            return [2 /*return*/, reject("no data returned")];
+                    }
+                });
+            }); }, function (err) {
+                _this.walletError = true;
+                return reject("data or server error");
+            });
         });
     };
     WalletService = __decorate([
@@ -7269,7 +7676,7 @@ var SignatureRequestPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_smartContract_service__ = __webpack_require__(66);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__assets_assets__ = __webpack_require__(229);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__createpromo__ = __webpack_require__(407);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__marketitem__ = __webpack_require__(137);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__marketitem__ = __webpack_require__(138);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -7587,7 +7994,7 @@ var AssetItemPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(15);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_smartContract_service__ = __webpack_require__(66);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__marketitem__ = __webpack_require__(137);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__marketitem__ = __webpack_require__(138);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -7713,7 +8120,7 @@ var CreateSalePage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_smartContract_service__ = __webpack_require__(66);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_autocomplete_provider__ = __webpack_require__(106);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_wallet_service__ = __webpack_require__(24);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__marketitem__ = __webpack_require__(137);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__marketitem__ = __webpack_require__(138);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -7921,7 +8328,7 @@ var CreatePromoPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(46);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_settings_service__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_peer_service__ = __webpack_require__(225);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_peer_service__ = __webpack_require__(226);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_bulletinSecret_service__ = __webpack_require__(12);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_firebase_service__ = __webpack_require__(230);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(67);
@@ -7929,12 +8336,13 @@ var CreatePromoPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_wallet_service__ = __webpack_require__(24);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_transaction_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__ionic_native_social_sharing__ = __webpack_require__(104);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__home_home__ = __webpack_require__(224);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__home_home__ = __webpack_require__(225);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__angular_http__ = __webpack_require__(15);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__ionic_native_google_maps__ = __webpack_require__(410);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__app_websocket_service__ = __webpack_require__(36);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_groups__ = __webpack_require__(684);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__mail_mail__ = __webpack_require__(231);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__sendreceive_sendreceive__ = __webpack_require__(136);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ionic_native_google_maps__ = __webpack_require__(410);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_websocket_service__ = __webpack_require__(36);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__app_groups__ = __webpack_require__(684);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__mail_mail__ = __webpack_require__(231);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -7955,6 +8363,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+
 
 
 
@@ -8016,6 +8425,10 @@ var Settings = /** @class */ (function () {
         this.centerIdentityPrivateUsername = "";
         this.centerIdentitySaveSuccess = false;
         this.centerIdentityImportSuccess = false;
+        this.operatorUsername = "";
+        this.operatorHost = "";
+        this.operatorSessionActive = false;
+        this.operatorAuthPending = false;
         if (typeof this.peerService.mode == "undefined")
             this.peerService.mode = true;
         this.prefix = "usernames-";
@@ -8024,22 +8437,61 @@ var Settings = /** @class */ (function () {
             .then(function () {
             return _this.peerService.go();
         })
+            .then(function () {
+            _this.prefillOperatorFromNode();
+        })
             .catch(function (err) {
             console.log(err);
         });
     }
+    Settings.prototype.currentNodeHost = function () {
+        var rs = this.settingsService.remoteSettings || {};
+        return (this.settingsService.remoteSettingsUrl ||
+            rs.baseUrl ||
+            (window.location.origin === "http://localhost:8100"
+                ? "http://" + window.location.hostname + ":8005"
+                : window.location.origin));
+    };
+    Settings.prototype.prefillOperatorFromNode = function () {
+        // Host = connected node. Username is typed (Yada Password style).
+        // Only suggest /yada-config identity when the field is still empty.
+        this.operatorHost = this.currentNodeHost();
+        if ((this.operatorUsername || "").trim()) {
+            return;
+        }
+        var identity = (this.settingsService.remoteSettings &&
+            this.settingsService.remoteSettings.identity) ||
+            {};
+        var nodeUser = (identity.username || "").trim();
+        if (nodeUser) {
+            this.operatorUsername = nodeUser;
+        }
+    };
+    /** Username for operator session: typed field only (never personal wallet key). */
+    Settings.prototype.resolveOperatorUsername = function () {
+        var typed = (this.operatorUsername || "").trim();
+        if (typed) {
+            return typed;
+        }
+        // Saved operator identity from a prior Connect (not a local WIF identity).
+        if (this.bulletinSecretService.isOperator() &&
+            (this.bulletinSecretService.username || "").trim()) {
+            return (this.bulletinSecretService.username || "").trim();
+        }
+        return "";
+    };
     Settings.prototype.loadMap = function (mapType) {
         var _this = this;
         /* The create() function will take the ID of your map element */
-        var map = __WEBPACK_IMPORTED_MODULE_14__ionic_native_google_maps__["a" /* GoogleMaps */].create("map-" + mapType, {
-            mapType: __WEBPACK_IMPORTED_MODULE_14__ionic_native_google_maps__["c" /* GoogleMapsMapTypeId */].HYBRID,
+        var map = __WEBPACK_IMPORTED_MODULE_15__ionic_native_google_maps__["a" /* GoogleMaps */].create("map-" + mapType, {
+            mapType: __WEBPACK_IMPORTED_MODULE_15__ionic_native_google_maps__["c" /* GoogleMapsMapTypeId */].HYBRID,
         });
-        map.one(__WEBPACK_IMPORTED_MODULE_14__ionic_native_google_maps__["b" /* GoogleMapsEvent */].MAP_READY).then(function (data) {
-            var coordinates = new __WEBPACK_IMPORTED_MODULE_14__ionic_native_google_maps__["d" /* LatLng */](41, -87);
+        map.one(__WEBPACK_IMPORTED_MODULE_15__ionic_native_google_maps__["b" /* GoogleMapsEvent */].MAP_READY).then(function (data) {
+            var coordinates = new __WEBPACK_IMPORTED_MODULE_15__ionic_native_google_maps__["d" /* LatLng */](41, -87);
             map.setCameraTarget(coordinates);
             map.setCameraZoom(8);
         });
-        map.on(__WEBPACK_IMPORTED_MODULE_14__ionic_native_google_maps__["b" /* GoogleMapsEvent */].MAP_CLICK).subscribe(function (e) {
+        map.on(__WEBPACK_IMPORTED_MODULE_15__ionic_native_google_maps__["b" /* GoogleMapsEvent */].MAP_CLICK).subscribe(function (e) {
             map.clear();
             _this.centerIdentityLocation = e[0];
             map.addMarker({
@@ -8070,15 +8522,42 @@ var Settings = /** @class */ (function () {
         this.storage
             .forEach(function (value, key) {
             if (key.substr(0, _this.prefix.length) === _this.prefix) {
-                var active = (_this.bulletinSecretService.username || "") ==
-                    key.substr(_this.prefix.length);
+                var active = _this.bulletinSecretService.keyname === key ||
+                    (_this.bulletinSecretService.username || "") ==
+                        key.substr(_this.prefix.length);
                 newKeys.push({
                     username: key.substr(_this.prefix.length),
                     key: value,
                     active: active,
+                    type: "local",
+                    keyname: key,
                 });
                 if (active) {
                     _this.activeKey = value;
+                }
+            }
+            else if (key.substr(0, "operator-".length) === "operator-") {
+                var record = value;
+                if (typeof value === "string") {
+                    try {
+                        record = JSON.parse(value);
+                    }
+                    catch (e) {
+                        record = { username: key.substr("operator-".length) };
+                    }
+                }
+                var label = "⚙ " +
+                    ((record && record.username) || key.substr("operator-".length));
+                var active = _this.bulletinSecretService.keyname === key;
+                newKeys.push({
+                    username: label,
+                    key: value,
+                    active: active,
+                    type: "operator",
+                    keyname: key,
+                });
+                if (active) {
+                    _this.activeKey = null;
                 }
             }
         })
@@ -8443,6 +8922,42 @@ var Settings = /** @class */ (function () {
             });
             this.loadingModal.present();
         }
+        // Operator identities use full storage keyname (operator-user@host).
+        if (typeof key === "string" && key.indexOf("operator-") === 0) {
+            return this.doSet(key)
+                .then(function () { return _this.loadOperatorToken(); })
+                .then(function () {
+                var host = _this.bulletinSecretService.operatorHost ||
+                    (_this.bulletinSecretService.identity &&
+                        _this.bulletinSecretService.identity.baseUrl);
+                if (host) {
+                    return _this.peerService.go(host, true);
+                }
+            })
+                .then(function () {
+                if (showModal) {
+                    _this.loadingModal.dismiss().catch(function () { });
+                }
+                _this.settingsService.menu = "wallet";
+                _this.events.publish("menu", [
+                    {
+                        title: "Wallet",
+                        label: "Node wallet",
+                        component: __WEBPACK_IMPORTED_MODULE_14__sendreceive_sendreceive__["a" /* SendReceive */],
+                        count: false,
+                        color: "",
+                        root: true,
+                    },
+                ]);
+                _this.navCtrl.setRoot(__WEBPACK_IMPORTED_MODULE_14__sendreceive_sendreceive__["a" /* SendReceive */]);
+            })
+                .catch(function (err) {
+                console.log(err);
+                if (showModal) {
+                    _this.loadingModal.dismiss().catch(function () { });
+                }
+            });
+        }
         if (this.settingsService.remoteSettings.restricted) {
             return this.set(key)
                 .then(function () {
@@ -8496,7 +9011,7 @@ var Settings = /** @class */ (function () {
                     {
                         title: "Inbox",
                         label: "Inbox",
-                        component: __WEBPACK_IMPORTED_MODULE_17__mail_mail__["a" /* MailPage */],
+                        component: __WEBPACK_IMPORTED_MODULE_18__mail_mail__["a" /* MailPage */],
                         count: false,
                         color: "",
                         root: true,
@@ -8504,7 +9019,7 @@ var Settings = /** @class */ (function () {
                     {
                         title: "Sent",
                         label: "Sent",
-                        component: __WEBPACK_IMPORTED_MODULE_17__mail_mail__["a" /* MailPage */],
+                        component: __WEBPACK_IMPORTED_MODULE_18__mail_mail__["a" /* MailPage */],
                         count: false,
                         color: "",
                         root: true,
@@ -8526,15 +9041,15 @@ var Settings = /** @class */ (function () {
             })
                 .then(function () {
                 var promises = [];
-                for (var i = 0; i < __WEBPACK_IMPORTED_MODULE_16__app_groups__["a" /* default */].default_groups.length; i++) {
-                    if (!_this.graphService.isAdded(__WEBPACK_IMPORTED_MODULE_16__app_groups__["a" /* default */].default_groups[i])) {
-                        promises.push(_this.graphService.addGroup(__WEBPACK_IMPORTED_MODULE_16__app_groups__["a" /* default */].default_groups[i], undefined, undefined, undefined, false));
+                for (var i = 0; i < __WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_groups.length; i++) {
+                    if (!_this.graphService.isAdded(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_groups[i])) {
+                        promises.push(_this.graphService.addGroup(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_groups[i], undefined, undefined, undefined, false));
                         addedDefaults_1 = true;
                     }
                 }
-                for (var i = 0; i < __WEBPACK_IMPORTED_MODULE_16__app_groups__["a" /* default */].default_markets.length; i++) {
-                    if (!_this.graphService.isAdded(__WEBPACK_IMPORTED_MODULE_16__app_groups__["a" /* default */].default_markets[i])) {
-                        promises.push(_this.graphService.addGroup(__WEBPACK_IMPORTED_MODULE_16__app_groups__["a" /* default */].default_markets[i], undefined, undefined, undefined, false));
+                for (var i = 0; i < __WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_markets.length; i++) {
+                    if (!_this.graphService.isAdded(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_markets[i])) {
+                        promises.push(_this.graphService.addGroup(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_markets[i], undefined, undefined, undefined, false));
                         addedDefaults_1 = true;
                     }
                 }
@@ -8582,6 +9097,9 @@ var Settings = /** @class */ (function () {
     };
     Settings.prototype.unlockWallet = function () {
         var _this = this;
+        if (this.bulletinSecretService.isOperator()) {
+            return this.authenticateOperator();
+        }
         return new Promise(function (resolve, reject) {
             var options = new __WEBPACK_IMPORTED_MODULE_13__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
             _this.ahttp
@@ -8604,7 +9122,351 @@ var Settings = /** @class */ (function () {
             });
         });
     };
+    Settings.prototype.importNodeOperator = function () {
+        var _this = this;
+        this.operatorHost = this.currentNodeHost();
+        var host = this.currentNodeHost();
+        var username = this.resolveOperatorUsername();
+        if (!username) {
+            var a = this.alertCtrl.create({
+                title: "Node username required",
+                subTitle: "Enter the node username (the same identity as your Yada Password vault for this node).",
+                buttons: ["Ok"],
+            });
+            a.present();
+            return;
+        }
+        this.operatorUsername = username;
+        this.loadingModal = this.loadingCtrl.create({
+            content: "Connecting to this node...",
+        });
+        this.loadingModal.present();
+        return this.peerService
+            .go(host, true)
+            .then(function (cfg) {
+            var identity = (cfg && cfg.identity) ||
+                (_this.settingsService.remoteSettings &&
+                    _this.settingsService.remoteSettings.identity) ||
+                {};
+            // Always use the username the user entered — never replace with a
+            // different identity.username from config (can disagree with KEL/vault).
+            var address = identity.address || "";
+            var pub = (identity.username &&
+                identity.username === username &&
+                identity.public_key) ||
+                "";
+            var usig = (identity.username &&
+                identity.username === username &&
+                identity.username_signature) ||
+                "";
+            var finish = function (addr) {
+                return _this.bulletinSecretService.importOperator({
+                    username: username,
+                    host: host,
+                    baseUrl: _this.settingsService.remoteSettingsUrl || host,
+                    public_key: pub || "",
+                    address: addr || "",
+                    username_signature: usig || "",
+                });
+            };
+            if (!address &&
+                pub &&
+                _this.bulletinSecretService.publicKeyToAddress) {
+                return _this.bulletinSecretService
+                    .publicKeyToAddress(pub)
+                    .then(function (addr) { return finish(addr); })
+                    .catch(function () { return finish(""); });
+            }
+            // If config identity username matches, keep its address; else leave blank
+            // until auth (node still resolves auth-session by username).
+            if (identity.username === username) {
+                address = identity.address || address;
+            }
+            else {
+                address = "";
+            }
+            return finish(address);
+        })
+            .then(function () { return _this.save(); })
+            .then(function () { return _this.persistOperatorToken(null); })
+            .then(function () {
+            _this.operatorSessionActive = false;
+            _this.loadingModal.dismiss().catch(function () { });
+            var toast = _this.toastCtrl.create({
+                message: "Operator identity saved for this node. Authenticate with Yada Password — no WIF stored.",
+                duration: 3500,
+            });
+            toast.present();
+            return _this.save();
+        })
+            .catch(function (err) {
+            _this.loadingModal.dismiss().catch(function () { });
+            var a = _this.alertCtrl.create({
+                title: "Connect failed",
+                subTitle: err && err.toString ? err.toString() : err,
+                buttons: ["Ok"],
+            });
+            a.present();
+        });
+    };
+    Settings.prototype.authenticateOperator = function () {
+        var _this = this;
+        if (!this.bulletinSecretService.isOperator()) {
+            return Promise.reject("not an operator identity");
+        }
+        var baseUrl = this.settingsService.remoteSettingsUrl ||
+            (this.settingsService.remoteSettings &&
+                this.settingsService.remoteSettings.baseUrl);
+        if (!baseUrl) {
+            return Promise.reject("node URL missing");
+        }
+        // Prefer the typed node username; never a personal wallet identity.
+        var username = this.resolveOperatorUsername();
+        if (!username) {
+            return Promise.reject("enter the node username before authenticating");
+        }
+        this.operatorUsername = username;
+        this.operatorAuthPending = true;
+        this.loadingModal = this.loadingCtrl.create({
+            content: "Waiting for approve in Yada Password… Open the extension or app and Approve.",
+        });
+        this.loadingModal.present();
+        return this.createOperatorAuthSession(baseUrl, username)
+            .then(function (session) { return _this.pollOperatorAuthSession(baseUrl, session); })
+            .then(function (view) {
+            _this.operatorAuthPending = false;
+            _this.loadingModal.dismiss().catch(function () { });
+            if (!view || view.session_status === "denied") {
+                throw (view && view.message) || "request denied";
+            }
+            if (view.session_status === "expired") {
+                throw "auth request expired — try again";
+            }
+            var token = view.token;
+            if (!token) {
+                throw ((view && view.message) ||
+                    "approved but no operator token — ensure vault matches this node");
+            }
+            return _this.setOperatorSession(token).then(function () {
+                var toast = _this.toastCtrl.create({
+                    message: "Node operator session active",
+                    duration: 2500,
+                });
+                toast.present();
+                return view;
+            });
+        })
+            .catch(function (err) {
+            _this.operatorAuthPending = false;
+            _this.loadingModal.dismiss().catch(function () { });
+            var a = _this.alertCtrl.create({
+                title: "Authentication failed",
+                subTitle: err && err.toString ? err.toString() : err,
+                buttons: ["Ok"],
+            });
+            a.present();
+            return Promise.reject(err);
+        });
+    };
+    Settings.prototype.createOperatorAuthSession = function (baseUrl, username) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            var headers = new __WEBPACK_IMPORTED_MODULE_13__angular_http__["a" /* Headers */]();
+            headers.append("Content-Type", "application/json");
+            headers.append("Accept", "application/json");
+            var options = new __WEBPACK_IMPORTED_MODULE_13__angular_http__["d" /* RequestOptions */]({ headers: headers });
+            var site = (baseUrl || "").toString().replace(/\/+$/, "");
+            _this.ahttp
+                .post(baseUrl + "/password-rotation/auth-session", {
+                username: username,
+                site: site,
+                action: "operator",
+            }, options)
+                .subscribe(function (res) {
+                var data = {};
+                try {
+                    data = res.json();
+                }
+                catch (e) {
+                    data = {};
+                }
+                if (!data.status || !data.session_id) {
+                    return reject((data && data.message) || "failed to create auth session");
+                }
+                resolve(data);
+            }, function (err) {
+                var message = "failed to create auth session";
+                try {
+                    var body = err.json && err.json();
+                    message = (body && body.message) || message;
+                }
+                catch (e) { }
+                reject(message);
+            });
+        });
+    };
+    Settings.prototype.pollOperatorAuthSession = function (baseUrl, session) {
+        var _this = this;
+        var sessionId = session.session_id;
+        var started = Date.now();
+        var timeoutMs = 180000;
+        var intervalMs = 1500;
+        var pollOnce = function () {
+            return new Promise(function (resolve, reject) {
+                _this.ahttp
+                    .get(baseUrl +
+                    "/password-rotation/auth-session/" +
+                    encodeURIComponent(sessionId))
+                    .subscribe(function (res) {
+                    var data = {};
+                    try {
+                        data = res.json();
+                    }
+                    catch (e) {
+                        data = {};
+                    }
+                    resolve(data);
+                }, function (err) {
+                    var message = "poll failed";
+                    try {
+                        var body = err.json && err.json();
+                        message = (body && body.message) || message;
+                    }
+                    catch (e) { }
+                    reject(message);
+                });
+            });
+        };
+        var loop = function () {
+            return pollOnce().then(function (view) {
+                var st = view && view.session_status;
+                if (st === "approved" || st === "denied" || st === "expired") {
+                    return view;
+                }
+                if (Date.now() - started > timeoutMs) {
+                    throw "timed out waiting for Yada Password approve";
+                }
+                return new Promise(function (r) { return setTimeout(r, intervalMs); }).then(loop);
+            });
+        };
+        return loop();
+    };
+    Settings.prototype.setOperatorSession = function (token) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            if (!_this.bulletinSecretService.keyname) {
+                return reject("no operator identity");
+            }
+            _this.settingsService.tokens[_this.bulletinSecretService.keyname] = token;
+            _this.operatorSessionActive = !!token;
+            _this.persistOperatorToken(token)
+                .then(function () { return resolve(token); })
+                .catch(reject);
+        });
+    };
+    Settings.prototype.persistOperatorToken = function (token) {
+        var key = "operator-jwt-" + (this.bulletinSecretService.keyname || "");
+        if (!this.bulletinSecretService.keyname) {
+            return Promise.resolve(null);
+        }
+        try {
+            if (token) {
+                window.localStorage.setItem(key, token);
+            }
+            else {
+                window.localStorage.removeItem(key);
+            }
+        }
+        catch (e) { }
+        if (token) {
+            return this.storage.set(key, token);
+        }
+        return this.storage.remove(key);
+    };
+    Settings.prototype.loadOperatorToken = function () {
+        var _this = this;
+        if (!this.bulletinSecretService.isOperator()) {
+            return Promise.resolve(null);
+        }
+        var key = "operator-jwt-" + this.bulletinSecretService.keyname;
+        var keyname = this.bulletinSecretService.keyname;
+        // Fast path: localStorage (survives refresh; readable from any service)
+        try {
+            var ls = window.localStorage.getItem(key);
+            if (ls) {
+                this.settingsService.tokens[keyname] = ls;
+                this.operatorSessionActive = true;
+                return Promise.resolve(ls);
+            }
+        }
+        catch (e) { }
+        return this.storage.get(key).then(function (token) {
+            if (token) {
+                _this.settingsService.tokens[keyname] = token;
+                _this.operatorSessionActive = true;
+                try {
+                    window.localStorage.setItem(key, token);
+                }
+                catch (e) { }
+            }
+            else {
+                _this.operatorSessionActive = false;
+            }
+            return token;
+        });
+    };
+    Settings.prototype.checkOperatorSession = function () {
+        var _this = this;
+        var baseUrl = this.settingsService.remoteSettingsUrl ||
+            (this.settingsService.remoteSettings &&
+                this.settingsService.remoteSettings.baseUrl);
+        if (!baseUrl) {
+            return;
+        }
+        var headers = new __WEBPACK_IMPORTED_MODULE_13__angular_http__["a" /* Headers */]();
+        var token = this.settingsService.tokens[this.bulletinSecretService.keyname];
+        if (token) {
+            headers.append("Authorization", "Bearer " + token);
+        }
+        var options = new __WEBPACK_IMPORTED_MODULE_13__angular_http__["d" /* RequestOptions */]({
+            headers: headers,
+            withCredentials: true,
+        });
+        this.ahttp
+            .get(baseUrl +
+            "/unlocked?origin=" +
+            encodeURIComponent(window.location.origin), options)
+            .subscribe(function (res) {
+            var data = {};
+            try {
+                data = res.json();
+            }
+            catch (e) {
+                data = {};
+            }
+            _this.operatorSessionActive = !!data.unlocked;
+            var toast = _this.toastCtrl.create({
+                message: data.unlocked
+                    ? "Operator session valid"
+                    : "No active operator session",
+                duration: 2000,
+            });
+            toast.present();
+        }, function () {
+            _this.operatorSessionActive = false;
+            var toast = _this.toastCtrl.create({
+                message: "Session check failed",
+                duration: 2000,
+            });
+            toast.present();
+        });
+    };
     Settings.prototype.set = function (key) {
+        if (typeof key === "string" && key.indexOf("operator-") === 0) {
+            return this.doSet(key).catch(function () {
+                console.log("can not set operator identity");
+            });
+        }
         this.storage.set("last-keyname", this.prefix + key);
         return this.doSet(this.prefix + key).catch(function () {
             console.log("can not set identity");
@@ -8617,8 +9479,9 @@ var Settings = /** @class */ (function () {
                 .set(keyname)
                 .then(function () {
                 _this.serverDown = false;
-                if (!document.URL.startsWith("http") ||
-                    document.URL.startsWith("http://localhost:8080")) {
+                if (!_this.bulletinSecretService.isOperator() &&
+                    (!document.URL.startsWith("http") ||
+                        document.URL.startsWith("http://localhost:8080"))) {
                     _this.firebaseService.initFirebase();
                 }
                 return resolve(null);
@@ -8631,6 +9494,9 @@ var Settings = /** @class */ (function () {
     };
     Settings.prototype.save = function () {
         this.graphService.resetGraph();
+        if (this.bulletinSecretService.isOperator()) {
+            return this.doSet(this.bulletinSecretService.keyname);
+        }
         return this.set(this.bulletinSecretService.keyname.substr(this.prefix.length));
     };
     Settings.prototype.showChat = function () {
@@ -8751,7 +9617,7 @@ var Settings = /** @class */ (function () {
     };
     Settings = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: "page-settings",template:/*ion-inline-start:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/settings/settings.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Sign-in</h1>\n  <h3>Create an identity</h3>\n  <button\n    ion-button\n    secondary\n    (click)="createWallet()"\n    *ngIf="!settingsService.remoteSettings.restricted"\n  >\n    Create identity\n  </button>\n  <button\n    ion-button\n    secondary\n    (click)="createWalletFromInvite()"\n    *ngIf="settingsService.remoteSettings.restricted"\n  >\n    Create identity from Code\n  </button>\n  <h3 *ngIf="keys && keys.length > 0">Select an identity</h3>\n  <ion-list>\n    <button\n      *ngFor="let key of keys"\n      ion-item\n      (click)="selectIdentity(key.username)"\n      [color]="key.active ? \'primary\' : settingsService.remoteSettings.restricted ? \'light\' : \'dark\'"\n    >\n      <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n      {{key.username}}\n    </button>\n  </ion-list>\n  <ion-list\n    *ngIf="bulletinSecretService.keyname && !centerIdentityExportEnabled"\n  >\n    <ion-item>\n      Make the active identity available anywhere using the YadaCoin blockchain\n      and maps provided by Center Identity\n      <button ion-button secondary (click)="enableCenterIdentityExport()">\n        Enable\n      </button>\n    </ion-item>\n  </ion-list>\n  <ion-list\n    *ngIf="bulletinSecretService.keyname && centerIdentityExportEnabled"\n  >\n    <ion-item\n      style="\n        background: linear-gradient(\n          90deg,\n          rgba(255, 255, 255, 1) 0%,\n          #191919 75%\n        );\n        color: black;\n      "\n      ><img\n        src="assets/center-identity-logo1024x500.png"\n        height="65"\n        style="vertical-align: middle"\n    /></ion-item>\n    <ion-item>\n      <ion-input\n        type="text"\n        placeholder="Public username"\n        [(ngModel)]="bulletinSecretService.identity.username"\n        disabled\n      ></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very\n      memorable)\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very\n      memorable)\n      <ion-input\n        type="text"\n        placeholder="Private username"\n        [(ngModel)]="centerIdentityPrivateUsername"\n      ></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private location that nobody knows except for you (must be very\n      memorable)\n      <div id="map-export" style="width: 500px; height: 500px"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentitySaveSuccess">\n      <button ion-button secondary (click)="saveKeyUsingCenterIdentity()">\n        Save to blockchain\n      </button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentitySaveSuccess">\n      <button\n        ion-button\n        primary\n        (click)="saveKeyUsingCenterIdentity()"\n        disabled\n      >\n        Success!\n      </button>\n    </ion-item>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname">\n    <hr />\n    <h4>Export wif (private, do not share)</h4>\n    <ion-item *ngIf="!exportKeyEnabled">\n      <button ion-button secondary (click)="exportKey()">\n        Export active identity\n      </button>\n    </ion-item>\n    <ion-item *ngIf="exportKeyEnabled">\n      <ion-input type="text" [(ngModel)]="activeKey"></ion-input>\n    </ion-item>\n    <h4>\n      Public identity (share this with your friends)\n      <ion-spinner *ngIf="busy"></ion-spinner>\n    </h4>\n    <ion-item *ngIf="settingsService.remoteSettings.restricted">\n      <ion-textarea\n        type="text"\n        [(ngModel)]="identitySkylink"\n        autoGrow="true"\n        rows="1"\n      ></ion-textarea>\n    </ion-item>\n    <ion-item *ngIf="!settingsService.remoteSettings.restricted">\n      <ion-textarea\n        type="text"\n        [value]="bulletinSecretService.identityJson()"\n        autoGrow="true"\n        rows="5"\n      ></ion-textarea>\n    </ion-item>\n  </ion-list>\n  <h4>Import using location</h4>\n  <ion-item *ngIf="!centerIdentityImportEnabled">\n    <button ion-button secondary (click)="enableCenterIdentityImport()">\n      Choose location\n    </button>\n  </ion-item>\n  <ion-list *ngIf="centerIdentityImportEnabled">\n    <ion-item>\n      Enter your private username\n      <ion-input\n        type="text"\n        placeholder="Private username"\n        [(ngModel)]="centerIdentityPrivateUsername"\n      ></ion-input>\n    </ion-item>\n    <ion-item>\n      Select your private location\n      <div id="map-import" style="width: 500px; height: 500px"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentityImportSuccess">\n      <button ion-button secondary (click)="getKeyUsingCenterIdentity()">\n        Get from blockchain <ion-spinner *ngIf="CIBusy"></ion-spinner>\n      </button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentityImportSuccess">\n      <button ion-button primary (click)="getKeyUsingCenterIdentity()" disabled>\n        Success!\n      </button>\n    </ion-item>\n  </ion-list>\n  <h4>Import WIF</h4>\n  <ion-item>\n    <button ion-button secondary (click)="importKey()">Import identity</button>\n  </ion-item>\n</ion-content>\n'/*ion-inline-end:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/settings/settings.html"*/,
+            selector: "page-settings",template:/*ion-inline-start:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/settings/settings.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Sign-in</h1>\n  <h3>Create an identity</h3>\n  <button\n    ion-button\n    secondary\n    (click)="createWallet()"\n    *ngIf="!settingsService.remoteSettings.restricted"\n  >\n    Create identity\n  </button>\n  <button\n    ion-button\n    secondary\n    (click)="createWalletFromInvite()"\n    *ngIf="settingsService.remoteSettings.restricted"\n  >\n    Create identity from Code\n  </button>\n  <h3 *ngIf="keys && keys.length > 0">Select an identity</h3>\n  <ion-list>\n    <button\n      *ngFor="let key of keys"\n      ion-item\n      (click)="selectIdentity(key.type === \'operator\' ? key.keyname : key.username)"\n      [color]="key.active ? \'primary\' : settingsService.remoteSettings.restricted ? \'light\' : \'dark\'"\n    >\n      <ion-icon\n        [name]="key.type === \'operator\' ? \'settings\' : \'person\'"\n        item-start\n        [color]="\'dark\'"\n      ></ion-icon>\n      {{key.username}}\n    </button>\n  </ion-list>\n  <ion-list\n    *ngIf="bulletinSecretService.keyname && !bulletinSecretService.isOperator() && !centerIdentityExportEnabled"\n  >\n    <ion-item>\n      Make the active identity available anywhere using the YadaCoin blockchain\n      and maps provided by Center Identity\n      <button ion-button secondary (click)="enableCenterIdentityExport()">\n        Enable\n      </button>\n    </ion-item>\n  </ion-list>\n  <ion-list\n    *ngIf="bulletinSecretService.keyname && centerIdentityExportEnabled"\n  >\n    <ion-item\n      style="\n        background: linear-gradient(\n          90deg,\n          rgba(255, 255, 255, 1) 0%,\n          #191919 75%\n        );\n        color: black;\n      "\n      ><img\n        src="assets/center-identity-logo1024x500.png"\n        height="65"\n        style="vertical-align: middle"\n    /></ion-item>\n    <ion-item>\n      <ion-input\n        type="text"\n        placeholder="Public username"\n        [(ngModel)]="bulletinSecretService.identity.username"\n        disabled\n      ></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very\n      memorable)\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very\n      memorable)\n      <ion-input\n        type="text"\n        placeholder="Private username"\n        [(ngModel)]="centerIdentityPrivateUsername"\n      ></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private location that nobody knows except for you (must be very\n      memorable)\n      <div id="map-export" style="width: 500px; height: 500px"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentitySaveSuccess">\n      <button ion-button secondary (click)="saveKeyUsingCenterIdentity()">\n        Save to blockchain\n      </button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentitySaveSuccess">\n      <button\n        ion-button\n        primary\n        (click)="saveKeyUsingCenterIdentity()"\n        disabled\n      >\n        Success!\n      </button>\n    </ion-item>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname && !bulletinSecretService.isOperator()">\n    <hr />\n    <h4>Export wif (private, do not share)</h4>\n    <ion-item *ngIf="!exportKeyEnabled">\n      <button ion-button secondary (click)="exportKey()">\n        Export active identity\n      </button>\n    </ion-item>\n    <ion-item *ngIf="exportKeyEnabled">\n      <ion-input type="text" [(ngModel)]="activeKey"></ion-input>\n    </ion-item>\n    <h4>\n      Public identity (share this with your friends)\n      <ion-spinner *ngIf="busy"></ion-spinner>\n    </h4>\n    <ion-item *ngIf="settingsService.remoteSettings.restricted">\n      <ion-textarea\n        type="text"\n        [(ngModel)]="identitySkylink"\n        autoGrow="true"\n        rows="1"\n      ></ion-textarea>\n    </ion-item>\n    <ion-item *ngIf="!settingsService.remoteSettings.restricted">\n      <ion-textarea\n        type="text"\n        [value]="bulletinSecretService.identityJson()"\n        autoGrow="true"\n        rows="5"\n      ></ion-textarea>\n    </ion-item>\n  </ion-list>\n  <h4>Import using location</h4>\n  <ion-item *ngIf="!centerIdentityImportEnabled">\n    <button ion-button secondary (click)="enableCenterIdentityImport()">\n      Choose location\n    </button>\n  </ion-item>\n  <ion-list *ngIf="centerIdentityImportEnabled">\n    <ion-item>\n      Enter your private username\n      <ion-input\n        type="text"\n        placeholder="Private username"\n        [(ngModel)]="centerIdentityPrivateUsername"\n      ></ion-input>\n    </ion-item>\n    <ion-item>\n      Select your private location\n      <div id="map-import" style="width: 500px; height: 500px"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentityImportSuccess">\n      <button ion-button secondary (click)="getKeyUsingCenterIdentity()">\n        Get from blockchain <ion-spinner *ngIf="CIBusy"></ion-spinner>\n      </button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentityImportSuccess">\n      <button ion-button primary (click)="getKeyUsingCenterIdentity()" disabled>\n        Success!\n      </button>\n    </ion-item>\n  </ion-list>\n  <h4>Import WIF</h4>\n  <ion-item>\n    <button ion-button secondary (click)="importKey()">Import identity</button>\n  </ion-item>\n  <hr />\n  <h3>Node operator (no WIF)</h3>\n  <p>\n    Control this node&rsquo;s treasury without importing the node seed. Enter the\n    <strong>node</strong> username (same as Yada Password vault for this node).\n    Authenticate with approve/reject in the app or extension; keys stay on the node.\n  </p>\n  <ion-item>\n    <p>\n      Node:\n      <strong>{{ currentNodeHost() }}</strong>\n    </p>\n  </ion-item>\n  <ion-item>\n    <ion-label stacked>Node username</ion-label>\n    <ion-input\n      type="text"\n      placeholder="node username"\n      [(ngModel)]="operatorUsername"\n      autocomplete="username"\n    ></ion-input>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="importNodeOperator()">\n      Connect as operator\n    </button>\n  </ion-item>\n  <ion-list *ngIf="bulletinSecretService.isOperator()">\n    <ion-item>\n      <p>\n        Active operator:\n        <strong>{{ bulletinSecretService.username }}</strong>\n        @\n        {{ bulletinSecretService.operatorHost || currentNodeHost() }}\n      </p>\n      <p *ngIf="bulletinSecretService.address">\n        Node address: {{ bulletinSecretService.address }}\n      </p>\n      <p *ngIf="operatorSessionActive" style="color: #3fb950">\n        Operator session active\n      </p>\n      <p *ngIf="!operatorSessionActive" style="color: #f85149">\n        Not authenticated — approve in Yada Password\n      </p>\n    </ion-item>\n  <ion-item>\n    <p *ngIf="operatorAuthPending">\n      Check Yada Password (extension or app) and Approve the operator request.\n    </p>\n    <button\n      ion-button\n      secondary\n      (click)="authenticateOperator()"\n      [disabled]="operatorAuthPending"\n    >\n      Authenticate with Yada Password\n    </button>\n  </ion-item>\n    <ion-item>\n      <button ion-button secondary (click)="checkOperatorSession()">\n        Check session\n      </button>\n    </ion-item>\n  </ion-list>\n</ion-content>\n'/*ion-inline-end:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/settings/settings.html"*/,
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -8764,7 +9630,7 @@ var Settings = /** @class */ (function () {
             __WEBPACK_IMPORTED_MODULE_8__app_graph_service__["a" /* GraphService */],
             __WEBPACK_IMPORTED_MODULE_11__ionic_native_social_sharing__["a" /* SocialSharing */],
             __WEBPACK_IMPORTED_MODULE_9__app_wallet_service__["a" /* WalletService */],
-            __WEBPACK_IMPORTED_MODULE_15__app_websocket_service__["a" /* WebSocketService */],
+            __WEBPACK_IMPORTED_MODULE_16__app_websocket_service__["a" /* WebSocketService */],
             __WEBPACK_IMPORTED_MODULE_10__app_transaction_service__["a" /* TransactionService */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["l" /* ToastController */],
@@ -8788,7 +9654,7 @@ var Settings = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(24);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(138);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(139);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_bulletinSecret_service__ = __webpack_require__(12);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(15);
@@ -9369,11 +10235,11 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(15);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_common__ = __webpack_require__(61);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_component__ = __webpack_require__(573);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__pages_home_home__ = __webpack_require__(224);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__pages_home_home__ = __webpack_require__(225);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__ = __webpack_require__(685);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_list_list__ = __webpack_require__(67);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_settings_settings__ = __webpack_require__(409);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_chat_chat__ = __webpack_require__(226);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_chat_chat__ = __webpack_require__(227);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_profile_profile__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__ = __webpack_require__(411);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__ = __webpack_require__(412);
@@ -9387,14 +10253,14 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__ionic_storage__ = __webpack_require__(46);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_22__graph_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_23__bulletinSecret_service__ = __webpack_require__(12);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_24__peer_service__ = __webpack_require__(225);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_24__peer_service__ = __webpack_require__(226);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_25__settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_26__wallet_service__ = __webpack_require__(24);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_27__websocket_service__ = __webpack_require__(36);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_28__transaction_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__opengraphparser_service__ = __webpack_require__(138);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__opengraphparser_service__ = __webpack_require__(139);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_30__firebase_service__ = __webpack_require__(230);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__pages_sendreceive_sendreceive__ = __webpack_require__(227);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__pages_sendreceive_sendreceive__ = __webpack_require__(136);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__ionic_native_clipboard__ = __webpack_require__(706);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_33__ionic_native_social_sharing__ = __webpack_require__(104);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_34__ionic_native_badge__ = __webpack_require__(395);
@@ -9404,7 +10270,7 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_38_ionic2_auto_complete__ = __webpack_require__(396);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_39__autocomplete_provider__ = __webpack_require__(106);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_40__ionic_native_google_maps__ = __webpack_require__(410);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_41__pages_mail_mailitem__ = __webpack_require__(136);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_41__pages_mail_mailitem__ = __webpack_require__(137);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_42__pages_signaturerequest_signaturerequest__ = __webpack_require__(402);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_43__pages_web_web__ = __webpack_require__(232);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_44__pages_web_mypages__ = __webpack_require__(414);
@@ -9416,7 +10282,7 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_50__pages_assets_createasset__ = __webpack_require__(404);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_51__smartContract_service__ = __webpack_require__(66);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_52__pages_markets_market__ = __webpack_require__(403);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_53__pages_markets_marketitem__ = __webpack_require__(137);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_53__pages_markets_marketitem__ = __webpack_require__(138);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_54__pages_markets_createsale__ = __webpack_require__(406);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_55__pages_markets_createpromo__ = __webpack_require__(407);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
@@ -9605,13 +10471,13 @@ var AppModule = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__bulletinSecret_service__ = __webpack_require__(12);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__wallet_service__ = __webpack_require__(24);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_home_home__ = __webpack_require__(224);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_home_home__ = __webpack_require__(225);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_list_list__ = __webpack_require__(67);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_calendar_calendar__ = __webpack_require__(228);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_settings_settings__ = __webpack_require__(409);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__ = __webpack_require__(411);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__ = __webpack_require__(412);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_sendreceive_sendreceive__ = __webpack_require__(227);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_sendreceive_sendreceive__ = __webpack_require__(136);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__ = __webpack_require__(231);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ionic_native_deeplinks__ = __webpack_require__(413);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__websocket_service__ = __webpack_require__(36);
@@ -9847,7 +10713,7 @@ var MyApp = /** @class */ (function () {
         __metadata("design:type", __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["h" /* Nav */])
     ], MyApp.prototype, "nav", void 0);
     MyApp = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/Users/matt.vogel/dev/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note\n            *ngIf="settingsService.remoteSettings.restricted"\n            style="font-size: 20px"\n          >\n            {{bulletinSecretService.identity.username || \'Center Identity\'}}\n          </ion-note>\n          <ion-note\n            *ngIf="!settingsService.remoteSettings.restricted"\n            style="font-size: 20px"\n          >\n            {{bulletinSecretService.identity.username || \'YadaCoin\'}}\n          </ion-note>\n          <ion-note style="font-size: 12px"> {{version}} </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content *ngIf="bulletinSecretService.key">\n      <ion-row>\n        <ion-col col-lg-2 col-md-2 col-sm-2>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'home\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="home"\n            tooltip="Home"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="home"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'wallet\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="wallet"\n            tooltip="Wallet"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="cash"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'mail\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="mail"\n            tooltip="Mail"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="mail"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.MAIL]?.length > 0 || graphService.notifications[settingsService.collections.GROUP_MAIL]?.length > 0"\n              color="secondary"\n              style="vertical-align: top; position: absolute"\n              item-right\n              >{{graphService.notifications[settingsService.collections.MAIL].length\n              +\n              graphService.notifications[settingsService.collections.GROUP_MAIL].length}}</ion-badge\n            >\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'chat\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="chat"\n            tooltip="Private messages"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="chatboxes"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CHAT]?.length > 0"\n              color="secondary"\n              style="vertical-align: top; position: absolute"\n              item-right\n              >{{graphService.notifications[settingsService.collections.CHAT].length}}</ion-badge\n            >\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'community\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="community"\n            tooltip="Community chat"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="chatbubbles"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.GROUP_CHAT]?.length > 0"\n              color="secondary"\n              style="vertical-align: top; position: absolute"\n              item-right\n              >{{graphService.notifications[settingsService.collections.GROUP_CHAT].length}}</ion-badge\n            >\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'calendar\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="calendar"\n            tooltip="Calendar"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="calendar"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CALENDAR]?.length > 0 || graphService.notifications[settingsService.collections.GROUP_CALENDAR]?.length > 0"\n              color="secondary"\n              style="vertical-align: top; position: absolute"\n              item-right\n              >{{graphService.notifications[settingsService.collections.CALENDAR].length\n              +\n              graphService.notifications[settingsService.collections.GROUP_CALENDAR].length}}</ion-badge\n            >\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'contacts\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="contacts"\n            tooltip="Contacts"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contacts"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CONTACT]?.length > 0"\n              color="secondary"\n              style="vertical-align: top; position: absolute"\n              item-right\n              >{{graphService.notifications[settingsService.collections.CONTACT].length}}</ion-badge\n            >\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'files\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="files"\n            tooltip="Files"\n            (click)="segmentChanged($event)"\n            *ngIf="settingsService.remoteSettings.restricted"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="folder"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'assets\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="assets"\n            tooltip="Assets"\n            (click)="segmentChanged($event)"\n            *ngIf="!settingsService.remoteSettings.restricted"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="pricetag"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'markets\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="markets"\n            tooltip="Markets"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="cart"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.MARKET]?.length > 0"\n              color="secondary"\n              style="vertical-align: top; position: absolute"\n              item-right\n              >{{graphService.notifications[settingsService.collections.MARKET].length}}</ion-badge\n            >\n          </button>\n          <!-- <button\n            class="navbutton"\n            [color]="settingsService.menu === \'web\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="web"\n            tooltip="Web"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="globe"></ion-icon>\n          </button> -->\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'notifications\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="notifications"\n            tooltip="Notifications"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="notifications"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[\'notifications\']?.length > 0"\n              color="secondary"\n              style="vertical-align: top; position: absolute"\n              item-right\n              >{{graphService.notifications[\'notifications\'].length}}</ion-badge\n            >\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'settings\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="settings"\n            tooltip="Identity"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contact"></ion-icon>\n          </button>\n        </ion-col>\n        <ion-col\n          col-lg-10\n          col-md-10\n          col-sm-10\n          style="padding-right: 7px; margin-top: 4px"\n        >\n          <ng-container *ngFor="let p of pages">\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Contact Requests\'"\n              class="subnavbutton"\n            >\n              {{p.label}}\n              <ion-note *ngIf="graphService.graph.friend_requests"\n                >{{graphService.graph.friend_requests.length}}</ion-note\n              >\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Messages\'"\n              class="subnavbutton"\n            >\n              {{p.label}}\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              *ngIf="[\'Messages\', \'Contact Requests\'].indexOf(p.title) < 0"\n              class="subnavbutton"\n            >\n              {{p.label}}\n              <ion-note\n                *ngIf="p.kwargs && p.kwargs.identity && graphService.counts[p.kwargs.identity.username_signature] && graphService.counts[p.kwargs.identity.username_signature] > 0"\n                >{{graphService.counts[p.kwargs.identity.username_signature]}}</ion-note\n              >\n            </button>\n            <ng-container\n              *ngIf="p.kwargs && p.kwargs.identity && p.kwargs.subitems && p.kwargs.subitems[p.kwargs.identity.username_signature]"\n            >\n              <button\n                menuClose\n                ion-item\n                (click)="openPage(subitem)"\n                class="subnavbutton"\n                *ngFor="let subitem of p.kwargs.subitems[p.kwargs.identity.username_signature]"\n              >\n                &nbsp;&nbsp;&nbsp;&nbsp;{{subitem.kwargs.identity.username}}\n                <ion-note\n                  *ngIf="graphService.counts[subitem.kwargs.identity.username_signature] && graphService.counts[subitem.kwargs.identity.username_signature] > 0"\n                  >{{graphService.counts[subitem.kwargs.identity.username_signature]}}</ion-note\n                >\n              </button>\n            </ng-container>\n          </ng-container>\n        </ion-col>\n      </ion-row>\n      <img\n        *ngIf="!settingsService.remoteSettings.restricted"\n        src="yadacoinstatic/app/assets/img/yadacoinlogosmall.png"\n        class="logo"\n      />\n      <img\n        *ngIf="settingsService.remoteSettings.restricted"\n        src="yadacoinstatic/app/assets/center-identity-logo-square.png"\n        class="logo"\n      />\n    </ion-content>\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>\n'/*ion-inline-end:"/Users/matt.vogel/dev/yadacoinmobile/src/app/app.html"*/
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/Users/matt.vogel/dev/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note\n            *ngIf="settingsService.remoteSettings.restricted"\n            style="font-size: 20px"\n          >\n            {{bulletinSecretService.identity.username || \'Center Identity\'}}\n          </ion-note>\n          <ion-note\n            *ngIf="!settingsService.remoteSettings.restricted"\n            style="font-size: 20px"\n          >\n            {{bulletinSecretService.identity.username || \'YadaCoin\'}}\n          </ion-note>\n          <ion-note style="font-size: 12px"> {{version}} </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content *ngIf="bulletinSecretService.key || bulletinSecretService.isOperator()">\n      <ion-row>\n        <ion-col col-lg-2 col-md-2 col-sm-2>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'home\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="home"\n            tooltip="Home"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="home"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'wallet\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="wallet"\n            tooltip="Wallet"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="cash"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'mail\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="mail"\n            tooltip="Mail"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="mail"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.MAIL]?.length > 0 || graphService.notifications[settingsService.collections.GROUP_MAIL]?.length > 0"\n              color="secondary"\n              style="vertical-align: top; position: absolute"\n              item-right\n              >{{graphService.notifications[settingsService.collections.MAIL].length\n              +\n              graphService.notifications[settingsService.collections.GROUP_MAIL].length}}</ion-badge\n            >\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'chat\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="chat"\n            tooltip="Private messages"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="chatboxes"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CHAT]?.length > 0"\n              color="secondary"\n              style="vertical-align: top; position: absolute"\n              item-right\n              >{{graphService.notifications[settingsService.collections.CHAT].length}}</ion-badge\n            >\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'community\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="community"\n            tooltip="Community chat"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="chatbubbles"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.GROUP_CHAT]?.length > 0"\n              color="secondary"\n              style="vertical-align: top; position: absolute"\n              item-right\n              >{{graphService.notifications[settingsService.collections.GROUP_CHAT].length}}</ion-badge\n            >\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'calendar\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="calendar"\n            tooltip="Calendar"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="calendar"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CALENDAR]?.length > 0 || graphService.notifications[settingsService.collections.GROUP_CALENDAR]?.length > 0"\n              color="secondary"\n              style="vertical-align: top; position: absolute"\n              item-right\n              >{{graphService.notifications[settingsService.collections.CALENDAR].length\n              +\n              graphService.notifications[settingsService.collections.GROUP_CALENDAR].length}}</ion-badge\n            >\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'contacts\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="contacts"\n            tooltip="Contacts"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contacts"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CONTACT]?.length > 0"\n              color="secondary"\n              style="vertical-align: top; position: absolute"\n              item-right\n              >{{graphService.notifications[settingsService.collections.CONTACT].length}}</ion-badge\n            >\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'files\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="files"\n            tooltip="Files"\n            (click)="segmentChanged($event)"\n            *ngIf="settingsService.remoteSettings.restricted"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="folder"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'assets\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="assets"\n            tooltip="Assets"\n            (click)="segmentChanged($event)"\n            *ngIf="!settingsService.remoteSettings.restricted"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="pricetag"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'markets\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="markets"\n            tooltip="Markets"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="cart"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.MARKET]?.length > 0"\n              color="secondary"\n              style="vertical-align: top; position: absolute"\n              item-right\n              >{{graphService.notifications[settingsService.collections.MARKET].length}}</ion-badge\n            >\n          </button>\n          <!-- <button\n            class="navbutton"\n            [color]="settingsService.menu === \'web\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="web"\n            tooltip="Web"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="globe"></ion-icon>\n          </button> -->\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'notifications\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="notifications"\n            tooltip="Notifications"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="notifications"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[\'notifications\']?.length > 0"\n              color="secondary"\n              style="vertical-align: top; position: absolute"\n              item-right\n              >{{graphService.notifications[\'notifications\'].length}}</ion-badge\n            >\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'settings\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="settings"\n            tooltip="Identity"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contact"></ion-icon>\n          </button>\n        </ion-col>\n        <ion-col\n          col-lg-10\n          col-md-10\n          col-sm-10\n          style="padding-right: 7px; margin-top: 4px"\n        >\n          <ng-container *ngFor="let p of pages">\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Contact Requests\'"\n              class="subnavbutton"\n            >\n              {{p.label}}\n              <ion-note *ngIf="graphService.graph.friend_requests"\n                >{{graphService.graph.friend_requests.length}}</ion-note\n              >\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Messages\'"\n              class="subnavbutton"\n            >\n              {{p.label}}\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              *ngIf="[\'Messages\', \'Contact Requests\'].indexOf(p.title) < 0"\n              class="subnavbutton"\n            >\n              {{p.label}}\n              <ion-note\n                *ngIf="p.kwargs && p.kwargs.identity && graphService.counts[p.kwargs.identity.username_signature] && graphService.counts[p.kwargs.identity.username_signature] > 0"\n                >{{graphService.counts[p.kwargs.identity.username_signature]}}</ion-note\n              >\n            </button>\n            <ng-container\n              *ngIf="p.kwargs && p.kwargs.identity && p.kwargs.subitems && p.kwargs.subitems[p.kwargs.identity.username_signature]"\n            >\n              <button\n                menuClose\n                ion-item\n                (click)="openPage(subitem)"\n                class="subnavbutton"\n                *ngFor="let subitem of p.kwargs.subitems[p.kwargs.identity.username_signature]"\n              >\n                &nbsp;&nbsp;&nbsp;&nbsp;{{subitem.kwargs.identity.username}}\n                <ion-note\n                  *ngIf="graphService.counts[subitem.kwargs.identity.username_signature] && graphService.counts[subitem.kwargs.identity.username_signature] > 0"\n                  >{{graphService.counts[subitem.kwargs.identity.username_signature]}}</ion-note\n                >\n              </button>\n            </ng-container>\n          </ng-container>\n        </ion-col>\n      </ion-row>\n      <img\n        *ngIf="!settingsService.remoteSettings.restricted"\n        src="yadacoinstatic/app/assets/img/yadacoinlogosmall.png"\n        class="logo"\n      />\n      <img\n        *ngIf="settingsService.remoteSettings.restricted"\n        src="yadacoinstatic/app/assets/center-identity-logo-square.png"\n        class="logo"\n      />\n    </ion-content>\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>\n'/*ion-inline-end:"/Users/matt.vogel/dev/yadacoinmobile/src/app/app.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["k" /* Platform */],
             __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__["a" /* StatusBar */],
@@ -10087,11 +10953,11 @@ var SmartContractService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__ionic_native_social_sharing__ = __webpack_require__(104);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__chat_chat__ = __webpack_require__(226);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__chat_chat__ = __webpack_require__(227);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__signaturerequest_signaturerequest__ = __webpack_require__(402);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__angular_http__ = __webpack_require__(15);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__mail_mailitem__ = __webpack_require__(136);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__mail_mailitem__ = __webpack_require__(137);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_websocket_service__ = __webpack_require__(36);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__calendar_calendar__ = __webpack_require__(228);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__markets_market__ = __webpack_require__(403);
@@ -10905,11 +11771,11 @@ var ListPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(24);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(67);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__chat_chat__ = __webpack_require__(226);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__chat_chat__ = __webpack_require__(227);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(15);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__mail_compose__ = __webpack_require__(105);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__sendreceive_sendreceive__ = __webpack_require__(227);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__sendreceive_sendreceive__ = __webpack_require__(136);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -11173,7 +12039,7 @@ var ProfilePage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(24);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(138);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(139);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(15);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {

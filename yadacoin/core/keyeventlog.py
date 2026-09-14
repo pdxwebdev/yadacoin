@@ -1366,8 +1366,13 @@ class KELResult(Sequence):
 
     __slots__ = ("_log", "addresses")
 
-    def __init__(self, log):
+    def __init__(self, log, addresses=None):
         self._log = log
+        if addresses is None:
+            addresses = KeyEventLog.addresses_from_log(log)
+        self.addresses = (
+            addresses if isinstance(addresses, frozenset) else frozenset(addresses)
+        )
 
     def __getitem__(self, index):
         return self._log[index]
@@ -1389,7 +1394,7 @@ class KELResult(Sequence):
         return hash(tuple(self._log))
 
     def __repr__(self):
-        return f"KELResult(len={len(self._log)})"
+        return f"KELResult(len={len(self._log)}, addresses={len(self.addresses)})"
 
 
 class KELHashCollection:
@@ -2301,7 +2306,7 @@ class KeyEventLog:
         config = Config()
 
         log = await KeyEventLog.get_log(
-            public_key,
+            public_key=public_key,
             onchain_only=onchain_only,
             follow_recovery=follow_recovery,
         )
@@ -2309,29 +2314,122 @@ class KeyEventLog:
         result = KELResult(log)
         if hasattr(config, "key_log_debug") and config.key_log_debug:
             config.app_log.debug(
-                "build_from_public_key done public_key=%s log_len=%d",
+                "build_from_public_key done public_key=%s log_len=%d addresses=%d",
                 public_key[:16],
                 len(log),
+                len(result.addresses),
             )
 
         return result
 
     @staticmethod
+    def addresses_from_log(log):
+        """Collect every address field that appears on KEL entries in *log*."""
+        addresses = set()
+        for txn in log or []:
+            if isinstance(txn, dict):
+                getters = (
+                    txn.get("public_key_hash"),
+                    txn.get("prerotated_key_hash"),
+                    txn.get("twice_prerotated_key_hash"),
+                    txn.get("prev_public_key_hash"),
+                )
+            else:
+                getters = (
+                    getattr(txn, "public_key_hash", None),
+                    getattr(txn, "prerotated_key_hash", None),
+                    getattr(txn, "twice_prerotated_key_hash", None),
+                    getattr(txn, "prev_public_key_hash", None),
+                )
+            for val in getters:
+                if isinstance(val, str) and val:
+                    addresses.add(val)
+        return frozenset(addresses)
+
+    @staticmethod
+    async def get_kel_addresses(
+        address=None,
+        public_key=None,
+        onchain_only=True,
+        follow_recovery=True,
+    ):
+        """Return all wallet addresses belonging to the KEL for *address*/*public_key*.
+
+        Used by balance and UTXO aggregation so any KEL entry address reports the
+        full identity balance (cross-key spending can unlock prior entries).
+        When the address is not part of a KEL, returns ``frozenset({address})``.
+
+        Resolves via ``get_inception`` so funded ``prerotated_key_hash`` addresses
+        (not only current signer ``public_key_hash``) still expand to the full KEL.
+        """
+        if not address and not public_key:
+            return frozenset()
+        if not address and public_key:
+            try:
+                address = str(
+                    P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
+                )
+            except Exception:
+                return frozenset()
+
+        try:
+            log = await KeyEventLog.get_log(
+                public_key=public_key,
+                address=address,
+                onchain_only=onchain_only,
+                follow_recovery=follow_recovery,
+            )
+        except Exception:
+            return frozenset({address}) if address else frozenset()
+
+        if not log:
+            return frozenset({address}) if address else frozenset()
+
+        addresses = set(KeyEventLog.addresses_from_log(log))
+        if address:
+            addresses.add(address)
+        return frozenset(addresses)
+
+    @staticmethod
     async def get_log(
-        public_key,
+        public_key=None,
+        address=None,
         onchain_only=False,
         follow_recovery=True,
     ):
-        """Return the ordered KEL for *public_key* and a given username"""
+        """Return the ordered KEL for *public_key* or *address*.
+
+        Prefers inception resolution so any KEL address field (signer,
+        prerotated, twice-prerotated) can load the full tagged log.
+        """
         config = Config()
-        latest = await KeyEventLog.get_latest(
-            public_key=public_key, onchain_only=onchain_only
-        )
-        if latest is None:
+        if not public_key and not address:
             return []
-        inception_pkh = getattr(latest, "inception_public_key_hash", None) or getattr(
-            latest, "public_key_hash", None
-        )
+
+        inception_pkh = None
+        try:
+            inception = await KeyEventLog.get_inception(
+                public_key=public_key,
+                address=address,
+                onchain_only=onchain_only,
+                follow_recovery=follow_recovery,
+            )
+            if inception is not None:
+                inception_pkh = getattr(
+                    inception, "inception_public_key_hash", None
+                ) or getattr(inception, "public_key_hash", None)
+        except Exception:
+            inception_pkh = None
+
+        if not inception_pkh:
+            latest = await KeyEventLog.get_latest(
+                public_key=public_key, address=address, onchain_only=onchain_only
+            )
+            if latest is None:
+                return []
+            inception_pkh = getattr(
+                latest, "inception_public_key_hash", None
+            ) or getattr(latest, "public_key_hash", None)
         if not inception_pkh:
             return []
         cursor = config.mongo.async_db.blocks.aggregate(

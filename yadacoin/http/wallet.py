@@ -67,6 +67,34 @@ class GetBalanceSum(BaseHandler):
 
 @jwtauthwallet
 class SendTransactionView(BaseHandler):
+    async def prepare(self):
+        # Mirror UnlockedHandler: credentialed CORS so operator cookie sessions
+        # work from the web wallet (same as GET /unlocked).
+        origin = (
+            self.get_query_argument("origin", None)
+            or self.request.headers.get("Origin")
+            or "*"
+        )
+        if origin and origin[-1] == "/":
+            origin = origin[:-1]
+        self.set_header("Access-Control-Allow-Origin", origin)
+        if origin != "*":
+            self.set_header("Access-Control-Allow-Credentials", "true")
+        self.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.set_header("Access-Control-Expose-Headers", "Content-Type")
+        self.set_header(
+            "Access-Control-Allow-Headers",
+            "Authorization, Content-Type, Depth, User-Agent, X-File-Size, "
+            "X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, "
+            "Cache-Control",
+        )
+        self.set_header("Access-Control-Max-Age", 600)
+        await super(SendTransactionView, self).prepare()
+
+    async def options(self):
+        self.set_status(204)
+        self.finish()
+
     async def post(self):
         if not await self.wallet_is_unlocked():
             return self.render_as_json({"error": "not authorized"})
