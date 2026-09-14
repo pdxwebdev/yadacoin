@@ -1,0 +1,1033 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }}</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121821;
+      --panel2: #182230;
+      --ink: #e8eef6;
+      --muted: #8b9bb0;
+      --line: #243041;
+      --accent: #3d8bfd;
+      --teal: #2dd4bf;
+      --amber: #fbbf24;
+      --rose: #fb7185;
+      --violet: #a78bfa;
+      --ok: #34d399;
+      --ring: rgba(61, 139, 253, 0.25);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background:
+        radial-gradient(ellipse at 10% -10%, rgba(61,139,253,.18), transparent 42%),
+        radial-gradient(ellipse at 90% 0%, rgba(45,212,191,.12), transparent 40%),
+        radial-gradient(ellipse at 50% 100%, rgba(167,139,250,.08), transparent 45%),
+        var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    a { color: var(--teal); text-decoration: none; }
+    header {
+      border-bottom: 1px solid var(--line);
+      background: rgba(11,15,20,.85);
+      backdrop-filter: blur(10px);
+      position: sticky; top: 0; z-index: 20;
+    }
+    .bar {
+      max-width: 1280px; margin: 0 auto;
+      padding: 14px 20px;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .mark {
+      width: 34px; height: 34px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), var(--teal));
+      display: grid; place-items: center; font-weight: 800; color: #041018;
+    }
+    .brand h1 { font-size: 1.05rem; font-weight: 700; letter-spacing: .01em; }
+    .brand p { font-size: .72rem; color: var(--muted); }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    button, .btn {
+      border: 1px solid var(--line);
+      background: var(--panel2);
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: .85rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.primary, .btn.primary {
+      background: linear-gradient(90deg, var(--accent), #2563eb);
+      border-color: transparent;
+    }
+    button.teal { background: linear-gradient(90deg, #0d9488, var(--teal)); border-color: transparent; color: #042f2e; }
+    button:disabled { opacity: .6; cursor: wait; }
+    main { max-width: 1280px; margin: 0 auto; padding: 22px 20px 64px; }
+    .hero {
+      display: grid;
+      grid-template-columns: 1.4fr .9fr;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    @media (max-width: 900px) { .hero { grid-template-columns: 1fr; } }
+    .panel {
+      background: linear-gradient(180deg, rgba(24,34,48,.95), rgba(18,24,33,.98));
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 20px 50px rgba(0,0,0,.25);
+    }
+    .panel h2 { font-size: 1rem; margin-bottom: 6px; }
+    .muted { color: var(--muted); font-size: .86rem; line-height: 1.45; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      border-radius: 999px; padding: 3px 10px; font-size: .72rem; font-weight: 700;
+      border: 1px solid var(--line); background: rgba(255,255,255,.03);
+      text-transform: uppercase; letter-spacing: .04em;
+    }
+    .pill.ready { color: var(--ok); border-color: rgba(52,211,153,.35); background: rgba(52,211,153,.08); }
+    .pill.enhanced { color: var(--teal); border-color: rgba(45,212,191,.35); background: rgba(45,212,191,.08); }
+    .pill.transitioning { color: var(--amber); border-color: rgba(251,191,36,.35); background: rgba(251,191,36,.08); }
+    .pill.at_risk, .pill.at-risk { color: #fdba74; border-color: rgba(251,146,60,.35); background: rgba(251,146,60,.08); }
+    .pill.critical { color: var(--rose); border-color: rgba(251,113,133,.4); background: rgba(251,113,133,.1); }
+    .score-xl {
+      font-size: clamp(2.6rem, 5vw, 3.6rem);
+      font-weight: 800; letter-spacing: -0.03em;
+      background: linear-gradient(90deg, #fff, var(--teal));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .grid4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin: 16px 0;
+    }
+    @media (max-width: 900px) { .grid4 { grid-template-columns: repeat(2, 1fr); } }
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    .stat .k { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    .stat .v { font-size: 1.45rem; font-weight: 750; margin-top: 4px; }
+    .stat .s { font-size: .75rem; color: var(--muted); margin-top: 2px; }
+    .layout {
+      display: grid;
+      grid-template-columns: 1.15fr .85fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+    .dims { display: grid; gap: 10px; }
+    .dim { display: grid; grid-template-columns: 110px 1fr 42px; gap: 8px; align-items: center; }
+    .dim label { font-size: .78rem; color: var(--muted); }
+    .bar-track { height: 8px; background: #0d131c; border-radius: 999px; overflow: hidden; border: 1px solid var(--line); }
+    .bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--teal)); }
+    .bar-fill.kel { background: linear-gradient(90deg, var(--violet), var(--teal)); }
+    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+    tr:hover td { background: rgba(255,255,255,.02); }
+    .row-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; align-items: end; }
+    label.field { display: grid; gap: 4px; font-size: .75rem; color: var(--muted); }
+    input, select, textarea {
+      background: #0d131c; border: 1px solid var(--line); color: var(--ink);
+      border-radius: 10px; padding: 9px 10px; font-size: .9rem; min-width: 160px;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+    .steps { display: grid; gap: 8px; }
+    .step {
+      border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+      background: rgba(13,19,28,.6);
+    }
+    .step .p { font-size: .7rem; font-weight: 800; color: var(--amber); }
+    .step .t { font-weight: 700; font-size: .88rem; margin: 2px 0; }
+    .diff {
+      border-left: 3px solid var(--teal);
+      padding: 10px 12px;
+      background: rgba(45,212,191,.06);
+      border-radius: 0 12px 12px 0;
+      margin-top: 12px;
+    }
+    .chart-wrap { position: relative; height: 220px; }
+    .empty { color: var(--muted); padding: 24px; text-align: center; }
+    .toast {
+      position: fixed; right: 16px; bottom: 16px; z-index: 50;
+      background: #0f172a; border: 1px solid var(--line); color: var(--ink);
+      padding: 10px 14px; border-radius: 12px; display: none;
+      box-shadow: 0 12px 40px rgba(0,0,0,.4);
+    }
+    .flow {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px;
+    }
+    @media (max-width: 800px) { .flow { grid-template-columns: 1fr 1fr; } }
+    .flow .c {
+      border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+      background: rgba(255,255,255,.02);
+    }
+    .flow .c strong { display: block; margin-bottom: 4px; color: var(--accent); font-size: .85rem; }
+    .flow .c span { font-size: .78rem; color: var(--muted); line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <div class="brand">
+        <div class="mark">YA</div>
+        <div>
+          <h1>Post-Quantum Readiness</h1>
+          <p>Organizational readiness · KEL migration · quantum path</p>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" id="btnDemo" class="teal">Load demo org</button>
+        <button type="button" id="btnDiscover" class="teal">Run discovery</button>
+        <button type="button" id="btnAssess" class="primary">Run assessment</button>
+        <button type="button" id="btnRefresh">Refresh</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:start">
+          <div>
+            <div class="pill" id="bandPill">—</div>
+            <h2 style="margin-top:10px;font-size:1.35rem" id="orgName">Select or create an organization</h2>
+            <p class="muted" id="orgMeta">Discover crypto assets, prioritize risk, remediate with a plan, and govern continuous readiness.</p>
+          </div>
+          <div style="text-align:right">
+            <div class="muted" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.06em">Readiness score</div>
+            <div class="score-xl" id="overallScore">—</div>
+          </div>
+        </div>
+        <div class="diff" id="diffBox">
+          <strong style="color:var(--teal)">KEL differentiator</strong>
+          <p class="muted" style="margin-top:4px">
+            Unlike inventory-only platforms, we score <em>crypto agility</em> via the KEL abstraction layer.
+            Systems still on ECC/RSA show <strong>enhanced</strong> status once KEL-wrapped — algorithm swaps no longer require app rewrites.
+          </p>
+        </div>
+        <div class="flow">
+          <div class="c"><strong>Discover</strong><span>Inventory algorithms, protocols, keys, and ownership across the org.</span></div>
+          <div class="c"><strong>Prioritize</strong><span>Rank by exposure, business impact, and remediation effort.</span></div>
+          <div class="c"><strong>Remediate</strong><span>Step plans: add KEL first, then rotate to hybrid/PQC behind it.</span></div>
+          <div class="c"><strong>Govern</strong><span>Track KEL migration % and quantum-safe adoption over time.</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Organization</h2>
+        <p class="muted" style="margin-bottom:12px">API-first SaaS surface under <code>/post-quantum-readiness/api/v1</code></p>
+        <div class="row-actions">
+          <label class="field">Org
+            <select id="orgSelect"><option value="">—</option></select>
+          </label>
+          <button type="button" id="btnNewOrg">New org</button>
+        </div>
+        <div id="newOrgForm" style="display:none;margin-top:8px">
+          <div class="row-actions">
+            <label class="field">Name<input id="newName" placeholder="Contoso Bank" /></label>
+            <label class="field">Industry<input id="newIndustry" placeholder="financial_services" /></label>
+            <label class="field" style="align-self:end"><span></span>
+              <label style="display:flex;gap:6px;align-items:center;color:var(--ink);font-size:.85rem">
+                <input type="checkbox" id="newSeed" /> Seed sample assets (demo only)
+              </label>
+            </label>
+            <button type="button" class="primary" id="btnCreateOrg">Create</button>
+          </div>
+        </div>
+        <div class="grid4" style="margin-top:8px">
+          <div class="stat"><div class="k">Assets</div><div class="v" id="statAssets">0</div></div>
+          <div class="stat"><div class="k">With KEL</div><div class="v" id="statKel">0%</div><div class="s">abstraction layer</div></div>
+          <div class="stat"><div class="k">Agility+</div><div class="v" id="statEnh">0%</div><div class="s">enhanced via KEL</div></div>
+          <div class="stat"><div class="k">Quantum-safe</div><div class="v" id="statQs">0%</div><div class="s">KEL + PQC</div></div>
+        </div>
+        <p class="muted" id="kelNarrative" style="margin-top:8px"></p>
+      </div>
+    </section>
+
+<section class="panel" style="margin-bottom:16px;margin-top:8px" id="taxonomyPanel">
+      <h2>PQ-unsafe cryptography map</h2>
+      <p class="muted" style="margin-bottom:10px">
+        All categories/subcategories that may use post-quantum-unsafe cryptography.
+        Progress updates from live inventory (coverage, score, KEL %, PQC %).
+        <span id="taxTotals"></span>
+      </p>
+      <div id="categoryProgress" style="display:grid;gap:12px;max-height:70vh;overflow:auto;padding-right:4px">
+        <div class="empty">Loading categories…</div>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-bottom:16px" id="llmPanel">
+      <h2>LLM settings</h2>
+      <p class="muted" style="margin-bottom:10px">
+        Configure the discovery agent’s model provider. Default is
+        <strong>Kilo Code Gateway</strong> (<code>https://api.kilo.ai/api/gateway</code>).
+        Also supports OpenAI, OpenRouter, Anthropic, Ollama, or any OpenAI-compatible base URL.
+      </p>
+      <div class="row-actions">
+        <label class="field">Provider
+          <select id="llmProvider"></select>
+        </label>
+        <label class="field" style="flex:1;min-width:200px">API key (Kilo / provider)
+          <input id="llmApiKey" type="password" placeholder="Paste KILO_API_KEY or provider key" autocomplete="off" />
+        </label>
+        <label class="field" style="flex:1;min-width:200px">Base URL
+          <input id="llmBaseUrl" placeholder="https://api.kilo.ai/api/gateway" />
+        </label>
+        <label class="field">Model
+          <input id="llmModel" placeholder="x-ai/grok-4.5" />
+        </label>
+      </div>
+      <div class="row-actions">
+        <label style="display:flex;gap:6px;align-items:center;font-size:.85rem;color:var(--ink)">
+          <input type="checkbox" id="llmEnabled" checked /> Enabled
+        </label>
+        <label style="display:flex;gap:6px;align-items:center;font-size:.85rem;color:var(--ink)">
+          <input type="checkbox" id="llmRequire" /> Require LLM for discovery
+        </label>
+        <span class="muted" id="llmKeyStatus" style="font-size:.8rem"></span>
+        <button type="button" id="btnSaveLlm">Save settings</button>
+        <button type="button" id="btnTestLlm">Test connection</button>
+      </div>
+      <pre id="llmTestOut" class="muted" style="margin-top:8px;white-space:pre-wrap;font-size:.75rem;max-height:100px;overflow:auto"></pre>
+    </section>
+
+    <section class="panel" style="margin-bottom:16px" id="discoverPanel">
+      <h2>Discovery agent (live network)</h2>
+      <p class="muted" style="margin-bottom:10px">
+        Probes <strong>real</strong> targets: TLS certs/algorithms, HTTP security headers, DNS CAA, KEL endpoints.
+        Clears demo seed assets by default so scores reflect live findings only.
+        If blocked, the agent pauses with <span class="pill transitioning">needs_input</span> questions.
+      </p>
+      <div class="row-actions">
+        <label class="field" style="flex:1;min-width:240px">Targets (one host / URL per line)
+          <textarea id="discTargets" rows="3" placeholder="example.com&#10;api.example.com:443&#10;https://staging.example.com" style="min-width:100%;width:100%"></textarea>
+        </label>
+      </div>
+      <div class="row-actions">
+        <label style="display:flex;gap:6px;align-items:center;font-size:.85rem;color:var(--ink)">
+          <input type="checkbox" id="discSync" checked /> Run inline (sync)
+        </label>
+        <label style="display:flex;gap:6px;align-items:center;font-size:.85rem;color:var(--ink)">
+          <input type="checkbox" id="discSkipLlm" /> Skip LLM enrich
+        </label>
+        <label style="display:flex;gap:6px;align-items:center;font-size:.85rem;color:var(--ink)">
+          <input type="checkbox" id="discClearDemo" checked /> Clear demo seed assets
+        </label>
+        <button type="button" class="primary" id="btnRunDiscover">Start discovery</button>
+        <button type="button" id="btnClearDemo">Clear demo now</button>
+      </div>
+      <div id="needsInputBox" style="display:none;margin-top:12px;border:1px solid rgba(251,191,36,.4);border-radius:12px;padding:12px;background:rgba(251,191,36,.06)">
+        <strong style="color:var(--amber)">Agent needs input</strong>
+        <p class="muted" id="needsInputMsg" style="margin:6px 0"></p>
+        <ul id="needsInputQuestions" class="muted" style="margin:8px 0 8px 18px;font-size:.85rem"></ul>
+        <div class="row-actions">
+          <label class="field" style="flex:1">Answer / extra targets
+            <textarea id="resumeAnswers" rows="2" placeholder="additional hosts, or notes" style="width:100%"></textarea>
+          </label>
+          <label class="field">API key (if asked)
+            <input id="resumeApiKey" type="password" placeholder="optional key to save + resume" />
+          </label>
+          <button type="button" class="primary" id="btnResumeDiscover">Resume</button>
+        </div>
+      </div>
+      <div id="limitationsBox" class="muted" style="margin-top:10px;font-size:.82rem"></div>
+      <pre id="discStatus" class="muted" style="margin-top:10px;white-space:pre-wrap;font-size:.78rem;max-height:220px;overflow:auto"></pre>
+    </section>
+
+    
+
+    <section class="layout">
+      <div class="panel">
+        <h2>Dimension scores</h2>
+        <p class="muted" style="margin-bottom:12px">Weighted model — KEL agility is 25% of overall readiness.</p>
+        <div class="dims" id="dimList"></div>
+        <div class="chart-wrap" style="margin-top:18px">
+          <canvas id="trendChart"></canvas>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Priority remediation</h2>
+        <p class="muted" style="margin-bottom:12px">Context-ranked findings. KEL-first path lowers future algorithm cutover cost.</p>
+        <div class="steps" id="remediationList"><div class="empty">Run an assessment to populate findings.</div></div>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+        <div>
+          <h2>Crypto asset inventory</h2>
+          <p class="muted">Classical algorithms with <span class="pill enhanced" style="margin-left:4px">KEL abstracted</span> count as agility-enhanced.</p>
+        </div>
+        <button type="button" id="btnAddAsset">Add asset</button>
+      </div>
+      <div id="addAssetForm" style="display:none;margin-bottom:14px;border:1px solid var(--line);border-radius:12px;padding:12px">
+        <div class="row-actions">
+          <label class="field">Name<input id="aName" placeholder="Payments API" /></label>
+          <label class="field">Algorithm
+            <select id="aAlg">
+              <option>RSA-2048</option><option>ECDSA</option><option>Ed25519</option><option>secp256k1</option>
+              <option>hybrid-mlkem-x25519</option><option>ML-DSA-65</option><option>ML-KEM-768</option><option>RSA-1024</option>
+            </select>
+          </label>
+          <label class="field">Protocol
+            <select id="aProto"><option>TLS1.3</option><option>TLS1.2</option><option>TLS1.0</option><option>https</option></select>
+          </label>
+          <label class="field">KEL status
+            <select id="aKel">
+              <option value="none">No KEL</option>
+              <option value="kel_abstracted">KEL abstracted (ECC/RSA OK)</option>
+              <option value="kel_hybrid">KEL hybrid</option>
+              <option value="kel_quantum_safe">KEL + quantum-safe</option>
+            </select>
+          </label>
+          <label class="field">Criticality
+            <select id="aCrit"><option>critical</option><option>high</option><option selected>medium</option><option>low</option></select>
+          </label>
+          <label class="field">Exposure
+            <select id="aExp"><option>internet</option><option>partner</option><option selected>internal</option><option>airgapped</option></select>
+          </label>
+          <button type="button" class="primary" id="btnSaveAsset">Save asset</button>
+        </div>
+      </div>
+      <div style="overflow:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Asset</th>
+              <th>Algorithm</th>
+              <th>KEL / agility</th>
+              <th>Score</th>
+              <th>Risk</th>
+              <th>Top action</th>
+            </tr>
+          </thead>
+          <tbody id="assetTable"><tr><td colspan="6" class="empty">No org selected</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const API = "/post-quantum-readiness/api/v1";
+    let state = { orgId: null, dashboard: null, trendChart: null, lastJobId: null, providers: [], taxonomy: [] };
+
+    function toast(msg) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.style.display = "block";
+      setTimeout(() => { el.style.display = "none"; }, 2800);
+    }
+
+    async function api(path, opts = {}) {
+      const res = await fetch(API + path, {
+        headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+        ...opts,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.status === false) {
+        throw new Error(data.error || res.statusText || "request failed");
+      }
+      return data;
+    }
+
+    function bandClass(b) {
+      return (b || "").replace("-", "_");
+    }
+
+    function renderCategoryProgress(cp, taxonomy) {
+      const box = document.getElementById("categoryProgress");
+      const totalsEl = document.getElementById("taxTotals");
+      if (!box) return;
+
+      // Merge live progress with full taxonomy so empty orgs still show all slots
+      let categories = (cp && cp.categories) ? cp.categories.slice() : null;
+      if (!categories || !categories.length) {
+        const tree = taxonomy || state.taxonomy || [];
+        categories = tree.map(function (c) {
+          return {
+            id: c.id,
+            name: c.name,
+            description: c.description,
+            quantum_risk: c.quantum_risk,
+            subcategory_count: (c.subcategories || []).length,
+            subcategories_inventoried: 0,
+            coverage_percent: 0,
+            asset_count: 0,
+            overall: null,
+            kel_percent: 0,
+            quantum_safe_percent: 0,
+            status_band: "not_started",
+            subcategories: (c.subcategories || []).map(function (s) {
+              return {
+                id: s.id,
+                name: s.name,
+                asset_count: 0,
+                inventoried: false,
+                overall: null,
+                kel_percent: 0,
+                status_band: "not_started",
+              };
+            }),
+          };
+        });
+      }
+
+      if (!categories.length) {
+        box.innerHTML = '<div class="empty">Loading taxonomy…</div>';
+        totalsEl.textContent = "";
+        return;
+      }
+
+      const t = (cp && cp.totals) || {
+        coverage_percent: 0,
+        subcategories: categories.reduce(function (n, c) { return n + (c.subcategory_count || (c.subcategories || []).length); }, 0),
+        asset_count: 0,
+        categories: categories.length,
+        subcategories_inventoried: 0,
+      };
+      totalsEl.textContent =
+        "Coverage " + (t.coverage_percent || 0) + "% · " +
+        (t.subcategories_inventoried || 0) + "/" + (t.subcategories || 0) + " subcategories inventoried · " +
+        (t.asset_count || 0) + " assets · " + categories.length + " categories. Expand a row for subcategories.";
+
+      box.innerHTML = categories.map(function (c) {
+        const subs = (c.subcategories || []).map(function (s) {
+          const band = s.status_band || "not_started";
+          const inv = s.inventoried ? (s.overall != null ? s.overall : "—") : "—";
+          return '<div style="display:grid;grid-template-columns:1fr 52px 88px 72px;gap:6px;align-items:center;font-size:.75rem;padding:4px 0;border-bottom:1px solid rgba(36,48,65,.5)">' +
+            '<span style="color:var(--ink)">' + (s.name || s.id) +
+            (s.inventoried ? "" : ' <span class="muted">(not inventoried)</span>') + "</span>" +
+            '<span style="text-align:right;font-weight:700">' + inv + "</span>" +
+            '<span class="pill ' + bandClass(band) + '">' + String(band).replace(/_/g, " ") + "</span>" +
+            '<span class="muted" style="text-align:right">KEL ' + (s.kel_percent || 0) + "%</span>" +
+            "</div>";
+        }).join("");
+        return '<details open style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:rgba(13,19,28,.45)">' +
+          "<summary style='cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;gap:10px;align-items:center'>" +
+          "<strong style='font-size:0.95rem'>" + c.name + "</strong>" +
+          '<span class="pill ' + bandClass(c.status_band) + '">' + String(c.status_band || "not_started").replace(/_/g, " ") + "</span>" +
+          '<span class="muted" style="font-size:.78rem">risk: ' + (c.quantum_risk || "—") +
+          " · coverage " + (c.coverage_percent || 0) + "% (" + (c.subcategories_inventoried || 0) + "/" +
+          (c.subcategory_count || (c.subcategories || []).length) + ")" +
+          " · assets " + (c.asset_count || 0) +
+          " · score " + (c.overall != null ? c.overall : "—") +
+          " · KEL " + (c.kel_percent || 0) + "% · PQC " + (c.quantum_safe_percent || 0) + "%</span>" +
+          "</summary>" +
+          '<p class="muted" style="margin:8px 0 6px;font-size:.8rem">' + (c.description || "") + "</p>" +
+          '<div style="margin-top:4px">' +
+          '<div style="display:grid;grid-template-columns:1fr 52px 88px 72px;gap:6px;font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">' +
+          "<span>Subcategory</span><span style='text-align:right'>Score</span><span>Status</span><span style='text-align:right'>KEL</span></div>" +
+          subs + "</div></details>";
+      }).join("");
+    }
+
+    async function loadTaxonomy() {
+      try {
+        const data = await api("/taxonomy");
+        state.taxonomy = data.taxonomy || [];
+        if (!state.orgId) {
+          renderCategoryProgress(null, state.taxonomy);
+        }
+        return state.taxonomy;
+      } catch (err) {
+        console.warn("taxonomy load failed", err);
+        return [];
+      }
+    }
+
+    function fillBar(val) {
+      const v = Math.max(0, Math.min(100, Number(val) || 0));
+      return `<div class="bar-track"><div class="bar-fill${arguments[1] ? " " + arguments[1] : ""}" style="width:${v}%"></div></div>`;
+    }
+
+    async function loadOrgs(selectId) {
+      const data = await api("/orgs");
+      const sel = document.getElementById("orgSelect");
+      const cur = selectId || state.orgId || sel.value;
+      sel.innerHTML = '<option value="">— select —</option>';
+      (data.orgs || []).forEach(o => {
+        const opt = document.createElement("option");
+        opt.value = o.id;
+        opt.textContent = `${o.name}${o.latest_overall != null ? " · " + o.latest_overall : ""}`;
+        if (o.id === cur) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      if (cur) {
+        sel.value = cur;
+        state.orgId = cur;
+      }
+      return data.orgs || [];
+    }
+
+    function renderDashboard(d) {
+      state.dashboard = d;
+      const org = d.org || {};
+      const summary = d.summary || {};
+      const kel = summary.kel_migration || {};
+      const band = summary.status_band || org.latest_status_band || "—";
+
+      document.getElementById("orgName").textContent = org.name || "Organization";
+      document.getElementById("orgMeta").textContent =
+        [org.industry, org.size, org.contact_email].filter(Boolean).join(" · ") ||
+        "Crypto readiness dashboard";
+      document.getElementById("overallScore").textContent =
+        summary.overall != null ? summary.overall : "—";
+      const pill = document.getElementById("bandPill");
+      pill.textContent = band;
+      pill.className = "pill " + bandClass(band);
+
+      document.getElementById("statAssets").textContent = summary.asset_count ?? (d.assets || []).length;
+      document.getElementById("statKel").textContent = (kel.percent_with_kel ?? 0) + "%";
+      document.getElementById("statEnh").textContent = (kel.percent_agility_enhanced ?? 0) + "%";
+      document.getElementById("statQs").textContent = (kel.percent_quantum_safe ?? 0) + "%";
+      document.getElementById("kelNarrative").textContent = kel.narrative || "";
+
+      renderCategoryProgress(summary.category_progress || null, summary.taxonomy || state.taxonomy);
+
+      const dims = summary.dimensions || {};
+      const labels = {
+        discovery: "Discovery",
+        algorithm: "Algorithms",
+        protocol: "Protocols",
+        lifecycle: "Lifecycle",
+        governance: "Governance",
+        kel_agility: "KEL agility",
+      };
+      const dimList = document.getElementById("dimList");
+      dimList.innerHTML = Object.keys(labels).map(k => {
+        const v = dims[k] ?? 0;
+        return `<div class="dim">
+          <label>${labels[k]}</label>
+          ${fillBar(v, k === "kel_agility" ? "kel" : "")}
+          <span style="text-align:right;font-weight:700">${v}</span>
+        </div>`;
+      }).join("");
+
+      const findings = summary.priority_findings || [];
+      const rem = document.getElementById("remediationList");
+      if (!findings.length) {
+        rem.innerHTML = '<div class="empty">No findings yet.</div>';
+      } else {
+        rem.innerHTML = findings.slice(0, 8).map(f => {
+          const act = f.top_action || {};
+          return `<div class="step">
+            <div class="p">${(f.priority && f.priority.severity) || "risk"} · effort ${(f.priority && f.priority.remediation_effort) || "—"}</div>
+            <div class="t">${f.name || f.asset_id}</div>
+            <div class="muted">${act.action || ""}${act.detail ? " — " + act.detail : ""}</div>
+            <div style="margin-top:6px">
+              ${f.agility_enhanced ? '<span class="pill enhanced">agility enhanced</span>' : '<span class="pill">'+ (f.kel_status || "no kel") +'</span>'}
+              <span class="pill">score ${f.overall}</span>
+              <span class="pill critical">risk ${(f.priority && f.priority.risk_score) || 0}</span>
+            </div>
+          </div>`;
+        }).join("");
+      }
+
+      // Asset table: merge inventory with scored_assets
+      const scored = {};
+      (summary.scored_assets || []).forEach(s => { scored[s.id] = s; });
+      const assets = d.assets || [];
+      const tbody = document.getElementById("assetTable");
+      if (!assets.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">No assets — add inventory or load demo.</td></tr>';
+      } else {
+        tbody.innerHTML = assets.map(a => {
+          const s = scored[a.id] || {};
+          const kelLabel = s.kel_label || a.kel_status || "—";
+          const enh = s.agility_enhanced;
+          const top = (findings.find(f => f.asset_id === a.id) || {}).top_action || {};
+          return `<tr>
+            <td><strong>${a.name || a.id}</strong><div class="muted">${a.environment || ""} · ${a.exposure || ""}</div></td>
+            <td>${a.algorithm || "—"}<div class="muted">${s.algorithm_class || ""}</div></td>
+            <td>${enh ? '<span class="pill enhanced">enhanced</span> ' : ''}<span class="muted">${kelLabel}</span></td>
+            <td><strong>${s.overall != null ? s.overall : "—"}</strong>
+              <div class="pill ${bandClass(s.status_band || "")}">${s.status_band || ""}</div></td>
+            <td>${(findings.find(f => f.asset_id === a.id) || {}).priority?.risk_score ?? "—"}</td>
+            <td class="muted">${top.action || "—"}</td>
+          </tr>`;
+        }).join("");
+      }
+
+      renderTrend(d.snapshots || []);
+    }
+
+    function renderTrend(snapshots) {
+      const labels = snapshots.map(s => {
+        const d = new Date((s.created_at || 0) * 1000);
+        return d.toLocaleDateString();
+      });
+      const overall = snapshots.map(s => s.overall);
+      const kel = snapshots.map(s => s.kel_percent);
+      const ctx = document.getElementById("trendChart");
+      if (state.trendChart) state.trendChart.destroy();
+      state.trendChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: labels.length ? labels : ["—"],
+          datasets: [
+            {
+              label: "Readiness",
+              data: overall.length ? overall : [0],
+              borderColor: "#3d8bfd",
+              backgroundColor: "rgba(61,139,253,.15)",
+              tension: 0.3,
+              fill: true,
+            },
+            {
+              label: "KEL %",
+              data: kel.length ? kel : [0],
+              borderColor: "#2dd4bf",
+              backgroundColor: "transparent",
+              tension: 0.3,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: "#8b9bb0" } } },
+          scales: {
+            x: { ticks: { color: "#8b9bb0" }, grid: { color: "#243041" } },
+            y: { min: 0, max: 100, ticks: { color: "#8b9bb0" }, grid: { color: "#243041" } },
+          },
+        },
+      });
+    }
+
+    async function loadDashboard(orgId) {
+      if (!orgId) return;
+      state.orgId = orgId;
+      const d = await api(`/orgs/${encodeURIComponent(orgId)}/dashboard`);
+      renderDashboard(d);
+    }
+
+    document.getElementById("orgSelect").addEventListener("change", async (e) => {
+      try {
+        if (e.target.value) await loadDashboard(e.target.value);
+      } catch (err) { toast(err.message); }
+    });
+
+    document.getElementById("btnRefresh").addEventListener("click", async () => {
+      try {
+        await loadOrgs(state.orgId);
+        if (state.orgId) await loadDashboard(state.orgId);
+        toast("Refreshed");
+      } catch (err) { toast(err.message); }
+    });
+
+    document.getElementById("btnAssess").addEventListener("click", async () => {
+      if (!state.orgId) return toast("Select an organization first");
+      try {
+        document.getElementById("btnAssess").disabled = true;
+        await api(`/orgs/${encodeURIComponent(state.orgId)}/assess`, { method: "POST", body: "{}" });
+        await loadDashboard(state.orgId);
+        await loadOrgs(state.orgId);
+        toast("Assessment complete");
+      } catch (err) { toast(err.message); }
+      finally { document.getElementById("btnAssess").disabled = false; }
+    });
+
+    document.getElementById("btnDiscover").addEventListener("click", () => {
+      document.getElementById("discoverPanel").scrollIntoView({ behavior: "smooth" });
+    });
+
+    function showDiscoveryResult(result, job) {
+      const statusEl = document.getElementById("discStatus");
+      const limBox = document.getElementById("limitationsBox");
+      const needBox = document.getElementById("needsInputBox");
+      const r = result || (job && job.result) || {};
+      const limitations = r.limitations || (job && job.limitations) || [];
+      limBox.innerHTML = limitations.length
+        ? "<strong>Limitations</strong><ul style='margin:6px 0 0 16px'>" +
+          limitations.map(l => "<li>" + l + "</li>").join("") + "</ul>"
+        : "";
+      if (r.status === "needs_input" || (job && job.status === "needs_input")) {
+        needBox.style.display = "block";
+        document.getElementById("needsInputMsg").textContent =
+          r.error_message || (job && job.error_message) || "Additional input required";
+        const qs = r.questions || (job && job.questions) || [];
+        document.getElementById("needsInputQuestions").innerHTML = qs.map(q =>
+          "<li><code>" + (q.id || "") + "</code> — " + (q.prompt || q) + "</li>"
+        ).join("");
+        state.lastJobId = (job && job.job_id) || state.lastJobId;
+      } else {
+        needBox.style.display = "none";
+      }
+      statusEl.textContent = JSON.stringify({
+        status: r.status || (job && job.status),
+        source: r.source,
+        cleared_assets: r.cleared_assets,
+        assets_discovered: r.assets_discovered,
+        discovered_assets: r.discovered_assets,
+        findings: r.findings,
+        assessment: r.assessment,
+        used_llm: r.used_llm,
+        limitations: r.limitations,
+        questions: r.questions,
+        error: r.error_message || (job && job.error_message),
+      }, null, 2);
+    }
+
+    async function pollJob(orgId, jobId) {
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => setTimeout(r, 1500));
+        const data = await api("/orgs/" + encodeURIComponent(orgId) + "/discover/" + encodeURIComponent(jobId));
+        const job = data.job || {};
+        showDiscoveryResult(job.result, job);
+        if (["succeeded", "failed", "needs_input"].indexOf(job.status) >= 0) return job;
+      }
+      throw new Error("discovery poll timeout");
+    }
+
+    async function loadLlmSettings() {
+      const data = await api("/llm-settings");
+      state.providers = data.providers || [];
+      const sel = document.getElementById("llmProvider");
+      sel.innerHTML = state.providers.map(p =>
+        '<option value="' + p.id + '">' + p.label + "</option>"
+      ).join("");
+      const s = data.settings || {};
+      sel.value = s.provider || "kilo";
+      document.getElementById("llmBaseUrl").value = s.base_url || "";
+      document.getElementById("llmModel").value = s.model || "";
+      document.getElementById("llmEnabled").checked = s.enabled !== false;
+      document.getElementById("llmRequire").checked = !!s.require_for_discovery;
+      document.getElementById("llmApiKey").placeholder = s.api_key_set
+        ? "Saved (" + (s.api_key_masked || "••••") + ") — paste to replace"
+        : "Paste KILO_API_KEY or provider key";
+      document.getElementById("llmKeyStatus").textContent = s.api_key_set
+        ? "Key on file: " + s.api_key_masked : "No API key saved";
+      return s;
+    }
+
+    document.getElementById("llmProvider").addEventListener("change", () => {
+      const p = state.providers.find(x => x.id === document.getElementById("llmProvider").value);
+      if (!p) return;
+      if (p.base_url) document.getElementById("llmBaseUrl").value = p.base_url;
+      if (p.default_model) document.getElementById("llmModel").value = p.default_model;
+    });
+
+    document.getElementById("btnSaveLlm").addEventListener("click", async () => {
+      try {
+        const keyEl = document.getElementById("llmApiKey");
+        const key = (keyEl.value || "").trim();
+        if (!key) {
+          const status = document.getElementById("llmKeyStatus").textContent || "";
+          if (status.indexOf("No API key") >= 0) {
+            return toast("Paste an API key before saving");
+          }
+        }
+        const body = {
+          action: "save",
+          provider: document.getElementById("llmProvider").value,
+          base_url: document.getElementById("llmBaseUrl").value.trim(),
+          model: document.getElementById("llmModel").value.trim(),
+          enabled: document.getElementById("llmEnabled").checked,
+          require_for_discovery: document.getElementById("llmRequire").checked,
+        };
+        if (key) body.api_key = key;
+        const data = await api("/llm-settings", { method: "POST", body: JSON.stringify(body) });
+        const s = data.settings || {};
+        if (!s.api_key_set && key) {
+          toast("Save failed — key not persisted");
+          document.getElementById("llmTestOut").textContent = JSON.stringify(data, null, 2);
+          return;
+        }
+        keyEl.value = "";
+        await loadLlmSettings();
+        toast(s.api_key_set ? "API key saved" : "Settings saved (no key)");
+        document.getElementById("llmTestOut").textContent = JSON.stringify(s, null, 2);
+      } catch (err) { toast(err.message); }
+    });
+
+    document.getElementById("btnTestLlm").addEventListener("click", async () => {
+      try {
+        const body = {
+          action: "test",
+          provider: document.getElementById("llmProvider").value,
+          base_url: document.getElementById("llmBaseUrl").value.trim(),
+          model: document.getElementById("llmModel").value.trim(),
+        };
+        const key = document.getElementById("llmApiKey").value.trim();
+        if (key) body.api_key = key;
+        const data = await api("/llm-settings", { method: "POST", body: JSON.stringify(body) });
+        document.getElementById("llmTestOut").textContent = JSON.stringify(data.test, null, 2);
+        toast(data.test && data.test.ok ? "LLM OK" : "LLM failed");
+      } catch (err) { toast(err.message); }
+    });
+
+    document.getElementById("btnClearDemo").addEventListener("click", async () => {
+      if (!state.orgId) return toast("Select an organization first");
+      try {
+        const data = await api("/orgs/" + encodeURIComponent(state.orgId) + "/clear-demo", {
+          method: "POST", body: "{}",
+        });
+        toast("Cleared " + (data.deleted || 0) + " demo assets");
+        await loadDashboard(state.orgId);
+      } catch (err) { toast(err.message); }
+    });
+
+    document.getElementById("btnRunDiscover").addEventListener("click", async () => {
+      if (!state.orgId) return toast("Select an organization first");
+      const raw = document.getElementById("discTargets").value || "";
+      const targets = raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+      if (!targets.length) return toast("Enter at least one live target host or URL");
+      const statusEl = document.getElementById("discStatus");
+      const btn = document.getElementById("btnRunDiscover");
+      btn.disabled = true;
+      statusEl.textContent = "Starting live discovery…";
+      document.getElementById("needsInputBox").style.display = "none";
+      try {
+        const body = {
+          targets: targets,
+          sync: document.getElementById("discSync").checked,
+          skip_llm: document.getElementById("discSkipLlm").checked,
+          clear_demo_seed: document.getElementById("discClearDemo").checked,
+          replace_prior_discovered: true,
+          assess_discovered_only: true,
+        };
+        const data = await api("/orgs/" + encodeURIComponent(state.orgId) + "/discover", {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        state.lastJobId = data.job && data.job.job_id;
+        if (data.mode === "sync") {
+          showDiscoveryResult(data.result, data.job);
+          const n = (data.result && data.result.assets_discovered) || 0;
+          toast(data.result && data.result.status === "needs_input" ? "Needs input" : ("Live-discovered " + n + " assets"));
+        } else {
+          const jobId = (data.job && data.job.job_id) || "";
+          statusEl.textContent = "Queued on Celery… job " + jobId;
+          const job = await pollJob(state.orgId, jobId);
+          toast(job.status === "needs_input" ? "Needs input" : "Discovery finished");
+        }
+        await loadDashboard(state.orgId);
+        await loadOrgs(state.orgId);
+      } catch (err) {
+        statusEl.textContent = err.message;
+        toast(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("btnResumeDiscover").addEventListener("click", async () => {
+      if (!state.orgId || !state.lastJobId) return toast("No paused job");
+      const answers = {
+        additional_targets: document.getElementById("resumeAnswers").value,
+      };
+      const key = document.getElementById("resumeApiKey").value.trim();
+      if (key) answers.api_key = key;
+      try {
+        const data = await api(
+          "/orgs/" + encodeURIComponent(state.orgId) + "/discover/" + encodeURIComponent(state.lastJobId) + "/resume",
+          { method: "POST", body: JSON.stringify({ answers: answers }) }
+        );
+        showDiscoveryResult(data.result, data.job);
+        await loadDashboard(state.orgId);
+        toast((data.result && data.result.status) || "resumed");
+      } catch (err) { toast(err.message); }
+    });
+
+    document.getElementById("btnDemo").addEventListener("click", async () => {
+      try {
+        document.getElementById("btnDemo").disabled = true;
+        const data = await api("/demo", { method: "POST", body: "{}" });
+        await loadOrgs(data.org && data.org.id);
+        renderDashboard(data);
+        toast("Demo org ready — note KEL-enhanced classical assets");
+      } catch (err) { toast(err.message); }
+      finally { document.getElementById("btnDemo").disabled = false; }
+    });
+
+    document.getElementById("btnNewOrg").addEventListener("click", () => {
+      const f = document.getElementById("newOrgForm");
+      f.style.display = f.style.display === "none" ? "block" : "none";
+    });
+
+    document.getElementById("btnCreateOrg").addEventListener("click", async () => {
+      const name = document.getElementById("newName").value.trim();
+      if (!name) return toast("Name required");
+      try {
+        const body = {
+          name,
+          industry: document.getElementById("newIndustry").value.trim(),
+          seed_demo: document.getElementById("newSeed").checked,
+          has_crypto_policy: true,
+        };
+        const data = await api("/orgs", { method: "POST", body: JSON.stringify(body) });
+        await loadOrgs(data.org.id);
+        if (body.seed_demo) {
+          await api(`/orgs/${data.org.id}/assess`, { method: "POST", body: '{"trigger":"create"}' }).catch(() => {});
+        }
+        await loadDashboard(data.org.id);
+        document.getElementById("newOrgForm").style.display = "none";
+        toast("Organization created");
+      } catch (err) { toast(err.message); }
+    });
+
+    document.getElementById("btnAddAsset").addEventListener("click", () => {
+      if (!state.orgId) return toast("Select an organization first");
+      const f = document.getElementById("addAssetForm");
+      f.style.display = f.style.display === "none" ? "block" : "none";
+    });
+
+    document.getElementById("btnSaveAsset").addEventListener("click", async () => {
+      if (!state.orgId) return;
+      const kel = document.getElementById("aKel").value;
+      const body = {
+        name: document.getElementById("aName").value.trim(),
+        algorithm: document.getElementById("aAlg").value,
+        protocol: document.getElementById("aProto").value,
+        kel_status: kel,
+        has_kel: kel !== "none",
+        business_criticality: document.getElementById("aCrit").value,
+        exposure: document.getElementById("aExp").value,
+        environment: "production",
+        owner: "security",
+        key_rotation_days: 90,
+      };
+      if (!body.name) return toast("Asset name required");
+      try {
+        await api(`/orgs/${encodeURIComponent(state.orgId)}/assets`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        await api(`/orgs/${encodeURIComponent(state.orgId)}/assess`, { method: "POST", body: "{}" });
+        await loadDashboard(state.orgId);
+        document.getElementById("addAssetForm").style.display = "none";
+        document.getElementById("aName").value = "";
+        toast("Asset saved and rescored");
+      } catch (err) { toast(err.message); }
+    });
+
+    (async function init() {
+      try {
+        await loadTaxonomy();
+        await loadLlmSettings().catch(function () {});
+        const orgs = await loadOrgs();
+        if (orgs.length) {
+          await loadDashboard(orgs[0].id);
+        } else {
+          renderCategoryProgress(null, state.taxonomy);
+        }
+      } catch (err) {
+        toast(err.message);
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -28,6 +28,7 @@ TRACKED_PLUGINS = {
     "yadacoinpool",
     "yadanodeinfo",
     "kelutilization",
+    "postquantumreadiness",
 }
 
 
@@ -54,6 +55,8 @@ def _tag_for(path: str, module: str) -> str:
         return "AI Agent"
     if "plugins.kelutilization" in module or "kel-utilization" in path:
         return "KEL Utilization"
+    if "plugins.postquantumreadiness" in module or "post-quantum-readiness" in path:
+        return "Post-Quantum Readiness"
     if (
         "plugins.keyrotation" in module
         or "key-rotation" in path

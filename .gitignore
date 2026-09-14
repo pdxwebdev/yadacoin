@@ -16,3 +16,5 @@ venv*/
 *.p12
 *.p8
 *.mobileprovision
+pqr_llm_secrets.json
+config/pqr_llm_secrets.json
