@@ -18,3 +18,6 @@ venv*/
 *.mobileprovision
 pqr_llm_secrets.json
 config/pqr_llm_secrets.json
+
+# Local node configs (keys/seeds)
+config/local_node_*.json

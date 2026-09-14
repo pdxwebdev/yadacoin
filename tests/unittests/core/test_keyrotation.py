@@ -1631,7 +1631,7 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
         mock_entry = MagicMock()
         mock_entry.prerotated_key_hash = "1KEL"
 
-        async def _empty_gen(addr):
+        async def _empty_gen(addr, **kwargs):
             return
             yield  # pragma: no cover
 
@@ -1642,7 +1642,9 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
             await mgr._check_and_sweep_legacy_funds(mock_entry)
         mock_sweep.assert_not_awaited()
 
-    async def test_with_utxos_calls_sweep(self):
+    async def test_below_max_inputs_skips_sweep(self):
+        """Funds below CHAIN.MAX_INPUTS stay on the legacy address."""
+        from yadacoin.core.chain import CHAIN
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
         cfg = _make_config(address="1LEGACY")
@@ -1654,19 +1656,88 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
         mock_entry = MagicMock()
         mock_entry.prerotated_key_hash = "1KEL"
 
-        utxo = {"id": "utxo1", "outputs": [{"to": "1LEGACY", "value": 5.0}]}
+        fetch_kwargs = []
 
-        async def _gen(addr):
-            yield utxo
+        async def _gen(addr, **kwargs):
+            fetch_kwargs.append(kwargs)
+            for i in range(CHAIN.MAX_INPUTS - 1):
+                yield {
+                    "id": f"utxo{i}",
+                    "outputs": [{"to": "1LEGACY", "value": 1.0}],
+                }
 
         cfg.BU = MagicMock()
         cfg.BU.get_wallet_unspent_transactions_for_spending = _gen
 
         with patch.object(mgr, "_sweep_legacy_to_kel", new=AsyncMock()) as mock_sweep:
             await mgr._check_and_sweep_legacy_funds(mock_entry)
+        mock_sweep.assert_not_awaited()
+        self.assertEqual(fetch_kwargs, [{"inc_mempool": True}])
+
+    async def test_at_max_inputs_calls_sweep(self):
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        cfg = _make_config(address="1LEGACY")
+        cfg.LatestBlock = MagicMock()
+        cfg.LatestBlock.block.index = 100
+        cfg.LatestBlock.block.hash = "abc"
+        mgr = NodeKeyRotationManager(cfg)
+
+        mock_entry = MagicMock()
+        mock_entry.prerotated_key_hash = "1KEL"
+
+        async def _gen(addr, **kwargs):
+            for i in range(CHAIN.MAX_INPUTS):
+                yield {
+                    "id": f"utxo{i}",
+                    "outputs": [{"to": "1LEGACY", "value": 1.0}],
+                }
+
+        cfg.BU = MagicMock()
+        cfg.BU.get_wallet_unspent_transactions_for_spending = _gen
+
+        with patch.object(
+            mgr, "_sweep_legacy_to_kel", new=AsyncMock(return_value=True)
+        ) as mock_sweep:
+            await mgr._check_and_sweep_legacy_funds(mock_entry)
         mock_sweep.assert_awaited_once()
-        # Cache must be invalidated after sweep
-        self.assertNotIn("1LEGACY", mgr._kel_balance_cache)
+        self.assertEqual(mock_sweep.call_args.kwargs["total"], float(CHAIN.MAX_INPUTS))
+        self.assertEqual(
+            mgr._kel_balance_cache["1LEGACY"],
+            {"utxos": [], "block_height": 100, "block_hash": "abc"},
+        )
+
+    async def test_second_poll_same_tip_skips_resweep(self):
+        """After a successful consolidation, the same tip must not build another txn."""
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        cfg = _make_config(address="1LEGACY")
+        cfg.LatestBlock = MagicMock()
+        cfg.LatestBlock.block.index = 100
+        cfg.LatestBlock.block.hash = "abc"
+        mgr = NodeKeyRotationManager(cfg)
+
+        mock_entry = MagicMock()
+        mock_entry.prerotated_key_hash = "1KEL"
+
+        async def _gen(addr, **kwargs):
+            for i in range(CHAIN.MAX_INPUTS):
+                yield {
+                    "id": f"utxo{i}",
+                    "outputs": [{"to": "1LEGACY", "value": 1.0}],
+                }
+
+        cfg.BU = MagicMock()
+        cfg.BU.get_wallet_unspent_transactions_for_spending = _gen
+
+        with patch.object(
+            mgr, "_sweep_legacy_to_kel", new=AsyncMock(return_value=True)
+        ) as mock_sweep:
+            await mgr._check_and_sweep_legacy_funds(mock_entry)
+            await mgr._check_and_sweep_legacy_funds(mock_entry)
+        mock_sweep.assert_awaited_once()
 
     async def test_utxo_fetch_exception_skips_sweep(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
@@ -1680,7 +1751,7 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
         mock_entry = MagicMock()
         mock_entry.prerotated_key_hash = "1KEL"
 
-        async def _bad_gen(addr):
+        async def _bad_gen(addr, **kwargs):
             raise Exception("fetch error")
             yield  # pragma: no cover
 
@@ -1712,7 +1783,7 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
 
         fetch_called = []
 
-        async def _gen(addr):
+        async def _gen(addr, **kwargs):
             fetch_called.append(addr)
             yield {"id": "x", "outputs": [{"to": "1LEGACY", "value": 1.0}]}
 
@@ -1746,9 +1817,9 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
         mock_sweep.assert_not_awaited()
 
     async def test_utxo_fetch_stops_at_chain_input_limit(self):
-        """When more than 100 UTXOs are available, the fetch loop must
-        break at exactly 100 (obeying the on-chain input limit) instead of
-        collecting all of them (line ~1203)."""
+        """When more than MAX_INPUTS UTXOs are available, fetch stops at the
+        limit and consolidates that batch."""
+        from yadacoin.core.chain import CHAIN
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
         cfg = _make_config(address="1LEGACY")
@@ -1762,8 +1833,8 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
 
         yielded = []
 
-        async def _gen(addr):
-            for i in range(150):
+        async def _gen(addr, **kwargs):
+            for i in range(CHAIN.MAX_INPUTS + 50):
                 utxo = {
                     "id": f"utxo{i}",
                     "outputs": [{"to": "1LEGACY", "value": 1.0}],
@@ -1774,17 +1845,18 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
         cfg.BU = MagicMock()
         cfg.BU.get_wallet_unspent_transactions_for_spending = _gen
 
-        with patch.object(mgr, "_sweep_legacy_to_kel", new=AsyncMock()) as mock_sweep:
+        with patch.object(
+            mgr, "_sweep_legacy_to_kel", new=AsyncMock(return_value=True)
+        ) as mock_sweep:
             await mgr._check_and_sweep_legacy_funds(mock_entry)
 
         mock_sweep.assert_awaited_once()
-        # The break must stop consumption at 100, well short of the 150
-        # the generator could have produced.
-        self.assertEqual(len(yielded), 100)
-        self.assertEqual(mock_sweep.call_args.kwargs["total"], 100.0)
+        self.assertEqual(len(yielded), CHAIN.MAX_INPUTS)
+        self.assertEqual(mock_sweep.call_args.kwargs["total"], float(CHAIN.MAX_INPUTS))
 
     async def test_pool_peer_type_skips_legacy_sweep(self):
-        """Lines 1660-1664: pool nodes log and return without sweeping."""
+        """Pool nodes log and return without consolidating at MAX_INPUTS."""
+        from yadacoin.core.chain import CHAIN
         from yadacoin.core.keyrotation import NodeKeyRotationManager
         from yadacoin.enums.peertypes import PEER_TYPES
 
@@ -1794,8 +1866,12 @@ class TestCheckAndSweepLegacyFunds(AsyncTestCase):
         cfg.LatestBlock.block.index = 100
         cfg.LatestBlock.block.hash = "abc"
 
-        async def _gen(addr):
-            yield {"id": "u1", "outputs": [{"to": "1LEGACY", "value": 5.0}]}
+        async def _gen(addr, **kwargs):
+            for i in range(CHAIN.MAX_INPUTS):
+                yield {
+                    "id": f"u{i}",
+                    "outputs": [{"to": "1LEGACY", "value": 1.0}],
+                }
 
         cfg.BU = MagicMock()
         cfg.BU.get_wallet_unspent_transactions_for_spending = _gen
@@ -1826,19 +1902,39 @@ class TestSweepLegacyToKel(AsyncTestCase):
         cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock()
         mgr = NodeKeyRotationManager(cfg)
 
-        mock_txn = MagicMock()
-        mock_txn.hash = "HASH"
-        mock_txn.transaction_signature = "SIG"
-        mock_txn.to_dict.return_value = {"id": "SIG"}
+        async def _do_money(self):
+            self.inputs = [MagicMock()]
 
-        with patch("yadacoin.core.transaction.Transaction.do_money", new=AsyncMock()):
+        with patch(
+            "yadacoin.core.transaction.Transaction.do_money",
+            new=_do_money,
+        ):
             with patch(
                 "yadacoin.core.transaction.Transaction.generate_hash",
                 new=AsyncMock(return_value="HASH"),
             ):
-                await mgr._sweep_legacy_to_kel(sweep_target="1KELTarget", total=5.0)
+                ok = await mgr._sweep_legacy_to_kel(
+                    sweep_target="1KELTarget", total=5.0
+                )
 
+        self.assertTrue(ok)
         cfg.mongo.async_db.miner_transactions.replace_one.assert_awaited_once()
+
+    async def test_empty_inputs_skips_mempool_write(self):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        cfg = _make_config()
+        cfg.mongo.async_db.miner_transactions.replace_one = AsyncMock()
+        mgr = NodeKeyRotationManager(cfg)
+
+        async def _do_money(self):
+            self.inputs = []
+
+        with patch("yadacoin.core.transaction.Transaction.do_money", new=_do_money):
+            ok = await mgr._sweep_legacy_to_kel(sweep_target="1KEL", total=1.0)
+
+        self.assertFalse(ok)
+        cfg.mongo.async_db.miner_transactions.replace_one.assert_not_awaited()
 
     async def test_exception_is_logged_not_raised(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
@@ -1849,13 +1945,17 @@ class TestSweepLegacyToKel(AsyncTestCase):
         )
         mgr = NodeKeyRotationManager(cfg)
 
-        with patch("yadacoin.core.transaction.Transaction.do_money", new=AsyncMock()):
+        async def _do_money(self):
+            self.inputs = [MagicMock()]
+
+        with patch("yadacoin.core.transaction.Transaction.do_money", new=_do_money):
             with patch(
                 "yadacoin.core.transaction.Transaction.generate_hash",
                 new=AsyncMock(return_value="HASH"),
             ):
                 # Should not raise
-                await mgr._sweep_legacy_to_kel(sweep_target="1KEL", total=1.0)
+                ok = await mgr._sweep_legacy_to_kel(sweep_target="1KEL", total=1.0)
+        self.assertFalse(ok)
         cfg.app_log.error.assert_called()
 
     async def test_broadcasts_when_node_mode(self):
@@ -1882,7 +1982,10 @@ class TestSweepLegacyToKel(AsyncTestCase):
 
         mgr = NodeKeyRotationManager(cfg)
 
-        with patch("yadacoin.core.transaction.Transaction.do_money", new=AsyncMock()):
+        async def _do_money(self):
+            self.inputs = [MagicMock()]
+
+        with patch("yadacoin.core.transaction.Transaction.do_money", new=_do_money):
             with patch(
                 "yadacoin.core.transaction.Transaction.generate_hash",
                 new=AsyncMock(return_value="HASH"),
@@ -1903,13 +2006,17 @@ class TestSweepLegacyToKel(AsyncTestCase):
 
         mgr = NodeKeyRotationManager(cfg)
 
-        with patch("yadacoin.core.transaction.Transaction.do_money", new=AsyncMock()):
+        async def _do_money(self):
+            self.inputs = [MagicMock()]
+
+        with patch("yadacoin.core.transaction.Transaction.do_money", new=_do_money):
             with patch(
                 "yadacoin.core.transaction.Transaction.generate_hash",
                 new=AsyncMock(return_value="HASH"),
             ):
-                await mgr._sweep_legacy_to_kel(sweep_target="1KEL", total=1.0)
+                ok = await mgr._sweep_legacy_to_kel(sweep_target="1KEL", total=1.0)
 
+        self.assertTrue(ok)
         cfg.app_log.warning.assert_called()
 
 

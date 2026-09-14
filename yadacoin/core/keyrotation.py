@@ -56,6 +56,7 @@ live tip (on-chain + mempool + ``key_event_log``) without a separate
 auth-interval re-anchor package.
 """
 
+import asyncio
 import base64
 import hashlib
 import hmac as _hmac
@@ -70,6 +71,7 @@ from coincurve import PrivateKey as _CoincurvePrivateKey
 from coincurve._libsecp256k1 import ffi as _ffi
 from coincurve.keys import PrivateKey
 
+from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.keyeventlog import KeyEventLog
 from yadacoin.enums.peertypes import PEER_TYPES
@@ -242,6 +244,9 @@ class NodeKeyRotationManager:
         self._inception_complete = False  # True once inception is confirmed on-chain
         # {address: {"utxos": [...], "block_height": int, "block_hash": str}}
         self._kel_balance_cache: dict = {}
+        # Serialize legacy sweeps so PeriodicCallback overlap cannot double-spend
+        # the same UTXO into miner_transactions.
+        self._legacy_sweep_lock = asyncio.Lock()
         # Cached after first derivation so background_kel_checker avoids repeating it
         self._k0: dict | None = None
         self._second_factor: str = ""
@@ -2003,80 +2008,111 @@ class NodeKeyRotationManager:
         )
 
     async def _check_and_sweep_legacy_funds(self, latest):
-        """Sweep UTXOs at the legacy node address (P2PKH of config.public_key)
-        to ``latest.prerotated_key_hash``.
+        """Consolidate legacy-address UTXOs only when at the input limit.
 
-        This transitions funds from the potentially compromised WIF-derived
-        address to the KEL-protected address.  The balance cache is keyed by
-        block height + hash so we only query the chain when the tip advances.
+        Funds may remain on the legacy node address.  A sweep to
+        ``latest.prerotated_key_hash`` runs only when spendable UTXO count
+        reaches ``CHAIN.MAX_INPUTS`` (100), so further spends would otherwise
+        be blocked.  Below that threshold no automatic move is performed.
+
+        UTXO selection includes mempool spends (``inc_mempool=True``) so a
+        pending consolidation is not re-submitted.  A lock prevents concurrent
+        PeriodicCallback runs from double-building the same spend.
         """
         config = self.config
         legacy_address = config.address
         sweep_target = latest.prerotated_key_hash
+        max_inputs = CHAIN.MAX_INPUTS
 
         if legacy_address == sweep_target:
             return  # nothing to move
 
-        try:
-            current_height = config.LatestBlock.block.index
-            current_hash = config.LatestBlock.block.hash
-        except Exception:
-            return
+        if self._legacy_sweep_lock.locked():
+            return  # another sweep attempt is already in progress
 
-        cached = self._kel_balance_cache.get(legacy_address)
-        cache_valid = (
-            cached is not None
-            and cached["block_height"] == current_height
-            and cached["block_hash"] == current_hash
-        )
-
-        if not cache_valid:
-            utxos = []
+        async with self._legacy_sweep_lock:
             try:
-                async for utxo in config.BU.get_wallet_unspent_transactions_for_spending(
-                    legacy_address
-                ):
-                    utxos.append(utxo)
-                    if len(utxos) >= 100:
-                        break  # obey the 100-input chain limit; remainder swept next poll
-            except Exception as exc:
-                config.app_log.debug(
-                    "NodeKeyRotationManager: legacy UTXO fetch error: %s", exc
-                )
-            self._kel_balance_cache[legacy_address] = {
-                "utxos": utxos,
-                "block_height": current_height,
-                "block_hash": current_hash,
-            }
-        else:
-            utxos = cached["utxos"]
+                current_height = config.LatestBlock.block.index
+                current_hash = config.LatestBlock.block.hash
+            except Exception:
+                return
 
-        total = sum(
-            sum(o["value"] for o in u["outputs"] if o["to"] == legacy_address)
-            for u in utxos
-        )
-
-        if total <= 0:
-            return
-
-        if config.peer_type == PEER_TYPES.POOL.value:
-            config.app_log.info(
-                "NodeKeyRotationManager: skipping legacy sweep for pool node."
+            cached = self._kel_balance_cache.get(legacy_address)
+            cache_valid = (
+                cached is not None
+                and cached["block_height"] == current_height
+                and cached["block_hash"] == current_hash
             )
-            return
 
-        config.app_log.info(
-            "NodeKeyRotationManager: sweeping %.8f YDA from legacy address %s to KEL address %s",
-            total,
-            legacy_address,
-            sweep_target,
-        )
-        await self._sweep_legacy_to_kel(sweep_target=sweep_target, total=total)
-        self._kel_balance_cache.pop(legacy_address, None)
+            if not cache_valid:
+                utxos = []
+                try:
+                    async for (
+                        utxo
+                    ) in config.BU.get_wallet_unspent_transactions_for_spending(
+                        legacy_address, inc_mempool=True
+                    ):
+                        utxos.append(utxo)
+                        if len(utxos) >= max_inputs:
+                            break
+                except Exception as exc:
+                    config.app_log.debug(
+                        "NodeKeyRotationManager: legacy UTXO fetch error: %s", exc
+                    )
+                self._kel_balance_cache[legacy_address] = {
+                    "utxos": utxos,
+                    "block_height": current_height,
+                    "block_hash": current_hash,
+                }
+            else:
+                utxos = cached["utxos"]
 
-    async def _sweep_legacy_to_kel(self, sweep_target: str, total: float):
+            # Only consolidate when the wallet is at the chain input limit.
+            if len(utxos) < max_inputs:
+                return
+
+            total = sum(
+                sum(o["value"] for o in u["outputs"] if o["to"] == legacy_address)
+                for u in utxos
+            )
+
+            if total <= 0:
+                return
+
+            if config.peer_type == PEER_TYPES.POOL.value:
+                config.app_log.info(
+                    "NodeKeyRotationManager: skipping legacy sweep for pool node."
+                )
+                return
+
+            config.app_log.info(
+                "NodeKeyRotationManager: consolidating %d UTXOs (%.8f YDA) from "
+                "legacy address %s to KEL address %s",
+                len(utxos),
+                total,
+                legacy_address,
+                sweep_target,
+            )
+            submitted = await self._sweep_legacy_to_kel(
+                sweep_target=sweep_target, total=total
+            )
+            # Keep an empty cache for this tip so the next poll does not re-log
+            # and re-attempt while the mempool spend is still pending.  Tip
+            # advance invalidates the cache and re-checks with inc_mempool=True.
+            if submitted:
+                self._kel_balance_cache[legacy_address] = {
+                    "utxos": [],
+                    "block_height": current_height,
+                    "block_hash": current_hash,
+                }
+            else:
+                self._kel_balance_cache.pop(legacy_address, None)
+
+    async def _sweep_legacy_to_kel(self, sweep_target: str, total: float) -> bool:
         """Build and broadcast a transaction sweeping legacy address UTXOs to
         ``sweep_target``, signed by ``config.private_key``.
+
+        Returns True when a txn was written to the mempool, False on failure.
         """
         from yadacoin.core.transaction import Transaction
 
@@ -2100,6 +2136,13 @@ class NodeKeyRotationManager:
                 dh_public_key="",
             )
             await txn.do_money()
+
+            if not txn.inputs:
+                config.app_log.debug(
+                    "NodeKeyRotationManager: legacy sweep skipped — no spendable inputs "
+                    "(likely already reserved in mempool)"
+                )
+                return False
 
             txn.hash = await txn.generate_hash()
             txn.transaction_signature = NodeKeyRotationManager._sign(
@@ -2137,8 +2180,10 @@ class NodeKeyRotationManager:
                     config.app_log.warning(
                         "NodeKeyRotationManager: legacy sweep broadcast error: %s", exc
                     )
+            return True
         except Exception as exc:
             config.app_log.error("NodeKeyRotationManager: legacy sweep failed: %s", exc)
+            return False
 
     # ------------------------------------------------------------------
     # Signing
