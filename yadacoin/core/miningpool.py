@@ -51,13 +51,20 @@ class MiningPool(object):
         # Block rebuilds at that height until LatestBlock catches up.
         self.pending_won_index = None
         self.excluded = []
+        # Sticky reason when KEL ratchet cannot build a real mining template.
+        self.template_error = None
         try:
             await self.refresh()
-        except Exception:
+        except Exception as exc:
             from traceback import format_exc
 
-            # Keep the pool object so stratum can accept miners and retry
-            # template build on the next login/block_checker cycle.
+            from yadacoin.core.keyrotation import KelMiningRatchetNotReady
+
+            self.block_factory = None
+            if isinstance(exc, KelMiningRatchetNotReady):
+                self.template_error = str(exc)
+            else:
+                self.template_error = "initial refresh failed"
             self.app_log.error(
                 "MiningPool initial refresh failed (will retry): {}".format(
                     format_exc()
@@ -67,7 +74,12 @@ class MiningPool(object):
 
     def get_status(self):
         """Returns pool status as explicit dict"""
-        status = {"miners": len(self.inbound), "ips": len(self.connected_ips)}
+        status = {
+            "miners": len(self.inbound),
+            "ips": len(self.connected_ips),
+            "template_ready": self.block_factory is not None,
+            "template_error": self.template_error,
+        }
         return status
 
     async def process_nonce_queue(self):
@@ -409,18 +421,30 @@ class MiningPool(object):
                 index=self.config.LatestBlock.block.index + 1,
             )
             self.block_factory.header = self.block_factory.generate_header()
+            self.template_error = None
             self.refreshing = False
-        except Exception:
+        except Exception as exc:
             self.refreshing = False
+            self.block_factory = None
             from traceback import format_exc
 
+            from yadacoin.core.keyrotation import KelMiningRatchetNotReady
+
+            if isinstance(exc, KelMiningRatchetNotReady):
+                self.template_error = str(exc)
+            else:
+                self.template_error = "refresh failed"
             self.app_log.error("Exception {} mp.refresh".format(format_exc()))
             raise
 
     async def ensure_fresh_factory(self):
         """Rebuild block_factory when missing or targeting an already-mined height."""
         if self.block_factory is None or self._factory_is_stale():
-            await self.refresh()
+            try:
+                await self.refresh()
+            except Exception:
+                # template_error already set in refresh; callers tolerate None factory
+                pass
 
     async def block_to_mine_info(self):
         """Returns info for current block to mine"""
@@ -468,6 +492,8 @@ class MiningPool(object):
     async def block_template(self, agent, peer_id):
         """Returns info for current block to mine"""
         await self.ensure_fresh_factory()
+        if self.block_factory is None:
+            return None
         if not self.block_factory.target:
             await self.set_target_from_last_non_special_min(
                 self.config.LatestBlock.block

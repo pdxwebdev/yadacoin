@@ -3128,45 +3128,29 @@ class TestBlock(AsyncTestCase):
         finally:
             NodesTester.successful_nodes = saved
 
-    async def test_pay_masternodes_empty_triplet_uses_fallback_address(self):
-        """Empty KEL triplet (coinbase_prerotated=None) must not crash pool init."""
+    async def test_pay_masternodes_incomplete_triplet_raises(self):
         from yadacoin.core.chain import CHAIN
-        from yadacoin.core.keyrotation import ReanchorTriplet
+        from yadacoin.core.keyrotation import KelMiningRatchetNotReady
 
         block = await Block.init_async(
             version=CHAIN.get_version_for_height(CHAIN.PAY_MASTER_NODES_FORK),
             block_index=CHAIN.PAY_MASTER_NODES_FORK,
             target=1,
         )
-        saved = NodesTester.successful_nodes
-        NodesTester.successful_nodes = []
-        try:
-            triplet = ReanchorTriplet(
-                coinbase_confirming=None,
-                signer_private_key=None,
-                signer_public_key=None,
-                coinbase_prerotated=None,
-                coinbase_twice_prerotated=None,
-                coinbase_public_key_hash=None,
-                coinbase_prev_public_key_hash=None,
-            )
-            with mock.patch(
-                "yadacoin.core.block.NodeKeyRotationManager._sign",
-                return_value="sig",
-            ):
-                coinbase = await block.pay_masternodes([], triplet, 5.0)
-            self.assertIsNotNone(coinbase)
-            self.assertEqual(len(coinbase.outputs), 1)
-            self.assertIsNotNone(coinbase.outputs[0].to)
-            self.assertTrue(len(coinbase.outputs[0].to) > 0)
-            self.assertAlmostEqual(float(coinbase.outputs[0].value), 5.0)
-            # generate_hash path must not raise on None .lower()
-            self.assertTrue(coinbase.hash)
-        finally:
-            NodesTester.successful_nodes = saved
+        with self.assertRaises(KelMiningRatchetNotReady) as ctx:
+            await block.pay_masternodes([], None, 5.0)
+        self.assertIn("complete ReanchorTriplet", str(ctx.exception))
+
+        incomplete = Mock()
+        incomplete.coinbase_prerotated = "1Miner"
+        incomplete.signer_public_key = None
+        incomplete.signer_private_key = None
+        with self.assertRaises(KelMiningRatchetNotReady) as ctx2:
+            await block.pay_masternodes([], incomplete, 5.0)
+        self.assertIn("signer keys", str(ctx2.exception))
 
     async def test_pay_masternodes_skips_invalid_masternode_pubkey(self):
-        """Invalid MN public keys must not produce coinbase outputs with to=None."""
+        """Invalid MN public keys must not produce coinbase outputs."""
         from yadacoin.core.chain import CHAIN
 
         block = await Block.init_async(
@@ -3239,7 +3223,7 @@ class TestBlock(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=contract_generated,
-            ):
+            ), mock.patch.object(Block, "verify_signature", return_value=None):
                 with self.assertRaises(TotalValueMismatchException):
                     await block.verify()
         finally:

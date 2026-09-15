@@ -348,25 +348,6 @@ class TestGetOutputHashes(TransactionTestCase):
         result = txn.get_output_hashes()
         self.assertTrue(result.startswith("aaa_addr"))
 
-    async def test_none_to_does_not_raise(self):
-        """Coinbase outputs with to=None must not crash hash generation."""
-        txn = Transaction(
-            public_key=self.public_key,
-            inputs=[],
-            outputs=[
-                Output(to=None, value=1.0),
-                Output(to="bbb", value=2.0),
-            ],
-        )
-        result = txn.get_output_hashes()
-        self.assertIn("bbb", result)
-        self.assertIn("1.00000000", result)
-
-    async def test_output_from_dict_coerces_none_to(self):
-        out = Output.from_dict({"to": None, "value": 1.0})
-        self.assertEqual(out.to, "")
-        self.assertEqual(out.to_dict()["to"], "")
-
 
 # ---------------------------------------------------------------------------
 # Transaction.generate_hash - all versions

@@ -1164,29 +1164,38 @@ class TestQueueReanchor(AsyncTestCase):
         self.assertIsNone(await mgr._queue_reanchor())
         self.assertIsNone(await mgr._queue_reanchor(block=None))
 
-    async def test_no_k0_returns_empty_triplet(self):
-        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
+    async def test_no_k0_raises_not_ready(self):
+        from yadacoin.core.keyrotation import (
+            KelMiningRatchetNotReady,
+            NodeKeyRotationManager,
+        )
 
         cfg = _make_config()
         mgr = NodeKeyRotationManager(cfg)
         block = MagicMock()
-        result = await mgr._queue_reanchor(block=block)
-        self.assertIsInstance(result, ReanchorTriplet)
-        self.assertIsNone(result.coinbase_confirming)
+        with self.assertRaises(KelMiningRatchetNotReady) as ctx:
+            await mgr._queue_reanchor(block=block)
+        self.assertIn("K0", str(ctx.exception))
 
-    async def test_no_kel_pub_returns_empty_triplet(self):
-        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
+    async def test_no_kel_pub_raises_not_ready(self):
+        from yadacoin.core.keyrotation import (
+            KelMiningRatchetNotReady,
+            NodeKeyRotationManager,
+        )
 
         cfg = _make_config()  # kel_anchor_public_key is None
         mgr = NodeKeyRotationManager(cfg)
         mgr._k0 = {"private_key": bytes(32), "chain_code": bytes(32)}
         mgr._second_factor = "sf"
-        result = await mgr._queue_reanchor(block=MagicMock())
-        self.assertIsInstance(result, ReanchorTriplet)
-        self.assertIsNone(result.coinbase_confirming)
+        with self.assertRaises(KelMiningRatchetNotReady) as ctx:
+            await mgr._queue_reanchor(block=MagicMock())
+        self.assertIn("kel_anchor_public_key", str(ctx.exception))
 
-    async def test_no_onchain_kel_returns_empty_triplet(self):
-        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
+    async def test_no_kel_tip_raises_not_ready(self):
+        from yadacoin.core.keyrotation import (
+            KelMiningRatchetNotReady,
+            NodeKeyRotationManager,
+        )
 
         cfg = _make_config(kel_anchor_public_key="02pub")
         mgr = NodeKeyRotationManager(cfg)
@@ -1196,13 +1205,19 @@ class TestQueueReanchor(AsyncTestCase):
         with patch(
             "yadacoin.core.keyeventlog.KeyEventLog.get_onchain_hashlink_tip",
             new=AsyncMock(return_value=None),
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=None),
         ):
-            result = await mgr._queue_reanchor(block=MagicMock())
-        self.assertIsInstance(result, ReanchorTriplet)
-        self.assertIsNone(result.coinbase_confirming)
+            with self.assertRaises(KelMiningRatchetNotReady) as ctx:
+                await mgr._queue_reanchor(block=MagicMock())
+        self.assertIn("no main-KEL tip", str(ctx.exception))
 
-    async def test_kel_build_exception_returns_empty_triplet(self):
-        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
+    async def test_live_tip_lookup_exception_raises_not_ready(self):
+        from yadacoin.core.keyrotation import (
+            KelMiningRatchetNotReady,
+            NodeKeyRotationManager,
+        )
 
         cfg = _make_config(kel_anchor_public_key="02pub")
         mgr = NodeKeyRotationManager(cfg)
@@ -1211,11 +1226,137 @@ class TestQueueReanchor(AsyncTestCase):
 
         with patch(
             "yadacoin.core.keyeventlog.KeyEventLog.get_onchain_hashlink_tip",
-            new=AsyncMock(side_effect=Exception("db error")),
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(side_effect=RuntimeError("mongo down")),
         ):
-            result = await mgr._queue_reanchor(block=MagicMock())
+            with self.assertRaises(KelMiningRatchetNotReady) as ctx:
+                await mgr._queue_reanchor(block=MagicMock())
+        self.assertIn("main-KEL tip lookup failed", str(ctx.exception))
+
+    async def test_tip_empty_prerotated_raises_not_ready(self):
+        from yadacoin.core.keyrotation import (
+            KelMiningRatchetNotReady,
+            NodeKeyRotationManager,
+        )
+
+        cfg = _make_config(kel_anchor_public_key="02pub")
+        mgr = NodeKeyRotationManager(cfg)
+        mgr._k0 = {"private_key": _VALID_PRIV, "chain_code": _VALID_PRIV}
+        mgr._second_factor = "sf"
+
+        mock_entry = MagicMock()
+        mock_entry.public_key_hash = "1Tip"
+        mock_entry.prerotated_key_hash = ""
+        mock_entry.counter = 0
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_onchain_hashlink_tip",
+            new=AsyncMock(return_value=mock_entry),
+        ):
+            with self.assertRaises(KelMiningRatchetNotReady) as ctx:
+                await mgr._queue_reanchor(block=MagicMock())
+        self.assertIn("empty prerotated_key_hash", str(ctx.exception))
+
+    async def test_hashlink_error_falls_back_to_live_tip(self):
+        """On-chain hashlink failure must not empty-triplet; use live tip."""
+        from bitcoin.wallet import P2PKHBitcoinAddress
+        from coincurve import PrivateKey as CK
+
+        from yadacoin.core.keyrotation import (
+            NodeKeyRotationManager,
+            ReanchorTriplet,
+            derive_secure_path,
+        )
+
+        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        cfg = _make_config(kel_anchor_public_key="02pub")
+        mgr = NodeKeyRotationManager(cfg)
+        mgr._k0 = {
+            "private_key": bytes.fromhex(priv_hex),
+            "chain_code": bytes.fromhex(priv_hex),
+        }
+        mgr._second_factor = "mysecret"
+
+        _k0 = {
+            "private_key": bytes.fromhex(priv_hex),
+            "chain_code": bytes.fromhex(priv_hex),
+        }
+        step1 = derive_secure_path(_k0["private_key"], _k0["chain_code"], "mysecret")
+        step1_pub = CK(step1["private_key"]).public_key.format(compressed=True)
+        step1_addr = str(P2PKHBitcoinAddress.from_pubkey(step1_pub))
+
+        mock_entry = MagicMock()
+        mock_entry.public_key_hash = "1SomeAddress"
+        mock_entry.prerotated_key_hash = step1_addr
+        mock_entry.counter = 0
+        mock_entry.inception_public_key_hash = "1Inc"
+
+        block = MagicMock()
+        block.time = 1_700_000_000
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_onchain_hashlink_tip",
+            new=AsyncMock(side_effect=Exception("db error")),
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=mock_entry),
+        ):
+            result = await mgr._queue_reanchor(block=block)
+
         self.assertIsInstance(result, ReanchorTriplet)
-        self.assertIsNone(result.coinbase_confirming)
+        self.assertIsNotNone(result.coinbase_prerotated)
+        self.assertIsNotNone(result.coinbase_confirming)
+
+    async def test_live_mempool_tip_builds_full_triplet(self):
+        """Mempool-only inception tip must still produce a complete triplet."""
+        from bitcoin.wallet import P2PKHBitcoinAddress
+        from coincurve import PrivateKey as CK
+
+        from yadacoin.core.keyrotation import (
+            NodeKeyRotationManager,
+            ReanchorTriplet,
+            derive_secure_path,
+        )
+
+        priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+        cfg = _make_config(kel_anchor_public_key="02pub")
+        mgr = NodeKeyRotationManager(cfg)
+        mgr._k0 = {
+            "private_key": bytes.fromhex(priv_hex),
+            "chain_code": bytes.fromhex(priv_hex),
+        }
+        mgr._second_factor = "mysecret"
+
+        _k0 = {
+            "private_key": bytes.fromhex(priv_hex),
+            "chain_code": bytes.fromhex(priv_hex),
+        }
+        step1 = derive_secure_path(_k0["private_key"], _k0["chain_code"], "mysecret")
+        step1_pub = CK(step1["private_key"]).public_key.format(compressed=True)
+        step1_addr = str(P2PKHBitcoinAddress.from_pubkey(step1_pub))
+
+        mock_entry = MagicMock()
+        mock_entry.public_key_hash = "1MempoolInception"
+        mock_entry.prerotated_key_hash = step1_addr
+        mock_entry.counter = 0
+        mock_entry.inception_public_key_hash = "1MempoolInception"
+
+        block = MagicMock()
+        block.time = 1_700_000_000
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_onchain_hashlink_tip",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+            new=AsyncMock(return_value=mock_entry),
+        ):
+            result = await mgr._queue_reanchor(block=block)
+
+        self.assertIsInstance(result, ReanchorTriplet)
+        self.assertTrue(result.coinbase_prerotated)
+        self.assertTrue(result.signer_public_key)
+        self.assertIsNotNone(result.coinbase_confirming)
 
     async def test_block_path_returns_coinbase_confirming_only(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
@@ -3646,9 +3787,12 @@ class TestCoinbaseKelContinuity(AsyncTestCase):
 
 
 class TestQueueReanchorDerivationGuard(AsyncTestCase):
-    async def test_queue_reanchor_max_derivation_steps_returns_empty(self):
+    async def test_queue_reanchor_max_derivation_steps_raises(self):
         """When tip.prerotated never matches derived addresses, refuse template."""
-        from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
+        from yadacoin.core.keyrotation import (
+            KelMiningRatchetNotReady,
+            NodeKeyRotationManager,
+        )
 
         priv_hex = "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
         cfg = _make_config(kel_anchor_public_key="02pub")
@@ -3673,10 +3817,6 @@ class TestQueueReanchorDerivationGuard(AsyncTestCase):
             "yadacoin.core.keyrotation.DERIVE_TIP_SIGNER_MAX_STEPS",
             2,
         ):
-            result = await mgr._queue_reanchor(block=block)
-
-        self.assertIsInstance(result, ReanchorTriplet)
-        self.assertIsNone(result.coinbase_confirming)
-        cfg.app_log.error.assert_called()
-        err_msg = str(cfg.app_log.error.call_args)
-        self.assertIn("cannot derive signer", err_msg)
+            with self.assertRaises(KelMiningRatchetNotReady) as ctx:
+                await mgr._queue_reanchor(block=block)
+        self.assertIn("cannot derive coinbase signer", str(ctx.exception))
