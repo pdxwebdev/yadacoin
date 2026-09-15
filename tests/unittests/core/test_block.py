@@ -3128,6 +3128,71 @@ class TestBlock(AsyncTestCase):
         finally:
             NodesTester.successful_nodes = saved
 
+    async def test_pay_masternodes_incomplete_triplet_raises(self):
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.keyrotation import KelMiningRatchetNotReady
+
+        block = await Block.init_async(
+            version=CHAIN.get_version_for_height(CHAIN.PAY_MASTER_NODES_FORK),
+            block_index=CHAIN.PAY_MASTER_NODES_FORK,
+            target=1,
+        )
+        with self.assertRaises(KelMiningRatchetNotReady) as ctx:
+            await block.pay_masternodes([], None, 5.0)
+        self.assertIn("complete ReanchorTriplet", str(ctx.exception))
+
+        incomplete = Mock()
+        incomplete.coinbase_prerotated = "1Miner"
+        incomplete.signer_public_key = None
+        incomplete.signer_private_key = None
+        with self.assertRaises(KelMiningRatchetNotReady) as ctx2:
+            await block.pay_masternodes([], incomplete, 5.0)
+        self.assertIn("signer keys", str(ctx2.exception))
+
+    async def test_pay_masternodes_skips_invalid_masternode_pubkey(self):
+        """Invalid MN public keys must not produce coinbase outputs."""
+        from yadacoin.core.chain import CHAIN
+
+        block = await Block.init_async(
+            version=CHAIN.get_version_for_height(CHAIN.PAY_MASTER_NODES_FORK),
+            block_index=CHAIN.PAY_MASTER_NODES_FORK,
+            target=1,
+        )
+        bad = Mock()
+        bad.identity = Mock()
+        bad.identity.public_key = "not-hex"
+        good = Mock()
+        good.identity = Mock()
+        good.identity.public_key = (
+            "02cd94b54fa5ec2431013e047e3d609d385e40c73538639acb77f6d1b0f2b46c4a"
+        )
+        saved = NodesTester.successful_nodes
+        NodesTester.successful_nodes = [bad, good]
+        try:
+            triplet = Mock()
+            triplet.coinbase_prerotated = "1MinerPrerotated"
+            triplet.coinbase_twice_prerotated = "1MinerTwice"
+            triplet.coinbase_public_key_hash = "1MinerPKH"
+            triplet.coinbase_prev_public_key_hash = ""
+            triplet.signer_public_key = (
+                "02cd94b54fa5ec2431013e047e3d609d385e40c73538639acb77f6d1b0f2b46c4a"
+            )
+            triplet.signer_private_key = "11" * 32
+            with mock.patch(
+                "yadacoin.core.block.NodeKeyRotationManager._sign",
+                return_value="sig",
+            ), mock.patch(
+                "yadacoin.core.block.Transaction.generate_hash",
+                new=AsyncMock(return_value="c" * 64),
+            ):
+                coinbase = await block.pay_masternodes([], triplet, 5.0)
+            self.assertEqual(len(coinbase.outputs), 2)
+            for out in coinbase.outputs:
+                self.assertIsNotNone(out.to)
+                self.assertTrue(out.to)
+        finally:
+            NodesTester.successful_nodes = saved
+
     @mock.patch(
         "yadacoin.core.block.Block.generate_hash_from_header",
         new=mock_generate_hash_from_header,
@@ -3158,7 +3223,7 @@ class TestBlock(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.transaction.Transaction.contract_generated",
                 new=contract_generated,
-            ):
+            ), mock.patch.object(Block, "verify_signature", return_value=None):
                 with self.assertRaises(TotalValueMismatchException):
                     await block.verify()
         finally:

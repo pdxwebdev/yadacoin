@@ -351,6 +351,8 @@ class Block(object):
         which provides the KEL fields and signing key for the coinbase,
         continuing the key derivation lineage from the re-anchor pair.
         """
+        from yadacoin.core.keyrotation import KelMiningRatchetNotReady
+
         index = self.index
         # Regenerate the coinbase now that all post-build transaction filtering
         # has completed. Transactions may have been removed after the coinbase
@@ -359,6 +361,18 @@ class Block(object):
         # too large.  Recompute from the surviving non-coinbase transactions and
         # rebuild the coinbase in-place.
         if index >= CHAIN.PAY_MASTER_NODES_FORK:
+            if triplet is None or not getattr(triplet, "coinbase_prerotated", None):
+                raise KelMiningRatchetNotReady(
+                    "pay_masternodes requires a complete ReanchorTriplet "
+                    "(coinbase_prerotated); got incomplete/empty ratchet package"
+                )
+            if not getattr(triplet, "signer_public_key", None) or not getattr(
+                triplet, "signer_private_key", None
+            ):
+                raise KelMiningRatchetNotReady(
+                    "pay_masternodes requires triplet signer keys"
+                )
+
             non_coinbase = [t for t in tranaction_objs if not t.coinbase]
             fee_sum = sum(float(t.fee) for t in non_coinbase)
             masternode_fee_sum = 0.0
@@ -370,12 +384,17 @@ class Block(object):
             # NodesTester.successful_nodes with identity=None must not shrink
             # the divisor or leave the miner at 90% with zero MN outputs
             # (verify then sees coinbase_sum+masternode_sum = 0.9*reward).
-            reward_nodes = [
-                n
-                for n in (NodesTester.successful_nodes or [])
-                if getattr(n, "identity", None) is not None
-                and getattr(n.identity, "public_key", None)
-            ]
+            reward_nodes = []
+            for n in NodesTester.successful_nodes or []:
+                identity = getattr(n, "identity", None)
+                public_key = getattr(identity, "public_key", None) if identity else None
+                if not public_key:
+                    continue
+                try:
+                    str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+                except Exception:
+                    continue
+                reward_nodes.append(n)
             self_output = None
             updated_outputs = []
             if reward_nodes:

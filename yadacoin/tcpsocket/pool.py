@@ -203,12 +203,44 @@ class StratumServer(RPCSocketServer):
             return
         peer_id = str(uuid.uuid4())
         await StratumServer.block_checker()
-        if not StratumServer.config.mp:
+
+        async def _login_error(message):
+            await stream.write(
+                "{}\n".format(
+                    json.dumps(
+                        {
+                            "id": body.get("id"),
+                            "method": body.get("method"),
+                            "jsonrpc": body.get("jsonrpc"),
+                            "error": {"message": message},
+                        }
+                    )
+                ).encode()
+            )
             await StratumServer.remove_peer(stream)
+
+        if not StratumServer.config.mp:
+            await _login_error("Pool not ready; mining template unavailable")
             return
-        job = await StratumServer.config.mp.block_template(
-            body["params"].get("agent"), peer_id
-        )
+        try:
+            job = await StratumServer.config.mp.block_template(
+                body["params"].get("agent"), peer_id
+            )
+        except Exception:
+            self.config.app_log.warning(traceback.format_exc())
+            detail = getattr(StratumServer.config.mp, "template_error", None)
+            msg = "Pool template unavailable; retry shortly"
+            if detail:
+                msg = "{} ({})".format(msg, detail)
+            await _login_error(msg)
+            return
+        if job is None or StratumServer.config.mp.block_factory is None:
+            detail = getattr(StratumServer.config.mp, "template_error", None)
+            msg = "Pool template unavailable; KEL ratchet not ready"
+            if detail:
+                msg = "{} ({})".format(msg, detail)
+            await _login_error(msg)
+            return
         if not hasattr(stream, "jobs"):
             stream.jobs = {}
         stream.jobs[job.id] = job

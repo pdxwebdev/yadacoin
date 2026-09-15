@@ -84,13 +84,22 @@ from yadacoin.enums.peertypes import PEER_TYPES
 # ---------------------------------------------------------------------------
 
 
+class KelMiningRatchetNotReady(Exception):
+    """Mining template cannot be built until a real main-KEL tip exists.
+
+    Raised instead of returning an empty :class:`ReanchorTriplet` (which
+    previously crashed pool init with ``to=None`` in coinbase hashing).
+    """
+
+
 @dataclass
 class ReanchorTriplet:
     """Coinbase KEL package for block generation.
 
     ``coinbase_confirming`` is template-only (injected into the candidate
-    block with the coinbase).  Tip is resolved from the on-chain KEL only
-    so mined coinbase always continues the confirmed chain.
+    block with the coinbase).  Tip is resolved from the live main KEL
+    (on-chain hash-link preferred; mempool allowed for bootstrap) so a
+    full triplet is always produced when the node KEL exists.
 
     kn1/kn2/kn3 key material supports an optional same-block pool-payout
     rotation that extends the coinbase confirming tip (template-only; no
@@ -1613,11 +1622,13 @@ class NodeKeyRotationManager:
     async def advance_block_ratchet(self, block):
         """Build coinbase KEL material for block generation.
 
-        Resolves the main-KEL tip by **on-chain hash-link walk** from inception
-        (not max-counter; mempool/key_event_log ignored) so coinbase always
-        continues the confirmed prerotated chain, sets
-        ``block.public_key`` / ``block.private_key``, and returns a
-        :class:`ReanchorTriplet` with template-only ``coinbase_confirming``.
+        Resolves the main-KEL tip (on-chain hash-link preferred; live/mempool
+        fallback for bootstrap), sets ``block.public_key`` /
+        ``block.private_key``, and returns a full :class:`ReanchorTriplet`
+        with template-only ``coinbase_confirming``.
+
+        Raises :class:`KelMiningRatchetNotReady` when no real tip exists —
+        never returns an empty triplet with ``coinbase_prerotated=None``.
         """
         (
             second_factor,
@@ -1630,14 +1641,64 @@ class NodeKeyRotationManager:
 
         return await self._queue_reanchor(block=block)
 
+    async def _resolve_mining_kel_tip(self, k0_pub_hex: str):
+        """Return ``(tip_txn, source)`` for coinbase parenting.
+
+        Prefer on-chain hash-link tip (canonical for peers; avoids max-counter
+        skips).  If missing (e.g. inception still mempool-only), fall back to
+        :meth:`KeyEventLog.get_latest` with mempool allowed — matching the
+        module contract that block generation parents off the **live** main
+        KEL tip.  Auth/branch tips are not used (lookup is by K0 public key).
+        """
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        config = self.config
+        latest = None
+        source = None
+
+        try:
+            latest = await KeyEventLog.get_onchain_hashlink_tip(k0_pub_hex)
+            if latest is not None:
+                source = "onchain_hashlink"
+        except Exception as exc:
+            config.app_log.error(
+                "NodeKeyRotationManager: on-chain hashlink tip error for %s: %s",
+                k0_pub_hex[:16],
+                exc,
+                exc_info=True,
+            )
+
+        if latest is None:
+            try:
+                latest = await KeyEventLog.get_latest(k0_pub_hex, onchain_only=False)
+            except Exception as exc:
+                raise KelMiningRatchetNotReady(
+                    "main-KEL tip lookup failed: {}".format(exc)
+                ) from exc
+            if latest is not None:
+                source = "live_get_latest"
+                config.app_log.warning(
+                    "NodeKeyRotationManager: no on-chain hashlink tip for %s; "
+                    "using live main-KEL tip pkh=%s counter=%s",
+                    k0_pub_hex[:16],
+                    getattr(latest, "public_key_hash", ""),
+                    getattr(latest, "counter", None),
+                )
+
+        if latest is None:
+            raise KelMiningRatchetNotReady(
+                "no main-KEL tip for mining (K0={}): inception missing "
+                "on-chain and in mempool — check seed/SECOND_FACTOR and "
+                "that startup_check created/found inception".format(k0_pub_hex[:16])
+            )
+        return latest, source
+
     async def _queue_reanchor(self, block=None):
         """Build the coinbase KEL package for a mining template.
 
         Requires ``block``.  Does not write to ``miner_transactions``.
-        Parents coinbase exclusively off the on-chain KEL tip so the block
-        is canonical for peers that never saw this node's mempool or
-        ``key_event_log``.  Auth/branch tips in those collections must not
-        advance the mining ratchet.
+        Always returns a complete :class:`ReanchorTriplet` or raises
+        :class:`KelMiningRatchetNotReady`.  Never returns an empty triplet.
         """
         if block is None:
             return None
@@ -1646,60 +1707,49 @@ class NodeKeyRotationManager:
         k0 = self._k0
         second_factor = self._second_factor or _read_second_factor()
 
-        def _empty_triplet(signer_private_key=None, signer_public_key=None):
-            return ReanchorTriplet(
-                coinbase_confirming=None,
-                signer_private_key=signer_private_key,
-                signer_public_key=signer_public_key,
-                coinbase_prerotated=None,
-                coinbase_twice_prerotated=None,
-                coinbase_public_key_hash=None,
-                coinbase_prev_public_key_hash=None,
-                coinbase_counter=None,
-                coinbase_inception_public_key_hash="",
-                kn1_private_key="",
-                kn1_public_key="",
-                kn2_private_key="",
-                kn2_public_key="",
-                kn2_chain_code="",
-                kn2_address="",
+        if not k0 or not second_factor:
+            raise KelMiningRatchetNotReady(
+                "KEL manager has no K0/second_factor — startup_check did not complete"
             )
 
-        if not k0 or not second_factor:
-            return _empty_triplet()
-
-        from yadacoin.core.keyeventlog import KeyEventLog
         from yadacoin.core.transaction import Transaction
 
         kel_pub = getattr(config, "kel_anchor_public_key", None)
         if not kel_pub:
-            return _empty_triplet()
+            raise KelMiningRatchetNotReady(
+                "kel_anchor_public_key not set — KEL inception not activated"
+            )
 
         k0_pub_hex = (
             _CoincurvePrivateKey(k0["private_key"])
             .public_key.format(compressed=True)
             .hex()
         )
-        try:
-            # Hash-link tip only — never max(counter).  Branch announcements and
-            # prior skipped-key blocks can write counters ahead of the real
-            # prerotated chain; max-counter then parents coinbase off a key that
-            # was never committed on-chain (exactly the 605100→605101 skip).
-            latest = await KeyEventLog.get_onchain_hashlink_tip(k0_pub_hex)
-        except Exception:
-            return _empty_triplet()
-        if not latest:
-            return _empty_triplet()
+        latest, tip_source = await self._resolve_mining_kel_tip(k0_pub_hex)
+        config.app_log.debug(
+            "NodeKeyRotationManager: mining tip source=%s pkh=%s counter=%s",
+            tip_source,
+            getattr(latest, "public_key_hash", ""),
+            getattr(latest, "counter", None),
+        )
 
         # Walk derivation to latest.prerotated_key_hash (next unused signer).
         # Guard against runaway loops if tip.prerotated is not on our path.
+        tip_prerotated = getattr(latest, "prerotated_key_hash", None) or ""
+        if not tip_prerotated:
+            raise KelMiningRatchetNotReady(
+                "main-KEL tip has empty prerotated_key_hash (pkh={})".format(
+                    getattr(latest, "public_key_hash", "")
+                )
+            )
+
         cur = k0
         cur = derive_secure_path(cur["private_key"], cur["chain_code"], second_factor)
         cur_priv_obj = _CoincurvePrivateKey(cur["private_key"])
         cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
         cur_address = str(P2PKHBitcoinAddress.from_pubkey(cur_pub_bytes))
         guard = 0
-        while latest.prerotated_key_hash != cur_address:
+        while tip_prerotated != cur_address:
             cur = derive_secure_path(
                 cur["private_key"], cur["chain_code"], second_factor
             )
@@ -1707,16 +1757,15 @@ class NodeKeyRotationManager:
             cur_pub_bytes = cur_priv_obj.public_key.format(compressed=True)
             cur_address = str(P2PKHBitcoinAddress.from_pubkey(cur_pub_bytes))
             guard += 1
-            if latest.prerotated_key_hash == cur_address:
+            if tip_prerotated == cur_address:
                 break
             if guard >= DERIVE_TIP_SIGNER_MAX_STEPS:
-                config.app_log.error(
-                    "NodeKeyRotationManager: cannot derive signer for tip "
-                    "prerotated=%s after %d steps — refusing block template",
-                    latest.prerotated_key_hash,
-                    guard,
+                raise KelMiningRatchetNotReady(
+                    "cannot derive coinbase signer for tip prerotated={} "
+                    "after {} steps (seed/SECOND_FACTOR mismatch or foreign tip)".format(
+                        tip_prerotated, guard
+                    )
                 )
-                return _empty_triplet()
 
         kn = cur
         kn_address = cur_address

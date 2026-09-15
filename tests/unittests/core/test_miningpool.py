@@ -88,6 +88,7 @@ def _mk_pool(cfg=None):
     pool.block_factory = None
     pool.pending_won_index = None
     pool.excluded = []
+    pool.template_error = None
     return pool
 
 
@@ -105,6 +106,7 @@ class TestInitAsync(AsyncTestCase):
             pool = await MiningPool.init_async()
         self.assertEqual(pool.last_block_time, 1000)
         self.assertEqual(pool.index, 99)
+        self.assertIsNone(pool.template_error)
 
     async def test_init_async_no_block(self):
         cfg = _mk_config()
@@ -114,6 +116,31 @@ class TestInitAsync(AsyncTestCase):
         ):
             pool = await MiningPool.init_async()
         self.assertEqual(pool.last_block_time, 0)
+
+    async def test_init_async_soft_fails_kel_not_ready(self):
+        from yadacoin.core.keyrotation import KelMiningRatchetNotReady
+
+        cfg = _mk_config()
+        with patch("yadacoin.core.miningpool.Config", return_value=cfg), patch.object(
+            MiningPool,
+            "refresh",
+            AsyncMock(side_effect=KelMiningRatchetNotReady("no tip")),
+        ), patch("yadacoin.core.miningpool.getLogger") as mock_log:
+            mock_log.return_value = MagicMock()
+            pool = await MiningPool.init_async()
+        self.assertIsNone(pool.block_factory)
+        self.assertEqual(pool.template_error, "no tip")
+        pool.app_log.error.assert_called()
+
+    async def test_init_async_soft_fails_generic_refresh_error(self):
+        cfg = _mk_config()
+        with patch("yadacoin.core.miningpool.Config", return_value=cfg), patch.object(
+            MiningPool, "refresh", AsyncMock(side_effect=RuntimeError("boom"))
+        ), patch("yadacoin.core.miningpool.getLogger") as mock_log:
+            mock_log.return_value = MagicMock()
+            pool = await MiningPool.init_async()
+        self.assertIsNone(pool.block_factory)
+        self.assertEqual(pool.template_error, "initial refresh failed")
 
 
 # ---------------------------------------------------------------------------
@@ -126,8 +153,26 @@ class TestGetStatus(AsyncTestCase):
         pool = _mk_pool()
         pool.inbound = {"a": 1, "b": 2}
         pool.connected_ips = {"ip1": 1}
+        pool.block_factory = MagicMock()
+        pool.template_error = None
         s = pool.get_status()
-        self.assertEqual(s, {"miners": 2, "ips": 1})
+        self.assertEqual(
+            s,
+            {
+                "miners": 2,
+                "ips": 1,
+                "template_ready": True,
+                "template_error": None,
+            },
+        )
+
+    async def test_get_status_not_ready(self):
+        pool = _mk_pool()
+        pool.block_factory = None
+        pool.template_error = "KEL ratchet not ready"
+        s = pool.get_status()
+        self.assertFalse(s["template_ready"])
+        self.assertEqual(s["template_error"], "KEL ratchet not ready")
 
 
 # ---------------------------------------------------------------------------
@@ -547,6 +592,54 @@ class TestRefresh(AsyncTestCase):
             with self.assertRaises(Exception):
                 await pool.refresh()
         self.assertFalse(pool.refreshing)
+        self.assertIsNone(pool.block_factory)
+        self.assertEqual(pool.template_error, "refresh failed")
+
+    async def test_refresh_kel_not_ready_sets_template_error(self):
+        from yadacoin.core.keyrotation import KelMiningRatchetNotReady
+
+        pool = _mk_pool()
+        with patch(
+            "yadacoin.core.miningpool.Peer.is_synced",
+            new=AsyncMock(return_value=True),
+        ), patch.object(
+            pool.config.LatestBlock, "block_checker", AsyncMock()
+        ), patch.object(
+            pool.config.LatestBlock, "block", MagicMock(index=5)
+        ), patch(
+            "yadacoin.core.miningpool.Block.generate",
+            new=AsyncMock(side_effect=KelMiningRatchetNotReady("no tip")),
+        ):
+            with self.assertRaises(KelMiningRatchetNotReady):
+                await pool.refresh()
+        self.assertIsNone(pool.block_factory)
+        self.assertEqual(pool.template_error, "no tip")
+
+    async def test_refresh_clears_template_error_on_success(self):
+        pool = _mk_pool()
+        pool.template_error = "stale"
+        bf = _mk_block_factory(time_val=2000)
+        bf.generate_header = MagicMock(return_value="hdr")
+        with patch(
+            "yadacoin.core.miningpool.Peer.is_synced",
+            new=AsyncMock(return_value=True),
+        ), patch(
+            "yadacoin.core.miningpool.Block.generate", new=AsyncMock(return_value=bf)
+        ), patch.object(
+            pool.config.LatestBlock, "block_checker", AsyncMock()
+        ), patch.object(
+            pool.config.LatestBlock, "block", MagicMock(index=5)
+        ):
+            await pool.refresh()
+        self.assertIsNone(pool.template_error)
+        self.assertEqual(pool.block_factory, bf)
+
+    async def test_ensure_fresh_factory_swallows_refresh_error(self):
+        pool = _mk_pool()
+        pool.block_factory = None
+        pool.refresh = AsyncMock(side_effect=RuntimeError("still broken"))
+        await pool.ensure_fresh_factory()
+        self.assertIsNone(pool.block_factory)
 
     async def test_refresh_rebuilds_stale_when_unsynced(self):
         """Stale tip-height factory must refresh even if Peer.is_synced is false."""
@@ -955,6 +1048,13 @@ class TestRemainingBranches(AsyncTestCase):
             r = await pool.block_template("agent", "peer")
         self.assertEqual(r, "job")
         pool.refresh.assert_awaited()
+
+    async def test_block_template_returns_none_when_factory_unavailable(self):
+        pool = _mk_pool()
+        pool.block_factory = None
+        pool.refresh = AsyncMock()  # leaves factory None
+        r = await pool.block_template("agent", "peer")
+        self.assertIsNone(r)
 
     async def test_process_nonce_no_factory_returns_false(self):
         """process_nonce returns False when factory stays None after ensure_fresh."""
