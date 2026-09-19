@@ -231,6 +231,60 @@ class NodeTesterHealth(HealthItem):
         return self.report_status(True)
 
 
+class PeerBranchHealth(HealthItem):
+    """Watch peer-branch key_event_log growth (spam / bug detector).
+
+    Does not fail the whole node health bit on soft warnings; hard oversize
+    or rate-limit blocks are logged via kel_manager and reflected in to_dict.
+    """
+
+    timeout = 600  # expect a check at least every 10 minutes
+    last_snapshot = None
+
+    async def check_health(self):
+        self.last_activity = time.time()
+        mgr = getattr(self.config, "kel_manager", None)
+        if mgr is None or not hasattr(mgr, "peer_branch_monitor_snapshot"):
+            return self.report_status(True, ignore=True)
+        try:
+            snap = await mgr.peer_branch_monitor_snapshot()
+        except Exception as exc:
+            self.report_bad_health(f"PeerBranchHealth snapshot failed: {exc}")
+            return self.report_status(False)
+        self.last_snapshot = snap
+        limits = snap.get("limits") or {}
+        max_total = int(limits.get("max_total_docs") or 20000)
+        total = int(snap.get("total_peer_branch_docs") or 0)
+        oversize = snap.get("oversize_peers") or []
+        blocked = int(snap.get("advances_blocked") or 0)
+        if oversize:
+            self.report_bad_health(
+                "PeerBranchHealth: oversize peer branches: "
+                + ", ".join(
+                    f"{p.get('peer') or p.get('branch')} docs={p.get('docs')}"
+                    for p in oversize[:5]
+                )
+            )
+        if total > max_total:
+            self.report_bad_health(
+                f"PeerBranchHealth: total peer-branch docs {total} > {max_total}"
+            )
+            return self.report_status(False)
+        if blocked and blocked > 0:
+            # Rate-limit fired — warn but do not mark node dead.
+            self.config.app_log.warning(
+                "PeerBranchHealth: advances_blocked=%s (rate/size guard active)",
+                blocked,
+            )
+        return self.report_status(True)
+
+    def to_dict(self):
+        out = super().to_dict()
+        if self.last_snapshot:
+            out["snapshot"] = self.last_snapshot
+        return out
+
+
 class Health:
     def __init__(self):
         self.config = Config()
@@ -247,6 +301,7 @@ class Health:
         self.cache_validator = CacheValidatorHealth()
         self.mempool_cleaner = MempoolCleanerHealth()
         self.node_tester = NodeTesterHealth()
+        self.peer_branch = PeerBranchHealth()
         self.health_items = [
             self.consensus,
             self.tcp_server,
@@ -260,6 +315,7 @@ class Health:
             self.cache_validator,
             self.mempool_cleaner,
             self.node_tester,
+            self.peer_branch,
         ]
         if MODES.POOL.value in self.config.modes:
             self.nonce_processor = NonceProcessorHealth()

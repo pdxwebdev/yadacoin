@@ -2257,8 +2257,22 @@ class _FakeKeyEventLogCollection:
         if not matches:
             return None
         if sort:
-            key, direction = sort[0]
-            matches.sort(key=lambda d: d.get(key, 0), reverse=(direction == -1))
+            # Support multi-key sort [(k, dir), ...]
+            def _sort_key(d):
+                vals = []
+                for key, direction in sort:
+                    vals.append(d.get(key, 0) if direction != -1 else d.get(key, 0))
+                return tuple(
+                    d.get(key, 0) * (1 if direction != -1 else 1)
+                    for key, direction in sort
+                )
+
+            # Stable multi-key: apply sorts reversed
+            for key, direction in reversed(list(sort)):
+                matches.sort(
+                    key=lambda d, k=key: d.get(k, 0) if d.get(k, 0) is not None else 0,
+                    reverse=(direction == -1),
+                )
         return matches[0]
 
     def find(self, filt=None, projection=None):
@@ -2274,17 +2288,95 @@ class _FakeKeyEventLogCollection:
         if upsert:
             self.docs.append(doc)
 
-    @staticmethod
-    def _matches(doc, filt):
-        # Support simple equality and ``$or`` lists used by mempool upserts.
+    async def update_one(self, filt, update, upsert=False):
+        for i, d in enumerate(self.docs):
+            if self._matches(d, filt):
+                if "$set" in update:
+                    d = dict(d)
+                    d.update(update["$set"])
+                    self.docs[i] = d
+                return
+        if upsert and "$set" in update:
+            self.docs.append(dict(update["$set"]))
+
+    async def delete_many(self, filt):
+        self.docs = [d for d in self.docs if not self._matches(d, filt)]
+
+    async def count_documents(self, filt=None):
+        filt = filt or {}
+        return sum(1 for d in self.docs if self._matches(d, filt))
+
+    def aggregate(self, pipeline):
+        """Minimal $match/$group/$sort/$limit for peer_branch_monitor_snapshot."""
+        docs = list(self.docs)
+        for stage in pipeline or []:
+            if "$match" in stage:
+                docs = [d for d in docs if self._matches(d, stage["$match"])]
+            elif "$group" in stage:
+                g = stage["$group"]
+                key = g.get("_id")
+                buckets = {}
+                for d in docs:
+                    if isinstance(key, str) and key.startswith("$"):
+                        k = d.get(key[1:])
+                    else:
+                        k = key
+                    b = buckets.setdefault(
+                        k,
+                        {
+                            "_id": k,
+                            "n": 0,
+                            "checkpoints": 0,
+                            "peer": d.get("branch_peer"),
+                        },
+                    )
+                    b["n"] += 1
+                    if d.get("epoch_checkpoint"):
+                        b["checkpoints"] += 1
+                docs = list(buckets.values())
+            elif "$sort" in stage:
+                sk = stage["$sort"]
+                for field, direction in reversed(list(sk.items())):
+                    docs.sort(
+                        key=lambda d, f=field: d.get(f, 0) or 0,
+                        reverse=(direction == -1),
+                    )
+            elif "$limit" in stage:
+                docs = docs[: int(stage["$limit"])]
+        return _FakeFindCursor(docs)
+
+    @classmethod
+    def _match_value(cls, doc_val, filt_val):
+        if isinstance(filt_val, dict):
+            if "$gt" in filt_val:
+                try:
+                    return (doc_val if doc_val is not None else 0) > filt_val["$gt"]
+                except TypeError:
+                    return False
+            if "$lt" in filt_val:
+                try:
+                    return (doc_val if doc_val is not None else 0) < filt_val["$lt"]
+                except TypeError:
+                    return False
+            if "$exists" in filt_val:
+                exists = doc_val is not None
+                return exists if filt_val["$exists"] else not exists
+            if "$ne" in filt_val:
+                return doc_val != filt_val["$ne"]
+            return False
+        return doc_val == filt_val
+
+    @classmethod
+    def _matches(cls, doc, filt):
+        # Support simple equality, ``$or``, and comparison ops used by prune.
         if not isinstance(filt, dict):
             return False
         if "$or" in filt:
-            return any(
-                all(doc.get(k) == v for k, v in clause.items())
-                for clause in filt["$or"]
-            )
-        return all(doc.get(k) == v for k, v in filt.items())
+            rest = {k: v for k, v in filt.items() if k != "$or"}
+            if rest and not cls._matches(doc, rest):
+                return False
+            return any(cls._matches(doc, clause) for clause in filt["$or"])
+        return all(cls._match_value(doc.get(k), v) for k, v in filt.items())
 
 
 class _FakeMinerTransactionsCollection(_FakeKeyEventLogCollection):
@@ -2338,6 +2430,9 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
             "chain_code": bytes.fromhex(self._cc_hex()),
         }
         mgr._test_kel_depth = self.KEL_DEPTH if kel_depth is None else kel_depth
+        # Tests often advance many times in one second; keep rate guard off
+        # unless a test tightens it deliberately.
+        mgr.PEER_BRANCH_MAX_ADVANCES_PER_WINDOW = 100000
         return mgr
 
     def _patch_kel_depth(self, mgr):
@@ -2573,6 +2668,728 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         self.assertTrue(txn.hash)
         recomputed = await txn.generate_hash()
         self.assertEqual(recomputed, txn.hash)
+
+    async def test_peer_branch_advance_rate_limit_blocks_spam(self):
+        """Rate guard refuses minting keys when advances exceed the window cap."""
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        mgr.PEER_BRANCH_MAX_ADVANCES_PER_WINDOW = 3
+        mgr.PEER_BRANCH_ADVANCE_WINDOW_S = 3600
+        mgr.PEER_BRANCH_ALERT_COOLDOWN_S = 0
+        peer = "peer_rate_limit"
+
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            for _ in range(3):
+                await mgr.advance_peer_auth_ratchet(peer)
+            with self.assertRaises(NodeKeyRotationManager.PeerBranchAdvanceRateLimited):
+                await mgr.advance_peer_auth_ratchet(peer)
+            # Cooldown suppresses duplicate alert log
+            mgr.PEER_BRANCH_ALERT_COOLDOWN_S = 9999
+            with self.assertRaises(NodeKeyRotationManager.PeerBranchAdvanceRateLimited):
+                await mgr.advance_peer_auth_ratchet(peer)
+        self.assertGreaterEqual(
+            mgr._peer_branch_monitor_stats.get("advances_blocked", 0), 1
+        )
+        snap = await mgr.peer_branch_monitor_snapshot()
+        self.assertIn("limits", snap)
+        self.assertGreaterEqual(snap.get("total_peer_branch_docs", 0), 1)
+
+    async def test_peer_branch_size_and_checkpoint_limits(self):
+        """Doc / checkpoint caps refuse further advances."""
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        mgr.PEER_BRANCH_ALERT_COOLDOWN_S = 0
+        peer = "peer_size_cap"
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            await mgr.advance_peer_auth_ratchet(peer)
+        branch = await mgr.peer_branch_inception_public_key_hash(peer)
+        # Inflate doc count past max
+        kel = cfg.mongo.async_db.key_event_log
+        for i in range(mgr.PEER_BRANCH_MAX_DOCS_PER_PEER + 2):
+            kel.docs.append(
+                {
+                    "counter": 100 + i,
+                    "branch_inception_public_key_hash": branch,
+                    "branch_peer": peer,
+                    "public_key_hash": f"pkh{i}",
+                }
+            )
+        with self.assertRaises(NodeKeyRotationManager.PeerBranchAdvanceRateLimited):
+            await mgr._peer_branch_advance_guard(peer)
+
+        # Reset docs; inflate checkpoints
+        kel.docs = [d for d in kel.docs if d.get("counter", 0) < 100]
+        mgr.PEER_BRANCH_MAX_DOCS_PER_PEER = 100000
+        for i in range(mgr.PEER_BRANCH_MAX_CHECKPOINTS_PER_PEER + 2):
+            kel.docs.append(
+                {
+                    "counter": 200 + i,
+                    "branch_inception_public_key_hash": branch,
+                    "branch_peer": peer,
+                    "epoch_checkpoint": True,
+                    "public_key_hash": f"cp{i}",
+                }
+            )
+        with self.assertRaises(NodeKeyRotationManager.PeerBranchAdvanceRateLimited):
+            await mgr._peer_branch_advance_guard(peer)
+
+        # Alert list trim when > 50
+        mgr.PEER_BRANCH_ALERT_COOLDOWN_S = 0
+        for i in range(55):
+            mgr._peer_branch_alert(f"p{i}", f"msg{i}")
+        self.assertLessEqual(len(mgr._peer_branch_monitor_stats["alerts"]), 50)
+
+        # Snapshot oversize_peers + aggregate path
+        mgr.PEER_BRANCH_MAX_DOCS_PER_PEER = 1
+        mgr.PEER_BRANCH_MAX_CHECKPOINTS_PER_PEER = 1
+        snap = await mgr.peer_branch_monitor_snapshot()
+        self.assertTrue(snap.get("oversize_peers") or snap.get("max_docs_peer", 0) >= 1)
+
+        # Aggregate failure fallback (count still works)
+        def boom_agg(pipeline):
+            raise RuntimeError("no agg")
+
+        kel.aggregate = boom_agg
+        snap2 = await mgr.peer_branch_monitor_snapshot()
+        self.assertIn("error", snap2)
+
+        # Aggregate failure and count also fails
+        async def boom_count(filt=None):
+            raise RuntimeError("count fail")
+
+        orig_count = kel.count_documents
+        kel.count_documents = boom_count
+        snap2b = await mgr.peer_branch_monitor_snapshot()
+        self.assertIn("error", snap2b)
+        kel.count_documents = orig_count
+
+        # Aggregate ok but global count fails
+        def ok_agg(pipeline):
+            return _FakeFindCursor(
+                [
+                    {
+                        "_id": branch,
+                        "n": 5,
+                        "checkpoints": 3,
+                        "peer": peer,
+                    }
+                ]
+            )
+
+        kel.aggregate = ok_agg
+        kel.count_documents = boom_count
+        snap3 = await mgr.peer_branch_monitor_snapshot()
+        self.assertEqual(snap3.get("max_checkpoints_peer"), 3)
+        kel.count_documents = orig_count
+
+    async def test_multiple_advances_increment_epoch_len_and_counters(self):
+        """Resume must not stick on bridge tip and overwrite counter=1 forever."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        # Avoid rate-limit interaction with multi-advance tests.
+        mgr.PEER_BRANCH_MAX_ADVANCES_PER_WINDOW = 10000
+        peer = "peer_multi_advance"
+
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            for _ in range(5):
+                await mgr.advance_peer_auth_ratchet(peer)
+
+        state = mgr._peer_branches[peer]
+        self.assertEqual(state["epoch_len"], 5)
+        self.assertEqual(state["counter"], 5)
+        advances = [
+            d for d in cfg.mongo.async_db.key_event_log.docs if d.get("counter", 0) > 0
+        ]
+        counters = sorted(d["counter"] for d in advances)
+        self.assertEqual(counters, [1, 2, 3, 4, 5])
+
+        # Cold resume (clear memory) still sees tip counter 5.
+        mgr2 = self._make_mgr(cfg)
+        with self._patch_kel_depth(mgr2), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            st2, _ = await mgr2._ensure_peer_branch_ready(peer)
+        self.assertEqual(st2["counter"], 5)
+        self.assertEqual(st2["epoch_len"], 5)
+
+    async def test_prune_epoch_opens_after_interval_and_drops_old(self):
+        """Option A: checkpoint spine — first CP prev = bridge Kp0; intermediates
+        drop; second CP prev = first CP for verification after prune."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        # Tiny interval so the test does not mint 100 entries.
+        mgr.PEER_BRANCH_PRUNE_INTERVAL = 3
+        mgr.PEER_BRANCH_MAX_ADVANCES_PER_WINDOW = 10000
+        peer = "peer_prune_sig"
+
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            # 3 steps + CP1, then 3 steps + CP2
+            for _ in range(8):
+                await mgr.advance_peer_auth_ratchet(peer)
+
+        docs = cfg.mongo.async_db.key_event_log.docs
+        bridge = next(d for d in docs if d.get("counter") == 0)
+        self.assertEqual(bridge.get("branch_peer"), peer)
+        branch_pkh = bridge.get("branch_inception_public_key_hash") or bridge.get(
+            "public_key_hash"
+        )
+        checkpoints = sorted(
+            [d for d in docs if d.get("epoch_checkpoint")],
+            key=lambda d: d.get("counter") or 0,
+        )
+        self.assertEqual(len(checkpoints), 2)
+        cp1, cp2 = checkpoints[0], checkpoints[1]
+        self.assertEqual(int(cp1.get("prune_index") or 0), 1)
+        self.assertEqual(int(cp2.get("prune_index") or 0), 2)
+        # Spine: CP1 → bridge/Kp0, CP2 → CP1
+        cp1_prev = (cp1.get("txn") or {}).get("prev_public_key_hash") or ""
+        cp2_prev = (cp2.get("txn") or {}).get("prev_public_key_hash") or ""
+        self.assertEqual(cp1_prev, branch_pkh)
+        self.assertEqual(cp2_prev, cp1.get("public_key_hash"))
+        self.assertEqual(
+            (cp2.get("txn") or {}).get("checkpoint_spine_prev_pkh"),
+            cp1.get("public_key_hash"),
+        )
+        # Pre-checkpoint intermediates gone; current window tail may remain.
+        # After 8 steps with interval=3: … CP1 … CP2 + 1 plain tail.
+        plain = [
+            d for d in docs if d.get("counter", 0) > 0 and not d.get("epoch_checkpoint")
+        ]
+        self.assertLessEqual(len(plain), 3)
+        for d in plain:
+            self.assertEqual(int(d.get("prune_index") or 0), 2)
+        self.assertTrue(any(d.get("counter") == 0 for d in docs))
+
+    async def test_apply_remote_prune_index_monotonic(self):
+        """Remote prune_index may increase (and drop old rows) but never decrease."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        branch = "1BranchInceptionPkhXXXX"
+        kel = cfg.mongo.async_db.key_event_log
+        kel.docs = [
+            {
+                "counter": 0,
+                "branch_inception_public_key_hash": branch,
+                "public_key_hash": branch,
+                "prune_index": 0,
+            },
+            {
+                "counter": 1,
+                "branch_inception_public_key_hash": branch,
+                "public_key_hash": "A",
+                "prune_index": 0,
+            },
+            {
+                "counter": 2,
+                "branch_inception_public_key_hash": branch,
+                "public_key_hash": "B",
+                "prune_index": 0,
+            },
+        ]
+        # Increase to 1 → drop epoch-0 rows (keep bridge).
+        self.assertTrue(await mgr.apply_remote_prune_index(branch, 1))
+        self.assertEqual(
+            [d for d in kel.docs if d.get("counter", 0) > 0],
+            [],
+        )
+        self.assertTrue(any(d.get("counter") == 0 for d in kel.docs))
+        # Decrease rejected.
+        kel.docs.append(
+            {
+                "counter": 3,
+                "branch_inception_public_key_hash": branch,
+                "public_key_hash": "C",
+                "prune_index": 1,
+            }
+        )
+        self.assertFalse(await mgr.apply_remote_prune_index(branch, 0))
+        self.assertTrue(
+            any(d.get("prune_index") == 1 for d in kel.docs if d.get("counter", 0) > 0)
+        )
+
+    async def test_peer_branch_prune_index_helpers_and_edge_cases(self):
+        """Cover peer_branch_prune_index + apply_remote edge paths."""
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+
+        # No branch → 0
+        self.assertEqual(await mgr.peer_branch_prune_index("nobody"), 0)
+
+        # Cached bad prune_index falls through to DB
+        mgr._peer_branches["bad_cache"] = {"prune_index": "not-an-int"}
+        self.assertEqual(await mgr.peer_branch_prune_index("bad_cache"), 0)
+
+        # Cached good value
+        mgr._peer_branches["good_cache"] = {"prune_index": 7}
+        self.assertEqual(await mgr.peer_branch_prune_index("good_cache"), 7)
+
+        branch = "1CovBranch"
+        kel = cfg.mongo.async_db.key_event_log
+        kel.docs = [
+            {
+                "counter": 0,
+                "branch_inception_public_key_hash": branch,
+                "branch_peer": "peer_cov",
+                "public_key_hash": branch,
+                "prune_index": 0,
+            },
+            {
+                "counter": 1,
+                "branch_inception_public_key_hash": branch,
+                "public_key_hash": "T",
+                "prune_index": "bad",  # ValueError path on int()
+            },
+        ]
+        # peer_branch_inception from bridge
+        mgr._peer_branches.pop("peer_cov", None)
+        # find bridge by branch_peer
+        self.assertEqual(
+            await mgr.peer_branch_inception_public_key_hash("peer_cov"), branch
+        )
+        # tip has bad prune_index → return 0
+        self.assertEqual(await mgr.peer_branch_prune_index("peer_cov"), 0)
+
+        # apply_remote: invalid / negative / empty branch
+        self.assertFalse(await mgr.apply_remote_prune_index(branch, "x"))
+        self.assertFalse(await mgr.apply_remote_prune_index(branch, -1))
+        self.assertTrue(await mgr.apply_remote_prune_index("", 5))
+
+        # tip prune_index ValueError → local=0, then increase updates cache
+        kel.docs = [
+            {
+                "counter": 0,
+                "branch_inception_public_key_hash": branch,
+                "public_key_hash": branch,
+            },
+            {
+                "counter": 1,
+                "branch_inception_public_key_hash": branch,
+                "public_key_hash": "A",
+                "prune_index": "nope",
+            },
+        ]
+        mgr._peer_branches["peer_cov"] = {"prune_index": 0, "epoch_len": 3}
+        self.assertTrue(
+            await mgr.apply_remote_prune_index(branch, 2, branch_peer="peer_cov")
+        )
+        self.assertEqual(mgr._peer_branches["peer_cov"]["prune_index"], 2)
+        self.assertEqual(mgr._peer_branches["peer_cov"]["epoch_len"], 0)
+
+        # open epoch error paths
+        st = {
+            "prune_index": "bad",
+            "branch_inception_public_key_hash": branch,
+            "prev_pkh": "prev",
+        }
+        orig_del = kel.delete_many
+
+        async def boom_del(filt):
+            raise RuntimeError("delete fail")
+
+        kel.delete_many = boom_del
+        st2 = await mgr._open_peer_branch_epoch("peer_cov", st)
+        self.assertEqual(st2["prune_index"], 1)  # bad→0 then +1
+        self.assertEqual(st2["epoch_len"], 0)
+        kel.delete_many = orig_del
+
+        # update_one failure swallowed
+        async def boom_upd(filt, update, upsert=False):
+            raise RuntimeError("upd fail")
+
+        kel.update_one = boom_upd
+        st3 = await mgr._open_peer_branch_epoch(
+            "peer_cov",
+            {
+                "prune_index": 1,
+                "branch_inception_public_key_hash": branch,
+                "prev_pkh": "p",
+            },
+        )
+        self.assertEqual(st3["prune_index"], 2)
+
+        # static helpers
+        key = {
+            "private_key": bytes.fromhex(self.PRIV_HEX),
+            "chain_code": bytes.fromhex(self._cc_hex()),
+        }
+        addr = NodeKeyRotationManager._peer_branch_key_addr(key)
+        pub = NodeKeyRotationManager._peer_branch_key_pub_hex(key)
+        self.assertTrue(addr.startswith("1") or len(addr) >= 26)
+        self.assertEqual(pub, self.PUB_HEX)
+
+        # kp0 re-derive with root_depth
+        kel.docs = [
+            {
+                "counter": 0,
+                "branch_peer": "peer_cov",
+                "root_depth": 1,
+                "branch_inception_public_key_hash": branch,
+            }
+        ]
+        kp0 = await mgr._peer_branch_kp0_key("peer_cov", {})
+        self.assertIn("private_key", kp0)
+
+    async def test_get_peer_auth_keys_rotate_and_tip_paths(self):
+        """get_peer_auth_keys rotate=True and read-only tip paths."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        peer = "peer_auth_keys"
+
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            # rotate=True delegates to advance
+            r1 = await mgr.get_peer_auth_keys(peer, rotate=True)
+            self.assertEqual(len(r1), 6)
+            self.assertTrue(r1[0])  # priv hex
+
+            # read-only after tip exists (counter>0)
+            await mgr.advance_peer_auth_ratchet(peer)
+            r2 = await mgr.get_peer_auth_keys(peer, rotate=False)
+            self.assertEqual(len(r2), 6)
+            self.assertFalse(r2[5])  # not new branch
+
+            # root-only: clear advances, leave bridge; force tip counter 0 path
+            kel = cfg.mongo.async_db.key_event_log
+            kel.docs = [d for d in kel.docs if d.get("counter") == 0]
+            mgr._peer_branches.pop(peer, None)
+            r3 = await mgr.get_peer_auth_keys(peer, rotate=False)
+            self.assertEqual(len(r3), 6)
+
+            # bad prune_index on state → except path
+            st, _ = await mgr._ensure_peer_branch_ready(peer)
+            st["prune_index"] = "x"
+            st["epoch_len"] = "y"
+            # advance with bad epoch_len coerces to 0
+            await mgr.advance_peer_auth_ratchet(peer)
+
+            # unmatched tip → fallback advance
+            async def fake_tip_unmatch(b, prune_index=None):
+                return {
+                    "counter": 3,
+                    "public_key_hash": "1UnmatchableTipPkhXXXXXXXXXXXXXX",
+                    "prerotated_key_hash": "1Pre",
+                    "branch_inception_public_key_hash": b,
+                    "txn": {
+                        "public_key_hash": "1UnmatchableTipPkhXXXXXXXXXXXXXX",
+                        "prerotated_key_hash": "1Pre",
+                    },
+                }
+
+            mgr._peer_branch_tip_by_hash_link = fake_tip_unmatch
+            with self._patch_kel_depth(mgr), patch(
+                "yadacoin.core.transaction.Config", return_value=cfg
+            ):
+                r4 = await mgr.get_peer_auth_keys(peer, rotate=False)
+            self.assertEqual(len(r4), 6)
+
+            # tip_pre mismatch warning: match tip pkh but wrong prerotated
+            mgr2 = self._make_mgr(cfg)
+            with self._patch_kel_depth(mgr2), patch(
+                "yadacoin.core.transaction.Config", return_value=cfg
+            ):
+                await mgr2.advance_peer_auth_ratchet(peer + "_pre")
+                await mgr2.advance_peer_auth_ratchet(peer + "_pre")
+
+            real_tip_fn = mgr2._peer_branch_tip_by_hash_link
+
+            async def tip_bad_pre(b, prune_index=None):
+                real = await real_tip_fn(b, prune_index=prune_index)
+                if real:
+                    real = dict(real)
+                    real["prerotated_key_hash"] = "1WrongPreRotatedXXXXXXXXXXXXXX"
+                    if real.get("txn"):
+                        real["txn"] = dict(real["txn"])
+                        real["txn"][
+                            "prerotated_key_hash"
+                        ] = "1WrongPreRotatedXXXXXXXXXXXXXX"
+                return real
+
+            mgr2._peer_branch_tip_by_hash_link = tip_bad_pre
+            r5 = await mgr2.get_peer_auth_keys(peer + "_pre", rotate=False)
+            self.assertEqual(len(r5), 6)
+
+    async def test_remaining_prune_and_auth_edge_coverage(self):
+        """Hit remaining exception / empty-filter / reachability branches."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        kel = cfg.mongo.async_db.key_event_log
+        branch = "1EdgeBranch"
+
+        # peer_branch_prune_index: tip with prune_index missing → 0
+        kel.docs = [
+            {
+                "counter": 0,
+                "branch_peer": "edge_peer",
+                "branch_inception_public_key_hash": branch,
+                "public_key_hash": branch,
+            },
+            {
+                "counter": 1,
+                "branch_inception_public_key_hash": branch,
+                "public_key_hash": "T",
+                # no prune_index key
+            },
+        ]
+        mgr._peer_branches.pop("edge_peer", None)
+        self.assertEqual(await mgr.peer_branch_prune_index("edge_peer"), 0)
+
+        # tip_by_hash_link empty after filter (wrong prune epoch only)
+        kel.docs = [
+            {
+                "counter": 1,
+                "branch_inception_public_key_hash": branch,
+                "public_key_hash": "X",
+                "prune_index": 9,
+                "txn": {"prev_public_key_hash": "Y", "public_key_hash": "X"},
+            }
+        ]
+        self.assertIsNone(
+            await mgr._peer_branch_tip_by_hash_link(branch, prune_index=0)
+        )
+
+        # reachability growth: bridge + same-pkh later advance
+        kel.docs = [
+            {
+                "id": "br",
+                "counter": 0,
+                "branch_inception_public_key_hash": branch,
+                "public_key_hash": branch,
+                "prerotated_key_hash": "N1",
+                "txn": {
+                    "public_key_hash": branch,
+                    "prerotated_key_hash": "N1",
+                    "prev_public_key_hash": "",
+                },
+            },
+            {
+                "id": "a1",
+                "counter": 1,
+                "branch_inception_public_key_hash": branch,
+                "public_key_hash": branch,  # same pkh as bridge
+                "prerotated_key_hash": "N2",
+                "prune_index": 0,
+                "txn": {
+                    "public_key_hash": branch,
+                    "prerotated_key_hash": "N2",
+                    "prev_public_key_hash": "other",
+                },
+            },
+            {
+                "id": "a2",
+                "counter": 2,
+                "branch_inception_public_key_hash": branch,
+                "public_key_hash": branch,
+                "prerotated_key_hash": "N3",
+                "prune_index": 0,
+                "txn": {
+                    "public_key_hash": branch,
+                    "prerotated_key_hash": "N3",
+                    "prev_public_key_hash": "other2",
+                },
+            },
+        ]
+        tip = await mgr._peer_branch_tip_by_hash_link(branch)
+        self.assertEqual(tip["id"], "a2")
+
+        # _peer_branch_kp0_key when _k0 missing
+        mgr._k0 = None
+        with self.assertRaises(RuntimeError):
+            await mgr._peer_branch_kp0_key("edge_peer", {})
+        mgr._k0 = {
+            "private_key": bytes.fromhex(self.PRIV_HEX),
+            "chain_code": bytes.fromhex(self._cc_hex()),
+        }
+
+        # get_peer_auth_keys: bad prune_index + bad tip counter + tip_pkh mismatch
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            await mgr.advance_peer_auth_ratchet("edge_auth")
+        st = mgr._peer_branches["edge_auth"]
+        st["prune_index"] = object()
+        real_tip = await mgr._peer_branch_tip_by_hash_link(
+            st["branch_inception_public_key_hash"]
+        )
+
+        async def tip_weird(b, prune_index=None):
+            t = dict(real_tip) if real_tip else {"public_key_hash": "Z", "counter": 0}
+            t["counter"] = object()  # int() fails
+            t["public_key_hash"] = "1NotMatchingSignKeyXXXXXXXXXXXX"
+            return t
+
+        mgr._peer_branch_tip_by_hash_link = tip_weird
+        r = await mgr.get_peer_auth_keys("edge_auth", rotate=False)
+        self.assertEqual(len(r), 6)
+
+        # advance: checkpoint path with PEER_BRANCH_PRUNE_INTERVAL=1
+        mgr3 = self._make_mgr(cfg)
+        with self._patch_kel_depth(mgr3), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            await mgr3.advance_peer_auth_ratchet("edge_epoch")
+        mgr3.PEER_BRANCH_PRUNE_INTERVAL = 1
+        st3 = mgr3._peer_branches["edge_epoch"]
+        st3["epoch_len"] = 1  # next advance is checkpoint
+        with self._patch_kel_depth(mgr3), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ):
+            await mgr3.advance_peer_auth_ratchet("edge_epoch")
+        self.assertEqual(mgr3._peer_branches["edge_epoch"]["epoch_len"], 1)
+        self.assertGreaterEqual(
+            int(mgr3._peer_branches["edge_epoch"].get("prune_index") or 0), 1
+        )
+        cps = [
+            d
+            for d in cfg.mongo.async_db.key_event_log.docs
+            if d.get("branch_peer") == "edge_epoch" and d.get("epoch_checkpoint")
+        ]
+        self.assertTrue(cps)
+
+        # _prune_peer_branch_intermediates edge paths
+        await mgr._prune_peer_branch_intermediates("x", "", "id", 1)  # empty branch
+        kel = cfg.mongo.async_db.key_event_log
+
+        async def boom_del(filt):
+            raise RuntimeError("del fail")
+
+        async def boom_upd(filt, update, upsert=False):
+            raise RuntimeError("upd fail")
+
+        kel.delete_many = boom_del
+        kel.update_one = boom_upd
+        await mgr._prune_peer_branch_intermediates("edge_peer", branch, "keep", 2)
+
+        # prior checkpoint lookup: empty branch + DB hit without cache
+        self.assertEqual(
+            await mgr._peer_branch_prior_checkpoint_pkh("", {}),
+            "",
+        )
+        kel.docs = [
+            {
+                "counter": 5,
+                "branch_inception_public_key_hash": "brSpine",
+                "epoch_checkpoint": True,
+                "public_key_hash": "1SpineTipXXXXXXXXXXXXXXXXXXXXXX",
+            }
+        ]
+        self.assertEqual(
+            await mgr._peer_branch_prior_checkpoint_pkh("brSpine", {}),
+            "1SpineTipXXXXXXXXXXXXXXXXXXXXXX",
+        )
+
+    async def test_tip_by_hash_link_bad_prune_and_orphan_advances(self):
+        """Cover prune_index ValueError and orphan-advance last resort."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        kel = cfg.mongo.async_db.key_event_log
+        # bad prune_index on top doc → coerce to 0, still find advances
+        kel.docs = [
+            {
+                "id": "bridge",
+                "counter": 0,
+                "branch_inception_public_key_hash": "br2",
+                "public_key_hash": "br2",
+                "prerotated_key_hash": "P",
+                "prune_index": 0,
+                "txn": {
+                    "public_key_hash": "br2",
+                    "prerotated_key_hash": "P",
+                    "prev_public_key_hash": "",
+                },
+            },
+            {
+                "id": "adv",
+                "counter": 1,
+                "branch_inception_public_key_hash": "br2",
+                "public_key_hash": "P",
+                "prerotated_key_hash": "Q",
+                "prune_index": "nope",
+                "txn": {
+                    "public_key_hash": "P",
+                    "prerotated_key_hash": "Q",
+                    "prev_public_key_hash": "br2",
+                },
+            },
+        ]
+        tip = await mgr._peer_branch_tip_by_hash_link("br2")
+        self.assertIsNotNone(tip)
+        self.assertEqual(tip["id"], "adv")
+
+        # orphan advances (no bridge, prev not linking) → last-resort max
+        kel.docs = [
+            {
+                "id": "o1",
+                "counter": 1,
+                "branch_inception_public_key_hash": "br3",
+                "public_key_hash": "O1",
+                "prerotated_key_hash": "O2",
+                "prune_index": 0,
+                "txn": {
+                    "public_key_hash": "O1",
+                    "prerotated_key_hash": "O2",
+                    "prev_public_key_hash": "ZZZ",
+                },
+            },
+            {
+                "id": "o2",
+                "counter": 5,
+                "branch_inception_public_key_hash": "br3",
+                "public_key_hash": "O9",
+                "prerotated_key_hash": "O0",
+                "prune_index": 0,
+                "txn": {
+                    "public_key_hash": "O9",
+                    "prerotated_key_hash": "O0",
+                    "prev_public_key_hash": "YYY",
+                },
+            },
+        ]
+        tip2 = await mgr._peer_branch_tip_by_hash_link("br3")
+        self.assertEqual(tip2["id"], "o2")
+
+        # resume with bad tip prune_index
+        kel.docs = [
+            {
+                "counter": 0,
+                "branch_peer": "peer_resume_bad",
+                "branch_inception_public_key_hash": "br4",
+                "public_key_hash": "br4",
+                "root_depth": 0,
+                "prune_index": 0,
+            },
+            {
+                "counter": 2,
+                "branch_inception_public_key_hash": "br4",
+                "public_key_hash": "T2",
+                "prerotated_key_hash": "T3",
+                "prune_index": object(),  # int() fails
+                "txn": {
+                    "public_key_hash": "T2",
+                    "prerotated_key_hash": "T3",
+                    "prev_public_key_hash": "br4",
+                },
+            },
+        ]
+        # Need matching key material - tip may not match Kp0 walk; still exercises except
+        with self._patch_kel_depth(mgr):
+            st, is_new = await mgr._ensure_peer_branch_ready("peer_resume_bad")
+        self.assertFalse(is_new)
+        self.assertIn("epoch_len", st)
 
     async def test_peer_branches_are_isolated(self):
         """Entries written for peer A must never appear in peer B's branch
@@ -3169,7 +3986,7 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         tip = await mgr._peer_branch_tip_by_hash_link("cyc")
         self.assertIn(tip["id"], ("a", "b"))
 
-        # No empty-prev roots — fall back to min counter
+        # No empty-prev roots — orphan cluster prefers max counter (resume tip)
         kel.docs = [
             {
                 "id": "m1",
@@ -3189,7 +4006,7 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
             },
         ]
         tip = await mgr._peer_branch_tip_by_hash_link("nr")
-        self.assertEqual(tip["id"], "m0")
+        self.assertEqual(tip["id"], "m1")
 
         # Bad counter field exercises _ctr except path (prev set so
         # short-circuit does not skip _ctr in the roots filter).

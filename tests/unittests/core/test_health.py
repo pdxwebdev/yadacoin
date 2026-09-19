@@ -28,6 +28,7 @@ from yadacoin.core.health import (
     MessageSenderHealth,
     NodeTesterHealth,
     NonceProcessorHealth,
+    PeerBranchHealth,
     PeerHealth,
     PoolPayerHealth,
     TCPClientHealth,
@@ -438,6 +439,74 @@ class TestHealthCheckFailurePath(HealthTestCase):
         result = await h.check_health()
         self.assertTrue(result)
         mock_item.reset.assert_not_called()
+
+
+class TestPeerBranchHealth(HealthTestCase):
+    async def test_peer_branch_health_ok_with_snapshot(self):
+        h = PeerBranchHealth()
+        snap = {
+            "total_peer_branch_docs": 10,
+            "oversize_peers": [],
+            "advances_blocked": 0,
+            "limits": {"max_total_docs": 20000},
+        }
+        h.config.kel_manager = MagicMock()
+        h.config.kel_manager.peer_branch_monitor_snapshot = AsyncMock(return_value=snap)
+        result = await h.check_health()
+        self.assertTrue(result)
+        self.assertEqual(h.last_snapshot["total_peer_branch_docs"], 10)
+        d = h.to_dict()
+        self.assertIn("snapshot", d)
+
+    async def test_peer_branch_health_fails_on_total_oversize(self):
+        h = PeerBranchHealth()
+        snap = {
+            "total_peer_branch_docs": 50000,
+            "oversize_peers": [{"peer": "x", "docs": 500, "branch": "b"}],
+            "advances_blocked": 0,
+            "limits": {"max_total_docs": 20000},
+        }
+        h.config.kel_manager = MagicMock()
+        h.config.kel_manager.peer_branch_monitor_snapshot = AsyncMock(return_value=snap)
+        h.config.app_log = MagicMock()
+        result = await h.check_health()
+        self.assertFalse(result)
+
+    async def test_peer_branch_health_warns_on_blocked_advances(self):
+        h = PeerBranchHealth()
+        snap = {
+            "total_peer_branch_docs": 10,
+            "oversize_peers": [],
+            "advances_blocked": 3,
+            "limits": {"max_total_docs": 20000},
+        }
+        h.config.kel_manager = MagicMock()
+        h.config.kel_manager.peer_branch_monitor_snapshot = AsyncMock(return_value=snap)
+        h.config.app_log = MagicMock()
+        result = await h.check_health()
+        self.assertTrue(result)
+        h.config.app_log.warning.assert_called()
+
+    async def test_peer_branch_health_snapshot_exception(self):
+        h = PeerBranchHealth()
+        h.config.kel_manager = MagicMock()
+        h.config.kel_manager.peer_branch_monitor_snapshot = AsyncMock(
+            side_effect=RuntimeError("snap fail")
+        )
+        h.config.app_log = MagicMock()
+        result = await h.check_health()
+        self.assertFalse(result)
+
+    async def test_peer_branch_health_no_manager_ignored(self):
+        h = PeerBranchHealth()
+        h.config.kel_manager = None
+        result = await h.check_health()
+        self.assertTrue(result)
+        self.assertTrue(h.ignore)
+
+    async def test_health_includes_peer_branch_item(self):
+        h = Health()
+        self.assertTrue(any(isinstance(x, PeerBranchHealth) for x in h.health_items))
 
 
 if __name__ == "__main__":

@@ -56,6 +56,13 @@ def _make_config():
     config.kel_manager.advance_peer_auth_ratchet = AsyncMock(
         return_value=("default_priv", "default_pub", None, None, "default_tpkh", False)
     )
+    # Reconnects use tip keys without advancing (sign-once tip reuse).
+    config.kel_manager.get_peer_auth_keys = AsyncMock(
+        return_value=("default_priv", "default_pub", None, None, "default_tpkh", False)
+    )
+    config.kel_manager.peer_branch_prune_index = AsyncMock(return_value=0)
+    config.kel_manager.apply_remote_prune_index = AsyncMock(return_value=True)
+    config.kel_manager._peer_branch_tip_by_hash_link = AsyncMock(return_value=None)
     # Peer-branch anchor lookup — returns falsy by default so ratchet_chain
     # delta building takes the "no anchor" short-circuit, matching the
     # pre-branching tests' expectation of an empty chain by default.
@@ -506,6 +513,85 @@ class TestProcessRatchetAuthEmptyChain(AsyncTestCase):
         call_kwargs = rpc.remove_peer.call_args
         self.assertIn("no KEL inception", call_kwargs[1].get("reason", ""))
 
+    async def test_empty_chain_authorizes_from_stored_tip(self):
+        """Tip-only reconnect: empty ratchet_chain still auths if tip is on disk."""
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        rpc = _make_rpc()
+        stream = _make_stream()
+        rpc.remove_peer = AsyncMock(return_value=None)
+
+        pub = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+        conf_pub = "03fff97bd5755eeea420453a14355235d382f6472f8568a18b2f057a1460297556"
+        sign_pkh = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub)))
+        conf_pkh = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(conf_pub)))
+        tip_txn = {
+            "id": "tip-sig",
+            "public_key": pub,
+            "public_key_hash": sign_pkh,
+            "prerotated_key_hash": conf_pkh,
+            "prev_public_key_hash": "1Parent",
+            "hash": "ab" * 32,
+            "inputs": [],
+            "outputs": [{"to": conf_pkh, "value": 0}],
+            "fee": 0,
+            "time": 1,
+            "version": 7,
+        }
+        tip_doc = {
+            "counter": 1,
+            "branch_inception_public_key_hash": "1BranchRoot",
+            "public_key_hash": sign_pkh,
+            "prerotated_key_hash": conf_pkh,
+            "public_key": pub,
+            "txn": tip_txn,
+        }
+
+        async def _find_one(query, *args, **kwargs):
+            if query.get("public_key_hash") == sign_pkh:
+                return tip_doc
+            if query.get("branch_inception_public_key_hash") == "1BranchRoot":
+                return tip_doc
+            return None
+
+        rpc.config.mongo.async_db.key_event_log.find_one = AsyncMock(
+            side_effect=_find_one
+        )
+
+        tip_txn_obj = MagicMock()
+        tip_txn_obj.public_key_hash = sign_pkh
+        tip_txn_obj.prerotated_key_hash = conf_pkh
+        tip_txn_obj.public_key = pub
+        tip_txn_obj.prev_public_key_hash = "1Parent"
+        tip_txn_obj.transaction_signature = "tip-sig"
+        tip_txn_obj.to_dict = MagicMock(return_value=tip_txn)
+        ke = MagicMock()
+        ke.txn = tip_txn_obj
+
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username",
+            new_callable=AsyncMock,
+            return_value={"public_key": pub},
+        ), patch(
+            "yadacoin.core.transaction.Transaction.verify",
+            new_callable=AsyncMock,
+        ), patch(
+            "yadacoin.core.transaction.Transaction.from_dict",
+            return_value=tip_txn_obj,
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEvent",
+            return_value=ke,
+        ):
+            result = await rpc._process_ratchet_auth(
+                stream,
+                ratchet_chain=[],
+                ratchet_public_key=pub,
+                confirming_public_key=conf_pub,
+            )
+
+        self.assertIsNotNone(result)
+        rpc.remove_peer.assert_not_awaited()
+
 
 def _fix_key_event_log_find_chain(rpc):
     """The shared _make_config() mock's find().sort().to_list() chain is
@@ -753,6 +839,9 @@ class TestHandleKelConnect(AsyncTestCase):
         rpc.config.kel_manager.advance_peer_auth_ratchet = AsyncMock(
             return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
         )
+        rpc.config.kel_manager.get_peer_auth_keys = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
+        )
 
         with patch(
             "yadacoin.tcpsocket.node.SessionCipher.generate_keypair",
@@ -800,6 +889,9 @@ class TestHandleKelConnect(AsyncTestCase):
         )
         _auth_priv, _auth_pub = _real_keys()
         rpc.config.kel_manager.advance_peer_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
+        )
+        rpc.config.kel_manager.get_peer_auth_keys = AsyncMock(
             return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
         )
 
@@ -853,6 +945,9 @@ class TestHandleKelConnect(AsyncTestCase):
         )
         _auth_priv, _auth_pub = _real_keys()
         rpc.config.kel_manager.advance_peer_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
+        )
+        rpc.config.kel_manager.get_peer_auth_keys = AsyncMock(
             return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
         )
 
@@ -1072,6 +1167,9 @@ class TestRequestSig(AsyncTestCase):
         rpc.config.kel_manager.advance_peer_auth_ratchet = AsyncMock(
             return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
         )
+        rpc.config.kel_manager.get_peer_auth_keys = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
+        )
         await rpc.request_sig(body=body, stream=stream)
 
         rpc.remove_peer.assert_awaited_once()
@@ -1113,6 +1211,9 @@ class TestRequestSig(AsyncTestCase):
         )
 
         rpc.config.kel_manager.advance_peer_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
+        )
+        rpc.config.kel_manager.get_peer_auth_keys = AsyncMock(
             return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
         )
         with patch(
@@ -1158,6 +1259,9 @@ class TestRequestSig(AsyncTestCase):
         rpc._process_ratchet_auth = AsyncMock(return_value=None)
 
         rpc.config.kel_manager.advance_peer_auth_ratchet = AsyncMock(
+            return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
+        )
+        rpc.config.kel_manager.get_peer_auth_keys = AsyncMock(
             return_value=(_auth_priv, _auth_pub, None, None, "tpkh", False)
         )
         with patch(
@@ -1481,6 +1585,9 @@ class TestPeerBranchRatchetDelta(AsyncTestCase):
                 },
             },
         ]
+        by_pkh = {}
+        for d in docs:
+            by_pkh.setdefault(d["public_key_hash"], []).append(d)
 
         class _Cursor:
             def __init__(self, items):
@@ -1489,15 +1596,66 @@ class TestPeerBranchRatchetDelta(AsyncTestCase):
             async def to_list(self, length=None):
                 return list(self._items)
 
-        rpc.config.mongo.async_db.key_event_log.find = MagicMock(
-            return_value=_Cursor(docs)
+        # Tag epoch 0 on all docs (active prune window).
+        for d in docs:
+            d.setdefault("prune_index", 0)
+
+        async def _find_one(query, *args, **kwargs):
+            pkh = query.get("public_key_hash")
+            if pkh and pkh in by_pkh:
+                return max(by_pkh[pkh], key=lambda x: x.get("counter") or 0)
+            # prune_index resolution / tip probes
+            if query.get("counter") == {"$gt": 0} or (
+                isinstance(query.get("counter"), dict)
+                and "$gt" in (query.get("counter") or {})
+            ):
+                active = [d for d in docs if d.get("counter", 0) > 0]
+                if active:
+                    return max(
+                        active,
+                        key=lambda x: (
+                            x.get("prune_index") or 0,
+                            x.get("counter") or 0,
+                        ),
+                    )
+            return None
+
+        def _find(query, *args, **kwargs):
+            pkh = query.get("public_key_hash")
+            if pkh and pkh in by_pkh:
+                return _Cursor(by_pkh[pkh])
+            return _Cursor([])
+
+        rpc.config.mongo.async_db.key_event_log.find_one = AsyncMock(
+            side_effect=_find_one
+        )
+        rpc.config.mongo.async_db.key_event_log.find = MagicMock(side_effect=_find)
+        rpc.config.kel_manager._peer_branch_tip_by_hash_link = AsyncMock(
+            return_value=docs[2]
         )
 
+        # Epoch wire chain excludes permanent bridge (counter 0).
         full = await rpc._peer_branch_ratchet_delta(branch, tip_pkh="C")
-        self.assertEqual([t["id"] for t in full], ["root", "mid", "tip"])
+        self.assertEqual([t["id"] for t in full], ["mid", "tip"])
 
         delta = await rpc._peer_branch_ratchet_delta(branch, after_pkh="B", tip_pkh="C")
         self.assertEqual([t["id"] for t in delta], ["tip"])
+
+        # Caps + meta: truncated gap reports eof=False
+        short, eof, tip, pidx = await rpc._peer_branch_ratchet_delta(
+            branch, tip_pkh="C", limit=1, return_meta=True
+        )
+        self.assertEqual([t["id"] for t in short], ["tip"])
+        self.assertFalse(eof)
+        self.assertEqual(tip, "C")
+        self.assertEqual(pidx, 0)
+
+        # Already at tip → empty delta, eof
+        empty, eof2, _, _ = await rpc._peer_branch_ratchet_delta(
+            branch, after_pkh="C", tip_pkh="C", return_meta=True
+        )
+        self.assertEqual(empty, [])
+        self.assertTrue(eof2)
 
 
 class TestAcceptPeerKelChainCoinbase(AsyncTestCase):

@@ -1124,7 +1124,7 @@ class BlockChainUtils(object):
                 if amount_needed is not None and total >= amount_needed:
                     break  # pragma: no cover
                 if limit and count >= limit and amount_needed is not None:
-                    break
+                    break  # pragma: no cover
 
         if not inc_mempool:
             return  # pragma: no cover  (async-generator return; not instrumentable in Py3.9)

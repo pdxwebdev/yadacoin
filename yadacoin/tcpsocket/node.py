@@ -346,28 +346,11 @@ class NodeRPC(BaseRPC):
             seen.add(tid)
             out.append(raw)
 
-        # Peer already has a tip of our chain — send only successors.
+        # Peer already has a tip of our chain.  Do NOT full-walk the KEL.
+        # Handshake only needs pending mempool + optional anchor; catch-up of
+        # long on-chain history is block sync, not connect payload.
         if latest_kel_pkh:
-            try:
-                kel = await KeyEventLog.build_from_public_key(k0_pub)
-            except Exception as exc:
-                self.config.app_log.debug(
-                    "_get_kel_chain_for_peer: KEL build error: %s", exc
-                )
-                kel = None
-            if kel:
-                found = False
-                for ke in kel:
-                    pkh = getattr(ke, "public_key_hash", None) or ""
-                    if not found:
-                        if pkh == latest_kel_pkh:
-                            found = True
-                        continue
-                    _append_txn(ke)
-                if found:
-                    return out
-                # Unknown tip — fall through to compact anchor rather than
-                # dumping the entire history (peer may be on a fork/stale).
+            return out
 
         if need_anchor:
             try:
@@ -682,149 +665,257 @@ class NodeRPC(BaseRPC):
                 await self._purge_mempool_txn(txn)
                 await self._purge_peer_kel_cache_txn(txn)
 
+    # Max ratchet txns on the handshake hot path. Larger gaps use chunked
+    # branch_sync_* after tips are advertised — never a full dump.
+    PEER_BRANCH_HANDSHAKE_DELTA_LIMIT = 32
+    PEER_BRANCH_SYNC_CHUNK = 32
+    # Must match NodeKeyRotationManager.PEER_BRANCH_PRUNE_INTERVAL.
+    PEER_BRANCH_PRUNE_INTERVAL = 100
+
+    @staticmethod
+    def _branch_doc_pkh(d):
+        return (
+            (d or {}).get("public_key_hash")
+            or ((d or {}).get("txn") or {}).get("public_key_hash")
+            or ""
+        )
+
+    @staticmethod
+    def _branch_doc_pre(d):
+        return (
+            (d or {}).get("prerotated_key_hash")
+            or ((d or {}).get("txn") or {}).get("prerotated_key_hash")
+            or ""
+        )
+
+    @staticmethod
+    def _branch_doc_prev(d):
+        return (
+            ((d or {}).get("txn") or {}).get("prev_public_key_hash")
+            or (d or {}).get("prev_public_key_hash")
+            or ""
+        )
+
+    @staticmethod
+    def _branch_doc_ctr(d):
+        try:
+            return int((d or {}).get("counter") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    async def _peer_branch_parent_doc(self, branch_inception_pkh: str, child_doc):
+        """Parent of *child_doc* via prev_public_key_hash (one indexed read)."""
+        prev_pkh = self._branch_doc_prev(child_doc)
+        if not prev_pkh:
+            return None
+        child_pkh = self._branch_doc_pkh(child_doc)
+        # Prefer parent whose prerotated points at child.
+        cursor = self.config.mongo.async_db.key_event_log.find(
+            {
+                "branch_inception_public_key_hash": branch_inception_pkh,
+                "public_key_hash": prev_pkh,
+            },
+            {"_id": 0},
+        )
+        cands = await cursor.to_list(length=8)
+        if not cands:
+            return None
+        for cand in cands:
+            if self._branch_doc_pre(cand) == child_pkh:
+                return cand
+        return max(cands, key=self._branch_doc_ctr)
+
+    async def _peer_branch_child_doc(self, branch_inception_pkh: str, parent_doc):
+        """Child of *parent_doc* via prerotated_key_hash (one indexed read)."""
+        next_pkh = self._branch_doc_pre(parent_doc)
+        if not next_pkh:
+            return None
+        parent_pkh = self._branch_doc_pkh(parent_doc)
+        cursor = self.config.mongo.async_db.key_event_log.find(
+            {
+                "branch_inception_public_key_hash": branch_inception_pkh,
+                "public_key_hash": next_pkh,
+            },
+            {"_id": 0},
+        )
+        cands = await cursor.to_list(length=8)
+        if not cands:
+            return None
+        for cand in cands:
+            if self._branch_doc_prev(cand) == parent_pkh:
+                return cand
+        return max(cands, key=self._branch_doc_ctr)
+
+    async def _peer_branch_doc_by_pkh(
+        self, branch_inception_pkh: str, pkh: str, prune_index: int = None
+    ):
+        """Load one branch doc by public_key_hash (prefer highest counter)."""
+        if not branch_inception_pkh or not pkh:
+            return None
+        q = {
+            "branch_inception_public_key_hash": branch_inception_pkh,
+            "public_key_hash": pkh,
+        }
+        if prune_index is not None:
+            q["$or"] = [
+                {"prune_index": prune_index},
+                {"counter": 0},
+            ]
+            if prune_index == 0:
+                q["$or"].append({"prune_index": {"$exists": False}})
+        return await self.config.mongo.async_db.key_event_log.find_one(
+            q,
+            {"_id": 0},
+            sort=[("counter", -1)],
+        )
+
     async def _peer_branch_ratchet_delta(
         self,
         branch_inception_pkh: str,
         after_pkh: str = "",
         tip_pkh: str = "",
-    ) -> list:
-        """Ordered peer-branch ratchet txns by hash-link (not counter).
+        limit: int = None,
+        return_meta: bool = False,
+        prune_index: int = None,
+    ):
+        """Ordered peer-branch ratchet txns — successors after *after_pkh* only.
 
-        Corrupted / renumbered counters previously dropped the current signing
-        tip from handshake deltas (sign matched tip_pre of an older entry).
-        Walk ``prev_public_key_hash`` / ``prerotated_key_hash`` instead.
+        Scoped to a single *prune_index* epoch (≤ PRUNE_INTERVAL entries).
+        Does **not** load the full branch history.  Caps output at *limit*;
+        larger gaps use :meth:`branch_sync_request`.
 
-        *after_pkh*: peer already has this tip — successors only (exclusive).
-        *tip_pkh*: prefer this address as tip (usually addr of signing key).
+        When *return_meta* is True returns
+        ``(txns, eof, resolved_tip_pkh, prune_index)``.
         """
+        if limit is None:
+            limit = self.PEER_BRANCH_HANDSHAKE_DELTA_LIMIT
         if not branch_inception_pkh:
-            return []
-        cursor = self.config.mongo.async_db.key_event_log.find(
-            {"branch_inception_public_key_hash": branch_inception_pkh},
-            {"_id": 0},
-        )
-        docs = await cursor.to_list(length=None)
-        if not docs:
-            return []
+            empty = ([], True, "", 0)
+            return empty if return_meta else []
 
-        def _pkh(d):
-            return (
-                d.get("public_key_hash")
-                or (d.get("txn") or {}).get("public_key_hash")
-                or ""
+        if prune_index is None:
+            top = await self.config.mongo.async_db.key_event_log.find_one(
+                {
+                    "branch_inception_public_key_hash": branch_inception_pkh,
+                    "counter": {"$gt": 0},
+                },
+                sort=[("prune_index", -1)],
+                projection={"prune_index": 1},
             )
-
-        def _pre(d):
-            return (
-                d.get("prerotated_key_hash")
-                or (d.get("txn") or {}).get("prerotated_key_hash")
-                or ""
-            )
-
-        def _prev(d):
-            return (d.get("txn") or {}).get("prev_public_key_hash") or ""
-
-        def _ctr(d):
-            try:
-                return int(d.get("counter") or 0)
-            except Exception:
-                return 0
-
-        by_pkh = {}
-        for d in docs:
-            p = _pkh(d)
-            if p:
-                by_pkh.setdefault(p, []).append(d)
+            if top and top.get("prune_index") is not None:
+                try:
+                    prune_index = int(top["prune_index"])
+                except (TypeError, ValueError):
+                    prune_index = 0
+            else:
+                prune_index = 0
 
         tip_doc = None
-        if tip_pkh and tip_pkh in by_pkh:
-            tip_doc = max(by_pkh[tip_pkh], key=_ctr)
-
+        if tip_pkh:
+            tip_doc = await self._peer_branch_doc_by_pkh(
+                branch_inception_pkh, tip_pkh, prune_index=prune_index
+            )
         if tip_doc is None:
-            roots = [d for d in docs if not _prev(d) or _ctr(d) == 0]
-            if not roots:
-                roots = [min(docs, key=_ctr)]
-            best, best_depth = None, -1
-            for root in roots:
-                cur, depth, seen = root, 0, set()
-                while cur is not None:
-                    depth += 1
-                    cid = cur.get("id") or id(cur)
-                    if cid in seen:
-                        break
-                    seen.add(cid)
-                    nxt_pkh = _pre(cur)
-                    nxt = None
-                    if nxt_pkh and nxt_pkh in by_pkh:
-                        cur_pkh = _pkh(cur)
-                        cur_id = cur.get("id")
-                        for cand in by_pkh[nxt_pkh]:
-                            if cand is cur or (
-                                cur_id and cand.get("id") and cand.get("id") == cur_id
-                            ):
-                                continue
-                            if _prev(cand) == cur_pkh:
-                                nxt = cand
-                                break
-                        if nxt is None:
-                            for cand in by_pkh[nxt_pkh]:
-                                if cand is cur or (
-                                    cur_id
-                                    and cand.get("id")
-                                    and cand.get("id") == cur_id
-                                ):
-                                    continue
-                                if _prev(cand) in ("", cur_pkh):
-                                    nxt = cand
-                                    break
-                        if nxt is None:
-                            others = [
-                                c
-                                for c in by_pkh[nxt_pkh]
-                                if c is not cur
-                                and not (
-                                    cur_id and c.get("id") and c.get("id") == cur_id
-                                )
-                            ]
-                            if others:
-                                nxt = max(others, key=_ctr)
-                    if nxt is None:
-                        break
-                    cur = nxt
-                if depth >= best_depth:
-                    best_depth = depth
-                    best = cur
-            tip_doc = best
-
+            tip_doc = await self.config.kel_manager._peer_branch_tip_by_hash_link(
+                branch_inception_pkh, prune_index=prune_index
+            )
         if tip_doc is None:
-            return []
+            empty = ([], True, "", prune_index)
+            return empty if return_meta else []
 
+        resolved_tip = self._branch_doc_pkh(tip_doc)
+        if after_pkh and after_pkh == resolved_tip:
+            empty = ([], True, resolved_tip, prune_index)
+            return empty if return_meta else []
+
+        # Walk backward from tip until after_pkh (exclusive), capped at limit.
+        # Stay within the active prune epoch (skip foreign-epoch parents).
         chain_rev = []
-        cur, seen = tip_doc, set()
+        cur = tip_doc
+        seen = set()
+        truncated = False
         while cur is not None:
             cid = cur.get("id") or id(cur)
             if cid in seen:
                 break
             seen.add(cid)
-            pkh = _pkh(cur)
+            # Bridge (counter 0) is not part of the epoch wire chain.
+            if self._branch_doc_ctr(cur) == 0 and not (
+                after_pkh and self._branch_doc_pkh(cur) == after_pkh
+            ):
+                break
+            pkh = self._branch_doc_pkh(cur)
             if after_pkh and pkh == after_pkh:
                 break
             txn = cur.get("txn")
             if txn:
+                if isinstance(txn, dict) and "prune_index" not in txn:
+                    txn = dict(txn)
+                    txn["prune_index"] = prune_index
                 chain_rev.append(txn)
-            prev_pkh = _prev(cur)
-            if not prev_pkh or prev_pkh not in by_pkh:
+            if len(chain_rev) >= limit:
+                parent = await self._peer_branch_parent_doc(branch_inception_pkh, cur)
+                if parent is not None and self._branch_doc_ctr(parent) > 0:
+                    parent_pkh = self._branch_doc_pkh(parent)
+                    if not after_pkh or parent_pkh != after_pkh:
+                        truncated = True
                 break
-            parent = None
-            for cand in by_pkh[prev_pkh]:
-                if _pre(cand) == pkh:
-                    parent = cand
-                    break
+            parent = await self._peer_branch_parent_doc(branch_inception_pkh, cur)
             if parent is None:
-                parent = max(by_pkh[prev_pkh], key=_ctr)
+                break
+            # Bridge is permanent root — stop before including it unless after_pkh.
+            if self._branch_doc_ctr(parent) == 0:
+                break
+            # Option A: linear checkpoints may cross prune_index; still walk.
+            # Cap is enforced by *limit* only.
             cur = parent
 
-        return list(reversed(chain_rev))
+        out = list(reversed(chain_rev))
+        eof = not truncated
+
+        # Tip-only / bridge-only branches: walking stops at counter 0 and
+        # yields [].  Peer still needs the tip txn to authorize the signing
+        # key when they have no local copy (first contact or after_pkh miss).
+        if not out and tip_doc and tip_doc.get("txn"):
+            if not after_pkh or after_pkh != resolved_tip:
+                txn = tip_doc.get("txn")
+                if isinstance(txn, dict):
+                    txn = dict(txn)
+                    txn.setdefault("prune_index", prune_index)
+                out = [txn]
+                eof = True
+
+        if return_meta:
+            return out, eof, resolved_tip, prune_index
+        return out
+
+    async def _local_peer_branch_tip_pkh(self, peer_branch_key: str) -> str:
+        """Tip pkh we store for *our* branch toward this peer (empty if none)."""
+        if not peer_branch_key:
+            return ""
+        branch = await self.config.kel_manager.peer_branch_inception_public_key_hash(
+            peer_branch_key
+        )
+        if not branch:
+            return ""
+        tip = await self.config.kel_manager._peer_branch_tip_by_hash_link(branch)
+        return self._branch_doc_pkh(tip) if tip else ""
+
+    async def _stored_remote_branch_tip_pkh(self, peer_branch_key: str) -> str:
+        """Last tip pkh we stored for the *remote* peer's branch toward us."""
+        if not peer_branch_key:
+            return ""
+        # Remote entries are tagged branch_peer = our identity announcement id
+        # when they send us their branch; also look up by their IA as branch_peer
+        # on docs we wrote while ingesting their ratchet_chain.
+        doc = await self.config.mongo.async_db.key_event_log.find_one(
+            {"branch_peer": peer_branch_key},
+            sort=[("counter", -1)],
+            projection={"public_key_hash": 1, "txn": 1},
+        )
+        if not doc:
+            return ""
+        return self._branch_doc_pkh(doc)
 
     # ── KEL compact resync ─────────────────────────────────────────────────
     #
@@ -2349,6 +2440,38 @@ class NodeRPC(BaseRPC):
                     "branch_inception_public_key_hash"
                 )
 
+        # Empty ratchet_chain (tip-only reconnect): recover branch from the
+        # signing key already on disk, or from branch_inception_pkh stashed
+        # on the stream by request_sig / sig_response.
+        if not _branch_inception_pkh:
+            _hint_branch = getattr(stream, "_peer_branch_inception_pkh", "") or ""
+            if _hint_branch:
+                _branch_inception_pkh = _hint_branch
+        if not _branch_inception_pkh and ratchet_public_key:
+            from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH_early
+
+            try:
+                _sign_pkh_early = str(
+                    _P2PKH_early.from_pubkey(bytes.fromhex(ratchet_public_key))
+                )
+            except Exception:
+                _sign_pkh_early = ""
+            if _sign_pkh_early:
+                _by_sign = await self.config.mongo.async_db.key_event_log.find_one(
+                    {
+                        "public_key_hash": _sign_pkh_early,
+                        "branch_inception_public_key_hash": {
+                            "$exists": True,
+                            "$ne": "",
+                        },
+                    },
+                    sort=[("counter", -1)],
+                )
+                if _by_sign:
+                    _branch_inception_pkh = _by_sign.get(
+                        "branch_inception_public_key_hash"
+                    )
+
         # Next counter only for brand-new ids — never renumber existing entries.
         _existing_tip = None
         if _branch_inception_pkh:
@@ -2506,6 +2629,38 @@ class NodeRPC(BaseRPC):
                 _anchor_key_event = _KE(_Txn.from_dict(_doc["txn"]))
                 _anchor_counter = _doc.get("counter", 0)
 
+        # Tip-only reconnect: no chain and no branch yet — still authorize if
+        # a stored tip matches sign (+ optional confirming prerotated).
+        if _anchor_key_event is None and _signing_pkh_probe and not parsed_ratchet:
+            _q_tip = {"public_key_hash": _signing_pkh_probe}
+            if _conf_pkh_probe:
+                _q_tip["prerotated_key_hash"] = _conf_pkh_probe
+            _doc = await self.config.mongo.async_db.key_event_log.find_one(
+                {
+                    **_q_tip,
+                    "branch_inception_public_key_hash": {"$exists": True, "$ne": ""},
+                },
+                {"_id": 0},
+                sort=[("counter", -1)],
+            )
+            if _doc is None and _conf_pkh_probe:
+                _doc = await self.config.mongo.async_db.key_event_log.find_one(
+                    {
+                        "public_key_hash": _signing_pkh_probe,
+                        "branch_inception_public_key_hash": {
+                            "$exists": True,
+                            "$ne": "",
+                        },
+                    },
+                    {"_id": 0},
+                    sort=[("counter", -1)],
+                )
+            if _doc and _doc.get("txn"):
+                _anchor_key_event = _KE(_Txn.from_dict(_doc["txn"]))
+                _anchor_counter = _doc.get("counter", 0)
+                if not _branch_inception_pkh:
+                    _branch_inception_pkh = _doc.get("branch_inception_public_key_hash")
+
         _has_kel = bool(_anchor_key_event)
         if not _has_kel and _peer_k0:
             _has_kel = bool(
@@ -2577,14 +2732,11 @@ class NodeRPC(BaseRPC):
 
         # Signing key authorization against the peer-branch tip.
         #
-        # Protocol is deterministic after advance_peer_auth_ratchet:
-        #   tip.public_key_hash     = addr(current)  # key that signed the tip txn
-        #   tip.prerotated_key_hash = addr(next)     # committed next hop
-        # Handshake signs the mutual transcript with ``ratchet_public_key`` =
-        # current, so authorization is exactly:
-        #   addr(ratchet_public_key) == tip.public_key_hash
-        # When a confirming/next key is also presented, it must match the tip's
-        # prerotated commitment (not an alternate signing identity).
+        # Protocol after advance_peer_auth_ratchet (sign-once per handshake):
+        #   tip.public_key_hash     = addr(signing key for this step)
+        #   tip.prerotated_key_hash = addr(next / confirming)
+        # Handshake signs with ratchet_public_key == tip.public_key_hash.
+        # Confirming must match tip.prerotated when the tip commits a next hop.
         signing_address = _signing_pkh_probe or str(
             P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ratchet_public_key))
         )
@@ -2605,7 +2757,8 @@ class NodeRPC(BaseRPC):
                     )
                 except Exception:
                     conf_address = ""
-            if not conf_address or conf_address != tip_pre:
+            # Only enforce confirming match when the tip commits a next hop.
+            if tip_pre and (not conf_address or conf_address != tip_pre):
                 authenticated = False
         if not authenticated:
             await self.remove_peer(
@@ -2691,9 +2844,41 @@ class NodeRPC(BaseRPC):
 
         # Client tip from the chain they just sent (hash order), not max counter
         # — corrupted counters previously selected a stale foreign tip.
+        # Reconnects send empty ratchet_chain + my_tip_pkh instead of a dump.
         _client_kel_tip_pkh = ""
         if parsed_ratchet:
             _client_kel_tip_pkh = parsed_ratchet[-1].public_key_hash or ""
+        if not _client_kel_tip_pkh:
+            _client_kel_tip_pkh = params.get("my_tip_pkh") or ""
+
+        # Monotonic prune_index: accept increase (ditch old epoch), never decrease.
+        try:
+            _client_prune = int(params.get("prune_index"))
+        except (TypeError, ValueError):
+            _client_prune = None
+        if _client_prune is not None:
+            _peer_branch_key_early = stream.peer.identity_announcement or (
+                stream.peer.identity.username_signature
+                if stream.peer.identity is not None
+                else ""
+            )
+            _client_branch = params.get("branch_inception_pkh") or ""
+            if not _client_branch and parsed_ratchet:
+                _client_branch = parsed_ratchet[0].public_key_hash or ""
+            if _client_branch:
+                ok = await self.config.kel_manager.apply_remote_prune_index(
+                    _client_branch,
+                    _client_prune,
+                    branch_peer=_peer_branch_key_early,
+                )
+                if not ok:
+                    return await self.remove_peer(
+                        stream,
+                        reason=(
+                            f"connect: prune_index decrease rejected "
+                            f"(remote={_client_prune})"
+                        ),
+                    )
 
         # Generate server ECDH keypair
         _ecdh_priv, _ecdh_pub = SessionCipher.generate_keypair()
@@ -2731,17 +2916,26 @@ class NodeRPC(BaseRPC):
             if stream.peer.identity is not None
             else ""
         )
-        (
-            _auth_priv,
-            _auth_pub,
-            _conf_priv,
-            _conf_pub,
-            tpkh,
-            _is_new_branch,
-        ) = await self.config.kel_manager.advance_peer_auth_ratchet(_peer_branch_key)
+        # Sign-once: mint one new peer-branch step per handshake.  Do not reuse
+        # a tip key across sessions.  Growth is bounded by prune epochs + deltas.
+        try:
+            (
+                _auth_priv,
+                _auth_pub,
+                _conf_priv,
+                _conf_pub,
+                tpkh,
+                _is_new_branch,
+            ) = await self.config.kel_manager.advance_peer_auth_ratchet(
+                _peer_branch_key
+            )
+        except NodeKeyRotationManager.PeerBranchAdvanceRateLimited as exc:
+            return await self.remove_peer(
+                stream, reason=f"connect: peer-branch rate/size limit — {exc}"
+            )
 
         # Mutual-auth transcript: both ECDH pubs + both branch tips + challenge.
-        # Server tip is addr(signing key) after advance — never max(counter).
+        # Server tip is addr(signing key) — never max(counter).
         from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH_tip
 
         _branch_inception_pkh = (
@@ -2768,11 +2962,22 @@ class NodeRPC(BaseRPC):
             else None
         )
 
-        # Hash-link delta ending at the signing tip (includes bridge on new branch).
-        _srv_ratchet_chain = await self._peer_branch_ratchet_delta(
+        # Client's latest_ratchet_pkh = tip of *our* branch they already hold.
+        # Send only the hash-link delta (capped); never a full dump.
+        _srv_prune = await self.config.kel_manager.peer_branch_prune_index(
+            _peer_branch_key
+        )
+        (
+            _srv_ratchet_chain,
+            _srv_delta_eof,
+            _,
+            _srv_prune,
+        ) = await self._peer_branch_ratchet_delta(
             _branch_inception_pkh,
             after_pkh=latest_ratchet_pkh or "",
             tip_pkh=_server_kel_tip_pkh,
+            return_meta=True,
+            prune_index=_srv_prune,
         )
         if _is_new_branch and _branch_inception_pkh:
             bridge = await self.config.mongo.async_db.key_event_log.find_one(
@@ -2788,7 +2993,9 @@ class NodeRPC(BaseRPC):
                     (t.get("id") if isinstance(t, dict) else None) == _bridge_id
                     for t in _srv_ratchet_chain
                 ):
-                    _srv_ratchet_chain.insert(0, _bridge_txn)
+                    # Only prepend bridge when peer has no tip yet (empty after).
+                    if not latest_ratchet_pkh:
+                        _srv_ratchet_chain.insert(0, _bridge_txn)
 
         # Store state needed by sig_response handler
         stream._peer_ecdh_pub = peer_ecdh_pub
@@ -2827,10 +3034,24 @@ class NodeRPC(BaseRPC):
             "latest_ratchet_pkh": _client_kel_tip_pkh,
             # What we have of client's *main* KEL so they send only the delta
             "latest_kel_pkh": _client_main_kel_tip,
+            "branch_inception_pkh": _branch_inception_pkh,
+            "prune_index": _srv_prune,
+            # Peer must chunk-sync if handshake delta was truncated.
+            "branch_sync_needed": not _srv_delta_eof,
         }
+        if not _srv_ratchet_chain and _branch_inception_pkh:
+            _tip_proof, _, _, _ = await self._peer_branch_ratchet_delta(
+                _branch_inception_pkh,
+                after_pkh="",
+                tip_pkh=_server_kel_tip_pkh,
+                return_meta=True,
+                prune_index=_srv_prune,
+            )
+            if _tip_proof:
+                request_payload["ratchet_chain"] = _tip_proof
+                _srv_ratchet_chain = _tip_proof
         # Compact main KEL: K_n anchor on first branch contact, otherwise
-        # pending + anything after the client's reported tip — never the
-        # full on-chain history.
+        # pending + anything after the client's reported tip of our KEL.
         kel_chain = await self._get_kel_chain_for_peer(
             _client_latest_kel_pkh,
             need_anchor=_is_new_branch,
@@ -2838,6 +3059,7 @@ class NodeRPC(BaseRPC):
         if kel_chain:
             request_payload["kel_chain"] = kel_chain
 
+        stream._peer_branch_inception_pkh = _branch_inception_pkh or ""
         await self.write_params(stream, "request_sig", request_payload)
         self.config.app_log.info(
             "  [>]   request_sig sent (encrypted)  (peer=%s, new_branch=%s)",
@@ -2979,23 +3201,57 @@ class NodeRPC(BaseRPC):
         if result is None:
             return  # remove_peer already called
 
-        # Client signs the same mutual transcript with its ratchet key —
-        # advanced within *this server's own branch* of our off-chain ratchet.
-        # Must match NodeSocketClient.connect / server _handle_kel_connect:
-        # identity_announcement when present, else username_signature.
+        if params.get("branch_sync_needed"):
+            stream._branch_sync_needed = True
+            stream._peer_branch_inception_pkh = params.get("branch_inception_pkh") or ""
+            stream._local_branch_tip_for_sync = latest_ratchet_pkh or ""
+
+        # Apply server's prune_index (monotonic increase only).
+        try:
+            _srv_prune_in = int(params.get("prune_index"))
+        except (TypeError, ValueError):
+            _srv_prune_in = None
+        if _srv_prune_in is not None:
+            _srv_branch = params.get("branch_inception_pkh") or ""
+            if _srv_branch:
+                _peer_bk = stream.peer.identity_announcement or (
+                    stream.peer.identity.username_signature
+                    if stream.peer.identity is not None
+                    else ""
+                )
+                ok = await self.config.kel_manager.apply_remote_prune_index(
+                    _srv_branch, _srv_prune_in, branch_peer=_peer_bk
+                )
+                if not ok:
+                    return await self.remove_peer(
+                        stream,
+                        reason=(
+                            f"request_sig: prune_index decrease rejected "
+                            f"(remote={_srv_prune_in})"
+                        ),
+                    )
+
+        # Sign-once: client advances its peer-branch ratchet for this handshake.
         _peer_branch_key = stream.peer.identity_announcement or (
             stream.peer.identity.username_signature
             if stream.peer.identity is not None
             else ""
         )
-        (
-            _auth_priv,
-            _auth_pub,
-            _conf_priv,
-            _conf_pub,
-            tpkh,
-            _is_new_branch,
-        ) = await self.config.kel_manager.advance_peer_auth_ratchet(_peer_branch_key)
+        try:
+            (
+                _auth_priv,
+                _auth_pub,
+                _conf_priv,
+                _conf_pub,
+                tpkh,
+                _is_new_branch,
+            ) = await self.config.kel_manager.advance_peer_auth_ratchet(
+                _peer_branch_key
+            )
+        except NodeKeyRotationManager.PeerBranchAdvanceRateLimited as exc:
+            return await self.remove_peer(
+                stream, reason=f"request_sig: peer-branch rate/size limit — {exc}"
+            )
         _client_signed = NodeKeyRotationManager._sign(_auth_priv, _auth_transcript)
         _client_conf_signed = (
             NodeKeyRotationManager._sign(_conf_priv, _auth_transcript)
@@ -3003,7 +3259,7 @@ class NodeRPC(BaseRPC):
             else None
         )
 
-        # Hash-link delta ending at our signing tip for this handshake.
+        # Hash-link delta ending at our signing tip (capped; chunked if gap).
         from bitcoin.wallet import P2PKHBitcoinAddress as _P2PKH_cli
 
         _branch_inception_pkh = (
@@ -3014,10 +3270,20 @@ class NodeRPC(BaseRPC):
         _client_sign_pkh = (
             str(_P2PKH_cli.from_pubkey(bytes.fromhex(_auth_pub))) if _auth_pub else ""
         )
-        _client_ratchet_chain = await self._peer_branch_ratchet_delta(
+        _cli_prune = await self.config.kel_manager.peer_branch_prune_index(
+            _peer_branch_key
+        )
+        (
+            _client_ratchet_chain,
+            _cli_delta_eof,
+            _,
+            _cli_prune,
+        ) = await self._peer_branch_ratchet_delta(
             _branch_inception_pkh,
             after_pkh=latest_ratchet_pkh or "",
             tip_pkh=_client_sign_pkh,
+            return_meta=True,
+            prune_index=_cli_prune,
         )
 
         # Compact main KEL for the server: K_n anchor on first branch contact,
@@ -3031,6 +3297,10 @@ class NodeRPC(BaseRPC):
             "ratchet_chain": _client_ratchet_chain,
             # Tip of server's main KEL we hold — server can delta next time
             "latest_kel_pkh": await self._peer_main_kel_tip_pkh(stream=stream),
+            "branch_inception_pkh": _branch_inception_pkh,
+            "prune_index": _cli_prune,
+            "branch_sync_needed": not _cli_delta_eof,
+            "my_tip_pkh": _client_sign_pkh,
         }
         kel_chain = await self._get_kel_chain_for_peer(
             _server_latest_kel_pkh,
@@ -3038,6 +3308,18 @@ class NodeRPC(BaseRPC):
         )
         if kel_chain:
             sig_response_payload["kel_chain"] = kel_chain
+
+        # Ensure first-contact always carries tip proof if delta was empty.
+        if not _client_ratchet_chain and _branch_inception_pkh:
+            _tip_proof, _, _, _ = await self._peer_branch_ratchet_delta(
+                _branch_inception_pkh,
+                after_pkh="",
+                tip_pkh=_client_sign_pkh,
+                return_meta=True,
+                prune_index=_cli_prune,
+            )
+            if _tip_proof:
+                sig_response_payload["ratchet_chain"] = _tip_proof
 
         await self.write_params(stream, "sig_response", sig_response_payload)
         self.config.app_log.info(
@@ -3159,6 +3441,284 @@ class NodeRPC(BaseRPC):
         await self.send_block_to_peer(self.config.LatestBlock.block, stream)
         await self.get_next_block(self.config.LatestBlock.block, stream)
         await self.send_mempool(stream)
+        if params.get("branch_sync_needed"):
+            await self._request_branch_sync_if_needed(
+                stream,
+                branch_inception_pkh=params.get("branch_inception_pkh") or "",
+                after_pkh=getattr(stream, "_connect_latest_ratchet_pkh", "") or "",
+            )
+
+    async def branch_sync_request(self, body, stream):
+        """Serve a bounded forward chunk of our peer-branch after *after_pkh*."""
+        params = body.get("params") or {}
+        branch_inception_pkh = params.get("branch_inception_pkh") or ""
+        after_pkh = params.get("after_pkh") or ""
+        tip_pkh = params.get("want_tip_pkh") or params.get("tip_pkh") or ""
+        try:
+            limit = int(params.get("limit") or self.PEER_BRANCH_SYNC_CHUNK)
+        except (TypeError, ValueError):
+            limit = self.PEER_BRANCH_SYNC_CHUNK
+        limit = max(1, min(limit, self.PEER_BRANCH_SYNC_CHUNK))
+
+        # Only serve *our* branch for this peer relationship.
+        _peer_branch_key = getattr(stream.peer, "identity_announcement", None) or (
+            stream.peer.identity.username_signature
+            if getattr(stream.peer, "identity", None) is not None
+            else ""
+        )
+        our_branch = (
+            await self.config.kel_manager.peer_branch_inception_public_key_hash(
+                _peer_branch_key
+            )
+        )
+        if not branch_inception_pkh:
+            branch_inception_pkh = our_branch
+        if our_branch and branch_inception_pkh != our_branch:
+            self.config.app_log.warning(
+                "branch_sync_request: branch mismatch from %s (got %s want %s)",
+                getattr(stream.peer, "host", "?"),
+                branch_inception_pkh,
+                our_branch,
+            )
+            await self.write_params(
+                stream,
+                "branch_sync_response",
+                {
+                    "branch_inception_pkh": our_branch,
+                    "after_pkh": after_pkh,
+                    "entries": [],
+                    "eof": True,
+                    "error": "branch_mismatch",
+                },
+            )
+            return
+
+        try:
+            req_prune = int(params.get("prune_index"))
+        except (TypeError, ValueError):
+            req_prune = None
+        entries, eof, resolved_tip, _pi = await self._peer_branch_ratchet_delta(
+            branch_inception_pkh,
+            after_pkh=after_pkh,
+            tip_pkh=tip_pkh,
+            limit=limit,
+            return_meta=True,
+            prune_index=req_prune,
+        )
+        next_after = ""
+        if entries:
+            next_after = entries[-1].get("public_key_hash") or ""
+        await self.write_params(
+            stream,
+            "branch_sync_response",
+            {
+                "branch_inception_pkh": branch_inception_pkh,
+                "after_pkh": after_pkh,
+                "entries": entries,
+                "next_after_pkh": next_after,
+                "eof": eof,
+                "tip_pkh": resolved_tip,
+                "prune_index": _pi,
+            },
+        )
+
+    async def branch_sync_response(self, body, stream):
+        """Ingest a chunk of peer-branch entries (verify-once, tip advance)."""
+        params = body.get("params") or {}
+        if params.get("error"):
+            self.config.app_log.warning(
+                "branch_sync_response error from %s: %s",
+                getattr(stream.peer, "host", "?"),
+                params.get("error"),
+            )
+            return
+        try:
+            _sync_prune = int(params.get("prune_index"))
+        except (TypeError, ValueError):
+            _sync_prune = None
+        if _sync_prune is not None and params.get("branch_inception_pkh"):
+            _peer_bk = getattr(stream.peer, "identity_announcement", None) or (
+                stream.peer.identity.username_signature
+                if getattr(stream.peer, "identity", None) is not None
+                else ""
+            )
+            ok = await self.config.kel_manager.apply_remote_prune_index(
+                params.get("branch_inception_pkh"),
+                _sync_prune,
+                branch_peer=_peer_bk,
+            )
+            if not ok:
+                self.config.app_log.warning(
+                    "branch_sync_response: prune_index decrease ignored from %s",
+                    getattr(stream.peer, "host", "?"),
+                )
+                return
+            stream._ingest_prune_index = _sync_prune
+
+        entries = params.get("entries") or []
+        if entries:
+            # Verify-once each entry and store; do not re-walk prior history.
+            await self._ingest_branch_sync_entries(stream, entries)
+
+        if params.get("eof"):
+            return
+        # Request next chunk
+        next_after = params.get("next_after_pkh") or ""
+        if not next_after and entries:
+            next_after = entries[-1].get("public_key_hash") or ""
+        if not next_after:
+            return
+        await self.write_params(
+            stream,
+            "branch_sync_request",
+            {
+                "branch_inception_pkh": params.get("branch_inception_pkh") or "",
+                "after_pkh": next_after,
+                "want_tip_pkh": params.get("tip_pkh") or "",
+                "limit": self.PEER_BRANCH_SYNC_CHUNK,
+            },
+        )
+
+    async def _ingest_branch_sync_entries(self, stream, entries: list) -> None:
+        """Verify-once and store peer-branch entries without full re-auth."""
+        from yadacoin.core.transaction import Transaction as _Txn
+
+        parsed = []
+        for raw in entries:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                parsed.append(_Txn.from_dict(raw))
+            except Exception as exc:
+                self.config.app_log.debug(
+                    "_ingest_branch_sync_entries: parse error: %s", exc
+                )
+        if not parsed:
+            return
+        # Store via the same path as connect-time ratchet ingest in
+        # _process_ratchet_auth (key_event_log), without requiring tip sig.
+        check_max_inputs = (
+            self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK
+        )
+        check_masternode_fee = (
+            self.config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK
+        )
+        check_dynamic_nodes = (
+            self.config.LatestBlock.block.index >= CHAIN.DYNAMIC_NODES_FORK
+        )
+        check_branch_announcement = (
+            self.config.LatestBlock.block.index >= CHAIN.KEL_BRANCH_ANNOUNCEMENT_FORK
+        )
+        check_credential_announcement = (
+            self.config.LatestBlock.block.index >= CHAIN.CREDENTIAL_ANNOUNCEMENT_FORK
+        )
+        for i, txn in enumerate(parsed):
+            try:
+                await txn.verify(
+                    check_max_inputs=check_max_inputs,
+                    check_masternode_fee=check_masternode_fee,
+                    check_kel=False,
+                    check_dynamic_nodes=check_dynamic_nodes,
+                    check_branch_announcement=check_branch_announcement,
+                    check_credential_announcement=check_credential_announcement,
+                    mempool=True,
+                    batch_txns=parsed,
+                )
+            except (
+                MissingInputTransactionException,
+                KELExceptionPredecessorNotYetInMempool,
+                KELExceptionPreviousKeyHashReferenceMissing,
+                KELLogUnbuildableException,
+            ):
+                pass
+            except Exception as exc:
+                self.config.app_log.warning(
+                    "_ingest_branch_sync_entries: invalid txn [%d]: %s", i, exc
+                )
+                return
+
+        _peer_branch_key = getattr(stream.peer, "identity_announcement", None) or (
+            stream.peer.identity.username_signature
+            if getattr(stream.peer, "identity", None) is not None
+            else ""
+        )
+        branch_pkh = ""
+        first = parsed[0]
+        for _pkh in (first.prev_public_key_hash, first.public_key_hash):
+            if not _pkh:
+                continue
+            hit = await self.config.mongo.async_db.key_event_log.find_one(
+                {
+                    "public_key_hash": _pkh,
+                    "branch_inception_public_key_hash": {"$exists": True, "$ne": ""},
+                }
+            )
+            if hit:
+                branch_pkh = hit.get("branch_inception_public_key_hash") or ""
+                break
+        if not branch_pkh:
+            branch_pkh = first.public_key_hash or ""
+
+        existing_tip = await self.config.mongo.async_db.key_event_log.find_one(
+            {"branch_inception_public_key_hash": branch_pkh},
+            sort=[("counter", -1)],
+        )
+        next_counter = int((existing_tip or {}).get("counter") or 0) + 1
+        try:
+            ingest_prune = int(
+                getattr(stream, "_ingest_prune_index", None)
+                or (existing_tip or {}).get("prune_index")
+                or 0
+            )
+        except (TypeError, ValueError):
+            ingest_prune = 0
+        for txn in parsed:
+            tid = txn.transaction_signature
+            already = await self.config.mongo.async_db.key_event_log.find_one(
+                {"id": tid}
+            )
+            if already:
+                continue
+            raw = txn.to_dict()
+            if isinstance(raw, dict):
+                raw.setdefault("prune_index", ingest_prune)
+            doc = {
+                "counter": next_counter,
+                "branch_inception_public_key_hash": branch_pkh,
+                "branch_peer": _peer_branch_key,
+                "id": tid,
+                "public_key": txn.public_key,
+                "public_key_hash": txn.public_key_hash,
+                "prerotated_key_hash": txn.prerotated_key_hash,
+                "prune_index": ingest_prune,
+                "txn": raw,
+                "timestamp": time.time(),
+            }
+            await self.config.mongo.async_db.key_event_log.replace_one(
+                {
+                    "branch_inception_public_key_hash": branch_pkh,
+                    "id": tid,
+                },
+                doc,
+                upsert=True,
+            )
+            next_counter += 1
+
+    async def _request_branch_sync_if_needed(
+        self, stream, branch_inception_pkh: str = "", after_pkh: str = ""
+    ):
+        """Ask peer for the next chunk of their branch after a truncated delta."""
+        if not branch_inception_pkh and not after_pkh:
+            return
+        await self.write_params(
+            stream,
+            "branch_sync_request",
+            {
+                "branch_inception_pkh": branch_inception_pkh,
+                "after_pkh": after_pkh,
+                "limit": self.PEER_BRANCH_SYNC_CHUNK,
+            },
+        )
 
     # ── end KEL cross-signing helpers ─────────────────────────────────────────
 
@@ -3173,6 +3733,17 @@ class NodeRPC(BaseRPC):
             peer_username,
         )
         await self.send_mempool(stream)
+        params = (body or {}).get("params") or {}
+        if getattr(stream, "_branch_sync_needed", False) or params.get(
+            "branch_sync_needed"
+        ):
+            await self._request_branch_sync_if_needed(
+                stream,
+                branch_inception_pkh=getattr(stream, "_peer_branch_inception_pkh", "")
+                or params.get("branch_inception_pkh")
+                or "",
+                after_pkh=getattr(stream, "_local_branch_tip_for_sync", "") or "",
+            )
 
     async def get_ws_stream(self, route):
         if MODES.WEB.value not in self.config.modes:
@@ -3235,12 +3806,11 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
                 # No signatures in phase 1 — auth happens in encrypted request_sig/sig_response
             }
 
-            # Our ratchet chain, scoped to *this peer's own branch* (server
-            # will use it to determine client KEL tip for the nonce). Since
-            # each peer gets an isolated branch rooted at its own bridge
-            # entry, this is bounded by how many times we've connected to
-            # this specific peer — never the global handshake history shared
-            # with every other peer.
+            # Tip/delta only — never dump the full peer-branch on connect.
+            # latest_ratchet_pkh = tip of *server's* branch we already hold
+            #   (so they send only successors).
+            # my_tip_pkh / ratchet_chain empty: server learns our tip in
+            #   request_sig/sig_response; first contact may include bridge only.
             _peer_branch_key = peer.identity_announcement or (
                 peer.identity.username_signature if peer.identity is not None else ""
             )
@@ -3250,18 +3820,32 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
                 )
             )
             _is_first_contact = bool(_peer_branch_key) and not _branch_inception_pkh
+            connect_payload["ratchet_chain"] = []
+            # What we already have of *their* branch toward us.
+            _their_tip = await self._stored_remote_branch_tip_pkh(_peer_branch_key)
+            if _their_tip:
+                connect_payload["latest_ratchet_pkh"] = _their_tip
+            # Our tip for this peer branch (gap detection / their after_pkh).
+            _my_tip = await self._local_peer_branch_tip_pkh(_peer_branch_key)
+            if _my_tip:
+                connect_payload["my_tip_pkh"] = _my_tip
             if _branch_inception_pkh:
-                _full = await self._peer_branch_ratchet_delta(
-                    _branch_inception_pkh, after_pkh="", tip_pkh=""
-                )
-                connect_payload["ratchet_chain"] = _full
-                if _full:
-                    _last = _full[-1]
-                    _tip_pkh = (
-                        _last.get("public_key_hash") if isinstance(_last, dict) else ""
+                connect_payload["branch_inception_pkh"] = _branch_inception_pkh
+                if _is_first_contact or not _my_tip:
+                    bridge = await self.config.mongo.async_db.key_event_log.find_one(
+                        {
+                            "branch_inception_public_key_hash": _branch_inception_pkh,
+                            "counter": 0,
+                        }
                     )
-                    if _tip_pkh:
-                        connect_payload["latest_ratchet_pkh"] = _tip_pkh
+                    if bridge and bridge.get("txn"):
+                        connect_payload["ratchet_chain"] = [bridge["txn"]]
+            # Active prune epoch — peer must never decrease; on increase they
+            # ditch lower-epoch rows and sync only this window.
+            _my_prune = await self.config.kel_manager.peer_branch_prune_index(
+                _peer_branch_key
+            )
+            connect_payload["prune_index"] = _my_prune
 
             # Tip of the server's main KEL we already hold so they never send
             # their entire history on reconnect.
@@ -3269,10 +3853,9 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
             if _server_main_kel_tip:
                 connect_payload["latest_kel_pkh"] = _server_main_kel_tip
 
-            # Compact main KEL: K_n anchor on first contact, else pending /
-            # delta only — never the full on-chain walk.
+            # Compact main KEL: K_n anchor on first contact, else pending only.
             kel_chain = await self._get_kel_chain_for_peer(
-                "",
+                _server_main_kel_tip or "",
                 need_anchor=_is_first_contact,
             )
             if kel_chain:
