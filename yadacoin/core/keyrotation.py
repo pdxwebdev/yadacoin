@@ -296,11 +296,11 @@ class NodeKeyRotationManager:
         #
         # {peer_username_signature: {"ratchet_key", "ratchet_pub", "counter",
         #                             "prev_pkh", "branch_inception_public_key_hash",
-        #                             "inception_public_key_hash", "prune_index",
-        #                             "epoch_len"}}
+        #                             "inception_public_key_hash", "epoch_len",
+        #                             "branch_generation"}}
         self._peer_branches: dict = {}
         # Spam / growth monitor: recent advance timestamps per peer + last alert.
-        # {peer_id: [unix_ts, ...]}  (pruned to PEER_BRANCH_ADVANCE_WINDOW_S)
+        # {peer_id: [unix_ts, ...]}  (trimmed to PEER_BRANCH_ADVANCE_WINDOW_S)
         self._peer_branch_advance_times: dict = {}
         self._peer_branch_last_alert: dict = {}
         self._peer_branch_monitor_stats: dict = {
@@ -308,18 +308,17 @@ class NodeKeyRotationManager:
             "last_check": 0,
             "alerts": [],
         }
+        # Stash for the next mint after reroot_peer_branch (generation / link).
+        self._peer_branch_next_generation: dict = {}
+        self._peer_branch_supersedes: dict = {}
 
-    # Max non-checkpoint steps in the active peer-branch window (excluding
-    # the permanent bridge at counter 0).  When exceeded the tip signs one
-    # linear *epoch checkpoint* (prev = prior tip, not Kp0), prune_index
-    # bumps, and intermediate non-checkpoint rows are dropped.  Hash-link
-    # stays continuous under the single on-chain branch root.
-    PEER_BRANCH_PRUNE_INTERVAL = 100
+    # Max off-chain steps on one BranchAnnouncement root.  When exceeded we
+    # mint a *new* on-chain BranchAnnouncement and abandon the old branch docs.
+    PEER_BRANCH_EPOCH_STEPS = 100
     # Hard guards against buggy reconnect loops minting public keys forever.
     PEER_BRANCH_ADVANCE_WINDOW_S = 3600
     PEER_BRANCH_MAX_ADVANCES_PER_WINDOW = 120  # ~2/min sustained
-    PEER_BRANCH_MAX_DOCS_PER_PEER = 400  # bridge + CPs + short tail
-    PEER_BRANCH_MAX_CHECKPOINTS_PER_PEER = 200
+    PEER_BRANCH_MAX_DOCS_PER_PEER = 400  # bridge + short epoch tail
     PEER_BRANCH_MAX_TOTAL_DOCS = 20000
     PEER_BRANCH_ALERT_COOLDOWN_S = 300
 
@@ -892,6 +891,19 @@ class NodeKeyRotationManager:
             )
         return cur, depth
 
+    async def _active_peer_branch_bridge(self, identity_announcement: str):
+        """Active (non-superseded) counter-0 bridge for *identity_announcement*."""
+        if not identity_announcement:
+            return None
+        return await self.config.mongo.async_db.key_event_log.find_one(
+            {
+                "branch_peer": identity_announcement,
+                "counter": 0,
+                "superseded": {"$ne": True},
+            },
+            sort=[("branch_generation", -1), ("timestamp", -1)],
+        )
+
     async def peer_branch_inception_public_key_hash(
         self, identity_announcement: str
     ) -> str:
@@ -908,9 +920,7 @@ class NodeKeyRotationManager:
             return cached.get("branch_inception_public_key_hash") or ""
         if not identity_announcement:
             return ""
-        bridge = await self.config.mongo.async_db.key_event_log.find_one(
-            {"branch_peer": identity_announcement, "counter": 0}
-        )
+        bridge = await self._active_peer_branch_bridge(identity_announcement)
         if not bridge:
             return ""
         # Prefer new field; fall back to legacy full-pubkey anchor via pkh on doc
@@ -920,66 +930,178 @@ class NodeKeyRotationManager:
             or ""
         )
 
+    async def peer_branch_contains_pkh(
+        self, branch_inception_pkh: str, pkh: str
+    ) -> bool:
+        """True if *pkh* appears on the active epoch of *branch_inception_pkh*."""
+        if not branch_inception_pkh or not pkh:
+            return False
+        doc = await self.config.mongo.async_db.key_event_log.find_one(
+            {
+                "branch_inception_public_key_hash": branch_inception_pkh,
+                "superseded": {"$ne": True},
+                "$or": [
+                    {"public_key_hash": pkh},
+                    {"prerotated_key_hash": pkh},
+                    {"txn.public_key_hash": pkh},
+                    {"txn.prerotated_key_hash": pkh},
+                ],
+            },
+            projection={"_id": 1},
+        )
+        return bool(doc)
+
+    async def peer_branch_wire_bundle(self, identity_announcement: str) -> dict:
+        """Handshake payload for our branch to *identity_announcement*.
+
+        Includes on-chain BranchAnnouncement pair + bridge so a peer still on
+        an old epoch can switch roots without waiting for block sync alone.
+        """
+        out = {
+            "branch_inception_pkh": "",
+            "branch_generation": 0,
+            "supersedes_branch_inception_pkh": "",
+            "announcement_txn": None,
+            "confirming_txn": None,
+            "bridge_txn": None,
+        }
+        if not identity_announcement:
+            return out
+        cached = self._peer_branches.get(identity_announcement) or {}
+        bridge = await self._active_peer_branch_bridge(identity_announcement)
+        if not bridge:
+            inception = cached.get("branch_inception_public_key_hash") or ""
+            out["branch_inception_pkh"] = inception
+            return out
+        out["branch_inception_pkh"] = (
+            bridge.get("branch_inception_public_key_hash")
+            or bridge.get("public_key_hash")
+            or cached.get("branch_inception_public_key_hash")
+            or ""
+        )
+        try:
+            out["branch_generation"] = int(bridge.get("branch_generation") or 0)
+        except (TypeError, ValueError):
+            out["branch_generation"] = 0
+        out["supersedes_branch_inception_pkh"] = (
+            bridge.get("supersedes_branch_inception_pkh") or ""
+        )
+        out["announcement_txn"] = bridge.get("announcement_txn")
+        out["confirming_txn"] = bridge.get("confirming_txn")
+        out["bridge_txn"] = bridge.get("txn")
+        return out
+
+    async def _supersede_peer_branch(
+        self, identity_announcement: str, old_inception_pkh: str
+    ) -> None:
+        """Mark *old_inception_pkh* inactive and drop its off-chain advances."""
+        config = self.config
+        if old_inception_pkh:
+            try:
+                await config.mongo.async_db.key_event_log.delete_many(
+                    {
+                        "branch_inception_public_key_hash": old_inception_pkh,
+                        "counter": {"$gt": 0},
+                    }
+                )
+            except Exception as exc:
+                config.app_log.warning(
+                    "NodeKeyRotationManager: reroot GC delete error " "(branch=%s): %s",
+                    old_inception_pkh,
+                    exc,
+                )
+            try:
+                await config.mongo.async_db.key_event_log.update_many(
+                    {"branch_inception_public_key_hash": old_inception_pkh},
+                    {"$set": {"superseded": True}},
+                )
+            except Exception as exc:
+                config.app_log.warning(
+                    "NodeKeyRotationManager: reroot supersede mark error "
+                    "(branch=%s): %s",
+                    old_inception_pkh,
+                    exc,
+                )
+        if identity_announcement:
+            try:
+                await config.mongo.async_db.key_event_log.update_many(
+                    {"branch_peer": identity_announcement, "counter": 0},
+                    {"$set": {"superseded": True}},
+                )
+            except Exception:
+                pass
+
+    async def reroot_peer_branch(
+        self, identity_announcement: str, branch_type: str = ""
+    ):
+        """Mint a new on-chain BranchAnnouncement and abandon the prior epoch.
+
+        Returns ``(state, True)`` — always a fresh branch from the caller's
+        perspective (peer must receive announcement + bridge + delta).
+        """
+        if not identity_announcement:
+            raise ValueError("reroot_peer_branch requires identity_announcement")
+        old = await self._active_peer_branch_bridge(identity_announcement)
+        old_inception = ""
+        old_gen = 0
+        if old:
+            old_inception = (
+                old.get("branch_inception_public_key_hash")
+                or old.get("public_key_hash")
+                or old.get("branch_commit")
+                or ""
+            )
+            try:
+                old_gen = int(old.get("branch_generation") or 0)
+            except (TypeError, ValueError):
+                old_gen = 0
+            await self._supersede_peer_branch(identity_announcement, old_inception)
+        self._peer_branches.pop(identity_announcement, None)
+        self._peer_branch_advance_times.pop(identity_announcement, None)
+        self._peer_branch_next_generation[identity_announcement] = old_gen + 1
+        self._peer_branch_supersedes[identity_announcement] = old_inception
+        state, _ = await self._ensure_peer_branch_ready(
+            identity_announcement, branch_type=branch_type
+        )
+        self.config.app_log.info(
+            "NodeKeyRotationManager: peer-branch epoch reroot "
+            "peer=%s gen=%s old_branch=%s new_branch=%s",
+            (identity_announcement or "")[:24],
+            old_gen + 1,
+            (old_inception or "")[:16],
+            (state.get("branch_inception_public_key_hash") or "")[:16],
+        )
+        return state, True
+
     # Back-compat alias used by older call sites / tests during rollout
     async def peer_branch_anchor_pub(self, identity_announcement: str) -> str:
         return await self.peer_branch_inception_public_key_hash(identity_announcement)
 
-    async def peer_branch_prune_index(self, identity_announcement: str) -> int:
-        """Return the active prune_index for *identity_announcement* (0 if none)."""
-        cached = self._peer_branches.get(identity_announcement)
-        if cached and cached.get("prune_index") is not None:
-            try:
-                return int(cached["prune_index"])
-            except (TypeError, ValueError):
-                pass
-        branch = await self.peer_branch_inception_public_key_hash(identity_announcement)
-        if not branch:
-            return 0
-        tip = await self.config.mongo.async_db.key_event_log.find_one(
-            {
-                "branch_inception_public_key_hash": branch,
-                "counter": {"$gt": 0},
-            },
-            sort=[("prune_index", -1), ("counter", -1)],
-            projection={"prune_index": 1},
-        )
-        if tip and tip.get("prune_index") is not None:
-            try:
-                return int(tip["prune_index"])
-            except (TypeError, ValueError):
-                return 0
-        return 0
-
-    async def _peer_branch_tip_by_hash_link(
-        self, branch_inception_pkh: str, prune_index: int = None
-    ):
+    async def _peer_branch_tip_by_hash_link(self, branch_inception_pkh: str):
         """Return the tip key_event_log doc for a peer branch.
 
         Peer-branch advances often re-sign as Kp0 (same pkh as the bridge) so a
         pure prerotated walk from the bridge never reaches counter>0 rows and
         resume would stuck at counter=0, **overwriting counter=1 forever**
-        (epoch_len stuck at 1).  Prefer the highest *local* counter in the
-        active prune epoch; fall back to hash-link among counter>0; then bridge.
+        (epoch_len stuck at 1).  Prefer hash-link walk; fall back to max
+        reachable counter among counter>0; then bridge.
         """
         if not branch_inception_pkh:
             return None
-        base = {"branch_inception_public_key_hash": branch_inception_pkh}
-        if prune_index is None:
-            top = await self.config.mongo.async_db.key_event_log.find_one(
-                {**base, "counter": {"$gt": 0}},
-                sort=[("prune_index", -1)],
-                projection={"prune_index": 1},
-            )
-            if top and top.get("prune_index") is not None:
-                try:
-                    prune_index = int(top["prune_index"])
-                except (TypeError, ValueError):
-                    prune_index = 0
-            else:
-                prune_index = 0
+        base = {
+            "branch_inception_public_key_hash": branch_inception_pkh,
+            "superseded": {"$ne": True},
+        }
 
         cursor = self.config.mongo.async_db.key_event_log.find(base)
         all_docs = await cursor.to_list(length=None)
+        if not all_docs:
+            # Legacy rows without superseded flag
+            cursor = self.config.mongo.async_db.key_event_log.find(
+                {"branch_inception_public_key_hash": branch_inception_pkh}
+            )
+            all_docs = await cursor.to_list(length=None)
+            all_docs = [d for d in all_docs if d.get("superseded") is not True]
         if not all_docs:
             return None
 
@@ -1010,20 +1132,10 @@ class NodeKeyRotationManager:
             except (TypeError, ValueError):
                 return 0
 
-        def _eff_prune(d):
-            try:
-                return int(d.get("prune_index") or 0)
-            except (TypeError, ValueError):
-                return 0
-
         def _id(d):
             return d.get("id") or id(d)
 
-        # Bridge always included; advances filtered by effective prune_index.
-        docs = [d for d in all_docs if _ctr(d) == 0 or _eff_prune(d) == prune_index]
-        if not docs:
-            return None
-
+        docs = all_docs
         bridge = next((d for d in docs if _ctr(d) == 0), None)
         advances = [d for d in docs if _ctr(d) > 0]
 
@@ -1082,15 +1194,10 @@ class NodeKeyRotationManager:
                 best = tip
         if best is not None and _ctr(best) > 0:
             max_adv = max((_ctr(d) for d in advances), default=0)
-            # Prefer walk tip when it is the highest counter or the walk is a
-            # real chain (depth>1).  Otherwise fall through (orphan cluster).
             if _ctr(best) >= max_adv or best_depth > 1:
                 return best
 
-        # 2) Peer-branch advances often re-sign as Kp0 (same pkh as bridge), so
-        # prerotated walk never leaves the bridge.  Build reachability via
-        # prev_public_key_hash from the bridge, then take max counter among
-        # reachable advances (ignores foreign junk with high counters).
+        # 2) Same-pkh re-sign as Kp0: reachability via prev from bridge.
         if advances:
             reachable = []
             frontier_pkhs = set()
@@ -1098,18 +1205,10 @@ class NodeKeyRotationManager:
                 frontier_pkhs.add(_pkh(bridge))
                 frontier_pkhs.add(branch_inception_pkh)
             frontier_pkhs.add(branch_inception_pkh)
-            # Seed with epoch checkpoints / legacy roots linked from bridge.
             for d in advances:
                 prev = _prev(d)
-                if (
-                    not prev
-                    or prev == branch_inception_pkh
-                    or prev in frontier_pkhs
-                    or d.get("epoch_root")
-                    or d.get("epoch_checkpoint")
-                ):
+                if not prev or prev == branch_inception_pkh or prev in frontier_pkhs:
                     reachable.append(d)
-            # Grow by prev-link / same-pkh successor counters.
             changed = True
             seen_ids = {_id(d) for d in reachable}
             while changed:
@@ -1125,14 +1224,11 @@ class NodeKeyRotationManager:
                         continue
                     prev = _prev(d)
                     if prev in known_pkh or _pkh(d) in known_pkh:
-                        # Same-pkh re-sign as Kp0: accept higher counter on
-                        # known pkh (local advances after bridge).
                         reachable.append(d)
                         seen_ids.add(did)
                         changed = True
             if reachable:
                 return max(reachable, key=_ctr)
-            # Last resort for our own monotonic counters (no junk path).
             return max(advances, key=_ctr)
 
         return bridge
@@ -1177,13 +1273,8 @@ class NodeKeyRotationManager:
         peer_factor = self.peer_branch_factor(identity_announcement)
         second_factor = self._second_factor or _read_second_factor()
 
-        # The bridge entry (counter 0) is the stable, permanent identifier
-        # for this peer's branch — look it up by the branch_peer marker
-        # (not by anchor_public_key, which we don't know yet without first
-        # knowing which root produced it).
-        bridge_doc = await config.mongo.async_db.key_event_log.find_one(
-            {"branch_peer": identity_announcement, "counter": 0}
-        )
+        # Active bridge only — superseded epochs are abandoned after reroot.
+        bridge_doc = await self._active_peer_branch_bridge(identity_announcement)
 
         if bridge_doc is None:
             # First contact with this peer — root at our current on-chain/
@@ -1433,12 +1524,23 @@ class NodeKeyRotationManager:
                 kp0["private_key"].hex(), root_txn.hash
             )
 
+            branch_generation = int(
+                self._peer_branch_next_generation.pop(identity_announcement, 0) or 0
+            )
+            supersedes_branch = (
+                self._peer_branch_supersedes.pop(identity_announcement, "") or ""
+            )
+
             # main_inception_pkh already resolved above for mempool tagging.
+            # Match only a live bridge — never revive a superseded epoch row
+            # (same Kp0 can recur in tests / rare tip stalls).
             try:
                 await config.mongo.async_db.key_event_log.replace_one(
                     {
                         "branch_peer": identity_announcement,
                         "counter": 0,
+                        "branch_inception_public_key_hash": kp0_address,
+                        "superseded": {"$ne": True},
                     },
                     {
                         "counter": 0,
@@ -1449,11 +1551,13 @@ class NodeKeyRotationManager:
                         "branch_commit": kp0_address,
                         "branch_commit_next": kp1_address,
                         "confirming_public_key_hash": confirming_txn.public_key_hash,
+                        "branch_generation": branch_generation,
+                        "supersedes_branch_inception_pkh": supersedes_branch,
+                        "superseded": False,
                         "id": root_txn.transaction_signature,
                         "public_key": kp0_pub_hex,
                         "public_key_hash": kp0_address,
                         "prerotated_key_hash": kp1_address,
-                        "prune_index": 0,
                         "txn": root_txn.to_dict(),
                         "announcement_txn": unconfirmed_txn.to_dict(),
                         "confirming_txn": confirming_txn.to_dict(),
@@ -1474,8 +1578,9 @@ class NodeKeyRotationManager:
                 "prev_pkh": confirming_txn.public_key_hash,
                 "branch_inception_public_key_hash": kp0_address,
                 "inception_public_key_hash": main_inception_pkh,
-                "prune_index": 0,
                 "epoch_len": 0,
+                "branch_generation": branch_generation,
+                "supersedes_branch_inception_pkh": supersedes_branch,
             }
         else:
             # Resume: reproduce the *original* root exactly — replay
@@ -1531,28 +1636,13 @@ class NodeKeyRotationManager:
             tip_pkh = (tip or {}).get("public_key_hash") or ""
             tip_pre = (tip or {}).get("prerotated_key_hash") or ""
             tip_counter = int((tip or {}).get("counter") or 0)
-            try:
-                prune_index = int((tip or {}).get("prune_index") or 0)
-            except (TypeError, ValueError):
-                prune_index = 0
             epoch_len = await self.config.mongo.async_db.key_event_log.count_documents(
                 {
                     "branch_inception_public_key_hash": branch_inception_pkh,
-                    "prune_index": prune_index,
                     "counter": {"$gt": 0},
+                    "superseded": {"$ne": True},
                 }
             )
-            # Legacy docs without prune_index count as epoch 0.
-            if prune_index == 0 and epoch_len == 0:
-                epoch_len = (
-                    await self.config.mongo.async_db.key_event_log.count_documents(
-                        {
-                            "branch_inception_public_key_hash": branch_inception_pkh,
-                            "prune_index": {"$exists": False},
-                            "counter": {"$gt": 0},
-                        }
-                    )
-                )
 
             def _addr(key_dict):
                 return str(
@@ -1595,7 +1685,6 @@ class NodeKeyRotationManager:
                     cur = kp0
                     counter = 0
                     prev_pkh = kp0_address
-                    prune_index = 0
                     epoch_len = 0
                 else:
                     # One hop past tip signer = committed prerotated key.
@@ -1619,6 +1708,10 @@ class NodeKeyRotationManager:
                 .public_key.format(compressed=True)
                 .hex()
             )
+            try:
+                branch_generation = int(bridge_doc.get("branch_generation") or 0)
+            except (TypeError, ValueError):
+                branch_generation = 0
             state = {
                 "ratchet_key": cur,
                 "ratchet_pub": cur_pub_hex,
@@ -1626,8 +1719,12 @@ class NodeKeyRotationManager:
                 "prev_pkh": prev_pkh,
                 "branch_inception_public_key_hash": branch_inception_pkh,
                 "inception_public_key_hash": main_inception_pkh,
-                "prune_index": prune_index,
                 "epoch_len": epoch_len,
+                "branch_generation": branch_generation,
+                "supersedes_branch_inception_pkh": bridge_doc.get(
+                    "supersedes_branch_inception_pkh"
+                )
+                or "",
             }
 
         is_new_branch = bridge_doc is None
@@ -1657,9 +1754,7 @@ class NodeKeyRotationManager:
         second_factor = self._second_factor or _read_second_factor()
         self._second_factor = second_factor
         peer_factor = self.peer_branch_factor(identity_announcement)
-        bridge_doc = await self.config.mongo.async_db.key_event_log.find_one(
-            {"branch_peer": identity_announcement, "counter": 0}
-        )
+        bridge_doc = await self._active_peer_branch_bridge(identity_announcement)
         root_depth = int((bridge_doc or {}).get("root_depth", 0) or 0)
         cur_root = self._k0
         if cur_root is None:
@@ -1699,13 +1794,7 @@ class NodeKeyRotationManager:
             identity_announcement, branch_type=branch_type
         )
         branch_inception_pkh = state.get("branch_inception_public_key_hash") or ""
-        try:
-            prune_index = int(state.get("prune_index") or 0)
-        except (TypeError, ValueError):
-            prune_index = 0
-        tip = await self._peer_branch_tip_by_hash_link(
-            branch_inception_pkh, prune_index=prune_index
-        )
+        tip = await self._peer_branch_tip_by_hash_link(branch_inception_pkh)
         tip_pkh = (tip or {}).get("public_key_hash") or ""
         tip_pre = (tip or {}).get("prerotated_key_hash") or ""
         try:
@@ -1796,41 +1885,47 @@ class NodeKeyRotationManager:
         never the history accumulated talking to anyone else.
 
         **Required for P2P handshake** (sign-once: one new step per auth).
-        Growth is bounded by prune epochs (``PEER_BRANCH_PRUNE_INTERVAL``)
-        and tip/delta wire payloads — not by skipping advance.
+        Growth is bounded by on-chain BranchAnnouncement epoch re-roots
+        (``PEER_BRANCH_EPOCH_STEPS`` steps per root) and tip/delta wire
+        payloads — not by skipping advance.
 
-        ``is_new_branch`` is True only on the very first call ever made for
-        this peer (the one that mints the BranchAnnouncement) — callers should
-        use it to decide whether the peer also needs the single KEL entry that
-        establishes K_n (see NodeRPC._get_kel_chain_for_peer in
-        tcpsocket/node.py), since a brand-new peer relationship has no other
-        way to validate the announcement's on-chain parent before block sync
-        has even started.
+        ``is_new_branch`` is True on first contact *or* after an epoch reroot
+        (new BranchAnnouncement).  Callers must send announcement + confirming
+        + bridge/delta so the peer leaves the old ratchet (see
+        NodeRPC handshake in tcpsocket/node.py).
         """
         config = self.config
         peer_factor = self.peer_branch_factor(identity_announcement)
-        # Refuse spam advances before minting another public key.
-        await self._peer_branch_advance_guard(identity_announcement)
-        state, is_new_branch = await self._ensure_peer_branch_ready(
-            identity_announcement, branch_type=branch_type
-        )
+        is_new_branch = False
 
-        # Option A: normal steps prev = prior tip.  Checkpoints form a durable
-        # spine: prev = prior checkpoint (or bridge Kp0), so CP_n verifies
-        # against CP_{n-1} after intermediates are pruned.
+        # Refuse spam advances; oversize epochs trigger reroot instead of
+        # permanent lockout so fleets with bloated legacy branches can recover.
+        try:
+            await self._peer_branch_advance_guard(identity_announcement)
+        except self.PeerBranchNeedsReroot:
+            state, is_new_branch = await self.reroot_peer_branch(
+                identity_announcement, branch_type=branch_type
+            )
+        else:
+            state, is_new_branch = await self._ensure_peer_branch_ready(
+                identity_announcement, branch_type=branch_type
+            )
+
         try:
             epoch_len = int(state.get("epoch_len") or 0)
         except (TypeError, ValueError):
             epoch_len = 0
             state["epoch_len"] = 0
-        try:
-            prune_index = int(state.get("prune_index") or 0)
-        except (TypeError, ValueError):
-            prune_index = 0
-        is_checkpoint = epoch_len >= self.PEER_BRANCH_PRUNE_INTERVAL
-        if is_checkpoint:
-            prune_index = prune_index + 1
-            epoch_len = 0
+
+        # Epoch full → new on-chain BranchAnnouncement.
+        if epoch_len >= self.PEER_BRANCH_EPOCH_STEPS:
+            state, is_new_branch = await self.reroot_peer_branch(
+                identity_announcement, branch_type=branch_type
+            )
+            try:
+                epoch_len = int(state.get("epoch_len") or 0)
+            except (TypeError, ValueError):
+                epoch_len = 0
 
         prev_key = state["ratchet_key"]
         prev_pub_hex = state["ratchet_pub"]
@@ -1858,19 +1953,8 @@ class NodeKeyRotationManager:
 
         branch_inception_pkh = state["branch_inception_public_key_hash"]
         main_inception_pkh = state.get("inception_public_key_hash") or ""
-        # Immediate window parent (last tip before this step).
-        window_prev_pkh = state.get("prev_pkh") or ""
-        if is_checkpoint:
-            # Spine parent: prior checkpoint, else on-chain branch root (Kp0).
-            spine_prev = await self._peer_branch_prior_checkpoint_pkh(
-                branch_inception_pkh, state
-            )
-            prev_pkh_for_txn = spine_prev or branch_inception_pkh
-        else:
-            prev_pkh_for_txn = window_prev_pkh
+        prev_pkh_for_txn = state.get("prev_pkh") or ""
 
-        # Checkpoint metadata is injected into the wire txn dict *after*
-        # hash/sign so relationship hashing stays a normal v7 rotation txn.
         ratchet_txn = Transaction(
             txn_time=int(time.time()),
             public_key=prev_pub_hex,
@@ -1896,17 +1980,6 @@ class NodeKeyRotationManager:
         next_counter = state["counter"] + 1
 
         txn_dict = ratchet_txn.to_dict()
-        txn_dict["prune_index"] = prune_index
-        if is_checkpoint:
-            txn_dict["epoch_checkpoint"] = True
-            txn_dict["branch_inception_public_key_hash"] = branch_inception_pkh
-            # Signer / tip of this compact window (current ratchet key).
-            txn_dict["checkpoint_tip_pkh"] = prev_address
-            txn_dict["checkpoint_tip_pre"] = next_address
-            # Immediate pre-checkpoint tip (window), for optional full audit.
-            txn_dict["window_prev_pkh"] = window_prev_pkh
-            # Spine parent (prior CP or bridge) — same as prev_public_key_hash.
-            txn_dict["checkpoint_spine_prev_pkh"] = prev_pkh_for_txn
 
         entry_filter = {
             "branch_inception_public_key_hash": branch_inception_pkh,
@@ -1921,14 +1994,9 @@ class NodeKeyRotationManager:
             "public_key": prev_pub_hex,
             "public_key_hash": prev_address,
             "prerotated_key_hash": next_address,
-            "prune_index": prune_index,
-            "epoch_checkpoint": bool(is_checkpoint),
             "txn": txn_dict,
             "timestamp": time.time(),
         }
-        if is_checkpoint:
-            entry_doc["checkpoint_spine_prev_pkh"] = prev_pkh_for_txn
-            entry_doc["window_prev_pkh"] = window_prev_pkh
         # Include counter so the Kp0 root (counter 0) is not overwritten when
         # the first advance also signs as addr(Kp0).  Both docs share
         # public_key_hash=addr(Kp0); __kel_pkh must be non-unique.
@@ -1966,14 +2034,6 @@ class NodeKeyRotationManager:
                 # otherwise ratchet_chain deltas omit the step the peer must verify.
                 raise
 
-        if is_checkpoint:
-            await self._prune_peer_branch_intermediates(
-                identity_announcement,
-                branch_inception_pkh,
-                keep_id=ratchet_txn.transaction_signature,
-                prune_index=prune_index,
-            )
-
         branch_state = {
             "ratchet_key": next_key,
             "ratchet_pub": next_pub_hex,
@@ -1981,15 +2041,13 @@ class NodeKeyRotationManager:
             "prev_pkh": prev_address,
             "branch_inception_public_key_hash": branch_inception_pkh,
             "inception_public_key_hash": main_inception_pkh,
-            "prune_index": prune_index,
             "epoch_len": epoch_len + 1,
+            "branch_generation": state.get("branch_generation") or 0,
+            "supersedes_branch_inception_pkh": state.get(
+                "supersedes_branch_inception_pkh"
+            )
+            or "",
         }
-        if is_checkpoint:
-            branch_state["last_checkpoint_pkh"] = prev_address
-            branch_state["last_checkpoint_id"] = ratchet_txn.transaction_signature
-        elif state.get("last_checkpoint_pkh"):
-            branch_state["last_checkpoint_pkh"] = state.get("last_checkpoint_pkh")
-            branch_state["last_checkpoint_id"] = state.get("last_checkpoint_id")
         self._peer_branches[identity_announcement] = branch_state
 
         return (
@@ -2003,6 +2061,9 @@ class NodeKeyRotationManager:
 
     class PeerBranchAdvanceRateLimited(Exception):
         """Raised when peer-branch advance rate or size limits are exceeded."""
+
+    class PeerBranchNeedsReroot(PeerBranchAdvanceRateLimited):
+        """Branch is oversize / stuck — mint a new BranchAnnouncement epoch."""
 
     async def _peer_branch_advance_guard(self, identity_announcement: str) -> None:
         """Block / alert on pathological peer-branch growth (key spam)."""
@@ -2034,31 +2095,20 @@ class NodeKeyRotationManager:
         branch = await self.peer_branch_inception_public_key_hash(identity_announcement)
         if branch:
             n_docs = await self.config.mongo.async_db.key_event_log.count_documents(
-                {"branch_inception_public_key_hash": branch}
-            )
-            n_cp = await self.config.mongo.async_db.key_event_log.count_documents(
                 {
                     "branch_inception_public_key_hash": branch,
-                    "epoch_checkpoint": True,
+                    "superseded": {"$ne": True},
                 }
             )
             if n_docs > self.PEER_BRANCH_MAX_DOCS_PER_PEER:
                 self._peer_branch_alert(
                     identity_announcement,
                     f"peer-branch doc count {n_docs} > "
-                    f"{self.PEER_BRANCH_MAX_DOCS_PER_PEER} (branch={branch[:16]}…)",
+                    f"{self.PEER_BRANCH_MAX_DOCS_PER_PEER} "
+                    f"(branch={branch[:16]}…) — reroot required",
                 )
-                raise self.PeerBranchAdvanceRateLimited(
+                raise self.PeerBranchNeedsReroot(
                     f"peer-branch size limit exceeded ({n_docs} docs)"
-                )
-            if n_cp > self.PEER_BRANCH_MAX_CHECKPOINTS_PER_PEER:
-                self._peer_branch_alert(
-                    identity_announcement,
-                    f"peer-branch checkpoints {n_cp} > "
-                    f"{self.PEER_BRANCH_MAX_CHECKPOINTS_PER_PEER}",
-                )
-                raise self.PeerBranchAdvanceRateLimited(
-                    f"peer-branch checkpoint limit exceeded ({n_cp})"
                 )
 
     def _peer_branch_alert(self, peer_id: str, message: str) -> None:
@@ -2079,7 +2129,6 @@ class NodeKeyRotationManager:
             "total_peer_branch_docs": 0,
             "peers": 0,
             "max_docs_peer": 0,
-            "max_checkpoints_peer": 0,
             "oversize_peers": [],
             "advances_blocked": int(
                 self._peer_branch_monitor_stats.get("advances_blocked") or 0
@@ -2091,7 +2140,7 @@ class NodeKeyRotationManager:
                 "max_advances_per_window": self.PEER_BRANCH_MAX_ADVANCES_PER_WINDOW,
                 "advance_window_s": self.PEER_BRANCH_ADVANCE_WINDOW_S,
                 "max_docs_per_peer": self.PEER_BRANCH_MAX_DOCS_PER_PEER,
-                "max_checkpoints_per_peer": self.PEER_BRANCH_MAX_CHECKPOINTS_PER_PEER,
+                "epoch_steps": self.PEER_BRANCH_EPOCH_STEPS,
                 "max_total_docs": self.PEER_BRANCH_MAX_TOTAL_DOCS,
             },
         }
@@ -2102,22 +2151,14 @@ class NodeKeyRotationManager:
                         "branch_inception_public_key_hash": {
                             "$exists": True,
                             "$ne": "",
-                        }
+                        },
+                        "superseded": {"$ne": True},
                     }
                 },
                 {
                     "$group": {
                         "_id": "$branch_inception_public_key_hash",
                         "n": {"$sum": 1},
-                        "checkpoints": {
-                            "$sum": {
-                                "$cond": [
-                                    {"$eq": ["$epoch_checkpoint", True]},
-                                    1,
-                                    0,
-                                ]
-                            }
-                        },
                         "peer": {"$first": "$branch_peer"},
                     }
                 },
@@ -2148,23 +2189,16 @@ class NodeKeyRotationManager:
         total = 0
         for row in rows:
             n = int(row.get("n") or 0)
-            cps = int(row.get("checkpoints") or 0)
             total += n
             stats["peers"] += 1
             if n > stats["max_docs_peer"]:
                 stats["max_docs_peer"] = n
-            if cps > stats["max_checkpoints_peer"]:
-                stats["max_checkpoints_peer"] = cps
-            if (
-                n > self.PEER_BRANCH_MAX_DOCS_PER_PEER
-                or cps > self.PEER_BRANCH_MAX_CHECKPOINTS_PER_PEER
-            ):
+            if n > self.PEER_BRANCH_MAX_DOCS_PER_PEER:
                 stats["oversize_peers"].append(
                     {
                         "branch": (row.get("_id") or "")[:24],
                         "peer": (row.get("peer") or "")[:32],
                         "docs": n,
-                        "checkpoints": cps,
                     }
                 )
         stats["total_peer_branch_docs"] = total
@@ -2184,174 +2218,6 @@ class NodeKeyRotationManager:
             pass
         self._peer_branch_monitor_stats["last_check"] = time.time()
         return stats
-
-    async def _peer_branch_prior_checkpoint_pkh(
-        self, branch_inception_pkh: str, state: dict
-    ) -> str:
-        """Return public_key_hash of the latest epoch checkpoint (spine tip)."""
-        cached = (state or {}).get("last_checkpoint_pkh") or ""
-        if cached:
-            return cached
-        if not branch_inception_pkh:
-            return ""
-        doc = await self.config.mongo.async_db.key_event_log.find_one(
-            {
-                "branch_inception_public_key_hash": branch_inception_pkh,
-                "epoch_checkpoint": True,
-            },
-            sort=[("counter", -1)],
-            projection={"public_key_hash": 1},
-        )
-        if doc and doc.get("public_key_hash"):
-            return doc["public_key_hash"]
-        return ""
-
-    async def _prune_peer_branch_intermediates(
-        self,
-        identity_announcement: str,
-        branch_inception_pkh: str,
-        keep_id: str,
-        prune_index: int,
-    ):
-        """After a checkpoint: drop non-checkpoint intermediates; keep bridge +
-        all checkpoints + the new tip.  Hash-link stays linear via checkpoints.
-        """
-        config = self.config
-        if not branch_inception_pkh:
-            return
-        try:
-            # Drop ordinary steps; retain bridge (counter 0), checkpoints, and tip.
-            await config.mongo.async_db.key_event_log.delete_many(
-                {
-                    "branch_inception_public_key_hash": branch_inception_pkh,
-                    "counter": {"$gt": 0},
-                    "epoch_checkpoint": {"$ne": True},
-                    "id": {"$ne": keep_id},
-                }
-            )
-            # Legacy sibling epoch_root rows (pre-Option-A) may remain.
-            await config.mongo.async_db.key_event_log.delete_many(
-                {
-                    "branch_inception_public_key_hash": branch_inception_pkh,
-                    "counter": {"$gt": 0},
-                    "epoch_root": True,
-                    "id": {"$ne": keep_id},
-                }
-            )
-        except Exception as exc:
-            config.app_log.warning(
-                "NodeKeyRotationManager: checkpoint prune delete error "
-                "(branch=%s prune_index=%s): %s",
-                branch_inception_pkh,
-                prune_index,
-                exc,
-            )
-        try:
-            await config.mongo.async_db.key_event_log.update_one(
-                {"branch_peer": identity_announcement, "counter": 0},
-                {
-                    "$set": {
-                        "prune_index": prune_index,
-                        "active_prune_index": prune_index,
-                    }
-                },
-            )
-        except Exception:
-            pass
-        config.app_log.info(
-            "NodeKeyRotationManager: peer-branch epoch checkpoint "
-            "prune_index=%s branch=%s keep_id=%s",
-            prune_index,
-            branch_inception_pkh,
-            (keep_id or "")[:16],
-        )
-
-    async def _open_peer_branch_epoch(self, identity_announcement: str, state: dict):
-        """Compatibility shim: bump prune_index in memory only (Option A).
-
-        Real checkpoints are written inside :meth:`advance_peer_auth_ratchet`
-        as linear hash-link steps.  Kept for tests that call this helper.
-        """
-        try:
-            old_index = int(state.get("prune_index") or 0)
-        except (TypeError, ValueError):
-            old_index = 0
-        new_index = old_index + 1
-        state = dict(state)
-        state["prune_index"] = new_index
-        state["epoch_len"] = 0
-        self._peer_branches[identity_announcement] = state
-        return state
-
-    async def apply_remote_prune_index(
-        self,
-        branch_inception_pkh: str,
-        remote_prune_index: int,
-        branch_peer: str = "",
-    ) -> bool:
-        """Accept a peer's prune_index if it is >= local; never decrease.
-
-        On increase, drop local epoch rows below *remote_prune_index* (keep
-        bridge).  Returns False if the peer attempted a decrease (reject).
-        """
-        try:
-            remote_prune_index = int(remote_prune_index)
-        except (TypeError, ValueError):
-            return False
-        if remote_prune_index < 0:
-            return False
-        if not branch_inception_pkh:
-            return True
-        local = 0
-        tip = await self.config.mongo.async_db.key_event_log.find_one(
-            {
-                "branch_inception_public_key_hash": branch_inception_pkh,
-                "counter": {"$gt": 0},
-            },
-            sort=[("prune_index", -1)],
-            projection={"prune_index": 1},
-        )
-        if tip and tip.get("prune_index") is not None:
-            try:
-                local = int(tip["prune_index"])
-            except (TypeError, ValueError):
-                local = 0
-        if remote_prune_index < local:
-            self.config.app_log.warning(
-                "NodeKeyRotationManager: rejected prune_index decrease "
-                "(branch=%s local=%s remote=%s)",
-                branch_inception_pkh,
-                local,
-                remote_prune_index,
-            )
-            return False
-        if remote_prune_index > local:
-            await self.config.mongo.async_db.key_event_log.delete_many(
-                {
-                    "branch_inception_public_key_hash": branch_inception_pkh,
-                    "counter": {"$gt": 0},
-                    "prune_index": {"$lt": remote_prune_index},
-                }
-            )
-            if remote_prune_index > 0:
-                await self.config.mongo.async_db.key_event_log.delete_many(
-                    {
-                        "branch_inception_public_key_hash": branch_inception_pkh,
-                        "counter": {"$gt": 0},
-                        "prune_index": {"$exists": False},
-                    }
-                )
-            if branch_peer and branch_peer in self._peer_branches:
-                self._peer_branches[branch_peer]["prune_index"] = remote_prune_index
-                self._peer_branches[branch_peer]["epoch_len"] = 0
-            self.config.app_log.info(
-                "NodeKeyRotationManager: applied remote prune_index %s "
-                "(was %s, branch=%s)",
-                remote_prune_index,
-                local,
-                branch_inception_pkh,
-            )
-        return True
 
     async def advance_block_ratchet(self, block):
         """Build coinbase KEL material for block generation.

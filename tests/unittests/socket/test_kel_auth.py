@@ -60,8 +60,6 @@ def _make_config():
     config.kel_manager.get_peer_auth_keys = AsyncMock(
         return_value=("default_priv", "default_pub", None, None, "default_tpkh", False)
     )
-    config.kel_manager.peer_branch_prune_index = AsyncMock(return_value=0)
-    config.kel_manager.apply_remote_prune_index = AsyncMock(return_value=True)
     config.kel_manager._peer_branch_tip_by_hash_link = AsyncMock(return_value=None)
     # Peer-branch anchor lookup — returns falsy by default so ratchet_chain
     # delta building takes the "no anchor" short-circuit, matching the
@@ -70,6 +68,17 @@ def _make_config():
     config.kel_manager.peer_branch_inception_public_key_hash = AsyncMock(
         return_value=""
     )
+    config.kel_manager.peer_branch_wire_bundle = AsyncMock(
+        return_value={
+            "branch_inception_pkh": "",
+            "branch_generation": 0,
+            "supersedes_branch_inception_pkh": "",
+            "announcement_txn": None,
+            "confirming_txn": None,
+            "bridge_txn": None,
+        }
+    )
+    config.kel_manager.peer_branch_contains_pkh = AsyncMock(return_value=False)
     config.peer = MagicMock()
     config.peer.to_dict = MagicMock(return_value={"host": "127.0.0.1"})
 
@@ -1596,28 +1605,17 @@ class TestPeerBranchRatchetDelta(AsyncTestCase):
             async def to_list(self, length=None):
                 return list(self._items)
 
-        # Tag epoch 0 on all docs (active prune window).
-        for d in docs:
-            d.setdefault("prune_index", 0)
-
         async def _find_one(query, *args, **kwargs):
             pkh = query.get("public_key_hash")
             if pkh and pkh in by_pkh:
                 return max(by_pkh[pkh], key=lambda x: x.get("counter") or 0)
-            # prune_index resolution / tip probes
             if query.get("counter") == {"$gt": 0} or (
                 isinstance(query.get("counter"), dict)
                 and "$gt" in (query.get("counter") or {})
             ):
                 active = [d for d in docs if d.get("counter", 0) > 0]
                 if active:
-                    return max(
-                        active,
-                        key=lambda x: (
-                            x.get("prune_index") or 0,
-                            x.get("counter") or 0,
-                        ),
-                    )
+                    return max(active, key=lambda x: x.get("counter") or 0)
             return None
 
         def _find(query, *args, **kwargs):
@@ -1642,20 +1640,631 @@ class TestPeerBranchRatchetDelta(AsyncTestCase):
         self.assertEqual([t["id"] for t in delta], ["tip"])
 
         # Caps + meta: truncated gap reports eof=False
-        short, eof, tip, pidx = await rpc._peer_branch_ratchet_delta(
+        short, eof, tip = await rpc._peer_branch_ratchet_delta(
             branch, tip_pkh="C", limit=1, return_meta=True
         )
         self.assertEqual([t["id"] for t in short], ["tip"])
         self.assertFalse(eof)
         self.assertEqual(tip, "C")
-        self.assertEqual(pidx, 0)
 
         # Already at tip → empty delta, eof
-        empty, eof2, _, _ = await rpc._peer_branch_ratchet_delta(
+        empty, eof2, _ = await rpc._peer_branch_ratchet_delta(
             branch, after_pkh="C", tip_pkh="C", return_meta=True
         )
         self.assertEqual(empty, [])
         self.assertTrue(eof2)
+
+
+class TestPeerBranchHandshakePayload(AsyncTestCase):
+    """Epoch reroot wire helpers: announce + delta reset + remote GC."""
+
+    def _rpc(self):
+        from yadacoin.tcpsocket.node import NodeRPC
+
+        return NodeRPC()
+
+    async def test_branch_doc_helpers(self):
+        from yadacoin.tcpsocket.node import NodeRPC
+
+        self.assertEqual(NodeRPC._branch_doc_pkh(None), "")
+        self.assertEqual(
+            NodeRPC._branch_doc_pkh({"txn": {"public_key_hash": "T"}}), "T"
+        )
+        self.assertEqual(NodeRPC._branch_doc_pre({}), "")
+        self.assertEqual(
+            NodeRPC._branch_doc_pre({"txn": {"prerotated_key_hash": "P"}}), "P"
+        )
+        self.assertEqual(NodeRPC._branch_doc_prev({}), "")
+        self.assertEqual(NodeRPC._branch_doc_prev({"prev_public_key_hash": "V"}), "V")
+        self.assertEqual(NodeRPC._branch_doc_ctr({"counter": "x"}), 0)
+        self.assertEqual(NodeRPC._branch_doc_ctr({"counter": 3}), 3)
+
+    async def test_append_kel_txn_dedupes_and_skips_junk(self):
+        rpc = self._rpc()
+        out, seen = [], set()
+        rpc._append_kel_txn(out, seen, None)
+        rpc._append_kel_txn(out, seen, "not-a-dict")
+        rpc._append_kel_txn(out, seen, {"id": "a", "x": 1})
+        rpc._append_kel_txn(out, seen, {"id": "a", "x": 2})
+        rpc._append_kel_txn(out, seen, {"hash": "h1", "y": 1})
+
+        class _T:
+            def to_dict(self):
+                return {"id": "b", "z": 1}
+
+        rpc._append_kel_txn(out, seen, _T())
+        self.assertEqual(len(out), 3)
+        self.assertEqual({d.get("id") or d.get("hash") for d in out}, {"a", "h1", "b"})
+
+    async def test_handshake_payload_force_announce_on_stale_tip(self):
+        rpc = self._rpc()
+        cfg = _make_config()
+        rpc.config = cfg
+        bridge_txn = {"id": "bridge1", "public_key_hash": "BR"}
+        ann = {"id": "ann1"}
+        conf = {"id": "conf1"}
+        tip_txn = {"id": "tip1", "public_key_hash": "TIP"}
+        cfg.kel_manager.peer_branch_wire_bundle = AsyncMock(
+            return_value={
+                "branch_inception_pkh": "BR",
+                "branch_generation": 2,
+                "supersedes_branch_inception_pkh": "OLD",
+                "announcement_txn": ann,
+                "confirming_txn": conf,
+                "bridge_txn": bridge_txn,
+            }
+        )
+        cfg.kel_manager.peer_branch_inception_public_key_hash = AsyncMock(
+            return_value="BR"
+        )
+        cfg.kel_manager.peer_branch_contains_pkh = AsyncMock(return_value=False)
+        rpc._peer_branch_ratchet_delta = AsyncMock(
+            return_value=([tip_txn], True, "TIP")
+        )
+        rpc._get_kel_chain_for_peer = AsyncMock(return_value=[])
+
+        hs = await rpc._peer_branch_handshake_payload(
+            "peer_key",
+            is_new_branch=False,
+            peer_after_pkh="STALE_TIP",
+            tip_pkh="TIP",
+            peer_latest_kel_pkh="KEL",
+            peer_reported_branch_inception="OLD",
+        )
+        self.assertTrue(hs["force_announce"])
+        self.assertEqual(hs["branch_generation"], 2)
+        self.assertEqual(hs["supersedes_branch_inception_pkh"], "OLD")
+        ids = [t.get("id") for t in hs["ratchet_chain"]]
+        self.assertIn("bridge1", ids)
+        kel_ids = [t.get("id") for t in hs["kel_chain"]]
+        self.assertIn("ann1", kel_ids)
+        self.assertIn("conf1", kel_ids)
+        # stale after → empty after_pkh used for delta
+        rpc._peer_branch_ratchet_delta.assert_called()
+        call_kw = rpc._peer_branch_ratchet_delta.call_args
+        self.assertEqual(
+            call_kw.kwargs.get("after_pkh") or call_kw[1].get("after_pkh"), ""
+        )
+
+    async def test_handshake_payload_tip_proof_when_delta_empty(self):
+        rpc = self._rpc()
+        cfg = _make_config()
+        rpc.config = cfg
+        cfg.kel_manager.peer_branch_wire_bundle = AsyncMock(
+            return_value={
+                "branch_inception_pkh": "BR",
+                "branch_generation": 0,
+                "supersedes_branch_inception_pkh": "",
+                "announcement_txn": None,
+                "confirming_txn": None,
+                "bridge_txn": None,
+            }
+        )
+        cfg.kel_manager.peer_branch_contains_pkh = AsyncMock(return_value=True)
+        tip = {"id": "only_tip", "public_key_hash": "T"}
+        rpc._peer_branch_ratchet_delta = AsyncMock(
+            side_effect=[
+                ([], True, "T"),
+                ([tip], True, "T"),
+            ]
+        )
+        rpc._get_kel_chain_for_peer = AsyncMock(return_value=[])
+        hs = await rpc._peer_branch_handshake_payload(
+            "pk",
+            is_new_branch=False,
+            peer_after_pkh="T",
+            tip_pkh="T",
+        )
+        # after_pkh == tip and contains → no force; empty delta may still tip-proof
+        self.assertTrue(any(t.get("id") == "only_tip" for t in hs["ratchet_chain"]))
+
+    async def test_note_remote_branch_epoch_gc(self):
+        rpc = self._rpc()
+        cfg = _make_config()
+        rpc.config = cfg
+        stream = MagicMock()
+        kel = cfg.mongo.async_db.key_event_log
+        kel.update_many = AsyncMock()
+        kel.delete_many = AsyncMock()
+        await rpc._note_remote_branch_epoch(
+            stream,
+            branch_inception_pkh="NEW",
+            branch_generation="3",
+            supersedes_branch_inception_pkh="OLD",
+        )
+        self.assertEqual(stream._peer_branch_inception_pkh, "NEW")
+        self.assertEqual(stream._peer_branch_generation, 3)
+        kel.update_many.assert_awaited()
+        kel.delete_many.assert_awaited()
+
+        # bad generation + GC exception soft-fail
+        kel.update_many = AsyncMock(side_effect=RuntimeError("x"))
+        await rpc._note_remote_branch_epoch(
+            stream,
+            branch_inception_pkh="N2",
+            branch_generation=object(),
+            supersedes_branch_inception_pkh="OLD2",
+        )
+        self.assertEqual(stream._peer_branch_generation, 0)
+
+    async def test_branch_sync_request_reroot_mismatch(self):
+        rpc = self._rpc()
+        cfg = _make_config()
+        rpc.config = cfg
+        stream = MagicMock()
+        stream.peer = MagicMock()
+        stream.peer.identity_announcement = "peer_ia"
+        stream.peer.identity = MagicMock(username_signature="usig")
+        stream.peer.host = "1.2.3.4"
+        cfg.kel_manager.peer_branch_inception_public_key_hash = AsyncMock(
+            return_value="OUR_BR"
+        )
+        cfg.kel_manager.peer_branch_wire_bundle = AsyncMock(
+            return_value={
+                "branch_inception_pkh": "OUR_BR",
+                "branch_generation": 4,
+                "supersedes_branch_inception_pkh": "THEIR_OLD",
+                "bridge_txn": {"id": "br", "public_key_hash": "OUR_BR"},
+                "announcement_txn": {"id": "ann"},
+                "confirming_txn": {"id": "conf"},
+            }
+        )
+        rpc.write_params = AsyncMock()
+        body = {
+            "params": {
+                "branch_inception_pkh": "THEIR_OLD",
+                "after_pkh": "X",
+                "want_tip_pkh": "Y",
+            }
+        }
+        await rpc.branch_sync_request(body, stream)
+        rpc.write_params.assert_awaited()
+        args = rpc.write_params.await_args
+        self.assertEqual(args[0][1], "branch_sync_response")
+        payload = args[0][2]
+        self.assertEqual(payload.get("error"), "branch_rerooted")
+        self.assertEqual(payload.get("branch_inception_pkh"), "OUR_BR")
+        self.assertTrue(payload.get("kel_chain"))
+
+    async def test_branch_sync_response_reroot_accepts_kel(self):
+        rpc = self._rpc()
+        cfg = _make_config()
+        rpc.config = cfg
+        stream = MagicMock()
+        rpc._accept_peer_kel_chain = AsyncMock()
+        rpc._note_remote_branch_epoch = AsyncMock()
+        rpc._ingest_branch_sync_entries = AsyncMock()
+        body = {
+            "params": {
+                "error": "branch_rerooted",
+                "branch_inception_pkh": "NEW",
+                "branch_generation": 5,
+                "supersedes_branch_inception_pkh": "OLD",
+                "kel_chain": [{"id": "ann"}],
+                "entries": [],
+                "eof": True,
+            }
+        }
+        await rpc.branch_sync_response(body, stream)
+        rpc._accept_peer_kel_chain.assert_awaited()
+        rpc._note_remote_branch_epoch.assert_awaited()
+
+        # hard error path
+        rpc._accept_peer_kel_chain.reset_mock()
+        await rpc.branch_sync_response({"params": {"error": "nope"}}, stream)
+        rpc._accept_peer_kel_chain.assert_not_awaited()
+
+        # reroot kel accept failure soft
+        rpc._accept_peer_kel_chain = AsyncMock(side_effect=RuntimeError("kel"))
+        await rpc.branch_sync_response(
+            {
+                "params": {
+                    "error": "branch_rerooted",
+                    "kel_chain": [{"id": "x"}],
+                    "eof": True,
+                }
+            },
+            stream,
+        )
+
+        # continue chunk request when not eof
+        rpc.write_params = AsyncMock()
+        rpc._ingest_branch_sync_entries = AsyncMock()
+        await rpc.branch_sync_response(
+            {
+                "params": {
+                    "entries": [{"public_key_hash": "A"}],
+                    "eof": False,
+                    "next_after_pkh": "",
+                    "branch_inception_pkh": "BR",
+                    "tip_pkh": "T",
+                }
+            },
+            stream,
+        )
+        rpc.write_params.assert_awaited()
+
+    async def test_branch_sync_request_normal_path(self):
+        rpc = self._rpc()
+        cfg = _make_config()
+        rpc.config = cfg
+        stream = MagicMock()
+        stream.peer = MagicMock()
+        stream.peer.identity_announcement = "ia"
+        stream.peer.identity = None
+        cfg.kel_manager.peer_branch_inception_public_key_hash = AsyncMock(
+            return_value="BR"
+        )
+        rpc._peer_branch_ratchet_delta = AsyncMock(
+            return_value=([{"id": "e1", "public_key_hash": "P"}], True, "TIP")
+        )
+        rpc.write_params = AsyncMock()
+        await rpc.branch_sync_request(
+            {"params": {"branch_inception_pkh": "BR", "limit": "bad"}}, stream
+        )
+        payload = rpc.write_params.await_args[0][2]
+        self.assertEqual(payload["entries"][0]["id"], "e1")
+        self.assertEqual(payload["next_after_pkh"], "P")
+
+        # empty branch_inception → use ours
+        rpc.write_params.reset_mock()
+        await rpc.branch_sync_request({"params": {}}, stream)
+        self.assertEqual(
+            rpc.write_params.await_args[0][2]["branch_inception_pkh"], "BR"
+        )
+
+    async def test_peer_branch_doc_walk_helpers(self):
+        rpc = self._rpc()
+        cfg = _make_config()
+        rpc.config = cfg
+
+        class _Cur:
+            def __init__(self, items):
+                self._items = items
+
+            async def to_list(self, length=None):
+                return list(self._items)
+
+        parent = {
+            "public_key_hash": "A",
+            "prerotated_key_hash": "B",
+            "counter": 1,
+            "txn": {
+                "public_key_hash": "A",
+                "prerotated_key_hash": "B",
+                "prev_public_key_hash": "",
+            },
+        }
+        child = {
+            "public_key_hash": "B",
+            "prerotated_key_hash": "C",
+            "counter": 2,
+            "txn": {
+                "public_key_hash": "B",
+                "prerotated_key_hash": "C",
+                "prev_public_key_hash": "A",
+            },
+        }
+        kel = cfg.mongo.async_db.key_event_log
+        kel.find = MagicMock(return_value=_Cur([parent]))
+        got = await rpc._peer_branch_parent_doc("BR", child)
+        self.assertEqual(got["public_key_hash"], "A")
+
+        kel.find = MagicMock(return_value=_Cur([]))
+        self.assertIsNone(await rpc._peer_branch_parent_doc("BR", child))
+        self.assertIsNone(
+            await rpc._peer_branch_parent_doc(
+                "BR", {"txn": {"prev_public_key_hash": ""}}
+            )
+        )
+
+        kel.find = MagicMock(return_value=_Cur([child]))
+        got_c = await rpc._peer_branch_child_doc("BR", parent)
+        self.assertEqual(got_c["public_key_hash"], "B")
+        kel.find = MagicMock(return_value=_Cur([]))
+        self.assertIsNone(await rpc._peer_branch_child_doc("BR", parent))
+        self.assertIsNone(
+            await rpc._peer_branch_child_doc("BR", {"prerotated_key_hash": ""})
+        )
+
+        self.assertIsNone(await rpc._peer_branch_doc_by_pkh("", "x"))
+        self.assertIsNone(await rpc._peer_branch_doc_by_pkh("b", ""))
+
+        # delta empty branch / no tip
+        self.assertEqual(await rpc._peer_branch_ratchet_delta(""), [])
+        empty_m = await rpc._peer_branch_ratchet_delta("", return_meta=True)
+        self.assertEqual(empty_m, ([], True, ""))
+        cfg.kel_manager._peer_branch_tip_by_hash_link = AsyncMock(return_value=None)
+        self.assertEqual(
+            await rpc._peer_branch_ratchet_delta("BR", tip_pkh=""),
+            [],
+        )
+        none_m = await rpc._peer_branch_ratchet_delta("BR", return_meta=True)
+        self.assertEqual(none_m, ([], True, ""))
+
+        # tip-only proof when walk empty
+        tip_doc = {
+            "counter": 1,
+            "public_key_hash": "T",
+            "txn": {"id": "tip", "public_key_hash": "T", "prev_public_key_hash": "BR"},
+        }
+        cfg.kel_manager._peer_branch_tip_by_hash_link = AsyncMock(return_value=tip_doc)
+        kel.find_one = AsyncMock(return_value=None)
+        rpc._peer_branch_parent_doc = AsyncMock(return_value=None)
+        out = await rpc._peer_branch_ratchet_delta("BR", tip_pkh="T")
+        self.assertEqual(out[0].get("id"), "tip")
+
+        # parent/child max(cands) — restore real methods (not AsyncMock stubs)
+        from yadacoin.tcpsocket.node import NodeRPC as _NR
+
+        rpc._peer_branch_parent_doc = _NR._peer_branch_parent_doc.__get__(rpc, _NR)
+        rpc._peer_branch_child_doc = _NR._peer_branch_child_doc.__get__(rpc, _NR)
+        lo = {
+            "public_key_hash": "A",
+            "prerotated_key_hash": "ZZ",
+            "counter": 1,
+            "txn": {"public_key_hash": "A", "prerotated_key_hash": "ZZ"},
+        }
+        hi = {
+            "public_key_hash": "A",
+            "prerotated_key_hash": "YY",
+            "counter": 9,
+            "txn": {"public_key_hash": "A", "prerotated_key_hash": "YY"},
+        }
+        kel.find = MagicMock(return_value=_Cur([lo, hi]))
+        child = {
+            "public_key_hash": "B",
+            "txn": {"prev_public_key_hash": "A", "public_key_hash": "B"},
+        }
+        got = await rpc._peer_branch_parent_doc("BR", child)
+        self.assertEqual(got["counter"], 9)
+        parent = {
+            "public_key_hash": "A",
+            "prerotated_key_hash": "B",
+            "txn": {"public_key_hash": "A", "prerotated_key_hash": "B"},
+        }
+        c_lo = {
+            "public_key_hash": "B",
+            "counter": 1,
+            "txn": {"prev_public_key_hash": "X", "public_key_hash": "B"},
+        }
+        c_hi = {
+            "public_key_hash": "B",
+            "counter": 5,
+            "txn": {"prev_public_key_hash": "Y", "public_key_hash": "B"},
+        }
+        kel.find = MagicMock(return_value=_Cur([c_lo, c_hi]))
+        got_c = await rpc._peer_branch_child_doc("BR", parent)
+        self.assertEqual(got_c["counter"], 5)
+
+        # delta walk cycle break + local/remote tip helpers
+        mid = {
+            "id": "mid",
+            "counter": 2,
+            "public_key_hash": "M",
+            "txn": {"id": "mid", "public_key_hash": "M", "prev_public_key_hash": "A"},
+        }
+        tip2 = {
+            "id": "tip2",
+            "counter": 3,
+            "public_key_hash": "T2",
+            "txn": {"id": "tip2", "public_key_hash": "T2", "prev_public_key_hash": "M"},
+        }
+        cfg.kel_manager._peer_branch_tip_by_hash_link = AsyncMock(return_value=tip2)
+
+        async def parent_cycle(br, cur):
+            if cur is tip2 or (isinstance(cur, dict) and cur.get("id") == "tip2"):
+                return mid
+            if cur is mid or (isinstance(cur, dict) and cur.get("id") == "mid"):
+                return mid  # same id → seen break
+            return None
+
+        rpc._peer_branch_parent_doc = parent_cycle
+        rpc._peer_branch_doc_by_pkh = AsyncMock(return_value=None)
+        walked = await rpc._peer_branch_ratchet_delta("BR", tip_pkh="T2", limit=10)
+        self.assertTrue(any(t.get("id") == "tip2" for t in walked))
+
+        cfg.kel_manager.peer_branch_inception_public_key_hash = AsyncMock(
+            return_value=""
+        )
+        self.assertEqual(await rpc._local_peer_branch_tip_pkh(""), "")
+        self.assertEqual(await rpc._local_peer_branch_tip_pkh("pk"), "")
+        cfg.kel_manager.peer_branch_inception_public_key_hash = AsyncMock(
+            return_value="BR"
+        )
+        cfg.kel_manager._peer_branch_tip_by_hash_link = AsyncMock(return_value=None)
+        self.assertEqual(await rpc._local_peer_branch_tip_pkh("pk"), "")
+        cfg.kel_manager._peer_branch_tip_by_hash_link = AsyncMock(
+            return_value={"public_key_hash": "LT"}
+        )
+        self.assertEqual(await rpc._local_peer_branch_tip_pkh("pk"), "LT")
+
+        self.assertEqual(await rpc._stored_remote_branch_tip_pkh(""), "")
+        kel.find_one = AsyncMock(return_value=None)
+        self.assertEqual(await rpc._stored_remote_branch_tip_pkh("pk"), "")
+        kel.find_one = AsyncMock(return_value={"public_key_hash": "RT"})
+        self.assertEqual(await rpc._stored_remote_branch_tip_pkh("pk"), "RT")
+
+    async def test_ingest_branch_sync_entries(self):
+        rpc = self._rpc()
+        cfg = _make_config()
+        rpc.config = cfg
+        stream = MagicMock()
+        stream.peer = MagicMock()
+        stream.peer.identity_announcement = "ia"
+        stream.peer.identity = None
+
+        # empty / junk
+        await rpc._ingest_branch_sync_entries(stream, [])
+        await rpc._ingest_branch_sync_entries(stream, ["x", 1])
+
+        mock_txn = MagicMock()
+        mock_txn.verify = AsyncMock()
+        mock_txn.transaction_signature = "sig1"
+        mock_txn.public_key = "pub"
+        mock_txn.public_key_hash = "PKH"
+        mock_txn.prerotated_key_hash = "PRE"
+        mock_txn.prev_public_key_hash = "PREV"
+        mock_txn.to_dict = MagicMock(return_value={"id": "sig1"})
+
+        with patch(
+            "yadacoin.core.transaction.Transaction.from_dict",
+            return_value=mock_txn,
+        ):
+            kel = cfg.mongo.async_db.key_event_log
+            kel.find_one = AsyncMock(return_value=None)
+            kel.replace_one = AsyncMock()
+            await rpc._ingest_branch_sync_entries(
+                stream, [{"id": "sig1", "public_key_hash": "PKH"}]
+            )
+            kel.replace_one.assert_awaited()
+
+            # already stored skips write — enough find_one returns
+            kel.replace_one.reset_mock()
+            kel.find_one = AsyncMock(return_value={"id": "sig1", "counter": 3})
+            await rpc._ingest_branch_sync_entries(
+                stream, [{"id": "sig1", "public_key_hash": "PKH"}]
+            )
+            kel.replace_one.assert_not_awaited()
+
+            # verify hard failure aborts
+            mock_txn.verify = AsyncMock(side_effect=RuntimeError("bad"))
+            kel.find_one = AsyncMock(return_value=None)
+            kel.replace_one.reset_mock()
+            await rpc._ingest_branch_sync_entries(
+                stream, [{"id": "sig1", "public_key_hash": "PKH"}]
+            )
+            kel.replace_one.assert_not_awaited()
+
+        # parse error path
+        with patch(
+            "yadacoin.core.transaction.Transaction.from_dict",
+            side_effect=ValueError("nope"),
+        ):
+            await rpc._ingest_branch_sync_entries(stream, [{"id": "bad"}])
+
+        # branch_sync_response: no next_after and no entries → return
+        rpc.write_params = AsyncMock()
+        await rpc.branch_sync_response(
+            {"params": {"entries": [], "eof": False, "next_after_pkh": ""}},
+            stream,
+        )
+        rpc.write_params.assert_not_awaited()
+
+        # deferred KEL verify exceptions are ignored (continue ingest)
+        from yadacoin.core.transaction import MissingInputTransactionException
+
+        mock_txn2 = MagicMock()
+        mock_txn2.verify = AsyncMock(
+            side_effect=MissingInputTransactionException("later")
+        )
+        mock_txn2.transaction_signature = "sig2"
+        mock_txn2.public_key = "pub"
+        mock_txn2.public_key_hash = "PKH2"
+        mock_txn2.prerotated_key_hash = "PRE2"
+        mock_txn2.prev_public_key_hash = ""
+        mock_txn2.to_dict = MagicMock(return_value={"id": "sig2"})
+        with patch(
+            "yadacoin.core.transaction.Transaction.from_dict",
+            return_value=mock_txn2,
+        ):
+            kel = cfg.mongo.async_db.key_event_log
+            kel.find_one = AsyncMock(return_value=None)
+            kel.replace_one = AsyncMock()
+            await rpc._ingest_branch_sync_entries(
+                stream, [{"id": "sig2", "public_key_hash": "PKH2"}]
+            )
+            kel.replace_one.assert_awaited()
+
+    async def test_delta_bridge_and_tip_proof_edges(self):
+        rpc = self._rpc()
+        cfg = _make_config()
+        rpc.config = cfg
+        bridge = {
+            "id": "br0",
+            "counter": 0,
+            "public_key_hash": "BR",
+            "txn": {"id": "br0", "public_key_hash": "BR", "prev_public_key_hash": ""},
+        }
+        tip = {
+            "id": "tip",
+            "counter": 1,
+            "public_key_hash": "T",
+            "txn": {"id": "tip", "public_key_hash": "T", "prev_public_key_hash": "BR"},
+        }
+        cfg.kel_manager._peer_branch_tip_by_hash_link = AsyncMock(return_value=tip)
+        rpc._peer_branch_doc_by_pkh = AsyncMock(return_value=None)
+
+        # walk hits bridge (counter 0) and stops; tip-proof still emitted
+        async def parent_to_bridge(br, cur):
+            if cur is tip or (isinstance(cur, dict) and cur.get("id") == "tip"):
+                return bridge
+            return None
+
+        rpc._peer_branch_parent_doc = parent_to_bridge
+        out, eof, _ = await rpc._peer_branch_ratchet_delta(
+            "BR", tip_pkh="T", return_meta=True
+        )
+        self.assertTrue(any(t.get("id") == "tip" for t in out))
+        self.assertTrue(eof)
+
+        # tip is bridge (counter 0): walk breaks at 957; tip-proof fills chain
+        cfg.kel_manager._peer_branch_tip_by_hash_link = AsyncMock(return_value=bridge)
+        rpc._peer_branch_parent_doc = AsyncMock(return_value=None)
+        out2, eof2, _ = await rpc._peer_branch_ratchet_delta(
+            "BR", tip_pkh="BR", return_meta=True
+        )
+        self.assertEqual(out2[0].get("id"), "br0")
+        self.assertTrue(eof2)
+
+        # after_pkh already at tip → empty (no tip-proof)
+        out3 = await rpc._peer_branch_ratchet_delta("BR", after_pkh="BR", tip_pkh="BR")
+        self.assertEqual(out3, [])
+
+        # after_pkh matches bridge pkh while walking from tip (skip early break)
+        tip_b = {
+            "id": "t3",
+            "counter": 1,
+            "public_key_hash": "T3",
+            "txn": {
+                "id": "t3",
+                "public_key_hash": "T3",
+                "prev_public_key_hash": "BR",
+            },
+        }
+        cfg.kel_manager._peer_branch_tip_by_hash_link = AsyncMock(return_value=tip_b)
+
+        async def parent_bridge(br, cur):
+            return bridge
+
+        rpc._peer_branch_parent_doc = parent_bridge
+        # Force walk onto bridge as *cur* by making tip counter 0 after first step
+        # Start tip as bridge with after_pkh=BR so 954 condition is false then 959 breaks
+        cfg.kel_manager._peer_branch_tip_by_hash_link = AsyncMock(return_value=bridge)
+        out4 = await rpc._peer_branch_ratchet_delta(
+            "BR", after_pkh="BR", tip_pkh="BR", return_meta=False
+        )
+        self.assertEqual(out4, [])
 
 
 class TestAcceptPeerKelChainCoinbase(AsyncTestCase):
