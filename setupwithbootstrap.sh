@@ -17,7 +17,17 @@ else
 echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu bionic/mongodb-org/4.4 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-4.4.list
 fi
 sudo apt-get update
-sudo apt-get install -y mongodb-org libssl-dev cmake python3-pip libjpeg-dev build-essential git
+sudo apt-get install -y mongodb-org libssl-dev cmake python3-pip python3-dev libjpeg-dev build-essential git
+
+# Prefer system cmake over a broken pip cmake shim (/usr/local/bin/cmake)
+export PATH="/usr/bin:${PATH}"
+if [ -x /usr/local/bin/cmake ] && ! /usr/local/bin/cmake --version >/dev/null 2>&1; then
+  sudo rm -f /usr/local/bin/cmake
+fi
+if ! command -v cmake >/dev/null 2>&1 || ! cmake --version >/dev/null 2>&1; then
+  echo "System cmake is required to build pyrx but is missing or broken."
+  exit 1
+fi
 
 # Setup and start DB service
 sudo systemctl enable mongod.service
@@ -57,12 +67,12 @@ RestartSec=5s
 WantedBy=multi-user.target
 EOL
 
-# Install python prerequisites
-sudo -H python3 -m pip install --upgrade pip
-sudo -H python3 -m pip install pyopenssl --upgrade
-sudo -H python3 -m pip install -r requirements.txt
+# Install python prerequisites (system cmake on PATH for pyrx build)
+sudo -H env PATH="/usr/bin:${PATH}" python3 -m pip install --upgrade pip
+sudo -H env PATH="/usr/bin:${PATH}" python3 -m pip install pyopenssl --upgrade
+sudo -H env PATH="/usr/bin:${PATH}" python3 -m pip install -r requirements.txt
 # get the correct chardet and urllib3 versions for yada code
-sudo python3 -m pip install --upgrade requests
+sudo env PATH="/usr/bin:${PATH}" python3 -m pip install --upgrade requests
 
 # Prompt for a custom username and generate config.json with username_signature
 read -r -p "Enter a custom username for this node: " NODE_USERNAME
