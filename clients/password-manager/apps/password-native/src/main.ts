@@ -17,6 +17,7 @@ import {
   hexToBytes,
   identityAfterInception,
   isAlreadyInceptedError,
+  syncInceptionFromNode,
   materialFromPrivCc,
   nodeUrlToWebSocketUrl,
   normalizeSiteId,
@@ -31,49 +32,46 @@ import {
   siteAtCounter,
   siteKeysForOrigin,
   unlockIdentity,
+  vaultIdFromData,
+  VaultStore,
   verifyNativeCaller,
   websocketPeerIdentity,
+  LEGACY_KEYS,
+  createLocalStorageBackend,
   type AttestedCaller,
   type BridgeRequest,
   type BridgeResult,
   type PasswordAuthRequestPayload,
   type SiteCallerPin,
   type SiteRegistration,
+  type StoredSite,
+  type StoredVault,
   type VaultIdentity,
+  type VaultStorageBackend,
   type VerifyCallerResult,
 } from "@yadacoin/password-core";
 import { applyTheme, resolveTheme } from "@yadacoin/password-shared-ui";
 import { CallerIdentity } from "./caller-plugin";
 
-const VAULT_KEY = "yadaPasswordNativeVault";
-
-interface StoredSite {
-  siteId: string;
-  branchPeer: string;
-  counter: number;
-  tipPrevPkh: string;
-  branchInceptionPkh: string;
-  tipPriv: string;
-  tipCc: string;
-  currentPassword: string;
-  nextPassword: string;
-  kp0Priv: string;
-  kp0Cc: string;
-  androidPackage?: string;
-  androidCertSha256?: string[];
+function createNativeVaultBackend(): VaultStorageBackend {
+  if (Capacitor.isNativePlatform()) {
+    return {
+      getItem: async (key: string) => {
+        const { value } = await Preferences.get({ key });
+        return value;
+      },
+      setItem: async (key: string, value: string) => {
+        await Preferences.set({ key, value });
+      },
+      removeItem: async (key: string) => {
+        await Preferences.remove({ key });
+      },
+    };
+  }
+  return createLocalStorageBackend();
 }
 
-interface StoredVault {
-  nodeUrl: string;
-  mnemonic: string;
-  secondFactor: string;
-  username: string;
-  identityType: string;
-  mainDepth: number;
-  tipPrevPkh: string;
-  inceptionDone: boolean;
-  sites: Record<string, StoredSite>;
-}
+const store = new VaultStore(createNativeVaultBackend());
 
 let pending: BridgeRequest | null = null;
 let pendingCaller: AttestedCaller | null = null;
@@ -202,21 +200,62 @@ function resolveNodeUrl(url: string): string {
 }
 
 async function loadVault(): Promise<StoredVault | null> {
-  if (Capacitor.isNativePlatform()) {
-    const { value } = await Preferences.get({ key: VAULT_KEY });
-    return value ? (JSON.parse(value) as StoredVault) : null;
-  }
-  const raw = localStorage.getItem(VAULT_KEY);
-  return raw ? (JSON.parse(raw) as StoredVault) : null;
+  const entry = await store.getActiveVault();
+  return entry?.data ?? null;
 }
 
 async function saveVault(v: StoredVault): Promise<void> {
-  const raw = JSON.stringify(v);
-  if (Capacitor.isNativePlatform()) {
-    await Preferences.set({ key: VAULT_KEY, value: raw });
+  const id = vaultIdFromData(v);
+  await store.updateVaultData(id, v);
+  await store.setActiveVaultId(id);
+}
+
+function fillFormFromVault(v: StoredVault | null) {
+  if (!v) {
+    ($("username") as HTMLInputElement).value = "";
+    ($("secondFactor") as HTMLInputElement).value = "";
+    ($("mnemonic") as HTMLTextAreaElement).value = "";
     return;
   }
-  localStorage.setItem(VAULT_KEY, raw);
+  ($("username") as HTMLInputElement).value = v.username || "";
+  ($("secondFactor") as HTMLInputElement).value = v.secondFactor || "";
+  ($("mnemonic") as HTMLTextAreaElement).value = v.mnemonic || "";
+  if (v.nodeUrl) ($("nodeUrl") as HTMLInputElement).value = v.nodeUrl;
+}
+
+async function refreshVaultSelect(selectedId?: string | null) {
+  const sel = $("vaultSelect") as HTMLSelectElement;
+  const vaults = await store.listVaults();
+  const activeId =
+    selectedId !== undefined ? selectedId : await store.getActiveVaultId();
+  sel.innerHTML = "";
+  if (!vaults.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "— no vault —";
+    sel.appendChild(opt);
+    return;
+  }
+  for (const e of vaults) {
+    const opt = document.createElement("option");
+    opt.value = e.id;
+    const label = e.name || e.data.username || e.id.slice(0, 12);
+    opt.textContent = `${label} · ${e.id.slice(0, 10)}…`;
+    if (e.id === activeId) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+async function switchToVault(id: string) {
+  if (!id) return;
+  const entry = await store.getVault(id);
+  if (!entry) throw new Error("vault not found");
+  await store.setActiveVaultId(id);
+  fillFormFromVault(entry.data);
+  await refreshVaultSelect(id);
+  stopAuthWs();
+  await refreshHome();
+  if (entry.data.inceptionDone) void ensureAuthWs();
 }
 
 function storeSite(site: SiteRegistration, pin?: SiteCallerPin | null): StoredSite {
@@ -261,20 +300,32 @@ function identityFromVault(v: StoredVault): VaultIdentity {
 }
 
 async function ensureIncepted(v: StoredVault): Promise<StoredVault> {
-  if (v.inceptionDone) return v;
   const nodeUrl = resolveNodeUrl(v.nodeUrl || "");
   if (!nodeUrl) return v;
-  const id = identityFromVault(v);
-  const depth = await fetchKelDepth({ baseUrl: nodeUrl }, id.k0.publicKeyHex);
-  if (depth < 1) return v;
-  const next: StoredVault = {
-    ...v,
-    inceptionDone: true,
-    mainDepth: Math.max(v.mainDepth || 0, depth),
-    tipPrevPkh: v.tipPrevPkh || id.k0.address,
-  };
-  await saveVault(next);
-  return next;
+  try {
+    const id = identityFromVault(v);
+    const { identity, inceptionDone } = await syncInceptionFromNode(
+      { baseUrl: nodeUrl },
+      id
+    );
+    if (!inceptionDone) return v;
+    const next: StoredVault = {
+      ...v,
+      inceptionDone: true,
+      mainDepth: identity.mainDepth,
+      tipPrevPkh: identity.tipPrevPkh,
+    };
+    if (
+      next.inceptionDone !== v.inceptionDone ||
+      next.mainDepth !== v.mainDepth ||
+      next.tipPrevPkh !== v.tipPrevPkh
+    ) {
+      await saveVault(next);
+    }
+    return next;
+  } catch {
+    return v;
+  }
 }
 
 function setTab(name: string) {
@@ -464,8 +515,13 @@ function remotePayloadToRequest(p: PasswordAuthRequestPayload): BridgeRequest {
   if (site.startsWith("http://") || site.startsWith("https://")) {
     site = normalizeSiteId(site);
   }
+  const action = (p.action || "signin").toLowerCase();
+  const allowed = ["register", "signin", "status", "operator"] as const;
+  const bridgeAction = (allowed as readonly string[]).includes(action)
+    ? (action as (typeof allowed)[number])
+    : "signin";
   return {
-    action: p.action,
+    action: bridgeAction,
     site,
     callback: "",
     nonce: p.nonce,
@@ -899,7 +955,7 @@ async function approvePending() {
       );
       return;
     }
-    const nodeUrl = resolveNodeUrl(v.nodeUrl);
+    const nodeUrl = resolveNodeUrl(v.nodeUrl || "");
     if (!nodeUrl) {
       await respond(
         {
@@ -1095,10 +1151,11 @@ async function main() {
     });
   }
 
-  const v0 = await loadVault();
+  await store.migrateLegacy(LEGACY_KEYS.native);
+
+  let v0 = await loadVault();
   const originDefault = defaultNodeUrl();
   if (v0) {
-    // Snap stale vault nodeUrl (e.g. pool.yadacoin.io) back to page origin when local
     let nodeField = v0.nodeUrl || originDefault || "";
     if (
       pageServedFromNode() &&
@@ -1108,16 +1165,56 @@ async function main() {
       !isLocalHttpHost(nodeField)
     ) {
       nodeField = originDefault;
-      await saveVault({ ...v0, nodeUrl: originDefault });
+      v0 = { ...v0, nodeUrl: originDefault };
+      await saveVault(v0);
       console.info("[yadapass] nodeUrl pinned to page origin", originDefault);
     }
     ($("nodeUrl") as HTMLInputElement).value = nodeField;
-    ($("username") as HTMLInputElement).value = v0.username || "";
-    ($("secondFactor") as HTMLInputElement).value = v0.secondFactor || "";
-    ($("mnemonic") as HTMLTextAreaElement).value = v0.mnemonic || "";
+    fillFormFromVault(v0);
   } else if (originDefault) {
     ($("nodeUrl") as HTMLInputElement).value = originDefault;
   }
+  await refreshVaultSelect();
+
+  ($("vaultSelect") as HTMLSelectElement).addEventListener("change", () => {
+    void (async () => {
+      const id = ($("vaultSelect") as HTMLSelectElement).value;
+      if (!id) return;
+      try {
+        await switchToVault(id);
+        alertMsg("Switched vault", "success");
+      } catch (e) {
+        alertMsg(e instanceof Error ? e.message : String(e), "error");
+      }
+    })();
+  });
+
+  $("newVaultBtn").addEventListener("click", () => {
+    fillFormFromVault(null);
+    setTab("vault");
+    alertMsg("Enter a new seed (or Generate), then Save vault", "success");
+  });
+
+  $("deleteVaultBtn").addEventListener("click", () => {
+    void (async () => {
+      const id = await store.getActiveVaultId();
+      if (!id) {
+        alertMsg("No vault to delete", "error");
+        return;
+      }
+      if (!confirm("Delete the active vault from this device? This cannot be undone.")) {
+        return;
+      }
+      await store.deleteVault(id);
+      stopAuthWs();
+      const next = await store.getActiveVault();
+      fillFormFromVault(next?.data ?? null);
+      await refreshVaultSelect();
+      await refreshHome();
+      if (next?.data?.inceptionDone) void ensureAuthWs();
+      alertMsg("Vault deleted", "success");
+    })();
+  });
 
   $("genSeedBtn").addEventListener("click", () => {
     ($("mnemonic") as HTMLTextAreaElement).value = createVaultSeed(128);
@@ -1135,26 +1232,24 @@ async function main() {
       const secondFactor = ($("secondFactor") as HTMLInputElement).value;
       const mnemonic = ($("mnemonic") as HTMLTextAreaElement).value.trim();
       const id = unlockIdentity(mnemonic, secondFactor, username);
-      const prev = await loadVault();
-      const sameIdentity =
-        !!prev &&
-        prev.mnemonic === mnemonic &&
-        prev.secondFactor === secondFactor &&
-        prev.username === username;
+      const vaultId = id.k0.address;
+      const existing = await store.getVault(vaultId);
+      const prev = existing?.data ?? null;
       let stored: StoredVault = {
         nodeUrl,
         mnemonic,
         secondFactor,
         username,
         identityType: "social",
-        mainDepth: sameIdentity ? prev!.mainDepth ?? 0 : 0,
-        tipPrevPkh: sameIdentity ? prev!.tipPrevPkh ?? "" : "",
-        inceptionDone: sameIdentity ? prev!.inceptionDone ?? false : false,
-        // Site material is derived from vault + node tip; keep only when identity matches.
-        sites: sameIdentity ? prev!.sites ?? {} : {},
+        mainDepth: prev?.mainDepth ?? 0,
+        tipPrevPkh: prev?.tipPrevPkh ?? "",
+        inceptionDone: prev?.inceptionDone ?? false,
+        sites: prev?.sites ?? {},
       };
-      await saveVault(stored);
-      // Auto-detect KEL on node so a restored vault does not need a separate inception tap.
+      await store.saveVault(vaultId, stored, {
+        name: username || existing?.name,
+      });
+      await store.setActiveVaultId(vaultId);
       if (nodeUrl) {
         stored = await ensureIncepted(stored);
         if (!stored.inceptionDone) {
@@ -1172,16 +1267,24 @@ async function main() {
                 inceptionDone: true,
               };
               await saveVault(stored);
+            } else {
+              stored = await ensureIncepted(stored);
             }
           } catch {
-            /* user can tap Broadcast inception if node unreachable */
+            stored = await ensureIncepted(stored);
           }
         }
       }
-      const ready = stored.inceptionDone ? "ready · sign-in will auto-sync sites" : "saved · inception still needed";
+      await refreshVaultSelect(vaultId);
+      const ready = stored.inceptionDone
+        ? "ready · sign-in will auto-sync sites"
+        : "saved · inception still needed";
       alertMsg(`Vault saved · ${id.k0.address.slice(0, 12)}… · ${ready}`, "success");
       await refreshHome();
-      if (stored.inceptionDone) setTab(pending ? "request" : "home");
+      if (stored.inceptionDone) {
+        void ensureAuthWs();
+        setTab(pending ? "request" : "home");
+      }
     } catch (e) {
       alertMsg(e instanceof Error ? e.message : String(e), "error");
     }
@@ -1197,7 +1300,7 @@ async function main() {
       v.nodeUrl = nodeUrl;
       v = await ensureIncepted({ ...v, nodeUrl });
       if (v.inceptionDone) {
-        alertMsg("Already incepted — ready to approve requests", "success");
+        alertMsg("Already incepted on node — vault updated", "success");
         await refreshHome();
         setTab(pending ? "request" : "home");
         return;
@@ -1207,6 +1310,13 @@ async function main() {
       const res = await broadcastTxns({ baseUrl: nodeUrl }, txn);
       const already = isAlreadyInceptedError(res.body?.message);
       if (!res.ok && res.body?.status === false && !already) {
+        v = await ensureIncepted(v);
+        if (v.inceptionDone) {
+          alertMsg("Already incepted on node — vault updated", "success");
+          await refreshHome();
+          setTab("home");
+          return;
+        }
         throw new Error(res.body?.message || `broadcast failed (${res.status})`);
       }
       identity = identityAfterInception(identity);

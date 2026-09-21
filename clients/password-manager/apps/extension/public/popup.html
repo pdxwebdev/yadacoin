@@ -43,6 +43,16 @@
         <div class="pm-brand__name" id="brandName">Yada Password</div>
       </header>
       <div class="pm-card">
+        <div class="pm-field">
+          <label for="vaultSelect">Active vault</label>
+          <select class="pm-select" id="vaultSelect">
+            <option value="">— no vault —</option>
+          </select>
+        </div>
+        <div class="pm-btn-row" style="margin-top:0;margin-bottom:0.75rem">
+          <button type="button" class="pm-btn pm-btn--ghost" id="newVaultBtn">New vault</button>
+          <button type="button" class="pm-btn pm-btn--ghost" id="deleteVaultBtn">Delete</button>
+        </div>
         <div class="pm-tabs" role="tablist">
           <button type="button" class="pm-tab" data-tab="request" aria-selected="true">Request</button>
           <button type="button" class="pm-tab" data-tab="site">Site</button>

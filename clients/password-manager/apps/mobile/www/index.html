@@ -86,6 +86,17 @@
         <p class="pm-muted">Client-owned seed · never sent to the node</p>
 
         <div class="pm-field">
+          <label for="vaultSelect">Active vault</label>
+          <select class="pm-select" id="vaultSelect">
+            <option value="">— no vault —</option>
+          </select>
+        </div>
+        <div class="pm-btn-row">
+          <button type="button" class="pm-btn pm-btn--ghost" id="newVaultBtn">New vault</button>
+          <button type="button" class="pm-btn pm-btn--ghost" id="deleteVaultBtn">Delete</button>
+        </div>
+
+        <div class="pm-field">
           <label for="nodeUrl">Node URL</label>
           <input class="pm-input" id="nodeUrl" type="url" placeholder="http://192.168.1.10:8101" />
         </div>

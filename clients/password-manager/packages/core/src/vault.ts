@@ -204,7 +204,9 @@ export function isAlreadyInceptedError(message: string | undefined): boolean {
     m.includes("already on-chain") ||
     m.includes("already incepted") ||
     m.includes("duplicate kel inception") ||
-    m.includes("key event log already exists")
+    m.includes("kel already exists") ||
+    m.includes("key event log already exists") ||
+    (m.includes("username") && m.includes("already claimed"))
   );
 }
 
@@ -226,10 +228,69 @@ export function kelRotationDepth(
   return inception + rotations;
 }
 
+export type InceptionStatus = {
+  incepted: boolean;
+  kelDepth: number;
+  hasKel: boolean;
+  usernameMatches: boolean | null;
+  source: "identity-inception-status" | "key-event-log" | "none";
+};
+
+/**
+ * Ask the node whether this K0 already has an identity announcement / KEL.
+ * Prefers GET /identity-inception-status; falls back to /key-event-log.
+ */
+export async function fetchInceptionStatus(
+  api: NodeApi,
+  publicKeyHex: string,
+  username?: string
+): Promise<InceptionStatus> {
+  const q = new URLSearchParams({ public_key: publicKeyHex });
+  if (username?.trim()) q.set("username", username.trim());
+  try {
+    const res = await httpJson(api, `/identity-inception-status?${q.toString()}`);
+    if (res.ok && res.body?.status !== false) {
+      const kelDepth = Number(res.body?.kel_depth ?? 0);
+      const incepted = Boolean(res.body?.incepted) || kelDepth >= 1;
+      const match = res.body?.identity?.matches_public_key;
+      return {
+        incepted,
+        kelDepth: Number.isFinite(kelDepth) ? Math.max(0, kelDepth) : incepted ? 1 : 0,
+        hasKel: Boolean(res.body?.has_kel) || kelDepth >= 1,
+        usernameMatches:
+          typeof match === "boolean" ? match : username?.trim() ? null : null,
+        source: "identity-inception-status",
+      };
+    }
+  } catch {
+    /* fall through to KEL */
+  }
+
+  const depth = await fetchKelDepth(api, publicKeyHex);
+  return {
+    incepted: depth >= 1,
+    kelDepth: depth,
+    hasKel: depth >= 1,
+    usernameMatches: null,
+    source: depth >= 1 ? "key-event-log" : "none",
+  };
+}
+
 export async function fetchKelDepth(
   api: NodeApi,
   publicKeyHex: string
 ): Promise<number> {
+  try {
+    const has = await httpJson(
+      api,
+      `/has-key-event-log?public_key=${encodeURIComponent(publicKeyHex)}`
+    );
+    if (has.ok && has.body?.status === true) {
+      /* confirmed present; still need depth from full log */
+    }
+  } catch {
+    /* optional probe */
+  }
   const kel = await httpJson(
     api,
     `/key-event-log?public_key=${encodeURIComponent(publicKeyHex)}`
@@ -238,6 +299,54 @@ export async function fetchKelDepth(
     return kelRotationDepth(kel.body.key_event_log);
   }
   return 0;
+}
+
+/**
+ * Merge node inception truth into vault identity fields (mainDepth / tip).
+ * Does not persist — callers write StoredVault.
+ */
+export function identityFromInceptionStatus(
+  identity: VaultIdentity,
+  status: InceptionStatus
+): VaultIdentity {
+  if (!status.incepted) {
+    return {
+      ...identity,
+      mainDepth: 0,
+      tipSigner: identity.k0,
+      tipPrevPkh: "",
+    };
+  }
+  const depth = Math.max(1, status.kelDepth || 1);
+  const tipSigner = walkMain(identity.k0, identity.secondFactor, depth);
+  const tipPrevPkh =
+    depth <= 1
+      ? identity.k0.address
+      : walkMain(identity.k0, identity.secondFactor, depth - 1).address;
+  return {
+    ...identity,
+    mainDepth: depth,
+    tipSigner,
+    tipPrevPkh,
+  };
+}
+
+/** Probe node and return identity + inceptionDone for local vault sync. */
+export async function syncInceptionFromNode(
+  api: NodeApi,
+  identity: VaultIdentity
+): Promise<{ identity: VaultIdentity; inceptionDone: boolean; status: InceptionStatus }> {
+  const status = await fetchInceptionStatus(
+    api,
+    identity.k0.publicKeyHex,
+    identity.username
+  );
+  const next = identityFromInceptionStatus(identity, status);
+  return {
+    identity: next,
+    inceptionDone: status.incepted,
+    status,
+  };
 }
 
 /**

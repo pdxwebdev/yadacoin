@@ -30,6 +30,16 @@
           can route by your Yada username while this app stays online on your node.
         </p>
         <div class="pm-field">
+          <label for="vaultSelect">Active vault</label>
+          <select class="pm-select" id="vaultSelect">
+            <option value="">— no vault —</option>
+          </select>
+        </div>
+        <div class="pm-btn-row">
+          <button type="button" class="pm-btn pm-btn--ghost" id="newVaultBtn">New vault</button>
+          <button type="button" class="pm-btn pm-btn--ghost" id="deleteVaultBtn">Delete</button>
+        </div>
+        <div class="pm-field">
           <label>Status</label>
           <div class="mono" id="homeStatus">—</div>
         </div>
@@ -112,6 +122,6 @@
         </div>
       </section>
     </div>
-    <script type="module" src="js/main.js?v=local-node-3"></script>
+    <script type="module" src="js/main.js?v=multi-vault-1"></script>
   </body>
 </html>

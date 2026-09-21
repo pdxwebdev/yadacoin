@@ -228,6 +228,73 @@ class TestHasKELHandler(ExtrasHttpTestCase):
         self.assertEqual(response.code, 400)
 
 
+class TestIdentityInceptionStatusHandler(ExtrasHttpTestCase):
+    def test_missing_public_key_returns_400(self):
+        response = self.fetch("/identity-inception-status")
+        self.assertEqual(response.code, 400)
+
+    def test_not_incepted_empty_kel(self):
+        pubkey = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+        with patch(
+            "yadacoin.http.keyeventlog.KeyEventLog.build_from_public_key",
+            new=AsyncMock(return_value=[]),
+        ), patch(
+            "yadacoin.http.keyeventlog.IdentityAnnouncement.get_by_username",
+            new=AsyncMock(return_value=None),
+        ):
+            response = self.fetch(
+                f"/identity-inception-status?public_key={pubkey}&username=alice"
+            )
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertTrue(data["status"])
+        self.assertFalse(data["incepted"])
+        self.assertEqual(data["kel_depth"], 0)
+        self.assertFalse(data["identity"]["matches_public_key"])
+
+    def test_incepted_via_kel(self):
+        pubkey = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+        mock_item = MagicMock()
+        mock_item.txn = MagicMock(prev_public_key_hash="")
+        mock_item.to_dict = MagicMock(
+            return_value={"prev_public_key_hash": "", "public_key": pubkey}
+        )
+        with patch(
+            "yadacoin.http.keyeventlog.KeyEventLog.build_from_public_key",
+            new=AsyncMock(return_value=[mock_item]),
+        ):
+            response = self.fetch(f"/identity-inception-status?public_key={pubkey}")
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertTrue(data["incepted"])
+        self.assertTrue(data["has_kel"])
+        self.assertGreaterEqual(data["kel_depth"], 1)
+
+    def test_incepted_via_username_match(self):
+        pubkey = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+        with patch(
+            "yadacoin.http.keyeventlog.KeyEventLog.build_from_public_key",
+            new=AsyncMock(return_value=[]),
+        ), patch(
+            "yadacoin.http.keyeventlog.IdentityAnnouncement.get_by_username",
+            new=AsyncMock(
+                return_value={
+                    "public_key": pubkey,
+                    "identity": {"username": "alice"},
+                    "source": "blockchain",
+                }
+            ),
+        ):
+            response = self.fetch(
+                f"/identity-inception-status?public_key={pubkey}&username=alice"
+            )
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertTrue(data["incepted"])
+        self.assertTrue(data["identity"]["matches_public_key"])
+        self.assertEqual(data["kel_depth"], 1)
+
+
 # ---------------------------------------------------------------------------
 # KELHandler
 # ---------------------------------------------------------------------------

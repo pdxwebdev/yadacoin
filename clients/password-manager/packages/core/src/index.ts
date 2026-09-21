@@ -1,3 +1,4 @@
+export * from "./vault-store.js";
 export * from "./bytes.js";
 export * from "./hash.js";
 export * from "./derive.js";

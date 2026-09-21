@@ -2,45 +2,34 @@
  * MV3 service worker — vault sign-in/rotate for harness pages via content script.
  */
 import {
+  bytesToHex,
   hashPassword,
   hexToBytes,
+  LEGACY_KEYS,
   materialFromPrivCc,
   registerSite,
   resyncSiteFromNode,
   resyncVaultFromNode,
   rotateSitePassword,
+  syncInceptionFromNode,
   unlockIdentity,
+  vaultIdFromData,
+  VaultStore,
   type SiteRegistration,
+  type StoredSite,
+  type StoredVault,
   type VaultIdentity,
 } from "@yadacoin/password-core";
-import { bytesToHex } from "@yadacoin/password-core";
+import { createExtensionVaultBackend } from "../shared/vault-backend.js";
 
-const VAULT_KEY = "yadaPasswordVault";
 const SETTINGS_KEY = "yadaPasswordSettings";
+const store = new VaultStore(createExtensionVaultBackend());
+let migrated = false;
 
-interface StoredSite {
-  siteId: string;
-  branchPeer: string;
-  counter: number;
-  tipPrevPkh: string;
-  branchInceptionPkh: string;
-  tipPriv: string;
-  tipCc: string;
-  currentPassword: string;
-  nextPassword: string;
-  kp0Priv: string;
-  kp0Cc: string;
-}
-
-interface StoredVault {
-  mnemonic: string;
-  secondFactor: string;
-  username: string;
-  identityType: string;
-  mainDepth: number;
-  tipPrevPkh: string;
-  inceptionDone: boolean;
-  sites: Record<string, StoredSite>;
+async function ensureMigrated(): Promise<void> {
+  if (migrated) return;
+  await store.migrateLegacy(LEGACY_KEYS.extension);
+  migrated = true;
 }
 
 function storeSite(site: SiteRegistration): StoredSite {
@@ -74,12 +63,16 @@ function siteFromStored(s: StoredSite): SiteRegistration {
 }
 
 async function loadVault(): Promise<StoredVault | null> {
-  const data = await chrome.storage.local.get(VAULT_KEY);
-  return (data[VAULT_KEY] as StoredVault) || null;
+  await ensureMigrated();
+  const entry = await store.getActiveVault();
+  return entry?.data ?? null;
 }
 
 async function saveVault(v: StoredVault): Promise<void> {
-  await chrome.storage.local.set({ [VAULT_KEY]: v });
+  await ensureMigrated();
+  const id = vaultIdFromData(v);
+  await store.updateVaultData(id, v);
+  await store.setActiveVaultId(id);
 }
 
 async function nodeUrl(): Promise<string> {
@@ -88,8 +81,49 @@ async function nodeUrl(): Promise<string> {
   return (s.nodeUrl || "").replace(/\/+$/, "");
 }
 
+async function ensureIncepted(
+  v: StoredVault,
+  baseUrl: string
+): Promise<StoredVault> {
+  if (!baseUrl) return v;
+  try {
+    const identity: VaultIdentity = unlockIdentity(
+      v.mnemonic,
+      v.secondFactor,
+      v.username,
+      {
+        identityType: v.identityType,
+        mainDepth: v.mainDepth,
+        tipPrevPkh: v.tipPrevPkh,
+      }
+    );
+    const { identity: nextId, inceptionDone } = await syncInceptionFromNode(
+      { baseUrl },
+      identity
+    );
+    if (!inceptionDone) return v;
+    const next: StoredVault = {
+      ...v,
+      inceptionDone: true,
+      mainDepth: nextId.mainDepth,
+      tipPrevPkh: nextId.tipPrevPkh,
+    };
+    if (
+      next.inceptionDone !== v.inceptionDone ||
+      next.mainDepth !== v.mainDepth ||
+      next.tipPrevPkh !== v.tipPrevPkh
+    ) {
+      await saveVault(next);
+    }
+    return next;
+  } catch {
+    return v;
+  }
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   console.info("Yada Password extension installed");
+  void ensureMigrated();
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -108,8 +142,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, message: "set Node URL in extension options" });
           return;
         }
-        const v = await loadVault();
-        if (!v?.inceptionDone) {
+        let v = await loadVault();
+        if (!v) {
+          sendResponse({ ok: false, message: "no vault" });
+          return;
+        }
+        v = await ensureIncepted(v, baseUrl);
+        if (!v.inceptionDone) {
           sendResponse({ ok: false, message: "vault not incepted" });
           return;
         }
@@ -163,8 +202,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           });
           return;
         }
-        const v = await loadVault();
-        if (!v?.inceptionDone) {
+        let v = await loadVault();
+        if (!v) {
+          sendResponse({ ok: false, message: "no vault" });
+          return;
+        }
+        v = await ensureIncepted(v, baseUrl);
+        if (!v.inceptionDone) {
           sendResponse({ ok: false, message: "vault not incepted" });
           return;
         }
@@ -185,11 +229,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         } else {
           site = siteFromStored(stored);
         }
-        const result = await rotateSitePassword(
-          { baseUrl },
-          identity,
-          site
-        );
+        const result = await rotateSitePassword({ baseUrl }, identity, site);
         v.sites[origin] = storeSite(result.site);
         await saveVault(v);
         sendResponse({
@@ -209,7 +249,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         });
       }
     })();
-    return true; // async sendResponse
+    return true;
   }
 
   if (message.type === "YADA_RESYNC_SITE") {
@@ -225,8 +265,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, message: "set Node URL in extension options" });
           return;
         }
-        const v = await loadVault();
-        if (!v?.inceptionDone) {
+        let v = await loadVault();
+        if (!v) {
+          sendResponse({ ok: false, message: "no vault" });
+          return;
+        }
+        v = await ensureIncepted(v, baseUrl);
+        if (!v.inceptionDone) {
           sendResponse({ ok: false, message: "vault not incepted" });
           return;
         }

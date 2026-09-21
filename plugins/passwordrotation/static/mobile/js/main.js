@@ -30,64 +30,6 @@ var require_crypto = __commonJS({
   }
 });
 
-// ../../packages/core/dist/bytes.js
-function hexToBytes(hex) {
-  const h = hex.startsWith("0x") ? hex.slice(2) : hex;
-  if (h.length % 2)
-    throw new Error("invalid hex");
-  const out = new Uint8Array(h.length / 2);
-  for (let i = 0; i < out.length; i++) {
-    out[i] = parseInt(h.slice(i * 2, i * 2 + 2), 16);
-  }
-  return out;
-}
-function bytesToHex(bytes) {
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-function bytesToBase64(bytes) {
-  let s = "";
-  for (let i = 0; i < bytes.length; i++)
-    s += String.fromCharCode(bytes[i]);
-  return btoa(s);
-}
-
-// ../../node_modules/@noble/hashes/esm/_u64.js
-var U32_MASK64 = /* @__PURE__ */ BigInt(2 ** 32 - 1);
-var _32n = /* @__PURE__ */ BigInt(32);
-function fromBig(n, le = false) {
-  if (le)
-    return { h: Number(n & U32_MASK64), l: Number(n >> _32n & U32_MASK64) };
-  return { h: Number(n >> _32n & U32_MASK64) | 0, l: Number(n & U32_MASK64) | 0 };
-}
-function split(lst, le = false) {
-  const len = lst.length;
-  let Ah = new Uint32Array(len);
-  let Al = new Uint32Array(len);
-  for (let i = 0; i < len; i++) {
-    const { h, l } = fromBig(lst[i], le);
-    [Ah[i], Al[i]] = [h, l];
-  }
-  return [Ah, Al];
-}
-var shrSH = (h, _l, s) => h >>> s;
-var shrSL = (h, l, s) => h << 32 - s | l >>> s;
-var rotrSH = (h, l, s) => h >>> s | l << 32 - s;
-var rotrSL = (h, l, s) => h << 32 - s | l >>> s;
-var rotrBH = (h, l, s) => h << 64 - s | l >>> s - 32;
-var rotrBL = (h, l, s) => h >>> s - 32 | l << 64 - s;
-var rotr32H = (_h, l) => l;
-var rotr32L = (h, _l) => h;
-function add(Ah, Al, Bh, Bl) {
-  const l = (Al >>> 0) + (Bl >>> 0);
-  return { h: Ah + Bh + (l / 2 ** 32 | 0) | 0, l: l | 0 };
-}
-var add3L = (Al, Bl, Cl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0);
-var add3H = (low, Ah, Bh, Ch) => Ah + Bh + Ch + (low / 2 ** 32 | 0) | 0;
-var add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0);
-var add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
-var add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
-var add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
-
 // ../../node_modules/@noble/hashes/esm/crypto.js
 var crypto2 = typeof globalThis === "object" && "crypto" in globalThis ? globalThis.crypto : void 0;
 
@@ -161,7 +103,7 @@ var hasHexBuiltin = /* @__PURE__ */ (() => (
   typeof Uint8Array.from([]).toHex === "function" && typeof Uint8Array.fromHex === "function"
 ))();
 var hexes = /* @__PURE__ */ Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, "0"));
-function bytesToHex2(bytes) {
+function bytesToHex(bytes) {
   abytes(bytes);
   if (hasHexBuiltin)
     return bytes.toHex();
@@ -181,7 +123,7 @@ function asciiToBase16(ch) {
     return ch - (asciis.a - 10);
   return;
 }
-function hexToBytes2(hex) {
+function hexToBytes(hex) {
   if (typeof hex !== "string")
     throw new Error("hex string expected, got " + typeof hex);
   if (hasHexBuiltin)
@@ -267,267 +209,6 @@ function randomBytes(bytesLength = 32) {
   }
   throw new Error("crypto.getRandomValues must be defined");
 }
-
-// ../../node_modules/@noble/hashes/esm/_blake.js
-var BSIGMA = /* @__PURE__ */ Uint8Array.from([
-  0,
-  1,
-  2,
-  3,
-  4,
-  5,
-  6,
-  7,
-  8,
-  9,
-  10,
-  11,
-  12,
-  13,
-  14,
-  15,
-  14,
-  10,
-  4,
-  8,
-  9,
-  15,
-  13,
-  6,
-  1,
-  12,
-  0,
-  2,
-  11,
-  7,
-  5,
-  3,
-  11,
-  8,
-  12,
-  0,
-  5,
-  2,
-  15,
-  13,
-  10,
-  14,
-  3,
-  6,
-  7,
-  1,
-  9,
-  4,
-  7,
-  9,
-  3,
-  1,
-  13,
-  12,
-  11,
-  14,
-  2,
-  6,
-  5,
-  10,
-  4,
-  0,
-  15,
-  8,
-  9,
-  0,
-  5,
-  7,
-  2,
-  4,
-  10,
-  15,
-  14,
-  1,
-  11,
-  12,
-  6,
-  8,
-  3,
-  13,
-  2,
-  12,
-  6,
-  10,
-  0,
-  11,
-  8,
-  3,
-  4,
-  13,
-  7,
-  5,
-  15,
-  14,
-  1,
-  9,
-  12,
-  5,
-  1,
-  15,
-  14,
-  13,
-  4,
-  10,
-  0,
-  7,
-  6,
-  3,
-  9,
-  2,
-  8,
-  11,
-  13,
-  11,
-  7,
-  14,
-  12,
-  1,
-  3,
-  9,
-  5,
-  0,
-  15,
-  4,
-  8,
-  6,
-  2,
-  10,
-  6,
-  15,
-  14,
-  9,
-  11,
-  3,
-  0,
-  8,
-  12,
-  2,
-  13,
-  7,
-  1,
-  4,
-  10,
-  5,
-  10,
-  2,
-  8,
-  4,
-  7,
-  6,
-  1,
-  5,
-  15,
-  11,
-  9,
-  14,
-  3,
-  12,
-  13,
-  0,
-  0,
-  1,
-  2,
-  3,
-  4,
-  5,
-  6,
-  7,
-  8,
-  9,
-  10,
-  11,
-  12,
-  13,
-  14,
-  15,
-  14,
-  10,
-  4,
-  8,
-  9,
-  15,
-  13,
-  6,
-  1,
-  12,
-  0,
-  2,
-  11,
-  7,
-  5,
-  3,
-  // Blake1, unused in others
-  11,
-  8,
-  12,
-  0,
-  5,
-  2,
-  15,
-  13,
-  10,
-  14,
-  3,
-  6,
-  7,
-  1,
-  9,
-  4,
-  7,
-  9,
-  3,
-  1,
-  13,
-  12,
-  11,
-  14,
-  2,
-  6,
-  5,
-  10,
-  4,
-  0,
-  15,
-  8,
-  9,
-  0,
-  5,
-  7,
-  2,
-  4,
-  10,
-  15,
-  14,
-  1,
-  11,
-  12,
-  6,
-  8,
-  3,
-  13,
-  2,
-  12,
-  6,
-  10,
-  0,
-  11,
-  8,
-  3,
-  4,
-  13,
-  7,
-  5,
-  15,
-  14,
-  1,
-  9
-]);
 
 // ../../node_modules/@noble/hashes/esm/_md.js
 function setBigUint64(view, byteOffset, value, isLE2) {
@@ -667,681 +348,42 @@ var SHA512_IV = /* @__PURE__ */ Uint32Array.from([
   327033209
 ]);
 
-// ../../node_modules/@noble/hashes/esm/blake2.js
-var B2B_IV = /* @__PURE__ */ Uint32Array.from([
-  4089235720,
-  1779033703,
-  2227873595,
-  3144134277,
-  4271175723,
-  1013904242,
-  1595750129,
-  2773480762,
-  2917565137,
-  1359893119,
-  725511199,
-  2600822924,
-  4215389547,
-  528734635,
-  327033209,
-  1541459225
-]);
-var BBUF = /* @__PURE__ */ new Uint32Array(32);
-function G1b(a, b, c, d, msg, x) {
-  const Xl = msg[x], Xh = msg[x + 1];
-  let Al = BBUF[2 * a], Ah = BBUF[2 * a + 1];
-  let Bl = BBUF[2 * b], Bh = BBUF[2 * b + 1];
-  let Cl = BBUF[2 * c], Ch = BBUF[2 * c + 1];
-  let Dl = BBUF[2 * d], Dh = BBUF[2 * d + 1];
-  let ll = add3L(Al, Bl, Xl);
-  Ah = add3H(ll, Ah, Bh, Xh);
-  Al = ll | 0;
-  ({ Dh, Dl } = { Dh: Dh ^ Ah, Dl: Dl ^ Al });
-  ({ Dh, Dl } = { Dh: rotr32H(Dh, Dl), Dl: rotr32L(Dh, Dl) });
-  ({ h: Ch, l: Cl } = add(Ch, Cl, Dh, Dl));
-  ({ Bh, Bl } = { Bh: Bh ^ Ch, Bl: Bl ^ Cl });
-  ({ Bh, Bl } = { Bh: rotrSH(Bh, Bl, 24), Bl: rotrSL(Bh, Bl, 24) });
-  BBUF[2 * a] = Al, BBUF[2 * a + 1] = Ah;
-  BBUF[2 * b] = Bl, BBUF[2 * b + 1] = Bh;
-  BBUF[2 * c] = Cl, BBUF[2 * c + 1] = Ch;
-  BBUF[2 * d] = Dl, BBUF[2 * d + 1] = Dh;
+// ../../node_modules/@noble/hashes/esm/_u64.js
+var U32_MASK64 = /* @__PURE__ */ BigInt(2 ** 32 - 1);
+var _32n = /* @__PURE__ */ BigInt(32);
+function fromBig(n, le = false) {
+  if (le)
+    return { h: Number(n & U32_MASK64), l: Number(n >> _32n & U32_MASK64) };
+  return { h: Number(n >> _32n & U32_MASK64) | 0, l: Number(n & U32_MASK64) | 0 };
 }
-function G2b(a, b, c, d, msg, x) {
-  const Xl = msg[x], Xh = msg[x + 1];
-  let Al = BBUF[2 * a], Ah = BBUF[2 * a + 1];
-  let Bl = BBUF[2 * b], Bh = BBUF[2 * b + 1];
-  let Cl = BBUF[2 * c], Ch = BBUF[2 * c + 1];
-  let Dl = BBUF[2 * d], Dh = BBUF[2 * d + 1];
-  let ll = add3L(Al, Bl, Xl);
-  Ah = add3H(ll, Ah, Bh, Xh);
-  Al = ll | 0;
-  ({ Dh, Dl } = { Dh: Dh ^ Ah, Dl: Dl ^ Al });
-  ({ Dh, Dl } = { Dh: rotrSH(Dh, Dl, 16), Dl: rotrSL(Dh, Dl, 16) });
-  ({ h: Ch, l: Cl } = add(Ch, Cl, Dh, Dl));
-  ({ Bh, Bl } = { Bh: Bh ^ Ch, Bl: Bl ^ Cl });
-  ({ Bh, Bl } = { Bh: rotrBH(Bh, Bl, 63), Bl: rotrBL(Bh, Bl, 63) });
-  BBUF[2 * a] = Al, BBUF[2 * a + 1] = Ah;
-  BBUF[2 * b] = Bl, BBUF[2 * b + 1] = Bh;
-  BBUF[2 * c] = Cl, BBUF[2 * c + 1] = Ch;
-  BBUF[2 * d] = Dl, BBUF[2 * d + 1] = Dh;
+function split(lst, le = false) {
+  const len = lst.length;
+  let Ah = new Uint32Array(len);
+  let Al = new Uint32Array(len);
+  for (let i = 0; i < len; i++) {
+    const { h, l } = fromBig(lst[i], le);
+    [Ah[i], Al[i]] = [h, l];
+  }
+  return [Ah, Al];
 }
-function checkBlake2Opts(outputLen, opts = {}, keyLen, saltLen, persLen) {
-  anumber(keyLen);
-  if (outputLen < 0 || outputLen > keyLen)
-    throw new Error("outputLen bigger than keyLen");
-  const { key, salt, personalization } = opts;
-  if (key !== void 0 && (key.length < 1 || key.length > keyLen))
-    throw new Error("key length must be undefined or 1.." + keyLen);
-  if (salt !== void 0 && salt.length !== saltLen)
-    throw new Error("salt must be undefined or " + saltLen);
-  if (personalization !== void 0 && personalization.length !== persLen)
-    throw new Error("personalization must be undefined or " + persLen);
+var shrSH = (h, _l, s) => h >>> s;
+var shrSL = (h, l, s) => h << 32 - s | l >>> s;
+var rotrSH = (h, l, s) => h >>> s | l << 32 - s;
+var rotrSL = (h, l, s) => h << 32 - s | l >>> s;
+var rotrBH = (h, l, s) => h << 64 - s | l >>> s - 32;
+var rotrBL = (h, l, s) => h >>> s - 32 | l << 64 - s;
+var rotr32H = (_h, l) => l;
+var rotr32L = (h, _l) => h;
+function add(Ah, Al, Bh, Bl) {
+  const l = (Al >>> 0) + (Bl >>> 0);
+  return { h: Ah + Bh + (l / 2 ** 32 | 0) | 0, l: l | 0 };
 }
-var BLAKE2 = class extends Hash {
-  constructor(blockLen, outputLen) {
-    super();
-    this.finished = false;
-    this.destroyed = false;
-    this.length = 0;
-    this.pos = 0;
-    anumber(blockLen);
-    anumber(outputLen);
-    this.blockLen = blockLen;
-    this.outputLen = outputLen;
-    this.buffer = new Uint8Array(blockLen);
-    this.buffer32 = u32(this.buffer);
-  }
-  update(data) {
-    aexists(this);
-    data = toBytes(data);
-    abytes(data);
-    const { blockLen, buffer, buffer32 } = this;
-    const len = data.length;
-    const offset = data.byteOffset;
-    const buf = data.buffer;
-    for (let pos = 0; pos < len; ) {
-      if (this.pos === blockLen) {
-        swap32IfBE(buffer32);
-        this.compress(buffer32, 0, false);
-        swap32IfBE(buffer32);
-        this.pos = 0;
-      }
-      const take = Math.min(blockLen - this.pos, len - pos);
-      const dataOffset = offset + pos;
-      if (take === blockLen && !(dataOffset % 4) && pos + take < len) {
-        const data32 = new Uint32Array(buf, dataOffset, Math.floor((len - pos) / 4));
-        swap32IfBE(data32);
-        for (let pos32 = 0; pos + blockLen < len; pos32 += buffer32.length, pos += blockLen) {
-          this.length += blockLen;
-          this.compress(data32, pos32, false);
-        }
-        swap32IfBE(data32);
-        continue;
-      }
-      buffer.set(data.subarray(pos, pos + take), this.pos);
-      this.pos += take;
-      this.length += take;
-      pos += take;
-    }
-    return this;
-  }
-  digestInto(out) {
-    aexists(this);
-    aoutput(out, this);
-    const { pos, buffer32 } = this;
-    this.finished = true;
-    clean(this.buffer.subarray(pos));
-    swap32IfBE(buffer32);
-    this.compress(buffer32, 0, true);
-    swap32IfBE(buffer32);
-    const out32 = u32(out);
-    this.get().forEach((v, i) => out32[i] = swap8IfBE(v));
-  }
-  digest() {
-    const { buffer, outputLen } = this;
-    this.digestInto(buffer);
-    const res = buffer.slice(0, outputLen);
-    this.destroy();
-    return res;
-  }
-  _cloneInto(to) {
-    const { buffer, length, finished, destroyed, outputLen, pos } = this;
-    to || (to = new this.constructor({ dkLen: outputLen }));
-    to.set(...this.get());
-    to.buffer.set(buffer);
-    to.destroyed = destroyed;
-    to.finished = finished;
-    to.length = length;
-    to.pos = pos;
-    to.outputLen = outputLen;
-    return to;
-  }
-  clone() {
-    return this._cloneInto();
-  }
-};
-var BLAKE2b = class extends BLAKE2 {
-  constructor(opts = {}) {
-    const olen = opts.dkLen === void 0 ? 64 : opts.dkLen;
-    super(128, olen);
-    this.v0l = B2B_IV[0] | 0;
-    this.v0h = B2B_IV[1] | 0;
-    this.v1l = B2B_IV[2] | 0;
-    this.v1h = B2B_IV[3] | 0;
-    this.v2l = B2B_IV[4] | 0;
-    this.v2h = B2B_IV[5] | 0;
-    this.v3l = B2B_IV[6] | 0;
-    this.v3h = B2B_IV[7] | 0;
-    this.v4l = B2B_IV[8] | 0;
-    this.v4h = B2B_IV[9] | 0;
-    this.v5l = B2B_IV[10] | 0;
-    this.v5h = B2B_IV[11] | 0;
-    this.v6l = B2B_IV[12] | 0;
-    this.v6h = B2B_IV[13] | 0;
-    this.v7l = B2B_IV[14] | 0;
-    this.v7h = B2B_IV[15] | 0;
-    checkBlake2Opts(olen, opts, 64, 16, 16);
-    let { key, personalization, salt } = opts;
-    let keyLength = 0;
-    if (key !== void 0) {
-      key = toBytes(key);
-      keyLength = key.length;
-    }
-    this.v0l ^= this.outputLen | keyLength << 8 | 1 << 16 | 1 << 24;
-    if (salt !== void 0) {
-      salt = toBytes(salt);
-      const slt = u32(salt);
-      this.v4l ^= swap8IfBE(slt[0]);
-      this.v4h ^= swap8IfBE(slt[1]);
-      this.v5l ^= swap8IfBE(slt[2]);
-      this.v5h ^= swap8IfBE(slt[3]);
-    }
-    if (personalization !== void 0) {
-      personalization = toBytes(personalization);
-      const pers = u32(personalization);
-      this.v6l ^= swap8IfBE(pers[0]);
-      this.v6h ^= swap8IfBE(pers[1]);
-      this.v7l ^= swap8IfBE(pers[2]);
-      this.v7h ^= swap8IfBE(pers[3]);
-    }
-    if (key !== void 0) {
-      const tmp = new Uint8Array(this.blockLen);
-      tmp.set(key);
-      this.update(tmp);
-    }
-  }
-  // prettier-ignore
-  get() {
-    let { v0l, v0h, v1l, v1h, v2l, v2h, v3l, v3h, v4l, v4h, v5l, v5h, v6l, v6h, v7l, v7h } = this;
-    return [v0l, v0h, v1l, v1h, v2l, v2h, v3l, v3h, v4l, v4h, v5l, v5h, v6l, v6h, v7l, v7h];
-  }
-  // prettier-ignore
-  set(v0l, v0h, v1l, v1h, v2l, v2h, v3l, v3h, v4l, v4h, v5l, v5h, v6l, v6h, v7l, v7h) {
-    this.v0l = v0l | 0;
-    this.v0h = v0h | 0;
-    this.v1l = v1l | 0;
-    this.v1h = v1h | 0;
-    this.v2l = v2l | 0;
-    this.v2h = v2h | 0;
-    this.v3l = v3l | 0;
-    this.v3h = v3h | 0;
-    this.v4l = v4l | 0;
-    this.v4h = v4h | 0;
-    this.v5l = v5l | 0;
-    this.v5h = v5h | 0;
-    this.v6l = v6l | 0;
-    this.v6h = v6h | 0;
-    this.v7l = v7l | 0;
-    this.v7h = v7h | 0;
-  }
-  compress(msg, offset, isLast) {
-    this.get().forEach((v, i) => BBUF[i] = v);
-    BBUF.set(B2B_IV, 16);
-    let { h, l } = fromBig(BigInt(this.length));
-    BBUF[24] = B2B_IV[8] ^ l;
-    BBUF[25] = B2B_IV[9] ^ h;
-    if (isLast) {
-      BBUF[28] = ~BBUF[28];
-      BBUF[29] = ~BBUF[29];
-    }
-    let j = 0;
-    const s = BSIGMA;
-    for (let i = 0; i < 12; i++) {
-      G1b(0, 4, 8, 12, msg, offset + 2 * s[j++]);
-      G2b(0, 4, 8, 12, msg, offset + 2 * s[j++]);
-      G1b(1, 5, 9, 13, msg, offset + 2 * s[j++]);
-      G2b(1, 5, 9, 13, msg, offset + 2 * s[j++]);
-      G1b(2, 6, 10, 14, msg, offset + 2 * s[j++]);
-      G2b(2, 6, 10, 14, msg, offset + 2 * s[j++]);
-      G1b(3, 7, 11, 15, msg, offset + 2 * s[j++]);
-      G2b(3, 7, 11, 15, msg, offset + 2 * s[j++]);
-      G1b(0, 5, 10, 15, msg, offset + 2 * s[j++]);
-      G2b(0, 5, 10, 15, msg, offset + 2 * s[j++]);
-      G1b(1, 6, 11, 12, msg, offset + 2 * s[j++]);
-      G2b(1, 6, 11, 12, msg, offset + 2 * s[j++]);
-      G1b(2, 7, 8, 13, msg, offset + 2 * s[j++]);
-      G2b(2, 7, 8, 13, msg, offset + 2 * s[j++]);
-      G1b(3, 4, 9, 14, msg, offset + 2 * s[j++]);
-      G2b(3, 4, 9, 14, msg, offset + 2 * s[j++]);
-    }
-    this.v0l ^= BBUF[0] ^ BBUF[16];
-    this.v0h ^= BBUF[1] ^ BBUF[17];
-    this.v1l ^= BBUF[2] ^ BBUF[18];
-    this.v1h ^= BBUF[3] ^ BBUF[19];
-    this.v2l ^= BBUF[4] ^ BBUF[20];
-    this.v2h ^= BBUF[5] ^ BBUF[21];
-    this.v3l ^= BBUF[6] ^ BBUF[22];
-    this.v3h ^= BBUF[7] ^ BBUF[23];
-    this.v4l ^= BBUF[8] ^ BBUF[24];
-    this.v4h ^= BBUF[9] ^ BBUF[25];
-    this.v5l ^= BBUF[10] ^ BBUF[26];
-    this.v5h ^= BBUF[11] ^ BBUF[27];
-    this.v6l ^= BBUF[12] ^ BBUF[28];
-    this.v6h ^= BBUF[13] ^ BBUF[29];
-    this.v7l ^= BBUF[14] ^ BBUF[30];
-    this.v7h ^= BBUF[15] ^ BBUF[31];
-    clean(BBUF);
-  }
-  destroy() {
-    this.destroyed = true;
-    clean(this.buffer32);
-    this.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-  }
-};
-var blake2b = /* @__PURE__ */ createOptHasher((opts) => new BLAKE2b(opts));
-
-// ../../node_modules/@noble/hashes/esm/argon2.js
-var AT = { Argond2d: 0, Argon2i: 1, Argon2id: 2 };
-var ARGON2_SYNC_POINTS = 4;
-var abytesOrZero = (buf) => {
-  if (buf === void 0)
-    return Uint8Array.of();
-  return kdfInputToBytes(buf);
-};
-function mul(a, b) {
-  const aL = a & 65535;
-  const aH = a >>> 16;
-  const bL = b & 65535;
-  const bH = b >>> 16;
-  const ll = Math.imul(aL, bL);
-  const hl = Math.imul(aH, bL);
-  const lh = Math.imul(aL, bH);
-  const hh = Math.imul(aH, bH);
-  const carry = (ll >>> 16) + (hl & 65535) + lh;
-  const high = hh + (hl >>> 16) + (carry >>> 16) | 0;
-  const low = carry << 16 | ll & 65535;
-  return { h: high, l: low };
-}
-function mul2(a, b) {
-  const { h, l } = mul(a, b);
-  return { h: (h << 1 | l >>> 31) & 4294967295, l: l << 1 & 4294967295 };
-}
-function blamka(Ah, Al, Bh, Bl) {
-  const { h: Ch, l: Cl } = mul2(Al, Bl);
-  const Rll = add3L(Al, Bl, Cl);
-  return { h: add3H(Rll, Ah, Bh, Ch), l: Rll | 0 };
-}
-var A2_BUF = new Uint32Array(256);
-function G(a, b, c, d) {
-  let Al = A2_BUF[2 * a], Ah = A2_BUF[2 * a + 1];
-  let Bl = A2_BUF[2 * b], Bh = A2_BUF[2 * b + 1];
-  let Cl = A2_BUF[2 * c], Ch = A2_BUF[2 * c + 1];
-  let Dl = A2_BUF[2 * d], Dh = A2_BUF[2 * d + 1];
-  ({ h: Ah, l: Al } = blamka(Ah, Al, Bh, Bl));
-  ({ Dh, Dl } = { Dh: Dh ^ Ah, Dl: Dl ^ Al });
-  ({ Dh, Dl } = { Dh: rotr32H(Dh, Dl), Dl: rotr32L(Dh, Dl) });
-  ({ h: Ch, l: Cl } = blamka(Ch, Cl, Dh, Dl));
-  ({ Bh, Bl } = { Bh: Bh ^ Ch, Bl: Bl ^ Cl });
-  ({ Bh, Bl } = { Bh: rotrSH(Bh, Bl, 24), Bl: rotrSL(Bh, Bl, 24) });
-  ({ h: Ah, l: Al } = blamka(Ah, Al, Bh, Bl));
-  ({ Dh, Dl } = { Dh: Dh ^ Ah, Dl: Dl ^ Al });
-  ({ Dh, Dl } = { Dh: rotrSH(Dh, Dl, 16), Dl: rotrSL(Dh, Dl, 16) });
-  ({ h: Ch, l: Cl } = blamka(Ch, Cl, Dh, Dl));
-  ({ Bh, Bl } = { Bh: Bh ^ Ch, Bl: Bl ^ Cl });
-  ({ Bh, Bl } = { Bh: rotrBH(Bh, Bl, 63), Bl: rotrBL(Bh, Bl, 63) });
-  A2_BUF[2 * a] = Al, A2_BUF[2 * a + 1] = Ah;
-  A2_BUF[2 * b] = Bl, A2_BUF[2 * b + 1] = Bh;
-  A2_BUF[2 * c] = Cl, A2_BUF[2 * c + 1] = Ch;
-  A2_BUF[2 * d] = Dl, A2_BUF[2 * d + 1] = Dh;
-}
-function P(v00, v01, v02, v03, v04, v05, v06, v07, v08, v09, v10, v11, v12, v13, v14, v15) {
-  G(v00, v04, v08, v12);
-  G(v01, v05, v09, v13);
-  G(v02, v06, v10, v14);
-  G(v03, v07, v11, v15);
-  G(v00, v05, v10, v15);
-  G(v01, v06, v11, v12);
-  G(v02, v07, v08, v13);
-  G(v03, v04, v09, v14);
-}
-function block(x, xPos, yPos, outPos, needXor) {
-  for (let i = 0; i < 256; i++)
-    A2_BUF[i] = x[xPos + i] ^ x[yPos + i];
-  for (let i = 0; i < 128; i += 16) {
-    P(i, i + 1, i + 2, i + 3, i + 4, i + 5, i + 6, i + 7, i + 8, i + 9, i + 10, i + 11, i + 12, i + 13, i + 14, i + 15);
-  }
-  for (let i = 0; i < 16; i += 2) {
-    P(i, i + 1, i + 16, i + 17, i + 32, i + 33, i + 48, i + 49, i + 64, i + 65, i + 80, i + 81, i + 96, i + 97, i + 112, i + 113);
-  }
-  if (needXor)
-    for (let i = 0; i < 256; i++)
-      x[outPos + i] ^= A2_BUF[i] ^ x[xPos + i] ^ x[yPos + i];
-  else
-    for (let i = 0; i < 256; i++)
-      x[outPos + i] = A2_BUF[i] ^ x[xPos + i] ^ x[yPos + i];
-  clean(A2_BUF);
-}
-function Hp(A, dkLen) {
-  const A8 = u8(A);
-  const T = new Uint32Array(1);
-  const T8 = u8(T);
-  T[0] = dkLen;
-  if (dkLen <= 64)
-    return blake2b.create({ dkLen }).update(T8).update(A8).digest();
-  const out = new Uint8Array(dkLen);
-  let V = blake2b.create({}).update(T8).update(A8).digest();
-  let pos = 0;
-  out.set(V.subarray(0, 32));
-  pos += 32;
-  for (; dkLen - pos > 64; pos += 32) {
-    const Vh = blake2b.create({}).update(V);
-    Vh.digestInto(V);
-    Vh.destroy();
-    out.set(V.subarray(0, 32), pos);
-  }
-  out.set(blake2b(V, { dkLen: dkLen - pos }), pos);
-  clean(V, T);
-  return u32(out);
-}
-function indexAlpha(r, s, laneLen, segmentLen, index, randL, sameLane = false) {
-  let area;
-  if (r === 0) {
-    if (s === 0)
-      area = index - 1;
-    else if (sameLane)
-      area = s * segmentLen + index - 1;
-    else
-      area = s * segmentLen + (index == 0 ? -1 : 0);
-  } else if (sameLane)
-    area = laneLen - segmentLen + index - 1;
-  else
-    area = laneLen - segmentLen + (index == 0 ? -1 : 0);
-  const startPos = r !== 0 && s !== ARGON2_SYNC_POINTS - 1 ? (s + 1) * segmentLen : 0;
-  const rel = area - 1 - mul(area, mul(randL, randL).h).h;
-  return (startPos + rel) % laneLen;
-}
-var maxUint32 = Math.pow(2, 32);
-function isU32(num) {
-  return Number.isSafeInteger(num) && num >= 0 && num < maxUint32;
-}
-function argon2Opts(opts) {
-  const merged = {
-    version: 19,
-    dkLen: 32,
-    maxmem: maxUint32 - 1,
-    asyncTick: 10
-  };
-  for (let [k, v] of Object.entries(opts))
-    if (v != null)
-      merged[k] = v;
-  const { dkLen, p, m, t, version, onProgress } = merged;
-  if (!isU32(dkLen) || dkLen < 4)
-    throw new Error("dkLen should be at least 4 bytes");
-  if (!isU32(p) || p < 1 || p >= Math.pow(2, 24))
-    throw new Error("p should be 1 <= p < 2^24");
-  if (!isU32(m))
-    throw new Error("m should be 0 <= m < 2^32");
-  if (!isU32(t) || t < 1)
-    throw new Error("t (iterations) should be 1 <= t < 2^32");
-  if (onProgress !== void 0 && typeof onProgress !== "function")
-    throw new Error("progressCb should be function");
-  if (!isU32(m) || m < 8 * p)
-    throw new Error("memory should be at least 8*p bytes");
-  if (version !== 16 && version !== 19)
-    throw new Error("unknown version=" + version);
-  return merged;
-}
-function argon2Init(password, salt, type, opts) {
-  password = kdfInputToBytes(password);
-  salt = kdfInputToBytes(salt);
-  abytes(password);
-  abytes(salt);
-  if (!isU32(password.length))
-    throw new Error("password should be less than 4 GB");
-  if (!isU32(salt.length) || salt.length < 8)
-    throw new Error("salt should be at least 8 bytes and less than 4 GB");
-  if (!Object.values(AT).includes(type))
-    throw new Error("invalid type");
-  let { p, dkLen, m, t, version, key, personalization, maxmem, onProgress, asyncTick } = argon2Opts(opts);
-  key = abytesOrZero(key);
-  personalization = abytesOrZero(personalization);
-  const h = blake2b.create({});
-  const BUF = new Uint32Array(1);
-  const BUF8 = u8(BUF);
-  for (let item of [p, dkLen, m, t, version, type]) {
-    BUF[0] = item;
-    h.update(BUF8);
-  }
-  for (let i of [password, salt, key, personalization]) {
-    BUF[0] = i.length;
-    h.update(BUF8).update(i);
-  }
-  const H0 = new Uint32Array(18);
-  const H0_8 = u8(H0);
-  h.digestInto(H0_8);
-  const lanes = p;
-  const mP = 4 * p * Math.floor(m / (ARGON2_SYNC_POINTS * p));
-  const laneLen = Math.floor(mP / p);
-  const segmentLen = Math.floor(laneLen / ARGON2_SYNC_POINTS);
-  const memUsed = mP * 256;
-  if (!isU32(maxmem) || memUsed > maxmem)
-    throw new Error("mem should be less than 2**32, got: maxmem=" + maxmem + ", memused=" + memUsed);
-  const B = new Uint32Array(memUsed);
-  for (let l = 0; l < p; l++) {
-    const i = 256 * laneLen * l;
-    H0[17] = l;
-    H0[16] = 0;
-    B.set(Hp(H0, 1024), i);
-    H0[16] = 1;
-    B.set(Hp(H0, 1024), i + 256);
-  }
-  let perBlock = () => {
-  };
-  if (onProgress) {
-    const totalBlock = t * ARGON2_SYNC_POINTS * p * segmentLen;
-    const callbackPer = Math.max(Math.floor(totalBlock / 1e4), 1);
-    let blockCnt = 0;
-    perBlock = () => {
-      blockCnt++;
-      if (onProgress && (!(blockCnt % callbackPer) || blockCnt === totalBlock))
-        onProgress(blockCnt / totalBlock);
-    };
-  }
-  clean(BUF, H0);
-  return { type, mP, p, t, version, B, laneLen, lanes, segmentLen, dkLen, perBlock, asyncTick };
-}
-function argon2Output(B, p, laneLen, dkLen) {
-  const B_final = new Uint32Array(256);
-  for (let l = 0; l < p; l++)
-    for (let j = 0; j < 256; j++)
-      B_final[j] ^= B[256 * (laneLen * l + laneLen - 1) + j];
-  const res = u8(Hp(B_final, dkLen));
-  clean(B_final);
-  return res;
-}
-function processBlock(B, address, l, r, s, index, laneLen, segmentLen, lanes, offset, prev, dataIndependent, needXor) {
-  if (offset % laneLen)
-    prev = offset - 1;
-  let randL, randH;
-  if (dataIndependent) {
-    let i128 = index % 128;
-    if (i128 === 0) {
-      address[256 + 12]++;
-      block(address, 256, 2 * 256, 0, false);
-      block(address, 0, 2 * 256, 0, false);
-    }
-    randL = address[2 * i128];
-    randH = address[2 * i128 + 1];
-  } else {
-    const T = 256 * prev;
-    randL = B[T];
-    randH = B[T + 1];
-  }
-  const refLane = r === 0 && s === 0 ? l : randH % lanes;
-  const refPos = indexAlpha(r, s, laneLen, segmentLen, index, randL, refLane == l);
-  const refBlock = laneLen * refLane + refPos;
-  block(B, 256 * prev, 256 * refBlock, offset * 256, needXor);
-}
-function argon2(type, password, salt, opts) {
-  const { mP, p, t, version, B, laneLen, lanes, segmentLen, dkLen, perBlock } = argon2Init(password, salt, type, opts);
-  const address = new Uint32Array(3 * 256);
-  address[256 + 6] = mP;
-  address[256 + 8] = t;
-  address[256 + 10] = type;
-  for (let r = 0; r < t; r++) {
-    const needXor = r !== 0 && version === 19;
-    address[256 + 0] = r;
-    for (let s = 0; s < ARGON2_SYNC_POINTS; s++) {
-      address[256 + 4] = s;
-      const dataIndependent = type == AT.Argon2i || type == AT.Argon2id && r === 0 && s < 2;
-      for (let l = 0; l < p; l++) {
-        address[256 + 2] = l;
-        address[256 + 12] = 0;
-        let startPos = 0;
-        if (r === 0 && s === 0) {
-          startPos = 2;
-          if (dataIndependent) {
-            address[256 + 12]++;
-            block(address, 256, 2 * 256, 0, false);
-            block(address, 0, 2 * 256, 0, false);
-          }
-        }
-        let offset = l * laneLen + s * segmentLen + startPos;
-        let prev = offset % laneLen ? offset - 1 : offset + laneLen - 1;
-        for (let index = startPos; index < segmentLen; index++, offset++, prev++) {
-          perBlock();
-          processBlock(B, address, l, r, s, index, laneLen, segmentLen, lanes, offset, prev, dataIndependent, needXor);
-        }
-      }
-    }
-  }
-  clean(address);
-  return argon2Output(B, p, laneLen, dkLen);
-}
-var argon2id = (password, salt, opts) => argon2(AT.Argon2id, password, salt, opts);
-
-// ../../node_modules/@noble/hashes/esm/hmac.js
-var HMAC = class extends Hash {
-  constructor(hash2, _key2) {
-    super();
-    this.finished = false;
-    this.destroyed = false;
-    ahash(hash2);
-    const key = toBytes(_key2);
-    this.iHash = hash2.create();
-    if (typeof this.iHash.update !== "function")
-      throw new Error("Expected instance of class which extends utils.Hash");
-    this.blockLen = this.iHash.blockLen;
-    this.outputLen = this.iHash.outputLen;
-    const blockLen = this.blockLen;
-    const pad = new Uint8Array(blockLen);
-    pad.set(key.length > blockLen ? hash2.create().update(key).digest() : key);
-    for (let i = 0; i < pad.length; i++)
-      pad[i] ^= 54;
-    this.iHash.update(pad);
-    this.oHash = hash2.create();
-    for (let i = 0; i < pad.length; i++)
-      pad[i] ^= 54 ^ 92;
-    this.oHash.update(pad);
-    clean(pad);
-  }
-  update(buf) {
-    aexists(this);
-    this.iHash.update(buf);
-    return this;
-  }
-  digestInto(out) {
-    aexists(this);
-    abytes(out, this.outputLen);
-    this.finished = true;
-    this.iHash.digestInto(out);
-    this.oHash.update(out);
-    this.oHash.digestInto(out);
-    this.destroy();
-  }
-  digest() {
-    const out = new Uint8Array(this.oHash.outputLen);
-    this.digestInto(out);
-    return out;
-  }
-  _cloneInto(to) {
-    to || (to = Object.create(Object.getPrototypeOf(this), {}));
-    const { oHash, iHash, finished, destroyed, blockLen, outputLen } = this;
-    to = to;
-    to.finished = finished;
-    to.destroyed = destroyed;
-    to.blockLen = blockLen;
-    to.outputLen = outputLen;
-    to.oHash = oHash._cloneInto(to.oHash);
-    to.iHash = iHash._cloneInto(to.iHash);
-    return to;
-  }
-  clone() {
-    return this._cloneInto();
-  }
-  destroy() {
-    this.destroyed = true;
-    this.oHash.destroy();
-    this.iHash.destroy();
-  }
-};
-var hmac = (hash2, key, message) => new HMAC(hash2, key).update(message).digest();
-hmac.create = (hash2, key) => new HMAC(hash2, key);
-
-// ../../node_modules/@noble/hashes/esm/pbkdf2.js
-function pbkdf2Init(hash2, _password, _salt, _opts) {
-  ahash(hash2);
-  const opts = checkOpts({ dkLen: 32, asyncTick: 10 }, _opts);
-  const { c, dkLen, asyncTick } = opts;
-  anumber(c);
-  anumber(dkLen);
-  anumber(asyncTick);
-  if (c < 1)
-    throw new Error("iterations (c) should be >= 1");
-  const password = kdfInputToBytes(_password);
-  const salt = kdfInputToBytes(_salt);
-  const DK = new Uint8Array(dkLen);
-  const PRF = hmac.create(hash2, password);
-  const PRFSalt = PRF._cloneInto().update(salt);
-  return { c, dkLen, asyncTick, DK, PRF, PRFSalt };
-}
-function pbkdf2Output(PRF, PRFSalt, DK, prfW, u) {
-  PRF.destroy();
-  PRFSalt.destroy();
-  if (prfW)
-    prfW.destroy();
-  clean(u);
-  return DK;
-}
-function pbkdf2(hash2, password, salt, opts) {
-  const { c, dkLen, DK, PRF, PRFSalt } = pbkdf2Init(hash2, password, salt, opts);
-  let prfW;
-  const arr = new Uint8Array(4);
-  const view = createView(arr);
-  const u = new Uint8Array(PRF.outputLen);
-  for (let ti = 1, pos = 0; pos < dkLen; ti++, pos += PRF.outputLen) {
-    const Ti = DK.subarray(pos, pos + PRF.outputLen);
-    view.setInt32(0, ti, false);
-    (prfW = PRFSalt._cloneInto(prfW)).update(arr).digestInto(u);
-    Ti.set(u.subarray(0, Ti.length));
-    for (let ui = 1; ui < c; ui++) {
-      PRF._cloneInto(prfW).update(u).digestInto(u);
-      for (let i = 0; i < Ti.length; i++)
-        Ti[i] ^= u[i];
-    }
-  }
-  return pbkdf2Output(PRF, PRFSalt, DK, prfW, u);
-}
+var add3L = (Al, Bl, Cl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0);
+var add3H = (low, Ah, Bh, Ch) => Ah + Bh + Ch + (low / 2 ** 32 | 0) | 0;
+var add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0);
+var add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
+var add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
+var add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
 
 // ../../node_modules/@noble/hashes/esm/sha2.js
 var SHA256_K = /* @__PURE__ */ Uint32Array.from([
@@ -1681,2065 +723,73 @@ var SHA512 = class extends HashMD {
 var sha256 = /* @__PURE__ */ createHasher(() => new SHA256());
 var sha512 = /* @__PURE__ */ createHasher(() => new SHA512());
 
-// ../../node_modules/@noble/hashes/esm/scrypt.js
-function XorAndSalsa(prev, pi, input, ii, out, oi) {
-  let y00 = prev[pi++] ^ input[ii++], y01 = prev[pi++] ^ input[ii++];
-  let y02 = prev[pi++] ^ input[ii++], y03 = prev[pi++] ^ input[ii++];
-  let y04 = prev[pi++] ^ input[ii++], y05 = prev[pi++] ^ input[ii++];
-  let y06 = prev[pi++] ^ input[ii++], y07 = prev[pi++] ^ input[ii++];
-  let y08 = prev[pi++] ^ input[ii++], y09 = prev[pi++] ^ input[ii++];
-  let y10 = prev[pi++] ^ input[ii++], y11 = prev[pi++] ^ input[ii++];
-  let y12 = prev[pi++] ^ input[ii++], y13 = prev[pi++] ^ input[ii++];
-  let y14 = prev[pi++] ^ input[ii++], y15 = prev[pi++] ^ input[ii++];
-  let x00 = y00, x01 = y01, x02 = y02, x03 = y03, x04 = y04, x05 = y05, x06 = y06, x07 = y07, x08 = y08, x09 = y09, x10 = y10, x11 = y11, x12 = y12, x13 = y13, x14 = y14, x15 = y15;
-  for (let i = 0; i < 8; i += 2) {
-    x04 ^= rotl(x00 + x12 | 0, 7);
-    x08 ^= rotl(x04 + x00 | 0, 9);
-    x12 ^= rotl(x08 + x04 | 0, 13);
-    x00 ^= rotl(x12 + x08 | 0, 18);
-    x09 ^= rotl(x05 + x01 | 0, 7);
-    x13 ^= rotl(x09 + x05 | 0, 9);
-    x01 ^= rotl(x13 + x09 | 0, 13);
-    x05 ^= rotl(x01 + x13 | 0, 18);
-    x14 ^= rotl(x10 + x06 | 0, 7);
-    x02 ^= rotl(x14 + x10 | 0, 9);
-    x06 ^= rotl(x02 + x14 | 0, 13);
-    x10 ^= rotl(x06 + x02 | 0, 18);
-    x03 ^= rotl(x15 + x11 | 0, 7);
-    x07 ^= rotl(x03 + x15 | 0, 9);
-    x11 ^= rotl(x07 + x03 | 0, 13);
-    x15 ^= rotl(x11 + x07 | 0, 18);
-    x01 ^= rotl(x00 + x03 | 0, 7);
-    x02 ^= rotl(x01 + x00 | 0, 9);
-    x03 ^= rotl(x02 + x01 | 0, 13);
-    x00 ^= rotl(x03 + x02 | 0, 18);
-    x06 ^= rotl(x05 + x04 | 0, 7);
-    x07 ^= rotl(x06 + x05 | 0, 9);
-    x04 ^= rotl(x07 + x06 | 0, 13);
-    x05 ^= rotl(x04 + x07 | 0, 18);
-    x11 ^= rotl(x10 + x09 | 0, 7);
-    x08 ^= rotl(x11 + x10 | 0, 9);
-    x09 ^= rotl(x08 + x11 | 0, 13);
-    x10 ^= rotl(x09 + x08 | 0, 18);
-    x12 ^= rotl(x15 + x14 | 0, 7);
-    x13 ^= rotl(x12 + x15 | 0, 9);
-    x14 ^= rotl(x13 + x12 | 0, 13);
-    x15 ^= rotl(x14 + x13 | 0, 18);
+// ../../node_modules/@noble/hashes/esm/hmac.js
+var HMAC = class extends Hash {
+  constructor(hash2, _key2) {
+    super();
+    this.finished = false;
+    this.destroyed = false;
+    ahash(hash2);
+    const key = toBytes(_key2);
+    this.iHash = hash2.create();
+    if (typeof this.iHash.update !== "function")
+      throw new Error("Expected instance of class which extends utils.Hash");
+    this.blockLen = this.iHash.blockLen;
+    this.outputLen = this.iHash.outputLen;
+    const blockLen = this.blockLen;
+    const pad = new Uint8Array(blockLen);
+    pad.set(key.length > blockLen ? hash2.create().update(key).digest() : key);
+    for (let i = 0; i < pad.length; i++)
+      pad[i] ^= 54;
+    this.iHash.update(pad);
+    this.oHash = hash2.create();
+    for (let i = 0; i < pad.length; i++)
+      pad[i] ^= 54 ^ 92;
+    this.oHash.update(pad);
+    clean(pad);
   }
-  out[oi++] = y00 + x00 | 0;
-  out[oi++] = y01 + x01 | 0;
-  out[oi++] = y02 + x02 | 0;
-  out[oi++] = y03 + x03 | 0;
-  out[oi++] = y04 + x04 | 0;
-  out[oi++] = y05 + x05 | 0;
-  out[oi++] = y06 + x06 | 0;
-  out[oi++] = y07 + x07 | 0;
-  out[oi++] = y08 + x08 | 0;
-  out[oi++] = y09 + x09 | 0;
-  out[oi++] = y10 + x10 | 0;
-  out[oi++] = y11 + x11 | 0;
-  out[oi++] = y12 + x12 | 0;
-  out[oi++] = y13 + x13 | 0;
-  out[oi++] = y14 + x14 | 0;
-  out[oi++] = y15 + x15 | 0;
-}
-function BlockMix(input, ii, out, oi, r) {
-  let head = oi + 0;
-  let tail = oi + 16 * r;
-  for (let i = 0; i < 16; i++)
-    out[tail + i] = input[ii + (2 * r - 1) * 16 + i];
-  for (let i = 0; i < r; i++, head += 16, ii += 16) {
-    XorAndSalsa(out, tail, input, ii, out, head);
-    if (i > 0)
-      tail += 16;
-    XorAndSalsa(out, head, input, ii += 16, out, tail);
+  update(buf) {
+    aexists(this);
+    this.iHash.update(buf);
+    return this;
   }
-}
-function scryptInit(password, salt, _opts) {
-  const opts = checkOpts({
-    dkLen: 32,
-    asyncTick: 10,
-    maxmem: 1024 ** 3 + 1024
-  }, _opts);
-  const { N, r, p, dkLen, asyncTick, maxmem, onProgress } = opts;
-  anumber(N);
-  anumber(r);
-  anumber(p);
-  anumber(dkLen);
-  anumber(asyncTick);
-  anumber(maxmem);
-  if (onProgress !== void 0 && typeof onProgress !== "function")
-    throw new Error("progressCb should be function");
-  const blockSize = 128 * r;
-  const blockSize32 = blockSize / 4;
-  const pow32 = Math.pow(2, 32);
-  if (N <= 1 || (N & N - 1) !== 0 || N > pow32) {
-    throw new Error("Scrypt: N must be larger than 1, a power of 2, and less than 2^32");
+  digestInto(out) {
+    aexists(this);
+    abytes(out, this.outputLen);
+    this.finished = true;
+    this.iHash.digestInto(out);
+    this.oHash.update(out);
+    this.oHash.digestInto(out);
+    this.destroy();
   }
-  if (p < 0 || p > (pow32 - 1) * 32 / blockSize) {
-    throw new Error("Scrypt: p must be a positive integer less than or equal to ((2^32 - 1) * 32) / (128 * r)");
+  digest() {
+    const out = new Uint8Array(this.oHash.outputLen);
+    this.digestInto(out);
+    return out;
   }
-  if (dkLen < 0 || dkLen > (pow32 - 1) * 32) {
-    throw new Error("Scrypt: dkLen should be positive integer less than or equal to (2^32 - 1) * 32");
+  _cloneInto(to) {
+    to || (to = Object.create(Object.getPrototypeOf(this), {}));
+    const { oHash, iHash, finished, destroyed, blockLen, outputLen } = this;
+    to = to;
+    to.finished = finished;
+    to.destroyed = destroyed;
+    to.blockLen = blockLen;
+    to.outputLen = outputLen;
+    to.oHash = oHash._cloneInto(to.oHash);
+    to.iHash = iHash._cloneInto(to.iHash);
+    return to;
   }
-  const memUsed = blockSize * (N + p);
-  if (memUsed > maxmem) {
-    throw new Error("Scrypt: memused is bigger than maxMem. Expected 128 * r * (N + p) > maxmem of " + maxmem);
+  clone() {
+    return this._cloneInto();
   }
-  const B = pbkdf2(sha256, password, salt, { c: 1, dkLen: blockSize * p });
-  const B32 = u32(B);
-  const V = u32(new Uint8Array(blockSize * N));
-  const tmp = u32(new Uint8Array(blockSize));
-  let blockMixCb = () => {
-  };
-  if (onProgress) {
-    const totalBlockMix = 2 * N * p;
-    const callbackPer = Math.max(Math.floor(totalBlockMix / 1e4), 1);
-    let blockMixCnt = 0;
-    blockMixCb = () => {
-      blockMixCnt++;
-      if (onProgress && (!(blockMixCnt % callbackPer) || blockMixCnt === totalBlockMix))
-        onProgress(blockMixCnt / totalBlockMix);
-    };
+  destroy() {
+    this.destroyed = true;
+    this.oHash.destroy();
+    this.iHash.destroy();
   }
-  return { N, r, p, dkLen, blockSize32, V, B32, B, tmp, blockMixCb, asyncTick };
-}
-function scryptOutput(password, dkLen, B, V, tmp) {
-  const res = pbkdf2(sha256, password, B, { c: 1, dkLen });
-  clean(B, V, tmp);
-  return res;
-}
-function scrypt(password, salt, opts) {
-  const { N, r, p, dkLen, blockSize32, V, B32, B, tmp, blockMixCb } = scryptInit(password, salt, opts);
-  swap32IfBE(B32);
-  for (let pi = 0; pi < p; pi++) {
-    const Pi = blockSize32 * pi;
-    for (let i = 0; i < blockSize32; i++)
-      V[i] = B32[Pi + i];
-    for (let i = 0, pos = 0; i < N - 1; i++) {
-      BlockMix(V, pos, V, pos += blockSize32, r);
-      blockMixCb();
-    }
-    BlockMix(V, (N - 1) * blockSize32, B32, Pi, r);
-    blockMixCb();
-    for (let i = 0; i < N; i++) {
-      const j = B32[Pi + blockSize32 - 16] % N;
-      for (let k = 0; k < blockSize32; k++)
-        tmp[k] = B32[Pi + k] ^ V[j * blockSize32 + k];
-      BlockMix(tmp, 0, B32, Pi, r);
-      blockMixCb();
-    }
-  }
-  swap32IfBE(B32);
-  return scryptOutput(password, dkLen, B, V, tmp);
-}
-
-// ../../node_modules/@noble/hashes/esm/sha256.js
-var sha2562 = sha256;
-
-// ../../node_modules/bcryptjs/index.js
-var import_crypto2 = __toESM(require_crypto(), 1);
-var randomFallback = null;
-function randomBytes2(len) {
-  try {
-    return crypto.getRandomValues(new Uint8Array(len));
-  } catch {
-  }
-  try {
-    return import_crypto2.default.randomBytes(len);
-  } catch {
-  }
-  if (!randomFallback) {
-    throw Error(
-      "Neither WebCryptoAPI nor a crypto module is available. Use bcrypt.setRandomFallback to set an alternative"
-    );
-  }
-  return randomFallback(len);
-}
-function setRandomFallback(random) {
-  randomFallback = random;
-}
-function genSaltSync(rounds, seed_length) {
-  rounds = rounds || GENSALT_DEFAULT_LOG2_ROUNDS;
-  if (typeof rounds !== "number")
-    throw Error(
-      "Illegal arguments: " + typeof rounds + ", " + typeof seed_length
-    );
-  if (rounds < 4) rounds = 4;
-  else if (rounds > 31) rounds = 31;
-  var salt = [];
-  salt.push("$2b$");
-  if (rounds < 10) salt.push("0");
-  salt.push(rounds.toString());
-  salt.push("$");
-  salt.push(base64_encode(randomBytes2(BCRYPT_SALT_LEN), BCRYPT_SALT_LEN));
-  return salt.join("");
-}
-function genSalt(rounds, seed_length, callback) {
-  if (typeof seed_length === "function")
-    callback = seed_length, seed_length = void 0;
-  if (typeof rounds === "function") callback = rounds, rounds = void 0;
-  if (typeof rounds === "undefined") rounds = GENSALT_DEFAULT_LOG2_ROUNDS;
-  else if (typeof rounds !== "number")
-    throw Error("illegal arguments: " + typeof rounds);
-  function _async(callback2) {
-    nextTick2(function() {
-      try {
-        callback2(null, genSaltSync(rounds));
-      } catch (err) {
-        callback2(err);
-      }
-    });
-  }
-  if (callback) {
-    if (typeof callback !== "function")
-      throw Error("Illegal callback: " + typeof callback);
-    _async(callback);
-  } else
-    return new Promise(function(resolve, reject) {
-      _async(function(err, res) {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(res);
-      });
-    });
-}
-function hashSync(password, salt) {
-  if (typeof salt === "undefined") salt = GENSALT_DEFAULT_LOG2_ROUNDS;
-  if (typeof salt === "number") salt = genSaltSync(salt);
-  if (typeof password !== "string" || typeof salt !== "string")
-    throw Error("Illegal arguments: " + typeof password + ", " + typeof salt);
-  return _hash(password, salt);
-}
-function hash(password, salt, callback, progressCallback) {
-  function _async(callback2) {
-    if (typeof password === "string" && typeof salt === "number")
-      genSalt(salt, function(err, salt2) {
-        _hash(password, salt2, callback2, progressCallback);
-      });
-    else if (typeof password === "string" && typeof salt === "string")
-      _hash(password, salt, callback2, progressCallback);
-    else
-      nextTick2(
-        callback2.bind(
-          this,
-          Error("Illegal arguments: " + typeof password + ", " + typeof salt)
-        )
-      );
-  }
-  if (callback) {
-    if (typeof callback !== "function")
-      throw Error("Illegal callback: " + typeof callback);
-    _async(callback);
-  } else
-    return new Promise(function(resolve, reject) {
-      _async(function(err, res) {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(res);
-      });
-    });
-}
-function safeStringCompare(known, unknown) {
-  var diff = known.length ^ unknown.length;
-  for (var i = 0; i < known.length; ++i) {
-    diff |= known.charCodeAt(i) ^ unknown.charCodeAt(i);
-  }
-  return diff === 0;
-}
-function compareSync(password, hash2) {
-  if (typeof password !== "string" || typeof hash2 !== "string")
-    throw Error("Illegal arguments: " + typeof password + ", " + typeof hash2);
-  if (hash2.length !== 60) return false;
-  return safeStringCompare(
-    hashSync(password, hash2.substring(0, hash2.length - 31)),
-    hash2
-  );
-}
-function compare(password, hashValue, callback, progressCallback) {
-  function _async(callback2) {
-    if (typeof password !== "string" || typeof hashValue !== "string") {
-      nextTick2(
-        callback2.bind(
-          this,
-          Error(
-            "Illegal arguments: " + typeof password + ", " + typeof hashValue
-          )
-        )
-      );
-      return;
-    }
-    if (hashValue.length !== 60) {
-      nextTick2(callback2.bind(this, null, false));
-      return;
-    }
-    hash(
-      password,
-      hashValue.substring(0, 29),
-      function(err, comp) {
-        if (err) callback2(err);
-        else callback2(null, safeStringCompare(comp, hashValue));
-      },
-      progressCallback
-    );
-  }
-  if (callback) {
-    if (typeof callback !== "function")
-      throw Error("Illegal callback: " + typeof callback);
-    _async(callback);
-  } else
-    return new Promise(function(resolve, reject) {
-      _async(function(err, res) {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(res);
-      });
-    });
-}
-function getRounds(hash2) {
-  if (typeof hash2 !== "string")
-    throw Error("Illegal arguments: " + typeof hash2);
-  return parseInt(hash2.split("$")[2], 10);
-}
-function getSalt(hash2) {
-  if (typeof hash2 !== "string")
-    throw Error("Illegal arguments: " + typeof hash2);
-  if (hash2.length !== 60)
-    throw Error("Illegal hash length: " + hash2.length + " != 60");
-  return hash2.substring(0, 29);
-}
-function truncates(password) {
-  if (typeof password !== "string")
-    throw Error("Illegal arguments: " + typeof password);
-  return utf8Length(password) > 72;
-}
-var nextTick2 = typeof setImmediate === "function" ? setImmediate : typeof scheduler === "object" && typeof scheduler.postTask === "function" ? scheduler.postTask.bind(scheduler) : setTimeout;
-function utf8Length(string) {
-  var len = 0, c = 0;
-  for (var i = 0; i < string.length; ++i) {
-    c = string.charCodeAt(i);
-    if (c < 128) len += 1;
-    else if (c < 2048) len += 2;
-    else if ((c & 64512) === 55296 && (string.charCodeAt(i + 1) & 64512) === 56320) {
-      ++i;
-      len += 4;
-    } else len += 3;
-  }
-  return len;
-}
-function utf8Array(string) {
-  var offset = 0, c1, c2;
-  var buffer = new Array(utf8Length(string));
-  for (var i = 0, k = string.length; i < k; ++i) {
-    c1 = string.charCodeAt(i);
-    if (c1 < 128) {
-      buffer[offset++] = c1;
-    } else if (c1 < 2048) {
-      buffer[offset++] = c1 >> 6 | 192;
-      buffer[offset++] = c1 & 63 | 128;
-    } else if ((c1 & 64512) === 55296 && ((c2 = string.charCodeAt(i + 1)) & 64512) === 56320) {
-      c1 = 65536 + ((c1 & 1023) << 10) + (c2 & 1023);
-      ++i;
-      buffer[offset++] = c1 >> 18 | 240;
-      buffer[offset++] = c1 >> 12 & 63 | 128;
-      buffer[offset++] = c1 >> 6 & 63 | 128;
-      buffer[offset++] = c1 & 63 | 128;
-    } else {
-      buffer[offset++] = c1 >> 12 | 224;
-      buffer[offset++] = c1 >> 6 & 63 | 128;
-      buffer[offset++] = c1 & 63 | 128;
-    }
-  }
-  return buffer;
-}
-var BASE64_CODE = "./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".split("");
-var BASE64_INDEX = [
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  0,
-  1,
-  54,
-  55,
-  56,
-  57,
-  58,
-  59,
-  60,
-  61,
-  62,
-  63,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  2,
-  3,
-  4,
-  5,
-  6,
-  7,
-  8,
-  9,
-  10,
-  11,
-  12,
-  13,
-  14,
-  15,
-  16,
-  17,
-  18,
-  19,
-  20,
-  21,
-  22,
-  23,
-  24,
-  25,
-  26,
-  27,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1,
-  28,
-  29,
-  30,
-  31,
-  32,
-  33,
-  34,
-  35,
-  36,
-  37,
-  38,
-  39,
-  40,
-  41,
-  42,
-  43,
-  44,
-  45,
-  46,
-  47,
-  48,
-  49,
-  50,
-  51,
-  52,
-  53,
-  -1,
-  -1,
-  -1,
-  -1,
-  -1
-];
-function base64_encode(b, len) {
-  var off = 0, rs = [], c1, c2;
-  if (len <= 0 || len > b.length) throw Error("Illegal len: " + len);
-  while (off < len) {
-    c1 = b[off++] & 255;
-    rs.push(BASE64_CODE[c1 >> 2 & 63]);
-    c1 = (c1 & 3) << 4;
-    if (off >= len) {
-      rs.push(BASE64_CODE[c1 & 63]);
-      break;
-    }
-    c2 = b[off++] & 255;
-    c1 |= c2 >> 4 & 15;
-    rs.push(BASE64_CODE[c1 & 63]);
-    c1 = (c2 & 15) << 2;
-    if (off >= len) {
-      rs.push(BASE64_CODE[c1 & 63]);
-      break;
-    }
-    c2 = b[off++] & 255;
-    c1 |= c2 >> 6 & 3;
-    rs.push(BASE64_CODE[c1 & 63]);
-    rs.push(BASE64_CODE[c2 & 63]);
-  }
-  return rs.join("");
-}
-function base64_decode(s, len) {
-  var off = 0, slen = s.length, olen = 0, rs = [], c1, c2, c3, c4, o, code;
-  if (len <= 0) throw Error("Illegal len: " + len);
-  while (off < slen - 1 && olen < len) {
-    code = s.charCodeAt(off++);
-    c1 = code < BASE64_INDEX.length ? BASE64_INDEX[code] : -1;
-    code = s.charCodeAt(off++);
-    c2 = code < BASE64_INDEX.length ? BASE64_INDEX[code] : -1;
-    if (c1 == -1 || c2 == -1) break;
-    o = c1 << 2 >>> 0;
-    o |= (c2 & 48) >> 4;
-    rs.push(String.fromCharCode(o));
-    if (++olen >= len || off >= slen) break;
-    code = s.charCodeAt(off++);
-    c3 = code < BASE64_INDEX.length ? BASE64_INDEX[code] : -1;
-    if (c3 == -1) break;
-    o = (c2 & 15) << 4 >>> 0;
-    o |= (c3 & 60) >> 2;
-    rs.push(String.fromCharCode(o));
-    if (++olen >= len || off >= slen) break;
-    code = s.charCodeAt(off++);
-    c4 = code < BASE64_INDEX.length ? BASE64_INDEX[code] : -1;
-    o = (c3 & 3) << 6 >>> 0;
-    o |= c4;
-    rs.push(String.fromCharCode(o));
-    ++olen;
-  }
-  var res = [];
-  for (off = 0; off < olen; off++) res.push(rs[off].charCodeAt(0));
-  return res;
-}
-var BCRYPT_SALT_LEN = 16;
-var GENSALT_DEFAULT_LOG2_ROUNDS = 10;
-var BLOWFISH_NUM_ROUNDS = 16;
-var MAX_EXECUTION_TIME = 100;
-var P_ORIG = [
-  608135816,
-  2242054355,
-  320440878,
-  57701188,
-  2752067618,
-  698298832,
-  137296536,
-  3964562569,
-  1160258022,
-  953160567,
-  3193202383,
-  887688300,
-  3232508343,
-  3380367581,
-  1065670069,
-  3041331479,
-  2450970073,
-  2306472731
-];
-var S_ORIG = [
-  3509652390,
-  2564797868,
-  805139163,
-  3491422135,
-  3101798381,
-  1780907670,
-  3128725573,
-  4046225305,
-  614570311,
-  3012652279,
-  134345442,
-  2240740374,
-  1667834072,
-  1901547113,
-  2757295779,
-  4103290238,
-  227898511,
-  1921955416,
-  1904987480,
-  2182433518,
-  2069144605,
-  3260701109,
-  2620446009,
-  720527379,
-  3318853667,
-  677414384,
-  3393288472,
-  3101374703,
-  2390351024,
-  1614419982,
-  1822297739,
-  2954791486,
-  3608508353,
-  3174124327,
-  2024746970,
-  1432378464,
-  3864339955,
-  2857741204,
-  1464375394,
-  1676153920,
-  1439316330,
-  715854006,
-  3033291828,
-  289532110,
-  2706671279,
-  2087905683,
-  3018724369,
-  1668267050,
-  732546397,
-  1947742710,
-  3462151702,
-  2609353502,
-  2950085171,
-  1814351708,
-  2050118529,
-  680887927,
-  999245976,
-  1800124847,
-  3300911131,
-  1713906067,
-  1641548236,
-  4213287313,
-  1216130144,
-  1575780402,
-  4018429277,
-  3917837745,
-  3693486850,
-  3949271944,
-  596196993,
-  3549867205,
-  258830323,
-  2213823033,
-  772490370,
-  2760122372,
-  1774776394,
-  2652871518,
-  566650946,
-  4142492826,
-  1728879713,
-  2882767088,
-  1783734482,
-  3629395816,
-  2517608232,
-  2874225571,
-  1861159788,
-  326777828,
-  3124490320,
-  2130389656,
-  2716951837,
-  967770486,
-  1724537150,
-  2185432712,
-  2364442137,
-  1164943284,
-  2105845187,
-  998989502,
-  3765401048,
-  2244026483,
-  1075463327,
-  1455516326,
-  1322494562,
-  910128902,
-  469688178,
-  1117454909,
-  936433444,
-  3490320968,
-  3675253459,
-  1240580251,
-  122909385,
-  2157517691,
-  634681816,
-  4142456567,
-  3825094682,
-  3061402683,
-  2540495037,
-  79693498,
-  3249098678,
-  1084186820,
-  1583128258,
-  426386531,
-  1761308591,
-  1047286709,
-  322548459,
-  995290223,
-  1845252383,
-  2603652396,
-  3431023940,
-  2942221577,
-  3202600964,
-  3727903485,
-  1712269319,
-  422464435,
-  3234572375,
-  1170764815,
-  3523960633,
-  3117677531,
-  1434042557,
-  442511882,
-  3600875718,
-  1076654713,
-  1738483198,
-  4213154764,
-  2393238008,
-  3677496056,
-  1014306527,
-  4251020053,
-  793779912,
-  2902807211,
-  842905082,
-  4246964064,
-  1395751752,
-  1040244610,
-  2656851899,
-  3396308128,
-  445077038,
-  3742853595,
-  3577915638,
-  679411651,
-  2892444358,
-  2354009459,
-  1767581616,
-  3150600392,
-  3791627101,
-  3102740896,
-  284835224,
-  4246832056,
-  1258075500,
-  768725851,
-  2589189241,
-  3069724005,
-  3532540348,
-  1274779536,
-  3789419226,
-  2764799539,
-  1660621633,
-  3471099624,
-  4011903706,
-  913787905,
-  3497959166,
-  737222580,
-  2514213453,
-  2928710040,
-  3937242737,
-  1804850592,
-  3499020752,
-  2949064160,
-  2386320175,
-  2390070455,
-  2415321851,
-  4061277028,
-  2290661394,
-  2416832540,
-  1336762016,
-  1754252060,
-  3520065937,
-  3014181293,
-  791618072,
-  3188594551,
-  3933548030,
-  2332172193,
-  3852520463,
-  3043980520,
-  413987798,
-  3465142937,
-  3030929376,
-  4245938359,
-  2093235073,
-  3534596313,
-  375366246,
-  2157278981,
-  2479649556,
-  555357303,
-  3870105701,
-  2008414854,
-  3344188149,
-  4221384143,
-  3956125452,
-  2067696032,
-  3594591187,
-  2921233993,
-  2428461,
-  544322398,
-  577241275,
-  1471733935,
-  610547355,
-  4027169054,
-  1432588573,
-  1507829418,
-  2025931657,
-  3646575487,
-  545086370,
-  48609733,
-  2200306550,
-  1653985193,
-  298326376,
-  1316178497,
-  3007786442,
-  2064951626,
-  458293330,
-  2589141269,
-  3591329599,
-  3164325604,
-  727753846,
-  2179363840,
-  146436021,
-  1461446943,
-  4069977195,
-  705550613,
-  3059967265,
-  3887724982,
-  4281599278,
-  3313849956,
-  1404054877,
-  2845806497,
-  146425753,
-  1854211946,
-  1266315497,
-  3048417604,
-  3681880366,
-  3289982499,
-  290971e4,
-  1235738493,
-  2632868024,
-  2414719590,
-  3970600049,
-  1771706367,
-  1449415276,
-  3266420449,
-  422970021,
-  1963543593,
-  2690192192,
-  3826793022,
-  1062508698,
-  1531092325,
-  1804592342,
-  2583117782,
-  2714934279,
-  4024971509,
-  1294809318,
-  4028980673,
-  1289560198,
-  2221992742,
-  1669523910,
-  35572830,
-  157838143,
-  1052438473,
-  1016535060,
-  1802137761,
-  1753167236,
-  1386275462,
-  3080475397,
-  2857371447,
-  1040679964,
-  2145300060,
-  2390574316,
-  1461121720,
-  2956646967,
-  4031777805,
-  4028374788,
-  33600511,
-  2920084762,
-  1018524850,
-  629373528,
-  3691585981,
-  3515945977,
-  2091462646,
-  2486323059,
-  586499841,
-  988145025,
-  935516892,
-  3367335476,
-  2599673255,
-  2839830854,
-  265290510,
-  3972581182,
-  2759138881,
-  3795373465,
-  1005194799,
-  847297441,
-  406762289,
-  1314163512,
-  1332590856,
-  1866599683,
-  4127851711,
-  750260880,
-  613907577,
-  1450815602,
-  3165620655,
-  3734664991,
-  3650291728,
-  3012275730,
-  3704569646,
-  1427272223,
-  778793252,
-  1343938022,
-  2676280711,
-  2052605720,
-  1946737175,
-  3164576444,
-  3914038668,
-  3967478842,
-  3682934266,
-  1661551462,
-  3294938066,
-  4011595847,
-  840292616,
-  3712170807,
-  616741398,
-  312560963,
-  711312465,
-  1351876610,
-  322626781,
-  1910503582,
-  271666773,
-  2175563734,
-  1594956187,
-  70604529,
-  3617834859,
-  1007753275,
-  1495573769,
-  4069517037,
-  2549218298,
-  2663038764,
-  504708206,
-  2263041392,
-  3941167025,
-  2249088522,
-  1514023603,
-  1998579484,
-  1312622330,
-  694541497,
-  2582060303,
-  2151582166,
-  1382467621,
-  776784248,
-  2618340202,
-  3323268794,
-  2497899128,
-  2784771155,
-  503983604,
-  4076293799,
-  907881277,
-  423175695,
-  432175456,
-  1378068232,
-  4145222326,
-  3954048622,
-  3938656102,
-  3820766613,
-  2793130115,
-  2977904593,
-  26017576,
-  3274890735,
-  3194772133,
-  1700274565,
-  1756076034,
-  4006520079,
-  3677328699,
-  720338349,
-  1533947780,
-  354530856,
-  688349552,
-  3973924725,
-  1637815568,
-  332179504,
-  3949051286,
-  53804574,
-  2852348879,
-  3044236432,
-  1282449977,
-  3583942155,
-  3416972820,
-  4006381244,
-  1617046695,
-  2628476075,
-  3002303598,
-  1686838959,
-  431878346,
-  2686675385,
-  1700445008,
-  1080580658,
-  1009431731,
-  832498133,
-  3223435511,
-  2605976345,
-  2271191193,
-  2516031870,
-  1648197032,
-  4164389018,
-  2548247927,
-  300782431,
-  375919233,
-  238389289,
-  3353747414,
-  2531188641,
-  2019080857,
-  1475708069,
-  455242339,
-  2609103871,
-  448939670,
-  3451063019,
-  1395535956,
-  2413381860,
-  1841049896,
-  1491858159,
-  885456874,
-  4264095073,
-  4001119347,
-  1565136089,
-  3898914787,
-  1108368660,
-  540939232,
-  1173283510,
-  2745871338,
-  3681308437,
-  4207628240,
-  3343053890,
-  4016749493,
-  1699691293,
-  1103962373,
-  3625875870,
-  2256883143,
-  3830138730,
-  1031889488,
-  3479347698,
-  1535977030,
-  4236805024,
-  3251091107,
-  2132092099,
-  1774941330,
-  1199868427,
-  1452454533,
-  157007616,
-  2904115357,
-  342012276,
-  595725824,
-  1480756522,
-  206960106,
-  497939518,
-  591360097,
-  863170706,
-  2375253569,
-  3596610801,
-  1814182875,
-  2094937945,
-  3421402208,
-  1082520231,
-  3463918190,
-  2785509508,
-  435703966,
-  3908032597,
-  1641649973,
-  2842273706,
-  3305899714,
-  1510255612,
-  2148256476,
-  2655287854,
-  3276092548,
-  4258621189,
-  236887753,
-  3681803219,
-  274041037,
-  1734335097,
-  3815195456,
-  3317970021,
-  1899903192,
-  1026095262,
-  4050517792,
-  356393447,
-  2410691914,
-  3873677099,
-  3682840055,
-  3913112168,
-  2491498743,
-  4132185628,
-  2489919796,
-  1091903735,
-  1979897079,
-  3170134830,
-  3567386728,
-  3557303409,
-  857797738,
-  1136121015,
-  1342202287,
-  507115054,
-  2535736646,
-  337727348,
-  3213592640,
-  1301675037,
-  2528481711,
-  1895095763,
-  1721773893,
-  3216771564,
-  62756741,
-  2142006736,
-  835421444,
-  2531993523,
-  1442658625,
-  3659876326,
-  2882144922,
-  676362277,
-  1392781812,
-  170690266,
-  3921047035,
-  1759253602,
-  3611846912,
-  1745797284,
-  664899054,
-  1329594018,
-  3901205900,
-  3045908486,
-  2062866102,
-  2865634940,
-  3543621612,
-  3464012697,
-  1080764994,
-  553557557,
-  3656615353,
-  3996768171,
-  991055499,
-  499776247,
-  1265440854,
-  648242737,
-  3940784050,
-  980351604,
-  3713745714,
-  1749149687,
-  3396870395,
-  4211799374,
-  3640570775,
-  1161844396,
-  3125318951,
-  1431517754,
-  545492359,
-  4268468663,
-  3499529547,
-  1437099964,
-  2702547544,
-  3433638243,
-  2581715763,
-  2787789398,
-  1060185593,
-  1593081372,
-  2418618748,
-  4260947970,
-  69676912,
-  2159744348,
-  86519011,
-  2512459080,
-  3838209314,
-  1220612927,
-  3339683548,
-  133810670,
-  1090789135,
-  1078426020,
-  1569222167,
-  845107691,
-  3583754449,
-  4072456591,
-  1091646820,
-  628848692,
-  1613405280,
-  3757631651,
-  526609435,
-  236106946,
-  48312990,
-  2942717905,
-  3402727701,
-  1797494240,
-  859738849,
-  992217954,
-  4005476642,
-  2243076622,
-  3870952857,
-  3732016268,
-  765654824,
-  3490871365,
-  2511836413,
-  1685915746,
-  3888969200,
-  1414112111,
-  2273134842,
-  3281911079,
-  4080962846,
-  172450625,
-  2569994100,
-  980381355,
-  4109958455,
-  2819808352,
-  2716589560,
-  2568741196,
-  3681446669,
-  3329971472,
-  1835478071,
-  660984891,
-  3704678404,
-  4045999559,
-  3422617507,
-  3040415634,
-  1762651403,
-  1719377915,
-  3470491036,
-  2693910283,
-  3642056355,
-  3138596744,
-  1364962596,
-  2073328063,
-  1983633131,
-  926494387,
-  3423689081,
-  2150032023,
-  4096667949,
-  1749200295,
-  3328846651,
-  309677260,
-  2016342300,
-  1779581495,
-  3079819751,
-  111262694,
-  1274766160,
-  443224088,
-  298511866,
-  1025883608,
-  3806446537,
-  1145181785,
-  168956806,
-  3641502830,
-  3584813610,
-  1689216846,
-  3666258015,
-  3200248200,
-  1692713982,
-  2646376535,
-  4042768518,
-  1618508792,
-  1610833997,
-  3523052358,
-  4130873264,
-  2001055236,
-  3610705100,
-  2202168115,
-  4028541809,
-  2961195399,
-  1006657119,
-  2006996926,
-  3186142756,
-  1430667929,
-  3210227297,
-  1314452623,
-  4074634658,
-  4101304120,
-  2273951170,
-  1399257539,
-  3367210612,
-  3027628629,
-  1190975929,
-  2062231137,
-  2333990788,
-  2221543033,
-  2438960610,
-  1181637006,
-  548689776,
-  2362791313,
-  3372408396,
-  3104550113,
-  3145860560,
-  296247880,
-  1970579870,
-  3078560182,
-  3769228297,
-  1714227617,
-  3291629107,
-  3898220290,
-  166772364,
-  1251581989,
-  493813264,
-  448347421,
-  195405023,
-  2709975567,
-  677966185,
-  3703036547,
-  1463355134,
-  2715995803,
-  1338867538,
-  1343315457,
-  2802222074,
-  2684532164,
-  233230375,
-  2599980071,
-  2000651841,
-  3277868038,
-  1638401717,
-  4028070440,
-  3237316320,
-  6314154,
-  819756386,
-  300326615,
-  590932579,
-  1405279636,
-  3267499572,
-  3150704214,
-  2428286686,
-  3959192993,
-  3461946742,
-  1862657033,
-  1266418056,
-  963775037,
-  2089974820,
-  2263052895,
-  1917689273,
-  448879540,
-  3550394620,
-  3981727096,
-  150775221,
-  3627908307,
-  1303187396,
-  508620638,
-  2975983352,
-  2726630617,
-  1817252668,
-  1876281319,
-  1457606340,
-  908771278,
-  3720792119,
-  3617206836,
-  2455994898,
-  1729034894,
-  1080033504,
-  976866871,
-  3556439503,
-  2881648439,
-  1522871579,
-  1555064734,
-  1336096578,
-  3548522304,
-  2579274686,
-  3574697629,
-  3205460757,
-  3593280638,
-  3338716283,
-  3079412587,
-  564236357,
-  2993598910,
-  1781952180,
-  1464380207,
-  3163844217,
-  3332601554,
-  1699332808,
-  1393555694,
-  1183702653,
-  3581086237,
-  1288719814,
-  691649499,
-  2847557200,
-  2895455976,
-  3193889540,
-  2717570544,
-  1781354906,
-  1676643554,
-  2592534050,
-  3230253752,
-  1126444790,
-  2770207658,
-  2633158820,
-  2210423226,
-  2615765581,
-  2414155088,
-  3127139286,
-  673620729,
-  2805611233,
-  1269405062,
-  4015350505,
-  3341807571,
-  4149409754,
-  1057255273,
-  2012875353,
-  2162469141,
-  2276492801,
-  2601117357,
-  993977747,
-  3918593370,
-  2654263191,
-  753973209,
-  36408145,
-  2530585658,
-  25011837,
-  3520020182,
-  2088578344,
-  530523599,
-  2918365339,
-  1524020338,
-  1518925132,
-  3760827505,
-  3759777254,
-  1202760957,
-  3985898139,
-  3906192525,
-  674977740,
-  4174734889,
-  2031300136,
-  2019492241,
-  3983892565,
-  4153806404,
-  3822280332,
-  352677332,
-  2297720250,
-  60907813,
-  90501309,
-  3286998549,
-  1016092578,
-  2535922412,
-  2839152426,
-  457141659,
-  509813237,
-  4120667899,
-  652014361,
-  1966332200,
-  2975202805,
-  55981186,
-  2327461051,
-  676427537,
-  3255491064,
-  2882294119,
-  3433927263,
-  1307055953,
-  942726286,
-  933058658,
-  2468411793,
-  3933900994,
-  4215176142,
-  1361170020,
-  2001714738,
-  2830558078,
-  3274259782,
-  1222529897,
-  1679025792,
-  2729314320,
-  3714953764,
-  1770335741,
-  151462246,
-  3013232138,
-  1682292957,
-  1483529935,
-  471910574,
-  1539241949,
-  458788160,
-  3436315007,
-  1807016891,
-  3718408830,
-  978976581,
-  1043663428,
-  3165965781,
-  1927990952,
-  4200891579,
-  2372276910,
-  3208408903,
-  3533431907,
-  1412390302,
-  2931980059,
-  4132332400,
-  1947078029,
-  3881505623,
-  4168226417,
-  2941484381,
-  1077988104,
-  1320477388,
-  886195818,
-  18198404,
-  3786409e3,
-  2509781533,
-  112762804,
-  3463356488,
-  1866414978,
-  891333506,
-  18488651,
-  661792760,
-  1628790961,
-  3885187036,
-  3141171499,
-  876946877,
-  2693282273,
-  1372485963,
-  791857591,
-  2686433993,
-  3759982718,
-  3167212022,
-  3472953795,
-  2716379847,
-  445679433,
-  3561995674,
-  3504004811,
-  3574258232,
-  54117162,
-  3331405415,
-  2381918588,
-  3769707343,
-  4154350007,
-  1140177722,
-  4074052095,
-  668550556,
-  3214352940,
-  367459370,
-  261225585,
-  2610173221,
-  4209349473,
-  3468074219,
-  3265815641,
-  314222801,
-  3066103646,
-  3808782860,
-  282218597,
-  3406013506,
-  3773591054,
-  379116347,
-  1285071038,
-  846784868,
-  2669647154,
-  3771962079,
-  3550491691,
-  2305946142,
-  453669953,
-  1268987020,
-  3317592352,
-  3279303384,
-  3744833421,
-  2610507566,
-  3859509063,
-  266596637,
-  3847019092,
-  517658769,
-  3462560207,
-  3443424879,
-  370717030,
-  4247526661,
-  2224018117,
-  4143653529,
-  4112773975,
-  2788324899,
-  2477274417,
-  1456262402,
-  2901442914,
-  1517677493,
-  1846949527,
-  2295493580,
-  3734397586,
-  2176403920,
-  1280348187,
-  1908823572,
-  3871786941,
-  846861322,
-  1172426758,
-  3287448474,
-  3383383037,
-  1655181056,
-  3139813346,
-  901632758,
-  1897031941,
-  2986607138,
-  3066810236,
-  3447102507,
-  1393639104,
-  373351379,
-  950779232,
-  625454576,
-  3124240540,
-  4148612726,
-  2007998917,
-  544563296,
-  2244738638,
-  2330496472,
-  2058025392,
-  1291430526,
-  424198748,
-  50039436,
-  29584100,
-  3605783033,
-  2429876329,
-  2791104160,
-  1057563949,
-  3255363231,
-  3075367218,
-  3463963227,
-  1469046755,
-  985887462
-];
-var C_ORIG = [
-  1332899944,
-  1700884034,
-  1701343084,
-  1684370003,
-  1668446532,
-  1869963892
-];
-function _encipher(lr, off, P2, S) {
-  var n, l = lr[off], r = lr[off + 1];
-  l ^= P2[0];
-  n = S[l >>> 24];
-  n += S[256 | l >> 16 & 255];
-  n ^= S[512 | l >> 8 & 255];
-  n += S[768 | l & 255];
-  r ^= n ^ P2[1];
-  n = S[r >>> 24];
-  n += S[256 | r >> 16 & 255];
-  n ^= S[512 | r >> 8 & 255];
-  n += S[768 | r & 255];
-  l ^= n ^ P2[2];
-  n = S[l >>> 24];
-  n += S[256 | l >> 16 & 255];
-  n ^= S[512 | l >> 8 & 255];
-  n += S[768 | l & 255];
-  r ^= n ^ P2[3];
-  n = S[r >>> 24];
-  n += S[256 | r >> 16 & 255];
-  n ^= S[512 | r >> 8 & 255];
-  n += S[768 | r & 255];
-  l ^= n ^ P2[4];
-  n = S[l >>> 24];
-  n += S[256 | l >> 16 & 255];
-  n ^= S[512 | l >> 8 & 255];
-  n += S[768 | l & 255];
-  r ^= n ^ P2[5];
-  n = S[r >>> 24];
-  n += S[256 | r >> 16 & 255];
-  n ^= S[512 | r >> 8 & 255];
-  n += S[768 | r & 255];
-  l ^= n ^ P2[6];
-  n = S[l >>> 24];
-  n += S[256 | l >> 16 & 255];
-  n ^= S[512 | l >> 8 & 255];
-  n += S[768 | l & 255];
-  r ^= n ^ P2[7];
-  n = S[r >>> 24];
-  n += S[256 | r >> 16 & 255];
-  n ^= S[512 | r >> 8 & 255];
-  n += S[768 | r & 255];
-  l ^= n ^ P2[8];
-  n = S[l >>> 24];
-  n += S[256 | l >> 16 & 255];
-  n ^= S[512 | l >> 8 & 255];
-  n += S[768 | l & 255];
-  r ^= n ^ P2[9];
-  n = S[r >>> 24];
-  n += S[256 | r >> 16 & 255];
-  n ^= S[512 | r >> 8 & 255];
-  n += S[768 | r & 255];
-  l ^= n ^ P2[10];
-  n = S[l >>> 24];
-  n += S[256 | l >> 16 & 255];
-  n ^= S[512 | l >> 8 & 255];
-  n += S[768 | l & 255];
-  r ^= n ^ P2[11];
-  n = S[r >>> 24];
-  n += S[256 | r >> 16 & 255];
-  n ^= S[512 | r >> 8 & 255];
-  n += S[768 | r & 255];
-  l ^= n ^ P2[12];
-  n = S[l >>> 24];
-  n += S[256 | l >> 16 & 255];
-  n ^= S[512 | l >> 8 & 255];
-  n += S[768 | l & 255];
-  r ^= n ^ P2[13];
-  n = S[r >>> 24];
-  n += S[256 | r >> 16 & 255];
-  n ^= S[512 | r >> 8 & 255];
-  n += S[768 | r & 255];
-  l ^= n ^ P2[14];
-  n = S[l >>> 24];
-  n += S[256 | l >> 16 & 255];
-  n ^= S[512 | l >> 8 & 255];
-  n += S[768 | l & 255];
-  r ^= n ^ P2[15];
-  n = S[r >>> 24];
-  n += S[256 | r >> 16 & 255];
-  n ^= S[512 | r >> 8 & 255];
-  n += S[768 | r & 255];
-  l ^= n ^ P2[16];
-  lr[off] = r ^ P2[BLOWFISH_NUM_ROUNDS + 1];
-  lr[off + 1] = l;
-  return lr;
-}
-function _streamtoword(data, offp) {
-  for (var i = 0, word = 0; i < 4; ++i)
-    word = word << 8 | data[offp] & 255, offp = (offp + 1) % data.length;
-  return { key: word, offp };
-}
-function _key(key, P2, S) {
-  var offset = 0, lr = [0, 0], plen = P2.length, slen = S.length, sw;
-  for (var i = 0; i < plen; i++)
-    sw = _streamtoword(key, offset), offset = sw.offp, P2[i] = P2[i] ^ sw.key;
-  for (i = 0; i < plen; i += 2)
-    lr = _encipher(lr, 0, P2, S), P2[i] = lr[0], P2[i + 1] = lr[1];
-  for (i = 0; i < slen; i += 2)
-    lr = _encipher(lr, 0, P2, S), S[i] = lr[0], S[i + 1] = lr[1];
-}
-function _ekskey(data, key, P2, S) {
-  var offp = 0, lr = [0, 0], plen = P2.length, slen = S.length, sw;
-  for (var i = 0; i < plen; i++)
-    sw = _streamtoword(key, offp), offp = sw.offp, P2[i] = P2[i] ^ sw.key;
-  offp = 0;
-  for (i = 0; i < plen; i += 2)
-    sw = _streamtoword(data, offp), offp = sw.offp, lr[0] ^= sw.key, sw = _streamtoword(data, offp), offp = sw.offp, lr[1] ^= sw.key, lr = _encipher(lr, 0, P2, S), P2[i] = lr[0], P2[i + 1] = lr[1];
-  for (i = 0; i < slen; i += 2)
-    sw = _streamtoword(data, offp), offp = sw.offp, lr[0] ^= sw.key, sw = _streamtoword(data, offp), offp = sw.offp, lr[1] ^= sw.key, lr = _encipher(lr, 0, P2, S), S[i] = lr[0], S[i + 1] = lr[1];
-}
-function _crypt(b, salt, rounds, callback, progressCallback) {
-  var cdata = C_ORIG.slice(), clen = cdata.length, err;
-  if (rounds < 4 || rounds > 31) {
-    err = Error("Illegal number of rounds (4-31): " + rounds);
-    if (callback) {
-      nextTick2(callback.bind(this, err));
-      return;
-    } else throw err;
-  }
-  if (salt.length !== BCRYPT_SALT_LEN) {
-    err = Error(
-      "Illegal salt length: " + salt.length + " != " + BCRYPT_SALT_LEN
-    );
-    if (callback) {
-      nextTick2(callback.bind(this, err));
-      return;
-    } else throw err;
-  }
-  rounds = 1 << rounds >>> 0;
-  var P2, S, i = 0, j;
-  if (typeof Int32Array === "function") {
-    P2 = new Int32Array(P_ORIG);
-    S = new Int32Array(S_ORIG);
-  } else {
-    P2 = P_ORIG.slice();
-    S = S_ORIG.slice();
-  }
-  _ekskey(salt, b, P2, S);
-  function next() {
-    if (progressCallback) progressCallback(i / rounds);
-    if (i < rounds) {
-      var start = Date.now();
-      for (; i < rounds; ) {
-        i = i + 1;
-        _key(b, P2, S);
-        _key(salt, P2, S);
-        if (Date.now() - start > MAX_EXECUTION_TIME) break;
-      }
-    } else {
-      for (i = 0; i < 64; i++)
-        for (j = 0; j < clen >> 1; j++) _encipher(cdata, j << 1, P2, S);
-      var ret = [];
-      for (i = 0; i < clen; i++)
-        ret.push((cdata[i] >> 24 & 255) >>> 0), ret.push((cdata[i] >> 16 & 255) >>> 0), ret.push((cdata[i] >> 8 & 255) >>> 0), ret.push((cdata[i] & 255) >>> 0);
-      if (callback) {
-        callback(null, ret);
-        return;
-      } else return ret;
-    }
-    if (callback) nextTick2(next);
-  }
-  if (typeof callback !== "undefined") {
-    next();
-  } else {
-    var res;
-    while (true) if (typeof (res = next()) !== "undefined") return res || [];
-  }
-}
-function _hash(password, salt, callback, progressCallback) {
-  var err;
-  if (typeof password !== "string" || typeof salt !== "string") {
-    err = Error("Invalid string / salt: Not a string");
-    if (callback) {
-      nextTick2(callback.bind(this, err));
-      return;
-    } else throw err;
-  }
-  var minor, offset;
-  if (salt.charAt(0) !== "$" || salt.charAt(1) !== "2") {
-    err = Error("Invalid salt version: " + salt.substring(0, 2));
-    if (callback) {
-      nextTick2(callback.bind(this, err));
-      return;
-    } else throw err;
-  }
-  if (salt.charAt(2) === "$") minor = String.fromCharCode(0), offset = 3;
-  else {
-    minor = salt.charAt(2);
-    if (minor !== "a" && minor !== "b" && minor !== "y" || salt.charAt(3) !== "$") {
-      err = Error("Invalid salt revision: " + salt.substring(2, 4));
-      if (callback) {
-        nextTick2(callback.bind(this, err));
-        return;
-      } else throw err;
-    }
-    offset = 4;
-  }
-  if (salt.charAt(offset + 2) > "$") {
-    err = Error("Missing salt rounds");
-    if (callback) {
-      nextTick2(callback.bind(this, err));
-      return;
-    } else throw err;
-  }
-  var r1 = parseInt(salt.substring(offset, offset + 1), 10) * 10, r2 = parseInt(salt.substring(offset + 1, offset + 2), 10), rounds = r1 + r2, real_salt = salt.substring(offset + 3, offset + 25);
-  password += minor >= "a" ? "\0" : "";
-  var passwordb = utf8Array(password), saltb = base64_decode(real_salt, BCRYPT_SALT_LEN);
-  function finish(bytes) {
-    var res = [];
-    res.push("$2");
-    if (minor >= "a") res.push(minor);
-    res.push("$");
-    if (rounds < 10) res.push("0");
-    res.push(rounds.toString());
-    res.push("$");
-    res.push(base64_encode(saltb, saltb.length));
-    res.push(base64_encode(bytes, C_ORIG.length * 4 - 1));
-    return res.join("");
-  }
-  if (typeof callback == "undefined")
-    return finish(_crypt(passwordb, saltb, rounds));
-  else {
-    _crypt(
-      passwordb,
-      saltb,
-      rounds,
-      function(err2, bytes) {
-        if (err2) callback(err2, null);
-        else callback(null, finish(bytes));
-      },
-      progressCallback
-    );
-  }
-}
-function encodeBase64(bytes, length) {
-  return base64_encode(bytes, length);
-}
-function decodeBase64(string, length) {
-  return base64_decode(string, length);
-}
-var bcryptjs_default = {
-  setRandomFallback,
-  genSaltSync,
-  genSalt,
-  hashSync,
-  hash,
-  compareSync,
-  compare,
-  getRounds,
-  getSalt,
-  truncates,
-  encodeBase64,
-  decodeBase64
 };
-
-// ../../packages/core/dist/hash.js
-var DEFAULT_PASSWORD_PHC = "$pbkdf2-sha256$i=310000";
-var MAX_PBKDF2_ITERS = 1e6;
-var MAX_SCRYPT_LN = 20;
-var MAX_ARGON2_M = 1048576;
-var MAX_ARGON2_T = 32;
-var MAX_BCRYPT_ROUNDS = 15;
-var BCRYPT_MODULAR = /^\$2[aby]\$(\d{2})\$/;
-function sha256Hex(data) {
-  const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
-  return bytesToHex2(sha2562(bytes));
-}
-function isPasswordHash(value) {
-  return parsePhc(value) !== null;
-}
-function normalizeId(id) {
-  const n = id.toLowerCase();
-  if (n === "pbkdf2-hmac-sha256" || n === "pbkdf2-hmac-sha-256")
-    return "pbkdf2-sha256";
-  if (n === "2a" || n === "2b" || n === "2y")
-    return "bcrypt";
-  return n;
-}
-function parsePhc(value) {
-  const s = value.trim();
-  if (!s.startsWith("$"))
-    return null;
-  const bcryptMod = s.match(BCRYPT_MODULAR);
-  if (bcryptMod) {
-    return {
-      id: "bcrypt",
-      version: "2b",
-      params: { t: String(Number(bcryptMod[1])) },
-      hash: s
-    };
-  }
-  const parts = s.split("$");
-  if (parts.length < 2 || parts[0] !== "" || !parts[1])
-    return null;
-  const id = normalizeId(parts[1]);
-  if (!["pbkdf2-sha256", "scrypt", "argon2id", "bcrypt"].includes(id))
-    return null;
-  let i = 2;
-  let version;
-  if (parts[i] && /^v=/.test(parts[i])) {
-    version = parts[i].slice(2);
-    i += 1;
-  }
-  const params = {};
-  if (parts[i] && parts[i].includes("=")) {
-    for (const kv of parts[i].split(",")) {
-      const eq = kv.indexOf("=");
-      if (eq <= 0)
-        return null;
-      params[kv.slice(0, eq)] = kv.slice(eq + 1);
-    }
-    i += 1;
-  }
-  const salt = parts[i] || void 0;
-  const hash2 = parts[i + 1] || void 0;
-  return { id, version, params, salt, hash: hash2 };
-}
-function formatPhc(p) {
-  if (p.id === "bcrypt" && p.hash && BCRYPT_MODULAR.test(p.hash))
-    return p.hash;
-  let out = `$${p.id}`;
-  if (p.version)
-    out += `$v=${p.version}`;
-  const keys = Object.keys(p.params);
-  if (keys.length) {
-    out += "$" + keys.map((k) => `${k}=${p.params[k]}`).join(",");
-  }
-  if (p.salt !== void 0)
-    out += `$${p.salt}`;
-  if (p.hash !== void 0)
-    out += `$${p.hash}`;
-  return out;
-}
-function b64encode(bytes) {
-  let bin = "";
-  for (const b of bytes)
-    bin += String.fromCharCode(b);
-  return btoa(bin).replace(/=+$/, "");
-}
-function b64decode(s) {
-  const pad = "=".repeat((4 - s.length % 4) % 4);
-  const bin = atob(s + pad);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++)
-    out[i] = bin.charCodeAt(i);
-  return out;
-}
-function utf8(password) {
-  return new TextEncoder().encode(password);
-}
-function digestFor(id, password, parts, salt) {
-  if (id === "pbkdf2-sha256") {
-    const iters = Number(parts.params.i || parts.params.iterations || 31e4);
-    if (!Number.isFinite(iters) || iters < 1 || iters > MAX_PBKDF2_ITERS) {
-      throw new Error("invalid PHC pbkdf2 iteration count");
-    }
-    return b64encode(pbkdf2(sha2562, utf8(password), salt, { c: iters, dkLen: 32 }));
-  }
-  if (id === "scrypt") {
-    const ln = Number(parts.params.ln ?? 14);
-    const r = Number(parts.params.r ?? 8);
-    const p = Number(parts.params.p ?? 1);
-    if (!Number.isFinite(ln) || ln < 1 || ln > MAX_SCRYPT_LN) {
-      throw new Error("invalid PHC scrypt ln");
-    }
-    return b64encode(scrypt(utf8(password), salt, { N: 2 ** ln, r, p, dkLen: 32 }));
-  }
-  if (id === "argon2id") {
-    const m = Number(parts.params.m ?? 19456);
-    const t = Number(parts.params.t ?? 2);
-    const p = Number(parts.params.p ?? 1);
-    if (!Number.isFinite(m) || m < 8 || m > MAX_ARGON2_M) {
-      throw new Error("invalid PHC argon2 memory");
-    }
-    if (!Number.isFinite(t) || t < 1 || t > MAX_ARGON2_T) {
-      throw new Error("invalid PHC argon2 time cost");
-    }
-    return b64encode(argon2id(utf8(password), salt, { t, m, p, dkLen: 32 }));
-  }
-  throw new Error(`unsupported PHC id ${id}`);
-}
-function bcryptRounds(parts) {
-  const t = Number(parts.params.t || parts.params.r || parts.params.cost || 12);
-  if (!Number.isFinite(t) || t < 4 || t > MAX_BCRYPT_ROUNDS) {
-    throw new Error("invalid bcrypt cost");
-  }
-  return t;
-}
-function hashPassword(password, phc = DEFAULT_PASSWORD_PHC) {
-  const parsed = parsePhc(phc);
-  if (!parsed)
-    throw new Error("invalid PHC string");
-  if (parsed.id === "bcrypt") {
-    return bcryptjs_default.hashSync(password, bcryptRounds(parsed));
-  }
-  const saltBytes = parsed.salt ? b64decode(parsed.salt) : randomBytes(16);
-  const hash2 = digestFor(parsed.id, password, parsed, saltBytes);
-  return formatPhc({
-    id: parsed.id,
-    version: parsed.version || (parsed.id === "argon2id" ? "19" : void 0),
-    params: parsed.params,
-    salt: b64encode(saltBytes),
-    hash: hash2
-  });
-}
-function verifyPassword(password, stored) {
-  const parsed = parsePhc(stored);
-  if (!parsed)
-    return false;
-  try {
-    if (parsed.id === "bcrypt") {
-      const crypt = parsed.hash && BCRYPT_MODULAR.test(parsed.hash) ? parsed.hash : stored;
-      return bcryptjs_default.compareSync(password, crypt);
-    }
-    if (!parsed.hash)
-      return false;
-    const recomputed = hashPassword(password, stored);
-    return recomputed === stored || recomputed === formatPhc(parsed);
-  } catch {
-    return false;
-  }
-}
-function phcTemplate(phc) {
-  const parsed = parsePhc(phc);
-  if (!parsed)
-    throw new Error("invalid PHC string");
-  if (parsed.id === "bcrypt") {
-    return formatPhc({ id: "bcrypt", params: { t: parsed.params.t || "12" } });
-  }
-  return formatPhc({
-    id: parsed.id,
-    version: parsed.version,
-    params: parsed.params
-  });
-}
+var hmac = (hash2, key, message) => new HMAC(hash2, key).update(message).digest();
+hmac.create = (hash2, key) => new HMAC(hash2, key);
 
 // ../../node_modules/@noble/curves/esm/utils.js
 var _0n = /* @__PURE__ */ BigInt(0);
@@ -3773,14 +823,14 @@ function hexToNumber(hex) {
   return hex === "" ? _0n : BigInt("0x" + hex);
 }
 function bytesToNumberBE(bytes) {
-  return hexToNumber(bytesToHex2(bytes));
+  return hexToNumber(bytesToHex(bytes));
 }
 function bytesToNumberLE(bytes) {
   abytes(bytes);
-  return hexToNumber(bytesToHex2(Uint8Array.from(bytes).reverse()));
+  return hexToNumber(bytesToHex(Uint8Array.from(bytes).reverse()));
 }
 function numberToBytesBE(n, len) {
-  return hexToBytes2(n.toString(16).padStart(len * 2, "0"));
+  return hexToBytes(n.toString(16).padStart(len * 2, "0"));
 }
 function numberToBytesLE(n, len) {
   return numberToBytesBE(n, len).reverse();
@@ -3789,7 +839,7 @@ function ensureBytes(title, hex, expectedLength) {
   let res;
   if (typeof hex === "string") {
     try {
-      res = hexToBytes2(hex);
+      res = hexToBytes(hex);
     } catch (e) {
       throw new Error(title + " must be hex string or Uint8Array, cause: " + e);
     }
@@ -5086,7 +2136,7 @@ function weierstrassN(params, extraOpts = {}) {
       return encodePoint(Point2, this, isCompressed);
     }
     toHex(isCompressed = true) {
-      return bytesToHex2(this.toBytes(isCompressed));
+      return bytesToHex(this.toBytes(isCompressed));
     }
     toString() {
       return `<Point ${this.is0() ? "ZERO" : this.toHex()}>`;
@@ -5269,7 +2319,7 @@ function ecdsa(Point2, hash2, ecdsaOpts = {}) {
       return new Signature(Fn.fromBytes(r), Fn.fromBytes(s), recid);
     }
     static fromHex(hex, format) {
-      return this.fromBytes(hexToBytes2(hex), format);
+      return this.fromBytes(hexToBytes(hex), format);
     }
     addRecoveryBit(recovery) {
       return new Signature(this.r, this.s, recovery);
@@ -5304,7 +2354,7 @@ function ecdsa(Point2, hash2, ecdsaOpts = {}) {
     toBytes(format = defaultSigOpts_format) {
       validateSigFormat(format);
       if (format === "der")
-        return hexToBytes2(DER.hexFromSig(this));
+        return hexToBytes(DER.hexFromSig(this));
       const r = Fn.toBytes(this.r);
       const s = Fn.toBytes(this.s);
       if (format === "recovered") {
@@ -5315,7 +2365,7 @@ function ecdsa(Point2, hash2, ecdsaOpts = {}) {
       return concatBytes(r, s);
     }
     toHex(format) {
-      return bytesToHex2(this.toBytes(format));
+      return bytesToHex(this.toBytes(format));
     }
     // TODO: remove
     assertValidity() {
@@ -5333,13 +2383,13 @@ function ecdsa(Point2, hash2, ecdsaOpts = {}) {
       return this.toBytes("der");
     }
     toDERHex() {
-      return bytesToHex2(this.toBytes("der"));
+      return bytesToHex(this.toBytes("der"));
     }
     toCompactRawBytes() {
       return this.toBytes("compact");
     }
     toCompactHex() {
-      return bytesToHex2(this.toBytes("compact"));
+      return bytesToHex(this.toBytes("compact"));
     }
   }
   const bits2int = ecdsaOpts.bits2int || function bits2int_def(bytes) {
@@ -5701,6 +2751,9 @@ var ripemd160 = /* @__PURE__ */ createHasher(() => new RIPEMD160());
 // ../../node_modules/@noble/hashes/esm/ripemd160.js
 var ripemd1602 = ripemd160;
 
+// ../../node_modules/@noble/hashes/esm/sha256.js
+var sha2562 = sha256;
+
 // ../../node_modules/@noble/hashes/esm/sha512.js
 var sha5122 = sha512;
 
@@ -5995,13 +3048,13 @@ var Point = secp256k1.ProjectivePoint;
 var base58check = createBase58check(sha256);
 function bytesToNumber(bytes) {
   abytes(bytes);
-  const h = bytes.length === 0 ? "0" : bytesToHex2(bytes);
+  const h = bytes.length === 0 ? "0" : bytesToHex(bytes);
   return BigInt("0x" + h);
 }
 function numberToBytes(num) {
   if (typeof num !== "bigint")
     throw new Error("bigint expected");
-  return hexToBytes2(num.toString(16).padStart(64, "0"));
+  return hexToBytes(num.toString(16).padStart(64, "0"));
 }
 var MASTER_SECRET = utf8ToBytes("Bitcoin seed");
 var BITCOIN_VERSIONS = { private: 76066276, public: 76067358 };
@@ -6234,6 +3287,51 @@ var HDKey = class _HDKey {
     return concatBytes(toU32(version), new Uint8Array([this.depth]), toU32(this.parentFingerprint), toU32(this.index), this.chainCode, key);
   }
 };
+
+// ../../node_modules/@noble/hashes/esm/pbkdf2.js
+function pbkdf2Init(hash2, _password, _salt, _opts) {
+  ahash(hash2);
+  const opts = checkOpts({ dkLen: 32, asyncTick: 10 }, _opts);
+  const { c, dkLen, asyncTick } = opts;
+  anumber(c);
+  anumber(dkLen);
+  anumber(asyncTick);
+  if (c < 1)
+    throw new Error("iterations (c) should be >= 1");
+  const password = kdfInputToBytes(_password);
+  const salt = kdfInputToBytes(_salt);
+  const DK = new Uint8Array(dkLen);
+  const PRF = hmac.create(hash2, password);
+  const PRFSalt = PRF._cloneInto().update(salt);
+  return { c, dkLen, asyncTick, DK, PRF, PRFSalt };
+}
+function pbkdf2Output(PRF, PRFSalt, DK, prfW, u) {
+  PRF.destroy();
+  PRFSalt.destroy();
+  if (prfW)
+    prfW.destroy();
+  clean(u);
+  return DK;
+}
+function pbkdf2(hash2, password, salt, opts) {
+  const { c, dkLen, DK, PRF, PRFSalt } = pbkdf2Init(hash2, password, salt, opts);
+  let prfW;
+  const arr = new Uint8Array(4);
+  const view = createView(arr);
+  const u = new Uint8Array(PRF.outputLen);
+  for (let ti = 1, pos = 0; pos < dkLen; ti++, pos += PRF.outputLen) {
+    const Ti = DK.subarray(pos, pos + PRF.outputLen);
+    view.setInt32(0, ti, false);
+    (prfW = PRFSalt._cloneInto(prfW)).update(arr).digestInto(u);
+    Ti.set(u.subarray(0, Ti.length));
+    for (let ui = 1; ui < c; ui++) {
+      PRF._cloneInto(prfW).update(u).digestInto(u);
+      for (let i = 0; i < Ti.length; i++)
+        Ti[i] ^= u[i];
+    }
+  }
+  return pbkdf2Output(PRF, PRFSalt, DK, prfW, u);
+}
 
 // ../../node_modules/@scure/bip39/esm/index.js
 var isJapanese = (wordlist2) => wordlist2[0] === "\u3042\u3044\u3053\u304F\u3057\u3093";
@@ -8341,6 +5439,27 @@ zero
 zone
 zoo`.split("\n");
 
+// ../../packages/core/dist/bytes.js
+function hexToBytes2(hex) {
+  const h = hex.startsWith("0x") ? hex.slice(2) : hex;
+  if (h.length % 2)
+    throw new Error("invalid hex");
+  const out = new Uint8Array(h.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(h.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+function bytesToHex2(bytes) {
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+function bytesToBase64(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i++)
+    s += String.fromCharCode(bytes[i]);
+  return btoa(s);
+}
+
 // ../../packages/core/dist/derive.js
 var CURVE_ORDER = BigInt("0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
 function generateSeedPhrase(strength = 128) {
@@ -8354,7 +5473,7 @@ function rootFromMnemonic(mnemonic) {
     throw new Error("invalid BIP39 mnemonic");
   }
   const entropyRaw = mnemonicToEntropy(mnemonic, wordlist);
-  const entropy = typeof entropyRaw === "string" ? hexToBytes(entropyRaw) : entropyRaw;
+  const entropy = typeof entropyRaw === "string" ? hexToBytes2(entropyRaw) : entropyRaw;
   const hd = HDKey.fromMasterSeed(entropy);
   if (!hd.privateKey || !hd.chainCode) {
     throw new Error("failed to derive BIP32 root from entropy");
@@ -8370,17 +5489,17 @@ function bip32HardenedChild(parentPriv, parentCc, index) {
   const I = hmac(sha5122, parentCc, data);
   const IL = I.slice(0, 32);
   const IR = I.slice(32, 64);
-  const ILn = BigInt("0x" + bytesToHex(IL));
-  const pkn = BigInt("0x" + bytesToHex(parentPriv));
+  const ILn = BigInt("0x" + bytesToHex2(IL));
+  const pkn = BigInt("0x" + bytesToHex2(parentPriv));
   const child = (ILn + pkn) % CURVE_ORDER;
   return {
-    privateKey: hexToBytes(child.toString(16).padStart(64, "0")),
+    privateKey: hexToBytes2(child.toString(16).padStart(64, "0")),
     chainCode: IR
   };
 }
 function deriveIndex(factor, level) {
   const hash2 = sha2562(new TextEncoder().encode(factor + String(level)));
-  const hashInt = BigInt("0x" + bytesToHex(hash2));
+  const hashInt = BigInt("0x" + bytesToHex2(hash2));
   return Number(hashInt % 2147483647n);
 }
 function deriveSecurePath(privKey, chainCode, factor) {
@@ -8425,7 +5544,7 @@ function materialFromPrivCc(privateKey, chainCode) {
     privateKey,
     chainCode,
     publicKey,
-    publicKeyHex: bytesToHex(publicKey),
+    publicKeyHex: bytesToHex2(publicKey),
     address: getP2PKH(publicKey)
   };
 }
@@ -8448,8 +5567,2890 @@ function siteFactor(secondFactor, siteId) {
   return secondFactor + siteId;
 }
 function generateSitePassword(branchKey, siteId, counter) {
-  const preimage = "yada-site-pw-v1|" + bytesToHex(branchKey.privateKey) + "|" + siteId + "|" + String(counter);
-  return bytesToHex(sha2562(new TextEncoder().encode(preimage)));
+  const preimage = "yada-site-pw-v1|" + bytesToHex2(branchKey.privateKey) + "|" + siteId + "|" + String(counter);
+  return bytesToHex2(sha2562(new TextEncoder().encode(preimage)));
+}
+
+// ../../node_modules/@noble/hashes/esm/_blake.js
+var BSIGMA = /* @__PURE__ */ Uint8Array.from([
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  14,
+  10,
+  4,
+  8,
+  9,
+  15,
+  13,
+  6,
+  1,
+  12,
+  0,
+  2,
+  11,
+  7,
+  5,
+  3,
+  11,
+  8,
+  12,
+  0,
+  5,
+  2,
+  15,
+  13,
+  10,
+  14,
+  3,
+  6,
+  7,
+  1,
+  9,
+  4,
+  7,
+  9,
+  3,
+  1,
+  13,
+  12,
+  11,
+  14,
+  2,
+  6,
+  5,
+  10,
+  4,
+  0,
+  15,
+  8,
+  9,
+  0,
+  5,
+  7,
+  2,
+  4,
+  10,
+  15,
+  14,
+  1,
+  11,
+  12,
+  6,
+  8,
+  3,
+  13,
+  2,
+  12,
+  6,
+  10,
+  0,
+  11,
+  8,
+  3,
+  4,
+  13,
+  7,
+  5,
+  15,
+  14,
+  1,
+  9,
+  12,
+  5,
+  1,
+  15,
+  14,
+  13,
+  4,
+  10,
+  0,
+  7,
+  6,
+  3,
+  9,
+  2,
+  8,
+  11,
+  13,
+  11,
+  7,
+  14,
+  12,
+  1,
+  3,
+  9,
+  5,
+  0,
+  15,
+  4,
+  8,
+  6,
+  2,
+  10,
+  6,
+  15,
+  14,
+  9,
+  11,
+  3,
+  0,
+  8,
+  12,
+  2,
+  13,
+  7,
+  1,
+  4,
+  10,
+  5,
+  10,
+  2,
+  8,
+  4,
+  7,
+  6,
+  1,
+  5,
+  15,
+  11,
+  9,
+  14,
+  3,
+  12,
+  13,
+  0,
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  14,
+  10,
+  4,
+  8,
+  9,
+  15,
+  13,
+  6,
+  1,
+  12,
+  0,
+  2,
+  11,
+  7,
+  5,
+  3,
+  // Blake1, unused in others
+  11,
+  8,
+  12,
+  0,
+  5,
+  2,
+  15,
+  13,
+  10,
+  14,
+  3,
+  6,
+  7,
+  1,
+  9,
+  4,
+  7,
+  9,
+  3,
+  1,
+  13,
+  12,
+  11,
+  14,
+  2,
+  6,
+  5,
+  10,
+  4,
+  0,
+  15,
+  8,
+  9,
+  0,
+  5,
+  7,
+  2,
+  4,
+  10,
+  15,
+  14,
+  1,
+  11,
+  12,
+  6,
+  8,
+  3,
+  13,
+  2,
+  12,
+  6,
+  10,
+  0,
+  11,
+  8,
+  3,
+  4,
+  13,
+  7,
+  5,
+  15,
+  14,
+  1,
+  9
+]);
+
+// ../../node_modules/@noble/hashes/esm/blake2.js
+var B2B_IV = /* @__PURE__ */ Uint32Array.from([
+  4089235720,
+  1779033703,
+  2227873595,
+  3144134277,
+  4271175723,
+  1013904242,
+  1595750129,
+  2773480762,
+  2917565137,
+  1359893119,
+  725511199,
+  2600822924,
+  4215389547,
+  528734635,
+  327033209,
+  1541459225
+]);
+var BBUF = /* @__PURE__ */ new Uint32Array(32);
+function G1b(a, b, c, d, msg, x) {
+  const Xl = msg[x], Xh = msg[x + 1];
+  let Al = BBUF[2 * a], Ah = BBUF[2 * a + 1];
+  let Bl = BBUF[2 * b], Bh = BBUF[2 * b + 1];
+  let Cl = BBUF[2 * c], Ch = BBUF[2 * c + 1];
+  let Dl = BBUF[2 * d], Dh = BBUF[2 * d + 1];
+  let ll = add3L(Al, Bl, Xl);
+  Ah = add3H(ll, Ah, Bh, Xh);
+  Al = ll | 0;
+  ({ Dh, Dl } = { Dh: Dh ^ Ah, Dl: Dl ^ Al });
+  ({ Dh, Dl } = { Dh: rotr32H(Dh, Dl), Dl: rotr32L(Dh, Dl) });
+  ({ h: Ch, l: Cl } = add(Ch, Cl, Dh, Dl));
+  ({ Bh, Bl } = { Bh: Bh ^ Ch, Bl: Bl ^ Cl });
+  ({ Bh, Bl } = { Bh: rotrSH(Bh, Bl, 24), Bl: rotrSL(Bh, Bl, 24) });
+  BBUF[2 * a] = Al, BBUF[2 * a + 1] = Ah;
+  BBUF[2 * b] = Bl, BBUF[2 * b + 1] = Bh;
+  BBUF[2 * c] = Cl, BBUF[2 * c + 1] = Ch;
+  BBUF[2 * d] = Dl, BBUF[2 * d + 1] = Dh;
+}
+function G2b(a, b, c, d, msg, x) {
+  const Xl = msg[x], Xh = msg[x + 1];
+  let Al = BBUF[2 * a], Ah = BBUF[2 * a + 1];
+  let Bl = BBUF[2 * b], Bh = BBUF[2 * b + 1];
+  let Cl = BBUF[2 * c], Ch = BBUF[2 * c + 1];
+  let Dl = BBUF[2 * d], Dh = BBUF[2 * d + 1];
+  let ll = add3L(Al, Bl, Xl);
+  Ah = add3H(ll, Ah, Bh, Xh);
+  Al = ll | 0;
+  ({ Dh, Dl } = { Dh: Dh ^ Ah, Dl: Dl ^ Al });
+  ({ Dh, Dl } = { Dh: rotrSH(Dh, Dl, 16), Dl: rotrSL(Dh, Dl, 16) });
+  ({ h: Ch, l: Cl } = add(Ch, Cl, Dh, Dl));
+  ({ Bh, Bl } = { Bh: Bh ^ Ch, Bl: Bl ^ Cl });
+  ({ Bh, Bl } = { Bh: rotrBH(Bh, Bl, 63), Bl: rotrBL(Bh, Bl, 63) });
+  BBUF[2 * a] = Al, BBUF[2 * a + 1] = Ah;
+  BBUF[2 * b] = Bl, BBUF[2 * b + 1] = Bh;
+  BBUF[2 * c] = Cl, BBUF[2 * c + 1] = Ch;
+  BBUF[2 * d] = Dl, BBUF[2 * d + 1] = Dh;
+}
+function checkBlake2Opts(outputLen, opts = {}, keyLen, saltLen, persLen) {
+  anumber(keyLen);
+  if (outputLen < 0 || outputLen > keyLen)
+    throw new Error("outputLen bigger than keyLen");
+  const { key, salt, personalization } = opts;
+  if (key !== void 0 && (key.length < 1 || key.length > keyLen))
+    throw new Error("key length must be undefined or 1.." + keyLen);
+  if (salt !== void 0 && salt.length !== saltLen)
+    throw new Error("salt must be undefined or " + saltLen);
+  if (personalization !== void 0 && personalization.length !== persLen)
+    throw new Error("personalization must be undefined or " + persLen);
+}
+var BLAKE2 = class extends Hash {
+  constructor(blockLen, outputLen) {
+    super();
+    this.finished = false;
+    this.destroyed = false;
+    this.length = 0;
+    this.pos = 0;
+    anumber(blockLen);
+    anumber(outputLen);
+    this.blockLen = blockLen;
+    this.outputLen = outputLen;
+    this.buffer = new Uint8Array(blockLen);
+    this.buffer32 = u32(this.buffer);
+  }
+  update(data) {
+    aexists(this);
+    data = toBytes(data);
+    abytes(data);
+    const { blockLen, buffer, buffer32 } = this;
+    const len = data.length;
+    const offset = data.byteOffset;
+    const buf = data.buffer;
+    for (let pos = 0; pos < len; ) {
+      if (this.pos === blockLen) {
+        swap32IfBE(buffer32);
+        this.compress(buffer32, 0, false);
+        swap32IfBE(buffer32);
+        this.pos = 0;
+      }
+      const take = Math.min(blockLen - this.pos, len - pos);
+      const dataOffset = offset + pos;
+      if (take === blockLen && !(dataOffset % 4) && pos + take < len) {
+        const data32 = new Uint32Array(buf, dataOffset, Math.floor((len - pos) / 4));
+        swap32IfBE(data32);
+        for (let pos32 = 0; pos + blockLen < len; pos32 += buffer32.length, pos += blockLen) {
+          this.length += blockLen;
+          this.compress(data32, pos32, false);
+        }
+        swap32IfBE(data32);
+        continue;
+      }
+      buffer.set(data.subarray(pos, pos + take), this.pos);
+      this.pos += take;
+      this.length += take;
+      pos += take;
+    }
+    return this;
+  }
+  digestInto(out) {
+    aexists(this);
+    aoutput(out, this);
+    const { pos, buffer32 } = this;
+    this.finished = true;
+    clean(this.buffer.subarray(pos));
+    swap32IfBE(buffer32);
+    this.compress(buffer32, 0, true);
+    swap32IfBE(buffer32);
+    const out32 = u32(out);
+    this.get().forEach((v, i) => out32[i] = swap8IfBE(v));
+  }
+  digest() {
+    const { buffer, outputLen } = this;
+    this.digestInto(buffer);
+    const res = buffer.slice(0, outputLen);
+    this.destroy();
+    return res;
+  }
+  _cloneInto(to) {
+    const { buffer, length, finished, destroyed, outputLen, pos } = this;
+    to || (to = new this.constructor({ dkLen: outputLen }));
+    to.set(...this.get());
+    to.buffer.set(buffer);
+    to.destroyed = destroyed;
+    to.finished = finished;
+    to.length = length;
+    to.pos = pos;
+    to.outputLen = outputLen;
+    return to;
+  }
+  clone() {
+    return this._cloneInto();
+  }
+};
+var BLAKE2b = class extends BLAKE2 {
+  constructor(opts = {}) {
+    const olen = opts.dkLen === void 0 ? 64 : opts.dkLen;
+    super(128, olen);
+    this.v0l = B2B_IV[0] | 0;
+    this.v0h = B2B_IV[1] | 0;
+    this.v1l = B2B_IV[2] | 0;
+    this.v1h = B2B_IV[3] | 0;
+    this.v2l = B2B_IV[4] | 0;
+    this.v2h = B2B_IV[5] | 0;
+    this.v3l = B2B_IV[6] | 0;
+    this.v3h = B2B_IV[7] | 0;
+    this.v4l = B2B_IV[8] | 0;
+    this.v4h = B2B_IV[9] | 0;
+    this.v5l = B2B_IV[10] | 0;
+    this.v5h = B2B_IV[11] | 0;
+    this.v6l = B2B_IV[12] | 0;
+    this.v6h = B2B_IV[13] | 0;
+    this.v7l = B2B_IV[14] | 0;
+    this.v7h = B2B_IV[15] | 0;
+    checkBlake2Opts(olen, opts, 64, 16, 16);
+    let { key, personalization, salt } = opts;
+    let keyLength = 0;
+    if (key !== void 0) {
+      key = toBytes(key);
+      keyLength = key.length;
+    }
+    this.v0l ^= this.outputLen | keyLength << 8 | 1 << 16 | 1 << 24;
+    if (salt !== void 0) {
+      salt = toBytes(salt);
+      const slt = u32(salt);
+      this.v4l ^= swap8IfBE(slt[0]);
+      this.v4h ^= swap8IfBE(slt[1]);
+      this.v5l ^= swap8IfBE(slt[2]);
+      this.v5h ^= swap8IfBE(slt[3]);
+    }
+    if (personalization !== void 0) {
+      personalization = toBytes(personalization);
+      const pers = u32(personalization);
+      this.v6l ^= swap8IfBE(pers[0]);
+      this.v6h ^= swap8IfBE(pers[1]);
+      this.v7l ^= swap8IfBE(pers[2]);
+      this.v7h ^= swap8IfBE(pers[3]);
+    }
+    if (key !== void 0) {
+      const tmp = new Uint8Array(this.blockLen);
+      tmp.set(key);
+      this.update(tmp);
+    }
+  }
+  // prettier-ignore
+  get() {
+    let { v0l, v0h, v1l, v1h, v2l, v2h, v3l, v3h, v4l, v4h, v5l, v5h, v6l, v6h, v7l, v7h } = this;
+    return [v0l, v0h, v1l, v1h, v2l, v2h, v3l, v3h, v4l, v4h, v5l, v5h, v6l, v6h, v7l, v7h];
+  }
+  // prettier-ignore
+  set(v0l, v0h, v1l, v1h, v2l, v2h, v3l, v3h, v4l, v4h, v5l, v5h, v6l, v6h, v7l, v7h) {
+    this.v0l = v0l | 0;
+    this.v0h = v0h | 0;
+    this.v1l = v1l | 0;
+    this.v1h = v1h | 0;
+    this.v2l = v2l | 0;
+    this.v2h = v2h | 0;
+    this.v3l = v3l | 0;
+    this.v3h = v3h | 0;
+    this.v4l = v4l | 0;
+    this.v4h = v4h | 0;
+    this.v5l = v5l | 0;
+    this.v5h = v5h | 0;
+    this.v6l = v6l | 0;
+    this.v6h = v6h | 0;
+    this.v7l = v7l | 0;
+    this.v7h = v7h | 0;
+  }
+  compress(msg, offset, isLast) {
+    this.get().forEach((v, i) => BBUF[i] = v);
+    BBUF.set(B2B_IV, 16);
+    let { h, l } = fromBig(BigInt(this.length));
+    BBUF[24] = B2B_IV[8] ^ l;
+    BBUF[25] = B2B_IV[9] ^ h;
+    if (isLast) {
+      BBUF[28] = ~BBUF[28];
+      BBUF[29] = ~BBUF[29];
+    }
+    let j = 0;
+    const s = BSIGMA;
+    for (let i = 0; i < 12; i++) {
+      G1b(0, 4, 8, 12, msg, offset + 2 * s[j++]);
+      G2b(0, 4, 8, 12, msg, offset + 2 * s[j++]);
+      G1b(1, 5, 9, 13, msg, offset + 2 * s[j++]);
+      G2b(1, 5, 9, 13, msg, offset + 2 * s[j++]);
+      G1b(2, 6, 10, 14, msg, offset + 2 * s[j++]);
+      G2b(2, 6, 10, 14, msg, offset + 2 * s[j++]);
+      G1b(3, 7, 11, 15, msg, offset + 2 * s[j++]);
+      G2b(3, 7, 11, 15, msg, offset + 2 * s[j++]);
+      G1b(0, 5, 10, 15, msg, offset + 2 * s[j++]);
+      G2b(0, 5, 10, 15, msg, offset + 2 * s[j++]);
+      G1b(1, 6, 11, 12, msg, offset + 2 * s[j++]);
+      G2b(1, 6, 11, 12, msg, offset + 2 * s[j++]);
+      G1b(2, 7, 8, 13, msg, offset + 2 * s[j++]);
+      G2b(2, 7, 8, 13, msg, offset + 2 * s[j++]);
+      G1b(3, 4, 9, 14, msg, offset + 2 * s[j++]);
+      G2b(3, 4, 9, 14, msg, offset + 2 * s[j++]);
+    }
+    this.v0l ^= BBUF[0] ^ BBUF[16];
+    this.v0h ^= BBUF[1] ^ BBUF[17];
+    this.v1l ^= BBUF[2] ^ BBUF[18];
+    this.v1h ^= BBUF[3] ^ BBUF[19];
+    this.v2l ^= BBUF[4] ^ BBUF[20];
+    this.v2h ^= BBUF[5] ^ BBUF[21];
+    this.v3l ^= BBUF[6] ^ BBUF[22];
+    this.v3h ^= BBUF[7] ^ BBUF[23];
+    this.v4l ^= BBUF[8] ^ BBUF[24];
+    this.v4h ^= BBUF[9] ^ BBUF[25];
+    this.v5l ^= BBUF[10] ^ BBUF[26];
+    this.v5h ^= BBUF[11] ^ BBUF[27];
+    this.v6l ^= BBUF[12] ^ BBUF[28];
+    this.v6h ^= BBUF[13] ^ BBUF[29];
+    this.v7l ^= BBUF[14] ^ BBUF[30];
+    this.v7h ^= BBUF[15] ^ BBUF[31];
+    clean(BBUF);
+  }
+  destroy() {
+    this.destroyed = true;
+    clean(this.buffer32);
+    this.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  }
+};
+var blake2b = /* @__PURE__ */ createOptHasher((opts) => new BLAKE2b(opts));
+
+// ../../node_modules/@noble/hashes/esm/argon2.js
+var AT = { Argond2d: 0, Argon2i: 1, Argon2id: 2 };
+var ARGON2_SYNC_POINTS = 4;
+var abytesOrZero = (buf) => {
+  if (buf === void 0)
+    return Uint8Array.of();
+  return kdfInputToBytes(buf);
+};
+function mul(a, b) {
+  const aL = a & 65535;
+  const aH = a >>> 16;
+  const bL = b & 65535;
+  const bH = b >>> 16;
+  const ll = Math.imul(aL, bL);
+  const hl = Math.imul(aH, bL);
+  const lh = Math.imul(aL, bH);
+  const hh = Math.imul(aH, bH);
+  const carry = (ll >>> 16) + (hl & 65535) + lh;
+  const high = hh + (hl >>> 16) + (carry >>> 16) | 0;
+  const low = carry << 16 | ll & 65535;
+  return { h: high, l: low };
+}
+function mul2(a, b) {
+  const { h, l } = mul(a, b);
+  return { h: (h << 1 | l >>> 31) & 4294967295, l: l << 1 & 4294967295 };
+}
+function blamka(Ah, Al, Bh, Bl) {
+  const { h: Ch, l: Cl } = mul2(Al, Bl);
+  const Rll = add3L(Al, Bl, Cl);
+  return { h: add3H(Rll, Ah, Bh, Ch), l: Rll | 0 };
+}
+var A2_BUF = new Uint32Array(256);
+function G(a, b, c, d) {
+  let Al = A2_BUF[2 * a], Ah = A2_BUF[2 * a + 1];
+  let Bl = A2_BUF[2 * b], Bh = A2_BUF[2 * b + 1];
+  let Cl = A2_BUF[2 * c], Ch = A2_BUF[2 * c + 1];
+  let Dl = A2_BUF[2 * d], Dh = A2_BUF[2 * d + 1];
+  ({ h: Ah, l: Al } = blamka(Ah, Al, Bh, Bl));
+  ({ Dh, Dl } = { Dh: Dh ^ Ah, Dl: Dl ^ Al });
+  ({ Dh, Dl } = { Dh: rotr32H(Dh, Dl), Dl: rotr32L(Dh, Dl) });
+  ({ h: Ch, l: Cl } = blamka(Ch, Cl, Dh, Dl));
+  ({ Bh, Bl } = { Bh: Bh ^ Ch, Bl: Bl ^ Cl });
+  ({ Bh, Bl } = { Bh: rotrSH(Bh, Bl, 24), Bl: rotrSL(Bh, Bl, 24) });
+  ({ h: Ah, l: Al } = blamka(Ah, Al, Bh, Bl));
+  ({ Dh, Dl } = { Dh: Dh ^ Ah, Dl: Dl ^ Al });
+  ({ Dh, Dl } = { Dh: rotrSH(Dh, Dl, 16), Dl: rotrSL(Dh, Dl, 16) });
+  ({ h: Ch, l: Cl } = blamka(Ch, Cl, Dh, Dl));
+  ({ Bh, Bl } = { Bh: Bh ^ Ch, Bl: Bl ^ Cl });
+  ({ Bh, Bl } = { Bh: rotrBH(Bh, Bl, 63), Bl: rotrBL(Bh, Bl, 63) });
+  A2_BUF[2 * a] = Al, A2_BUF[2 * a + 1] = Ah;
+  A2_BUF[2 * b] = Bl, A2_BUF[2 * b + 1] = Bh;
+  A2_BUF[2 * c] = Cl, A2_BUF[2 * c + 1] = Ch;
+  A2_BUF[2 * d] = Dl, A2_BUF[2 * d + 1] = Dh;
+}
+function P(v00, v01, v02, v03, v04, v05, v06, v07, v08, v09, v10, v11, v12, v13, v14, v15) {
+  G(v00, v04, v08, v12);
+  G(v01, v05, v09, v13);
+  G(v02, v06, v10, v14);
+  G(v03, v07, v11, v15);
+  G(v00, v05, v10, v15);
+  G(v01, v06, v11, v12);
+  G(v02, v07, v08, v13);
+  G(v03, v04, v09, v14);
+}
+function block(x, xPos, yPos, outPos, needXor) {
+  for (let i = 0; i < 256; i++)
+    A2_BUF[i] = x[xPos + i] ^ x[yPos + i];
+  for (let i = 0; i < 128; i += 16) {
+    P(i, i + 1, i + 2, i + 3, i + 4, i + 5, i + 6, i + 7, i + 8, i + 9, i + 10, i + 11, i + 12, i + 13, i + 14, i + 15);
+  }
+  for (let i = 0; i < 16; i += 2) {
+    P(i, i + 1, i + 16, i + 17, i + 32, i + 33, i + 48, i + 49, i + 64, i + 65, i + 80, i + 81, i + 96, i + 97, i + 112, i + 113);
+  }
+  if (needXor)
+    for (let i = 0; i < 256; i++)
+      x[outPos + i] ^= A2_BUF[i] ^ x[xPos + i] ^ x[yPos + i];
+  else
+    for (let i = 0; i < 256; i++)
+      x[outPos + i] = A2_BUF[i] ^ x[xPos + i] ^ x[yPos + i];
+  clean(A2_BUF);
+}
+function Hp(A, dkLen) {
+  const A8 = u8(A);
+  const T = new Uint32Array(1);
+  const T8 = u8(T);
+  T[0] = dkLen;
+  if (dkLen <= 64)
+    return blake2b.create({ dkLen }).update(T8).update(A8).digest();
+  const out = new Uint8Array(dkLen);
+  let V = blake2b.create({}).update(T8).update(A8).digest();
+  let pos = 0;
+  out.set(V.subarray(0, 32));
+  pos += 32;
+  for (; dkLen - pos > 64; pos += 32) {
+    const Vh = blake2b.create({}).update(V);
+    Vh.digestInto(V);
+    Vh.destroy();
+    out.set(V.subarray(0, 32), pos);
+  }
+  out.set(blake2b(V, { dkLen: dkLen - pos }), pos);
+  clean(V, T);
+  return u32(out);
+}
+function indexAlpha(r, s, laneLen, segmentLen, index, randL, sameLane = false) {
+  let area;
+  if (r === 0) {
+    if (s === 0)
+      area = index - 1;
+    else if (sameLane)
+      area = s * segmentLen + index - 1;
+    else
+      area = s * segmentLen + (index == 0 ? -1 : 0);
+  } else if (sameLane)
+    area = laneLen - segmentLen + index - 1;
+  else
+    area = laneLen - segmentLen + (index == 0 ? -1 : 0);
+  const startPos = r !== 0 && s !== ARGON2_SYNC_POINTS - 1 ? (s + 1) * segmentLen : 0;
+  const rel = area - 1 - mul(area, mul(randL, randL).h).h;
+  return (startPos + rel) % laneLen;
+}
+var maxUint32 = Math.pow(2, 32);
+function isU32(num) {
+  return Number.isSafeInteger(num) && num >= 0 && num < maxUint32;
+}
+function argon2Opts(opts) {
+  const merged = {
+    version: 19,
+    dkLen: 32,
+    maxmem: maxUint32 - 1,
+    asyncTick: 10
+  };
+  for (let [k, v] of Object.entries(opts))
+    if (v != null)
+      merged[k] = v;
+  const { dkLen, p, m, t, version, onProgress } = merged;
+  if (!isU32(dkLen) || dkLen < 4)
+    throw new Error("dkLen should be at least 4 bytes");
+  if (!isU32(p) || p < 1 || p >= Math.pow(2, 24))
+    throw new Error("p should be 1 <= p < 2^24");
+  if (!isU32(m))
+    throw new Error("m should be 0 <= m < 2^32");
+  if (!isU32(t) || t < 1)
+    throw new Error("t (iterations) should be 1 <= t < 2^32");
+  if (onProgress !== void 0 && typeof onProgress !== "function")
+    throw new Error("progressCb should be function");
+  if (!isU32(m) || m < 8 * p)
+    throw new Error("memory should be at least 8*p bytes");
+  if (version !== 16 && version !== 19)
+    throw new Error("unknown version=" + version);
+  return merged;
+}
+function argon2Init(password, salt, type, opts) {
+  password = kdfInputToBytes(password);
+  salt = kdfInputToBytes(salt);
+  abytes(password);
+  abytes(salt);
+  if (!isU32(password.length))
+    throw new Error("password should be less than 4 GB");
+  if (!isU32(salt.length) || salt.length < 8)
+    throw new Error("salt should be at least 8 bytes and less than 4 GB");
+  if (!Object.values(AT).includes(type))
+    throw new Error("invalid type");
+  let { p, dkLen, m, t, version, key, personalization, maxmem, onProgress, asyncTick } = argon2Opts(opts);
+  key = abytesOrZero(key);
+  personalization = abytesOrZero(personalization);
+  const h = blake2b.create({});
+  const BUF = new Uint32Array(1);
+  const BUF8 = u8(BUF);
+  for (let item of [p, dkLen, m, t, version, type]) {
+    BUF[0] = item;
+    h.update(BUF8);
+  }
+  for (let i of [password, salt, key, personalization]) {
+    BUF[0] = i.length;
+    h.update(BUF8).update(i);
+  }
+  const H0 = new Uint32Array(18);
+  const H0_8 = u8(H0);
+  h.digestInto(H0_8);
+  const lanes = p;
+  const mP = 4 * p * Math.floor(m / (ARGON2_SYNC_POINTS * p));
+  const laneLen = Math.floor(mP / p);
+  const segmentLen = Math.floor(laneLen / ARGON2_SYNC_POINTS);
+  const memUsed = mP * 256;
+  if (!isU32(maxmem) || memUsed > maxmem)
+    throw new Error("mem should be less than 2**32, got: maxmem=" + maxmem + ", memused=" + memUsed);
+  const B = new Uint32Array(memUsed);
+  for (let l = 0; l < p; l++) {
+    const i = 256 * laneLen * l;
+    H0[17] = l;
+    H0[16] = 0;
+    B.set(Hp(H0, 1024), i);
+    H0[16] = 1;
+    B.set(Hp(H0, 1024), i + 256);
+  }
+  let perBlock = () => {
+  };
+  if (onProgress) {
+    const totalBlock = t * ARGON2_SYNC_POINTS * p * segmentLen;
+    const callbackPer = Math.max(Math.floor(totalBlock / 1e4), 1);
+    let blockCnt = 0;
+    perBlock = () => {
+      blockCnt++;
+      if (onProgress && (!(blockCnt % callbackPer) || blockCnt === totalBlock))
+        onProgress(blockCnt / totalBlock);
+    };
+  }
+  clean(BUF, H0);
+  return { type, mP, p, t, version, B, laneLen, lanes, segmentLen, dkLen, perBlock, asyncTick };
+}
+function argon2Output(B, p, laneLen, dkLen) {
+  const B_final = new Uint32Array(256);
+  for (let l = 0; l < p; l++)
+    for (let j = 0; j < 256; j++)
+      B_final[j] ^= B[256 * (laneLen * l + laneLen - 1) + j];
+  const res = u8(Hp(B_final, dkLen));
+  clean(B_final);
+  return res;
+}
+function processBlock(B, address, l, r, s, index, laneLen, segmentLen, lanes, offset, prev, dataIndependent, needXor) {
+  if (offset % laneLen)
+    prev = offset - 1;
+  let randL, randH;
+  if (dataIndependent) {
+    let i128 = index % 128;
+    if (i128 === 0) {
+      address[256 + 12]++;
+      block(address, 256, 2 * 256, 0, false);
+      block(address, 0, 2 * 256, 0, false);
+    }
+    randL = address[2 * i128];
+    randH = address[2 * i128 + 1];
+  } else {
+    const T = 256 * prev;
+    randL = B[T];
+    randH = B[T + 1];
+  }
+  const refLane = r === 0 && s === 0 ? l : randH % lanes;
+  const refPos = indexAlpha(r, s, laneLen, segmentLen, index, randL, refLane == l);
+  const refBlock = laneLen * refLane + refPos;
+  block(B, 256 * prev, 256 * refBlock, offset * 256, needXor);
+}
+function argon2(type, password, salt, opts) {
+  const { mP, p, t, version, B, laneLen, lanes, segmentLen, dkLen, perBlock } = argon2Init(password, salt, type, opts);
+  const address = new Uint32Array(3 * 256);
+  address[256 + 6] = mP;
+  address[256 + 8] = t;
+  address[256 + 10] = type;
+  for (let r = 0; r < t; r++) {
+    const needXor = r !== 0 && version === 19;
+    address[256 + 0] = r;
+    for (let s = 0; s < ARGON2_SYNC_POINTS; s++) {
+      address[256 + 4] = s;
+      const dataIndependent = type == AT.Argon2i || type == AT.Argon2id && r === 0 && s < 2;
+      for (let l = 0; l < p; l++) {
+        address[256 + 2] = l;
+        address[256 + 12] = 0;
+        let startPos = 0;
+        if (r === 0 && s === 0) {
+          startPos = 2;
+          if (dataIndependent) {
+            address[256 + 12]++;
+            block(address, 256, 2 * 256, 0, false);
+            block(address, 0, 2 * 256, 0, false);
+          }
+        }
+        let offset = l * laneLen + s * segmentLen + startPos;
+        let prev = offset % laneLen ? offset - 1 : offset + laneLen - 1;
+        for (let index = startPos; index < segmentLen; index++, offset++, prev++) {
+          perBlock();
+          processBlock(B, address, l, r, s, index, laneLen, segmentLen, lanes, offset, prev, dataIndependent, needXor);
+        }
+      }
+    }
+  }
+  clean(address);
+  return argon2Output(B, p, laneLen, dkLen);
+}
+var argon2id = (password, salt, opts) => argon2(AT.Argon2id, password, salt, opts);
+
+// ../../node_modules/@noble/hashes/esm/scrypt.js
+function XorAndSalsa(prev, pi, input, ii, out, oi) {
+  let y00 = prev[pi++] ^ input[ii++], y01 = prev[pi++] ^ input[ii++];
+  let y02 = prev[pi++] ^ input[ii++], y03 = prev[pi++] ^ input[ii++];
+  let y04 = prev[pi++] ^ input[ii++], y05 = prev[pi++] ^ input[ii++];
+  let y06 = prev[pi++] ^ input[ii++], y07 = prev[pi++] ^ input[ii++];
+  let y08 = prev[pi++] ^ input[ii++], y09 = prev[pi++] ^ input[ii++];
+  let y10 = prev[pi++] ^ input[ii++], y11 = prev[pi++] ^ input[ii++];
+  let y12 = prev[pi++] ^ input[ii++], y13 = prev[pi++] ^ input[ii++];
+  let y14 = prev[pi++] ^ input[ii++], y15 = prev[pi++] ^ input[ii++];
+  let x00 = y00, x01 = y01, x02 = y02, x03 = y03, x04 = y04, x05 = y05, x06 = y06, x07 = y07, x08 = y08, x09 = y09, x10 = y10, x11 = y11, x12 = y12, x13 = y13, x14 = y14, x15 = y15;
+  for (let i = 0; i < 8; i += 2) {
+    x04 ^= rotl(x00 + x12 | 0, 7);
+    x08 ^= rotl(x04 + x00 | 0, 9);
+    x12 ^= rotl(x08 + x04 | 0, 13);
+    x00 ^= rotl(x12 + x08 | 0, 18);
+    x09 ^= rotl(x05 + x01 | 0, 7);
+    x13 ^= rotl(x09 + x05 | 0, 9);
+    x01 ^= rotl(x13 + x09 | 0, 13);
+    x05 ^= rotl(x01 + x13 | 0, 18);
+    x14 ^= rotl(x10 + x06 | 0, 7);
+    x02 ^= rotl(x14 + x10 | 0, 9);
+    x06 ^= rotl(x02 + x14 | 0, 13);
+    x10 ^= rotl(x06 + x02 | 0, 18);
+    x03 ^= rotl(x15 + x11 | 0, 7);
+    x07 ^= rotl(x03 + x15 | 0, 9);
+    x11 ^= rotl(x07 + x03 | 0, 13);
+    x15 ^= rotl(x11 + x07 | 0, 18);
+    x01 ^= rotl(x00 + x03 | 0, 7);
+    x02 ^= rotl(x01 + x00 | 0, 9);
+    x03 ^= rotl(x02 + x01 | 0, 13);
+    x00 ^= rotl(x03 + x02 | 0, 18);
+    x06 ^= rotl(x05 + x04 | 0, 7);
+    x07 ^= rotl(x06 + x05 | 0, 9);
+    x04 ^= rotl(x07 + x06 | 0, 13);
+    x05 ^= rotl(x04 + x07 | 0, 18);
+    x11 ^= rotl(x10 + x09 | 0, 7);
+    x08 ^= rotl(x11 + x10 | 0, 9);
+    x09 ^= rotl(x08 + x11 | 0, 13);
+    x10 ^= rotl(x09 + x08 | 0, 18);
+    x12 ^= rotl(x15 + x14 | 0, 7);
+    x13 ^= rotl(x12 + x15 | 0, 9);
+    x14 ^= rotl(x13 + x12 | 0, 13);
+    x15 ^= rotl(x14 + x13 | 0, 18);
+  }
+  out[oi++] = y00 + x00 | 0;
+  out[oi++] = y01 + x01 | 0;
+  out[oi++] = y02 + x02 | 0;
+  out[oi++] = y03 + x03 | 0;
+  out[oi++] = y04 + x04 | 0;
+  out[oi++] = y05 + x05 | 0;
+  out[oi++] = y06 + x06 | 0;
+  out[oi++] = y07 + x07 | 0;
+  out[oi++] = y08 + x08 | 0;
+  out[oi++] = y09 + x09 | 0;
+  out[oi++] = y10 + x10 | 0;
+  out[oi++] = y11 + x11 | 0;
+  out[oi++] = y12 + x12 | 0;
+  out[oi++] = y13 + x13 | 0;
+  out[oi++] = y14 + x14 | 0;
+  out[oi++] = y15 + x15 | 0;
+}
+function BlockMix(input, ii, out, oi, r) {
+  let head = oi + 0;
+  let tail = oi + 16 * r;
+  for (let i = 0; i < 16; i++)
+    out[tail + i] = input[ii + (2 * r - 1) * 16 + i];
+  for (let i = 0; i < r; i++, head += 16, ii += 16) {
+    XorAndSalsa(out, tail, input, ii, out, head);
+    if (i > 0)
+      tail += 16;
+    XorAndSalsa(out, head, input, ii += 16, out, tail);
+  }
+}
+function scryptInit(password, salt, _opts) {
+  const opts = checkOpts({
+    dkLen: 32,
+    asyncTick: 10,
+    maxmem: 1024 ** 3 + 1024
+  }, _opts);
+  const { N, r, p, dkLen, asyncTick, maxmem, onProgress } = opts;
+  anumber(N);
+  anumber(r);
+  anumber(p);
+  anumber(dkLen);
+  anumber(asyncTick);
+  anumber(maxmem);
+  if (onProgress !== void 0 && typeof onProgress !== "function")
+    throw new Error("progressCb should be function");
+  const blockSize = 128 * r;
+  const blockSize32 = blockSize / 4;
+  const pow32 = Math.pow(2, 32);
+  if (N <= 1 || (N & N - 1) !== 0 || N > pow32) {
+    throw new Error("Scrypt: N must be larger than 1, a power of 2, and less than 2^32");
+  }
+  if (p < 0 || p > (pow32 - 1) * 32 / blockSize) {
+    throw new Error("Scrypt: p must be a positive integer less than or equal to ((2^32 - 1) * 32) / (128 * r)");
+  }
+  if (dkLen < 0 || dkLen > (pow32 - 1) * 32) {
+    throw new Error("Scrypt: dkLen should be positive integer less than or equal to (2^32 - 1) * 32");
+  }
+  const memUsed = blockSize * (N + p);
+  if (memUsed > maxmem) {
+    throw new Error("Scrypt: memused is bigger than maxMem. Expected 128 * r * (N + p) > maxmem of " + maxmem);
+  }
+  const B = pbkdf2(sha256, password, salt, { c: 1, dkLen: blockSize * p });
+  const B32 = u32(B);
+  const V = u32(new Uint8Array(blockSize * N));
+  const tmp = u32(new Uint8Array(blockSize));
+  let blockMixCb = () => {
+  };
+  if (onProgress) {
+    const totalBlockMix = 2 * N * p;
+    const callbackPer = Math.max(Math.floor(totalBlockMix / 1e4), 1);
+    let blockMixCnt = 0;
+    blockMixCb = () => {
+      blockMixCnt++;
+      if (onProgress && (!(blockMixCnt % callbackPer) || blockMixCnt === totalBlockMix))
+        onProgress(blockMixCnt / totalBlockMix);
+    };
+  }
+  return { N, r, p, dkLen, blockSize32, V, B32, B, tmp, blockMixCb, asyncTick };
+}
+function scryptOutput(password, dkLen, B, V, tmp) {
+  const res = pbkdf2(sha256, password, B, { c: 1, dkLen });
+  clean(B, V, tmp);
+  return res;
+}
+function scrypt(password, salt, opts) {
+  const { N, r, p, dkLen, blockSize32, V, B32, B, tmp, blockMixCb } = scryptInit(password, salt, opts);
+  swap32IfBE(B32);
+  for (let pi = 0; pi < p; pi++) {
+    const Pi = blockSize32 * pi;
+    for (let i = 0; i < blockSize32; i++)
+      V[i] = B32[Pi + i];
+    for (let i = 0, pos = 0; i < N - 1; i++) {
+      BlockMix(V, pos, V, pos += blockSize32, r);
+      blockMixCb();
+    }
+    BlockMix(V, (N - 1) * blockSize32, B32, Pi, r);
+    blockMixCb();
+    for (let i = 0; i < N; i++) {
+      const j = B32[Pi + blockSize32 - 16] % N;
+      for (let k = 0; k < blockSize32; k++)
+        tmp[k] = B32[Pi + k] ^ V[j * blockSize32 + k];
+      BlockMix(tmp, 0, B32, Pi, r);
+      blockMixCb();
+    }
+  }
+  swap32IfBE(B32);
+  return scryptOutput(password, dkLen, B, V, tmp);
+}
+
+// ../../node_modules/bcryptjs/index.js
+var import_crypto2 = __toESM(require_crypto(), 1);
+var randomFallback = null;
+function randomBytes2(len) {
+  try {
+    return crypto.getRandomValues(new Uint8Array(len));
+  } catch {
+  }
+  try {
+    return import_crypto2.default.randomBytes(len);
+  } catch {
+  }
+  if (!randomFallback) {
+    throw Error(
+      "Neither WebCryptoAPI nor a crypto module is available. Use bcrypt.setRandomFallback to set an alternative"
+    );
+  }
+  return randomFallback(len);
+}
+function setRandomFallback(random) {
+  randomFallback = random;
+}
+function genSaltSync(rounds, seed_length) {
+  rounds = rounds || GENSALT_DEFAULT_LOG2_ROUNDS;
+  if (typeof rounds !== "number")
+    throw Error(
+      "Illegal arguments: " + typeof rounds + ", " + typeof seed_length
+    );
+  if (rounds < 4) rounds = 4;
+  else if (rounds > 31) rounds = 31;
+  var salt = [];
+  salt.push("$2b$");
+  if (rounds < 10) salt.push("0");
+  salt.push(rounds.toString());
+  salt.push("$");
+  salt.push(base64_encode(randomBytes2(BCRYPT_SALT_LEN), BCRYPT_SALT_LEN));
+  return salt.join("");
+}
+function genSalt(rounds, seed_length, callback) {
+  if (typeof seed_length === "function")
+    callback = seed_length, seed_length = void 0;
+  if (typeof rounds === "function") callback = rounds, rounds = void 0;
+  if (typeof rounds === "undefined") rounds = GENSALT_DEFAULT_LOG2_ROUNDS;
+  else if (typeof rounds !== "number")
+    throw Error("illegal arguments: " + typeof rounds);
+  function _async(callback2) {
+    nextTick2(function() {
+      try {
+        callback2(null, genSaltSync(rounds));
+      } catch (err) {
+        callback2(err);
+      }
+    });
+  }
+  if (callback) {
+    if (typeof callback !== "function")
+      throw Error("Illegal callback: " + typeof callback);
+    _async(callback);
+  } else
+    return new Promise(function(resolve, reject) {
+      _async(function(err, res) {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(res);
+      });
+    });
+}
+function hashSync(password, salt) {
+  if (typeof salt === "undefined") salt = GENSALT_DEFAULT_LOG2_ROUNDS;
+  if (typeof salt === "number") salt = genSaltSync(salt);
+  if (typeof password !== "string" || typeof salt !== "string")
+    throw Error("Illegal arguments: " + typeof password + ", " + typeof salt);
+  return _hash(password, salt);
+}
+function hash(password, salt, callback, progressCallback) {
+  function _async(callback2) {
+    if (typeof password === "string" && typeof salt === "number")
+      genSalt(salt, function(err, salt2) {
+        _hash(password, salt2, callback2, progressCallback);
+      });
+    else if (typeof password === "string" && typeof salt === "string")
+      _hash(password, salt, callback2, progressCallback);
+    else
+      nextTick2(
+        callback2.bind(
+          this,
+          Error("Illegal arguments: " + typeof password + ", " + typeof salt)
+        )
+      );
+  }
+  if (callback) {
+    if (typeof callback !== "function")
+      throw Error("Illegal callback: " + typeof callback);
+    _async(callback);
+  } else
+    return new Promise(function(resolve, reject) {
+      _async(function(err, res) {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(res);
+      });
+    });
+}
+function safeStringCompare(known, unknown) {
+  var diff = known.length ^ unknown.length;
+  for (var i = 0; i < known.length; ++i) {
+    diff |= known.charCodeAt(i) ^ unknown.charCodeAt(i);
+  }
+  return diff === 0;
+}
+function compareSync(password, hash2) {
+  if (typeof password !== "string" || typeof hash2 !== "string")
+    throw Error("Illegal arguments: " + typeof password + ", " + typeof hash2);
+  if (hash2.length !== 60) return false;
+  return safeStringCompare(
+    hashSync(password, hash2.substring(0, hash2.length - 31)),
+    hash2
+  );
+}
+function compare(password, hashValue, callback, progressCallback) {
+  function _async(callback2) {
+    if (typeof password !== "string" || typeof hashValue !== "string") {
+      nextTick2(
+        callback2.bind(
+          this,
+          Error(
+            "Illegal arguments: " + typeof password + ", " + typeof hashValue
+          )
+        )
+      );
+      return;
+    }
+    if (hashValue.length !== 60) {
+      nextTick2(callback2.bind(this, null, false));
+      return;
+    }
+    hash(
+      password,
+      hashValue.substring(0, 29),
+      function(err, comp) {
+        if (err) callback2(err);
+        else callback2(null, safeStringCompare(comp, hashValue));
+      },
+      progressCallback
+    );
+  }
+  if (callback) {
+    if (typeof callback !== "function")
+      throw Error("Illegal callback: " + typeof callback);
+    _async(callback);
+  } else
+    return new Promise(function(resolve, reject) {
+      _async(function(err, res) {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(res);
+      });
+    });
+}
+function getRounds(hash2) {
+  if (typeof hash2 !== "string")
+    throw Error("Illegal arguments: " + typeof hash2);
+  return parseInt(hash2.split("$")[2], 10);
+}
+function getSalt(hash2) {
+  if (typeof hash2 !== "string")
+    throw Error("Illegal arguments: " + typeof hash2);
+  if (hash2.length !== 60)
+    throw Error("Illegal hash length: " + hash2.length + " != 60");
+  return hash2.substring(0, 29);
+}
+function truncates(password) {
+  if (typeof password !== "string")
+    throw Error("Illegal arguments: " + typeof password);
+  return utf8Length(password) > 72;
+}
+var nextTick2 = typeof setImmediate === "function" ? setImmediate : typeof scheduler === "object" && typeof scheduler.postTask === "function" ? scheduler.postTask.bind(scheduler) : setTimeout;
+function utf8Length(string) {
+  var len = 0, c = 0;
+  for (var i = 0; i < string.length; ++i) {
+    c = string.charCodeAt(i);
+    if (c < 128) len += 1;
+    else if (c < 2048) len += 2;
+    else if ((c & 64512) === 55296 && (string.charCodeAt(i + 1) & 64512) === 56320) {
+      ++i;
+      len += 4;
+    } else len += 3;
+  }
+  return len;
+}
+function utf8Array(string) {
+  var offset = 0, c1, c2;
+  var buffer = new Array(utf8Length(string));
+  for (var i = 0, k = string.length; i < k; ++i) {
+    c1 = string.charCodeAt(i);
+    if (c1 < 128) {
+      buffer[offset++] = c1;
+    } else if (c1 < 2048) {
+      buffer[offset++] = c1 >> 6 | 192;
+      buffer[offset++] = c1 & 63 | 128;
+    } else if ((c1 & 64512) === 55296 && ((c2 = string.charCodeAt(i + 1)) & 64512) === 56320) {
+      c1 = 65536 + ((c1 & 1023) << 10) + (c2 & 1023);
+      ++i;
+      buffer[offset++] = c1 >> 18 | 240;
+      buffer[offset++] = c1 >> 12 & 63 | 128;
+      buffer[offset++] = c1 >> 6 & 63 | 128;
+      buffer[offset++] = c1 & 63 | 128;
+    } else {
+      buffer[offset++] = c1 >> 12 | 224;
+      buffer[offset++] = c1 >> 6 & 63 | 128;
+      buffer[offset++] = c1 & 63 | 128;
+    }
+  }
+  return buffer;
+}
+var BASE64_CODE = "./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".split("");
+var BASE64_INDEX = [
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  0,
+  1,
+  54,
+  55,
+  56,
+  57,
+  58,
+  59,
+  60,
+  61,
+  62,
+  63,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21,
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1,
+  28,
+  29,
+  30,
+  31,
+  32,
+  33,
+  34,
+  35,
+  36,
+  37,
+  38,
+  39,
+  40,
+  41,
+  42,
+  43,
+  44,
+  45,
+  46,
+  47,
+  48,
+  49,
+  50,
+  51,
+  52,
+  53,
+  -1,
+  -1,
+  -1,
+  -1,
+  -1
+];
+function base64_encode(b, len) {
+  var off = 0, rs = [], c1, c2;
+  if (len <= 0 || len > b.length) throw Error("Illegal len: " + len);
+  while (off < len) {
+    c1 = b[off++] & 255;
+    rs.push(BASE64_CODE[c1 >> 2 & 63]);
+    c1 = (c1 & 3) << 4;
+    if (off >= len) {
+      rs.push(BASE64_CODE[c1 & 63]);
+      break;
+    }
+    c2 = b[off++] & 255;
+    c1 |= c2 >> 4 & 15;
+    rs.push(BASE64_CODE[c1 & 63]);
+    c1 = (c2 & 15) << 2;
+    if (off >= len) {
+      rs.push(BASE64_CODE[c1 & 63]);
+      break;
+    }
+    c2 = b[off++] & 255;
+    c1 |= c2 >> 6 & 3;
+    rs.push(BASE64_CODE[c1 & 63]);
+    rs.push(BASE64_CODE[c2 & 63]);
+  }
+  return rs.join("");
+}
+function base64_decode(s, len) {
+  var off = 0, slen = s.length, olen = 0, rs = [], c1, c2, c3, c4, o, code;
+  if (len <= 0) throw Error("Illegal len: " + len);
+  while (off < slen - 1 && olen < len) {
+    code = s.charCodeAt(off++);
+    c1 = code < BASE64_INDEX.length ? BASE64_INDEX[code] : -1;
+    code = s.charCodeAt(off++);
+    c2 = code < BASE64_INDEX.length ? BASE64_INDEX[code] : -1;
+    if (c1 == -1 || c2 == -1) break;
+    o = c1 << 2 >>> 0;
+    o |= (c2 & 48) >> 4;
+    rs.push(String.fromCharCode(o));
+    if (++olen >= len || off >= slen) break;
+    code = s.charCodeAt(off++);
+    c3 = code < BASE64_INDEX.length ? BASE64_INDEX[code] : -1;
+    if (c3 == -1) break;
+    o = (c2 & 15) << 4 >>> 0;
+    o |= (c3 & 60) >> 2;
+    rs.push(String.fromCharCode(o));
+    if (++olen >= len || off >= slen) break;
+    code = s.charCodeAt(off++);
+    c4 = code < BASE64_INDEX.length ? BASE64_INDEX[code] : -1;
+    o = (c3 & 3) << 6 >>> 0;
+    o |= c4;
+    rs.push(String.fromCharCode(o));
+    ++olen;
+  }
+  var res = [];
+  for (off = 0; off < olen; off++) res.push(rs[off].charCodeAt(0));
+  return res;
+}
+var BCRYPT_SALT_LEN = 16;
+var GENSALT_DEFAULT_LOG2_ROUNDS = 10;
+var BLOWFISH_NUM_ROUNDS = 16;
+var MAX_EXECUTION_TIME = 100;
+var P_ORIG = [
+  608135816,
+  2242054355,
+  320440878,
+  57701188,
+  2752067618,
+  698298832,
+  137296536,
+  3964562569,
+  1160258022,
+  953160567,
+  3193202383,
+  887688300,
+  3232508343,
+  3380367581,
+  1065670069,
+  3041331479,
+  2450970073,
+  2306472731
+];
+var S_ORIG = [
+  3509652390,
+  2564797868,
+  805139163,
+  3491422135,
+  3101798381,
+  1780907670,
+  3128725573,
+  4046225305,
+  614570311,
+  3012652279,
+  134345442,
+  2240740374,
+  1667834072,
+  1901547113,
+  2757295779,
+  4103290238,
+  227898511,
+  1921955416,
+  1904987480,
+  2182433518,
+  2069144605,
+  3260701109,
+  2620446009,
+  720527379,
+  3318853667,
+  677414384,
+  3393288472,
+  3101374703,
+  2390351024,
+  1614419982,
+  1822297739,
+  2954791486,
+  3608508353,
+  3174124327,
+  2024746970,
+  1432378464,
+  3864339955,
+  2857741204,
+  1464375394,
+  1676153920,
+  1439316330,
+  715854006,
+  3033291828,
+  289532110,
+  2706671279,
+  2087905683,
+  3018724369,
+  1668267050,
+  732546397,
+  1947742710,
+  3462151702,
+  2609353502,
+  2950085171,
+  1814351708,
+  2050118529,
+  680887927,
+  999245976,
+  1800124847,
+  3300911131,
+  1713906067,
+  1641548236,
+  4213287313,
+  1216130144,
+  1575780402,
+  4018429277,
+  3917837745,
+  3693486850,
+  3949271944,
+  596196993,
+  3549867205,
+  258830323,
+  2213823033,
+  772490370,
+  2760122372,
+  1774776394,
+  2652871518,
+  566650946,
+  4142492826,
+  1728879713,
+  2882767088,
+  1783734482,
+  3629395816,
+  2517608232,
+  2874225571,
+  1861159788,
+  326777828,
+  3124490320,
+  2130389656,
+  2716951837,
+  967770486,
+  1724537150,
+  2185432712,
+  2364442137,
+  1164943284,
+  2105845187,
+  998989502,
+  3765401048,
+  2244026483,
+  1075463327,
+  1455516326,
+  1322494562,
+  910128902,
+  469688178,
+  1117454909,
+  936433444,
+  3490320968,
+  3675253459,
+  1240580251,
+  122909385,
+  2157517691,
+  634681816,
+  4142456567,
+  3825094682,
+  3061402683,
+  2540495037,
+  79693498,
+  3249098678,
+  1084186820,
+  1583128258,
+  426386531,
+  1761308591,
+  1047286709,
+  322548459,
+  995290223,
+  1845252383,
+  2603652396,
+  3431023940,
+  2942221577,
+  3202600964,
+  3727903485,
+  1712269319,
+  422464435,
+  3234572375,
+  1170764815,
+  3523960633,
+  3117677531,
+  1434042557,
+  442511882,
+  3600875718,
+  1076654713,
+  1738483198,
+  4213154764,
+  2393238008,
+  3677496056,
+  1014306527,
+  4251020053,
+  793779912,
+  2902807211,
+  842905082,
+  4246964064,
+  1395751752,
+  1040244610,
+  2656851899,
+  3396308128,
+  445077038,
+  3742853595,
+  3577915638,
+  679411651,
+  2892444358,
+  2354009459,
+  1767581616,
+  3150600392,
+  3791627101,
+  3102740896,
+  284835224,
+  4246832056,
+  1258075500,
+  768725851,
+  2589189241,
+  3069724005,
+  3532540348,
+  1274779536,
+  3789419226,
+  2764799539,
+  1660621633,
+  3471099624,
+  4011903706,
+  913787905,
+  3497959166,
+  737222580,
+  2514213453,
+  2928710040,
+  3937242737,
+  1804850592,
+  3499020752,
+  2949064160,
+  2386320175,
+  2390070455,
+  2415321851,
+  4061277028,
+  2290661394,
+  2416832540,
+  1336762016,
+  1754252060,
+  3520065937,
+  3014181293,
+  791618072,
+  3188594551,
+  3933548030,
+  2332172193,
+  3852520463,
+  3043980520,
+  413987798,
+  3465142937,
+  3030929376,
+  4245938359,
+  2093235073,
+  3534596313,
+  375366246,
+  2157278981,
+  2479649556,
+  555357303,
+  3870105701,
+  2008414854,
+  3344188149,
+  4221384143,
+  3956125452,
+  2067696032,
+  3594591187,
+  2921233993,
+  2428461,
+  544322398,
+  577241275,
+  1471733935,
+  610547355,
+  4027169054,
+  1432588573,
+  1507829418,
+  2025931657,
+  3646575487,
+  545086370,
+  48609733,
+  2200306550,
+  1653985193,
+  298326376,
+  1316178497,
+  3007786442,
+  2064951626,
+  458293330,
+  2589141269,
+  3591329599,
+  3164325604,
+  727753846,
+  2179363840,
+  146436021,
+  1461446943,
+  4069977195,
+  705550613,
+  3059967265,
+  3887724982,
+  4281599278,
+  3313849956,
+  1404054877,
+  2845806497,
+  146425753,
+  1854211946,
+  1266315497,
+  3048417604,
+  3681880366,
+  3289982499,
+  290971e4,
+  1235738493,
+  2632868024,
+  2414719590,
+  3970600049,
+  1771706367,
+  1449415276,
+  3266420449,
+  422970021,
+  1963543593,
+  2690192192,
+  3826793022,
+  1062508698,
+  1531092325,
+  1804592342,
+  2583117782,
+  2714934279,
+  4024971509,
+  1294809318,
+  4028980673,
+  1289560198,
+  2221992742,
+  1669523910,
+  35572830,
+  157838143,
+  1052438473,
+  1016535060,
+  1802137761,
+  1753167236,
+  1386275462,
+  3080475397,
+  2857371447,
+  1040679964,
+  2145300060,
+  2390574316,
+  1461121720,
+  2956646967,
+  4031777805,
+  4028374788,
+  33600511,
+  2920084762,
+  1018524850,
+  629373528,
+  3691585981,
+  3515945977,
+  2091462646,
+  2486323059,
+  586499841,
+  988145025,
+  935516892,
+  3367335476,
+  2599673255,
+  2839830854,
+  265290510,
+  3972581182,
+  2759138881,
+  3795373465,
+  1005194799,
+  847297441,
+  406762289,
+  1314163512,
+  1332590856,
+  1866599683,
+  4127851711,
+  750260880,
+  613907577,
+  1450815602,
+  3165620655,
+  3734664991,
+  3650291728,
+  3012275730,
+  3704569646,
+  1427272223,
+  778793252,
+  1343938022,
+  2676280711,
+  2052605720,
+  1946737175,
+  3164576444,
+  3914038668,
+  3967478842,
+  3682934266,
+  1661551462,
+  3294938066,
+  4011595847,
+  840292616,
+  3712170807,
+  616741398,
+  312560963,
+  711312465,
+  1351876610,
+  322626781,
+  1910503582,
+  271666773,
+  2175563734,
+  1594956187,
+  70604529,
+  3617834859,
+  1007753275,
+  1495573769,
+  4069517037,
+  2549218298,
+  2663038764,
+  504708206,
+  2263041392,
+  3941167025,
+  2249088522,
+  1514023603,
+  1998579484,
+  1312622330,
+  694541497,
+  2582060303,
+  2151582166,
+  1382467621,
+  776784248,
+  2618340202,
+  3323268794,
+  2497899128,
+  2784771155,
+  503983604,
+  4076293799,
+  907881277,
+  423175695,
+  432175456,
+  1378068232,
+  4145222326,
+  3954048622,
+  3938656102,
+  3820766613,
+  2793130115,
+  2977904593,
+  26017576,
+  3274890735,
+  3194772133,
+  1700274565,
+  1756076034,
+  4006520079,
+  3677328699,
+  720338349,
+  1533947780,
+  354530856,
+  688349552,
+  3973924725,
+  1637815568,
+  332179504,
+  3949051286,
+  53804574,
+  2852348879,
+  3044236432,
+  1282449977,
+  3583942155,
+  3416972820,
+  4006381244,
+  1617046695,
+  2628476075,
+  3002303598,
+  1686838959,
+  431878346,
+  2686675385,
+  1700445008,
+  1080580658,
+  1009431731,
+  832498133,
+  3223435511,
+  2605976345,
+  2271191193,
+  2516031870,
+  1648197032,
+  4164389018,
+  2548247927,
+  300782431,
+  375919233,
+  238389289,
+  3353747414,
+  2531188641,
+  2019080857,
+  1475708069,
+  455242339,
+  2609103871,
+  448939670,
+  3451063019,
+  1395535956,
+  2413381860,
+  1841049896,
+  1491858159,
+  885456874,
+  4264095073,
+  4001119347,
+  1565136089,
+  3898914787,
+  1108368660,
+  540939232,
+  1173283510,
+  2745871338,
+  3681308437,
+  4207628240,
+  3343053890,
+  4016749493,
+  1699691293,
+  1103962373,
+  3625875870,
+  2256883143,
+  3830138730,
+  1031889488,
+  3479347698,
+  1535977030,
+  4236805024,
+  3251091107,
+  2132092099,
+  1774941330,
+  1199868427,
+  1452454533,
+  157007616,
+  2904115357,
+  342012276,
+  595725824,
+  1480756522,
+  206960106,
+  497939518,
+  591360097,
+  863170706,
+  2375253569,
+  3596610801,
+  1814182875,
+  2094937945,
+  3421402208,
+  1082520231,
+  3463918190,
+  2785509508,
+  435703966,
+  3908032597,
+  1641649973,
+  2842273706,
+  3305899714,
+  1510255612,
+  2148256476,
+  2655287854,
+  3276092548,
+  4258621189,
+  236887753,
+  3681803219,
+  274041037,
+  1734335097,
+  3815195456,
+  3317970021,
+  1899903192,
+  1026095262,
+  4050517792,
+  356393447,
+  2410691914,
+  3873677099,
+  3682840055,
+  3913112168,
+  2491498743,
+  4132185628,
+  2489919796,
+  1091903735,
+  1979897079,
+  3170134830,
+  3567386728,
+  3557303409,
+  857797738,
+  1136121015,
+  1342202287,
+  507115054,
+  2535736646,
+  337727348,
+  3213592640,
+  1301675037,
+  2528481711,
+  1895095763,
+  1721773893,
+  3216771564,
+  62756741,
+  2142006736,
+  835421444,
+  2531993523,
+  1442658625,
+  3659876326,
+  2882144922,
+  676362277,
+  1392781812,
+  170690266,
+  3921047035,
+  1759253602,
+  3611846912,
+  1745797284,
+  664899054,
+  1329594018,
+  3901205900,
+  3045908486,
+  2062866102,
+  2865634940,
+  3543621612,
+  3464012697,
+  1080764994,
+  553557557,
+  3656615353,
+  3996768171,
+  991055499,
+  499776247,
+  1265440854,
+  648242737,
+  3940784050,
+  980351604,
+  3713745714,
+  1749149687,
+  3396870395,
+  4211799374,
+  3640570775,
+  1161844396,
+  3125318951,
+  1431517754,
+  545492359,
+  4268468663,
+  3499529547,
+  1437099964,
+  2702547544,
+  3433638243,
+  2581715763,
+  2787789398,
+  1060185593,
+  1593081372,
+  2418618748,
+  4260947970,
+  69676912,
+  2159744348,
+  86519011,
+  2512459080,
+  3838209314,
+  1220612927,
+  3339683548,
+  133810670,
+  1090789135,
+  1078426020,
+  1569222167,
+  845107691,
+  3583754449,
+  4072456591,
+  1091646820,
+  628848692,
+  1613405280,
+  3757631651,
+  526609435,
+  236106946,
+  48312990,
+  2942717905,
+  3402727701,
+  1797494240,
+  859738849,
+  992217954,
+  4005476642,
+  2243076622,
+  3870952857,
+  3732016268,
+  765654824,
+  3490871365,
+  2511836413,
+  1685915746,
+  3888969200,
+  1414112111,
+  2273134842,
+  3281911079,
+  4080962846,
+  172450625,
+  2569994100,
+  980381355,
+  4109958455,
+  2819808352,
+  2716589560,
+  2568741196,
+  3681446669,
+  3329971472,
+  1835478071,
+  660984891,
+  3704678404,
+  4045999559,
+  3422617507,
+  3040415634,
+  1762651403,
+  1719377915,
+  3470491036,
+  2693910283,
+  3642056355,
+  3138596744,
+  1364962596,
+  2073328063,
+  1983633131,
+  926494387,
+  3423689081,
+  2150032023,
+  4096667949,
+  1749200295,
+  3328846651,
+  309677260,
+  2016342300,
+  1779581495,
+  3079819751,
+  111262694,
+  1274766160,
+  443224088,
+  298511866,
+  1025883608,
+  3806446537,
+  1145181785,
+  168956806,
+  3641502830,
+  3584813610,
+  1689216846,
+  3666258015,
+  3200248200,
+  1692713982,
+  2646376535,
+  4042768518,
+  1618508792,
+  1610833997,
+  3523052358,
+  4130873264,
+  2001055236,
+  3610705100,
+  2202168115,
+  4028541809,
+  2961195399,
+  1006657119,
+  2006996926,
+  3186142756,
+  1430667929,
+  3210227297,
+  1314452623,
+  4074634658,
+  4101304120,
+  2273951170,
+  1399257539,
+  3367210612,
+  3027628629,
+  1190975929,
+  2062231137,
+  2333990788,
+  2221543033,
+  2438960610,
+  1181637006,
+  548689776,
+  2362791313,
+  3372408396,
+  3104550113,
+  3145860560,
+  296247880,
+  1970579870,
+  3078560182,
+  3769228297,
+  1714227617,
+  3291629107,
+  3898220290,
+  166772364,
+  1251581989,
+  493813264,
+  448347421,
+  195405023,
+  2709975567,
+  677966185,
+  3703036547,
+  1463355134,
+  2715995803,
+  1338867538,
+  1343315457,
+  2802222074,
+  2684532164,
+  233230375,
+  2599980071,
+  2000651841,
+  3277868038,
+  1638401717,
+  4028070440,
+  3237316320,
+  6314154,
+  819756386,
+  300326615,
+  590932579,
+  1405279636,
+  3267499572,
+  3150704214,
+  2428286686,
+  3959192993,
+  3461946742,
+  1862657033,
+  1266418056,
+  963775037,
+  2089974820,
+  2263052895,
+  1917689273,
+  448879540,
+  3550394620,
+  3981727096,
+  150775221,
+  3627908307,
+  1303187396,
+  508620638,
+  2975983352,
+  2726630617,
+  1817252668,
+  1876281319,
+  1457606340,
+  908771278,
+  3720792119,
+  3617206836,
+  2455994898,
+  1729034894,
+  1080033504,
+  976866871,
+  3556439503,
+  2881648439,
+  1522871579,
+  1555064734,
+  1336096578,
+  3548522304,
+  2579274686,
+  3574697629,
+  3205460757,
+  3593280638,
+  3338716283,
+  3079412587,
+  564236357,
+  2993598910,
+  1781952180,
+  1464380207,
+  3163844217,
+  3332601554,
+  1699332808,
+  1393555694,
+  1183702653,
+  3581086237,
+  1288719814,
+  691649499,
+  2847557200,
+  2895455976,
+  3193889540,
+  2717570544,
+  1781354906,
+  1676643554,
+  2592534050,
+  3230253752,
+  1126444790,
+  2770207658,
+  2633158820,
+  2210423226,
+  2615765581,
+  2414155088,
+  3127139286,
+  673620729,
+  2805611233,
+  1269405062,
+  4015350505,
+  3341807571,
+  4149409754,
+  1057255273,
+  2012875353,
+  2162469141,
+  2276492801,
+  2601117357,
+  993977747,
+  3918593370,
+  2654263191,
+  753973209,
+  36408145,
+  2530585658,
+  25011837,
+  3520020182,
+  2088578344,
+  530523599,
+  2918365339,
+  1524020338,
+  1518925132,
+  3760827505,
+  3759777254,
+  1202760957,
+  3985898139,
+  3906192525,
+  674977740,
+  4174734889,
+  2031300136,
+  2019492241,
+  3983892565,
+  4153806404,
+  3822280332,
+  352677332,
+  2297720250,
+  60907813,
+  90501309,
+  3286998549,
+  1016092578,
+  2535922412,
+  2839152426,
+  457141659,
+  509813237,
+  4120667899,
+  652014361,
+  1966332200,
+  2975202805,
+  55981186,
+  2327461051,
+  676427537,
+  3255491064,
+  2882294119,
+  3433927263,
+  1307055953,
+  942726286,
+  933058658,
+  2468411793,
+  3933900994,
+  4215176142,
+  1361170020,
+  2001714738,
+  2830558078,
+  3274259782,
+  1222529897,
+  1679025792,
+  2729314320,
+  3714953764,
+  1770335741,
+  151462246,
+  3013232138,
+  1682292957,
+  1483529935,
+  471910574,
+  1539241949,
+  458788160,
+  3436315007,
+  1807016891,
+  3718408830,
+  978976581,
+  1043663428,
+  3165965781,
+  1927990952,
+  4200891579,
+  2372276910,
+  3208408903,
+  3533431907,
+  1412390302,
+  2931980059,
+  4132332400,
+  1947078029,
+  3881505623,
+  4168226417,
+  2941484381,
+  1077988104,
+  1320477388,
+  886195818,
+  18198404,
+  3786409e3,
+  2509781533,
+  112762804,
+  3463356488,
+  1866414978,
+  891333506,
+  18488651,
+  661792760,
+  1628790961,
+  3885187036,
+  3141171499,
+  876946877,
+  2693282273,
+  1372485963,
+  791857591,
+  2686433993,
+  3759982718,
+  3167212022,
+  3472953795,
+  2716379847,
+  445679433,
+  3561995674,
+  3504004811,
+  3574258232,
+  54117162,
+  3331405415,
+  2381918588,
+  3769707343,
+  4154350007,
+  1140177722,
+  4074052095,
+  668550556,
+  3214352940,
+  367459370,
+  261225585,
+  2610173221,
+  4209349473,
+  3468074219,
+  3265815641,
+  314222801,
+  3066103646,
+  3808782860,
+  282218597,
+  3406013506,
+  3773591054,
+  379116347,
+  1285071038,
+  846784868,
+  2669647154,
+  3771962079,
+  3550491691,
+  2305946142,
+  453669953,
+  1268987020,
+  3317592352,
+  3279303384,
+  3744833421,
+  2610507566,
+  3859509063,
+  266596637,
+  3847019092,
+  517658769,
+  3462560207,
+  3443424879,
+  370717030,
+  4247526661,
+  2224018117,
+  4143653529,
+  4112773975,
+  2788324899,
+  2477274417,
+  1456262402,
+  2901442914,
+  1517677493,
+  1846949527,
+  2295493580,
+  3734397586,
+  2176403920,
+  1280348187,
+  1908823572,
+  3871786941,
+  846861322,
+  1172426758,
+  3287448474,
+  3383383037,
+  1655181056,
+  3139813346,
+  901632758,
+  1897031941,
+  2986607138,
+  3066810236,
+  3447102507,
+  1393639104,
+  373351379,
+  950779232,
+  625454576,
+  3124240540,
+  4148612726,
+  2007998917,
+  544563296,
+  2244738638,
+  2330496472,
+  2058025392,
+  1291430526,
+  424198748,
+  50039436,
+  29584100,
+  3605783033,
+  2429876329,
+  2791104160,
+  1057563949,
+  3255363231,
+  3075367218,
+  3463963227,
+  1469046755,
+  985887462
+];
+var C_ORIG = [
+  1332899944,
+  1700884034,
+  1701343084,
+  1684370003,
+  1668446532,
+  1869963892
+];
+function _encipher(lr, off, P2, S) {
+  var n, l = lr[off], r = lr[off + 1];
+  l ^= P2[0];
+  n = S[l >>> 24];
+  n += S[256 | l >> 16 & 255];
+  n ^= S[512 | l >> 8 & 255];
+  n += S[768 | l & 255];
+  r ^= n ^ P2[1];
+  n = S[r >>> 24];
+  n += S[256 | r >> 16 & 255];
+  n ^= S[512 | r >> 8 & 255];
+  n += S[768 | r & 255];
+  l ^= n ^ P2[2];
+  n = S[l >>> 24];
+  n += S[256 | l >> 16 & 255];
+  n ^= S[512 | l >> 8 & 255];
+  n += S[768 | l & 255];
+  r ^= n ^ P2[3];
+  n = S[r >>> 24];
+  n += S[256 | r >> 16 & 255];
+  n ^= S[512 | r >> 8 & 255];
+  n += S[768 | r & 255];
+  l ^= n ^ P2[4];
+  n = S[l >>> 24];
+  n += S[256 | l >> 16 & 255];
+  n ^= S[512 | l >> 8 & 255];
+  n += S[768 | l & 255];
+  r ^= n ^ P2[5];
+  n = S[r >>> 24];
+  n += S[256 | r >> 16 & 255];
+  n ^= S[512 | r >> 8 & 255];
+  n += S[768 | r & 255];
+  l ^= n ^ P2[6];
+  n = S[l >>> 24];
+  n += S[256 | l >> 16 & 255];
+  n ^= S[512 | l >> 8 & 255];
+  n += S[768 | l & 255];
+  r ^= n ^ P2[7];
+  n = S[r >>> 24];
+  n += S[256 | r >> 16 & 255];
+  n ^= S[512 | r >> 8 & 255];
+  n += S[768 | r & 255];
+  l ^= n ^ P2[8];
+  n = S[l >>> 24];
+  n += S[256 | l >> 16 & 255];
+  n ^= S[512 | l >> 8 & 255];
+  n += S[768 | l & 255];
+  r ^= n ^ P2[9];
+  n = S[r >>> 24];
+  n += S[256 | r >> 16 & 255];
+  n ^= S[512 | r >> 8 & 255];
+  n += S[768 | r & 255];
+  l ^= n ^ P2[10];
+  n = S[l >>> 24];
+  n += S[256 | l >> 16 & 255];
+  n ^= S[512 | l >> 8 & 255];
+  n += S[768 | l & 255];
+  r ^= n ^ P2[11];
+  n = S[r >>> 24];
+  n += S[256 | r >> 16 & 255];
+  n ^= S[512 | r >> 8 & 255];
+  n += S[768 | r & 255];
+  l ^= n ^ P2[12];
+  n = S[l >>> 24];
+  n += S[256 | l >> 16 & 255];
+  n ^= S[512 | l >> 8 & 255];
+  n += S[768 | l & 255];
+  r ^= n ^ P2[13];
+  n = S[r >>> 24];
+  n += S[256 | r >> 16 & 255];
+  n ^= S[512 | r >> 8 & 255];
+  n += S[768 | r & 255];
+  l ^= n ^ P2[14];
+  n = S[l >>> 24];
+  n += S[256 | l >> 16 & 255];
+  n ^= S[512 | l >> 8 & 255];
+  n += S[768 | l & 255];
+  r ^= n ^ P2[15];
+  n = S[r >>> 24];
+  n += S[256 | r >> 16 & 255];
+  n ^= S[512 | r >> 8 & 255];
+  n += S[768 | r & 255];
+  l ^= n ^ P2[16];
+  lr[off] = r ^ P2[BLOWFISH_NUM_ROUNDS + 1];
+  lr[off + 1] = l;
+  return lr;
+}
+function _streamtoword(data, offp) {
+  for (var i = 0, word = 0; i < 4; ++i)
+    word = word << 8 | data[offp] & 255, offp = (offp + 1) % data.length;
+  return { key: word, offp };
+}
+function _key(key, P2, S) {
+  var offset = 0, lr = [0, 0], plen = P2.length, slen = S.length, sw;
+  for (var i = 0; i < plen; i++)
+    sw = _streamtoword(key, offset), offset = sw.offp, P2[i] = P2[i] ^ sw.key;
+  for (i = 0; i < plen; i += 2)
+    lr = _encipher(lr, 0, P2, S), P2[i] = lr[0], P2[i + 1] = lr[1];
+  for (i = 0; i < slen; i += 2)
+    lr = _encipher(lr, 0, P2, S), S[i] = lr[0], S[i + 1] = lr[1];
+}
+function _ekskey(data, key, P2, S) {
+  var offp = 0, lr = [0, 0], plen = P2.length, slen = S.length, sw;
+  for (var i = 0; i < plen; i++)
+    sw = _streamtoword(key, offp), offp = sw.offp, P2[i] = P2[i] ^ sw.key;
+  offp = 0;
+  for (i = 0; i < plen; i += 2)
+    sw = _streamtoword(data, offp), offp = sw.offp, lr[0] ^= sw.key, sw = _streamtoword(data, offp), offp = sw.offp, lr[1] ^= sw.key, lr = _encipher(lr, 0, P2, S), P2[i] = lr[0], P2[i + 1] = lr[1];
+  for (i = 0; i < slen; i += 2)
+    sw = _streamtoword(data, offp), offp = sw.offp, lr[0] ^= sw.key, sw = _streamtoword(data, offp), offp = sw.offp, lr[1] ^= sw.key, lr = _encipher(lr, 0, P2, S), S[i] = lr[0], S[i + 1] = lr[1];
+}
+function _crypt(b, salt, rounds, callback, progressCallback) {
+  var cdata = C_ORIG.slice(), clen = cdata.length, err;
+  if (rounds < 4 || rounds > 31) {
+    err = Error("Illegal number of rounds (4-31): " + rounds);
+    if (callback) {
+      nextTick2(callback.bind(this, err));
+      return;
+    } else throw err;
+  }
+  if (salt.length !== BCRYPT_SALT_LEN) {
+    err = Error(
+      "Illegal salt length: " + salt.length + " != " + BCRYPT_SALT_LEN
+    );
+    if (callback) {
+      nextTick2(callback.bind(this, err));
+      return;
+    } else throw err;
+  }
+  rounds = 1 << rounds >>> 0;
+  var P2, S, i = 0, j;
+  if (typeof Int32Array === "function") {
+    P2 = new Int32Array(P_ORIG);
+    S = new Int32Array(S_ORIG);
+  } else {
+    P2 = P_ORIG.slice();
+    S = S_ORIG.slice();
+  }
+  _ekskey(salt, b, P2, S);
+  function next() {
+    if (progressCallback) progressCallback(i / rounds);
+    if (i < rounds) {
+      var start = Date.now();
+      for (; i < rounds; ) {
+        i = i + 1;
+        _key(b, P2, S);
+        _key(salt, P2, S);
+        if (Date.now() - start > MAX_EXECUTION_TIME) break;
+      }
+    } else {
+      for (i = 0; i < 64; i++)
+        for (j = 0; j < clen >> 1; j++) _encipher(cdata, j << 1, P2, S);
+      var ret = [];
+      for (i = 0; i < clen; i++)
+        ret.push((cdata[i] >> 24 & 255) >>> 0), ret.push((cdata[i] >> 16 & 255) >>> 0), ret.push((cdata[i] >> 8 & 255) >>> 0), ret.push((cdata[i] & 255) >>> 0);
+      if (callback) {
+        callback(null, ret);
+        return;
+      } else return ret;
+    }
+    if (callback) nextTick2(next);
+  }
+  if (typeof callback !== "undefined") {
+    next();
+  } else {
+    var res;
+    while (true) if (typeof (res = next()) !== "undefined") return res || [];
+  }
+}
+function _hash(password, salt, callback, progressCallback) {
+  var err;
+  if (typeof password !== "string" || typeof salt !== "string") {
+    err = Error("Invalid string / salt: Not a string");
+    if (callback) {
+      nextTick2(callback.bind(this, err));
+      return;
+    } else throw err;
+  }
+  var minor, offset;
+  if (salt.charAt(0) !== "$" || salt.charAt(1) !== "2") {
+    err = Error("Invalid salt version: " + salt.substring(0, 2));
+    if (callback) {
+      nextTick2(callback.bind(this, err));
+      return;
+    } else throw err;
+  }
+  if (salt.charAt(2) === "$") minor = String.fromCharCode(0), offset = 3;
+  else {
+    minor = salt.charAt(2);
+    if (minor !== "a" && minor !== "b" && minor !== "y" || salt.charAt(3) !== "$") {
+      err = Error("Invalid salt revision: " + salt.substring(2, 4));
+      if (callback) {
+        nextTick2(callback.bind(this, err));
+        return;
+      } else throw err;
+    }
+    offset = 4;
+  }
+  if (salt.charAt(offset + 2) > "$") {
+    err = Error("Missing salt rounds");
+    if (callback) {
+      nextTick2(callback.bind(this, err));
+      return;
+    } else throw err;
+  }
+  var r1 = parseInt(salt.substring(offset, offset + 1), 10) * 10, r2 = parseInt(salt.substring(offset + 1, offset + 2), 10), rounds = r1 + r2, real_salt = salt.substring(offset + 3, offset + 25);
+  password += minor >= "a" ? "\0" : "";
+  var passwordb = utf8Array(password), saltb = base64_decode(real_salt, BCRYPT_SALT_LEN);
+  function finish(bytes) {
+    var res = [];
+    res.push("$2");
+    if (minor >= "a") res.push(minor);
+    res.push("$");
+    if (rounds < 10) res.push("0");
+    res.push(rounds.toString());
+    res.push("$");
+    res.push(base64_encode(saltb, saltb.length));
+    res.push(base64_encode(bytes, C_ORIG.length * 4 - 1));
+    return res.join("");
+  }
+  if (typeof callback == "undefined")
+    return finish(_crypt(passwordb, saltb, rounds));
+  else {
+    _crypt(
+      passwordb,
+      saltb,
+      rounds,
+      function(err2, bytes) {
+        if (err2) callback(err2, null);
+        else callback(null, finish(bytes));
+      },
+      progressCallback
+    );
+  }
+}
+function encodeBase64(bytes, length) {
+  return base64_encode(bytes, length);
+}
+function decodeBase64(string, length) {
+  return base64_decode(string, length);
+}
+var bcryptjs_default = {
+  setRandomFallback,
+  genSaltSync,
+  genSalt,
+  hashSync,
+  hash,
+  compareSync,
+  compare,
+  getRounds,
+  getSalt,
+  truncates,
+  encodeBase64,
+  decodeBase64
+};
+
+// ../../packages/core/dist/hash.js
+var DEFAULT_PASSWORD_PHC = "$pbkdf2-sha256$i=310000";
+var MAX_PBKDF2_ITERS = 1e6;
+var MAX_SCRYPT_LN = 20;
+var MAX_ARGON2_M = 1048576;
+var MAX_ARGON2_T = 32;
+var MAX_BCRYPT_ROUNDS = 15;
+var BCRYPT_MODULAR = /^\$2[aby]\$(\d{2})\$/;
+function sha256Hex(data) {
+  const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
+  return bytesToHex(sha2562(bytes));
+}
+var HEX64 = /^[0-9a-f]{64}$/i;
+function isPasswordHash(value) {
+  const v = (value || "").trim();
+  if (HEX64.test(v))
+    return true;
+  return parsePhc(v) !== null;
+}
+function normalizeId(id) {
+  const n = id.toLowerCase();
+  if (n === "pbkdf2-hmac-sha256" || n === "pbkdf2-hmac-sha-256")
+    return "pbkdf2-sha256";
+  if (n === "2a" || n === "2b" || n === "2y")
+    return "bcrypt";
+  return n;
+}
+function parsePhc(value) {
+  const s = value.trim();
+  if (!s.startsWith("$"))
+    return null;
+  const bcryptMod = s.match(BCRYPT_MODULAR);
+  if (bcryptMod) {
+    return {
+      id: "bcrypt",
+      version: "2b",
+      params: { t: String(Number(bcryptMod[1])) },
+      hash: s
+    };
+  }
+  const parts = s.split("$");
+  if (parts.length < 2 || parts[0] !== "" || !parts[1])
+    return null;
+  const id = normalizeId(parts[1]);
+  if (!["pbkdf2-sha256", "scrypt", "argon2id", "bcrypt"].includes(id))
+    return null;
+  let i = 2;
+  let version;
+  if (parts[i] && /^v=/.test(parts[i])) {
+    version = parts[i].slice(2);
+    i += 1;
+  }
+  const params = {};
+  if (parts[i] && parts[i].includes("=")) {
+    for (const kv of parts[i].split(",")) {
+      const eq = kv.indexOf("=");
+      if (eq <= 0)
+        return null;
+      params[kv.slice(0, eq)] = kv.slice(eq + 1);
+    }
+    i += 1;
+  }
+  const salt = parts[i] || void 0;
+  const hash2 = parts[i + 1] || void 0;
+  return { id, version, params, salt, hash: hash2 };
+}
+function formatPhc(p) {
+  if (p.id === "bcrypt" && p.hash && BCRYPT_MODULAR.test(p.hash))
+    return p.hash;
+  let out = `$${p.id}`;
+  if (p.version)
+    out += `$v=${p.version}`;
+  const keys = Object.keys(p.params);
+  if (keys.length) {
+    out += "$" + keys.map((k) => `${k}=${p.params[k]}`).join(",");
+  }
+  if (p.salt !== void 0)
+    out += `$${p.salt}`;
+  if (p.hash !== void 0)
+    out += `$${p.hash}`;
+  return out;
+}
+function b64encode(bytes) {
+  let bin = "";
+  for (const b of bytes)
+    bin += String.fromCharCode(b);
+  return btoa(bin).replace(/=+$/, "");
+}
+function b64decode(s) {
+  const pad = "=".repeat((4 - s.length % 4) % 4);
+  const bin = atob(s + pad);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++)
+    out[i] = bin.charCodeAt(i);
+  return out;
+}
+function utf8(password) {
+  return new TextEncoder().encode(password);
+}
+function digestFor(id, password, parts, salt) {
+  if (id === "pbkdf2-sha256") {
+    const iters = Number(parts.params.i || parts.params.iterations || 31e4);
+    if (!Number.isFinite(iters) || iters < 1 || iters > MAX_PBKDF2_ITERS) {
+      throw new Error("invalid PHC pbkdf2 iteration count");
+    }
+    return b64encode(pbkdf2(sha2562, utf8(password), salt, { c: iters, dkLen: 32 }));
+  }
+  if (id === "scrypt") {
+    const ln = Number(parts.params.ln ?? 14);
+    const r = Number(parts.params.r ?? 8);
+    const p = Number(parts.params.p ?? 1);
+    if (!Number.isFinite(ln) || ln < 1 || ln > MAX_SCRYPT_LN) {
+      throw new Error("invalid PHC scrypt ln");
+    }
+    return b64encode(scrypt(utf8(password), salt, { N: 2 ** ln, r, p, dkLen: 32 }));
+  }
+  if (id === "argon2id") {
+    const m = Number(parts.params.m ?? 19456);
+    const t = Number(parts.params.t ?? 2);
+    const p = Number(parts.params.p ?? 1);
+    if (!Number.isFinite(m) || m < 8 || m > MAX_ARGON2_M) {
+      throw new Error("invalid PHC argon2 memory");
+    }
+    if (!Number.isFinite(t) || t < 1 || t > MAX_ARGON2_T) {
+      throw new Error("invalid PHC argon2 time cost");
+    }
+    return b64encode(argon2id(utf8(password), salt, { t, m, p, dkLen: 32 }));
+  }
+  throw new Error(`unsupported PHC id ${id}`);
+}
+function bcryptRounds(parts) {
+  const t = Number(parts.params.t || parts.params.r || parts.params.cost || 12);
+  if (!Number.isFinite(t) || t < 4 || t > MAX_BCRYPT_ROUNDS) {
+    throw new Error("invalid bcrypt cost");
+  }
+  return t;
+}
+function hashPasswordLegacySha256(password) {
+  return bytesToHex(sha2562(new TextEncoder().encode("yada-password-v1|" + password)));
+}
+function phcSaltB64ForPassword(password) {
+  return b64encode(sha2562(new TextEncoder().encode("yada-phc-salt-v1|" + password)).slice(0, 16));
+}
+function hashPassword(password, phc = DEFAULT_PASSWORD_PHC) {
+  const parsed = parsePhc(phc);
+  if (!parsed)
+    throw new Error("invalid PHC string");
+  if (parsed.id === "bcrypt") {
+    return bcryptjs_default.hashSync(password, bcryptRounds(parsed));
+  }
+  const saltBytes = parsed.salt ? b64decode(parsed.salt) : sha2562(new TextEncoder().encode("yada-phc-salt-v1|" + password)).slice(0, 16);
+  const hash2 = digestFor(parsed.id, password, parsed, saltBytes);
+  return formatPhc({
+    id: parsed.id,
+    version: parsed.version || (parsed.id === "argon2id" ? "19" : void 0),
+    params: parsed.params,
+    salt: b64encode(saltBytes),
+    hash: hash2
+  });
+}
+function verifyPassword(password, stored) {
+  const s = (stored || "").trim();
+  if (HEX64.test(s)) {
+    return hashPasswordLegacySha256(password).toLowerCase() === s.toLowerCase();
+  }
+  const parsed = parsePhc(s);
+  if (!parsed)
+    return false;
+  try {
+    if (parsed.id === "bcrypt") {
+      const crypt = parsed.hash && BCRYPT_MODULAR.test(parsed.hash) ? parsed.hash : stored;
+      return bcryptjs_default.compareSync(password, crypt);
+    }
+    if (!parsed.hash)
+      return false;
+    const recomputed = hashPassword(password, stored);
+    return recomputed === stored || recomputed === formatPhc(parsed);
+  } catch {
+    return false;
+  }
 }
 
 // ../../packages/core/dist/relationship.js
@@ -8469,7 +8470,7 @@ function validateDualCommit(commit) {
   if (!pre || !twice)
     throw new Error("both password hashes required");
   if (!isPasswordHash(pre) || !isPasswordHash(twice)) {
-    throw new Error("password hashes must be PHC strings (argon2id, scrypt, pbkdf2-sha256, or bcrypt)");
+    throw new Error("password hashes must be PHC strings or legacy 64-char hex");
   }
   if (normalizeStoredHash(pre) === normalizeStoredHash(twice)) {
     throw new Error("password hashes must differ");
@@ -8564,14 +8565,22 @@ function buildAndSignTxn(signer, fields) {
 // ../../packages/core/dist/vault.js
 async function httpJson(api, path, init) {
   const fetchImpl = api.fetch ?? globalThis.fetch.bind(globalThis);
-  const res = await fetchImpl(api.baseUrl.replace(/\/+$/, "") + path, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      ...init?.body ? { "Content-Type": "application/json" } : {},
-      ...init?.headers || {}
-    }
-  });
+  const url = api.baseUrl.replace(/\/+$/, "") + path;
+  let res;
+  try {
+    res = await fetchImpl(url, {
+      ...init,
+      credentials: init?.credentials ?? "include",
+      headers: {
+        Accept: "application/json",
+        ...init?.body ? { "Content-Type": "application/json" } : {},
+        ...init?.headers || {}
+      }
+    });
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    throw new Error(`Failed to reach node ${api.baseUrl} (${path}): ${why}. On a phone use the computer's LAN IP (not 127.0.0.1). On an emulator use 10.0.2.2.`);
+  }
   const text = await res.text();
   let body;
   try {
@@ -8641,6 +8650,96 @@ async function broadcastTxns(api, txns) {
     body: JSON.stringify(list)
   });
 }
+function isAlreadyInceptedError(message) {
+  const m = (message || "").toLowerCase();
+  return m.includes("already onchain") || m.includes("already on-chain") || m.includes("already incepted") || m.includes("duplicate kel inception") || m.includes("kel already exists") || m.includes("key event log already exists") || m.includes("username") && m.includes("already claimed");
+}
+function kelRotationDepth(entries) {
+  if (!Array.isArray(entries) || !entries.length)
+    return 0;
+  let inception = 0;
+  let rotations = 0;
+  for (const e of entries) {
+    const prev = e && e.prev_public_key_hash || "";
+    if (!prev) {
+      if (!inception)
+        inception = 1;
+    } else {
+      rotations += 1;
+    }
+  }
+  return inception + rotations;
+}
+async function fetchInceptionStatus(api, publicKeyHex, username) {
+  const q = new URLSearchParams({ public_key: publicKeyHex });
+  if (username?.trim())
+    q.set("username", username.trim());
+  try {
+    const res = await httpJson(api, `/identity-inception-status?${q.toString()}`);
+    if (res.ok && res.body?.status !== false) {
+      const kelDepth = Number(res.body?.kel_depth ?? 0);
+      const incepted = Boolean(res.body?.incepted) || kelDepth >= 1;
+      const match = res.body?.identity?.matches_public_key;
+      return {
+        incepted,
+        kelDepth: Number.isFinite(kelDepth) ? Math.max(0, kelDepth) : incepted ? 1 : 0,
+        hasKel: Boolean(res.body?.has_kel) || kelDepth >= 1,
+        usernameMatches: typeof match === "boolean" ? match : username?.trim() ? null : null,
+        source: "identity-inception-status"
+      };
+    }
+  } catch {
+  }
+  const depth = await fetchKelDepth(api, publicKeyHex);
+  return {
+    incepted: depth >= 1,
+    kelDepth: depth,
+    hasKel: depth >= 1,
+    usernameMatches: null,
+    source: depth >= 1 ? "key-event-log" : "none"
+  };
+}
+async function fetchKelDepth(api, publicKeyHex) {
+  try {
+    const has = await httpJson(api, `/has-key-event-log?public_key=${encodeURIComponent(publicKeyHex)}`);
+    if (has.ok && has.body?.status === true) {
+    }
+  } catch {
+  }
+  const kel = await httpJson(api, `/key-event-log?public_key=${encodeURIComponent(publicKeyHex)}`);
+  if (kel.ok && Array.isArray(kel.body?.key_event_log)) {
+    return kelRotationDepth(kel.body.key_event_log);
+  }
+  return 0;
+}
+function identityFromInceptionStatus(identity, status) {
+  if (!status.incepted) {
+    return {
+      ...identity,
+      mainDepth: 0,
+      tipSigner: identity.k0,
+      tipPrevPkh: ""
+    };
+  }
+  const depth = Math.max(1, status.kelDepth || 1);
+  const tipSigner = walkMain(identity.k0, identity.secondFactor, depth);
+  const tipPrevPkh = depth <= 1 ? identity.k0.address : walkMain(identity.k0, identity.secondFactor, depth - 1).address;
+  return {
+    ...identity,
+    mainDepth: depth,
+    tipSigner,
+    tipPrevPkh
+  };
+}
+async function syncInceptionFromNode(api, identity) {
+  const status = await fetchInceptionStatus(api, identity.k0.publicKeyHex, identity.username);
+  const next = identityFromInceptionStatus(identity, status);
+  return {
+    identity: next,
+    inceptionDone: status.incepted,
+    status
+  };
+}
 function normalizeSiteId(siteId) {
   const raw = siteId.trim();
   if (!raw)
@@ -8656,7 +8755,7 @@ function normalizeSiteId(siteId) {
     return raw.toLowerCase();
   }
 }
-async function registerSite(api, identity, siteId, time = Math.floor(Date.now() / 1e3), opts) {
+async function registerSite(api, identity, siteId, time = Math.floor(Date.now() / 1e3), _opts) {
   const branchPeer = normalizeSiteId(siteId);
   const sf = identity.secondFactor;
   const peerFactor = siteFactor(sf, branchPeer);
@@ -8665,28 +8764,25 @@ async function registerSite(api, identity, siteId, time = Math.floor(Date.now() 
   const kp2 = deriveMaterial(kp1, peerFactor);
   const kp3 = deriveMaterial(kp2, peerFactor);
   const existing = await fetchSiteTip(api, branchPeer);
-  const tip = existing.ok ? existing.body?.tip : null;
-  const tipHasPassword = !!(tip?.password?.prerotated_password_hash || tip?.password?.twice_prerotated_password_hash);
-  if (tip && tipHasPassword) {
-    const site2 = siteAtCounter(identity, { siteId, branchPeer, kp0 }, Number(tip.counter ?? 1));
-    return {
-      site: site2,
-      mainTxns: [],
-      offchainRoot: tip.txn,
-      offchainPassword: tip.txn,
-      identity
-    };
+  if (existing.ok && existing.body?.tip) {
+    if (!_opts?.replaceExisting) {
+      throw new Error("site already has a branch on the node \u2014 resync instead of registering again");
+    }
+    const resetRes = await httpJson(api, "/password-rotation/offchain/reset", {
+      method: "POST",
+      body: JSON.stringify({
+        branch_peer: branchPeer,
+        inception_public_key_hash: identity.inceptionPublicKeyHash
+      })
+    });
+    if (!resetRes.ok || resetRes.body?.status === false) {
+      throw new Error(resetRes.body?.message || "failed to replace existing site branch");
+    }
   }
   const pwCurrent = generateSitePassword(kp1, branchPeer, 1);
   const pwNext = generateSitePassword(kp2, branchPeer, 2);
-  const commit = {
-    prerotated_password_hash: hashPassword(pwCurrent, opts?.passwordPhc),
-    twice_prerotated_password_hash: hashPassword(pwNext, opts?.nextPasswordPhc || opts?.passwordPhc)
-  };
-  const relJson = buildPasswordRelationshipJson(commit);
-  const relHash = sha256Hex(relJson);
   let rootTxn;
-  if (!tip) {
+  {
     rootTxn = buildAndSignTxn(kp0, {
       time,
       outputs: [{ to: kp1.address, value: 0 }],
@@ -8710,14 +8806,19 @@ async function registerSite(api, identity, siteId, time = Math.floor(Date.now() 
       throw new Error(rootRes.body?.message || `offchain root failed (${rootRes.status})`);
     }
   }
+  const step1Commit = {
+    prerotated_password_hash: hashPassword(pwCurrent),
+    twice_prerotated_password_hash: hashPassword(pwNext)
+  };
+  const step1RelJson = buildPasswordRelationshipJson(step1Commit);
   const step1Txn = buildAndSignTxn(kp1, {
     time: time + 1,
     outputs: [{ to: kp2.address, value: 0 }],
     prerotatedKeyHash: kp2.address,
     twicePrerotatedKeyHash: kp3.address,
     prevPublicKeyHash: kp0.address,
-    relationshipHash: relHash,
-    relationship: relJson
+    relationshipHash: sha256Hex(step1RelJson),
+    relationship: JSON.parse(step1RelJson)
   });
   const stepRes = await httpJson(api, "/password-rotation/offchain", {
     method: "POST",
@@ -8751,64 +8852,115 @@ async function registerSite(api, identity, siteId, time = Math.floor(Date.now() 
     identity
   };
 }
+function siteKeysForOrigin(identity, siteId) {
+  const branchPeer = normalizeSiteId(siteId);
+  return {
+    branchPeer,
+    kp0: deriveMaterial(identity.k0, siteFactor(identity.secondFactor, branchPeer))
+  };
+}
+function findPasswordMatchingHash(identity, siteId, expectedHash, max = 64) {
+  const { branchPeer, kp0 } = siteKeysForOrigin(identity, siteId);
+  const peerFactor = siteFactor(identity.secondFactor, branchPeer);
+  const expectedSalt = parsePhc(expectedHash)?.salt;
+  let k = kp0;
+  for (let i = 1; i <= max; i++) {
+    k = deriveMaterial(k, peerFactor);
+    const password = generateSitePassword(k, branchPeer, i);
+    if (expectedSalt && phcSaltB64ForPassword(password) !== expectedSalt) {
+      continue;
+    }
+    if (verifyPassword(password, expectedHash)) {
+      const kNext = deriveMaterial(k, peerFactor);
+      return {
+        index: i,
+        password,
+        nextPassword: generateSitePassword(kNext, branchPeer, i + 1)
+      };
+    }
+  }
+  return null;
+}
 async function rotateSitePassword(api, identity, site, time = Math.floor(Date.now() / 1e3), opts) {
-  const tipRes = await fetchSiteTip(api, site.branchPeer);
+  const keys = siteKeysForOrigin(identity, site.branchPeer || site.siteId);
+  const tipRes = await fetchSiteTip(api, keys.branchPeer);
   const tip = tipRes.body?.tip;
   if (!tipRes.ok || !tip) {
     throw new Error("site not registered on node");
   }
   const tipCounter = Number(tip.counter ?? site.counter ?? 0);
   const live = siteAtCounter(identity, {
-    siteId: site.siteId || site.branchPeer,
-    branchPeer: site.branchPeer,
-    kp0: site.kp0
+    siteId: keys.branchPeer,
+    branchPeer: keys.branchPeer,
+    kp0: keys.kp0
   }, tipCounter);
-  const tipPre = tip.password?.prerotated_password_hash || "";
-  const tipTwice = tip.password?.twice_prerotated_password_hash || "";
-  const password = [site.currentPassword, site.nextPassword, live.currentPassword, live.nextPassword].find((c) => c && tipPre && verifyPassword(c, tipPre)) || live.currentPassword || site.currentPassword;
+  if (tip.prerotated_key_hash && live.tip.address !== tip.prerotated_key_hash) {
+    if (opts?._replaced) {
+      throw new Error("branch keys do not match the tip after rebuild");
+    }
+    const replaced = await registerSite(api, identity, keys.branchPeer, time, { replaceExisting: true });
+    return rotateSitePassword(api, identity, replaced.site, time, {
+      ...opts,
+      _replaced: true
+    });
+  }
+  let password = live.currentPassword || site.currentPassword || "";
+  let nextReveal = live.nextPassword || site.nextPassword || "";
+  if (opts?.expectedHash) {
+    const found = findPasswordMatchingHash(identity, keys.branchPeer, opts.expectedHash);
+    if (found) {
+      password = found.password;
+      nextReveal = found.nextPassword;
+    } else {
+      const tipPre = tip.password && tip.password.prerotated_password_hash || tip.prerotated_password_hash || "";
+      const fromTip = tipPre ? findPasswordMatchingHash(identity, keys.branchPeer, tipPre) : null;
+      if (fromTip) {
+        password = fromTip.password;
+        nextReveal = fromTip.nextPassword;
+      } else if (!password) {
+        throw new Error("stored next hash is not in this vault's password chain \u2014 clear the RP next-hash or Register again with this vault");
+      }
+    }
+  }
   if (!password) {
     throw new Error("no site password available");
-  }
-  if (tipPre && !verifyPassword(password, tipPre)) {
-    throw new Error("invalid password \u2014 local secret does not match the branch tip; re-register this site");
   }
   const peerFactor = siteFactor(identity.secondFactor, site.branchPeer);
   const signer = live.tip;
   const next = deriveMaterial(signer, peerFactor);
   const twice = deriveMaterial(next, peerFactor);
   const newTwicePassword = generateSitePassword(next, site.branchPeer, tipCounter + 2);
-  const nextSpec = opts?.nextPasswordPhc || opts?.passwordPhc || (tipTwice.startsWith("$") ? phcTemplate(tipTwice) : void 0);
-  const commit = {
-    prerotated_password_hash: tipTwice || hashPassword(live.nextPassword, nextSpec),
-    twice_prerotated_password_hash: hashPassword(newTwicePassword, nextSpec)
-  };
-  const relJson = buildPasswordRelationshipJson(commit);
-  const relHash = sha256Hex(relJson);
+  const consumedPassword = live.currentPassword || password;
+  const newPrePassword = live.nextPassword || newTwicePassword;
+  const rotateRelJson = buildPasswordRelationshipJson({
+    prerotated_password_hash: hashPassword(newPrePassword),
+    twice_prerotated_password_hash: hashPassword(newTwicePassword)
+  });
   const txn = buildAndSignTxn(signer, {
     time,
     outputs: [{ to: next.address, value: 0 }],
     prerotatedKeyHash: next.address,
     twicePrerotatedKeyHash: twice.address,
     prevPublicKeyHash: live.tipPrevPkh,
-    relationshipHash: relHash,
-    relationship: relJson
+    relationshipHash: sha256Hex(rotateRelJson),
+    relationship: JSON.parse(rotateRelJson)
   });
   const nextCounter = tipCounter + 1;
   const res = await httpJson(api, "/password-rotation/verify", {
     method: "POST",
     body: JSON.stringify({
       branch_peer: site.branchPeer,
-      password,
       counter: nextCounter,
+      password: consumedPassword,
       branch_inception_public_key_hash: site.branchInceptionPkh,
       inception_public_key_hash: identity.inceptionPublicKeyHash,
       txn
     })
   });
-  if (!res.ok || res.body?.status === false || !res.body?.authenticated) {
+  if (!res.ok || res.body?.status === false) {
     throw new Error(res.body?.message || `sign-in/rotate failed (${res.status})`);
   }
-  const usedPassword = password;
+  const usedPassword = consumedPassword;
   const updated = {
     ...live,
     tip: next,
@@ -8817,7 +8969,13 @@ async function rotateSitePassword(api, identity, site, time = Math.floor(Date.no
     currentPassword: live.nextPassword,
     nextPassword: newTwicePassword
   };
-  return { site: updated, txn, password: usedPassword, authenticated: true };
+  return {
+    site: updated,
+    txn,
+    password: usedPassword,
+    nextPassword: nextReveal || newTwicePassword,
+    authenticated: true
+  };
 }
 async function fetchSiteTip(api, branchPeer) {
   return httpJson(api, `/password-rotation/offchain/tip?branch_peer=${encodeURIComponent(branchPeer)}`);
@@ -8845,7 +9003,7 @@ async function resyncVaultFromNode(api, identity, sites) {
   let kelDepth = identity.mainDepth;
   const kelRes = await httpJson(api, `/key-event-log?public_key=${encodeURIComponent(identity.k0.publicKeyHex)}`);
   if (kelRes.ok && Array.isArray(kelRes.body?.key_event_log)) {
-    kelDepth = kelRes.body.key_event_log.length;
+    kelDepth = kelRotationDepth(kelRes.body.key_event_log);
   } else if (kelRes.status === 404 || kelRes.body?.status === false) {
     kelDepth = 0;
   }
@@ -8859,23 +9017,33 @@ async function resyncVaultFromNode(api, identity, sites) {
   };
   const removedSites = [];
   const rewoundSites = [];
+  const replacedSites = [];
   const nextSites = {};
   for (const [key, site] of Object.entries(sites)) {
-    const tip = await fetchSiteTip(api, site.branchPeer);
-    if (!tip.ok || tip.body?.status === false || !tip.body?.tip) {
+    const keys = siteKeysForOrigin(nextIdentity, site.branchPeer || site.siteId || key);
+    const tipRes = await fetchSiteTip(api, keys.branchPeer);
+    if (!tipRes.ok || tipRes.body?.status === false || !tipRes.body?.tip) {
       removedSites.push(key);
       continue;
     }
-    const counter = Number(tip.body.tip.counter ?? 0);
+    const tip = tipRes.body.tip;
+    const counter = Number(tip.counter ?? 0);
     if (!Number.isFinite(counter) || counter < 0) {
       removedSites.push(key);
       continue;
     }
-    if (counter !== site.counter) {
-      nextSites[key] = siteAtCounter(nextIdentity, site, counter);
+    const inception = tip.branch_inception_public_key_hash || "";
+    const rebuilt = siteAtCounter(nextIdentity, { siteId: keys.branchPeer, branchPeer: keys.branchPeer, kp0: keys.kp0 }, counter);
+    const keysMismatch = inception && inception !== keys.kp0.address || !!(tip.prerotated_key_hash && rebuilt.tip.address !== tip.prerotated_key_hash);
+    if (keysMismatch) {
+      const replaced = await registerSite(api, nextIdentity, keys.branchPeer, void 0, { replaceExisting: true });
+      nextSites[key] = replaced.site;
+      replacedSites.push(key);
+      continue;
+    }
+    nextSites[key] = rebuilt;
+    if (counter !== site.counter || site.kp0.address !== keys.kp0.address) {
       rewoundSites.push(key);
-    } else {
-      nextSites[key] = site;
     }
   }
   return {
@@ -8883,9 +9051,175 @@ async function resyncVaultFromNode(api, identity, sites) {
     sites: nextSites,
     removedSites,
     rewoundSites,
+    replacedSites,
     kelDepth
   };
 }
+
+// ../../packages/core/dist/vault-store.js
+var REGISTRY_KEY = "yadaVaultRegistry";
+var VAULT_PREFIX = "yadaVault_";
+function defaultVaultName(data) {
+  const username = data.username?.trim();
+  if (username)
+    return username;
+  return "Vault " + (/* @__PURE__ */ new Date()).toLocaleDateString();
+}
+function vaultIdFromData(data) {
+  const id = unlockIdentity(data.mnemonic, data.secondFactor, data.username, {
+    identityType: data.identityType,
+    mainDepth: data.mainDepth,
+    tipPrevPkh: data.tipPrevPkh
+  }).k0.address;
+  return id;
+}
+function createLocalStorageBackend() {
+  return {
+    getItem: (key) => Promise.resolve(localStorage.getItem(key)),
+    setItem: (key, value) => {
+      localStorage.setItem(key, value);
+      return Promise.resolve();
+    },
+    removeItem: (key) => {
+      localStorage.removeItem(key);
+      return Promise.resolve();
+    }
+  };
+}
+var VaultStore = class {
+  backend;
+  registryKey = REGISTRY_KEY;
+  constructor(backend) {
+    this.backend = backend;
+  }
+  vaultKey(id) {
+    return `${VAULT_PREFIX}${id}`;
+  }
+  async listVaults() {
+    const registry = await this.getRegistry();
+    const entries = [];
+    for (const id of registry.vaultIds) {
+      const entry = await this.getVault(id);
+      if (entry)
+        entries.push(entry);
+    }
+    return entries.sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+  async getVault(id) {
+    const raw = await this.backend.getItem(this.vaultKey(id));
+    if (!raw)
+      return null;
+    try {
+      const entry = JSON.parse(raw);
+      if (!entry.id || !entry.data || !entry.createdAt || !entry.updatedAt) {
+        return null;
+      }
+      return entry;
+    } catch {
+      return null;
+    }
+  }
+  async saveVault(id, data, opts) {
+    const now = Date.now();
+    const existing = await this.getVault(id);
+    const entry = {
+      id,
+      name: opts?.name ?? existing?.name ?? defaultVaultName(data),
+      data,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now
+    };
+    await this.backend.setItem(this.vaultKey(id), JSON.stringify(entry));
+    await this.addToRegistry(id);
+    return entry;
+  }
+  /** Update the data of an existing vault, preserving its name and createdAt. */
+  async updateVaultData(id, data) {
+    const existing = await this.getVault(id);
+    if (!existing) {
+      return this.saveVault(id, data);
+    }
+    return this.saveVault(id, data, { name: existing.name });
+  }
+  async deleteVault(id) {
+    await this.backend.removeItem(this.vaultKey(id));
+    const registry = await this.getRegistry();
+    const filtered = registry.vaultIds.filter((v) => v !== id);
+    let activeId = registry.activeVaultId;
+    if (activeId === id) {
+      activeId = filtered[0] ?? null;
+    }
+    await this.saveRegistry({ activeVaultId: activeId, vaultIds: filtered });
+  }
+  async getActiveVaultId() {
+    return (await this.getRegistry()).activeVaultId;
+  }
+  async setActiveVaultId(id) {
+    const registry = await this.getRegistry();
+    if (id && !registry.vaultIds.includes(id)) {
+      registry.vaultIds.push(id);
+    }
+    registry.activeVaultId = id;
+    await this.saveRegistry(registry);
+  }
+  async getActiveVault() {
+    const activeId = await this.getActiveVaultId();
+    if (!activeId)
+      return null;
+    return this.getVault(activeId);
+  }
+  /**
+   * Migrate a legacy single-vault entry from `legacyKey` into the multi-vault
+   * store. If the active vault is unset, the migrated vault becomes active.
+   * Returns the migrated entry, or null if no legacy data was found.
+   */
+  async migrateLegacy(legacyKey) {
+    const raw = await this.backend.getItem(legacyKey);
+    if (!raw)
+      return null;
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+    const id = vaultIdFromData(data);
+    const entry = await this.saveVault(id, data, {
+      name: data.username || defaultVaultName(data)
+    });
+    const activeId = await this.getActiveVaultId();
+    if (!activeId) {
+      await this.setActiveVaultId(id);
+    }
+    await this.backend.removeItem(legacyKey);
+    return entry;
+  }
+  async getRegistry() {
+    const raw = await this.backend.getItem(this.registryKey);
+    if (!raw)
+      return { activeVaultId: null, vaultIds: [] };
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return { activeVaultId: null, vaultIds: [] };
+    }
+  }
+  async saveRegistry(reg) {
+    await this.backend.setItem(this.registryKey, JSON.stringify(reg));
+  }
+  async addToRegistry(id) {
+    const registry = await this.getRegistry();
+    if (!registry.vaultIds.includes(id)) {
+      registry.vaultIds.push(id);
+    }
+    await this.saveRegistry(registry);
+  }
+};
+var LEGACY_KEYS = {
+  extension: "yadaPasswordVault",
+  native: "yadaPasswordNativeVault",
+  mobile: "yadaPasswordMobileVault"
+};
 
 // ../../packages/shared-ui/dist/theme/presets.js
 var baseTypography = {
@@ -9087,7 +9421,7 @@ function applyTheme(theme, root = typeof document !== "undefined" ? document.doc
 }
 
 // src/main.ts
-var STORAGE_KEY = "yadaPasswordMobileVault";
+var store = new VaultStore(createLocalStorageBackend());
 function $(id) {
   const el = document.getElementById(id);
   if (!el) throw new Error(`#${id}`);
@@ -9105,16 +9439,63 @@ function alertMsg(msg, kind = "") {
   el.textContent = msg;
   el.className = `pm-alert${kind ? ` pm-alert--${kind}` : ""}`;
 }
-function loadVault() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
+async function loadVault() {
+  const entry = await store.getActiveVault();
+  return entry?.data ?? null;
+}
+async function saveVault(v) {
+  const id = vaultIdFromData(v);
+  await store.updateVaultData(id, v);
+  await store.setActiveVaultId(id);
+}
+function fillFormFromVault(v) {
+  if (!v) {
+    $("username").value = "";
+    $("secondFactor").value = "";
+    $("mnemonic").value = "";
+    return;
+  }
+  if (v.nodeUrl) $("nodeUrl").value = v.nodeUrl || "";
+  $("username").value = v.username || "";
+  $("secondFactor").value = v.secondFactor || "";
+  $("mnemonic").value = v.mnemonic || "";
+  if (v.theme) {
+    $("preset").value = v.theme.presetId || "dark";
+    $("mode").value = v.theme.mode || "dark";
+    if (v.theme.primary) $("primary").value = v.theme.primary;
+    $("themeUrl").value = v.theme.themeUrl || "";
   }
 }
-function saveVault(v) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(v));
+async function refreshVaultSelect(selectedId) {
+  const sel = $("vaultSelect");
+  const vaults = await store.listVaults();
+  const activeId = selectedId !== void 0 ? selectedId : await store.getActiveVaultId();
+  sel.innerHTML = "";
+  if (!vaults.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "\u2014 no vault \u2014";
+    sel.appendChild(opt);
+    return;
+  }
+  for (const e of vaults) {
+    const opt = document.createElement("option");
+    opt.value = e.id;
+    const label = e.name || e.data.username || e.id.slice(0, 12);
+    opt.textContent = `${label} \xB7 ${e.id.slice(0, 10)}\u2026`;
+    if (e.id === activeId) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+async function switchToVault(id) {
+  if (!id) return;
+  const entry = await store.getVault(id);
+  if (!entry) throw new Error("vault not found");
+  await store.setActiveVaultId(id);
+  fillFormFromVault(entry.data);
+  await refreshVaultSelect(id);
+  refreshVaultStatus();
+  await refreshTip();
 }
 function appOrigin() {
   try {
@@ -9132,20 +9513,20 @@ function storeSite(site) {
     counter: site.counter,
     tipPrevPkh: site.tipPrevPkh,
     branchInceptionPkh: site.branchInceptionPkh,
-    tipPriv: bytesToHex(site.tip.privateKey),
-    tipCc: bytesToHex(site.tip.chainCode),
+    tipPriv: bytesToHex2(site.tip.privateKey),
+    tipCc: bytesToHex2(site.tip.chainCode),
     currentPassword: site.currentPassword,
     nextPassword: site.nextPassword,
-    kp0Priv: bytesToHex(site.kp0.privateKey),
-    kp0Cc: bytesToHex(site.kp0.chainCode)
+    kp0Priv: bytesToHex2(site.kp0.privateKey),
+    kp0Cc: bytesToHex2(site.kp0.chainCode)
   };
 }
 function siteFromStored(s) {
   return {
     siteId: s.siteId,
     branchPeer: s.branchPeer,
-    kp0: materialFromPrivCc(hexToBytes(s.kp0Priv), hexToBytes(s.kp0Cc)),
-    tip: materialFromPrivCc(hexToBytes(s.tipPriv), hexToBytes(s.tipCc)),
+    kp0: materialFromPrivCc(hexToBytes2(s.kp0Priv), hexToBytes2(s.kp0Cc)),
+    tip: materialFromPrivCc(hexToBytes2(s.tipPriv), hexToBytes2(s.tipCc)),
     counter: s.counter,
     tipPrevPkh: s.tipPrevPkh,
     currentPassword: s.currentPassword,
@@ -9159,6 +9540,31 @@ function identityFromVault(v) {
     mainDepth: v.mainDepth,
     tipPrevPkh: v.tipPrevPkh
   });
+}
+async function ensureIncepted(v) {
+  const nodeUrl = (v.nodeUrl || "").replace(/\/+$/, "");
+  if (!nodeUrl) return v;
+  try {
+    const id = identityFromVault(v);
+    const { identity, inceptionDone } = await syncInceptionFromNode(
+      { baseUrl: nodeUrl },
+      id
+    );
+    if (!inceptionDone) return v;
+    const next = {
+      ...v,
+      nodeUrl,
+      inceptionDone: true,
+      mainDepth: identity.mainDepth,
+      tipPrevPkh: identity.tipPrevPkh
+    };
+    if (next.inceptionDone !== v.inceptionDone || next.mainDepth !== v.mainDepth || next.tipPrevPkh !== v.tipPrevPkh) {
+      await saveVault(next);
+    }
+    return next;
+  } catch {
+    return v;
+  }
 }
 function setTab(name) {
   for (const btn of document.querySelectorAll(".mobile-tab")) {
@@ -9199,8 +9605,8 @@ async function applyThemeFromForm() {
   const brand = document.getElementById("brandName");
   if (brand && theme.brand?.name) brand.textContent = theme.brand.name;
 }
-function refreshVaultStatus() {
-  const v = loadVault();
+async function refreshVaultStatus() {
+  const v = await loadVault();
   if (!v) {
     $("k0Addr").textContent = "no vault";
     $("vaultStatus").textContent = "Create a vault first";
@@ -9223,7 +9629,7 @@ async function refreshTip() {
   $("appOrigin").textContent = origin;
   $("statusPill").textContent = "checking\u2026";
   $("statusPill").className = "pill";
-  const v = loadVault();
+  const v = await loadVault();
   const nodeUrl = (v?.nodeUrl || $("nodeUrl").value || "").replace(
     /\/+$/,
     ""
@@ -9263,18 +9669,11 @@ async function refreshTip() {
 async function main() {
   const origin = normalizeSiteId(appOrigin());
   $("appOrigin").textContent = origin;
-  const v0 = loadVault();
+  await store.migrateLegacy(LEGACY_KEYS.mobile);
+  const v0 = await loadVault();
   if (v0) {
-    $("nodeUrl").value = v0.nodeUrl || "";
-    $("username").value = v0.username || "";
-    $("secondFactor").value = v0.secondFactor || "";
-    $("mnemonic").value = v0.mnemonic || "";
-    if (v0.theme) {
-      $("preset").value = v0.theme.presetId || "dark";
-      $("mode").value = v0.theme.mode || "dark";
-      if (v0.theme.primary) $("primary").value = v0.theme.primary;
-      $("themeUrl").value = v0.theme.themeUrl || "";
-    } else if (v0.nodeUrl) {
+    fillFormFromVault(v0);
+    if (!v0.theme && v0.nodeUrl) {
       $("themeUrl").value = v0.nodeUrl.replace(/\/+$/, "") + "/password-rotation/theme.json";
     }
   }
@@ -9284,24 +9683,61 @@ async function main() {
       $("themeUrl").value = location.origin + "/password-rotation/theme.json";
     }
   }
+  await refreshVaultSelect();
   await applyThemeFromForm();
-  refreshVaultStatus();
+  await refreshVaultStatus();
   setTab(v0?.inceptionDone ? "auth" : "vault");
   await refreshTip();
+  $("vaultSelect").addEventListener("change", () => {
+    void (async () => {
+      const id = $("vaultSelect").value;
+      if (!id) return;
+      try {
+        await switchToVault(id);
+        alertMsg("Switched vault", "success");
+      } catch (e) {
+        alertMsg(e instanceof Error ? e.message : String(e), "error");
+      }
+    })();
+  });
+  $("newVaultBtn").addEventListener("click", () => {
+    fillFormFromVault(null);
+    setTab("vault");
+    alertMsg("Enter a new seed (or Generate), then Save vault", "success");
+  });
+  $("deleteVaultBtn").addEventListener("click", () => {
+    void (async () => {
+      const id = await store.getActiveVaultId();
+      if (!id) {
+        alertMsg("No vault to delete", "error");
+        return;
+      }
+      if (!confirm("Delete the active vault from this device? This cannot be undone.")) {
+        return;
+      }
+      await store.deleteVault(id);
+      const next = await store.getActiveVault();
+      fillFormFromVault(next?.data ?? null);
+      await refreshVaultSelect();
+      await refreshVaultStatus();
+      await refreshTip();
+      alertMsg("Vault deleted", "success");
+    })();
+  });
   for (const btn of document.querySelectorAll(".mobile-tab")) {
     btn.addEventListener("click", () => {
       setTab(btn.dataset.tab || "auth");
       if (btn.dataset.tab === "auth") {
-        refreshVaultStatus();
+        void refreshVaultStatus();
         void refreshTip();
       }
-      if (btn.dataset.tab === "vault") refreshVaultStatus();
+      if (btn.dataset.tab === "vault") void refreshVaultStatus();
     });
   }
   $("themeForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     await applyThemeFromForm();
-    const v = loadVault();
+    const v = await loadVault();
     if (v) {
       v.theme = {
         presetId: $("preset").value,
@@ -9309,7 +9745,7 @@ async function main() {
         primary: $("primary").value,
         themeUrl: $("themeUrl").value.trim()
       };
-      saveVault(v);
+      await saveVault(v);
     }
     alertMsg("Theme applied", "success");
   });
@@ -9318,52 +9754,75 @@ async function main() {
     alertMsg("Seed generated \u2014 write it down, then Save vault", "success");
   });
   $("saveVaultBtn").addEventListener("click", () => {
-    alertMsg("");
-    try {
-      const nodeUrl = $("nodeUrl").value.trim().replace(/\/+$/, "");
-      const username = $("username").value.trim();
-      const secondFactor = $("secondFactor").value;
-      const mnemonic = $("mnemonic").value.trim();
-      const id = unlockIdentity(mnemonic, secondFactor, username);
-      const prev = loadVault();
-      const stored = {
-        nodeUrl,
-        mnemonic,
-        secondFactor,
-        username,
-        identityType: "social",
-        mainDepth: prev?.mainDepth ?? 0,
-        tipPrevPkh: prev?.tipPrevPkh ?? "",
-        inceptionDone: prev?.inceptionDone ?? false,
-        sites: prev?.sites ?? {},
-        theme: prev?.theme
-      };
-      if (!prev || prev.mnemonic !== mnemonic) {
-        stored.mainDepth = 0;
-        stored.tipPrevPkh = "";
-        stored.inceptionDone = false;
-        stored.sites = {};
+    void (async () => {
+      alertMsg("");
+      try {
+        const nodeUrl = $("nodeUrl").value.trim().replace(/\/+$/, "");
+        const username = $("username").value.trim();
+        const secondFactor = $("secondFactor").value;
+        const mnemonic = $("mnemonic").value.trim();
+        const id = unlockIdentity(mnemonic, secondFactor, username);
+        const vaultId = id.k0.address;
+        const existing = await store.getVault(vaultId);
+        const prev = existing?.data ?? null;
+        let stored = {
+          nodeUrl,
+          mnemonic,
+          secondFactor,
+          username,
+          identityType: "social",
+          mainDepth: prev?.mainDepth ?? 0,
+          tipPrevPkh: prev?.tipPrevPkh ?? "",
+          inceptionDone: prev?.inceptionDone ?? false,
+          sites: prev?.sites ?? {},
+          theme: prev?.theme
+        };
+        await store.saveVault(vaultId, stored, {
+          name: username || existing?.name
+        });
+        await store.setActiveVaultId(vaultId);
+        if (nodeUrl) stored = await ensureIncepted(stored);
+        await refreshVaultSelect(vaultId);
+        await refreshVaultStatus();
+        const ready = stored.inceptionDone ? "incepted on node" : "inception still needed";
+        alertMsg(
+          `Vault saved \xB7 K0 ${id.k0.address.slice(0, 12)}\u2026 \xB7 ${ready}`,
+          "success"
+        );
+        if (stored.inceptionDone) setTab("auth");
+      } catch (e) {
+        alertMsg(e instanceof Error ? e.message : String(e), "error");
       }
-      saveVault(stored);
-      refreshVaultStatus();
-      alertMsg(`Vault saved \xB7 K0 ${id.k0.address.slice(0, 12)}\u2026`, "success");
-    } catch (e) {
-      alertMsg(e instanceof Error ? e.message : String(e), "error");
-    }
+    })();
   });
   $("inceptionBtn").addEventListener("click", async () => {
     alertMsg("");
     try {
-      let v = loadVault();
+      let v = await loadVault();
       if (!v) throw new Error("Save vault first");
-      if (v.inceptionDone) throw new Error("Inception already done");
       const nodeUrl = $("nodeUrl").value.trim().replace(/\/+$/, "");
       if (!nodeUrl) throw new Error("Node URL required");
-      v.nodeUrl = nodeUrl;
+      v = await ensureIncepted({ ...v, nodeUrl });
+      if (v.inceptionDone) {
+        await refreshVaultStatus();
+        alertMsg("Already incepted on node \u2014 vault updated", "success");
+        setTab("auth");
+        await refreshTip();
+        return;
+      }
       let identity = identityFromVault(v);
       const txn = buildInceptionTxn(identity);
       const res = await broadcastTxns({ baseUrl: nodeUrl }, txn);
-      if (!res.ok && res.body?.status === false) {
+      const already = isAlreadyInceptedError(res.body?.message);
+      if (!res.ok && res.body?.status === false && !already) {
+        v = await ensureIncepted(v);
+        if (v.inceptionDone) {
+          await refreshVaultStatus();
+          alertMsg("Already incepted on node \u2014 vault updated", "success");
+          setTab("auth");
+          await refreshTip();
+          return;
+        }
         throw new Error(res.body?.message || `broadcast failed (${res.status})`);
       }
       identity = identityAfterInception(identity);
@@ -9374,9 +9833,9 @@ async function main() {
         tipPrevPkh: identity.tipPrevPkh,
         inceptionDone: true
       };
-      saveVault(v);
-      refreshVaultStatus();
-      alertMsg("Inception broadcast", "success");
+      await saveVault(v);
+      await refreshVaultStatus();
+      alertMsg(already ? "Inception already on chain \u2014 vault updated" : "Inception broadcast", "success");
       setTab("auth");
       await refreshTip();
     } catch (e) {
@@ -9390,7 +9849,7 @@ async function main() {
   $("resyncBtn").addEventListener("click", async () => {
     alertMsg("");
     try {
-      let v = loadVault();
+      let v = await loadVault();
       if (!v) throw new Error("No vault");
       const nodeUrl = (v.nodeUrl || $("nodeUrl").value || "").replace(
         /\/+$/,
@@ -9414,8 +9873,8 @@ async function main() {
         inceptionDone: result.kelDepth > 0,
         sites: nextSites
       };
-      saveVault(v);
-      refreshVaultStatus();
+      await saveVault(v);
+      await refreshVaultStatus();
       await refreshTip();
       const bits = [
         `KEL depth ${result.kelDepth}`,
@@ -9430,7 +9889,7 @@ async function main() {
   $("registerSiteBtn").addEventListener("click", async () => {
     alertMsg("");
     try {
-      let v = loadVault();
+      let v = await loadVault();
       if (!v?.inceptionDone) throw new Error("Broadcast inception first (Vault tab)");
       const nodeUrl = (v.nodeUrl || $("nodeUrl").value).trim().replace(/\/+$/, "");
       if (!nodeUrl) throw new Error("Node URL required");
@@ -9452,7 +9911,7 @@ async function main() {
           [result.site.branchPeer]: storeSite(result.site)
         }
       };
-      saveVault(v);
+      await saveVault(v);
       $("sitePasswordDisplay").textContent = result.site.currentPassword;
       alertMsg(
         `Registered ${result.site.branchPeer} \xB7 counter ${result.site.counter}`,
@@ -9471,7 +9930,7 @@ async function main() {
     const btn = $("signinRotateBtn");
     btn.disabled = true;
     try {
-      let v = loadVault();
+      let v = await loadVault();
       if (!v?.inceptionDone) throw new Error("Vault not incepted");
       const nodeUrl = (v.nodeUrl || "").replace(/\/+$/, "");
       if (!nodeUrl) throw new Error("Node URL required");
@@ -9485,7 +9944,7 @@ async function main() {
         ...v,
         sites: { ...v.sites, [origin2]: storeSite(result.site) }
       };
-      saveVault(v);
+      await saveVault(v);
       $("sitePasswordDisplay").textContent = result.site.currentPassword;
       alertMsg(
         `Signed in & rotated \xB7 counter ${result.site.counter}`,

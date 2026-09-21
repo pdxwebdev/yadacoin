@@ -1,8 +1,34 @@
 import time
 
+from yadacoin.core.identityannouncement import IdentityAnnouncement
 from yadacoin.core.keyeventlog import KeyEventLog
 from yadacoin.core.transaction import Transaction
 from yadacoin.http.base import BaseHandler
+
+
+def _kel_rotation_depth(log) -> int:
+    """Match password-core kelRotationDepth: inception + rotations."""
+    if not log:
+        return 0
+    inception = 0
+    rotations = 0
+    for x in log:
+        prev = ""
+        try:
+            prev = getattr(x.txn, "prev_public_key_hash", None) or ""
+        except Exception:
+            prev = ""
+        if not prev and hasattr(x, "to_dict"):
+            try:
+                prev = (x.to_dict() or {}).get("prev_public_key_hash") or ""
+            except Exception:
+                prev = ""
+        if not prev:
+            if not inception:
+                inception = 1
+        else:
+            rotations += 1
+    return inception + rotations
 
 
 class HasKELHandler(BaseHandler):
@@ -11,6 +37,75 @@ class HasKELHandler(BaseHandler):
         txn = Transaction(public_key=public_key)
         result = await txn.has_key_event_log()
         return self.render_as_json({"status": result})
+
+
+class IdentityInceptionStatusHandler(BaseHandler):
+    """Whether a vault K0 already has an identity announcement / KEL inception.
+
+    Query:
+      public_key  (required) — K0 compressed public key hex
+      username    (optional) — cross-check IdentityAnnouncement username
+
+    Response:
+      status, incepted, has_kel, kel_depth, identity (optional match info)
+    """
+
+    async def get(self):
+        public_key = self.get_query_argument("public_key", None)
+        username = self.get_query_argument("username", None)
+        if not public_key:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "message": "public_key required"}
+            )
+
+        log = []
+        try:
+            log = await KeyEventLog.build_from_public_key(public_key) or []
+        except Exception:
+            log = []
+
+        kel_depth = _kel_rotation_depth(log)
+        has_kel = kel_depth >= 1 or bool(log)
+
+        identity_info = None
+        username_matches = None
+        if username is not None and str(username).strip():
+            uname = str(username).strip()
+            found = await IdentityAnnouncement.get_by_username(uname)
+            if found:
+                pk = found.get("public_key") or ""
+                username_matches = pk == public_key
+                identity_info = {
+                    "username": (found.get("identity") or {}).get("username") or uname,
+                    "public_key": pk,
+                    "source": found.get("source"),
+                    "matches_public_key": username_matches,
+                }
+            else:
+                username_matches = False
+                identity_info = {
+                    "username": uname,
+                    "public_key": "",
+                    "source": None,
+                    "matches_public_key": False,
+                }
+
+        # Incepted if KEL exists for this key, or username identity is already
+        # claimed by this same public key (announcement is the inception txn).
+        incepted = bool(has_kel) or bool(username_matches)
+
+        return self.render_as_json(
+            {
+                "status": True,
+                "incepted": incepted,
+                "has_kel": bool(has_kel),
+                "kel_depth": int(
+                    kel_depth if has_kel else (1 if username_matches else 0)
+                ),
+                "identity": identity_info,
+            }
+        )
 
 
 class KELHandler(BaseHandler):
@@ -66,6 +161,7 @@ class KELReportsHandler(BaseHandler):
 
 KEY_EVENT_LOG_HANDLERS = [
     (r"/has-key-event-log", HasKELHandler),
+    (r"/identity-inception-status", IdentityInceptionStatusHandler),
     (r"/key-event-log", KELHandler),
     (r"/kel-reports", KELReportsHandler),
 ]

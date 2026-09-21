@@ -2,16 +2,24 @@ import {
   broadcastTxns,
   buildInceptionTxn,
   bytesToHex,
+  createLocalStorageBackend,
   createVaultSeed,
   hexToBytes,
   identityAfterInception,
+  isAlreadyInceptedError,
+  LEGACY_KEYS,
   materialFromPrivCc,
   normalizeSiteId,
   registerSite,
   rotateSitePassword,
   resyncVaultFromNode,
+  syncInceptionFromNode,
   unlockIdentity,
+  vaultIdFromData,
+  VaultStore,
   type SiteRegistration,
+  type StoredSite,
+  type StoredVault,
   type VaultIdentity,
 } from "@yadacoin/password-core";
 import {
@@ -20,39 +28,7 @@ import {
   type ThemePartial,
 } from "@yadacoin/password-shared-ui";
 
-const STORAGE_KEY = "yadaPasswordMobileVault";
-
-interface StoredSite {
-  siteId: string;
-  branchPeer: string;
-  counter: number;
-  tipPrevPkh: string;
-  branchInceptionPkh: string;
-  tipPriv: string;
-  tipCc: string;
-  currentPassword: string;
-  nextPassword: string;
-  kp0Priv: string;
-  kp0Cc: string;
-}
-
-interface StoredVault {
-  nodeUrl: string;
-  mnemonic: string;
-  secondFactor: string;
-  username: string;
-  identityType: string;
-  mainDepth: number;
-  tipPrevPkh: string;
-  inceptionDone: boolean;
-  sites: Record<string, StoredSite>;
-  theme?: {
-    presetId: string;
-    mode: "light" | "dark" | "system";
-    primary: string;
-    themeUrl: string;
-  };
-}
+const store = new VaultStore(createLocalStorageBackend());
 
 function $(id: string): HTMLElement {
   const el = document.getElementById(id);
@@ -73,21 +49,71 @@ function alertMsg(msg: string, kind: "" | "error" | "success" = "") {
   el.className = `pm-alert${kind ? ` pm-alert--${kind}` : ""}`;
 }
 
-function loadVault(): StoredVault | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as StoredVault) : null;
-  } catch {
-    return null;
+async function loadVault(): Promise<StoredVault | null> {
+  const entry = await store.getActiveVault();
+  return entry?.data ?? null;
+}
+
+async function saveVault(v: StoredVault): Promise<void> {
+  const id = vaultIdFromData(v);
+  await store.updateVaultData(id, v);
+  await store.setActiveVaultId(id);
+}
+
+function fillFormFromVault(v: StoredVault | null) {
+  if (!v) {
+    ($("username") as HTMLInputElement).value = "";
+    ($("secondFactor") as HTMLInputElement).value = "";
+    ($("mnemonic") as HTMLTextAreaElement).value = "";
+    return;
+  }
+  if (v.nodeUrl) ($("nodeUrl") as HTMLInputElement).value = v.nodeUrl || "";
+  ($("username") as HTMLInputElement).value = v.username || "";
+  ($("secondFactor") as HTMLInputElement).value = v.secondFactor || "";
+  ($("mnemonic") as HTMLTextAreaElement).value = v.mnemonic || "";
+  if (v.theme) {
+    ($("preset") as HTMLSelectElement).value = v.theme.presetId || "dark";
+    ($("mode") as HTMLSelectElement).value = v.theme.mode || "dark";
+    if (v.theme.primary) ($("primary") as HTMLInputElement).value = v.theme.primary;
+    ($("themeUrl") as HTMLInputElement).value = v.theme.themeUrl || "";
   }
 }
 
-function saveVault(v: StoredVault) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(v));
+async function refreshVaultSelect(selectedId?: string | null) {
+  const sel = $("vaultSelect") as HTMLSelectElement;
+  const vaults = await store.listVaults();
+  const activeId =
+    selectedId !== undefined ? selectedId : await store.getActiveVaultId();
+  sel.innerHTML = "";
+  if (!vaults.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "— no vault —";
+    sel.appendChild(opt);
+    return;
+  }
+  for (const e of vaults) {
+    const opt = document.createElement("option");
+    opt.value = e.id;
+    const label = e.name || e.data.username || e.id.slice(0, 12);
+    opt.textContent = `${label} · ${e.id.slice(0, 10)}…`;
+    if (e.id === activeId) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+async function switchToVault(id: string) {
+  if (!id) return;
+  const entry = await store.getVault(id);
+  if (!entry) throw new Error("vault not found");
+  await store.setActiveVaultId(id);
+  fillFormFromVault(entry.data);
+  await refreshVaultSelect(id);
+  refreshVaultStatus();
+  await refreshTip();
 }
 
 function appOrigin(): string {
-  // Prefer real page origin (http://ip:port or capacitor://localhost)
   try {
     if (location.protocol === "http:" || location.protocol === "https:") {
       return location.origin.toLowerCase();
@@ -95,7 +121,6 @@ function appOrigin(): string {
   } catch {
     /* ignore */
   }
-  // Capacitor / file fallback — stable demo app id
   return "yada-password-mobile-demo";
 }
 
@@ -135,6 +160,36 @@ function identityFromVault(v: StoredVault): VaultIdentity {
     mainDepth: v.mainDepth,
     tipPrevPkh: v.tipPrevPkh,
   });
+}
+
+async function ensureIncepted(v: StoredVault): Promise<StoredVault> {
+  const nodeUrl = (v.nodeUrl || "").replace(/\/+$/, "");
+  if (!nodeUrl) return v;
+  try {
+    const id = identityFromVault(v);
+    const { identity, inceptionDone } = await syncInceptionFromNode(
+      { baseUrl: nodeUrl },
+      id
+    );
+    if (!inceptionDone) return v;
+    const next: StoredVault = {
+      ...v,
+      nodeUrl,
+      inceptionDone: true,
+      mainDepth: identity.mainDepth,
+      tipPrevPkh: identity.tipPrevPkh,
+    };
+    if (
+      next.inceptionDone !== v.inceptionDone ||
+      next.mainDepth !== v.mainDepth ||
+      next.tipPrevPkh !== v.tipPrevPkh
+    ) {
+      await saveVault(next);
+    }
+    return next;
+  } catch {
+    return v;
+  }
 }
 
 function setTab(name: string) {
@@ -180,8 +235,8 @@ async function applyThemeFromForm() {
   if (brand && theme.brand?.name) brand.textContent = theme.brand.name;
 }
 
-function refreshVaultStatus() {
-  const v = loadVault();
+async function refreshVaultStatus() {
+  const v = await loadVault();
   if (!v) {
     $("k0Addr").textContent = "no vault";
     $("vaultStatus").textContent = "Create a vault first";
@@ -208,7 +263,7 @@ async function refreshTip() {
   $("statusPill").textContent = "checking…";
   $("statusPill").className = "pill";
 
-  const v = loadVault();
+  const v = await loadVault();
   const nodeUrl = (v?.nodeUrl || ($("nodeUrl") as HTMLInputElement).value || "").replace(
     /\/+$/,
     ""
@@ -253,24 +308,17 @@ async function main() {
   const origin = normalizeSiteId(appOrigin());
   $("appOrigin").textContent = origin;
 
-  const v0 = loadVault();
+  await store.migrateLegacy(LEGACY_KEYS.mobile);
+
+  const v0 = await loadVault();
   if (v0) {
-    ($("nodeUrl") as HTMLInputElement).value = v0.nodeUrl || "";
-    ($("username") as HTMLInputElement).value = v0.username || "";
-    ($("secondFactor") as HTMLInputElement).value = v0.secondFactor || "";
-    ($("mnemonic") as HTMLTextAreaElement).value = v0.mnemonic || "";
-    if (v0.theme) {
-      ($("preset") as HTMLSelectElement).value = v0.theme.presetId || "dark";
-      ($("mode") as HTMLSelectElement).value = v0.theme.mode || "dark";
-      if (v0.theme.primary) ($("primary") as HTMLInputElement).value = v0.theme.primary;
-      ($("themeUrl") as HTMLInputElement).value = v0.theme.themeUrl || "";
-    } else if (v0.nodeUrl) {
+    fillFormFromVault(v0);
+    if (!v0.theme && v0.nodeUrl) {
       ($("themeUrl") as HTMLInputElement).value =
         v0.nodeUrl.replace(/\/+$/, "") + "/password-rotation/theme.json";
     }
   }
 
-  // Default node URL to same host when served from the node
   if (!($("nodeUrl") as HTMLInputElement).value) {
     if (location.protocol === "http:" || location.protocol === "https:") {
       ($("nodeUrl") as HTMLInputElement).value = location.origin;
@@ -279,27 +327,67 @@ async function main() {
     }
   }
 
+  await refreshVaultSelect();
   await applyThemeFromForm();
-  refreshVaultStatus();
+  await refreshVaultStatus();
 
   setTab(v0?.inceptionDone ? "auth" : "vault");
   await refreshTip();
+
+  ($("vaultSelect") as HTMLSelectElement).addEventListener("change", () => {
+    void (async () => {
+      const id = ($("vaultSelect") as HTMLSelectElement).value;
+      if (!id) return;
+      try {
+        await switchToVault(id);
+        alertMsg("Switched vault", "success");
+      } catch (e) {
+        alertMsg(e instanceof Error ? e.message : String(e), "error");
+      }
+    })();
+  });
+
+  $("newVaultBtn").addEventListener("click", () => {
+    fillFormFromVault(null);
+    setTab("vault");
+    alertMsg("Enter a new seed (or Generate), then Save vault", "success");
+  });
+
+  $("deleteVaultBtn").addEventListener("click", () => {
+    void (async () => {
+      const id = await store.getActiveVaultId();
+      if (!id) {
+        alertMsg("No vault to delete", "error");
+        return;
+      }
+      if (!confirm("Delete the active vault from this device? This cannot be undone.")) {
+        return;
+      }
+      await store.deleteVault(id);
+      const next = await store.getActiveVault();
+      fillFormFromVault(next?.data ?? null);
+      await refreshVaultSelect();
+      await refreshVaultStatus();
+      await refreshTip();
+      alertMsg("Vault deleted", "success");
+    })();
+  });
 
   for (const btn of document.querySelectorAll<HTMLButtonElement>(".mobile-tab")) {
     btn.addEventListener("click", () => {
       setTab(btn.dataset.tab || "auth");
       if (btn.dataset.tab === "auth") {
-        refreshVaultStatus();
+        void refreshVaultStatus();
         void refreshTip();
       }
-      if (btn.dataset.tab === "vault") refreshVaultStatus();
+      if (btn.dataset.tab === "vault") void refreshVaultStatus();
     });
   }
 
   $("themeForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     await applyThemeFromForm();
-    const v = loadVault();
+    const v = await loadVault();
     if (v) {
       v.theme = {
         presetId: ($("preset") as HTMLSelectElement).value,
@@ -307,7 +395,7 @@ async function main() {
         primary: ($("primary") as HTMLInputElement).value,
         themeUrl: ($("themeUrl") as HTMLInputElement).value.trim(),
       };
-      saveVault(v);
+      await saveVault(v);
     }
     alertMsg("Theme applied", "success");
   });
@@ -318,53 +406,78 @@ async function main() {
   });
 
   $("saveVaultBtn").addEventListener("click", () => {
-    alertMsg("");
-    try {
-      const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim().replace(/\/+$/, "");
-      const username = ($("username") as HTMLInputElement).value.trim();
-      const secondFactor = ($("secondFactor") as HTMLInputElement).value;
-      const mnemonic = ($("mnemonic") as HTMLTextAreaElement).value.trim();
-      const id = unlockIdentity(mnemonic, secondFactor, username);
-      const prev = loadVault();
-      const stored: StoredVault = {
-        nodeUrl,
-        mnemonic,
-        secondFactor,
-        username,
-        identityType: "social",
-        mainDepth: prev?.mainDepth ?? 0,
-        tipPrevPkh: prev?.tipPrevPkh ?? "",
-        inceptionDone: prev?.inceptionDone ?? false,
-        sites: prev?.sites ?? {},
-        theme: prev?.theme,
-      };
-      if (!prev || prev.mnemonic !== mnemonic) {
-        stored.mainDepth = 0;
-        stored.tipPrevPkh = "";
-        stored.inceptionDone = false;
-        stored.sites = {};
+    void (async () => {
+      alertMsg("");
+      try {
+        const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim().replace(/\/+$/, "");
+        const username = ($("username") as HTMLInputElement).value.trim();
+        const secondFactor = ($("secondFactor") as HTMLInputElement).value;
+        const mnemonic = ($("mnemonic") as HTMLTextAreaElement).value.trim();
+        const id = unlockIdentity(mnemonic, secondFactor, username);
+        const vaultId = id.k0.address;
+        const existing = await store.getVault(vaultId);
+        const prev = existing?.data ?? null;
+        let stored: StoredVault = {
+          nodeUrl,
+          mnemonic,
+          secondFactor,
+          username,
+          identityType: "social",
+          mainDepth: prev?.mainDepth ?? 0,
+          tipPrevPkh: prev?.tipPrevPkh ?? "",
+          inceptionDone: prev?.inceptionDone ?? false,
+          sites: prev?.sites ?? {},
+          theme: prev?.theme,
+        };
+        await store.saveVault(vaultId, stored, {
+          name: username || existing?.name,
+        });
+        await store.setActiveVaultId(vaultId);
+        if (nodeUrl) stored = await ensureIncepted(stored);
+        await refreshVaultSelect(vaultId);
+        await refreshVaultStatus();
+        const ready = stored.inceptionDone
+          ? "incepted on node"
+          : "inception still needed";
+        alertMsg(
+          `Vault saved · K0 ${id.k0.address.slice(0, 12)}… · ${ready}`,
+          "success"
+        );
+        if (stored.inceptionDone) setTab("auth");
+      } catch (e) {
+        alertMsg(e instanceof Error ? e.message : String(e), "error");
       }
-      saveVault(stored);
-      refreshVaultStatus();
-      alertMsg(`Vault saved · K0 ${id.k0.address.slice(0, 12)}…`, "success");
-    } catch (e) {
-      alertMsg(e instanceof Error ? e.message : String(e), "error");
-    }
+    })();
   });
 
   $("inceptionBtn").addEventListener("click", async () => {
     alertMsg("");
     try {
-      let v = loadVault();
+      let v = await loadVault();
       if (!v) throw new Error("Save vault first");
-      if (v.inceptionDone) throw new Error("Inception already done");
       const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim().replace(/\/+$/, "");
       if (!nodeUrl) throw new Error("Node URL required");
-      v.nodeUrl = nodeUrl;
+      v = await ensureIncepted({ ...v, nodeUrl });
+      if (v.inceptionDone) {
+        await refreshVaultStatus();
+        alertMsg("Already incepted on node — vault updated", "success");
+        setTab("auth");
+        await refreshTip();
+        return;
+      }
       let identity = identityFromVault(v);
       const txn = buildInceptionTxn(identity);
       const res = await broadcastTxns({ baseUrl: nodeUrl }, txn);
-      if (!res.ok && res.body?.status === false) {
+      const already = isAlreadyInceptedError(res.body?.message);
+      if (!res.ok && res.body?.status === false && !already) {
+        v = await ensureIncepted(v);
+        if (v.inceptionDone) {
+          await refreshVaultStatus();
+          alertMsg("Already incepted on node — vault updated", "success");
+          setTab("auth");
+          await refreshTip();
+          return;
+        }
         throw new Error(res.body?.message || `broadcast failed (${res.status})`);
       }
       identity = identityAfterInception(identity);
@@ -375,9 +488,9 @@ async function main() {
         tipPrevPkh: identity.tipPrevPkh,
         inceptionDone: true,
       };
-      saveVault(v);
-      refreshVaultStatus();
-      alertMsg("Inception broadcast", "success");
+      await saveVault(v);
+      await refreshVaultStatus();
+      alertMsg(already ? "Inception already on chain — vault updated" : "Inception broadcast", "success");
       setTab("auth");
       await refreshTip();
     } catch (e) {
@@ -393,7 +506,7 @@ async function main() {
   $("resyncBtn").addEventListener("click", async () => {
     alertMsg("");
     try {
-      let v = loadVault();
+      let v = await loadVault();
       if (!v) throw new Error("No vault");
       const nodeUrl = (v.nodeUrl || ($("nodeUrl") as HTMLInputElement).value || "").replace(
         /\/+$/,
@@ -417,8 +530,8 @@ async function main() {
         inceptionDone: result.kelDepth > 0,
         sites: nextSites,
       };
-      saveVault(v);
-      refreshVaultStatus();
+      await saveVault(v);
+      await refreshVaultStatus();
       await refreshTip();
       const bits = [
         `KEL depth ${result.kelDepth}`,
@@ -434,7 +547,7 @@ async function main() {
   $("registerSiteBtn").addEventListener("click", async () => {
     alertMsg("");
     try {
-      let v = loadVault();
+      let v = await loadVault();
       if (!v?.inceptionDone) throw new Error("Broadcast inception first (Vault tab)");
       const nodeUrl = (v.nodeUrl || ($("nodeUrl") as HTMLInputElement).value)
         .trim()
@@ -458,7 +571,7 @@ async function main() {
           [result.site.branchPeer]: storeSite(result.site),
         },
       };
-      saveVault(v);
+      await saveVault(v);
       $("sitePasswordDisplay").textContent = result.site.currentPassword;
       alertMsg(
         `Registered ${result.site.branchPeer} · counter ${result.site.counter}`,
@@ -478,7 +591,7 @@ async function main() {
     const btn = $("signinRotateBtn") as HTMLButtonElement;
     btn.disabled = true;
     try {
-      let v = loadVault();
+      let v = await loadVault();
       if (!v?.inceptionDone) throw new Error("Vault not incepted");
       const nodeUrl = (v.nodeUrl || "").replace(/\/+$/, "");
       if (!nodeUrl) throw new Error("Node URL required");
@@ -492,7 +605,7 @@ async function main() {
         ...v,
         sites: { ...v.sites, [origin]: storeSite(result.site) },
       };
-      saveVault(v);
+      await saveVault(v);
       $("sitePasswordDisplay").textContent = result.site.currentPassword;
       alertMsg(
         `Signed in & rotated · counter ${result.site.counter}`,

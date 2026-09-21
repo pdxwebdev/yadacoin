@@ -393,7 +393,11 @@ class GraphTransactionHandler(BaseGraphHandler):
                 self.config.app_log.error(f"InvalidTransactionException: {e}")
                 self.set_status(400)
                 return self.render_as_json(
-                    {"status": False, "message": "InvalidTransactionException"}
+                    {
+                        "status": False,
+                        "message": str(e) or "InvalidTransactionException",
+                        "exception": "InvalidTransactionException",
+                    }
                 )
             except InvalidTransactionSignatureException as e:
                 exception_raised = True
