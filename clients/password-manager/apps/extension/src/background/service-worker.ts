@@ -7,6 +7,7 @@ import {
   hexToBytes,
   LEGACY_KEYS,
   materialFromPrivCc,
+  normalizeNodeBaseUrl,
   registerSite,
   resyncSiteFromNode,
   resyncVaultFromNode,
@@ -21,6 +22,7 @@ import {
   type VaultIdentity,
 } from "@yadacoin/password-core";
 import { createExtensionVaultBackend } from "../shared/vault-backend.js";
+import { toOriginPattern } from "../shared/permissions.js";
 
 const SETTINGS_KEY = "yadaPasswordSettings";
 const store = new VaultStore(createExtensionVaultBackend());
@@ -75,50 +77,76 @@ async function saveVault(v: StoredVault): Promise<void> {
   await store.setActiveVaultId(id);
 }
 
-async function nodeUrl(): Promise<string> {
+async function nodeUrl(fallbackOrigin?: string): Promise<string> {
   const data = await chrome.storage.sync.get(SETTINGS_KEY);
   const s = (data[SETTINGS_KEY] || {}) as { nodeUrl?: string };
-  return (s.nodeUrl || "").replace(/\/+$/, "");
+  const fromSettings = normalizeNodeBaseUrl(s.nodeUrl || "");
+  if (fromSettings) return fromSettings;
+  const entry = await loadVault();
+  const fromVault = normalizeNodeBaseUrl(entry?.nodeUrl || "");
+  if (fromVault) return fromVault;
+  return normalizeNodeBaseUrl(fallbackOrigin || "");
+}
+
+async function hasNodeHostAccess(baseUrl: string): Promise<boolean> {
+  if (typeof chrome === "undefined" || !chrome.permissions?.contains) return true;
+  const origin = toOriginPattern(baseUrl);
+  if (!origin) return true;
+  try {
+    return await chrome.permissions.contains({ origins: [origin] });
+  } catch {
+    return true;
+  }
 }
 
 async function ensureIncepted(
   v: StoredVault,
   baseUrl: string
 ): Promise<StoredVault> {
-  if (!baseUrl) return v;
-  try {
-    const identity: VaultIdentity = unlockIdentity(
-      v.mnemonic,
-      v.secondFactor,
-      v.username,
-      {
-        identityType: v.identityType,
-        mainDepth: v.mainDepth,
-        tipPrevPkh: v.tipPrevPkh,
-      }
+  const base = normalizeNodeBaseUrl(baseUrl);
+  if (!base) return v;
+  if (!(await hasNodeHostAccess(base))) {
+    throw new Error(
+      `extension lacks host access to ${base} — open the popup, set Node URL to the node origin, Save vault (grants permission), then retry`
     );
-    const { identity: nextId, inceptionDone } = await syncInceptionFromNode(
-      { baseUrl },
-      identity
-    );
-    if (!inceptionDone) return v;
-    const next: StoredVault = {
-      ...v,
-      inceptionDone: true,
-      mainDepth: nextId.mainDepth,
-      tipPrevPkh: nextId.tipPrevPkh,
-    };
-    if (
-      next.inceptionDone !== v.inceptionDone ||
-      next.mainDepth !== v.mainDepth ||
-      next.tipPrevPkh !== v.tipPrevPkh
-    ) {
-      await saveVault(next);
-    }
-    return next;
-  } catch {
-    return v;
   }
+  const identity: VaultIdentity = unlockIdentity(
+    v.mnemonic,
+    v.secondFactor,
+    v.username,
+    {
+      identityType: v.identityType,
+      mainDepth: v.mainDepth,
+      tipPrevPkh: v.tipPrevPkh,
+    }
+  );
+  const { identity: nextId, inceptionDone, status } = await syncInceptionFromNode(
+    { baseUrl: base },
+    identity
+  );
+  if (!inceptionDone) {
+    if (v.inceptionDone) return v;
+    throw new Error(
+      `vault not incepted on ${base} (KEL depth ${status.kelDepth}, source ${status.source}). ` +
+        `Confirm Node URL is the node origin (e.g. https://yadacoin.io), Resync from the popup, or broadcast inception.`
+    );
+  }
+  const next: StoredVault = {
+    ...v,
+    nodeUrl: base,
+    inceptionDone: true,
+    mainDepth: nextId.mainDepth,
+    tipPrevPkh: nextId.tipPrevPkh,
+  };
+  if (
+    next.inceptionDone !== v.inceptionDone ||
+    next.mainDepth !== v.mainDepth ||
+    next.tipPrevPkh !== v.tipPrevPkh ||
+    next.nodeUrl !== v.nodeUrl
+  ) {
+    await saveVault(next);
+  }
+  return next;
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -137,9 +165,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, message: "invalid origin" });
           return;
         }
-        const baseUrl = await nodeUrl();
+        const baseUrl = await nodeUrl(origin);
         if (!baseUrl) {
-          sendResponse({ ok: false, message: "set Node URL in extension options" });
+          sendResponse({
+            ok: false,
+            message:
+              "set Node URL in extension popup/options to the node origin (e.g. https://yadacoin.io)",
+          });
           return;
         }
         let v = await loadVault();
@@ -194,11 +226,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, message: "invalid origin" });
           return;
         }
-        const baseUrl = await nodeUrl();
+        const baseUrl = await nodeUrl(origin);
         if (!baseUrl) {
           sendResponse({
             ok: false,
-            message: "set Node URL in extension options",
+            message:
+              "set Node URL in extension popup/options to the node origin (e.g. https://yadacoin.io)",
           });
           return;
         }
@@ -260,9 +293,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, message: "invalid origin" });
           return;
         }
-        const baseUrl = await nodeUrl();
+        const baseUrl = await nodeUrl(origin);
         if (!baseUrl) {
-          sendResponse({ ok: false, message: "set Node URL in extension options" });
+          sendResponse({
+            ok: false,
+            message:
+              "set Node URL in extension popup/options to the node origin (e.g. https://yadacoin.io)",
+          });
           return;
         }
         let v = await loadVault();

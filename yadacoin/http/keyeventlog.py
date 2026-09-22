@@ -6,6 +6,32 @@ from yadacoin.core.transaction import Transaction
 from yadacoin.http.base import BaseHandler
 
 
+def _kel_entry_prev(x) -> str:
+    """prev_public_key_hash from a Transaction, KeyEvent wrapper, or dict."""
+    if isinstance(x, dict):
+        return x.get("prev_public_key_hash") or ""
+    try:
+        wrapped = getattr(x, "txn", None)
+        if wrapped is not None:
+            prev = getattr(wrapped, "prev_public_key_hash", None) or ""
+            if prev:
+                return prev
+    except Exception:
+        pass
+    try:
+        prev = getattr(x, "prev_public_key_hash", None) or ""
+        if prev:
+            return prev
+    except Exception:
+        pass
+    if hasattr(x, "to_dict"):
+        try:
+            return (x.to_dict() or {}).get("prev_public_key_hash") or ""
+        except Exception:
+            return ""
+    return ""
+
+
 def _kel_rotation_depth(log) -> int:
     """Match password-core kelRotationDepth: inception + rotations."""
     if not log:
@@ -13,16 +39,7 @@ def _kel_rotation_depth(log) -> int:
     inception = 0
     rotations = 0
     for x in log:
-        prev = ""
-        try:
-            prev = getattr(x.txn, "prev_public_key_hash", None) or ""
-        except Exception:
-            prev = ""
-        if not prev and hasattr(x, "to_dict"):
-            try:
-                prev = (x.to_dict() or {}).get("prev_public_key_hash") or ""
-            except Exception:
-                prev = ""
+        prev = _kel_entry_prev(x)
         if not prev:
             if not inception:
                 inception = 1
@@ -59,6 +76,7 @@ class IdentityInceptionStatusHandler(BaseHandler):
                 {"status": False, "message": "public_key required"}
             )
 
+        public_key = str(public_key).strip()
         log = []
         try:
             log = await KeyEventLog.build_from_public_key(public_key) or []
@@ -68,6 +86,18 @@ class IdentityInceptionStatusHandler(BaseHandler):
         kel_depth = _kel_rotation_depth(log)
         has_kel = kel_depth >= 1 or bool(log)
 
+        # has_key_event_log only checks prerotated/twice-prerotated addresses,
+        # so K0 inception alone is false there — still treat a non-empty log as KEL.
+        if not has_kel:
+            try:
+                txn = Transaction(public_key=public_key)
+                if await txn.has_key_event_log():
+                    has_kel = True
+                    if kel_depth < 1:
+                        kel_depth = 1
+            except Exception:
+                pass
+
         identity_info = None
         username_matches = None
         if username is not None and str(username).strip():
@@ -75,7 +105,8 @@ class IdentityInceptionStatusHandler(BaseHandler):
             found = await IdentityAnnouncement.get_by_username(uname)
             if found:
                 pk = found.get("public_key") or ""
-                username_matches = pk == public_key
+                # Hex public keys are case-insensitive
+                username_matches = pk.lower() == public_key.lower() if pk else False
                 identity_info = {
                     "username": (found.get("identity") or {}).get("username") or uname,
                     "public_key": pk,

@@ -10,6 +10,7 @@ import {
   isAlreadyInceptedError,
   LEGACY_KEYS,
   materialFromPrivCc,
+  normalizeNodeBaseUrl,
   normalizeSiteId,
   postAuthSessionResult,
   registerSite,
@@ -118,9 +119,10 @@ function identityFromStored(v: StoredVault): VaultIdentity {
 
 async function ensureIncepted(
   v: StoredVault,
-  nodeUrl: string
+  nodeUrl: string,
+  opts?: { silent?: boolean }
 ): Promise<StoredVault> {
-  const base = (nodeUrl || "").replace(/\/+$/, "");
+  const base = normalizeNodeBaseUrl(nodeUrl);
   if (!base) return v;
   try {
     await ensureNodeAccess(base);
@@ -129,9 +131,11 @@ async function ensureIncepted(
       { baseUrl: base },
       id
     );
+    // Not on node yet — keep local vault so caller can broadcast inception.
     if (!inceptionDone) return v;
     const next: StoredVault = {
       ...v,
+      nodeUrl: base,
       inceptionDone: true,
       mainDepth: identity.mainDepth,
       tipPrevPkh: identity.tipPrevPkh,
@@ -139,13 +143,15 @@ async function ensureIncepted(
     if (
       next.inceptionDone !== v.inceptionDone ||
       next.mainDepth !== v.mainDepth ||
-      next.tipPrevPkh !== v.tipPrevPkh
+      next.tipPrevPkh !== v.tipPrevPkh ||
+      next.nodeUrl !== v.nodeUrl
     ) {
       await saveActiveVault(next);
     }
     return next;
-  } catch {
-    return v;
+  } catch (e) {
+    if (opts?.silent) return v;
+    throw e;
   }
 }
 
@@ -552,13 +558,15 @@ async function main() {
         inceptionDone: prev?.inceptionDone ?? false,
         sites: prev?.sites ?? {},
       };
-      if (nodeUrl) await ensureNodeAccess(nodeUrl);
+      const nodeBase = normalizeNodeBaseUrl(nodeUrl);
+      if (nodeBase) await ensureNodeAccess(nodeBase);
+      stored = { ...stored, nodeUrl: nodeBase || stored.nodeUrl };
       await store.saveVault(vaultId, stored, {
         name: username || existing?.name,
       });
       await store.setActiveVaultId(vaultId);
-      await saveSettings({ ...settings, nodeUrl });
-      if (nodeUrl) stored = await ensureIncepted(stored, nodeUrl);
+      await saveSettings({ ...settings, nodeUrl: nodeBase || nodeUrl });
+      if (nodeBase) stored = await ensureIncepted(stored, nodeBase, { silent: true });
       await refreshVaultSelect(vaultId);
       const ready = stored.inceptionDone
         ? "incepted on node"

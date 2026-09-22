@@ -8,6 +8,7 @@ import {
   type UserSettings,
 } from "../shared/settings.js";
 import { bootTheme } from "../shared/theme-boot.js";
+import { normalizeNodeBaseUrl } from "@yadacoin/password-core";
 import { requestOriginAccess } from "../shared/permissions.js";
 
 function $(id: string): HTMLElement {
@@ -69,6 +70,7 @@ async function main() {
   ($("themeForm") as HTMLFormElement).addEventListener("submit", async (e) => {
     e.preventDefault();
     const next = readForm();
+    next.nodeUrl = normalizeNodeBaseUrl(next.nodeUrl) || next.nodeUrl.trim();
     if (next.nodeUrl) {
       const ok = await requestOriginAccess(next.nodeUrl);
       if (!ok) {

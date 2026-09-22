@@ -61,18 +61,39 @@ export interface NodeApi {
   fetch?: typeof fetch;
 }
 
+/**
+ * Node HTTP base must be origin only (scheme + host + port).
+ * Users often paste harness URLs like https://yadacoin.io/password-rotation;
+ * API paths are rooted at the node origin, so strip path/query/hash.
+ */
+export function normalizeNodeBaseUrl(url: string): string {
+  const raw = (url || "").trim();
+  if (!raw) return "";
+  try {
+    const withScheme = raw.includes("://") ? raw : `https://${raw}`;
+    const u = new URL(withScheme);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return raw.replace(/\/+$/, "");
+    return u.origin;
+  } catch {
+    return raw.replace(/\/+$/, "");
+  }
+}
+
 async function httpJson(
   api: NodeApi,
   path: string,
   init?: RequestInit
 ): Promise<{ ok: boolean; status: number; body: any }> {
   const fetchImpl = api.fetch ?? globalThis.fetch.bind(globalThis);
-  const url = api.baseUrl.replace(/\/+$/, "") + path;
+  const base = normalizeNodeBaseUrl(api.baseUrl) || api.baseUrl.replace(/\/+$/, "");
+  const url = base + path;
   let res: Response;
   try {
     res = await fetchImpl(url, {
       ...init,
-      credentials: init?.credentials ?? "include",
+      // Public node JSON APIs do not need cookies; omit avoids credentialed CORS
+      // failures and accidental session coupling when the site shares the node host.
+      credentials: init?.credentials ?? "omit",
       headers: {
         Accept: "application/json",
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
@@ -82,8 +103,9 @@ async function httpJson(
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     throw new Error(
-      `Failed to reach node ${api.baseUrl} (${path}): ${why}. ` +
-        `On a phone use the computer's LAN IP (not 127.0.0.1). On an emulator use 10.0.2.2.`
+      `Failed to reach node ${base} (${path}): ${why}. ` +
+        `Grant the extension host access to this node (popup/options), use the node origin ` +
+        `(e.g. https://yadacoin.io not /password-rotation), and on a phone use the LAN IP not 127.0.0.1.`
     );
   }
   const text = await res.text();
@@ -239,6 +261,8 @@ export type InceptionStatus = {
 /**
  * Ask the node whether this K0 already has an identity announcement / KEL.
  * Prefers GET /identity-inception-status; falls back to /key-event-log.
+ * When the status endpoint reports not incepted, still probes the KEL so a
+ * stale or partial status handler cannot block an on-chain identity.
  */
 export async function fetchInceptionStatus(
   api: NodeApi,
@@ -247,13 +271,14 @@ export async function fetchInceptionStatus(
 ): Promise<InceptionStatus> {
   const q = new URLSearchParams({ public_key: publicKeyHex });
   if (username?.trim()) q.set("username", username.trim());
+  let statusProbe: InceptionStatus | null = null;
   try {
     const res = await httpJson(api, `/identity-inception-status?${q.toString()}`);
     if (res.ok && res.body?.status !== false) {
       const kelDepth = Number(res.body?.kel_depth ?? 0);
       const incepted = Boolean(res.body?.incepted) || kelDepth >= 1;
       const match = res.body?.identity?.matches_public_key;
-      return {
+      statusProbe = {
         incepted,
         kelDepth: Number.isFinite(kelDepth) ? Math.max(0, kelDepth) : incepted ? 1 : 0,
         hasKel: Boolean(res.body?.has_kel) || kelDepth >= 1,
@@ -261,19 +286,39 @@ export async function fetchInceptionStatus(
           typeof match === "boolean" ? match : username?.trim() ? null : null,
         source: "identity-inception-status",
       };
+      if (statusProbe.incepted) return statusProbe;
     }
   } catch {
     /* fall through to KEL */
   }
 
-  const depth = await fetchKelDepth(api, publicKeyHex);
-  return {
-    incepted: depth >= 1,
-    kelDepth: depth,
-    hasKel: depth >= 1,
-    usernameMatches: null,
-    source: depth >= 1 ? "key-event-log" : "none",
-  };
+  try {
+    const depth = await fetchKelDepth(api, publicKeyHex);
+    if (depth >= 1) {
+      return {
+        incepted: true,
+        kelDepth: depth,
+        hasKel: true,
+        usernameMatches: statusProbe?.usernameMatches ?? null,
+        source: "key-event-log",
+      };
+    }
+  } catch {
+    if (statusProbe) return statusProbe;
+    throw new Error(
+      `Could not verify vault inception on node ${normalizeNodeBaseUrl(api.baseUrl) || api.baseUrl}`
+    );
+  }
+
+  return (
+    statusProbe || {
+      incepted: false,
+      kelDepth: 0,
+      hasKel: false,
+      usernameMatches: null,
+      source: "none",
+    }
+  );
 }
 
 export async function fetchKelDepth(
