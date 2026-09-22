@@ -95,10 +95,32 @@ class BaseHandler(RequestHandler):
             return False
         return cookie_ts >= await self.get_auth_cutoff()
 
+    def _operator_cookie_secure(self) -> bool:
+        """Secure flag for operator cookies (honor reverse-proxy HTTPS)."""
+        if (self.request.protocol or "").lower() == "https":
+            return True
+        xf = (self.request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
+        return xf.lower() == "https"
+
     async def issue_operator_session(self, expires=23040):
         """Issue the key_or_wif cookie/JWT used by wallet_is_unlocked()."""
         issued_at = time.time()
-        self.set_secure_cookie("key_or_wif", str(issued_at))
+        # Explicit kwargs so HTTPS-behind-proxy still gets Secure cookies the
+        # browser will keep on https://yadacoin.io reloads.
+        cookie_kwargs = {
+            "httponly": True,
+            "secure": self._operator_cookie_secure(),
+        }
+        try:
+            self.set_secure_cookie(
+                "key_or_wif",
+                str(issued_at),
+                samesite="Lax",
+                **cookie_kwargs,
+            )
+        except TypeError:
+            # Older Tornado without samesite=
+            self.set_secure_cookie("key_or_wif", str(issued_at), **cookie_kwargs)
         max_expires = 86400
         try:
             expires_seconds = int(expires)

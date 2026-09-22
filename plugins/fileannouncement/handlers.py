@@ -143,14 +143,15 @@ class BaseFileAnnouncementHandler(BaseHandler):
         self.set_status(401)
         path = self.request.path or ""
         if path.startswith("/file-announcements/api/"):
+            # render_as_json already finishes the request
             self.render_as_json({"status": False, "error": "not authorized"})
         else:
+            # RequestHandler.render() finishes; do not call finish() again
             self.render(
                 "locked.html",
                 yadacoin=self.yadacoin_vars,
                 title="YadaCoin - File Announcements",
             )
-            self.finish()
 
     def _error(self, status, message):
         self.set_status(status)

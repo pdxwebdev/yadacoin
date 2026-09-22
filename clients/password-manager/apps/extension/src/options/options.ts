@@ -8,8 +8,7 @@ import {
   type UserSettings,
 } from "../shared/settings.js";
 import { bootTheme } from "../shared/theme-boot.js";
-import { normalizeNodeBaseUrl } from "@yadacoin/password-core";
-import { requestOriginAccess } from "../shared/permissions.js";
+
 
 function $(id: string): HTMLElement {
   const el = document.getElementById(id);
@@ -34,7 +33,6 @@ function readForm(): UserSettings {
     mode: ($("mode") as HTMLSelectElement).value as UserSettings["mode"],
     primary: ($("primary") as HTMLInputElement).value,
     density: ($("density") as HTMLSelectElement).value as UserSettings["density"],
-    nodeUrl: ($("nodeUrl") as HTMLInputElement).value.trim(),
     themeUrl: ($("themeUrl") as HTMLInputElement).value.trim(),
     brandName: ($("brandNameInput") as HTMLInputElement).value.trim(),
   };
@@ -45,7 +43,6 @@ function fillForm(s: UserSettings) {
   ($("mode") as HTMLSelectElement).value = s.mode || "system";
   if (s.primary) ($("primary") as HTMLInputElement).value = s.primary;
   ($("density") as HTMLSelectElement).value = s.density || "comfortable";
-  ($("nodeUrl") as HTMLInputElement).value = s.nodeUrl || "";
   ($("themeUrl") as HTMLInputElement).value = s.themeUrl || "";
   ($("brandNameInput") as HTMLInputElement).value = s.brandName || "";
 }
@@ -70,14 +67,6 @@ async function main() {
   ($("themeForm") as HTMLFormElement).addEventListener("submit", async (e) => {
     e.preventDefault();
     const next = readForm();
-    next.nodeUrl = normalizeNodeBaseUrl(next.nodeUrl) || next.nodeUrl.trim();
-    if (next.nodeUrl) {
-      const ok = await requestOriginAccess(next.nodeUrl);
-      if (!ok) {
-        showAlert("Permission denied for node URL", "error");
-        return;
-      }
-    }
     await saveSettings(next);
     await preview(next);
     showAlert("Settings saved", "success");

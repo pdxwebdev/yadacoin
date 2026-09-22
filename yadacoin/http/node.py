@@ -507,9 +507,81 @@ class GetNetworkTopologyHandler(BaseHandler):
     async def get(self):
         fmt = self.get_query_argument("format", "html")
         if fmt == "json":
-            await self._json_data()
+            # light=1 — tested_nodes only (fast). Full crawl is slow and for UI.
+            light = (self.get_query_argument("light", "") or "").lower() in (
+                "1",
+                "true",
+                "yes",
+            )
+            if light:
+                await self._json_data_light()
+            else:
+                await self._json_data()
         else:
             self.render("network_topology.html")
+
+    async def _json_data_light(self):
+        """Fast topology: latest successful NodesTester snapshot (no crawl)."""
+        tested_result = await self.config.mongo.async_db.tested_nodes.find_one(
+            {"_id": "latest_test"}, {"_id": 0}
+        )
+        successful_nodes = (
+            tested_result.get("successful_nodes", []) if tested_result else []
+        )
+
+        def infer_proto(proto, port):
+            if proto:
+                return proto
+            return "https" if str(port) in ("443", "8443") else "http"
+
+        nodes = []
+        for n in successful_nodes:
+            port = n.get("http_port") or n.get("port", 80)
+            proto = infer_proto(n.get("http_protocol"), port)
+            host = n.get("http_host") or n.get("host", "")
+            if not host:
+                continue
+            pt = n.get("peer_type") or None
+            if not pt:
+                if n.get("seed") and n.get("seed_gateway"):
+                    pt = "service_provider"
+                elif n.get("seed") and not n.get("seed_gateway"):
+                    pt = "seed_gateway"
+                else:
+                    pt = "seed"
+            nid = f"{proto}://{host}:{port}"
+            # normalize default ports in id for clients
+            if (proto == "https" and str(port) == "443") or (
+                proto == "http" and str(port) == "80"
+            ):
+                nid = f"{proto}://{host}"
+            nodes.append(
+                {
+                    "id": nid,
+                    "host": host,
+                    "port": port,
+                    "http_protocol": proto,
+                    "peer_type": pt,
+                    "username": (n.get("identity") or {}).get("username", ""),
+                    "username_signature": (n.get("identity") or {}).get(
+                        "username_signature", ""
+                    ),
+                    "status": "online",
+                    "source": "tested_nodes",
+                }
+            )
+
+        return self.render_as_json(
+            {
+                "nodes": nodes,
+                "edges": [],
+                "light": True,
+                "source": "tested_nodes",
+                "tested_at": (tested_result or {}).get("timestamp")
+                or (tested_result or {}).get("tested_at"),
+                "generated_at": time.time(),
+            }
+        )
 
     async def _json_data(self):
         import asyncio

@@ -30,7 +30,8 @@ import {
   type VaultIdentity,
 } from "@yadacoin/password-core";
 import { bootTheme } from "../shared/theme-boot.js";
-import { loadSettings, saveSettings } from "../shared/settings.js";
+import { resolveHomeApiBase } from "../shared/home.js";
+import { loadSettings } from "../shared/settings.js";
 import {
   enableSiteAndNode,
   injectBridgeIntoTab,
@@ -87,15 +88,28 @@ async function fillSiteFromOrigin(origin: string, vault: StoredVault | null) {
 
 async function ensureNodeAccess(nodeUrl: string): Promise<void> {
   const ok = await requestOriginAccess(nodeUrl);
-  if (!ok) throw new Error("Permission denied for node URL");
+  if (!ok) throw new Error("Permission denied for password home node");
 }
 
 async function ensureSiteAccess(siteId: string, nodeUrl: string): Promise<void> {
   const ok = await enableSiteAndNode(siteId, nodeUrl);
-  if (!ok) throw new Error("Permission denied for this site or node");
+  if (!ok) throw new Error("Permission denied for this site or home node");
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   const tabId = tabs[0]?.id;
   if (tabId != null) await injectBridgeIntoTab(tabId);
+}
+
+/** Deterministic password-home API base (no user Node URL). */
+async function getApiBase(username?: string): Promise<string> {
+  const origin = await getActiveOrigin();
+  const v = await loadVault();
+  const base = await resolveHomeApiBase({
+    username: (username || v?.username || "").trim(),
+    pageOrigin: origin || undefined,
+    cachedHome: v?.nodeUrl,
+  });
+  await ensureNodeAccess(base);
+  return base;
 }
 
 async function loadVault(): Promise<StoredVault | null> {
@@ -275,14 +289,7 @@ async function drainPendingRequests(): Promise<void> {
     showAlert("Save vault and broadcast inception first.", "error");
     return;
   }
-  const settings = await loadSettings();
-  const nodeUrl = (settings.nodeUrl || ($("nodeUrl") as HTMLInputElement).value || "").trim();
-  if (!nodeUrl) {
-    renderPendingRequest(null);
-    showAlert("Set Node URL under Setup.", "error");
-    return;
-  }
-  await ensureNodeAccess(nodeUrl);
+  const nodeUrl = await getApiBase(v.username);
   const id = identityFromStored(v);
   const rows = await fetchPendingAuthSessions(nodeUrl, {
     username: id.username,
@@ -305,10 +312,7 @@ async function approvePendingRequest(): Promise<void> {
   const p = pendingRemote;
   const v = await loadVault();
   if (!v) throw new Error("no vault");
-  const settings = await loadSettings();
-  const nodeUrl = (settings.nodeUrl || ($("nodeUrl") as HTMLInputElement).value || "").trim();
-  if (!nodeUrl) throw new Error("node URL required");
-  await ensureNodeAccess(nodeUrl);
+  const nodeUrl = await getApiBase(v.username);
   const identity = identityFromStored(v);
   let siteKey = p.site || "";
   if (siteKey.startsWith("http://") || siteKey.startsWith("https://")) {
@@ -389,10 +393,8 @@ async function approvePendingRequest(): Promise<void> {
 async function denyPendingRequest(): Promise<void> {
   if (!pendingRemote) return;
   const p = pendingRemote;
-  const settings = await loadSettings();
-  const nodeUrl = (settings.nodeUrl || ($("nodeUrl") as HTMLInputElement).value || "").trim();
-  if (!nodeUrl) throw new Error("node URL required");
-  await ensureNodeAccess(nodeUrl);
+  const v = await loadVault();
+  const nodeUrl = await getApiBase(v?.username);
   await postAuthSessionResult(nodeUrl, p.session_id, {
     result_token: p.result_token,
     ok: false,
@@ -427,8 +429,7 @@ async function refreshStatus() {
 
 async function main() {
   await bootTheme();
-  const settings = await loadSettings();
-  ($("nodeUrl") as HTMLInputElement).value = settings.nodeUrl;
+  await loadSettings();
 
   await store.migrateLegacy(LEGACY_KEYS.extension);
 
@@ -523,9 +524,9 @@ async function main() {
     showAlert("");
     try {
       const origin = await getActiveOrigin();
-      const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim();
       if (!origin) throw new Error("This tab has no http(s) origin");
-      await ensureSiteAccess(origin, nodeUrl || origin);
+      const home = await getApiBase();
+      await ensureSiteAccess(origin, home);
       showAlert("This page can talk to Yada Password. Register or Sign in here.", "success");
     } catch (e) {
       showAlert(e instanceof Error ? e.message : String(e), "error");
@@ -540,7 +541,6 @@ async function main() {
   $("saveVaultBtn").addEventListener("click", async () => {
     showAlert("");
     try {
-      const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim();
       const username = ($("username") as HTMLInputElement).value.trim();
       const secondFactor = ($("secondFactor") as HTMLInputElement).value;
       const mnemonic = ($("mnemonic") as HTMLTextAreaElement).value.trim();
@@ -557,19 +557,25 @@ async function main() {
         tipPrevPkh: prev?.tipPrevPkh ?? "",
         inceptionDone: prev?.inceptionDone ?? false,
         sites: prev?.sites ?? {},
+        nodeUrl: prev?.nodeUrl,
       };
-      const nodeBase = normalizeNodeBaseUrl(nodeUrl);
-      if (nodeBase) await ensureNodeAccess(nodeBase);
-      stored = { ...stored, nodeUrl: nodeBase || stored.nodeUrl };
       await store.saveVault(vaultId, stored, {
         name: username || existing?.name,
       });
       await store.setActiveVaultId(vaultId);
-      await saveSettings({ ...settings, nodeUrl: nodeBase || nodeUrl });
-      if (nodeBase) stored = await ensureIncepted(stored, nodeBase, { silent: true });
+      try {
+        const home = await getApiBase(username);
+        stored = await ensureIncepted(stored, home, { silent: true });
+        if (stored.nodeUrl !== home) {
+          stored = { ...stored, nodeUrl: home };
+          await saveActiveVault(stored);
+        }
+      } catch {
+        /* home resolve optional until inception */
+      }
       await refreshVaultSelect(vaultId);
       const ready = stored.inceptionDone
-        ? "incepted on node"
+        ? "incepted on home SP"
         : "inception still needed";
       showAlert(
         `Vault saved · K0 ${id.k0.address.slice(0, 12)}… · ${ready}`,
@@ -587,15 +593,12 @@ async function main() {
   $("inceptionBtn").addEventListener("click", async () => {
     showAlert("");
     try {
-      const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim();
-      if (!nodeUrl) throw new Error("Node URL required");
-      await ensureNodeAccess(nodeUrl);
       let v = await loadVault();
       if (!v) throw new Error("Save vault first");
+      const nodeUrl = await getApiBase(v.username);
       v = await ensureIncepted(v, nodeUrl);
       if (v.inceptionDone) {
-        await saveSettings({ ...settings, nodeUrl });
-        showAlert("Already incepted on node — vault updated", "success");
+        showAlert("Already incepted on home SP — vault updated", "success");
         const origin = await getActiveOrigin();
         await fillSiteFromOrigin(origin, v);
         setTab("site");
@@ -608,8 +611,7 @@ async function main() {
       if (!res.ok && res.body?.status === false && !already) {
         v = await ensureIncepted(v, nodeUrl);
         if (v.inceptionDone) {
-          await saveSettings({ ...settings, nodeUrl });
-          showAlert("Already incepted on node — vault updated", "success");
+          showAlert("Already incepted on home SP — vault updated", "success");
           const origin = await getActiveOrigin();
           await fillSiteFromOrigin(origin, v);
           setTab("site");
@@ -620,12 +622,12 @@ async function main() {
       identity = identityAfterInception(identity);
       v = {
         ...v,
+        nodeUrl,
         mainDepth: identity.mainDepth,
         tipPrevPkh: identity.tipPrevPkh,
         inceptionDone: true,
       };
       await saveActiveVault(v);
-      await saveSettings({ ...settings, nodeUrl });
       showAlert(
         already
           ? "Inception already on chain — vault updated"
@@ -643,16 +645,17 @@ async function main() {
   $("registerSiteBtn").addEventListener("click", async () => {
     showAlert("");
     try {
-      const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim();
       const siteId = ($("siteId") as HTMLInputElement).value.trim();
-      if (!nodeUrl || !siteId) throw new Error("Node URL and site required");
-      await ensureSiteAccess(siteId, nodeUrl);
+      if (!siteId) throw new Error("Site origin required");
       let v = await loadVault();
       if (!v?.inceptionDone) throw new Error("Broadcast inception first");
+      const nodeUrl = await getApiBase(v.username);
+      await ensureSiteAccess(siteId, nodeUrl);
       const identity = identityFromStored(v);
       const result = await registerSite({ baseUrl: nodeUrl }, identity, siteId);
       v = {
         ...v,
+        nodeUrl,
         mainDepth: result.identity.mainDepth,
         tipPrevPkh: result.identity.tipPrevPkh,
         sites: {
@@ -674,11 +677,9 @@ async function main() {
   $("resyncBtn").addEventListener("click", async () => {
     showAlert("");
     try {
-      const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim();
-      if (!nodeUrl) throw new Error("Node URL required");
-      await ensureNodeAccess(nodeUrl);
       let v = await loadVault();
       if (!v) throw new Error("No vault");
+      const nodeUrl = await getApiBase(v.username);
       const identity = identityFromStored(v);
       const sites: Record<string, SiteRegistration> = {};
       for (const [k, s] of Object.entries(v.sites || {})) {
@@ -691,6 +692,7 @@ async function main() {
       }
       v = {
         ...v,
+        nodeUrl,
         mainDepth: result.identity.mainDepth,
         tipPrevPkh: result.identity.tipPrevPkh,
         inceptionDone: result.kelDepth > 0,
@@ -721,12 +723,12 @@ async function main() {
   $("rotateSiteBtn").addEventListener("click", async () => {
     showAlert("");
     try {
-      const nodeUrl = ($("nodeUrl") as HTMLInputElement).value.trim();
       const siteId = ($("siteId") as HTMLInputElement).value.trim();
-      if (!nodeUrl || !siteId) throw new Error("Node URL and site required");
-      await ensureSiteAccess(siteId, nodeUrl);
+      if (!siteId) throw new Error("Site origin required");
       let v = await loadVault();
       if (!v) throw new Error("No vault");
+      const nodeUrl = await getApiBase(v.username);
+      await ensureSiteAccess(siteId, nodeUrl);
       const key = normalizeSiteId(siteId);
       const identity = identityFromStored(v);
       let site;
@@ -753,6 +755,7 @@ async function main() {
       const result = await rotateSitePassword({ baseUrl: nodeUrl }, identity, site);
       v = {
         ...v,
+        nodeUrl,
         sites: { ...v.sites, [key]: storeSite(result.site) },
       };
       await saveActiveVault(v);

@@ -172,6 +172,8 @@ export async function getPasswordHome(
   sp_host?: string;
   message?: string;
   username_signature?: string;
+  deterministic_node_http_base?: string;
+  tried?: string[];
 }> {
   const { body } = await jsonFetch(
     base(nodeUrl) +
@@ -194,6 +196,8 @@ export async function resolvePasswordHome(
   source?: string;
   is_local?: boolean;
   message?: string;
+  deterministic_node_http_base?: string;
+  tried?: string[];
 }> {
   return getPasswordHome(entryNodeUrl, username);
 }

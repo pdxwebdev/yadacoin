@@ -55,7 +55,8 @@
         $st.className = "err";
       }
     }, 1500);
-    function extRequest(type, resultType, timeoutMs = 60000) {
+    // verify/rotate can exceed 60s on a busy node; keep waiting for the extension
+    function extRequest(type, resultType, timeoutMs = 180000) {
       const requestId = "r" + ++reqSeq + "_" + Date.now();
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -78,17 +79,35 @@
       $msg.textContent = text || "";
       $msg.className = kind || "";
     }
-    async function openSession(password) {
+    async function openSession(password, homeNode) {
+      // Password tip often lives on the vault home SP (e.g. centeridentity.com)
+      // while this page is another origin (yadacoin.io). Pass home_node so
+      // admin-session can verify against the canonical tip.
+      const body = {
+        branch_peer: origin,
+        password: password || "",
+      };
+      if (homeNode) {
+        body.home_node = String(homeNode).replace(/\/+$/, "");
+      }
       const res = await fetch("/password-rotation/admin-session", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ branch_peer: origin, password: password || "" }),
+        credentials: "include",
+        body: JSON.stringify(body),
       });
-      const data = await res.json();
-      if (!res.ok || !data.status) {
-        throw new Error(data.message || "admin session failed");
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (_) {
+        data = {};
       }
+      if (!res.ok || !data.status) {
+        throw new Error(
+          data.message || ("admin session failed (" + res.status + ")")
+        );
+      }
+      return data;
     }
     document.getElementById("resyncBtn").onclick = async () => {
       setMsg("");
@@ -117,8 +136,13 @@
         if (!data.ok || data.authenticated === false) {
           throw new Error(data.message || "sign-in failed");
         }
-        await openSession(data.password || "");
-        window.location.reload();
+        if (!data.password) {
+          throw new Error("extension returned no password — resync then sign in again");
+        }
+        setMsg("Extension OK — opening operator session…", "ok");
+        await openSession(data.password, data.homeNode || data.home_node || "");
+        setMsg("Session opened — loading dashboard…", "ok");
+        window.location.assign("/file-announcements");
       } catch (e) {
         setMsg(String(e.message || e), "err");
       }

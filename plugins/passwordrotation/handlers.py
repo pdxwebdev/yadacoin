@@ -28,17 +28,47 @@ ADMIN_SESSION_MAX_AGE = 120
 
 
 def request_origin(handler) -> str:
-    proto = (handler.request.protocol or "http").lower()
-    host = (handler.request.host or "").lower()
-    return f"{proto}://{host}"
+    """Public origin of this request (scheme://host[:port]).
+
+    Prefers X-Forwarded-Proto / X-Forwarded-Host so HTTPS sites behind a TLS
+    terminator still match the browser's window.location.origin.
+    """
+    req = handler.request
+    headers = getattr(req, "headers", None) or {}
+    proto = (req.protocol or "http").lower()
+    xf_proto = str(headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
+    if xf_proto:
+        proto = xf_proto.lower()
+    host = str(headers.get("X-Forwarded-Host") or req.host or "").split(",")[0].strip()
+    host = host.lower()
+    return f"{proto}://{host}" if host else f"{proto}://"
+
+
+def _origin_netloc(url: str) -> str:
+    from urllib.parse import urlparse
+
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+        return (parsed.netloc or "").lower()
+    except Exception:
+        return ""
 
 
 def is_admin_branch_peer(handler, branch_peer: str) -> bool:
+    """True if branch_peer is this node's public origin (scheme optional)."""
     peer = (branch_peer or "").strip().lower().rstrip("/")
     origin = request_origin(handler).rstrip("/")
     if not peer or not origin:
         return False
-    return peer == origin
+    if peer == origin:
+        return True
+    # Browser origin is often https:// while Tornado sees http:// behind nginx.
+    peer_host = _origin_netloc(peer)
+    origin_host = _origin_netloc(origin)
+    return bool(peer_host) and peer_host == origin_host
 
 
 def _pkh_from_pubhex(pub_hex: str) -> str:
@@ -1021,6 +1051,10 @@ class PasswordHomeHandler(BaseHandler):
                 "sp_username_signature": route.get("sp_username_signature"),
                 "sp_host": route.get("sp_host"),
                 "claimed": route.get("claimed"),
+                "deterministic_node_http_base": route.get(
+                    "deterministic_node_http_base"
+                ),
+                "tried": route.get("tried") or [],
                 "inception_pkh": asess._pkh_from_pubhex(route.get("public_key") or ""),
                 "username_signature": route.get("username_signature"),
                 "message": route.get("message"),
@@ -1112,11 +1146,162 @@ class PasswordHomeHandler(BaseHandler):
         )
 
 
+def _branch_peer_variants(branch_peer: str) -> list:
+    """http/https variants of an origin so tip lookup matches either scheme."""
+    peer = (branch_peer or "").strip().lower().rstrip("/")
+    if not peer:
+        return []
+    out = [peer]
+    if peer.startswith("https://"):
+        out.append("http://" + peer[len("https://") :])
+    elif peer.startswith("http://"):
+        out.append("https://" + peer[len("http://") :])
+    # de-dupe preserve order
+    seen = set()
+    uniq = []
+    for p in out:
+        if p not in seen:
+            seen.add(p)
+            uniq.append(p)
+    return uniq
+
+
+async def _local_branch_tip(handler, branch_peer: str):
+    tip = None
+    used_peer = branch_peer
+    for peer_key in _branch_peer_variants(branch_peer):
+        tip = await handler.config.mongo.async_db.key_event_log.find_one(
+            {"branch_peer": peer_key},
+            sort=[("counter", -1)],
+        )
+        if tip:
+            used_peer = peer_key
+            break
+    if tip and tip.get("_id") is not None:
+        tip = dict(tip)
+        tip.pop("_id", None)
+    return used_peer, tip
+
+
+async def _remote_branch_tip(home_base: str, branch_peer: str):
+    """GET password tip from a home SP (where the vault actually ratchets)."""
+    from tornado.httpclient import AsyncHTTPClient, HTTPRequest
+
+    from plugins.passwordrotation import auth_session as asess
+
+    base = asess.normalize_http_base(home_base or "")
+    if not base:
+        return None
+    peer = (branch_peer or "").strip()
+    if not peer:
+        return None
+    try:
+        from urllib.parse import quote
+
+        client = AsyncHTTPClient()
+        req = HTTPRequest(
+            url=f"{base}/password-rotation/offchain/tip?branch_peer={quote(peer, safe='')}",
+            method="GET",
+            headers={"Accept": "application/json"},
+            connect_timeout=8,
+            request_timeout=20,
+        )
+        resp = await client.fetch(req, raise_error=False)
+        if resp.code != 200:
+            return None
+        data = json.loads(resp.body or b"{}")
+        tip = data.get("tip") if isinstance(data, dict) else None
+        return tip if isinstance(tip, dict) else None
+    except Exception:
+        return None
+
+
+async def _admin_tip_candidates(handler, branch_peer: str, body: dict) -> list:
+    """Local tip plus home-SP tips (password KEL often lives off-box).
+
+    Auth-session already proxies to the deterministic home SP. Admin unlock
+    must do the same for tip/password verify: e.g. vault Node URL
+    https://centeridentity.com while unlocking https://yadacoin.io.
+    """
+    from plugins.passwordrotation import auth_session as asess
+
+    tips = []  # list of (source, tip_dict)
+    _peer, local = await _local_branch_tip(handler, branch_peer)
+    if local:
+        tips.append(("local", local))
+
+    homes = []
+    for key in ("home_node", "node_url", "password_home", "vault_node"):
+        raw = (body.get(key) or "").strip()
+        if raw:
+            homes.append(raw)
+
+    # Deterministic / claimed home for this node's identity username
+    uname = (getattr(handler.config, "username", None) or "").strip()
+    if uname:
+        try:
+            route = await asess.resolve_password_route(uname, handler)
+            if route.get("status") and route.get("node_http_base"):
+                homes.append(route["node_http_base"])
+        except Exception:
+            pass
+        try:
+            claimed = await asess.get_home(uname)
+            if claimed and claimed.get("node_http_base"):
+                homes.append(claimed["node_http_base"])
+        except Exception:
+            pass
+
+    this_base = asess.this_node_http_base(handler)
+    seen = set()
+    for home in homes:
+        base = asess.normalize_http_base(home)
+        if not base or base.lower() in seen:
+            continue
+        seen.add(base.lower())
+        if this_base and asess.is_same_home(base, this_base):
+            continue
+        remote = await _remote_branch_tip(base, branch_peer)
+        if remote:
+            tips.append((base, remote))
+
+    # Prefer higher counters first (canonical ratchet tip)
+    def _ctr(item):
+        try:
+            return int((item[1] or {}).get("counter") or 0)
+        except Exception:
+            return 0
+
+    tips.sort(key=_ctr, reverse=True)
+    return tips
+
+
+def _password_hashes_from_tip(tip: dict) -> list:
+    hashes = []
+    if not isinstance(tip, dict):
+        return hashes
+    current_pre = (tip.get("password") or {}).get("prerotated_password_hash")
+    if current_pre:
+        hashes.append(current_pre)
+    # Some tips embed previous dual-commit under relationship
+    rel = tip.get("relationship")
+    if isinstance(rel, dict):
+        pw = rel.get("password") or {}
+        pre = pw.get("prerotated_password_hash")
+        if pre and pre not in hashes:
+            hashes.append(pre)
+    return hashes
+
+
 class PasswordAdminSessionHandler(BaseHandler):
     """POST /password-rotation/admin-session
 
     Issues an operator cookie/JWT after the password app/extension has rotated
     this *node origin's* password branch (vault must match the node KEL).
+
+    Password tip may live on the vault's home SP (e.g. centeridentity.com) while
+    this site is yadacoin.io — tip/password is resolved locally and via home
+    proxy (``home_node`` body field and/or deterministic password route).
 
     Same-origin browser pages get the secure cookie. Cross-origin wallets
     (e.g. ionic app on another host) still receive ``token`` for Bearer use;
@@ -1136,27 +1321,12 @@ class PasswordAdminSessionHandler(BaseHandler):
             return self.render_as_json(
                 {
                     "status": False,
-                    "message": "admin session is only for this node's origin",
+                    "message": (
+                        "admin session is only for this node's origin "
+                        f"(got {branch_peer!r}, node {origin!r})"
+                    ),
                 }
             )
-        tip = await self.config.mongo.async_db.key_event_log.find_one(
-            {"branch_peer": branch_peer},
-            sort=[("counter", -1)],
-        )
-        if not tip:
-            self.set_status(401)
-            return self.render_as_json(
-                {
-                    "status": False,
-                    "message": "no password branch for this origin — register via the extension",
-                }
-            )
-        mismatch = await vault_matches_node(
-            self, tip.get("inception_public_key_hash") or ""
-        )
-        if mismatch:
-            self.set_status(mismatch[0])
-            return self.render_as_json({"status": False, "message": mismatch[1]})
         password = body.get("password") or ""
         if not password:
             self.set_status(401)
@@ -1166,33 +1336,82 @@ class PasswordAdminSessionHandler(BaseHandler):
                     "message": "sign in with the Yada Password extension first",
                 }
             )
-        hashes = []
-        current_pre = (tip.get("password") or {}).get("prerotated_password_hash")
-        if current_pre:
-            hashes.append(current_pre)
-        prev = await self.config.mongo.async_db.key_event_log.find_one(
-            {
-                "branch_peer": branch_peer,
-                "counter": int(tip.get("counter") or 0) - 1,
-            }
-        )
-        prev_pre = ((prev or {}).get("password") or {}).get("prerotated_password_hash")
-        if prev_pre:
-            hashes.append(prev_pre)
-        matched = False
-        for stored in hashes:
-            try:
-                if _verify_password(password, stored):
-                    matched = True
-                    break
-            except Exception:
-                continue
-        if not matched:
+
+        candidates = await _admin_tip_candidates(self, branch_peer, body)
+        if not candidates:
             self.set_status(401)
-            return self.render_as_json({"status": False, "message": "invalid password"})
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": (
+                        "no password branch for this origin — register via the "
+                        "extension (home node), or pass home_node"
+                    ),
+                }
+            )
+
+        matched = False
+        matched_source = None
+        last_mismatch = None
+        for source, tip in candidates:
+            inception = tip.get("inception_public_key_hash") or ""
+            mismatch = await vault_matches_node(self, inception)
+            if mismatch:
+                last_mismatch = mismatch
+                continue
+            for stored in _password_hashes_from_tip(tip):
+                try:
+                    if _verify_password(password, stored):
+                        matched = True
+                        matched_source = source
+                        break
+                except Exception:
+                    continue
+            if matched:
+                break
+            # Also try previous counter on local only
+            if source == "local":
+                try:
+                    prev = await self.config.mongo.async_db.key_event_log.find_one(
+                        {
+                            "branch_peer": tip.get("branch_peer") or branch_peer,
+                            "counter": int(tip.get("counter") or 0) - 1,
+                        }
+                    )
+                    prev_pre = ((prev or {}).get("password") or {}).get(
+                        "prerotated_password_hash"
+                    )
+                    if prev_pre and _verify_password(password, prev_pre):
+                        matched = True
+                        matched_source = "local-prev"
+                        break
+                except Exception:
+                    pass
+
+        if not matched:
+            if last_mismatch and len(candidates) == 1:
+                self.set_status(last_mismatch[0])
+                return self.render_as_json(
+                    {"status": False, "message": last_mismatch[1]}
+                )
+            self.set_status(401)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": (
+                        "invalid password (checked local tip and "
+                        f"{max(0, len(candidates) - 1)} home tip(s))"
+                    ),
+                }
+            )
         token = await self.issue_operator_session()
         return self.render_as_json(
-            {"status": True, "token": token, "operator_session": True}
+            {
+                "status": True,
+                "token": token,
+                "operator_session": True,
+                "tip_source": matched_source,
+            }
         )
 
 

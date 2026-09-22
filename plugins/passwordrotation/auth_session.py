@@ -423,25 +423,69 @@ def _host_looks_like_pool(host: str) -> bool:
     return "pool.yadacoin" in h or h.startswith("pool.") or h.endswith(".pool")
 
 
-def resolve_password_home_sp(username_signature: str, handler=None) -> dict:
-    """Deterministic password-home service provider for an identity.
+def _sp_candidate_list(username_signature: str) -> list:
+    """Ordered SP candidates: primary deterministic pick, then wrap the ring.
 
-    Uses the same sha256(username_signature) modular pick as
-    ``Peer.calculate_seed_gateway`` / ``Peer.select_service_provider``, but
-    **without** epoch rotation so tip locality stays fixed.
-
-    Returns::
-
-        {
-          "node_http_base": str,
-          "source": "deterministic" | "local",
-          "is_local": bool,
-          "sp_username_signature": str | None,
-          "sp_host": str | None,
-        }
+    Primary index matches ``Peer.select_service_provider(..., rotate=False)``.
+    Callers probe in order and skip dead / pool hosts.
     """
+    import hashlib
+
     from yadacoin.core.peer import Peer
 
+    sig = (username_signature or "").strip()
+    if not sig:
+        return []
+    providers = Peer._service_providers_map() or {}
+    if not providers:
+        return []
+    keys = list(providers)
+    n = len(keys)
+    if n < 1:
+        return []
+    h = hashlib.sha256(sig.encode()).hexdigest()
+    # seed_time fixed at 1 — same as rotate=False password-home pick
+    start = (int(h, 16) * 1) % n
+    ordered = []
+    for i in range(n):
+        sp = providers[keys[(start + i) % n]]
+        host = getattr(sp, "host", None) or getattr(sp, "http_host", None) or ""
+        base = peer_http_base(sp)
+        if _host_looks_like_pool(str(host)) or _host_looks_like_pool(base or ""):
+            continue
+        if not base:
+            continue
+        ordered.append(sp)
+    return ordered
+
+
+async def probe_node_http_alive(base: str, timeout: float = 3.0) -> bool:
+    """True if base answers a cheap HTTP GET (get-status or password home)."""
+    from tornado.httpclient import AsyncHTTPClient, HTTPRequest
+
+    b = normalize_http_base(base or "")
+    if not b:
+        return False
+    client = AsyncHTTPClient()
+    for path in ("/get-status", "/password-rotation/theme.json", "/"):
+        try:
+            req = HTTPRequest(
+                url=b + path,
+                method="GET",
+                connect_timeout=timeout,
+                request_timeout=timeout,
+                validate_cert=False,
+            )
+            resp = await client.fetch(req, raise_error=False)
+            if 200 <= int(resp.code) < 500:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def resolve_password_home_sp(username_signature: str, handler=None) -> dict:
+    """Sync pick (no liveness). Prefer ``resolve_password_home_sp_live``."""
     this = this_node_http_base(handler)
     local = {
         "node_http_base": this,
@@ -450,23 +494,14 @@ def resolve_password_home_sp(username_signature: str, handler=None) -> dict:
         "sp_username_signature": None,
         "sp_host": None,
         "message": "no service provider directory — using this node",
+        "tried": [],
     }
-    sig = (username_signature or "").strip()
-    sp = (
-        Peer.select_service_provider(sig, rotate=False, skip_ignored=False)
-        if sig
-        else None
-    )
-    if sp is None:
+    candidates = _sp_candidate_list(username_signature)
+    if not candidates:
         return local
+    sp = candidates[0]
     host = getattr(sp, "host", None) or getattr(sp, "http_host", None) or ""
-    if _host_looks_like_pool(str(host)):
-        local["message"] = "selected peer is a pool, not an SP — using this node"
-        return local
     base = peer_http_base(sp) or this
-    if _host_looks_like_pool(base):
-        local["message"] = "selected home base is a pool — using this node"
-        return local
     is_local = this_node_matches_sp(sp, handler)
     sp_id = getattr(sp, "identity", None)
     return {
@@ -478,11 +513,126 @@ def resolve_password_home_sp(username_signature: str, handler=None) -> dict:
         ),
         "sp_host": host or None,
         "message": None,
+        "tried": [],
     }
 
 
+async def _tested_node_http_bases() -> list:
+    """HTTP bases from latest NodesTester successful_nodes (online snapshot)."""
+    try:
+        config = Config()
+        doc = await config.mongo.async_db.tested_nodes.find_one(
+            {"_id": "latest_test"}, {"_id": 0, "successful_nodes": 1}
+        )
+    except Exception:
+        return []
+    out = []
+    seen = set()
+    for n in (doc or {}).get("successful_nodes") or []:
+        host = n.get("http_host") or n.get("host") or ""
+        if not host:
+            continue
+        port = n.get("http_port") or n.get("port") or 80
+        proto = (n.get("http_protocol") or "").lower()
+        if not proto:
+            proto = "https" if str(port) in ("443", "8443") else "http"
+        if (proto == "https" and str(port) in ("443", None)) or (
+            proto == "http" and str(port) in ("80", None)
+        ):
+            base = f"{proto}://{host}"
+        else:
+            base = f"{proto}://{host}:{port}"
+        base = normalize_http_base(base)
+        if not base or _host_looks_like_pool(base) or base.lower() in seen:
+            continue
+        pt = (n.get("peer_type") or "").lower()
+        # Prefer SPs; still keep seeds/gateways as last-resort live entries
+        priority = 0 if pt == "service_provider" else 1
+        seen.add(base.lower())
+        out.append((priority, base))
+    out.sort(key=lambda x: x[0])
+    return [b for _, b in out]
+
+
+async def resolve_password_home_sp_live(username_signature: str, handler=None) -> dict:
+    """Deterministic SP ring + tested_nodes with HTTP liveness failover.
+
+    Walks config SP directory from the stable modular index, then live nodes
+    from tested_nodes. Skips pools and hosts that do not answer. Falls back to
+    this node when every remote candidate is dead.
+    """
+    this = this_node_http_base(handler)
+    local = {
+        "node_http_base": this,
+        "source": "local",
+        "is_local": True,
+        "sp_username_signature": None,
+        "sp_host": None,
+        "message": "no live service provider — using this node",
+        "tried": [],
+    }
+    candidates = _sp_candidate_list(username_signature)
+    tried = []
+    seen_bases = set()
+
+    async def _try_base(target: str, *, host=None, sp=None, source_tag: str):
+        nonlocal tried
+        t = normalize_http_base(target or "")
+        if not t or t.lower() in seen_bases:
+            return None
+        seen_bases.add(t.lower())
+        is_local = bool(this) and is_same_home(t, this)
+        if is_local or await probe_node_http_alive(t):
+            sp_id = getattr(sp, "identity", None) if sp is not None else None
+            return {
+                "node_http_base": this if is_local else t,
+                "source": source_tag if not tried else f"{source_tag}_failover",
+                "is_local": is_local,
+                "sp_username_signature": (
+                    sp_id.username_signature if sp_id is not None else None
+                ),
+                "sp_host": host or None,
+                "message": (
+                    None
+                    if not tried
+                    else f"primary SP unreachable; using failover after {len(tried)} dead"
+                ),
+                "tried": list(tried),
+            }
+        tried.append(t)
+        return None
+
+    for sp in candidates:
+        host = getattr(sp, "host", None) or getattr(sp, "http_host", None) or ""
+        base = peer_http_base(sp)
+        if not base:
+            continue
+        is_local = this_node_matches_sp(sp, handler)
+        target = this if is_local else base
+        hit = await _try_base(
+            target,
+            host=host,
+            sp=sp,
+            source_tag="deterministic",
+        )
+        if hit:
+            return hit
+
+    # Live NodesTester snapshot (often fresher than static config directory)
+    for base in await _tested_node_http_bases():
+        hit = await _try_base(base, host=base, source_tag="tested_nodes")
+        if hit:
+            return hit
+
+    local["tried"] = tried
+    local[
+        "message"
+    ] = f"all {len(tried)} candidate SP(s) unreachable — using this node as home"
+    return local
+
+
 async def resolve_password_route(username: str, handler=None) -> dict:
-    """Identity lookup + deterministic SP for password auth routing."""
+    """Identity lookup + live deterministic (or claimed) home SP."""
     identity = await resolve_identity(username)
     if not identity:
         return {
@@ -492,15 +642,37 @@ async def resolve_password_route(username: str, handler=None) -> dict:
     id_fields = identity.get("identity") or {}
     username_signature = id_fields.get("username_signature") or ""
     public_key = identity.get("public_key") or ""
-    home = resolve_password_home_sp(username_signature, handler)
-    # Optional published claim overrides only the HTTP base when present and
-    # still on the same deterministic SP family — prefer deterministic.
+    home = await resolve_password_home_sp_live(username_signature, handler)
     claimed = await get_home(username)
     claimed_base = normalize_http_base((claimed or {}).get("node_http_base") or "")
-    # Prefer deterministic SP; claim is advisory / legacy
-    node_http_base = (
-        home.get("node_http_base") or claimed_base or this_node_http_base(handler)
-    )
+    det_base = normalize_http_base(home.get("node_http_base") or "")
+    this = this_node_http_base(handler)
+    tried = list(home.get("tried") or [])
+
+    # Claimed home if still reachable; else fall through to live deterministic.
+    if claimed_base:
+        if is_same_home(claimed_base, this) or await probe_node_http_alive(
+            claimed_base
+        ):
+            return {
+                "status": True,
+                "username": username,
+                "username_signature": username_signature,
+                "public_key": public_key,
+                "identity": id_fields,
+                "node_http_base": claimed_base,
+                "source": "claimed",
+                "is_local": is_same_home(claimed_base, this),
+                "sp_username_signature": home.get("sp_username_signature"),
+                "sp_host": home.get("sp_host"),
+                "claimed": True,
+                "deterministic_node_http_base": det_base or None,
+                "tried": tried,
+                "message": home.get("message"),
+            }
+        tried.append(claimed_base)
+
+    node_http_base = det_base or this
     return {
         "status": True,
         "username": username,
@@ -508,11 +680,13 @@ async def resolve_password_route(username: str, handler=None) -> dict:
         "public_key": public_key,
         "identity": id_fields,
         "node_http_base": node_http_base,
-        "source": home.get("source"),
-        "is_local": home.get("is_local"),
+        "source": home.get("source") or "local",
+        "is_local": bool(home.get("is_local")),
         "sp_username_signature": home.get("sp_username_signature"),
         "sp_host": home.get("sp_host"),
         "claimed": bool(claimed),
+        "deterministic_node_http_base": det_base or None,
+        "tried": tried,
         "message": home.get("message"),
     }
 

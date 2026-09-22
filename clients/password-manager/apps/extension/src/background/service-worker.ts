@@ -1,5 +1,6 @@
 /**
  * MV3 service worker — vault sign-in/rotate for harness pages via content script.
+ * Password home SP is resolved automatically (no user Node URL).
  */
 import {
   bytesToHex,
@@ -22,9 +23,8 @@ import {
   type VaultIdentity,
 } from "@yadacoin/password-core";
 import { createExtensionVaultBackend } from "../shared/vault-backend.js";
-import { toOriginPattern } from "../shared/permissions.js";
+import { resolveHomeApiBase } from "../shared/home.js";
 
-const SETTINGS_KEY = "yadaPasswordSettings";
 const store = new VaultStore(createExtensionVaultBackend());
 let migrated = false;
 
@@ -77,67 +77,53 @@ async function saveVault(v: StoredVault): Promise<void> {
   await store.setActiveVaultId(id);
 }
 
-async function nodeUrl(fallbackOrigin?: string): Promise<string> {
-  const data = await chrome.storage.sync.get(SETTINGS_KEY);
-  const s = (data[SETTINGS_KEY] || {}) as { nodeUrl?: string };
-  const fromSettings = normalizeNodeBaseUrl(s.nodeUrl || "");
-  if (fromSettings) return fromSettings;
-  const entry = await loadVault();
-  const fromVault = normalizeNodeBaseUrl(entry?.nodeUrl || "");
-  if (fromVault) return fromVault;
-  return normalizeNodeBaseUrl(fallbackOrigin || "");
+/** Home SP API base for this vault + page origin. */
+async function apiBase(pageOrigin?: string): Promise<string> {
+  const v = await loadVault();
+  return resolveHomeApiBase({
+    username: v?.username || "",
+    pageOrigin,
+    cachedHome: v?.nodeUrl,
+    requestPermission: false,
+  });
 }
 
-async function hasNodeHostAccess(baseUrl: string): Promise<boolean> {
-  if (typeof chrome === "undefined" || !chrome.permissions?.contains) return true;
-  const origin = toOriginPattern(baseUrl);
-  if (!origin) return true;
-  try {
-    return await chrome.permissions.contains({ origins: [origin] });
-  } catch {
-    return true;
-  }
-}
-
-async function ensureIncepted(
+/**
+ * Soft-refresh inception fields from the home SP. Never blocks register/sign-in.
+ */
+async function refreshInception(
   v: StoredVault,
   baseUrl: string
 ): Promise<StoredVault> {
   const base = normalizeNodeBaseUrl(baseUrl);
   if (!base) return v;
-  if (!(await hasNodeHostAccess(base))) {
-    throw new Error(
-      `extension lacks host access to ${base} — open the popup, set Node URL to the node origin, Save vault (grants permission), then retry`
+
+  let next: StoredVault = v.nodeUrl === base ? v : { ...v, nodeUrl: base };
+
+  try {
+    const identity: VaultIdentity = unlockIdentity(
+      v.mnemonic,
+      v.secondFactor,
+      v.username,
+      {
+        identityType: v.identityType,
+        mainDepth: v.mainDepth,
+        tipPrevPkh: v.tipPrevPkh,
+      }
     );
-  }
-  const identity: VaultIdentity = unlockIdentity(
-    v.mnemonic,
-    v.secondFactor,
-    v.username,
-    {
-      identityType: v.identityType,
-      mainDepth: v.mainDepth,
-      tipPrevPkh: v.tipPrevPkh,
+    const synced = await syncInceptionFromNode({ baseUrl: base }, identity);
+    if (synced.inceptionDone) {
+      next = {
+        ...next,
+        inceptionDone: true,
+        mainDepth: synced.identity.mainDepth,
+        tipPrevPkh: synced.identity.tipPrevPkh,
+      };
     }
-  );
-  const { identity: nextId, inceptionDone, status } = await syncInceptionFromNode(
-    { baseUrl: base },
-    identity
-  );
-  if (!inceptionDone) {
-    if (v.inceptionDone) return v;
-    throw new Error(
-      `vault not incepted on ${base} (KEL depth ${status.kelDepth}, source ${status.source}). ` +
-        `Confirm Node URL is the node origin (e.g. https://yadacoin.io), Resync from the popup, or broadcast inception.`
-    );
+  } catch {
+    /* proceed — register/sign-in will surface real node errors */
   }
-  const next: StoredVault = {
-    ...v,
-    nodeUrl: base,
-    inceptionDone: true,
-    mainDepth: nextId.mainDepth,
-    tipPrevPkh: nextId.tipPrevPkh,
-  };
+
   if (
     next.inceptionDone !== v.inceptionDone ||
     next.mainDepth !== v.mainDepth ||
@@ -149,9 +135,13 @@ async function ensureIncepted(
   return next;
 }
 
+const EXT_VERSION = "0.1.7";
+
 chrome.runtime.onInstalled.addListener(() => {
-  console.info("Yada Password extension installed");
+  console.info("Yada Password extension installed", EXT_VERSION);
   void ensureMigrated();
+  // Warm topology cache from yadacoin.com / light snapshot
+  void import("../shared/home.js").then((m) => m.refreshTopologyCache()).catch(() => {});
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -165,12 +155,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, message: "invalid origin" });
           return;
         }
-        const baseUrl = await nodeUrl(origin);
+        const baseUrl = await apiBase(origin);
         if (!baseUrl) {
           sendResponse({
             ok: false,
-            message:
-              "set Node URL in extension popup/options to the node origin (e.g. https://yadacoin.io)",
+            extVersion: EXT_VERSION,
+            message: "could not resolve password home SP",
           });
           return;
         }
@@ -179,11 +169,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, message: "no vault" });
           return;
         }
-        v = await ensureIncepted(v, baseUrl);
-        if (!v.inceptionDone) {
-          sendResponse({ ok: false, message: "vault not incepted" });
-          return;
-        }
+        v = await refreshInception(v, baseUrl);
         const identity: VaultIdentity = unlockIdentity(
           v.mnemonic,
           v.secondFactor,
@@ -197,10 +183,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const result = await registerSite({ baseUrl }, identity, origin);
         v.mainDepth = result.identity.mainDepth;
         v.tipPrevPkh = result.identity.tipPrevPkh;
+        v.nodeUrl = baseUrl;
         v.sites[result.site.branchPeer] = storeSite(result.site);
         await saveVault(v);
         sendResponse({
           ok: true,
+          extVersion: EXT_VERSION,
+          homeNode: baseUrl,
           registered: true,
           counter: result.site.counter,
           password: result.site.currentPassword,
@@ -211,6 +200,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       } catch (e) {
         sendResponse({
           ok: false,
+          extVersion: EXT_VERSION,
           message: e instanceof Error ? e.message : String(e),
         });
       }
@@ -226,12 +216,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, message: "invalid origin" });
           return;
         }
-        const baseUrl = await nodeUrl(origin);
+        const baseUrl = await apiBase(origin);
         if (!baseUrl) {
           sendResponse({
             ok: false,
-            message:
-              "set Node URL in extension popup/options to the node origin (e.g. https://yadacoin.io)",
+            extVersion: EXT_VERSION,
+            message: "could not resolve password home SP",
           });
           return;
         }
@@ -240,11 +230,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, message: "no vault" });
           return;
         }
-        v = await ensureIncepted(v, baseUrl);
-        if (!v.inceptionDone) {
-          sendResponse({ ok: false, message: "vault not incepted" });
-          return;
-        }
+        v = await refreshInception(v, baseUrl);
         const identity: VaultIdentity = unlockIdentity(
           v.mnemonic,
           v.secondFactor,
@@ -264,9 +250,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
         const result = await rotateSitePassword({ baseUrl }, identity, site);
         v.sites[origin] = storeSite(result.site);
+        v.nodeUrl = baseUrl;
         await saveVault(v);
         sendResponse({
           ok: true,
+          extVersion: EXT_VERSION,
+          homeNode: baseUrl,
           authenticated: true,
           rotated: true,
           counter: result.site.counter,
@@ -278,6 +267,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       } catch (e) {
         sendResponse({
           ok: false,
+          extVersion: EXT_VERSION,
           message: e instanceof Error ? e.message : String(e),
         });
       }
@@ -293,12 +283,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, message: "invalid origin" });
           return;
         }
-        const baseUrl = await nodeUrl(origin);
+        const baseUrl = await apiBase(origin);
         if (!baseUrl) {
           sendResponse({
             ok: false,
-            message:
-              "set Node URL in extension popup/options to the node origin (e.g. https://yadacoin.io)",
+            extVersion: EXT_VERSION,
+            message: "could not resolve password home SP",
           });
           return;
         }
@@ -307,11 +297,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, message: "no vault" });
           return;
         }
-        v = await ensureIncepted(v, baseUrl);
-        if (!v.inceptionDone) {
-          sendResponse({ ok: false, message: "vault not incepted" });
-          return;
-        }
+        v = await refreshInception(v, baseUrl);
         const identity: VaultIdentity = unlockIdentity(
           v.mnemonic,
           v.secondFactor,
@@ -338,6 +324,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
         const nextVault: StoredVault = {
           ...v,
+          nodeUrl: baseUrl,
           mainDepth: full.identity.mainDepth,
           tipPrevPkh: full.identity.tipPrevPkh,
           inceptionDone: full.kelDepth > 0,
@@ -346,6 +333,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         await saveVault(nextVault);
         sendResponse({
           ok: true,
+          extVersion: EXT_VERSION,
+          homeNode: baseUrl,
           resynced: true,
           counter: site.counter,
           message: `resynced · counter ${site.counter}`,
@@ -353,6 +342,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       } catch (e) {
         sendResponse({
           ok: false,
+          extVersion: EXT_VERSION,
           message: e instanceof Error ? e.message : String(e),
         });
       }
@@ -367,6 +357,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const stored = v?.sites?.[origin];
       sendResponse({
         ok: true,
+        extVersion: EXT_VERSION,
         registered: !!stored,
         counter: stored?.counter ?? null,
       });

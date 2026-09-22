@@ -67,12 +67,12 @@ class BaseLivestreamWalletHandler(BaseHandler, _JsonMixin):
         if path.startswith("/livestream-announcements/api/"):
             self.render_as_json({"status": False, "error": "not authorized"})
         else:
+            # RequestHandler.render() finishes; do not call finish() again
             self.render(
                 "locked.html",
                 yadacoin=self.yadacoin_vars,
                 title="YadaCoin - Livestream",
             )
-            self.finish()
 
 
 class BaseLivestreamPublicHandler(BaseHandler, _JsonMixin):

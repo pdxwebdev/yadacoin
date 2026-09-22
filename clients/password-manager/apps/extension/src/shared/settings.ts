@@ -1,7 +1,6 @@
 import type { ThemeMode, ThemeDensity, ThemePartial } from "@yadacoin/password-shared-ui";
 
 export interface UserSettings {
-  nodeUrl: string;
   themeUrl: string;
   presetId: string;
   mode: ThemeMode;
@@ -11,7 +10,6 @@ export interface UserSettings {
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
-  nodeUrl: "",
   themeUrl: "",
   presetId: "default",
   mode: "system",

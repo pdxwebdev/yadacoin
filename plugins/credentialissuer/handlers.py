@@ -48,12 +48,12 @@ class BaseCredentialIssuerHandler(BaseHandler):
         if path.startswith("/credential-issuer/api/"):
             self.render_as_json({"status": False, "error": "not authorized"})
         else:
+            # RequestHandler.render() finishes; do not call finish() again
             self.render(
                 "locked.html",
                 yadacoin=self.yadacoin_vars,
                 title="YadaCoin - Credential Issuer",
             )
-            self.finish()
 
     def _error(self, status, message):
         self.set_status(status)
