@@ -215,6 +215,7 @@
     <button data-tab="upload">Upload</button>
     <button data-tab="history">Upload history</button>
     <button data-tab="search">Network search</button>
+    <button data-tab="cache">Stream cache</button>
     <button data-tab="settings">Settings</button>
   </nav>
   <main>
@@ -295,6 +296,19 @@
           <button class="btn" id="net-go">Search</button>
         </div>
         <div id="net-results"></div>
+      </div>
+    </section>
+
+    <section id="tab-cache" class="hidden">
+      <div class="card">
+        <h2>Local stream cache</h2>
+        <p class="muted">Files downloaded from Sia for playback are kept on this node for one hour after the last request. Deleting an entry does not remove the object from Sia.</p>
+        <div class="actions">
+          <button class="btn secondary" type="button" id="cache-refresh">Refresh</button>
+          <button class="btn danger" type="button" id="cache-clear">Clear all</button>
+        </div>
+        <p class="muted" id="cache-summary"></p>
+        <div id="cache-table"></div>
       </div>
     </section>
 
@@ -381,6 +395,23 @@ function fmtTime(ts) {
 function chips(list) {
   return (list || []).map(k => `<span class="chip">${esc(k)}</span>`).join("");
 }
+function fmtBytes(n) {
+  n = Number(n) || 0;
+  if (n < 1024) return n + " B";
+  const units = ["KB", "MB", "GB"];
+  let i = -1;
+  do { n /= 1024; i++; } while (n >= 1024 && i < units.length - 1);
+  return n.toFixed(n >= 10 ? 0 : 1) + " " + units[i];
+}
+function fmtDuration(sec) {
+  sec = Math.max(0, Number(sec) || 0);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h) return h + "h " + m + "m";
+  if (m) return m + "m " + s + "s";
+  return s + "s";
+}
 
 $$("nav.tabs button").forEach(btn => {
   btn.addEventListener("click", () => {
@@ -388,6 +419,7 @@ $$("nav.tabs button").forEach(btn => {
     btn.classList.add("active");
     $$("main > section").forEach(s => s.classList.add("hidden"));
     $("#tab-" + btn.dataset.tab).classList.remove("hidden");
+    if (btn.dataset.tab === "cache") loadCache().catch(e => flash(e.message));
   });
 });
 
@@ -489,9 +521,60 @@ async function loadReasons() {
     .map(r => `<option value="${esc(r.value)}">${esc(r.value)}</option>`).join("");
 }
 
+async function loadCache() {
+  const data = await api("/stream-cache");
+  const rows = data.results || [];
+  const ttl = fmtDuration(data.ttl_seconds || 0);
+  $("#cache-summary").textContent =
+    `${data.count || 0} entries · ${fmtBytes(data.total_bytes)} · idle TTL ${ttl}` +
+    (data.directory ? ` · ${data.directory}` : "");
+  if (!rows.length) {
+    $("#cache-table").innerHTML = `<div class="empty">Stream cache is empty.</div>`;
+    return;
+  }
+  $("#cache-table").innerHTML = `<table>
+    <thead><tr>
+      <th>File</th><th>File ID</th><th>Size</th><th>Cached</th><th>Expires in</th><th></th>
+    </tr></thead>
+    <tbody>${rows.map(r => `
+      <tr>
+        <td>
+          <strong>${esc(r.filename || "(unnamed)")}</strong><br>
+          <span class="muted">${esc(r.mime_type || "")}${r.present ? "" : " · missing on disk"}</span>
+        </td>
+        <td class="mono">${esc(r.backend || "")}<br>${esc(r.file_id || "")}</td>
+        <td>${fmtBytes(r.size)}</td>
+        <td class="muted">${fmtTime(r.cached_at)}</td>
+        <td class="muted">${fmtDuration(r.expires_in)}</td>
+        <td><button class="btn danger" data-cache-del="${esc(r.key)}">Delete</button></td>
+      </tr>`).join("")}
+    </tbody></table>`;
+  $$("[data-cache-del]").forEach(b => b.onclick = () => delCache(b.dataset.cacheDel));
+}
+
+async function delCache(key) {
+  if (!confirm("Remove this file from the local stream cache? The next play will download it from Sia again.")) return;
+  try {
+    await api("/stream-cache?key=" + encodeURIComponent(key), { method: "DELETE" });
+    flash("Cache entry removed", true);
+  } catch (err) {
+    flash(err.message);
+  }
+  await loadCache();
+}
+
 $("#file-refresh").onclick = () => loadFiles().catch(e => flash(e.message));
 $("#file-q").addEventListener("keydown", e => { if (e.key === "Enter") loadFiles().catch(err => flash(err.message)); });
 $("#hist-refresh").onclick = () => loadHistory().catch(e => flash(e.message));
+$("#cache-refresh").onclick = () => loadCache().catch(e => flash(e.message));
+$("#cache-clear").onclick = async () => {
+  if (!confirm("Clear the entire local stream cache? Files will be downloaded from Sia again on the next play.")) return;
+  try {
+    const data = await api("/stream-cache?all=true", { method: "DELETE" });
+    flash("Cleared " + (data.deleted || 0) + " cache entries", true);
+    await loadCache();
+  } catch (err) { flash(err.message); }
+};
 
 $("#upload-form").addEventListener("submit", async (e) => {
   e.preventDefault();

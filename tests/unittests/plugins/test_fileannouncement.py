@@ -11,6 +11,9 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import os
+import tempfile
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from plugins.fileannouncement.backends import MemoryStorageBackend, get_backend
@@ -18,6 +21,45 @@ from plugins.fileannouncement.store import _search_filter, record_from_announcem
 from yadacoin.core.fileannouncement import FileAnnouncement
 
 from ..test_setup import AsyncTestCase
+
+
+class TestStreamCache(AsyncTestCase):
+    async def test_list_delete_and_clear(self):
+        from plugins.fileannouncement import handlers as h
+
+        saved = dict(h._STREAM_CACHE)
+        h._STREAM_CACHE.clear()
+        paths = []
+        try:
+            for name, body in (("one", b"abc"), ("two", b"defg")):
+                fd, path = tempfile.mkstemp(
+                    prefix="fa_stream_test_", dir=h._STREAM_TMP_DIR
+                )
+                os.write(fd, body)
+                os.close(fd)
+                paths.append(path)
+                h._STREAM_CACHE[f"sia:{name}"] = (
+                    path,
+                    len(body),
+                    time.monotonic() + 3600,
+                    f"{name}.mp4",
+                    "video/mp4",
+                )
+            listed = h.list_stream_cache()
+            self.assertEqual(listed["count"], 2)
+            self.assertEqual(listed["total_bytes"], 7)
+            self.assertEqual(h.delete_stream_cache("sia:one"), 1)
+            self.assertFalse(os.path.exists(paths[0]))
+            self.assertEqual(h.delete_stream_cache("sia:missing"), 0)
+            self.assertEqual(h.clear_stream_cache(), 1)
+            self.assertEqual(h._STREAM_CACHE, {})
+            self.assertFalse(os.path.exists(paths[1]))
+        finally:
+            h._STREAM_CACHE.clear()
+            h._STREAM_CACHE.update(saved)
+            for path in paths:
+                if os.path.exists(path):
+                    os.unlink(path)
 
 
 class TestFileAnnouncementBackends(AsyncTestCase):

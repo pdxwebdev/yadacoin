@@ -64,6 +64,69 @@ def _evict_stream_cache():
             del _STREAM_CACHE[key]
 
 
+def _drop_stream_cache_entry(key):
+    entry = _STREAM_CACHE.pop(key, None)
+    if not entry:
+        return False
+    try:
+        os.unlink(entry[0])
+    except OSError:
+        pass
+    return True
+
+
+def list_stream_cache():
+    _evict_stream_cache()
+    now = time.monotonic()
+    results = []
+    for key, entry in _STREAM_CACHE.items():
+        path, total, exp = entry[0], entry[1], entry[2]
+        filename = entry[3] if len(entry) > 3 else ""
+        mime_type = entry[4] if len(entry) > 4 else ""
+        backend, _, file_id = key.partition(":")
+        cached_at = None
+        try:
+            cached_at = os.path.getmtime(path)
+        except OSError:
+            pass
+        results.append(
+            {
+                "key": key,
+                "backend": backend,
+                "file_id": file_id,
+                "filename": filename,
+                "mime_type": mime_type,
+                "size": total,
+                "path": path,
+                "present": os.path.isfile(path),
+                "cached_at": cached_at,
+                "expires_in": max(0, int(exp - now)),
+            }
+        )
+    results.sort(key=lambda row: row.get("cached_at") or 0, reverse=True)
+    return {
+        "count": len(results),
+        "total_bytes": sum(row.get("size") or 0 for row in results),
+        "ttl_seconds": _STREAM_CACHE_TTL,
+        "directory": _STREAM_TMP_DIR,
+        "results": results,
+    }
+
+
+def delete_stream_cache(key):
+    _evict_stream_cache()
+    return 1 if _drop_stream_cache_entry(key) else 0
+
+
+def clear_stream_cache():
+    _evict_stream_cache()
+    deleted = 0
+    for key in list(_STREAM_CACHE):
+        if _drop_stream_cache_entry(key):
+            deleted += 1
+    return deleted
+
+
 def _video_public_item(item: dict) -> dict:
     f = item.get("file") or {}
     backend = (f.get("backend") or "sia").strip().lower()
@@ -395,6 +458,27 @@ class FileBackendsHandler(BaseFileAnnouncementHandler):
         return self.render_as_json({"status": True, "results": available_backends()})
 
 
+class StreamCacheHandler(BaseFileAnnouncementHandler):
+    async def get(self):
+        data = list_stream_cache()
+        data["status"] = True
+        return self.render_as_json(data)
+
+    async def delete(self):
+        clear_all = self.get_query_argument("all", "").lower() in ("1", "true", "yes")
+        if clear_all:
+            return self.render_as_json(
+                {"status": True, "deleted": clear_stream_cache()}
+            )
+        key = self.get_query_argument("key", "")
+        if not key:
+            return self._error(400, "key is required")
+        deleted = delete_stream_cache(key)
+        if not deleted:
+            return self._error(404, "cache entry not found")
+        return self.render_as_json({"status": True, "deleted": deleted})
+
+
 class FileTakedownReasonsHandler(BaseFileAnnouncementHandler):
     async def get(self):
         return self.render_as_json(
@@ -674,6 +758,11 @@ class PublicStreamHandler(BaseHandler):
                         await self.flush()
         except StreamClosedError:
             return
+        except OSError:
+            if not self._finished:
+                self.set_status(404)
+                self.finish("cache entry unavailable")
+            return
         self.finish()
 
 
@@ -722,6 +811,7 @@ HANDLERS = [
     (r"/file-announcements/api/v1/history", FileHistoryHandler),
     (r"/file-announcements/api/v1/settings", FileSettingsHandler),
     (r"/file-announcements/api/v1/backends", FileBackendsHandler),
+    (r"/file-announcements/api/v1/stream-cache", StreamCacheHandler),
     (r"/file-announcements/api/v1/takedown-reasons", FileTakedownReasonsHandler),
     (r"/file-announcements/api/v1/public/videos", PublicVideoListHandler),
     (
