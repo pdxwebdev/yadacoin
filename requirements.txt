@@ -3,9 +3,12 @@ scikit-build
 tornado
 python-engineio==3.14.2
 base58
-# Keep coincurve/cffi pinned for reproducible multi-arch builds (arm/v7).
+# Keep coincurve pinned for multi-arch (arm/v7). Align cffi/cryptography/pyOpenSSL
+# (cryptography 47+ needs cffi>=2; pyOpenSSL 26.3+ needs cryptography>=49,<51).
 coincurve==17.0.0
-cffi>=1.15.1,<2
+cffi>=1.15.1
+cryptography>=49.0.0,<51
+pyOpenSSL>=26.3,<27
 bip32utils
 python-bitcoinlib
 mnemonic
