@@ -482,10 +482,18 @@ async def create_file(
             )
             file_id = uploaded["file_id"]
             size = uploaded.get("size", len(content))
+            share_url = uploaded.get("share_url") or ""
         elif not file_id:
             raise FileAnnouncementServiceError(
                 "either file content or an existing file_id is required"
             )
+        else:
+            share_url = ""
+        if not share_url and hasattr(backend, "share"):
+            try:
+                share_url = await backend.share(file_id)
+            except Exception:
+                share_url = ""
 
         ann = FileAnnouncement(
             file_id=file_id,
@@ -496,6 +504,7 @@ async def create_file(
             filename=filename,
             mime_type=mime_type,
             size=size,
+            share_url=share_url,
         )
         txn = await _generate_txn(config, ann, fee=0.0)
         await _broadcast(config, txn)
@@ -557,6 +566,16 @@ async def update_file(
     new_title = existing["title"] if title is None else title
     new_description = existing["description"] if description is None else description
     new_keywords = existing.get("keywords") if keywords is None else keywords
+    share_url = existing.get("share_url") or ""
+    if not share_url:
+        backend, _name, _settings = await _backend_from_settings(
+            config, existing.get("backend")
+        )
+        if hasattr(backend, "share"):
+            try:
+                share_url = await backend.share(existing["file_id"])
+            except Exception:
+                share_url = ""
     ann = FileAnnouncement(
         file_id=existing["file_id"],
         title=new_title,
@@ -567,6 +586,7 @@ async def update_file(
         mime_type=existing.get("mime_type") or "",
         size=existing.get("size"),
         supersedes=existing.get("transaction_id") or "",
+        share_url=share_url,
     )
     txn = await _generate_txn(config, ann, fee=0.0)
     await _broadcast(config, txn)
@@ -578,6 +598,7 @@ async def update_file(
             "description": ann.description,
             "keywords": list(ann.keywords),
             "supersedes": existing.get("transaction_id") or "",
+            "share_url": ann.share_url,
             "transaction_id": txn.transaction_signature,
             "status": "announced",
             **(
@@ -780,8 +801,19 @@ async def download_by_backend_file_id(
     if not file_id:
         raise FileAnnouncementServiceError("file_id is required")
     backend, name, _s = await _backend_from_settings(config, backend_name)
+    share_url = await store.share_url_for_file(config, file_id)
+    if not share_url:
+        local = await store.get_file_by_file_id(config, file_id)
+        if local and local.get("record_id") and local.get("status") != "taken_down":
+            try:
+                await update_file(config, local["record_id"])
+                share_url = (
+                    (await store.get_file(config, local["record_id"])) or {}
+                ).get("share_url") or ""
+            except Exception:
+                share_url = ""
     try:
-        result = await backend.download(file_id)
+        result = await backend.download(file_id, share_url=share_url)
     except StorageBackendError as exc:
         raise FileAnnouncementServiceError(str(exc)) from exc
     except Exception as exc:

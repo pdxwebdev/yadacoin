@@ -28,6 +28,7 @@ MAX_DESCRIPTION_LEN = 2000
 MAX_KEYWORDS = 32
 MAX_KEYWORD_LEN = 64
 MAX_FILE_ID_LEN = 128
+MAX_SHARE_URL_LEN = 8192
 KNOWN_BACKENDS = frozenset({"sia", "memory"})
 
 
@@ -67,6 +68,7 @@ class FileAnnouncement:
     ------
     backend      : storage backend name (e.g. ``sia``)
     file_id      : identifier returned by the backend (Sia Object ID)
+    share_url    : public Sia share URL (CreateSharedObjectURL); anyone can read it
     title        : human-readable title
     description  : longer description
     keywords     : list of search keywords
@@ -89,6 +91,7 @@ class FileAnnouncement:
         mime_type: str = "",
         size=None,
         supersedes: str = "",
+        share_url: str = "",
         **kwargs,
     ):
         if not file_id or not isinstance(file_id, str):
@@ -113,6 +116,10 @@ class FileAnnouncement:
         if len(description) > MAX_DESCRIPTION_LEN:
             raise ValueError(f"description exceeds {MAX_DESCRIPTION_LEN} characters")
 
+        share_url = str(share_url or "").strip()
+        if len(share_url) > MAX_SHARE_URL_LEN:
+            raise ValueError(f"share_url exceeds {MAX_SHARE_URL_LEN} characters")
+
         if size is not None:
             try:
                 size = int(size)
@@ -130,6 +137,7 @@ class FileAnnouncement:
         self.mime_type = str(mime_type or "")
         self.size = size
         self.supersedes = str(supersedes or "")
+        self.share_url = share_url
         self.extra_fields = {k: v for k, v in kwargs.items()}
 
     @staticmethod
@@ -171,6 +179,8 @@ class FileAnnouncement:
             result["size"] = self.size
         if self.supersedes:
             result["supersedes"] = self.supersedes
+        if self.share_url:
+            result["share_url"] = self.share_url
         if self.extra_fields:
             result.update(self.extra_fields)
         return result
@@ -187,6 +197,7 @@ class FileAnnouncement:
             + self.get_string(self.description)
             + ",".join(self.keywords)
             + self.get_string(self.supersedes)
+            + self.get_string(self.share_url)
         )
 
     def matches_query(self, query: str) -> bool:
@@ -200,6 +211,7 @@ class FileAnnouncement:
             self.title.lower(),
             self.description.lower(),
             self.file_id.lower(),
+            self.share_url.lower(),
             self.filename.lower(),
             " ".join(self.keywords),
         ]

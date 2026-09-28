@@ -16,6 +16,7 @@ Full license terms: see LICENSE.txt in this repository.
 import hashlib
 import json
 from abc import ABC, abstractmethod
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from typing import Dict, Optional
 
@@ -23,10 +24,16 @@ from typing import Dict, Optional
 SIA_APP_ID_HEX = hashlib.sha256(b"yadacoin-fileannouncement-v1").digest().hex()
 SIA_APP_ID_BYTES = bytes.fromhex(SIA_APP_ID_HEX)
 DEFAULT_INDEXER_URL = "https://sia.storage"
+SHARE_URL_TTL = timedelta(days=3650)
 
 
 class StorageBackendError(Exception):
     pass
+
+
+def is_share_url(value: str) -> bool:
+    v = (value or "").strip().lower()
+    return v.startswith(("http://", "https://", "sia://"))
 
 
 class StorageBackend(ABC):
@@ -45,7 +52,7 @@ class StorageBackend(ABC):
         """Store ``content`` and return {file_id, size, ...}."""
 
     @abstractmethod
-    async def download(self, file_id: str) -> dict:
+    async def download(self, file_id: str, share_url: str = "") -> dict:
         """Return {file_id, content: bytes, metadata: dict, size: int}."""
 
     @abstractmethod
@@ -81,7 +88,7 @@ class MemoryStorageBackend(StorageBackend):
         }
         return {"file_id": file_id, "size": len(content), "duplicate": False}
 
-    async def download(self, file_id: str) -> dict:
+    async def download(self, file_id: str, share_url: str = "") -> dict:
         obj = self._objects.get(file_id)
         if not obj:
             raise StorageBackendError(f"object not found: {file_id}")
@@ -173,9 +180,23 @@ class SiaStorageBackend(StorageBackend):
         obj.update_metadata(json.dumps(meta).encode())
         await sdk.pin_object(obj)
         size = obj.size() if hasattr(obj, "size") else len(content)
-        return {"file_id": str(obj.id()), "size": size, "duplicate": False}
+        share_url = str(
+            sdk.share_object(obj, datetime.now(timezone.utc) + SHARE_URL_TTL)
+        )
+        return {
+            "file_id": str(obj.id()),
+            "size": size,
+            "share_url": share_url,
+            "duplicate": False,
+        }
 
-    async def download(self, file_id: str) -> dict:
+    async def share(self, file_id: str) -> str:
+        """CreateSharedObjectURL for an object this app key already owns."""
+        sdk = await self._sdk()
+        obj = await sdk.object(file_id.strip())
+        return str(sdk.share_object(obj, datetime.now(timezone.utc) + SHARE_URL_TTL))
+
+    async def download(self, file_id: str, share_url: str = "") -> dict:
         try:
             from sia_storage import DownloadOptions
         except ImportError as exc:
@@ -183,7 +204,11 @@ class SiaStorageBackend(StorageBackend):
                 "sia-storage SDK is not installed. Run: pip install sia-storage"
             ) from exc
         sdk = await self._sdk()
-        obj = await sdk.object(file_id.strip())
+        link = (share_url or "").strip()
+        if is_share_url(link) or is_share_url(file_id):
+            obj = await sdk.shared_object(link or file_id.strip())
+        else:
+            obj = await sdk.object(file_id.strip())
         async with sdk.download(obj, DownloadOptions()) as d:
             raw = await d.read_all()
         meta = {}

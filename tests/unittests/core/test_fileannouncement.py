@@ -95,6 +95,24 @@ class TestFileAnnouncement(AsyncTestCase):
         with self.assertRaises(ValueError):
             FileAnnouncement.from_relationship({"not_file": {}})
 
+    async def test_share_url_roundtrip_and_hash(self):
+        plain = self._ann()
+        shared = self._ann(share_url="https://sia.storage/share/abc")
+        self.assertNotIn("share_url", plain.to_dict())
+        self.assertEqual(
+            plain.to_string(),
+            plain.backend
+            + plain.file_id
+            + plain.title
+            + plain.description
+            + ",".join(plain.keywords)
+            + plain.supersedes,
+        )
+        self.assertIn("https://sia.storage/share/abc", shared.to_string())
+        again = FileAnnouncement.from_dict(shared.to_dict())
+        self.assertEqual(again.share_url, shared.share_url)
+        self.assertNotEqual(plain.to_string(), shared.to_string())
+
     async def test_to_string_deterministic(self):
         a = self._ann()
         b = self._ann()

@@ -53,6 +53,7 @@ def record_from_announcement(
         "mime_type": ann.mime_type,
         "size": ann.size,
         "supersedes": ann.supersedes,
+        "share_url": ann.share_url,
         "transaction_id": transaction_id,
         "status": status,
         "created_at": _now(),
@@ -126,6 +127,51 @@ async def get_file(config, record_id: str) -> Optional[dict]:
 async def get_file_by_file_id(config, file_id: str) -> Optional[dict]:
     doc = await _db(config)[FILES_COLLECTION].find_one({"file_id": file_id}, {"_id": 0})
     return doc
+
+
+async def share_url_for_file(config, file_id: str) -> str:
+    """Public Sia share URL from the local index, then confirmed blocks."""
+    file_id = (file_id or "").strip()
+    if not file_id:
+        return ""
+    local = await get_file_by_file_id(config, file_id)
+    url = ((local or {}).get("share_url") or "").strip()
+    if url:
+        return url
+    try:
+        cursor = (
+            _db(config)
+            .blocks.find(
+                {"transactions.relationship.file.file_id": file_id},
+                {"transactions.relationship.file": 1, "index": 1},
+            )
+            .sort("index", -1)
+            .limit(8)
+        )
+        async for block in cursor:
+            for txn in block.get("transactions") or []:
+                rel = (txn.get("relationship") or {}).get("file") or {}
+                if rel.get("file_id") == file_id and rel.get("share_url"):
+                    return str(rel["share_url"]).strip()
+    except Exception:
+        return ""
+    try:
+        cursor = (
+            _db(config)
+            .miner_transactions.find(
+                {"relationship.file.file_id": file_id},
+                {"relationship.file": 1},
+            )
+            .sort([("time", -1)])
+            .limit(8)
+        )
+        async for txn in cursor:
+            rel = (txn.get("relationship") or {}).get("file") or {}
+            if rel.get("file_id") == file_id and rel.get("share_url"):
+                return str(rel["share_url"]).strip()
+    except Exception:
+        return ""
+    return ""
 
 
 async def get_file_by_transaction_id(config, transaction_id: str) -> Optional[dict]:
@@ -358,6 +404,7 @@ async def search_videos(
                     "filename": doc.get("filename") or "",
                     "mime_type": doc.get("mime_type") or "",
                     "size": doc.get("size") or 0,
+                    "share_url": doc.get("share_url") or "",
                 },
             }
         )
