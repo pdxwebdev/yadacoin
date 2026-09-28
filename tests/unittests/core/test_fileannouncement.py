@@ -20,6 +20,7 @@ from yadacoin.core.fileannouncement import (
     MAX_FILE_ID_LEN,
     MAX_KEYWORD_LEN,
     MAX_KEYWORDS,
+    MAX_SHARE_URL_LEN,
     MAX_TITLE_LEN,
     FileAnnouncement,
 )
@@ -78,6 +79,12 @@ class TestFileAnnouncement(AsyncTestCase):
     async def test_title_too_long_raises(self):
         with self.assertRaises(ValueError):
             FileAnnouncement(file_id="abc", title="t" * (MAX_TITLE_LEN + 1))
+
+    async def test_share_url_too_long_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            self._ann(share_url="https://sia.storage/" + "a" * MAX_SHARE_URL_LEN)
+        self.assertIn(str(MAX_SHARE_URL_LEN), str(ctx.exception))
+        self._ann(share_url="s" * MAX_SHARE_URL_LEN)
 
     async def test_negative_size_raises(self):
         with self.assertRaises(ValueError):
