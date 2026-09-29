@@ -128,6 +128,18 @@ body {
   height: 100%;
   object-fit: cover;
   background: #000;
+  visibility: hidden;
+}
+
+.slide.ready video,
+.slide.ready .meta,
+.slide.ready .side-actions {
+  visibility: visible;
+}
+
+.slide .meta,
+.slide .side-actions {
+  visibility: hidden;
 }
 
 .slide .meta {

@@ -38,6 +38,8 @@
   const prefetched = new Set();
   /** @type {IntersectionObserver | null} */
   let observer = null;
+  let feedGen = 0;
+  let probeAbort = new AbortController();
 
   const probe = document.createElement("video");
 
@@ -94,39 +96,76 @@
     return false;
   }
 
-  function formatHint(item) {
-    const mime = mimeFor(item);
-    const name = item.filename || "";
-    if (mime === "video/quicktime" || /\.mov$/i.test(name)) {
-      return (
-        "This is a QuickTime (.mov) file — often HEVC from macOS screen recording. " +
-        "Chrome/Edge usually cannot decode it. Open in Safari, or re-upload as H.264 MP4 " +
-        "(video/mp4) from File Announcements."
-      );
-    }
-    return (
-      "Browser could not decode this video. Prefer H.264 + AAC in an .mp4 container " +
-      `(got ${mime || "unknown"}).`
-    );
+  function itemKey(item) {
+    return `${(item && item.backend) || "sia"}:${(item && item.file_id) || ""}`;
   }
 
-  function setSlideError(slide, message) {
-    slide.classList.add("ready", "error");
-    slide.dataset.error = "1";
-    let err = slide.querySelector(".err");
-    if (!err) {
-      err = document.createElement("div");
-      err.className = "err";
-      slide.appendChild(err);
+  function contentKey(item) {
+    const name = String((item && item.filename) || "")
+      .trim()
+      .toLowerCase();
+    const size = Number(item && item.size) || 0;
+    if (!name || size <= 0) return "";
+    const owner = String((item && item.owner) || "")
+      .trim()
+      .toLowerCase();
+    if (owner) return `content:${owner}:${name}:${size}`;
+    return `content:${name}:${size}`;
+  }
+
+  /** @type {Set<string>} */
+  const dropped = new Set();
+
+  function clearMedia(video) {
+    video.dataset.unloading = "1";
+    try {
+      video.pause();
+    } catch (_) {}
+    video.removeAttribute("src");
+    while (video.firstChild) video.removeChild(video.firstChild);
+    try {
+      video.load();
+    } catch (_) {}
+  }
+
+  function dropVideo(key) {
+    if (!key || dropped.has(key)) return;
+    const index = videos.findIndex((v) => itemKey(v) === key);
+    if (index < 0) return;
+    dropped.add(key);
+    const wasActive = index === activeIndex;
+    videos.splice(index, 1);
+    const slide = feed.querySelector(`.slide[data-key="${key}"]`);
+    if (slide) {
+      if (observer) observer.unobserve(slide);
+      const video = slide.querySelector("video");
+      if (video) clearMedia(video);
+      slide.remove();
     }
-    err.textContent = message;
+    feed.querySelectorAll(".slide").forEach((s, i) => {
+      s.dataset.index = String(i);
+    });
+    const ac = prefetchControllers.get(key);
+    if (ac) {
+      ac.abort();
+      prefetchControllers.delete(key);
+    }
+    prefetched.delete(key);
+    if (!videos.length) {
+      emptyEl.hidden = false;
+      activeIndex = 0;
+      return;
+    }
+    emptyEl.hidden = true;
+    if (index < activeIndex) activeIndex -= 1;
+    if (wasActive) activateIndex(Math.min(index, videos.length - 1), true);
   }
 
   function buildSlide(item, index) {
     const slide = document.createElement("section");
     slide.className = "slide";
     slide.dataset.index = String(index);
-    slide.dataset.key = `${item.backend}:${item.file_id}`;
+    slide.dataset.key = itemKey(item);
     slide.dataset.mime = mimeFor(item);
 
     const video = document.createElement("video");
@@ -173,27 +212,24 @@
     side.appendChild(reportBtn);
     slide.appendChild(side);
 
-    if (!canLikelyPlay(mimeFor(item))) {
-      setSlideError(slide, formatHint(item));
-    }
-
     video.addEventListener("loadeddata", () => {
       slide.classList.add("ready");
-      slide.classList.remove("error");
-      const err = slide.querySelector(".err");
-      if (err) err.remove();
     });
-    video.addEventListener("error", () => {
-      const mediaErr = video.error;
-      const code = mediaErr ? mediaErr.code : 0;
-      const detail =
-        code === 4
-          ? formatHint(item)
-          : `Playback error (code ${code || "?"}). ${formatHint(item)}`;
-      setSlideError(slide, detail);
-    });
+    slide.addEventListener(
+      "error",
+      (e) => {
+        const target = e.target;
+        if (!target || (target !== video && target.tagName !== "SOURCE")) return;
+        if (video.dataset.unloading === "1") {
+          video.dataset.unloading = "";
+          return;
+        }
+        dropVideo(slide.dataset.key);
+      },
+      true
+    );
     video.addEventListener("click", () => {
-      if (slide.classList.contains("error")) return;
+      if (!slide.isConnected) return;
       if (video.paused) video.play().catch(() => {});
       else video.pause();
     });
@@ -202,6 +238,7 @@
   }
 
   function renderFeed() {
+    dropped.clear();
     feed.innerHTML = "";
     if (!videos.length) {
       emptyEl.hidden = false;
@@ -234,6 +271,7 @@
     const type = video.getAttribute("data-type") || "";
     if (!src) return;
     if (video.getAttribute("src") === src) return;
+    video.dataset.unloading = "";
     // Use <source> so the browser gets an explicit MIME type
     video.removeAttribute("src");
     while (video.firstChild) video.removeChild(video.firstChild);
@@ -253,35 +291,22 @@
     const slide = slides[index];
     if (!slide) return;
     const video = slide.querySelector("video");
-    if (slide.classList.contains("error") && !video.getAttribute("src")) {
-      // still try once — Safari may play quicktime even if canPlayType is empty
-      ensureSrc(video);
-    } else {
-      ensureSrc(video);
-    }
+    ensureSrc(video);
     video.muted = muted;
     pauseAllExcept(video);
     const play = () => {
+      if (!slide.isConnected) return;
       video.play().catch((err) => {
-        if (!slide.classList.contains("error")) {
-          setSlideError(
-            slide,
-            `Autoplay blocked or decode failed: ${err && err.message ? err.message : err}. ${formatHint(videos[index] || {})}`
-          );
-        }
+        if (err && err.name === "NotAllowedError") return;
+        if (video.error) dropVideo(slide.dataset.key);
       });
     };
     if (video.readyState >= 2) play();
     else {
       video.addEventListener("canplay", play, { once: true });
-      // Fallback if neither canplay nor error fires (stuck spinner)
       setTimeout(() => {
-        if (!slide.classList.contains("ready") && video.readyState < 2) {
-          if (video.error) {
-            video.dispatchEvent(new Event("error"));
-          } else if (video.readyState === 0) {
-            setSlideError(slide, formatHint(videos[index] || {}));
-          }
+        if (slide.isConnected && video.error && video.dataset.unloading !== "1") {
+          dropVideo(slide.dataset.key);
         }
       }, 8000);
     }
@@ -291,9 +316,7 @@
       if (!v) return;
       if (Math.abs(i - index) > 3) {
         if (v.getAttribute("src") || v.querySelector("source")) {
-          v.removeAttribute("src");
-          while (v.firstChild) v.removeChild(v.firstChild);
-          v.load();
+          clearMedia(v);
           s.classList.remove("ready");
         }
       } else if (Math.abs(i - index) <= 2 && i !== index) {
@@ -332,7 +355,7 @@
   }
 
   async function prefetchOne(item) {
-    const key = `${item.backend}:${item.file_id}`;
+    const key = itemKey(item);
     if (!item.stream_url || prefetched.has(key) || prefetchControllers.has(key)) {
       return;
     }
@@ -346,6 +369,13 @@
         signal: ac.signal,
         credentials: "same-origin",
       });
+      if (!(res.ok || res.status === 206)) {
+        try {
+          await res.arrayBuffer();
+        } catch (_) {}
+        dropVideo(key);
+        return;
+      }
       if (res.ok || res.status === 206) {
         await res.arrayBuffer();
         prefetched.add(key);
@@ -365,7 +395,7 @@
     const keep = new Set(
       videos
         .slice(Math.max(0, index), index + 1 + PREFETCH_COUNT)
-        .map((v) => `${v.backend}:${v.file_id}`)
+        .map((v) => itemKey(v))
     );
     for (const [key, ac] of prefetchControllers) {
       if (!keep.has(key)) {
@@ -375,10 +405,98 @@
     }
   }
 
+  function resetFeed() {
+    dropped.clear();
+    feed.innerHTML = "";
+    videos = [];
+    activeIndex = 0;
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+    emptyEl.hidden = true;
+  }
+
+  function appendSlide(item) {
+    const index = videos.length;
+    videos.push(item);
+    prefetched.add(itemKey(item));
+    feed.appendChild(buildSlide(item, index));
+    emptyEl.hidden = true;
+    setupObserver();
+    if (index === 0) {
+      requestAnimationFrame(() => {
+        activateIndex(0, true);
+      });
+    }
+  }
+
+  async function streamOk(item, signal) {
+    const url = streamUrl(item);
+    if (!url) return false;
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { Range: "bytes=0-1" },
+        credentials: "same-origin",
+        signal,
+      });
+      if (res.status !== 200 && res.status !== 206) {
+        try {
+          await res.arrayBuffer();
+        } catch (_) {}
+        return false;
+      }
+      const type = (res.headers.get("content-type") || "")
+        .split(";")[0]
+        .trim()
+        .toLowerCase();
+      if (
+        type.startsWith("text/") ||
+        type.includes("json") ||
+        type.includes("html") ||
+        type.includes("xml")
+      ) {
+        try {
+          await res.arrayBuffer();
+        } catch (_) {}
+        return false;
+      }
+      if (res.headers.get("content-length") === "0") return false;
+      try {
+        await res.arrayBuffer();
+      } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function mapPool(items, limit, fn) {
+    let cursor = 0;
+    const workers = Math.min(limit, items.length);
+    if (!workers) return;
+    await Promise.all(
+      Array.from({ length: workers }, async () => {
+        while (cursor < items.length) {
+          const item = items[cursor++];
+          await fn(item);
+        }
+      })
+    );
+  }
+
   async function loadVideos(q) {
-    if (loading) return;
+    probeAbort.abort();
+    probeAbort = new AbortController();
+    const signal = probeAbort.signal;
+    const gen = ++feedGen;
     loading = true;
     showStatus("Loading videos…", 0);
+    resetFeed();
+    prefetched.clear();
+    for (const ac of prefetchControllers.values()) ac.abort();
+    prefetchControllers.clear();
     try {
       const params = new URLSearchParams({
         limit: String(PAGE_SIZE),
@@ -387,31 +505,43 @@
       if (q) params.set("q", q);
       const res = await fetch(`${API_VIDEOS}?${params}`, {
         credentials: "same-origin",
+        signal,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (!data.status) throw new Error(data.error || "search failed");
-      videos = (data.results || []).filter((r) => r.stream_url && r.file_id);
-      prefetched.clear();
-      for (const ac of prefetchControllers.values()) ac.abort();
-      prefetchControllers.clear();
-      renderFeed();
-      if (videos.length) {
-        const unsupported = videos.filter((v) => !canLikelyPlay(mimeFor(v))).length;
-        let msg = `${videos.length} video${videos.length === 1 ? "" : "s"}`;
-        if (unsupported) {
-          msg += ` · ${unsupported} may need Safari or H.264 MP4`;
-        }
-        showStatus(msg, unsupported ? 6000 : 2800);
-      } else {
+      const seen = new Set();
+      const candidates = [];
+      for (const item of data.results || []) {
+        if (!item.stream_url || !item.file_id) continue;
+        if (!canLikelyPlay(mimeFor(item))) continue;
+        const id = itemKey(item);
+        const content = contentKey(item);
+        if (seen.has(id) || (content && seen.has(content))) continue;
+        seen.add(id);
+        if (content) seen.add(content);
+        candidates.push(item);
+      }
+      await mapPool(candidates, 3, async (item) => {
+        if (gen !== feedGen || signal.aborted) return;
+        if (!(await streamOk(item, signal))) return;
+        if (gen !== feedGen || signal.aborted) return;
+        appendSlide(item);
+      });
+      if (gen !== feedGen) return;
+      if (!videos.length) {
+        emptyEl.hidden = false;
         showStatus("");
+      } else {
+        showStatus(`${videos.length} video${videos.length === 1 ? "" : "s"}`);
       }
     } catch (err) {
-      videos = [];
-      renderFeed();
+      if (gen !== feedGen || signal.aborted) return;
+      resetFeed();
+      emptyEl.hidden = false;
       showStatus(`Failed to load: ${err.message || err}`, 5000);
     } finally {
-      loading = false;
+      if (gen === feedGen) loading = false;
     }
   }
 
