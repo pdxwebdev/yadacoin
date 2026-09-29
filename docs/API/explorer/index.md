@@ -10,11 +10,11 @@ This endpoint takes a search term and responds with a block for the given hash i
 
 `term`: `required` : `string`
 
-Search matches (first hit wins): block height, public key, block/txn hash or id, rid, KEL hashes, **identity announcement `username`**, **identity announcement `username_signature`**, wallet address, then mempool and failed-transaction equivalents.
+Search matches (first hit wins): block height, public key, block/txn hash or id, rid, KEL hashes, **identity announcement `username`**, **identity announcement `username_signature`**, **file announcement title, description, keywords, file_id, filename, or share_url**, wallet address, then mempool and failed-transaction equivalents.
 
 `result_type`: `optional` : `string` : `get_wallet_balance`
 
-Identity result types include `txn_identity_username`, `txn_identity_username_signature`, `mempool_identity_username`, and `mempool_identity_username_signature`.
+Identity result types include `txn_identity_username`, `txn_identity_username_signature`, `mempool_identity_username`, and `mempool_identity_username_signature`. File announcement result types include `txn_file_announcement`, `mempool_file_announcement`, and `failed_file_announcement`.
 
 **Example URL** :
 

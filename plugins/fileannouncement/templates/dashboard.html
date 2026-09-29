@@ -226,9 +226,9 @@
         <div class="searchbar">
           <input id="file-q" placeholder="Search title, description, keywords, or Sia file identifier" />
           <select id="file-status">
-            <option value="">All statuses</option>
-            <option value="announced">Announced</option>
-            <option value="taken_down">Taken down</option>
+            <option value="">Mempool and chain</option>
+            <option value="mempool">Mempool</option>
+            <option value="confirmed">On chain</option>
           </select>
           <button class="btn secondary" id="file-refresh">Search</button>
         </div>
@@ -392,6 +392,9 @@ function fmtTime(ts) {
   const d = new Date(Number(ts) * 1000);
   return isNaN(d) ? String(ts) : d.toISOString().replace("T"," ").slice(0,19);
 }
+function filePath(id) {
+  return "/files/" + encodeURIComponent(id || "");
+}
 function chips(list) {
   return (list || []).map(k => `<span class="chip">${esc(k)}</span>`).join("");
 }
@@ -441,7 +444,7 @@ async function loadFiles() {
   const data = await api("/files?" + params.toString());
   const rows = data.results || [];
   if (!rows.length) {
-    $("#file-table").innerHTML = `<div class="empty">No files yet. Upload one to announce it on-chain.</div>`;
+    $("#file-table").innerHTML = `<div class="empty">No file announcements in the mempool or on chain.</div>`;
     return;
   }
   $("#file-table").innerHTML = `<table>
@@ -461,10 +464,10 @@ async function loadFiles() {
         <td class="muted">${fmtTime(r.updated_at)}</td>
         <td>
           <div class="actions">
-            <button class="btn secondary" data-edit="${esc(r.record_id)}">Edit</button>
-            <button class="btn secondary" data-td="${esc(r.record_id)}">Takedown</button>
-            <a class="btn secondary" href="${API}/files/${esc(r.record_id)}/download">Download</a>
-            <button class="btn danger" data-del="${esc(r.record_id)}">Delete</button>
+            <button class="btn secondary" data-edit="${esc(r.transaction_id)}">Edit</button>
+            <button class="btn secondary" data-td="${esc(r.transaction_id)}">Takedown</button>
+            <a class="btn secondary" href="${API}${filePath(r.transaction_id)}/download">Download</a>
+            <button class="btn danger" data-del="${esc(r.transaction_id)}">Delete</button>
           </div>
         </td>
       </tr>`).join("")}
@@ -610,14 +613,9 @@ $("#net-go").onclick = async () => {
   const q = $("#net-q").value.trim();
   try {
     const data = await api("/files/search?q=" + encodeURIComponent(q));
-    const local = data.local || [];
     const net = data.network || [];
     $("#net-results").innerHTML = `
-      <h3>Local (${local.length})</h3>
-      ${local.length ? local.map(r => `<div class="card"><strong>${esc(r.title)}</strong>
-        <div class="mono">${esc(r.file_id)}</div>${chips(r.keywords)}
-        <div class="muted">${esc(r.description || "")}</div></div>`).join("") : `<div class="empty">No local matches</div>`}
-      <h3>Network (${net.length})</h3>
+      <h3>Mempool and chain (${net.length})</h3>
       ${net.length ? net.map(r => `<div class="card"><span class="chip">${esc(r.source)}</span>
         <strong>${esc((r.file||{}).title || "")}</strong>
         <div class="mono">${esc((r.file||{}).file_id || "")}</div>
@@ -628,7 +626,7 @@ $("#net-go").onclick = async () => {
 };
 
 async function openEdit(id) {
-  const data = await api("/files/" + id);
+  const data = await api(filePath(id));
   const r = data.result;
   const f = $("#edit-form");
   f.record_id.value = id;
@@ -641,7 +639,7 @@ $("#edit-cancel").onclick = () => $("#edit-dlg").close();
 $("#edit-save").onclick = async () => {
   const f = $("#edit-form");
   try {
-    await api("/files/" + f.record_id.value, {
+    await api(filePath(f.record_id.value), {
       method: "PUT",
       headers: {"Content-Type":"application/json"},
       body: JSON.stringify({
@@ -664,7 +662,7 @@ $("#td-cancel").onclick = () => $("#td-dlg").close();
 $("#td-go").onclick = async () => {
   const f = $("#td-form");
   try {
-    await api("/files/" + f.record_id.value + "/takedown", {
+    await api(filePath(f.record_id.value) + "/takedown", {
       method: "POST",
       headers: {"Content-Type":"application/json"},
       body: JSON.stringify({
@@ -682,7 +680,7 @@ $("#td-go").onclick = async () => {
 async function delFile(id) {
   if (!confirm("Delete this file record? This does not broadcast a takedown.")) return;
   try {
-    await api("/files/" + id, { method: "DELETE" });
+    await api(filePath(id), { method: "DELETE" });
     flash("Deleted", true);
     await loadFiles();
     await loadHistory();

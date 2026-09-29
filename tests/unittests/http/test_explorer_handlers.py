@@ -622,6 +622,61 @@ class TestExplorerSearchHandlerFoundPaths(ExplorerHttpTestCase):
         data = json.loads(response.body)
         self.assertEqual(data["resultType"], "txn_identity_username_signature")
 
+    def test_found_by_file_announcement(self):
+        import re
+
+        term = "quarterly-report.pdf"
+
+        async def side_effect(query, *args, **kwargs):
+            if not isinstance(query, dict) or "$or" not in query:
+                return 0
+            first = query["$or"][0]
+            if "transactions.relationship.file.title" in first:
+                return 1
+            return 0
+
+        self.mock_db.blocks.count_documents = AsyncMock(side_effect=side_effect)
+        self.mock_db.blocks.find = MagicMock(
+            return_value=make_async_iter_cursor(
+                [
+                    {
+                        "index": 50,
+                        "time": 1000,
+                        "transactions": [
+                            {
+                                "relationship": {
+                                    "file": {
+                                        "title": "Quarterly Report",
+                                        "filename": term,
+                                        "file_id": "sia-object-1",
+                                    }
+                                }
+                            }
+                        ],
+                    }
+                ]
+            )
+        )
+        response = self.fetch(f"/explorer-search?term={term}")
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertEqual(data["resultType"], "txn_file_announcement")
+        self.assertEqual(data["result"][0]["index"], 50)
+        file_query = None
+        for call in self.mock_db.blocks.count_documents.call_args_list:
+            query = call.args[0]
+            if (
+                isinstance(query, dict)
+                and "$or" in query
+                and "transactions.relationship.file.title" in query["$or"][0]
+            ):
+                file_query = query
+        self.assertIsNotNone(file_query)
+        self.assertEqual(
+            file_query["$or"][0]["transactions.relationship.file.title"]["$regex"],
+            re.escape(term),
+        )
+
     def test_found_in_mempool_by_identity_username(self):
         term = "mempool-user.example.com"
 
@@ -657,6 +712,38 @@ class TestExplorerSearchHandlerFoundPaths(ExplorerHttpTestCase):
         self.assertEqual(response.code, 200)
         data = json.loads(response.body)
         self.assertEqual(data["resultType"], "mempool_identity_username")
+
+    def test_found_in_mempool_by_file_announcement(self):
+        term = "demo-video"
+
+        async def mempool_side_effect(query, *args, **kwargs):
+            if not isinstance(query, dict) or "$or" not in query:
+                return 0
+            first = query["$or"][0]
+            if "relationship.file.title" in first:
+                return 1
+            return 0
+
+        self.mock_db.blocks.count_documents = AsyncMock(return_value=0)
+        self.mock_db.miner_transactions.count_documents = AsyncMock(
+            side_effect=mempool_side_effect
+        )
+        self.mock_db.miner_transactions.find = MagicMock(
+            return_value=make_async_iter_cursor(
+                [
+                    {
+                        "time": 1000,
+                        "relationship": {"file": {"title": term, "file_id": "vid-1"}},
+                        "inputs": [],
+                        "outputs": [],
+                    }
+                ]
+            )
+        )
+        response = self.fetch(f"/explorer-search?term={term}")
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertEqual(data["resultType"], "mempool_file_announcement")
 
     def test_found_by_txn_field(self):
         """Covers fields loop result path (approx lines 309-311)"""
@@ -866,6 +953,40 @@ class TestExplorerSearchHandlerFoundPaths(ExplorerHttpTestCase):
         self.assertEqual(response.code, 200)
         data = json.loads(response.body)
         self.assertIn("resultType", data)
+
+    def test_found_in_failed_by_file_announcement(self):
+        term = "taken-down-file"
+
+        async def failed_side_effect(query, *args, **kwargs):
+            if not isinstance(query, dict) or "$or" not in query:
+                return 0
+            first = query["$or"][0]
+            if "txn.relationship.file.title" in first:
+                return 1
+            return 0
+
+        self.mock_db.blocks.count_documents = AsyncMock(return_value=0)
+        self.mock_db.miner_transactions.count_documents = AsyncMock(return_value=0)
+        self.mock_db.failed_transactions.count_documents = AsyncMock(
+            side_effect=failed_side_effect
+        )
+        self.mock_db.failed_transactions.find = MagicMock(
+            return_value=make_async_iter_cursor(
+                [
+                    {
+                        "reason": "InvalidTransactionException",
+                        "txn": {
+                            "time": 1000,
+                            "relationship": {"file": {"title": term, "file_id": "x"}},
+                        },
+                    }
+                ]
+            )
+        )
+        response = self.fetch(f"/explorer-search?term={term}")
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertEqual(data["resultType"], "failed_file_announcement")
 
 
 # ---------------------------------------------------------------------------

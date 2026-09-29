@@ -9,6 +9,8 @@ async def go(app):
     try:
         await db.file_announcements.create_index("record_id", unique=True)
         await db.file_announcements.create_index("file_id")
+        await db.file_announcements.create_index("content_hash")
+        await db.file_announcements.create_index("owner")
         await db.file_announcements.create_index("transaction_id")
         await db.file_announcements.create_index(
             [
@@ -21,5 +23,7 @@ async def go(app):
         await db.file_upload_history.create_index([("timestamp", -1)])
         await db.file_upload_history.create_index("record_id")
         await db.file_upload_history.create_index("file_id")
+        await db.file_announcement_retractions.create_index("file_id")
+        await db.file_announcement_retractions.create_index("transaction_id")
     except Exception:
         pass

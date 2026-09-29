@@ -38,6 +38,19 @@ class FileAnnouncementServiceError(Exception):
     pass
 
 
+class DuplicateFileAnnouncementError(FileAnnouncementServiceError):
+    pass
+
+
+async def _operator_id(config) -> str:
+    """Stable announcer id. Empty when the node KEL is not ready."""
+    try:
+        keys = await _next_kel_signer(config)
+    except Exception:
+        return ""
+    return str(keys.get("inception_public_key_hash") or "").strip()
+
+
 async def _backend_from_settings(config, backend_name=None):
     settings = await store.get_settings(config)
     name = backend_name or settings.get("backend") or "sia"
@@ -472,7 +485,26 @@ async def create_file(
     backend, name, _settings = await _backend_from_settings(config, backend_name)
     record_id = store.new_record_id()
     uploaded = None
+    content_hash = hashlib.sha256(content).hexdigest() if content else ""
+    known_size = len(content) if content else size
     try:
+        owner = await _operator_id(config)
+        existing = await store.find_same_user_duplicate(
+            config,
+            owner=owner,
+            file_id=file_id or "",
+            filename=filename,
+            size=known_size,
+            content_hash=content_hash,
+        )
+        if existing:
+            label = (
+                existing.get("title")
+                or existing.get("filename")
+                or existing.get("file_id")
+                or "this file"
+            )
+            raise DuplicateFileAnnouncementError(f"this user already announced {label}")
         if content:
             uploaded = await backend.upload(
                 content,
@@ -517,7 +549,15 @@ async def create_file(
         confirming = getattr(txn, "confirming_txn", None)
         if confirming is not None:
             record["confirming_transaction_id"] = confirming.transaction_signature
-        saved = await store.insert_file(config, record)
+        owner_id = getattr(txn, "inception_public_key_hash", None) or owner
+        if owner_id:
+            record["owner"] = owner_id
+        if content_hash:
+            record["content_hash"] = content_hash
+        await store.clear_retraction(config, file_id)
+        saved = dict(record)
+        saved["status"] = "mempool"
+        saved["source"] = "mempool"
         await store.add_history(
             config,
             {
@@ -555,14 +595,17 @@ async def create_file(
         raise FileAnnouncementServiceError(str(exc)) from exc
 
 
+async def _existing_announcement(config, ident: str) -> dict:
+    live = await store.get_live_by_transaction_id(config, ident)
+    if live:
+        return live
+    raise FileAnnouncementServiceError("file not found")
+
+
 async def update_file(
     config, record_id: str, title=None, description=None, keywords=None
 ):
-    existing = await store.get_file(config, record_id)
-    if not existing:
-        raise FileAnnouncementServiceError("file not found")
-    if existing.get("status") == "taken_down":
-        raise FileAnnouncementServiceError("cannot update a taken-down file")
+    existing = await _existing_announcement(config, record_id)
     new_title = existing["title"] if title is None else title
     new_description = existing["description"] if description is None else description
     new_keywords = existing.get("keywords") if keywords is None else keywords
@@ -590,24 +633,22 @@ async def update_file(
     )
     txn = await _generate_txn(config, ann, fee=0.0)
     await _broadcast(config, txn)
-    updated = await store.update_file(
-        config,
-        record_id,
-        {
-            "title": ann.title,
-            "description": ann.description,
-            "keywords": list(ann.keywords),
-            "supersedes": existing.get("transaction_id") or "",
-            "share_url": ann.share_url,
-            "transaction_id": txn.transaction_signature,
-            "status": "announced",
-            **(
-                {"confirming_transaction_id": txn.confirming_txn.transaction_signature}
-                if getattr(txn, "confirming_txn", None) is not None
-                else {}
-            ),
-        },
-    )
+    updated = {
+        "transaction_id": txn.transaction_signature,
+        "record_id": txn.transaction_signature,
+        "file_id": ann.file_id,
+        "title": ann.title,
+        "description": ann.description,
+        "keywords": list(ann.keywords),
+        "filename": ann.filename,
+        "mime_type": ann.mime_type,
+        "size": ann.size,
+        "backend": ann.backend,
+        "share_url": ann.share_url,
+        "supersedes": existing.get("transaction_id") or "",
+        "status": "mempool",
+        "source": "mempool",
+    }
     await store.add_history(
         config,
         {
@@ -647,6 +688,11 @@ async def announce_content_takedown(
     await _broadcast(config, txn)
 
     local = await store.get_file_by_transaction_id(config, txn_id)
+    await store.retract_file(
+        config,
+        file_id=(local or {}).get("file_id") or "",
+        transaction_id=txn_id,
+    )
     result = {
         "ok": True,
         "target_transaction_id": txn_id,
@@ -727,10 +773,10 @@ async def announce_content_takedown(
 async def takedown_file(
     config, record_id: str, reason_code: str, delete_backend: bool = False
 ):
-    existing = await store.get_file(config, record_id)
-    if not existing:
+    existing = await store.get_live_by_transaction_id(config, record_id)
+    txn_id = (existing or {}).get("transaction_id") or (record_id or "").strip()
+    if not existing and not txn_id:
         raise FileAnnouncementServiceError("file not found")
-    txn_id = existing.get("transaction_id")
     if not txn_id:
         raise FileAnnouncementServiceError(
             "file has no announcement transaction to take down"
@@ -751,9 +797,26 @@ async def takedown_file(
 
 
 async def delete_file(config, record_id: str, delete_backend: bool = True):
-    existing = await store.get_file(config, record_id)
+    existing = await store.get_live_by_transaction_id(config, record_id)
     if not existing:
         raise FileAnnouncementServiceError("file not found")
+    file_id = existing.get("file_id") or ""
+    await store.retract_file(
+        config,
+        file_id=file_id,
+        transaction_id=existing.get("transaction_id") or "",
+    )
+    await store.remove_mempool_announcement(
+        config,
+        file_id=file_id,
+        transaction_ids=[
+            existing.get("transaction_id") or "",
+            existing.get("confirming_transaction_id") or "",
+        ],
+    )
+    await store.clear_local_file_relationship(
+        config, existing.get("transaction_id") or ""
+    )
     if delete_backend and existing.get("file_id"):
         try:
             backend, _name, _s = await _backend_from_settings(
@@ -762,7 +825,18 @@ async def delete_file(config, record_id: str, delete_backend: bool = True):
             await backend.delete(existing["file_id"])
         except Exception as exc:
             app_log.warning("backend delete failed: %s", exc)
-    await store.delete_file(config, record_id)
+    try:
+        await store._db(config)[store.FILES_COLLECTION].delete_many(
+            {
+                "$or": [
+                    {"file_id": file_id},
+                    {"transaction_id": existing.get("transaction_id") or ""},
+                    {"record_id": record_id},
+                ]
+            }
+        )
+    except Exception:
+        pass
     await store.add_history(
         config,
         {
@@ -775,15 +849,22 @@ async def delete_file(config, record_id: str, delete_backend: bool = True):
             "title": existing.get("title") or "",
         },
     )
-    return {"ok": True, "record_id": record_id}
+    return {
+        "ok": True,
+        "record_id": record_id,
+        "file_id": file_id,
+        "backend": existing.get("backend") or "sia",
+    }
 
 
 async def download_file(config, record_id: str) -> dict:
-    existing = await store.get_file(config, record_id)
+    existing = await store.get_live_by_transaction_id(config, record_id)
     if not existing:
         raise FileAnnouncementServiceError("file not found")
     backend, _name, _s = await _backend_from_settings(config, existing.get("backend"))
-    result = await backend.download(existing["file_id"])
+    result = await backend.download(
+        existing["file_id"], share_url=existing.get("share_url") or ""
+    )
     result["filename"] = existing.get("filename") or existing.get("title") or "download"
     result["mime_type"] = existing.get("mime_type") or "application/octet-stream"
     return result
@@ -800,6 +881,9 @@ async def download_by_backend_file_id(
     file_id = (file_id or "").strip()
     if not file_id:
         raise FileAnnouncementServiceError("file_id is required")
+    live = await store.live_announcement(config, file_id, backend_name)
+    if not live:
+        raise FileAnnouncementServiceError("file not found")
     backend, name, _s = await _backend_from_settings(config, backend_name)
     share_url = await store.share_url_for_file(config, file_id)
     if not share_url:

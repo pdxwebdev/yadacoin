@@ -26,7 +26,7 @@
       class="form-control"
       [(ngModel)]="model.term"
       name="term"
-      placeholder="Wallet address, Txn Id, Block height, Username, Username signature..."
+      placeholder="Wallet address, Txn Id, Block height, Username, File title, File id..."
     />
     <button
       style="margin-top: 15px; margin-bottom: 15px"
@@ -134,6 +134,73 @@
         <p *ngIf="transaction.relationship.identity.identity_type">
           <strong>identity_type: </strong
           >{{ transaction.relationship.identity.identity_type }}
+        </p>
+      </div>
+      <div *ngIf="transaction.relationship && transaction.relationship.file">
+        <h4>File announcement</h4>
+        <p *ngIf="transaction.relationship.file.title">
+          <strong>title: </strong>{{ transaction.relationship.file.title }}
+        </p>
+        <p *ngIf="transaction.relationship.file.description">
+          <strong>description: </strong
+          >{{ transaction.relationship.file.description }}
+        </p>
+        <p *ngIf="transaction.relationship.file.file_id">
+          <strong>file_id: </strong
+          ><a href="/explorer?term={{ transaction.relationship.file.file_id }}">{{
+            transaction.relationship.file.file_id
+          }}</a>
+        </p>
+        <p *ngIf="transaction.relationship.file.filename">
+          <strong>filename: </strong
+          ><a href="/explorer?term={{ transaction.relationship.file.filename }}">{{
+            transaction.relationship.file.filename
+          }}</a>
+        </p>
+        <p
+          *ngIf="
+            transaction.relationship.file.keywords &&
+            transaction.relationship.file.keywords.length
+          "
+        >
+          <strong>keywords: </strong>{{ transaction.relationship.file.keywords }}
+        </p>
+        <p *ngIf="transaction.relationship.file.mime_type">
+          <strong>mime_type: </strong>{{ transaction.relationship.file.mime_type }}
+        </p>
+        <p *ngIf="transaction.relationship.file.backend">
+          <strong>backend: </strong>{{ transaction.relationship.file.backend }}
+        </p>
+        <p *ngIf="transaction.relationship.file.share_url">
+          <strong>share_url: </strong
+          ><a
+            href="{{ transaction.relationship.file.share_url }}"
+            target="_blank"
+            rel="noopener"
+            >{{ transaction.relationship.file.share_url }}</a
+          >
+        </p>
+      </div>
+      <div
+        *ngIf="
+          transaction.txn &&
+          transaction.txn.relationship &&
+          transaction.txn.relationship.file
+        "
+      >
+        <h4>File announcement</h4>
+        <p *ngIf="transaction.txn.relationship.file.title">
+          <strong>title: </strong>{{ transaction.txn.relationship.file.title }}
+        </p>
+        <p *ngIf="transaction.txn.relationship.file.file_id">
+          <strong>file_id: </strong
+          ><a
+            href="/explorer?term={{ transaction.txn.relationship.file.file_id }}"
+            >{{ transaction.txn.relationship.file.file_id }}</a
+          >
+        </p>
+        <p *ngIf="transaction.txn.relationship.file.filename">
+          <strong>filename: </strong>{{ transaction.txn.relationship.file.filename }}
         </p>
       </div>
       <p>
@@ -278,6 +345,73 @@
           >{{ transaction.relationship.identity.identity_type }}
         </p>
       </div>
+      <div *ngIf="transaction.relationship && transaction.relationship.file">
+        <h4>File announcement</h4>
+        <p *ngIf="transaction.relationship.file.title">
+          <strong>title: </strong>{{ transaction.relationship.file.title }}
+        </p>
+        <p *ngIf="transaction.relationship.file.description">
+          <strong>description: </strong
+          >{{ transaction.relationship.file.description }}
+        </p>
+        <p *ngIf="transaction.relationship.file.file_id">
+          <strong>file_id: </strong
+          ><a href="/explorer?term={{ transaction.relationship.file.file_id }}">{{
+            transaction.relationship.file.file_id
+          }}</a>
+        </p>
+        <p *ngIf="transaction.relationship.file.filename">
+          <strong>filename: </strong
+          ><a href="/explorer?term={{ transaction.relationship.file.filename }}">{{
+            transaction.relationship.file.filename
+          }}</a>
+        </p>
+        <p
+          *ngIf="
+            transaction.relationship.file.keywords &&
+            transaction.relationship.file.keywords.length
+          "
+        >
+          <strong>keywords: </strong>{{ transaction.relationship.file.keywords }}
+        </p>
+        <p *ngIf="transaction.relationship.file.mime_type">
+          <strong>mime_type: </strong>{{ transaction.relationship.file.mime_type }}
+        </p>
+        <p *ngIf="transaction.relationship.file.backend">
+          <strong>backend: </strong>{{ transaction.relationship.file.backend }}
+        </p>
+        <p *ngIf="transaction.relationship.file.share_url">
+          <strong>share_url: </strong
+          ><a
+            href="{{ transaction.relationship.file.share_url }}"
+            target="_blank"
+            rel="noopener"
+            >{{ transaction.relationship.file.share_url }}</a
+          >
+        </p>
+      </div>
+      <div
+        *ngIf="
+          transaction.txn &&
+          transaction.txn.relationship &&
+          transaction.txn.relationship.file
+        "
+      >
+        <h4>File announcement</h4>
+        <p *ngIf="transaction.txn.relationship.file.title">
+          <strong>title: </strong>{{ transaction.txn.relationship.file.title }}
+        </p>
+        <p *ngIf="transaction.txn.relationship.file.file_id">
+          <strong>file_id: </strong
+          ><a
+            href="/explorer?term={{ transaction.txn.relationship.file.file_id }}"
+            >{{ transaction.txn.relationship.file.file_id }}</a
+          >
+        </p>
+        <p *ngIf="transaction.txn.relationship.file.filename">
+          <strong>filename: </strong>{{ transaction.txn.relationship.file.filename }}
+        </p>
+      </div>
       <p>
         <strong>relationship data: </strong
         ><textarea class="form-control">{{
@@ -397,6 +531,21 @@
         <p *ngIf="transaction.relationship.identity.identity_type">
           <strong>identity_type: </strong
           >{{ transaction.relationship.identity.identity_type }}
+        </p>
+      </div>
+      <div *ngIf="transaction.relationship && transaction.relationship.file">
+        <h4>File announcement</h4>
+        <p *ngIf="transaction.relationship.file.title">
+          <strong>title: </strong>{{ transaction.relationship.file.title }}
+        </p>
+        <p *ngIf="transaction.relationship.file.file_id">
+          <strong>file_id: </strong
+          ><a href="/explorer?term={{ transaction.relationship.file.file_id }}">{{
+            transaction.relationship.file.file_id
+          }}</a>
+        </p>
+        <p *ngIf="transaction.relationship.file.filename">
+          <strong>filename: </strong>{{ transaction.relationship.file.filename }}
         </p>
       </div>
     </li>
@@ -523,6 +672,51 @@
             <p *ngIf="transaction.relationship.identity.identity_type">
               <strong>identity_type: </strong
               >{{ transaction.relationship.identity.identity_type }}
+            </p>
+          </div>
+          <div *ngIf="transaction.relationship && transaction.relationship.file">
+            <h4>File announcement</h4>
+            <p *ngIf="transaction.relationship.file.title">
+              <strong>title: </strong>{{ transaction.relationship.file.title }}
+            </p>
+            <p *ngIf="transaction.relationship.file.description">
+              <strong>description: </strong
+              >{{ transaction.relationship.file.description }}
+            </p>
+            <p *ngIf="transaction.relationship.file.file_id">
+              <strong>file_id: </strong
+              ><a href="/explorer?term={{ transaction.relationship.file.file_id }}">{{
+                transaction.relationship.file.file_id
+              }}</a>
+            </p>
+            <p *ngIf="transaction.relationship.file.filename">
+              <strong>filename: </strong
+              ><a href="/explorer?term={{ transaction.relationship.file.filename }}">{{
+                transaction.relationship.file.filename
+              }}</a>
+            </p>
+            <p
+              *ngIf="
+                transaction.relationship.file.keywords &&
+                transaction.relationship.file.keywords.length
+              "
+            >
+              <strong>keywords: </strong>{{ transaction.relationship.file.keywords }}
+            </p>
+            <p *ngIf="transaction.relationship.file.mime_type">
+              <strong>mime_type: </strong>{{ transaction.relationship.file.mime_type }}
+            </p>
+            <p *ngIf="transaction.relationship.file.backend">
+              <strong>backend: </strong>{{ transaction.relationship.file.backend }}
+            </p>
+            <p *ngIf="transaction.relationship.file.share_url">
+              <strong>share_url: </strong
+              ><a
+                href="{{ transaction.relationship.file.share_url }}"
+                target="_blank"
+                rel="noopener"
+                >{{ transaction.relationship.file.share_url }}</a
+              >
             </p>
           </div>
           <p>
@@ -661,6 +855,45 @@
             <p *ngIf="transaction.relationship.identity.identity_type">
               <strong>identity_type: </strong
               >{{ transaction.relationship.identity.identity_type }}
+            </p>
+          </div>
+          <div *ngIf="transaction.relationship && transaction.relationship.file">
+            <h4>File announcement</h4>
+            <p *ngIf="transaction.relationship.file.title">
+              <strong>title: </strong>{{ transaction.relationship.file.title }}
+            </p>
+            <p *ngIf="transaction.relationship.file.description">
+              <strong>description: </strong
+              >{{ transaction.relationship.file.description }}
+            </p>
+            <p *ngIf="transaction.relationship.file.file_id">
+              <strong>file_id: </strong
+              ><a href="/explorer?term={{ transaction.relationship.file.file_id }}">{{
+                transaction.relationship.file.file_id
+              }}</a>
+            </p>
+            <p *ngIf="transaction.relationship.file.filename">
+              <strong>filename: </strong
+              ><a href="/explorer?term={{ transaction.relationship.file.filename }}">{{
+                transaction.relationship.file.filename
+              }}</a>
+            </p>
+            <p
+              *ngIf="
+                transaction.relationship.file.keywords &&
+                transaction.relationship.file.keywords.length
+              "
+            >
+              <strong>keywords: </strong>{{ transaction.relationship.file.keywords }}
+            </p>
+            <p *ngIf="transaction.relationship.file.share_url">
+              <strong>share_url: </strong
+              ><a
+                href="{{ transaction.relationship.file.share_url }}"
+                target="_blank"
+                rel="noopener"
+                >{{ transaction.relationship.file.share_url }}</a
+              >
             </p>
           </div>
         </div>

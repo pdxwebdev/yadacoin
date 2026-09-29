@@ -105,6 +105,54 @@ class TestFileAnnouncementStoreHelpers(AsyncTestCase):
         self.assertFalse(is_video_file({"mime_type": "image/png", "filename": "a.png"}))
         self.assertFalse(is_video_file({}))
 
+    async def test_video_feed_keys_collapse_reupload(self):
+        from plugins.fileannouncement.store import video_feed_keys
+
+        first = video_feed_keys(
+            {
+                "backend": "Sia",
+                "file_id": "aaa",
+                "filename": "Clip.mp4",
+                "size": 100,
+            },
+            owner="user-a",
+        )
+        second = video_feed_keys(
+            {
+                "backend": "sia",
+                "file_id": "bbb",
+                "filename": "clip.mp4",
+                "size": "100",
+            },
+            owner="user-a",
+        )
+        other = video_feed_keys(
+            {
+                "backend": "sia",
+                "file_id": "ccc",
+                "filename": "clip.mp4",
+                "size": 100,
+            },
+            owner="user-b",
+        )
+        self.assertIn("id:sia:aaa", first)
+        self.assertTrue(set(first) & set(second))
+        self.assertFalse(set(first) & set(other))
+
+    async def test_same_user_duplicate_filter(self):
+        from plugins.fileannouncement.store import same_user_duplicate_filter
+
+        filt = same_user_duplicate_filter(
+            owner="user-a",
+            filename="Clip.mp4",
+            size=100,
+            content_hash="abc",
+        )
+        self.assertIsNotNone(filt)
+        self.assertEqual(filt["status"], {"$nin": ["taken_down"]})
+        self.assertIn("$and", filt)
+        self.assertIsNone(same_user_duplicate_filter())
+
     async def test_record_from_announcement(self):
         ann = FileAnnouncement(
             file_id="abc123",
@@ -132,6 +180,8 @@ class TestFileAnnouncementService(AsyncTestCase):
 
         fake_txn = MagicMock()
         fake_txn.transaction_signature = "txn-sig"
+        fake_txn.inception_public_key_hash = "user-a"
+        fake_txn.confirming_txn = None
         fake_txn.to_dict.return_value = {"id": "txn-sig", "relationship": {"file": {}}}
 
         with patch.object(
@@ -140,6 +190,12 @@ class TestFileAnnouncementService(AsyncTestCase):
             service.store, "insert_file", AsyncMock(side_effect=lambda c, r: r)
         ), patch.object(
             service.store, "add_history", AsyncMock(return_value={})
+        ), patch.object(
+            service.store, "find_same_user_duplicate", AsyncMock(return_value=None)
+        ), patch.object(
+            service.store, "clear_retraction", AsyncMock()
+        ), patch.object(
+            service, "_operator_id", AsyncMock(return_value="user-a")
         ), patch.object(
             service, "_generate_txn", AsyncMock(return_value=fake_txn)
         ):
@@ -156,7 +212,38 @@ class TestFileAnnouncementService(AsyncTestCase):
         self.assertEqual(rec["title"], "Hello")
         self.assertEqual(rec["backend"], "memory")
         self.assertEqual(rec["transaction_id"], "txn-sig")
+        self.assertEqual(rec["owner"], "user-a")
+        self.assertTrue(rec["content_hash"])
         self.assertTrue(rec["file_id"])
+
+    async def test_create_file_rejects_same_user_duplicate(self):
+        from plugins.fileannouncement import service
+
+        config = MagicMock()
+        with patch.object(
+            service.store, "get_settings", AsyncMock(return_value={"backend": "memory"})
+        ), patch.object(
+            service.store,
+            "find_same_user_duplicate",
+            AsyncMock(return_value={"title": "Welcome", "file_id": "old"}),
+        ), patch.object(
+            service.store, "add_history", AsyncMock(return_value={})
+        ), patch.object(
+            service, "_operator_id", AsyncMock(return_value="user-a")
+        ), patch.object(
+            service, "_generate_txn", AsyncMock()
+        ) as generate:
+            with self.assertRaises(service.DuplicateFileAnnouncementError) as ctx:
+                await service.create_file(
+                    config,
+                    title="Welcome",
+                    content=b"payload",
+                    filename="clip.mp4",
+                    mime_type="video/mp4",
+                    backend_name="memory",
+                )
+        self.assertIn("already announced", str(ctx.exception))
+        generate.assert_not_called()
 
 
 class TestFileAnnouncementKEL(AsyncTestCase):
@@ -228,3 +315,209 @@ class TestFileAnnouncementKEL(AsyncTestCase):
         self.assertEqual(confirming.twice_prerotated_key_hash, ggc_addr)
         self.assertEqual(confirming.prev_public_key_hash, signer_addr)
         self.assertEqual(confirming.relationship, "")
+
+
+class _Cursor:
+    def __init__(self, rows):
+        self._rows = list(rows)
+        self._i = 0
+
+    def sort(self, *args, **kwargs):
+        return self
+
+    def limit(self, *args, **kwargs):
+        return self
+
+    def __aiter__(self):
+        self._i = 0
+        return self
+
+    async def __anext__(self):
+        if self._i >= len(self._rows):
+            raise StopAsyncIteration
+        row = self._rows[self._i]
+        self._i += 1
+        return row
+
+
+class _Coll:
+    def __init__(self, rows=None):
+        self.rows = list(rows or [])
+
+    def find(self, query=None, projection=None):
+        return _Cursor(self.rows)
+
+    async def find_one(self, query=None, projection=None):
+        return self.rows[0] if self.rows else None
+
+
+class _DB:
+    def __init__(self):
+        self.blocks = _Coll()
+        self.miner_transactions = _Coll()
+        self.file_announcements = _Coll()
+        self.file_announcement_retractions = _Coll()
+
+    def __getitem__(self, name):
+        return getattr(self, name)
+
+
+class TestLiveAnnouncement(AsyncTestCase):
+    def _config(self):
+        config = MagicMock()
+        config.mongo.async_db = _DB()
+        return config
+
+    async def test_local_only_is_not_playable(self):
+        from plugins.fileannouncement.store import live_announcement
+
+        config = self._config()
+        config.mongo.async_db.file_announcements.rows = [
+            {"file_id": "abc", "status": "announced", "transaction_id": "sig"}
+        ]
+        self.assertIsNone(await live_announcement(config, "abc"))
+
+    async def test_chain_announcement_is_playable(self):
+        from plugins.fileannouncement.store import live_announcement
+
+        config = self._config()
+        config.mongo.async_db.blocks.rows = [
+            {
+                "index": 9,
+                "transactions": [
+                    {
+                        "id": "sig",
+                        "inception_public_key_hash": "owner",
+                        "relationship": {
+                            "file": {
+                                "file_id": "abc",
+                                "backend": "sia",
+                                "title": "Clip",
+                                "filename": "clip.mp4",
+                                "mime_type": "video/mp4",
+                            }
+                        },
+                    }
+                ],
+            }
+        ]
+        live = await live_announcement(config, "abc", "sia")
+        self.assertEqual(live["source"], "chain")
+        self.assertEqual(live["transaction_id"], "sig")
+
+    async def test_takedown_in_mempool_blocks_playback(self):
+        from plugins.fileannouncement.store import live_announcement
+
+        config = self._config()
+        config.mongo.async_db.blocks.rows = [
+            {
+                "index": 9,
+                "transactions": [
+                    {
+                        "id": "sig",
+                        "relationship": {
+                            "file": {
+                                "file_id": "abc",
+                                "backend": "sia",
+                                "title": "Clip",
+                            }
+                        },
+                    }
+                ],
+            }
+        ]
+        config.mongo.async_db.miner_transactions.rows = [
+            {"relationship": {"content_takedown": {"transaction_id": "sig"}}}
+        ]
+        self.assertIsNone(await live_announcement(config, "abc"))
+
+    async def test_owner_retraction_blocks_chain_copy(self):
+        from plugins.fileannouncement.store import live_announcement
+
+        config = self._config()
+        config.mongo.async_db.blocks.rows = [
+            {
+                "index": 9,
+                "transactions": [
+                    {
+                        "id": "sig",
+                        "relationship": {
+                            "file": {
+                                "file_id": "abc",
+                                "backend": "sia",
+                                "title": "Clip",
+                            }
+                        },
+                    }
+                ],
+            }
+        ]
+        config.mongo.async_db.file_announcement_retractions.rows = [
+            {"file_id": "abc", "transaction_id": "sig"}
+        ]
+        self.assertIsNone(await live_announcement(config, "abc"))
+
+    async def test_list_live_files_ignores_local_collection(self):
+        from plugins.fileannouncement.store import list_live_files
+
+        config = self._config()
+        config.mongo.async_db.file_announcements.rows = [
+            {
+                "file_id": "only-local",
+                "title": "Local only",
+                "status": "announced",
+                "filename": "a.mp4",
+            }
+        ]
+        config.mongo.async_db.blocks.rows = [
+            {
+                "index": 3,
+                "time": 50,
+                "transactions": [
+                    {
+                        "id": "chain-sig",
+                        "time": 50,
+                        "relationship": {
+                            "file": {
+                                "file_id": "on-chain",
+                                "title": "On chain",
+                                "backend": "sia",
+                                "filename": "b.mp4",
+                            }
+                        },
+                    }
+                ],
+            }
+        ]
+        rows = await list_live_files(config)
+        self.assertEqual([row["file_id"] for row in rows], ["on-chain"])
+        self.assertEqual(rows[0]["status"], "confirmed")
+        self.assertEqual(rows[0]["transaction_id"], "chain-sig")
+
+    async def test_prune_drops_cache_when_not_live(self):
+        from plugins.fileannouncement import handlers as h
+
+        saved = dict(h._STREAM_CACHE)
+        h._STREAM_CACHE.clear()
+        fd, path = tempfile.mkstemp(prefix="fa_stream_test_", dir=h._STREAM_TMP_DIR)
+        os.write(fd, b"vid")
+        os.close(fd)
+        h._STREAM_CACHE["sia:abc"] = (
+            path,
+            3,
+            time.monotonic() + 3600,
+            "clip.mp4",
+            "video/mp4",
+        )
+        try:
+            with patch.object(
+                h.store, "live_announcement", AsyncMock(return_value=None)
+            ):
+                await h.prune_stream_cache(MagicMock())
+            self.assertEqual(h._STREAM_CACHE, {})
+            self.assertFalse(os.path.exists(path))
+        finally:
+            h._STREAM_CACHE.clear()
+            h._STREAM_CACHE.update(saved)
+            if os.path.exists(path):
+                os.unlink(path)

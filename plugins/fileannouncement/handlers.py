@@ -27,6 +27,7 @@ from yadacoin.http.base import BaseHandler
 from . import store
 from .backends import available_backends
 from .service import (
+    DuplicateFileAnnouncementError,
     FileAnnouncementServiceError,
     announce_content_takedown,
     create_file,
@@ -118,6 +119,23 @@ def delete_stream_cache(key):
     return 1 if _drop_stream_cache_entry(key) else 0
 
 
+def drop_stream_cache_for_file(backend, file_id):
+    backend = (backend or "sia").strip().lower()
+    file_id = (file_id or "").strip()
+    if not file_id:
+        return 0
+    return 1 if _drop_stream_cache_entry(f"{backend}:{file_id}") else 0
+
+
+async def prune_stream_cache(config):
+    """Drop cached streams whose announcement is gone, retracted, or taken down."""
+    for key in list(_STREAM_CACHE):
+        backend, _, file_id = key.partition(":")
+        live = await store.live_announcement(config, file_id, backend)
+        if not live:
+            _drop_stream_cache_entry(key)
+
+
 def clear_stream_cache():
     _evict_stream_cache()
     deleted = 0
@@ -143,6 +161,7 @@ def _video_public_item(item: dict) -> dict:
         "size": f.get("size") or 0,
         "backend": backend,
         "file_id": file_id,
+        "owner": (item.get("owner") or "").strip(),
         "stream_url": (
             f"/file-announcements/api/v1/public/stream/{quote(backend, safe='')}/"
             f"{quote(file_id, safe='')}"
@@ -241,7 +260,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
             skip = max(int(self.get_query_argument("skip", 0)), 0)
         except ValueError:
             return self._error(400, "limit and skip must be integers")
-        files = await store.list_files(
+        files = await store.list_live_files(
             self.config, query=query, status=status, limit=limit, skip=skip
         )
         return self.render_as_json(
@@ -298,6 +317,8 @@ class FileListHandler(BaseFileAnnouncementHandler):
                 file_id=file_id,
                 backend_name=backend,
             )
+        except DuplicateFileAnnouncementError as exc:
+            return self._error(409, str(exc))
         except (FileAnnouncementServiceError, ValueError) as exc:
             return self._error(400, str(exc))
         self.set_status(201)
@@ -306,7 +327,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
 
 class FileDetailHandler(BaseFileAnnouncementHandler):
     async def get(self, record_id):
-        doc = await store.get_file(self.config, record_id)
+        doc = await store.get_live_by_transaction_id(self.config, record_id)
         if not doc:
             return self._error(404, "file not found")
         return self.render_as_json({"status": True, "result": doc})
@@ -341,6 +362,7 @@ class FileDetailHandler(BaseFileAnnouncementHandler):
         except FileAnnouncementServiceError as exc:
             code = 404 if "not found" in str(exc) else 400
             return self._error(code, str(exc))
+        drop_stream_cache_for_file(result.get("backend"), result.get("file_id"))
         return self.render_as_json({"status": True, "result": result})
 
 
@@ -351,7 +373,7 @@ class FileSearchHandler(BaseFileAnnouncementHandler):
             limit = min(int(self.get_query_argument("limit", 50)), 200)
         except ValueError:
             return self._error(400, "limit must be an integer")
-        local = await store.list_files(self.config, query=query, limit=limit)
+        local = []
         chain = await store.search_chain(self.config, query=query, limit=limit)
         return self.render_as_json(
             {
@@ -404,6 +426,11 @@ class FileTakedownHandler(BaseFileAnnouncementHandler):
         except FileAnnouncementServiceError as exc:
             code = 404 if "not found" in str(exc) else 400
             return self._error(code, str(exc))
+        local = result.get("local_record") if isinstance(result, dict) else None
+        if isinstance(local, dict):
+            drop_stream_cache_for_file(local.get("backend"), local.get("file_id"))
+        elif isinstance(result, dict):
+            drop_stream_cache_for_file(result.get("backend"), result.get("file_id"))
         return self.render_as_json({"status": True, "result": result})
 
 
@@ -460,6 +487,7 @@ class FileBackendsHandler(BaseFileAnnouncementHandler):
 
 class StreamCacheHandler(BaseFileAnnouncementHandler):
     async def get(self):
+        await prune_stream_cache(self.config)
         data = list_stream_cache()
         data["status"] = True
         return self.render_as_json(data)
@@ -561,6 +589,9 @@ class PublicTakedownHandler(BaseHandler):
         except Exception as exc:
             self.set_status(500)
             return self.render_as_json({"status": False, "error": str(exc)})
+        local = result.get("local_record") if isinstance(result, dict) else None
+        if isinstance(local, dict):
+            drop_stream_cache_for_file(local.get("backend"), local.get("file_id"))
         return self.render_as_json({"status": True, "result": result})
 
 
@@ -577,6 +608,7 @@ class PublicVideoListHandler(BaseHandler):
             return self.render_as_json(
                 {"status": False, "error": "limit and skip must be integers"}
             )
+        await prune_stream_cache(self.config)
         raw = await store.search_videos(
             self.config, query=query, limit=limit, skip=skip
         )
@@ -637,6 +669,12 @@ class PublicStreamHandler(BaseHandler):
 
         _evict_stream_cache()
         cache_key = f"{backend}:{file_id}"
+        live = await store.live_announcement(self.config, file_id, backend)
+        if not live:
+            _drop_stream_cache_entry(cache_key)
+            self.set_status(404)
+            self.finish("file not found")
+            return None
 
         if cache_key not in _STREAM_CACHE:
             try:
@@ -805,9 +843,9 @@ HANDLERS = [
     (r"/file-announcements/api/v1/unlock", FileAnnouncementUnlockHandler),
     (r"/file-announcements/api/v1/files", FileListHandler),
     (r"/file-announcements/api/v1/files/search", FileSearchHandler),
-    (r"/file-announcements/api/v1/files/([^/]+)/takedown", FileTakedownHandler),
-    (r"/file-announcements/api/v1/files/([^/]+)/download", FileDownloadHandler),
-    (r"/file-announcements/api/v1/files/([^/]+)", FileDetailHandler),
+    (r"/file-announcements/api/v1/files/(.+)/takedown", FileTakedownHandler),
+    (r"/file-announcements/api/v1/files/(.+)/download", FileDownloadHandler),
+    (r"/file-announcements/api/v1/files/(.+)", FileDetailHandler),
     (r"/file-announcements/api/v1/history", FileHistoryHandler),
     (r"/file-announcements/api/v1/settings", FileSettingsHandler),
     (r"/file-announcements/api/v1/backends", FileBackendsHandler),

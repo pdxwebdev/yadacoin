@@ -24,6 +24,23 @@ from yadacoin.core.common import changetime
 from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.http.base import BaseHandler
 
+_FILE_SEARCH_FIELDS = (
+    "title",
+    "description",
+    "keywords",
+    "file_id",
+    "filename",
+    "share_url",
+)
+
+
+def _file_announcement_query(prefix, term):
+    text = (term or "").strip()
+    if not text:
+        return None
+    regex = {"$regex": re.escape(text), "$options": "i"}
+    return {"$or": [{f"{prefix}.{field}": regex} for field in _FILE_SEARCH_FIELDS]}
+
 
 class HashrateAPIHandler(BaseHandler):
     async def refresh(self):
@@ -348,6 +365,31 @@ class ExplorerSearchHandler(BaseHandler):
             pass
 
         try:
+            file_filter = _file_announcement_query(
+                "transactions.relationship.file", term
+            )
+            if file_filter:
+                res = await self.config.mongo.async_db.blocks.count_documents(
+                    file_filter
+                )
+                if res:
+                    return self.render_as_json(
+                        {
+                            "resultType": "txn_file_announcement",
+                            "result": [
+                                changetime(x)
+                                async for x in self.config.mongo.async_db.blocks.find(
+                                    file_filter, {"_id": 0}
+                                )
+                                .sort("index", -1)
+                                .limit(10)
+                            ],
+                        }
+                    )
+        except:
+            pass
+
+        try:
             res = await self.get_wallet_balance(term)
             if res:
                 return res
@@ -498,6 +540,31 @@ class ExplorerSearchHandler(BaseHandler):
             pass
 
         try:
+            file_filter = _file_announcement_query("relationship.file", term)
+            if file_filter:
+                res = (
+                    await self.config.mongo.async_db.miner_transactions.count_documents(
+                        file_filter
+                    )
+                )
+                if res:
+                    return self.render_as_json(
+                        {
+                            "resultType": "mempool_file_announcement",
+                            "result": [
+                                changetime(x)
+                                async for x in self.config.mongo.async_db.miner_transactions.find(
+                                    file_filter, {"_id": 0}
+                                )
+                                .sort("time", -1)
+                                .limit(10)
+                            ],
+                        }
+                    )
+        except:
+            pass
+
+        try:
             base64.b64decode(term.replace(" ", "+"))
             res = await self.config.mongo.async_db.failed_transactions.count_documents(
                 {"txn.id": term.replace(" ", "+")}
@@ -599,6 +666,30 @@ class ExplorerSearchHandler(BaseHandler):
                         ],
                     }
                 )
+        except:
+            pass
+
+        try:
+            file_filter = _file_announcement_query("txn.relationship.file", term)
+            if file_filter:
+                res = await self.config.mongo.async_db.failed_transactions.count_documents(
+                    file_filter
+                )
+                if res:
+                    return self.render_as_json(
+                        {
+                            "resultType": "failed_file_announcement",
+                            "result": [
+                                changetime(x)
+                                async for x in self.config.mongo.async_db.failed_transactions.find(
+                                    file_filter,
+                                    {"_id": 0, "txn._id": 0},
+                                )
+                                .sort("index", -1)
+                                .limit(10)
+                            ],
+                        }
+                    )
         except:
             pass
 
