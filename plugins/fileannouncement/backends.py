@@ -15,6 +15,7 @@ Full license terms: see LICENSE.txt in this repository.
 
 import hashlib
 import json
+import time
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -55,6 +56,32 @@ class StorageBackend(ABC):
     @abstractmethod
     async def download(self, file_id: str, share_url: str = "") -> dict:
         """Return {file_id, content: bytes, metadata: dict, size: int}."""
+
+    async def object_size(self, file_id: str, share_url: str = "") -> int:
+        result = await self.download(file_id, share_url=share_url)
+        return int(result.get("size") or len(result.get("content") or b""))
+
+    async def open_download(
+        self,
+        file_id: str,
+        share_url: str = "",
+        offset: int = 0,
+        length: Optional[int] = None,
+    ):
+        """Return (total_size, async iterator of bytes) without buffering first."""
+        result = await self.download(file_id, share_url=share_url)
+        data = result.get("content") or b""
+        total = int(result.get("size") or len(data))
+        start = max(0, int(offset or 0))
+        end = total if length is None else min(total, start + max(0, int(length)))
+        slice_ = data[start:end]
+
+        async def chunks():
+            step = 64 * 1024
+            for i in range(0, len(slice_), step):
+                yield slice_[i : i + step]
+
+        return total, chunks()
 
     @abstractmethod
     async def delete(self, file_id: str) -> dict:
@@ -113,9 +140,43 @@ class MemoryStorageBackend(StorageBackend):
             "size": obj["size"],
         }
 
+    async def object_size(self, file_id: str, share_url: str = "") -> int:
+        obj = self._objects.get(file_id)
+        if not obj:
+            raise StorageBackendError(f"object not found: {file_id}")
+        return int(obj["size"])
+
+    async def open_download(
+        self,
+        file_id: str,
+        share_url: str = "",
+        offset: int = 0,
+        length: Optional[int] = None,
+    ):
+        obj = self._objects.get(file_id)
+        if not obj:
+            raise StorageBackendError(f"object not found: {file_id}")
+        data = obj["content"]
+        total = int(obj["size"])
+        start = max(0, int(offset or 0))
+        end = total if length is None else min(total, start + max(0, int(length)))
+        slice_ = data[start:end]
+
+        async def chunks():
+            step = 64 * 1024
+            for i in range(0, len(slice_), step):
+                yield slice_[i : i + step]
+
+        return total, chunks()
+
     async def delete(self, file_id: str) -> dict:
         self._objects.pop(file_id, None)
         return {"file_id": file_id, "ok": True}
+
+
+_SDK_CACHE: Dict[tuple, object] = {}
+_OBJECT_CACHE: Dict[tuple, tuple] = {}
+_OBJECT_CACHE_TTL = 600
 
 
 class SiaStorageBackend(StorageBackend):
@@ -159,6 +220,10 @@ class SiaStorageBackend(StorageBackend):
             seed = bytes.fromhex(self.app_key_hex)
         except ValueError as exc:
             raise StorageBackendError("sia_app_key contains invalid hex") from exc
+        cache_key = (self.indexer_url, self.app_key_hex)
+        cached = _SDK_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
         builder = Builder(self.indexer_url, self._app_metadata())
         sdk = await builder.connected(AppKey(seed))
         if sdk is None:
@@ -168,7 +233,79 @@ class SiaStorageBackend(StorageBackend):
                 "python -m plugins.fileannouncement.onboard "
                 "then paste the printed 64-char hex into Settings."
             )
+        _SDK_CACHE[cache_key] = sdk
         return sdk
+
+    def _drop_sdk(self):
+        _SDK_CACHE.pop((self.indexer_url, self.app_key_hex), None)
+
+    async def _object(self, file_id: str, share_url: str = ""):
+        link = (share_url or "").strip()
+        ident = link or (file_id or "").strip()
+        cache_key = (self.indexer_url, self.app_key_hex, ident)
+        hit = _OBJECT_CACHE.get(cache_key)
+        now = time.monotonic()
+        if hit and hit[1] > now:
+            return hit[0]
+        sdk = await self._sdk()
+        try:
+            if is_share_url(link) or is_share_url(file_id):
+                obj = await sdk.shared_object(link or file_id.strip())
+            else:
+                obj = await sdk.object(file_id.strip())
+        except Exception:
+            self._drop_sdk()
+            _OBJECT_CACHE.pop(cache_key, None)
+            raise
+        _OBJECT_CACHE[cache_key] = (obj, now + _OBJECT_CACHE_TTL)
+        return obj
+
+    async def object_size(self, file_id: str, share_url: str = "") -> int:
+        try:
+            obj = await self._object(file_id, share_url)
+            return int(obj.size())
+        except StorageBackendError:
+            raise
+        except Exception as exc:
+            raise StorageBackendError(str(exc)) from exc
+
+    async def open_download(
+        self,
+        file_id: str,
+        share_url: str = "",
+        offset: int = 0,
+        length: Optional[int] = None,
+    ):
+        try:
+            from sia_storage import DownloadOptions
+        except ImportError as exc:
+            raise StorageBackendError(
+                "sia-storage SDK is not installed. Run: pip install sia-storage"
+            ) from exc
+        try:
+            sdk = await self._sdk()
+            obj = await self._object(file_id, share_url)
+            total = int(obj.size())
+            opts = DownloadOptions(
+                offset=int(offset or 0),
+                length=None if length is None else int(length),
+            )
+            handle = sdk.download(obj, opts)
+        except StorageBackendError:
+            raise
+        except Exception as exc:
+            self._drop_sdk()
+            raise StorageBackendError(str(exc)) from exc
+
+        async def chunks():
+            try:
+                async for chunk in handle:
+                    if chunk:
+                        yield chunk
+            finally:
+                await handle.close()
+
+        return total, chunks()
 
     async def upload(
         self,
@@ -237,11 +374,7 @@ class SiaStorageBackend(StorageBackend):
                 "sia-storage SDK is not installed. Run: pip install sia-storage"
             ) from exc
         sdk = await self._sdk()
-        link = (share_url or "").strip()
-        if is_share_url(link) or is_share_url(file_id):
-            obj = await sdk.shared_object(link or file_id.strip())
-        else:
-            obj = await sdk.object(file_id.strip())
+        obj = await self._object(file_id, share_url)
         async with sdk.download(obj, DownloadOptions()) as d:
             raw = await d.read_all()
         meta = {}

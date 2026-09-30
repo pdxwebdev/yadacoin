@@ -11,6 +11,7 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import asyncio
 import hashlib
 import time
 from logging import getLogger
@@ -32,6 +33,42 @@ from . import store
 from .backends import StorageBackendError, get_backend
 
 app_log = getLogger("tornado.application")
+
+_LIVE_UNTIL = {}
+_SHARE_UNTIL = {}
+_LIVE_TTL = 20
+_SHARE_TTL = 600
+
+
+def forget_live(backend: str, file_id: str):
+    key = f"{(backend or '').strip().lower()}:{(file_id or '').strip()}"
+    _LIVE_UNTIL.pop(key, None)
+    _SHARE_UNTIL.pop((file_id or "").strip(), None)
+
+
+async def assert_live(config, backend: str, file_id: str):
+    key = f"{(backend or '').strip().lower()}:{(file_id or '').strip()}"
+    now = time.monotonic()
+    hit = _LIVE_UNTIL.get(key)
+    if hit and hit[0] > now:
+        return hit[1]
+    live = await store.live_announcement(config, file_id, backend)
+    if not live:
+        _LIVE_UNTIL.pop(key, None)
+        raise FileAnnouncementServiceError("file not found")
+    _LIVE_UNTIL[key] = (now + _LIVE_TTL, live)
+    return live
+
+
+async def _cached_share_url(config, file_id: str) -> str:
+    key = (file_id or "").strip()
+    hit = _SHARE_UNTIL.get(key)
+    now = time.monotonic()
+    if hit and hit[1] > now:
+        return hit[0]
+    url = await store.share_url_for_file(config, file_id)
+    _SHARE_UNTIL[key] = (url or "", now + _SHARE_TTL)
+    return url or ""
 
 
 class FileAnnouncementServiceError(Exception):
@@ -922,3 +959,68 @@ async def download_by_backend_file_id(
     )
     result["backend"] = name
     return result
+
+
+async def prepare_public_stream(
+    config,
+    backend_name: str,
+    file_id: str,
+    filename: str = "",
+    mime_type: str = "",
+) -> dict:
+    """Resolve size and metadata without downloading object bytes."""
+    file_id = (file_id or "").strip()
+    if not file_id:
+        raise FileAnnouncementServiceError("file_id is required")
+    live, share_url, backend_tuple = await asyncio.gather(
+        assert_live(config, backend_name, file_id),
+        _cached_share_url(config, file_id),
+        _backend_from_settings(config, backend_name),
+    )
+    backend, name, _settings = backend_tuple
+    file_doc = (live or {}).get("file") or {}
+    try:
+        total = await backend.object_size(file_id, share_url=share_url)
+    except StorageBackendError as exc:
+        raise FileAnnouncementServiceError(str(exc)) from exc
+    except Exception as exc:
+        raise FileAnnouncementServiceError(str(exc)) from exc
+    return {
+        "backend": backend,
+        "backend_name": name,
+        "share_url": share_url,
+        "size": int(total),
+        "filename": filename or file_doc.get("filename") or file_id[:16] or "video",
+        "mime_type": mime_type
+        or file_doc.get("mime_type")
+        or "application/octet-stream",
+    }
+
+
+async def open_public_range(
+    config,
+    backend_name: str,
+    file_id: str,
+    offset: int = 0,
+    length: Optional[int] = None,
+    share_url: str = "",
+    backend=None,
+):
+    """Stream only the requested byte range from storage."""
+    file_id = (file_id or "").strip()
+    if backend is None:
+        prepared = await prepare_public_stream(config, backend_name, file_id)
+        backend = prepared["backend"]
+        share_url = share_url or prepared["share_url"]
+    try:
+        _total, chunks = await backend.open_download(
+            file_id,
+            share_url=share_url,
+            offset=int(offset or 0),
+            length=length,
+        )
+    except StorageBackendError as exc:
+        raise FileAnnouncementServiceError(str(exc)) from exc
+    except Exception as exc:
+        raise FileAnnouncementServiceError(str(exc)) from exc
+    return chunks

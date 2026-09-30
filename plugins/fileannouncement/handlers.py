@@ -30,10 +30,13 @@ from .service import (
     DuplicateFileAnnouncementError,
     FileAnnouncementServiceError,
     announce_content_takedown,
+    assert_live,
     create_file,
     delete_file,
-    download_by_backend_file_id,
     download_file,
+    forget_live,
+    open_public_range,
+    prepare_public_stream,
     takedown_file,
     update_file,
 )
@@ -124,7 +127,36 @@ def drop_stream_cache_for_file(backend, file_id):
     file_id = (file_id or "").strip()
     if not file_id:
         return 0
+    forget_live(backend, file_id)
     return 1 if _drop_stream_cache_entry(f"{backend}:{file_id}") else 0
+
+
+def parse_byte_range(header, total):
+    """Return (start, end) inclusive, or None for an unsatisfiable range."""
+    total = int(total)
+    if total <= 0:
+        return None
+    if not header:
+        return 0, total - 1
+    if not header.startswith("bytes="):
+        raise ValueError("invalid range")
+    spec = header[6:].split(",", 1)[0].strip()
+    start_str, sep, end_str = spec.partition("-")
+    if not sep:
+        raise ValueError("invalid range")
+    if start_str == "":
+        suffix = int(end_str)
+        if suffix <= 0:
+            raise ValueError("invalid range")
+        start = max(0, total - suffix)
+        end = total - 1
+    else:
+        start = int(start_str)
+        end = int(end_str) if end_str else total - 1
+    end = min(end, total - 1)
+    if start < 0 or start >= total or start > end:
+        return None
+    return start, end
 
 
 async def prune_stream_cache(config):
@@ -639,7 +671,7 @@ class PublicVideoListHandler(BaseHandler):
             return self.render_as_json(
                 {"status": False, "error": "limit and skip must be integers"}
             )
-        await prune_stream_cache(self.config)
+        tornado.ioloop.IOLoop.current().spawn_callback(prune_stream_cache, self.config)
         raw = await store.search_videos(
             self.config, query=query, limit=limit, skip=skip
         )
@@ -662,169 +694,43 @@ class PublicStreamHandler(BaseHandler):
         self.set_status(204)
         self.finish()
 
-    async def head(self, backend, file_id):
-        """Browsers / media stacks sometimes probe with HEAD before Range GET."""
-        await self._prepare_cache(backend, file_id)
-        if self._finished:
-            return
-        cache_key = f"{(backend or '').strip().lower()}:{(file_id or '').strip()}"
-        entry = _STREAM_CACHE.get(cache_key)
-        if not entry:
-            self.set_status(404)
-            return self.finish()
-        tmp_path, total, _, filename, mime_type = entry
+    def _media_headers(self, filename, mime_type, total, start, end, partial):
         is_av = mime_type.startswith("video/") or mime_type.startswith("audio/")
+        safe_name = (filename or "video").replace('"', "")
         self.set_header("Content-Type", mime_type)
         self.set_header("Accept-Ranges", "bytes")
-        self.set_header("Content-Length", str(total))
-        safe_name = filename.replace('"', "")
-        self.set_header(
-            "Content-Disposition",
-            f'inline; filename="{safe_name}"'
-            if is_av
-            else f'attachment; filename="{safe_name}"',
-        )
-        self.set_status(200)
-        return self.finish()
-
-    async def _prepare_cache(self, backend, file_id):
-        backend = (backend or "").strip().lower()
-        file_id = (file_id or "").strip()
-        if not backend or not file_id:
-            self.set_status(400)
-            self.finish("backend and file_id are required")
-            return None
-
-        filename = self.get_query_argument("filename", "") or ""
-        mime_type = self.get_query_argument("mime_type", "") or ""
-
-        _evict_stream_cache()
-        cache_key = f"{backend}:{file_id}"
-        live = await store.live_announcement(self.config, file_id, backend)
-        if not live:
-            _drop_stream_cache_entry(cache_key)
-            self.set_status(404)
-            self.finish("file not found")
-            return None
-
-        if cache_key not in _STREAM_CACHE:
-            try:
-                result = await download_by_backend_file_id(
-                    self.config,
-                    backend,
-                    file_id,
-                    filename=filename,
-                    mime_type=mime_type,
-                )
-            except FileAnnouncementServiceError as exc:
-                self.set_status(404 if "not found" in str(exc).lower() else 502)
-                self.finish(str(exc))
-                return None
-            except Exception as exc:
-                self.set_status(502)
-                self.finish(str(exc))
-                return None
-
-            content = result.get("content") or b""
-            filename = result.get("filename") or filename or file_id[:16]
-            mime_type = (
-                result.get("mime_type") or mime_type or "application/octet-stream"
-            )
-            fd, tmp_path = tempfile.mkstemp(prefix="fa_stream_", dir=_STREAM_TMP_DIR)
-            try:
-                with os.fdopen(fd, "wb") as fh:
-                    fh.write(content)
-                total = len(content)
-            except Exception:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                self.set_status(500)
-                self.finish("failed to cache stream")
-                return None
-            _STREAM_CACHE[cache_key] = (
-                tmp_path,
-                total,
-                time.monotonic() + _STREAM_CACHE_TTL,
-                filename,
-                mime_type,
-            )
-        else:
-            tmp_path, total, _, filename, mime_type = _STREAM_CACHE[cache_key]
-            _STREAM_CACHE[cache_key] = (
-                tmp_path,
-                total,
-                time.monotonic() + _STREAM_CACHE_TTL,
-                filename,
-                mime_type,
-            )
-        return cache_key, tmp_path, total, filename, mime_type
-
-    async def get(self, backend, file_id):
-        prepared = await self._prepare_cache(backend, file_id)
-        if self._finished or not prepared:
-            return
-        _cache_key, tmp_path, total, filename, mime_type = prepared
-
-        is_av = mime_type.startswith("video/") or mime_type.startswith("audio/")
-        self.set_header("Content-Type", mime_type)
-        self.set_header("Accept-Ranges", "bytes")
+        self.set_header("X-Content-Type-Options", "nosniff")
+        self.set_header("Cache-Control", "private, max-age=3600")
         self.set_header(
             "Access-Control-Expose-Headers",
             "Content-Type, Content-Length, Content-Range, Accept-Ranges",
         )
-        safe_name = filename.replace('"', "")
         self.set_header(
             "Content-Disposition",
             f'inline; filename="{safe_name}"'
             if is_av
             else f'attachment; filename="{safe_name}"',
         )
+        length = end - start + 1
+        if partial:
+            self.set_status(206)
+            self.set_header("Content-Range", f"bytes {start}-{end}/{total}")
+        else:
+            self.set_status(200)
+        self.set_header("Content-Length", str(length))
 
-        range_header = self.request.headers.get("Range", "")
+    async def _write_span(self, read_chunk, start, end):
+        remaining = end - start + 1
         try:
-            if range_header and range_header.startswith("bytes="):
-                try:
-                    range_spec = range_header[6:]
-                    start_str, _, end_str = range_spec.partition("-")
-                    start = int(start_str) if start_str else 0
-                    end = int(end_str) if end_str else total - 1
-                    end = min(end, total - 1)
-                    if start > end or start >= total:
-                        self.set_status(416)
-                        self.set_header("Content-Range", f"bytes */{total}")
-                        self.finish()
-                        return
-                    self.set_status(206)
-                    self.set_header("Content-Range", f"bytes {start}-{end}/{total}")
-                    self.set_header("Content-Length", str(end - start + 1))
-                    with open(tmp_path, "rb") as fh:
-                        fh.seek(start)
-                        remaining = end - start + 1
-                        while remaining > 0:
-                            chunk = fh.read(min(_STREAM_CHUNK, remaining))
-                            if not chunk:
-                                break
-                            self.write(chunk)
-                            await self.flush()
-                            remaining -= len(chunk)
-                except (ValueError, IndexError):
-                    self.set_status(400)
-                    return self.finish("Invalid Range header")
-            else:
-                self.set_header("Content-Length", str(total))
-                with open(tmp_path, "rb") as fh:
-                    while True:
-                        chunk = fh.read(_STREAM_CHUNK)
-                        if not chunk:
-                            break
-                        self.write(chunk)
-                        await self.flush()
+            while remaining > 0:
+                chunk = await read_chunk(remaining)
+                if not chunk:
+                    break
+                if len(chunk) > remaining:
+                    chunk = chunk[:remaining]
+                self.write(chunk)
+                await self.flush()
+                remaining -= len(chunk)
         except StreamClosedError:
             return
         except OSError:
@@ -832,7 +738,155 @@ class PublicStreamHandler(BaseHandler):
                 self.set_status(404)
                 self.finish("cache entry unavailable")
             return
-        self.finish()
+        if not self._finished:
+            self.finish()
+
+    async def head(self, backend, file_id):
+        """Browsers / media stacks sometimes probe with HEAD before Range GET."""
+        backend = (backend or "").strip().lower()
+        file_id = (file_id or "").strip()
+        cache_key = f"{backend}:{file_id}"
+        _evict_stream_cache()
+        entry = _STREAM_CACHE.get(cache_key)
+        if entry:
+            try:
+                await assert_live(self.config, backend, file_id)
+            except FileAnnouncementServiceError:
+                _drop_stream_cache_entry(cache_key)
+                self.set_status(404)
+                return self.finish("file not found")
+            _tmp, total, _, filename, mime_type = entry
+            self._media_headers(filename, mime_type, total, 0, total - 1, False)
+            return self.finish()
+        filename = self.get_query_argument("filename", "") or ""
+        mime_type = self.get_query_argument("mime_type", "") or ""
+        try:
+            stat = await prepare_public_stream(
+                self.config, backend, file_id, filename, mime_type
+            )
+        except FileAnnouncementServiceError as exc:
+            self.set_status(404 if "not found" in str(exc).lower() else 502)
+            return self.finish(str(exc))
+        total = int(stat["size"])
+        if total <= 0:
+            self.set_status(404)
+            return self.finish("empty")
+        self._media_headers(
+            stat["filename"], stat["mime_type"], total, 0, total - 1, False
+        )
+        return self.finish()
+
+    async def get(self, backend, file_id):
+        backend = (backend or "").strip().lower()
+        file_id = (file_id or "").strip()
+        if not backend or not file_id:
+            self.set_status(400)
+            self.finish("backend and file_id are required")
+            return
+        cache_key = f"{backend}:{file_id}"
+        _evict_stream_cache()
+        entry = _STREAM_CACHE.get(cache_key)
+        filename = self.get_query_argument("filename", "") or ""
+        mime_type = self.get_query_argument("mime_type", "") or ""
+        range_header = self.request.headers.get("Range", "")
+
+        if entry and os.path.isfile(entry[0]):
+            try:
+                await assert_live(self.config, backend, file_id)
+            except FileAnnouncementServiceError:
+                _drop_stream_cache_entry(cache_key)
+                self.set_status(404)
+                return self.finish("file not found")
+            tmp_path, total, _exp, cached_name, cached_mime = entry
+            _STREAM_CACHE[cache_key] = (
+                tmp_path,
+                total,
+                time.monotonic() + _STREAM_CACHE_TTL,
+                cached_name,
+                cached_mime,
+            )
+            filename = filename or cached_name
+            mime_type = mime_type or cached_mime
+            try:
+                span = parse_byte_range(range_header, total)
+            except ValueError:
+                self.set_status(400)
+                return self.finish("Invalid Range header")
+            if span is None:
+                self.set_status(416)
+                self.set_header("Content-Range", f"bytes */{total}")
+                return self.finish()
+            start, end = span
+            partial = bool(range_header)
+            self._media_headers(filename, mime_type, total, start, end, partial)
+            fh = open(tmp_path, "rb")
+            fh.seek(start)
+
+            async def read_chunk(remaining, handle=fh):
+                return handle.read(min(_STREAM_CHUNK, remaining))
+
+            try:
+                await self._write_span(read_chunk, start, end)
+            finally:
+                fh.close()
+            return
+
+        try:
+            stat = await prepare_public_stream(
+                self.config, backend, file_id, filename, mime_type
+            )
+        except FileAnnouncementServiceError as exc:
+            msg = str(exc)
+            self.set_status(404 if "not found" in msg.lower() else 502)
+            return self.finish(msg)
+        total = int(stat["size"])
+        if total <= 0:
+            self.set_status(404)
+            return self.finish("empty")
+        try:
+            span = parse_byte_range(range_header, total)
+        except ValueError:
+            self.set_status(400)
+            return self.finish("Invalid Range header")
+        if span is None:
+            self.set_status(416)
+            self.set_header("Content-Range", f"bytes */{total}")
+            return self.finish()
+        start, end = span
+        length = end - start + 1
+        try:
+            chunks = await open_public_range(
+                self.config,
+                backend,
+                file_id,
+                offset=start,
+                length=length,
+                share_url=stat.get("share_url") or "",
+                backend=stat.get("backend"),
+            )
+        except FileAnnouncementServiceError as exc:
+            msg = str(exc)
+            self.set_status(404 if "not found" in msg.lower() else 502)
+            return self.finish(msg)
+        partial = bool(range_header)
+        self._media_headers(
+            stat["filename"], stat["mime_type"], total, start, end, partial
+        )
+        agen = chunks.__aiter__()
+
+        async def read_chunk(_remaining, iterator=agen):
+            try:
+                return await iterator.__anext__()
+            except StopAsyncIteration:
+                return b""
+
+        try:
+            await self._write_span(read_chunk, start, end)
+        finally:
+            try:
+                await chunks.aclose()
+            except Exception:
+                pass
 
 
 class YadaScrollerDemoHandler(BaseHandler):

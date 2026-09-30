@@ -11,6 +11,7 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import hashlib
 import os
 import tempfile
 import time
@@ -565,3 +566,32 @@ class TestLiveAnnouncement(AsyncTestCase):
             h._STREAM_CACHE.update(saved)
             if os.path.exists(path):
                 os.unlink(path)
+
+
+class TestByteRange(AsyncTestCase):
+    async def test_parse_open_and_suffix_ranges(self):
+        from plugins.fileannouncement.handlers import parse_byte_range
+
+        self.assertEqual(parse_byte_range("", 100), (0, 99))
+        self.assertEqual(parse_byte_range("bytes=0-1", 100), (0, 1))
+        self.assertEqual(parse_byte_range("bytes=0-", 100), (0, 99))
+        self.assertEqual(parse_byte_range("bytes=-8", 100), (92, 99))
+        self.assertIsNone(parse_byte_range("bytes=100-110", 100))
+
+    async def test_memory_open_download_does_not_return_whole_object(self):
+        backend = MemoryStorageBackend()
+        body = b"abcdefghij"
+        uploaded = await backend.upload(body, filename="a.mp4", mime_type="video/mp4")
+        total, chunks = await backend.open_download(
+            uploaded["file_id"], offset=2, length=3
+        )
+        self.assertEqual(total, 10)
+        got = b""
+        async for chunk in chunks:
+            got += chunk
+        self.assertEqual(got, b"cde")
+        self.assertEqual(
+            await backend.object_size(uploaded["file_id"]),
+            len(body),
+        )
+        self.assertEqual(uploaded["file_id"], hashlib.sha256(body).hexdigest())

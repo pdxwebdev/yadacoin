@@ -174,8 +174,10 @@
     video.setAttribute("webkit-playsinline", "");
     video.loop = true;
     video.muted = muted;
-    video.preload = "metadata";
+    video.autoplay = true;
+    video.preload = "auto";
     video.controls = false;
+    video.setAttribute("fetchpriority", "high");
     video.setAttribute("data-src", streamUrl(item));
     video.setAttribute("data-type", mimeFor(item));
 
@@ -250,9 +252,10 @@
     feed.appendChild(frag);
     setupObserver();
     // layout then activate
+    activateIndex(0, false);
     requestAnimationFrame(() => {
-      activateIndex(0, true);
-      prefetchAround(0);
+      const slide = feed.querySelector(".slide");
+      if (slide) slide.scrollIntoView({ behavior: "auto", block: "start" });
     });
   }
 
@@ -268,19 +271,12 @@
 
   function ensureSrc(video) {
     const src = video.getAttribute("data-src");
-    const type = video.getAttribute("data-type") || "";
     if (!src) return;
     if (video.getAttribute("src") === src) return;
     video.dataset.unloading = "";
-    // Use <source> so the browser gets an explicit MIME type
-    video.removeAttribute("src");
+    video.preload = "auto";
     while (video.firstChild) video.removeChild(video.firstChild);
-    const source = document.createElement("source");
-    source.src = src;
-    if (type) source.type = type;
-    video.appendChild(source);
-    video.setAttribute("src", src); // keep for equality checks / some engines
-    video.load();
+    video.src = src;
   }
 
   function activateIndex(index, forceScroll) {
@@ -303,31 +299,42 @@
     };
     if (video.readyState >= 2) play();
     else {
-      video.addEventListener("canplay", play, { once: true });
+      video.addEventListener("loadeddata", play, { once: true });
       setTimeout(() => {
         if (slide.isConnected && video.error && video.dataset.unloading !== "1") {
           dropVideo(slide.dataset.key);
         }
       }, 8000);
     }
+    video.addEventListener(
+      "playing",
+      () => {
+        const next = slides[index + 1];
+        if (!next) return;
+        const nv = next.querySelector("video");
+        if (!nv) return;
+        nv.preload = "auto";
+        ensureSrc(nv);
+      },
+      { once: true }
+    );
 
     slides.forEach((s, i) => {
+      if (i === index) return;
       const v = s.querySelector("video");
       if (!v) return;
-      if (Math.abs(i - index) > 3) {
-        if (v.getAttribute("src") || v.querySelector("source")) {
-          clearMedia(v);
-          s.classList.remove("ready");
-        }
-      } else if (Math.abs(i - index) <= 2 && i !== index) {
-        ensureSrc(v);
+      if (Math.abs(i - index) <= 1 && (v.getAttribute("src") || v.querySelector("source"))) {
+        return;
+      }
+      if (v.getAttribute("src") || v.querySelector("source")) {
+        clearMedia(v);
+        s.classList.remove("ready");
       }
     });
 
     if (forceScroll) {
       slide.scrollIntoView({ behavior: "auto", block: "start" });
     }
-    prefetchAround(index);
   }
 
   function setupObserver() {
@@ -420,13 +427,14 @@
   function appendSlide(item) {
     const index = videos.length;
     videos.push(item);
-    prefetched.add(itemKey(item));
     feed.appendChild(buildSlide(item, index));
     emptyEl.hidden = true;
     setupObserver();
     if (index === 0) {
+      activateIndex(0, false);
       requestAnimationFrame(() => {
-        activateIndex(0, true);
+        const slide = feed.querySelector(".slide");
+        if (slide) slide.scrollIntoView({ behavior: "auto", block: "start" });
       });
     }
   }
@@ -522,18 +530,42 @@
         if (content) seen.add(content);
         candidates.push(item);
       }
-      await mapPool(candidates, 3, async (item) => {
-        if (gen !== feedGen || signal.aborted) return;
-        if (!(await streamOk(item, signal))) return;
-        if (gen !== feedGen || signal.aborted) return;
-        appendSlide(item);
-      });
-      if (gen !== feedGen) return;
-      if (!videos.length) {
+      const rest = candidates.slice(1);
+      if (candidates[0]) {
+        appendSlide(candidates[0]);
+        showStatus("");
+      }
+      const probeRest = async () => {
+        await mapPool(rest, 1, async (item) => {
+          if (gen !== feedGen || signal.aborted) return;
+          if (!(await streamOk(item, signal))) return;
+          if (gen !== feedGen || signal.aborted) return;
+          appendSlide(item);
+        });
+        if (gen !== feedGen) return;
+        if (!videos.length) {
+          emptyEl.hidden = false;
+          showStatus("");
+        } else {
+          showStatus(`${videos.length} video${videos.length === 1 ? "" : "s"}`);
+        }
+      };
+      if (!candidates[0]) {
         emptyEl.hidden = false;
         showStatus("");
       } else {
-        showStatus(`${videos.length} video${videos.length === 1 ? "" : "s"}`);
+        const firstVideo = feed.querySelector("video");
+        let started = false;
+        const kick = () => {
+          if (started || gen !== feedGen) return;
+          started = true;
+          probeRest();
+        };
+        if (firstVideo) {
+          firstVideo.addEventListener("loadeddata", kick, { once: true });
+          firstVideo.addEventListener("error", kick, { once: true });
+        }
+        setTimeout(kick, 1200);
       }
     } catch (err) {
       if (gen !== feedGen || signal.aborted) return;
