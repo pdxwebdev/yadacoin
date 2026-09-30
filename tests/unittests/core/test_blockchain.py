@@ -1688,6 +1688,19 @@ class TestTestBlockEnsureKelTagsFailure(AsyncTestCase):
             result = await Blockchain.test_block(block)
         self.assertFalse(result)
 
+    async def test_skips_prior_block_that_already_has_inception_tags(self):
+        block = MagicMock()
+        block.index = 0
+        block.transactions = []
+        block.verify = AsyncMock()
+        tagged = MagicMock()
+        tagged.inception_public_key_hash = "INC"
+        prior = MagicMock()
+        prior.index = -1
+        prior.transactions = [tagged]
+        result = await Blockchain.test_block(block, extra_blocks=[prior])
+        self.assertTrue(result)
+
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

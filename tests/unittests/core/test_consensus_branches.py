@@ -249,6 +249,18 @@ class TestProcessBlockQueue(ConsensusBase):
         # 100 calls
         self.assertEqual(self.consensus.process_block_queue_item.await_count, 100)
 
+    async def test_item_exception_is_logged_and_loop_continues(self):
+        item = MagicMock()
+        self.consensus.config.processing_queues.block_queue.pop.side_effect = [
+            item,
+            None,
+        ]
+        self.consensus.process_block_queue_item = AsyncMock(
+            side_effect=RuntimeError("boom")
+        )
+        await self.consensus.process_block_queue()
+        self.consensus.app_log.error.assert_called()
+
 
 # ---------------------------------------------------------------------------
 # process_block_queue_item (lines 109-210)
@@ -1144,6 +1156,35 @@ class TestBuildRemoteChain(ConsensusBase):
         self.assertGreater(len(passed), 1)
         self.assertLessEqual(len(passed), CHAIN.MAX_BLOCKS_PER_MESSAGE + 1)
 
+    async def test_bad_local_block_stops_walk(self):
+        self.consensus.config.mongo.async_db.blocks.find_one = AsyncMock(
+            return_value={"index": 2, "hash": "h2"}
+        )
+        with patch(
+            "yadacoin.core.consensus.Block.from_dict",
+            new=AsyncMock(side_effect=Exception("bad local")),
+        ), patch("yadacoin.core.consensus.Blockchain") as BC:
+            BC.return_value = "BC"
+            r = await self.consensus.build_remote_chain(_mk_block(index=1))
+        self.assertEqual(r, "BC")
+        self.consensus.app_log.warning.assert_called()
+
+    async def test_bad_consensus_block_stops_walk(self):
+        self.consensus.config.mongo.async_db.blocks.find_one = AsyncMock(
+            return_value=None
+        )
+        self.consensus.config.mongo.async_db.consensus.find_one = AsyncMock(
+            return_value={"block": {"index": 2, "hash": "h2"}}
+        )
+        with patch(
+            "yadacoin.core.consensus.Block.from_dict",
+            new=AsyncMock(side_effect=Exception("bad consensus")),
+        ), patch("yadacoin.core.consensus.Blockchain") as BC:
+            BC.return_value = "BC"
+            r = await self.consensus.build_remote_chain(_mk_block(index=1))
+        self.assertEqual(r, "BC")
+        self.consensus.app_log.warning.assert_called()
+
 
 # ---------------------------------------------------------------------------
 # get_previous_consensus_block_from_local (lines 401-410)
@@ -1327,6 +1368,101 @@ class TestBuildBackward(ConsensusBase):
         self.assertFalse(status)
         self.assertEqual(blocks, [])
         self.consensus.mongo.async_db.blocks.find_one.assert_not_awaited()
+
+    async def test_missing_prev_hash_returns_false(self):
+        blocks, status = await self.consensus.build_backward_from_block_to_fork(
+            _mk_block(prev_hash=""), []
+        )
+        self.assertFalse(status)
+        self.assertEqual(blocks, [])
+        self.consensus.mongo.async_db.blocks.find_one.assert_not_awaited()
+
+    async def test_empty_prev_hash_breaks_walk(self):
+        self.consensus.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        docs = [self._parent_doc(4, "p", "")]
+        self.consensus.mongo.async_db.consensus.find = MagicMock(
+            return_value=self._consensus_cursor(docs)
+        )
+        local_cursor = MagicMock()
+        local_cursor.to_list = AsyncMock(return_value=[])
+        self.consensus.mongo.async_db.blocks.find = MagicMock(return_value=local_cursor)
+        stream = MagicMock()
+        blocks, status = await self.consensus.build_backward_from_block_to_fork(
+            _mk_block(index=5, prev_hash="p"), [], stream
+        )
+        self.assertFalse(status)
+        self.assertEqual(blocks, [])
+        self.consensus.config.nodeShared.write_params.assert_not_awaited()
+
+    async def test_exhausted_walk_requests_older_getblocks(self):
+        self.consensus.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        docs = []
+        for i in range(10):
+            prev = "h%d" % (i - 1) if i else "still-going"
+            docs.append(self._parent_doc(i + 1, "h%d" % i, prev))
+        docs[0]["block"]["index"] = "nope"
+        docs[0]["block"]["version"] = None
+        docs[0]["index"] = "nope"
+        docs.append({"index": 1, "block": {"index": 1, "prevHash": "x"}})
+        docs.append(self._parent_doc(2, "badver", "zzz", version=99))
+        self.consensus.mongo.async_db.consensus.find = MagicMock(
+            return_value=self._consensus_cursor(docs)
+        )
+        local_cursor = MagicMock()
+        local_cursor.to_list = AsyncMock(return_value=[])
+        self.consensus.mongo.async_db.blocks.find = MagicMock(return_value=local_cursor)
+        stream = MagicMock()
+        with patch.object(CHAIN, "MAX_BLOCKS_PER_MESSAGE", 1):
+            blocks, status = await self.consensus.build_backward_from_block_to_fork(
+                _mk_block(index=20, prev_hash="h9"), [], stream
+            )
+        self.assertFalse(status)
+        self.assertEqual(blocks, [])
+        self.consensus.config.nodeShared.write_params.assert_awaited()
+        method = self.consensus.config.nodeShared.write_params.await_args[0][1]
+        self.assertEqual(method, "getblocks")
+
+    async def test_incomplete_full_block_returns_false(self):
+        self.consensus.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        docs = [self._parent_doc(4, "p", "local")]
+        self.consensus.mongo.async_db.consensus.find = MagicMock(
+            side_effect=[
+                self._consensus_cursor(docs),
+                self._consensus_cursor([]),
+            ]
+        )
+        local_cursor = MagicMock()
+        local_cursor.to_list = AsyncMock(return_value=[{"hash": "local"}])
+        self.consensus.mongo.async_db.blocks.find = MagicMock(return_value=local_cursor)
+        blocks, status = await self.consensus.build_backward_from_block_to_fork(
+            _mk_block(index=5, prev_hash="p"), []
+        )
+        self.assertFalse(status)
+        self.assertEqual(blocks, [])
+        self.consensus.app_log.warning.assert_called()
+
+    async def test_bad_parsed_consensus_block_returns_false(self):
+        self.consensus.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        docs = [self._parent_doc(4, "p", "local")]
+        self.consensus.mongo.async_db.consensus.find = MagicMock(
+            side_effect=[
+                self._consensus_cursor(docs),
+                self._consensus_cursor([{"block": docs[0]["block"]}]),
+            ]
+        )
+        local_cursor = MagicMock()
+        local_cursor.to_list = AsyncMock(return_value=[{"hash": "local"}])
+        self.consensus.mongo.async_db.blocks.find = MagicMock(return_value=local_cursor)
+        with patch(
+            "yadacoin.core.consensus.Block.from_dict",
+            new=AsyncMock(side_effect=Exception("bad")),
+        ):
+            blocks, status = await self.consensus.build_backward_from_block_to_fork(
+                _mk_block(index=5, prev_hash="p"), []
+            )
+        self.assertFalse(status)
+        self.assertEqual(blocks, [])
+        self.consensus.app_log.warning.assert_called()
 
 
 # ---------------------------------------------------------------------------

@@ -1767,6 +1767,221 @@ class TestMempoolConfirmingExtension(AsyncTestCase):
         with self._patch_step():
             self.assertIsNone(walk_unique_confirming_extension(tip, [a, b]))
 
+    async def test_none_tip_and_non_string_pkh(self):
+        from yadacoin.core.keyeventlog import walk_unique_confirming_extension
+
+        self.assertIsNone(walk_unique_confirming_extension(None, []))
+        tip = MagicMock()
+        tip.public_key_hash = None
+        self.assertIsNone(walk_unique_confirming_extension(tip, []))
+        tip.public_key_hash = 5
+        self.assertIsNone(walk_unique_confirming_extension(tip, []))
+
+    async def test_skips_bad_candidates_and_failed_steps(self):
+        from yadacoin.core.keyeventlog import walk_unique_confirming_extension
+
+        tip = _kel_txn(
+            "T", "U", "C", prev="P", relationship="", outputs_to="U", sig="tip"
+        )
+
+        class NoPrev:
+            prev_public_key_hash = None
+
+        class BadPrev:
+            prev_public_key_hash = 1
+
+        class NotKel:
+            prev_public_key_hash = "T"
+
+        class NoSig:
+            prev_public_key_hash = "T"
+            transaction_signature = None
+
+            def are_kel_fields_populated(self):
+                return True
+
+        unconfirmed_tip = _kel_txn(
+            "T",
+            "U",
+            "C",
+            prev="P",
+            relationship="file",
+            outputs_to="other",
+            sig="utip",
+        )
+        unconfirmed_kid = _kel_txn(
+            "U",
+            "C",
+            "D",
+            prev="T",
+            relationship="file",
+            outputs_to="other",
+            sig="ukid",
+        )
+        self.assertIsNone(
+            walk_unique_confirming_extension(unconfirmed_tip, [unconfirmed_kid])
+        )
+        bad_flag = _kel_txn(
+            "X", "Y", "Z", prev="T", relationship="file", outputs_to="other", sig="bad"
+        )
+        broken = _kel_txn(
+            "X", "Y", "Z", prev="T", relationship="", outputs_to="Y", sig="broken"
+        )
+        self.assertIsNone(
+            walk_unique_confirming_extension(
+                tip, [NoPrev(), BadPrev(), NotKel(), NoSig(), bad_flag, broken]
+            )
+        )
+
+    async def test_classify_failure_on_tip_stops_walk(self):
+        from yadacoin.core.keyeventlog import walk_unique_confirming_extension
+
+        tip = _kel_txn("T", "U", "C", prev="P", relationship="", outputs_to="U")
+        with patch(
+            "yadacoin.core.keyeventlog.classify_key_event_flag",
+            side_effect=Exception("flag"),
+        ):
+            self.assertIsNone(walk_unique_confirming_extension(tip, []))
+
+    async def test_classify_failure_on_child_is_skipped(self):
+        from yadacoin.core.keyeventlog import (
+            KeyEventFlag,
+            walk_unique_confirming_extension,
+        )
+
+        tip = _kel_txn(
+            "T", "U", "C", prev="P", relationship="", outputs_to="U", sig="tip"
+        )
+        kid = _kel_txn(
+            "U", "C", "D", prev="T", relationship="", outputs_to="C", sig="k"
+        )
+
+        def classify(txn):
+            if txn is kid:
+                raise Exception("kid flag")
+            return KeyEventFlag.CONFIRMING
+
+        with patch(
+            "yadacoin.core.keyeventlog.classify_key_event_flag", side_effect=classify
+        ):
+            self.assertIsNone(walk_unique_confirming_extension(tip, [kid]))
+
+    async def test_empty_child_pkh_stops_after_one_step(self):
+        from yadacoin.core.keyeventlog import (
+            KeyEventFlag,
+            walk_unique_confirming_extension,
+        )
+
+        class Tip:
+            public_key_hash = "T"
+            transaction_signature = "tip"
+
+        class Child:
+            prev_public_key_hash = "T"
+            public_key_hash = None
+            transaction_signature = "c"
+
+            def are_kel_fields_populated(self):
+                return True
+
+        child = Child()
+        with patch(
+            "yadacoin.core.keyeventlog.classify_key_event_flag",
+            return_value=KeyEventFlag.CONFIRMING,
+        ), patch(
+            "yadacoin.core.keyeventlog.kel_successor_flag_allowed",
+            return_value=True,
+        ), self._patch_step():
+            extended = walk_unique_confirming_extension(Tip(), [child])
+        self.assertIs(extended, child)
+
+    async def test_seen_signature_is_skipped(self):
+        from yadacoin.core.keyeventlog import (
+            KeyEventFlag,
+            walk_unique_confirming_extension,
+        )
+
+        class Tip:
+            public_key_hash = "T"
+            transaction_signature = "tip"
+
+        class Child:
+            def __init__(self, prev, pkh, sig):
+                self.prev_public_key_hash = prev
+                self.public_key_hash = pkh
+                self.transaction_signature = sig
+
+            def are_kel_fields_populated(self):
+                return True
+
+        first = Child("T", "U", "same")
+        again = Child("U", "V", "same")
+        with patch(
+            "yadacoin.core.keyeventlog.classify_key_event_flag",
+            return_value=KeyEventFlag.CONFIRMING,
+        ), patch(
+            "yadacoin.core.keyeventlog.kel_successor_flag_allowed",
+            return_value=True,
+        ), self._patch_step():
+            extended = walk_unique_confirming_extension(Tip(), [first, again])
+        self.assertIs(extended, first)
+
+    async def test_coll_missing_returns_none(self):
+        from yadacoin.core.keyeventlog import mempool_confirming_extension
+
+        cfg = MagicMock()
+        cfg.mongo = None
+        self.assertIsNone(await mempool_confirming_extension(MagicMock(), config=cfg))
+
+    async def test_loads_mempool_candidates(self):
+        from yadacoin.core.keyeventlog import mempool_confirming_extension
+
+        good = MagicMock()
+        good.are_kel_fields_populated.return_value = True
+        empty = MagicMock()
+        empty.are_kel_fields_populated.return_value = False
+
+        async def docs():
+            yield 1
+            yield {"bad": True}
+            yield {"kel": True}
+            yield {"empty": True}
+
+        coll = MagicMock()
+        coll.find.return_value = docs()
+        cfg = MagicMock()
+        cfg.mongo.async_db.miner_transactions = coll
+        with patch(
+            "yadacoin.core.keyeventlog.Transaction.from_dict",
+            side_effect=[Exception("bad"), good, empty],
+        ), patch(
+            "yadacoin.core.keyeventlog.walk_unique_confirming_extension",
+            return_value="tip",
+        ) as walk:
+            result = await mempool_confirming_extension(MagicMock(), config=cfg)
+        self.assertEqual(result, "tip")
+        self.assertEqual(walk.call_args[0][1], [good])
+
+    async def test_mempool_load_exception_returns_none(self):
+        from yadacoin.core.keyeventlog import mempool_confirming_extension
+
+        cfg = MagicMock()
+        cfg.mongo.async_db.miner_transactions.find.side_effect = Exception("db")
+        self.assertIsNone(await mempool_confirming_extension(MagicMock(), config=cfg))
+
+    async def test_walk_exception_returns_none(self):
+        from yadacoin.core.keyeventlog import mempool_confirming_extension
+
+        class Boom:
+            prev_public_key_hash = "T"
+
+            def are_kel_fields_populated(self):
+                raise RuntimeError("boom")
+
+        tip = MagicMock()
+        tip.public_key_hash = "T"
+        self.assertIsNone(await mempool_confirming_extension(tip, candidates=[Boom()]))
+
 
 class TestTemplateKelDoesNotDiscardAnnouncement(AsyncTestCase):
     async def test_coinbase_fork_defers_file_announcement_pair(self):
@@ -1817,3 +2032,36 @@ class TestTemplateKelDoesNotDiscardAnnouncement(AsyncTestCase):
         self.assertIn(coinbase_c, accepted)
         self.assertNotIn(ann_u, txns)
         self.assertNotIn(ann_c, txns)
+
+    async def test_sibling_root_defers_when_template_owns_prev(self):
+        from yadacoin.core.block import Block
+
+        mem = _kel_txn(
+            "MU", "MC", "MD", prev="T", relationship="", outputs_to="MC", sig="mem"
+        )
+        tmpl = _kel_txn(
+            "TU", "TC", "TD", prev="T", relationship="", outputs_to="TC", sig="tmpl"
+        )
+        tmpl.template_kel = True
+
+        async def fake_root(_txn):
+            return True, None
+
+        with patch(
+            "yadacoin.core.keyeventlog.is_mempool_kel_root",
+            new=AsyncMock(side_effect=fake_root),
+        ), patch("yadacoin.core.keyeventlog.verify_kel_step", return_value=None), patch(
+            "yadacoin.core.block.Config"
+        ) as cfg_cls:
+            cfg = MagicMock()
+            cfg.app_log = MagicMock()
+            cfg.mongo.async_db.miner_transactions.delete_one = AsyncMock()
+            cfg.mongo.async_db.failed_transactions.insert_one = AsyncMock()
+            cfg_cls.return_value = cfg
+            txns = [mem, tmpl]
+            accepted, rejected = await Block.select_kel_chains_for_block(txns)
+
+        self.assertEqual(rejected, [])
+        self.assertIn(tmpl, accepted)
+        self.assertNotIn(mem, accepted)
+        self.assertNotIn(mem, txns)

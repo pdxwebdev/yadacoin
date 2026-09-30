@@ -6357,4 +6357,150 @@ class TestTagKelAndEnsureKelGaps(AsyncTestCase):
             return_value=[seed, seed, child],
         ):
             await Block.ensure_kel_tags([seed, child])
+
+    def test_coerce_target_rejects_non_int_non_string(self):
+        with self.assertRaises(TypeError):
+            Block._coerce_target(None)
+        with self.assertRaises(TypeError):
+            Block._coerce_target(1.5)
+        with self.assertRaises(TypeError):
+            Block._coerce_target("")
+        with self.assertRaises(TypeError):
+            Block._coerce_target(True)
+
+    async def test_find_kel_parent_empty_prev(self):
+        self.assertIsNone(await Block._find_kel_parent(None))
+        self.assertIsNone(await Block._find_kel_parent(""))
+
+    async def test_find_kel_parent_scans_extra_blocks(self):
+        class T:
+            def __init__(self, pkh=None, pre=None, inc=None, kel=True):
+                self.public_key_hash = pkh
+                self.prerotated_key_hash = pre
+                self.inception_public_key_hash = inc
+                self._kel = kel
+
+            def are_kel_fields_populated(self):
+                return self._kel
+
+        future = MagicMock(index=10, transactions=[T("PREV", inc="SKIP")])
+        older = MagicMock(index=1, transactions=[T("PREV", inc="OLD")])
+        match = T(pre="PREV", inc="INC")
+        current = MagicMock(
+            index=5,
+            transactions=[
+                object(),
+                T("NOKEL", kel=False),
+                T("OTHER", inc="X"),
+                T("PREV", inc=None),
+                match,
+            ],
+        )
+        found = await Block._find_kel_parent(
+            "PREV", extra_blocks=[future, current, older], block_index=8
+        )
+        self.assertIs(found, match)
+
+    async def test_find_kel_parent_from_mongo(self):
+        raw_miss = {"public_key_hash": "other", "prerotated_key_hash": "nope"}
+        raw_hit = {"public_key_hash": "PREV", "id": "sig"}
+        mongo = MagicMock()
+        mongo.blocks.find_one = AsyncMock(
+            return_value={"transactions": [raw_miss, raw_hit]}
+        )
+        cfg = MagicMock()
+        cfg.mongo.async_db = mongo
+        parent = MagicMock()
+        with mock.patch("yadacoin.core.config.Config", return_value=cfg), mock.patch(
+            "yadacoin.core.transaction.Transaction.from_dict", return_value=parent
+        ) as from_dict:
+            found = await Block._find_kel_parent("PREV")
+        self.assertIs(found, parent)
+        from_dict.assert_called_once_with(raw_hit)
+
+    async def test_ensure_kel_tags_uses_found_parent(self):
+        from yadacoin.core.keyeventlog import KeyEventFlag
+
+        class T:
+            def __init__(self, sig, pkh, prev=""):
+                self.transaction_signature = sig
+                self.public_key_hash = pkh
+                self.prev_public_key_hash = prev
+                self.prerotated_key_hash = "PRE"
+                self.twice_prerotated_key_hash = ""
+                self.inception_public_key_hash = None
+                self.counter = None
+
+            def are_kel_fields_populated(self):
+                return True
+
+        child = T("s1", "K1", prev="K0")
+        parent = MagicMock()
+        parent.inception_public_key_hash = "INC"
+        parent.public_key_hash = "K0"
+        parent.counter = 2
+
+        async def fake_root(_txn):
+            return False, None
+
+        with mock.patch(
+            "yadacoin.core.keyeventlog.is_mempool_kel_root",
+            new=AsyncMock(side_effect=fake_root),
+        ), mock.patch(
+            "yadacoin.core.block.Block._find_kel_parent",
+            new=AsyncMock(return_value=parent),
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.classify_key_event_flag",
+            return_value=KeyEventFlag.CONFIRMING,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.kel_successor_flag_allowed",
+            return_value=True,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.verify_kel_step",
+            return_value=None,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.is_recovers_inception",
+            return_value=False,
+        ):
+            await Block.ensure_kel_tags([child])
         self.assertEqual(child.inception_public_key_hash, "INC")
+        self.assertEqual(child.counter, 3)
+
+    async def test_ensure_kel_tags_skips_parent_without_inception(self):
+        from yadacoin.core.keyeventlog import KeyEventFlag
+
+        class T:
+            def __init__(self, sig, pkh, prev=""):
+                self.transaction_signature = sig
+                self.public_key_hash = pkh
+                self.prev_public_key_hash = prev
+                self.prerotated_key_hash = "PRE"
+                self.twice_prerotated_key_hash = ""
+                self.inception_public_key_hash = None
+                self.counter = None
+
+            def are_kel_fields_populated(self):
+                return True
+
+        child = T("s1", "K1", prev="K0")
+        parent = MagicMock()
+        parent.inception_public_key_hash = None
+
+        async def fake_root(_txn):
+            return False, None
+
+        with mock.patch(
+            "yadacoin.core.keyeventlog.is_mempool_kel_root",
+            new=AsyncMock(side_effect=fake_root),
+        ), mock.patch(
+            "yadacoin.core.block.Block._find_kel_parent",
+            new=AsyncMock(return_value=parent),
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.classify_key_event_flag",
+            return_value=KeyEventFlag.CONFIRMING,
+        ), mock.patch(
+            "yadacoin.core.keyeventlog.is_recovers_inception",
+            return_value=False,
+        ):
+            await Block.ensure_kel_tags([child])
+        self.assertIsNone(child.inception_public_key_hash)
