@@ -48,6 +48,7 @@ class StorageBackend(ABC):
         filename: Optional[str] = None,
         mime_type: Optional[str] = None,
         metadata: Optional[dict] = None,
+        on_progress=None,
     ) -> dict:
         """Store ``content`` and return {file_id, size, ...}."""
 
@@ -74,6 +75,7 @@ class MemoryStorageBackend(StorageBackend):
         filename: Optional[str] = None,
         mime_type: Optional[str] = None,
         metadata: Optional[dict] = None,
+        on_progress=None,
     ) -> dict:
         file_id = hashlib.sha256(content).hexdigest()
         meta = dict(metadata or {})
@@ -81,6 +83,18 @@ class MemoryStorageBackend(StorageBackend):
             meta["filename"] = filename
         if mime_type:
             meta["mime_type"] = mime_type
+        if on_progress:
+            try:
+                on_progress(
+                    {
+                        "phase": "sia",
+                        "shard_size": len(content),
+                        "shard_index": 0,
+                        "slab_index": 0,
+                    }
+                )
+            except Exception:
+                pass
         self._objects[file_id] = {
             "content": bytes(content),
             "metadata": meta,
@@ -162,6 +176,7 @@ class SiaStorageBackend(StorageBackend):
         filename: Optional[str] = None,
         mime_type: Optional[str] = None,
         metadata: Optional[dict] = None,
+        on_progress=None,
     ) -> dict:
         try:
             from sia_storage import PinnedObject, UploadOptions
@@ -169,8 +184,26 @@ class SiaStorageBackend(StorageBackend):
             raise StorageBackendError(
                 "sia-storage SDK is not installed. Run: pip install sia-storage"
             ) from exc
+
+        def _shard(prog):
+            if not on_progress:
+                return
+            try:
+                on_progress(
+                    {
+                        "phase": "sia",
+                        "shard_size": int(getattr(prog, "shard_size", 0) or 0),
+                        "shard_index": int(getattr(prog, "shard_index", 0) or 0),
+                        "slab_index": int(getattr(prog, "slab_index", 0) or 0),
+                        "elapsed_ms": int(getattr(prog, "elapsed_ms", 0) or 0),
+                    }
+                )
+            except Exception:
+                pass
+
         sdk = await self._sdk()
-        obj = await sdk.upload(PinnedObject(), BytesIO(content), UploadOptions())
+        options = UploadOptions(shard_uploaded=_shard if on_progress else None)
+        obj = await sdk.upload(PinnedObject(), BytesIO(content), options)
         meta = dict(metadata or {})
         meta["sha256"] = hashlib.sha256(content).hexdigest()
         if filename:

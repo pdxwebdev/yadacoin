@@ -470,6 +470,15 @@ async def _generate_txn(config, relationship, fee=0.0):
     return unconfirmed
 
 
+def _emit_progress(on_progress, event):
+    if not on_progress:
+        return
+    try:
+        on_progress(event)
+    except Exception:
+        pass
+
+
 async def create_file(
     config,
     title: str,
@@ -481,6 +490,7 @@ async def create_file(
     file_id: str = "",
     backend_name: str = "",
     size=None,
+    on_progress=None,
 ):
     backend, name, _settings = await _backend_from_settings(config, backend_name)
     record_id = store.new_record_id()
@@ -506,11 +516,13 @@ async def create_file(
             )
             raise DuplicateFileAnnouncementError(f"this user already announced {label}")
         if content:
+            _emit_progress(on_progress, {"phase": "sia"})
             uploaded = await backend.upload(
                 content,
                 filename=filename,
                 mime_type=mime_type,
                 metadata={"title": title, "description": description},
+                on_progress=on_progress,
             )
             file_id = uploaded["file_id"]
             size = uploaded.get("size", len(content))
@@ -521,6 +533,7 @@ async def create_file(
             )
         else:
             share_url = ""
+        _emit_progress(on_progress, {"phase": "announcing"})
         if not share_url and hasattr(backend, "share"):
             try:
                 share_url = await backend.share(file_id)

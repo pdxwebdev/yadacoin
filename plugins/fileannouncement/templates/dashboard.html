@@ -144,6 +144,41 @@
       cursor: pointer;
     }
     button.btn:hover { background: var(--btn-hover); }
+    button.btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    button.btn:disabled:hover { background: var(--btn); }
+    input:disabled, textarea:disabled, select:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .upload-progress { margin-top: 14px; }
+    .progress-label { color: var(--muted); font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+    .progress-track {
+      position: relative;
+      height: 8px;
+      overflow: hidden;
+      border-radius: 99px;
+      background: var(--canvas-subtle);
+      border: 1px solid var(--border);
+    }
+    .progress-bar {
+      height: 100%;
+      width: 0;
+      background: var(--accent);
+      transition: width .15s ease;
+    }
+    .progress-bar.indeterminate {
+      position: absolute;
+      width: 35%;
+      transition: none;
+      animation: upload-slide 1.1s ease-in-out infinite;
+    }
+    @keyframes upload-slide {
+      0% { transform: translateX(-120%); }
+      100% { transform: translateX(320%); }
+    }
     button.btn.secondary {
       background: var(--canvas-subtle);
       color: var(--text);
@@ -268,8 +303,14 @@
               <select name="backend" id="upload-backend"></select>
             </div>
           </div>
+          <div id="upload-progress" class="upload-progress hidden" aria-live="polite">
+            <div class="progress-label" id="upload-progress-label">Uploading…</div>
+            <div class="progress-track" id="upload-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+              <div class="progress-bar" id="upload-progress-bar"></div>
+            </div>
+          </div>
           <div class="actions">
-            <button class="btn" type="submit">Upload & announce</button>
+            <button class="btn" type="submit" id="upload-submit">Upload & announce</button>
           </div>
         </form>
       </div>
@@ -579,18 +620,146 @@ $("#cache-clear").onclick = async () => {
   } catch (err) { flash(err.message); }
 };
 
+let uploadBusy = false;
+let uploadPoll = null;
+
+function setUploading(on) {
+  uploadBusy = on;
+  const form = $("#upload-form");
+  form.setAttribute("aria-busy", on ? "true" : "false");
+  form.querySelectorAll("input, textarea, select, button").forEach(el => { el.disabled = on; });
+  $("#upload-submit").textContent = on ? "Uploading…" : "Upload & announce";
+}
+
+function showUploadProgress(pct, label) {
+  const wrap = $("#upload-progress");
+  const bar = $("#upload-progress-bar");
+  const track = $("#upload-progress-track");
+  wrap.classList.remove("hidden");
+  $("#upload-progress-label").textContent = label;
+  if (pct == null) {
+    bar.classList.add("indeterminate");
+    bar.style.width = "";
+    track.removeAttribute("aria-valuenow");
+    track.setAttribute("aria-valuetext", label);
+  } else {
+    const n = Math.max(0, Math.min(100, pct));
+    bar.classList.remove("indeterminate");
+    bar.style.width = n + "%";
+    track.setAttribute("aria-valuenow", String(n));
+    track.setAttribute("aria-valuetext", label);
+  }
+}
+
+function hideUploadProgress() {
+  $("#upload-progress").classList.add("hidden");
+  const bar = $("#upload-progress-bar");
+  bar.classList.remove("indeterminate");
+  bar.style.width = "0";
+}
+
+function stopUploadPoll() {
+  if (uploadPoll) {
+    clearInterval(uploadPoll);
+    uploadPoll = null;
+  }
+}
+
+function startUploadPoll(id, hasFile) {
+  stopUploadPoll();
+  const tick = async () => {
+    try {
+      const data = await api("/uploads/" + encodeURIComponent(id));
+      const p = data.result || {};
+      if (p.phase === "sia" || (hasFile && p.phase === "receiving")) {
+        const shards = p.shards || 0;
+        const extra = shards
+          ? ` · ${shards} shard${shards === 1 ? "" : "s"} · ${fmtBytes(p.shard_bytes)}`
+          : "";
+        showUploadProgress(null, "Uploading to Sia" + extra);
+      } else if (p.phase === "announcing" || p.phase === "receiving") {
+        showUploadProgress(null, "Announcing on-chain…");
+      } else if (p.phase === "done") {
+        showUploadProgress(100, "Done");
+      } else if (p.phase === "error") {
+        showUploadProgress(null, p.error || "Upload failed");
+      }
+    } catch (err) {}
+  };
+  tick();
+  uploadPoll = setInterval(tick, 400);
+}
+
+function newUploadId() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return "up" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+}
+
+function postForm(url, fd, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.upload.onprogress = (ev) => {
+      if (ev.lengthComputable && onProgress) onProgress(ev.loaded, ev.total);
+    };
+    xhr.upload.onload = () => {
+      if (onProgress) onProgress(-1, -1);
+    };
+    xhr.onerror = () => reject(new Error("upload failed"));
+    xhr.onabort = () => reject(new Error("upload aborted"));
+    xhr.onload = () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText || "{}"); }
+      catch (err) { reject(new Error("upload failed")); return; }
+      if (xhr.status < 200 || xhr.status >= 300 || data.status === false) {
+        reject(new Error(data.error || "upload failed"));
+        return;
+      }
+      resolve(data);
+    };
+    xhr.send(fd);
+  });
+}
+
 $("#upload-form").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (uploadBusy) return;
   const fd = new FormData(e.target);
+  const file = fd.get("file");
+  const hasFile = !!(file && file.name && file.size);
+  const uploadId = newUploadId();
+  fd.set("upload_id", uploadId);
+  setUploading(true);
+  showUploadProgress(hasFile ? 0 : null, hasFile ? "Sending to node 0%" : "Announcing…");
+  let announced = false;
   try {
-    const res = await fetch(API + "/files", { method: "POST", body: fd });
-    const data = await res.json();
-    if (!res.ok || data.status === false) throw new Error(data.error || "upload failed");
+    const data = await postForm(API + "/files", fd, (loaded, total) => {
+      if (loaded < 0) {
+        showUploadProgress(null, hasFile ? "Uploading to Sia…" : "Announcing…");
+        startUploadPoll(uploadId, hasFile);
+        return;
+      }
+      const pct = total ? Math.round(loaded / total * 100) : 0;
+      showUploadProgress(pct, `Sending to node ${pct}%`);
+    });
+    announced = true;
+    stopUploadPoll();
+    showUploadProgress(100, "Done");
     flash("File announced: " + (data.result.file_id || ""), true);
     e.target.reset();
-    await loadFiles();
-    await loadHistory();
-  } catch (err) { flash(err.message); }
+  } catch (err) {
+    flash(err.message);
+  } finally {
+    stopUploadPoll();
+    setUploading(false);
+    hideUploadProgress();
+  }
+  if (announced) {
+    try {
+      await loadFiles();
+      await loadHistory();
+    } catch (err) { flash(err.message); }
+  }
 });
 
 $("#settings-form").addEventListener("submit", async (e) => {

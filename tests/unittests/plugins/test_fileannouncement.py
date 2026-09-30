@@ -62,6 +62,50 @@ class TestStreamCache(AsyncTestCase):
                     os.unlink(path)
 
 
+class TestUploadProgress(AsyncTestCase):
+    async def test_shard_progress_and_snapshot(self):
+        from plugins.fileannouncement import progress
+
+        upload_id = "upload-test-1"
+        progress._UPLOADS.pop(upload_id, None)
+        self.assertFalse(progress.begin("nope"))
+        self.assertEqual(progress.snapshot("missing-id")["phase"], "pending")
+        self.assertTrue(progress.begin(upload_id, filename="a.bin", size=12))
+        self.assertEqual(progress.snapshot(upload_id)["phase"], "receiving")
+        progress.apply(upload_id, {"phase": "sia"})
+        progress.apply(
+            upload_id,
+            {"shard_size": 4, "shard_index": 0, "slab_index": 1},
+        )
+        progress.apply(
+            upload_id,
+            {"shard_size": 8, "shard_index": 1, "slab_index": 1},
+        )
+        snap = progress.snapshot(upload_id)
+        self.assertEqual(snap["phase"], "sia")
+        self.assertEqual(snap["shards"], 2)
+        self.assertEqual(snap["shard_bytes"], 12)
+        self.assertEqual(snap["filename"], "a.bin")
+        progress.apply(upload_id, {"phase": "announcing"})
+        self.assertEqual(progress.snapshot(upload_id)["phase"], "announcing")
+        progress.finish(upload_id, ok=True)
+        done = progress.snapshot(upload_id)
+        self.assertEqual(done["phase"], "done")
+        self.assertTrue(done["ok"])
+        progress.finish(upload_id, ok=False, error="boom")
+        failed = progress.snapshot(upload_id)
+        self.assertEqual(failed["phase"], "error")
+        self.assertEqual(failed["error"], "boom")
+        progress._UPLOADS.pop(upload_id, None)
+
+    async def test_memory_upload_reports_progress(self):
+        events = []
+        backend = MemoryStorageBackend()
+        await backend.upload(b"hello", filename="a.txt", on_progress=events.append)
+        self.assertEqual(events[0]["phase"], "sia")
+        self.assertEqual(events[0]["shard_size"], 5)
+
+
 class TestFileAnnouncementBackends(AsyncTestCase):
     async def test_memory_upload_download_delete(self):
         backend = MemoryStorageBackend()

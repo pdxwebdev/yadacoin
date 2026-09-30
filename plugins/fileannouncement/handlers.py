@@ -24,7 +24,7 @@ from plugins.keyrotation.handlers import KelUnlockHandler
 from yadacoin.core.contenttakedown import TakedownReasonCode
 from yadacoin.http.base import BaseHandler
 
-from . import store
+from . import progress, store
 from .backends import available_backends
 from .service import (
     DuplicateFileAnnouncementError,
@@ -271,6 +271,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
         filename = ""
         mime_type = ""
         content = None
+        upload_id = ""
         ct = self.request.headers.get("Content-Type") or ""
         if self.request.files.get("file") or "multipart/form-data" in ct:
             if self.request.files.get("file"):
@@ -283,6 +284,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
             keywords = _keywords(self.get_body_argument("keywords", ""))
             file_id = self.get_body_argument("file_id", "")
             backend = self.get_body_argument("backend", "")
+            upload_id = self.get_body_argument("upload_id", "")
         else:
             try:
                 data = _json_body(self)
@@ -295,6 +297,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
             mime_type = data.get("mime_type") or ""
             file_id = data.get("file_id") or ""
             backend = data.get("backend") or ""
+            upload_id = data.get("upload_id") or ""
             raw = data.get("content_b64") or ""
             if raw:
                 import base64
@@ -305,6 +308,12 @@ class FileListHandler(BaseFileAnnouncementHandler):
                     return self._error(400, "content_b64 is not valid base64")
         if not title:
             return self._error(400, "title is required")
+        upload_id = str(upload_id or "").strip()
+        tracked = progress.begin(
+            upload_id,
+            filename=filename,
+            size=len(content) if content else 0,
+        )
         try:
             record = await create_file(
                 self.config,
@@ -316,13 +325,35 @@ class FileListHandler(BaseFileAnnouncementHandler):
                 mime_type=mime_type,
                 file_id=file_id,
                 backend_name=backend,
+                on_progress=(
+                    (lambda event, uid=upload_id: progress.apply(uid, event))
+                    if tracked
+                    else None
+                ),
             )
         except DuplicateFileAnnouncementError as exc:
+            if tracked:
+                progress.finish(upload_id, ok=False, error=str(exc))
             return self._error(409, str(exc))
         except (FileAnnouncementServiceError, ValueError) as exc:
+            if tracked:
+                progress.finish(upload_id, ok=False, error=str(exc))
             return self._error(400, str(exc))
+        except Exception:
+            if tracked:
+                progress.finish(upload_id, ok=False, error="upload failed")
+            raise
+        if tracked:
+            progress.finish(upload_id, ok=True)
         self.set_status(201)
         return self.render_as_json({"status": True, "result": record})
+
+
+class FileUploadProgressHandler(BaseFileAnnouncementHandler):
+    async def get(self, upload_id):
+        return self.render_as_json(
+            {"status": True, "result": progress.snapshot(upload_id)}
+        )
 
 
 class FileDetailHandler(BaseFileAnnouncementHandler):
@@ -842,6 +873,7 @@ HANDLERS = [
     (r"/file-announcements", FileAnnouncementDashboardHandler),
     (r"/file-announcements/api/v1/unlock", FileAnnouncementUnlockHandler),
     (r"/file-announcements/api/v1/files", FileListHandler),
+    (r"/file-announcements/api/v1/uploads/([^/]+)", FileUploadProgressHandler),
     (r"/file-announcements/api/v1/files/search", FileSearchHandler),
     (r"/file-announcements/api/v1/files/(.+)/takedown", FileTakedownHandler),
     (r"/file-announcements/api/v1/files/(.+)/download", FileDownloadHandler),
