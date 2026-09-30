@@ -69,7 +69,6 @@ EOL
 
 # Install python prerequisites (system cmake on PATH for pyrx build)
 sudo -H env PATH="/usr/bin:${PATH}" python3 -m pip install --upgrade pip
-sudo -H env PATH="/usr/bin:${PATH}" python3 -m pip install pyopenssl --upgrade
 sudo -H env PATH="/usr/bin:${PATH}" python3 -m pip install -r requirements.txt
 # get the correct chardet and urllib3 versions for yada code
 sudo env PATH="/usr/bin:${PATH}" python3 -m pip install --upgrade requests

@@ -199,7 +199,7 @@ jobs:
 
       - name: Configure Kilo CI permissions
         run: |
-          mkdir -p "$HOME/.config/kilo" .kilo
+          mkdir -p "$HOME/.config/kilo"
           cat > "$HOME/.config/kilo/kilo.json" <<'EOF'
           {
             "$schema": "https://app.kilo.ai/config.json",
@@ -210,7 +210,6 @@ jobs:
             }
           }
           EOF
-          cp "$HOME/.config/kilo/kilo.json" .kilo/kilo.json
 
       - name: Run Kilo implement
         uses: Kilo-Org/kilocode/github@v7.5.16
@@ -230,6 +229,7 @@ jobs:
             - Prefer answers from the author over guesses; state assumptions if still needed.
             - Make minimal, focused code changes that match existing project style.
             - Do not commit secrets or credentials.
+            - Do not commit `.kilo/` or `kilo.json`. CI permissions live only in `$HOME/.config/kilo/kilo.json`.
             - Tool use is pre-approved in CI; do not wait for human approval.
             - Create a new branch, commit your changes, and open a DRAFT pull request
               (gh pr create --draft).
@@ -286,7 +286,7 @@ jobs:
 
       - name: Configure Kilo CI permissions
         run: |
-          mkdir -p "$HOME/.config/kilo" .kilo
+          mkdir -p "$HOME/.config/kilo"
           cat > "$HOME/.config/kilo/kilo.json" <<'EOF'
           {
             "$schema": "https://app.kilo.ai/config.json",
@@ -297,7 +297,6 @@ jobs:
             }
           }
           EOF
-          cp "$HOME/.config/kilo/kilo.json" .kilo/kilo.json
 
       - name: Run Kilo
         uses: Kilo-Org/kilocode/github@v7.5.16
