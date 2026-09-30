@@ -12,7 +12,6 @@ Full license terms: see LICENSE.txt in this repository.
 """
 
 import datetime
-import json
 import logging
 from time import time
 from traceback import format_exc
@@ -94,7 +93,10 @@ class Consensus(object):
         item = self.config.processing_queues.block_queue.pop()
         i = 0  # max loops
         while item:
-            await self.process_block_queue_item(item)
+            try:
+                await self.process_block_queue_item(item)
+            except Exception:
+                self.app_log.error(format_exc())
 
             i += 1
             if i >= 100:
@@ -294,7 +296,9 @@ class Consensus(object):
                     "ignore": {"$ne": True},
                 }
             ).to_list(length=100)
-            for record in sorted(records, key=lambda x: int(x["block"]["target"], 16)):
+            for record in sorted(
+                records, key=lambda x: Block._coerce_target(x["block"]["target"])
+            ):
                 peer_stream = stream
                 if peer_stream is None or not (
                     hasattr(peer_stream, "peer") and peer_stream.peer.authenticated
@@ -429,15 +433,20 @@ class Consensus(object):
     async def build_remote_chain(self, block: Block):
         # now we just need to see how far this chain extends
         blocks = [block]
-        max_iterations = 100
+        max_iterations = CHAIN.MAX_BLOCKS_PER_MESSAGE
         i = 0
         while True:
             # get the heighest block from this chain
             local_block = await self.config.mongo.async_db.blocks.find_one(
                 {"prevHash": block.hash}, {"_id": 0}
             )
+            consensus_block = None
             if local_block:
-                local_block = await Block.from_dict(local_block)
+                try:
+                    local_block = await Block.from_dict(local_block)
+                except Exception as exc:
+                    self.app_log.warning("build_remote_chain: bad local block: %s", exc)
+                    break
                 block = local_block
                 blocks.append(local_block)
             else:
@@ -445,19 +454,27 @@ class Consensus(object):
                     {"block.prevHash": block.hash}, {"_id": 0}
                 )
                 if consensus_block:
-                    consensus_block = await Block.from_dict(consensus_block["block"])
+                    try:
+                        consensus_block = await Block.from_dict(
+                            consensus_block["block"]
+                        )
+                    except Exception as exc:
+                        self.app_log.warning(
+                            "build_remote_chain: bad consensus block: %s", exc
+                        )
+                        break
                     block = consensus_block
                     blocks.append(consensus_block)
             if not local_block and not consensus_block:
                 break
             i += 1
-            if i > max_iterations:
-                self.app_log.error(
-                    "MaxIterationsExceededException: Too many iterations building blockchain from block."
+            if i >= max_iterations:
+                self.app_log.warning(
+                    "build_remote_chain: truncated after %s blocks at index %s",
+                    len(blocks),
+                    block.index,
                 )
-                raise MaxIterationsExceededException(
-                    "Too many iterations building blockchain from block."
-                )
+                break
 
         blocks.sort(key=lambda x: x.index)
 
@@ -490,42 +507,167 @@ class Consensus(object):
     async def build_backward_from_block_to_fork(
         self, block, blocks, stream=None, depth=0
     ):
-        self.app_log.debug(f"build_backward_from_block_to_fork: {block.index}")
+        if blocks is None:
+            blocks = []
+        else:
+            blocks = list(blocks)
 
-        # Bound orphan walks so a poisoned consensus tip cannot recurse
-        # dozens of levels every few seconds.
         if depth > 100:
             self.app_log.warning(
                 "build_backward_from_block_to_fork: max depth exceeded at index %s"
                 % block.index
             )
-            return blocks if blocks is not None else [], False
-
-        retrace_block = await self.mongo.async_db.blocks.find_one(
-            {"hash": block.prev_hash, "time": {"$lt": block.time}}
-        )
-        if retrace_block:
-            return blocks, True
-
-        retrace_consensus_block = [
-            x async for x in self.get_previous_consensus_block(block, stream)
-        ]
-        if not retrace_consensus_block:
             return blocks, False
 
-        retrace_consensus_block = retrace_consensus_block[0]
+        prev_hash = getattr(block, "prev_hash", None)
+        if not prev_hash:
+            return blocks, False
 
-        if blocks is None:
-            blocks = []
-
-        backward_blocks, status = await self.build_backward_from_block_to_fork(
-            retrace_consensus_block,
-            json.loads(json.dumps([x for x in blocks])),
-            stream,
-            depth + 1,
+        local_parent = await self.mongo.async_db.blocks.find_one(
+            {"hash": prev_hash}, {"_id": 0, "hash": 1}
         )
-        backward_blocks.append(retrace_consensus_block)
-        return backward_blocks, status
+        if local_parent:
+            self.app_log.debug(
+                "build_backward_from_block_to_fork: %s connected", block.index
+            )
+            return blocks, True
+
+        tip_index = int(block.index)
+        search_limit = CHAIN.MAX_BLOCKS_PER_MESSAGE * 10
+        low = max(0, tip_index - search_limit)
+        consensus_cursor = self.mongo.async_db.consensus.find(
+            {
+                "index": {"$gte": low, "$lt": tip_index},
+                "ignore": {"$ne": True},
+            },
+            {
+                "_id": 0,
+                "block.hash": 1,
+                "block.prevHash": 1,
+                "block.index": 1,
+                "block.version": 1,
+            },
+        )
+        consensus_docs = await consensus_cursor.to_list(length=search_limit * 2)
+
+        by_hash = {}
+        for doc in consensus_docs:
+            raw = doc.get("block") or {}
+            block_hash = raw.get("hash")
+            if not block_hash:
+                continue
+            idx = raw.get("index", doc.get("index"))
+            version = raw.get("version")
+            if idx is not None and version is not None:
+                if version != CHAIN.get_version_for_height(idx):
+                    continue
+            by_hash[block_hash] = raw
+
+        walked = []
+        current_hash = prev_hash
+        current_index = tip_index - 1
+        missing_hash = None
+        missing_index = None
+        for _ in range(search_limit):
+            raw = by_hash.get(current_hash)
+            if not raw:
+                missing_hash = current_hash
+                missing_index = current_index
+                break
+            walked.append(raw)
+            current_hash = raw.get("prevHash")
+            try:
+                current_index = int(raw.get("index")) - 1
+            except (TypeError, ValueError):
+                current_index = current_index - 1
+            if not current_hash:
+                break
+        else:
+            missing_hash = current_hash
+            missing_index = current_index
+
+        parent_hashes = [raw.get("prevHash") for raw in walked if raw.get("prevHash")]
+        local_hits = set()
+        if parent_hashes:
+            local_cursor = self.mongo.async_db.blocks.find(
+                {"hash": {"$in": parent_hashes}},
+                {"_id": 0, "hash": 1},
+            )
+            local_docs = await local_cursor.to_list(length=len(parent_hashes))
+            local_hits = {doc.get("hash") for doc in local_docs}
+
+        cut = None
+        for i, raw in enumerate(walked):
+            if raw.get("prevHash") in local_hits:
+                cut = i
+                break
+
+        if cut is not None:
+            segment = list(reversed(walked[: cut + 1]))
+            hashes = [raw.get("hash") for raw in segment if raw.get("hash")]
+            full_cursor = self.mongo.async_db.consensus.find(
+                {"block.hash": {"$in": hashes}, "ignore": {"$ne": True}},
+                {"_id": 0, "block": 1},
+            )
+            full_docs = await full_cursor.to_list(length=len(hashes))
+            full_by_hash = {
+                (doc.get("block") or {}).get("hash"): doc.get("block")
+                for doc in full_docs
+            }
+            parsed = []
+            for raw in segment:
+                full = full_by_hash.get(raw.get("hash"))
+                if not full:
+                    self.app_log.warning(
+                        "build_backward_from_block_to_fork: incomplete consensus block %s",
+                        raw.get("hash"),
+                    )
+                    break
+                try:
+                    parsed.append(await Block.from_dict(full))
+                except Exception as exc:
+                    self.app_log.warning(
+                        "build_backward_from_block_to_fork: bad consensus block %s: %s",
+                        raw.get("hash"),
+                        exc,
+                    )
+                    break
+            if not parsed:
+                return blocks, False
+            self.app_log.debug(
+                "build_backward_from_block_to_fork: %s connected after %s blocks",
+                block.index,
+                len(parsed),
+            )
+            return blocks + parsed, True
+
+        self.app_log.debug(
+            "build_backward_from_block_to_fork: %s no fork in %s consensus blocks",
+            block.index,
+            len(walked),
+        )
+        if stream is not None:
+            if len(walked) >= search_limit and walked:
+                low_index = walked[-1].get("index")
+                try:
+                    low_index = int(low_index)
+                except (TypeError, ValueError):
+                    low_index = tip_index - search_limit
+                await self.config.nodeShared.write_params(
+                    stream,
+                    "getblocks",
+                    {
+                        "start_index": max(0, low_index - CHAIN.MAX_BLOCKS_PER_MESSAGE),
+                        "end_index": max(0, low_index - 1),
+                    },
+                )
+            elif missing_hash:
+                await self.config.nodeShared.write_params(
+                    stream,
+                    "getblock",
+                    {"hash": missing_hash, "index": missing_index},
+                )
+        return blocks, False
 
     async def _mark_consensus_block_ignored(self, block, reason):
         """Stop retrying an unintegrable consensus tip / orphan chain."""
@@ -653,7 +795,7 @@ class Consensus(object):
             # Tags were stripped/derived in test_block; re-derive for persistence
             # so insert remains correct if called without test_block.
             try:
-                await Block.ensure_kel_tags(block.transactions, clear_untrusted=True)
+                await Block.ensure_kel_tags(block.transactions, clear_untrusted=False)
             except Exception as exc:
                 self.app_log.warning(
                     "insert_block: ensure_kel_tags failed at height %s: %s",

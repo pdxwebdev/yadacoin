@@ -20,7 +20,8 @@ def _awaitable(value):
 
 from tornado.iostream import StreamClosedError
 
-from yadacoin.core.consensus import Consensus, MaxIterationsExceededException
+from yadacoin.core.chain import CHAIN
+from yadacoin.core.consensus import Consensus
 
 from ..test_setup import AsyncTestCase
 
@@ -1127,17 +1128,21 @@ class TestBuildRemoteChain(ConsensusBase):
         ), patch("yadacoin.core.consensus.Blockchain"):
             await self.consensus.build_remote_chain(_mk_block(index=1))
 
-    async def test_max_iterations_raises(self):
-        # local block always returns -> infinite chain
+    async def test_max_iterations_returns_partial(self):
+        # local block always returns -> would walk forever without the cap
         self.consensus.config.mongo.async_db.blocks.find_one = AsyncMock(
             return_value={"index": 2, "hash": "h", "prevHash": "p"}
         )
         with patch(
             "yadacoin.core.consensus.Block.from_dict",
             new=AsyncMock(return_value=_mk_block(index=2)),
-        ):
-            with self.assertRaises(MaxIterationsExceededException):
-                await self.consensus.build_remote_chain(_mk_block(index=1))
+        ), patch("yadacoin.core.consensus.Blockchain") as BC:
+            BC.return_value = "BC"
+            r = await self.consensus.build_remote_chain(_mk_block(index=1))
+        self.assertEqual(r, "BC")
+        passed = BC.call_args[0][0]
+        self.assertGreater(len(passed), 1)
+        self.assertLessEqual(len(passed), CHAIN.MAX_BLOCKS_PER_MESSAGE + 1)
 
 
 # ---------------------------------------------------------------------------
@@ -1207,6 +1212,25 @@ class TestGetPreviousConsensusBlock(ConsensusBase):
 
 
 class TestBuildBackward(ConsensusBase):
+    def _consensus_cursor(self, docs):
+        cursor = MagicMock()
+        cursor.to_list = AsyncMock(return_value=docs)
+        return cursor
+
+    def _parent_doc(self, index, block_hash, prev_hash, version=1):
+        return {
+            "index": index,
+            "block": {
+                "index": index,
+                "hash": block_hash,
+                "prevHash": prev_hash,
+                "version": version,
+                "time": index,
+                "target": "1",
+                "id": "sig%s" % index,
+            },
+        }
+
     async def test_retrace_block_found(self):
         self.consensus.mongo.async_db.blocks.find_one = AsyncMock(
             return_value={"hash": "p"}
@@ -1216,51 +1240,84 @@ class TestBuildBackward(ConsensusBase):
         )
         self.assertEqual(blocks, [])
         self.assertTrue(status)
+        query = self.consensus.mongo.async_db.blocks.find_one.await_args[0][0]
+        self.assertEqual(query, {"hash": "p"})
+        self.assertNotIn("time", query)
 
     async def test_no_consensus_returns_false(self):
         self.consensus.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
-
-        async def _empty(_self, _block, _stream=None):
-            if False:
-                yield
-
-        with patch.object(Consensus, "get_previous_consensus_block", _empty):
-            blocks, status = await self.consensus.build_backward_from_block_to_fork(
-                _mk_block(), []
-            )
+        blocks, status = await self.consensus.build_backward_from_block_to_fork(
+            _mk_block(), []
+        )
         self.assertFalse(status)
+        self.assertEqual(blocks, [])
 
-    async def test_recurses_with_consensus(self):
-        # local find_one returns None first time, then returns hit (terminating recursion)
-        self.consensus.mongo.async_db.blocks.find_one = AsyncMock(
-            side_effect=[None, {"hash": "p"}]
+    async def test_missing_parent_requests_getblock(self):
+        self.consensus.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        stream = MagicMock()
+        block = _mk_block(index=5, prev_hash="missing")
+        blocks, status = await self.consensus.build_backward_from_block_to_fork(
+            block, [], stream
+        )
+        self.assertFalse(status)
+        self.assertEqual(blocks, [])
+        self.consensus.config.nodeShared.write_params.assert_awaited_once_with(
+            stream, "getblock", {"hash": "missing", "index": 4}
         )
 
-        async def _gen(_self, _block, _stream=None):
-            yield _mk_block(index=_block.index - 1)
+    async def test_connects_through_consensus_without_per_block_query(self):
+        self.consensus.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        docs = [self._parent_doc(4, "p", "local")]
+        self.consensus.mongo.async_db.consensus.find = MagicMock(
+            return_value=self._consensus_cursor(docs)
+        )
+        local_cursor = MagicMock()
+        local_cursor.to_list = AsyncMock(return_value=[{"hash": "local"}])
+        self.consensus.mongo.async_db.blocks.find = MagicMock(return_value=local_cursor)
 
-        with patch.object(Consensus, "get_previous_consensus_block", _gen):
+        async def _from_dict(doc):
+            return _mk_block(
+                index=doc.get("index"),
+                bhash=doc.get("hash"),
+                prev_hash=doc.get("prevHash"),
+            )
+
+        with patch("yadacoin.core.consensus.Block.from_dict", side_effect=_from_dict):
             blocks, status = await self.consensus.build_backward_from_block_to_fork(
-                _mk_block(index=5), []
+                _mk_block(index=5, prev_hash="p"), []
             )
         self.assertTrue(status)
         self.assertEqual(len(blocks), 1)
+        self.assertEqual(blocks[0].hash, "p")
+        self.assertEqual(self.consensus.mongo.async_db.blocks.find_one.await_count, 1)
 
-    async def test_recurses_with_blocks_none(self):
-        """Line 442: blocks=None branch initializes to []."""
-        self.consensus.mongo.async_db.blocks.find_one = AsyncMock(
-            side_effect=[None, {"hash": "p"}]
+    async def test_connects_multi_block_oldest_first(self):
+        self.consensus.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        docs = [
+            self._parent_doc(4, "p", "mid"),
+            self._parent_doc(3, "mid", "local"),
+        ]
+        self.consensus.mongo.async_db.consensus.find = MagicMock(
+            return_value=self._consensus_cursor(docs)
         )
+        local_cursor = MagicMock()
+        local_cursor.to_list = AsyncMock(return_value=[{"hash": "local"}])
+        self.consensus.mongo.async_db.blocks.find = MagicMock(return_value=local_cursor)
 
-        async def _gen(_self, _block, _stream=None):
-            yield _mk_block(index=_block.index - 1)
+        async def _from_dict(doc):
+            return _mk_block(
+                index=doc.get("index"),
+                bhash=doc.get("hash"),
+                prev_hash=doc.get("prevHash"),
+            )
 
-        with patch.object(Consensus, "get_previous_consensus_block", _gen):
+        with patch("yadacoin.core.consensus.Block.from_dict", side_effect=_from_dict):
             blocks, status = await self.consensus.build_backward_from_block_to_fork(
-                _mk_block(index=5), None
+                _mk_block(index=5, prev_hash="p"), None
             )
         self.assertTrue(status)
-        self.assertEqual(len(blocks), 1)
+        self.assertEqual([b.hash for b in blocks], ["mid", "p"])
+        self.assertEqual([b.index for b in blocks], [3, 4])
 
     async def test_max_depth_exceeded_returns_false(self):
         self.consensus.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
@@ -1269,6 +1326,7 @@ class TestBuildBackward(ConsensusBase):
         )
         self.assertFalse(status)
         self.assertEqual(blocks, [])
+        self.consensus.mongo.async_db.blocks.find_one.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -1604,7 +1662,7 @@ class TestInsertBlock(ConsensusBase):
         ) as ensure:
             r = await self.consensus.insert_block(block, MagicMock())
         self.assertTrue(r)
-        ensure.assert_awaited_once_with(block.transactions, clear_untrusted=True)
+        ensure.assert_awaited_once_with(block.transactions, clear_untrusted=False)
         # to_dict runs after ensure so persisted docs include tags
         block.to_dict.assert_called()
 

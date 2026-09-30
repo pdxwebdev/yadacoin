@@ -1959,6 +1959,14 @@ class TestBlock(AsyncTestCase):
         result = await Block.from_dict(block)
         self.assertIs(result, block)
 
+    async def test_from_dict_integer_target(self):
+        d = copy.deepcopy(masternode_fee_block)
+        d["target"] = int(d["target"], 16)
+        d["special_target"] = int(d["special_target"], 16)
+        result = await Block.from_dict(d)
+        self.assertEqual(result.target, d["target"])
+        self.assertEqual(result.special_target, d["special_target"])
+
     async def test_from_dict_special_target_zero_sets_from_target(self):
         """Line 735: from_dict() copies target to special_target when special_target is missing/zero."""
         d = {k: v for k, v in masternode_fee_block.items() if k != "special_target"}

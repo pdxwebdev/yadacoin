@@ -156,7 +156,32 @@ class Blockchain(object):
         from yadacoin.core.block import Block
 
         try:
-            await Block.ensure_kel_tags(block.transactions, clear_untrusted=True)
+            prior = sorted(
+                (
+                    b
+                    for b in extra_blocks
+                    if getattr(b, "index", None) is not None and b.index < block.index
+                ),
+                key=lambda b: b.index,
+            )
+            for prior_block in prior:
+                if any(
+                    getattr(t, "inception_public_key_hash", None)
+                    for t in getattr(prior_block, "transactions", None) or []
+                ):
+                    continue
+                await Block.ensure_kel_tags(
+                    prior_block.transactions,
+                    clear_untrusted=False,
+                    extra_blocks=extra_blocks,
+                    block_index=prior_block.index,
+                )
+            await Block.ensure_kel_tags(
+                block.transactions,
+                clear_untrusted=True,
+                extra_blocks=extra_blocks,
+                block_index=block.index,
+            )
         except Exception as e:
             config.app_log.warning(
                 "test_block: ensure_kel_tags failed at height %s: %s",

@@ -614,7 +614,61 @@ class Block(object):
                 txn.counter = None
 
     @staticmethod
-    async def ensure_kel_tags(txns, *, clear_untrusted=False):
+    async def _find_kel_parent(prev, extra_blocks=None, block_index=None):
+        if not prev:
+            return None
+        found = None
+        found_index = -1
+        for block in extra_blocks or []:
+            idx = getattr(block, "index", None)
+            if block_index is not None and idx is not None and idx >= block_index:
+                continue
+            if idx is not None and idx < found_index:
+                continue
+            for txn in getattr(block, "transactions", None) or []:
+                are_kel = getattr(txn, "are_kel_fields_populated", None)
+                if not are_kel or not txn.are_kel_fields_populated():
+                    continue
+                if prev not in (
+                    getattr(txn, "public_key_hash", None),
+                    getattr(txn, "prerotated_key_hash", None),
+                ):
+                    continue
+                if getattr(txn, "inception_public_key_hash", None):
+                    found = txn
+                    found_index = idx if idx is not None else found_index
+        if found is not None:
+            return found
+        from yadacoin.core.config import Config
+        from yadacoin.core.transaction import Transaction
+
+        config = Config()
+        mongo = getattr(getattr(config, "mongo", None), "async_db", None)
+        if mongo is None:
+            return None
+        doc = await mongo.blocks.find_one(
+            {
+                "$or": [
+                    {"transactions.public_key_hash": prev},
+                    {"transactions.prerotated_key_hash": prev},
+                ]
+            },
+            sort=[("index", -1)],
+        )
+        if not isinstance(doc, dict):
+            return None
+        for raw in doc.get("transactions") or []:
+            if prev in (
+                raw.get("public_key_hash"),
+                raw.get("prerotated_key_hash"),
+            ):
+                return Transaction.from_dict(raw)
+        return None
+
+    @staticmethod
+    async def ensure_kel_tags(
+        txns, *, clear_untrusted=False, extra_blocks=None, block_index=None
+    ):
         """Ensure KEL txns carry inception_public_key_hash and counter in-memory.
 
         Used at block insert (and generation) so persisted block documents
@@ -663,6 +717,25 @@ class Block(object):
             if is_root:
                 roots.append(txn)
                 root_parents[txn.transaction_signature] = parent
+
+        rooted = {root.transaction_signature for root in roots}
+        for txn in kel_candidates:
+            if txn.transaction_signature in rooted:
+                continue
+            prev = getattr(txn, "prev_public_key_hash", None) or ""
+            if not prev:
+                continue
+            try:
+                parent = await Block._find_kel_parent(
+                    prev, extra_blocks=extra_blocks, block_index=block_index
+                )
+            except Exception:
+                parent = None
+            if parent is None or not getattr(parent, "inception_public_key_hash", None):
+                continue
+            roots.append(txn)
+            root_parents[txn.transaction_signature] = parent
+            rooted.add(txn.transaction_signature)
 
         for root in roots:
             if root.transaction_signature in claimed:
@@ -919,6 +992,14 @@ class Block(object):
                         f"select_kel_chains_for_block: mempool delete failed: {exc}"
                     )
 
+        # Coinbase / payout templates that extend the same prev as a mempool
+        # announcement would otherwise fork and KELChainDiscard the announcement.
+        template_prevs = {
+            t.prev_public_key_hash
+            for t in kel_candidates
+            if _is_template_kel(t) and getattr(t, "prev_public_key_hash", None)
+        }
+
         # Identify roots first.
         roots = []
         root_parents = {}  # sig -> onchain parent txn or None
@@ -989,6 +1070,24 @@ class Block(object):
                     # invalid kids become orphans and are discarded later.
                     break
                 if len(valid_kids) > 1:
+                    template_kids = [k for k in valid_kids if _is_template_kel(k)]
+                    mempool_kids = [k for k in valid_kids if not _is_template_kel(k)]
+                    # One mempool successor sharing a slot with this block's
+                    # coinbase/payout template is not an invalid announcement.
+                    # Leave it in the mempool; the next template is parented
+                    # after the complete pair.
+                    if (
+                        template_kids
+                        and len(mempool_kids) == 1
+                        and not any(_is_template_kel(m) for m in chain)
+                    ):
+                        await _defer(
+                            chain + mempool_kids,
+                            "KEL slot taken by block template; retry next block",
+                        )
+                        walk_failed = False
+                        chain = []
+                        break
                     # Ambiguous fork in mempool.
                     walk_failed = True
                     chain.extend(valid_kids)
@@ -997,6 +1096,9 @@ class Block(object):
                 chain.append(nxt)
                 prev = nxt
                 prev_flag = classify_key_event_flag(nxt)
+
+            if not chain:
+                continue
 
             if walk_failed or not is_kel_chain_complete(chain):
                 # Also pull any unclaimed kids we didn't walk into discard set
@@ -1008,6 +1110,16 @@ class Block(object):
             if not prefix:
                 # No complete prefix fits — defer entire chain to next block.
                 await _defer(chain, "block transaction limit; no complete prefix fits")
+                continue
+
+            if (
+                not _is_template_kel(prefix[0])
+                and prefix[0].prev_public_key_hash in template_prevs
+            ):
+                await _defer(
+                    chain,
+                    "KEL slot taken by block template; retry next block",
+                )
                 continue
 
             # Stamp inception/counter on the kept prefix before verify/double-spend.
@@ -1353,12 +1465,24 @@ class Block(object):
         else:
             return hashes[0]
 
+    @staticmethod
+    def _coerce_target(value):
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        if isinstance(value, str) and value:
+            return int(value, 16)
+        raise TypeError("int() can't convert non-string with explicit base")
+
     @classmethod
     async def from_dict(cls, block):
         if isinstance(block, Block):
             return block
-        if block.get("special_target", 0) == 0:
-            block["special_target"] = block.get("target")
+        raw_target = block.get("target")
+        target = cls._coerce_target(raw_target)
+        raw_special = block.get("special_target", 0)
+        if raw_special == 0:
+            raw_special = raw_target
+        special_target = cls._coerce_target(raw_special)
 
         return await cls.init_async(
             version=block.get("version"),
@@ -1373,8 +1497,8 @@ class Block(object):
             signature=block.get("id"),
             special_min=block.get("special_min"),
             header=block.get("header", ""),
-            target=int(block.get("target"), 16),
-            special_target=int(block.get("special_target", 0), 16),
+            target=target,
+            special_target=special_target,
         )
 
     @classmethod
