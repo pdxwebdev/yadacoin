@@ -702,7 +702,7 @@ class ExplorerGetBalance(BaseHandler):
         if not address:
             self.render_as_json({})
             return
-        balance = await self.config.BU.get_wallet_balance(address)
+        balance = await self.config.BU.get_wallet_balance(address, wait=False)
         return self.render_as_json({"balance": "{0:.8f}".format(balance)})
 
 

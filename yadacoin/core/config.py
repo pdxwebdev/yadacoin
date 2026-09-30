@@ -181,7 +181,7 @@ class Config:
         self.mempool_sender_wait = config.get("mempool_sender_wait", 180)
         self.nonce_processor_wait = config.get("nonce_processor_wait", 1)
 
-        self.mongo_query_timeout = config.get("mongo_query_timeout", 30000)
+        self.mongo_query_timeout = config.get("mongo_query_timeout") or None
         self.http_request_timeout = config.get("http_request_timeout", 3000)
 
         self.masternode_fee_minimum = config.get("masternode_fee_minimum", 1)
@@ -611,7 +611,7 @@ class Config:
         cls.mempool_sender_wait = config.get("mempool_sender_wait", 180)
         cls.nonce_processor_wait = config.get("nonce_processor_wait", 1)
 
-        cls.mongo_query_timeout = config.get("mongo_query_timeout", 3000)
+        cls.mongo_query_timeout = config.get("mongo_query_timeout") or None
         cls.http_request_timeout = config.get("http_request_timeout", 3000)
 
         cls.masternode_fee_minimum = config.get("masternode_fee_minimum", 1)

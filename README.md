@@ -405,8 +405,8 @@ export SECOND_FACTOR=your_strong_secret
   - description: Specify the number of seconds to wait before checking for new share submissions to process.
 - mongo_query_timeout
   - type: integer
-  - default: 30000
-  - description: Specify the max number of milliseconds of execution time for all mongo queries.
+  - default: none
+  - description: Max milliseconds for each MongoDB operation. Omitted, null, or 0 means no cap. When set, the server aborts the operation at that limit.
 - http_request_timeout
   - type: integer
   - default: 3000

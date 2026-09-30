@@ -12,6 +12,7 @@ Full license terms: see LICENSE.txt in this repository.
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from time import time
 
 from motor.motor_tornado import MotorClient
@@ -23,6 +24,42 @@ from yadacoin.core.config import Config
 
 
 class Mongo(object):
+    def _query_timeout_kwargs(self):
+        raw = getattr(self.config, "mongo_query_timeout", None)
+        try:
+            timeout = int(raw)
+        except (TypeError, ValueError):
+            return {}
+        if timeout <= 0:
+            return {}
+        return {"timeoutMS": timeout}
+
+    def _open_sync_client(self, **extra):
+        if (
+            hasattr(self.config, "mongodb_username")
+            and hasattr(self.config, "mongodb_password")
+            and self.config.mongodb_username
+            and self.config.mongodb_password
+        ):
+            return MongoClient(
+                self.config.mongodb_host,
+                username=self.config.mongodb_username,
+                password=self.config.mongodb_password,
+                **extra,
+            )
+        return MongoClient(self.config.mongodb_host, **extra)
+
+    def get_balance_db(self):
+        db = getattr(self, "balance_db", None)
+        if db is not None:
+            return db
+        self.balance_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="balance-scan"
+        )
+        self.balance_client = self._open_sync_client(**self._query_timeout_kwargs())
+        self.balance_db = self.balance_client[self.config.database]
+        return self.balance_db
+
     def __init__(self):
         self.config = Config()
         if (
@@ -49,13 +86,9 @@ class Mongo(object):
                         "MongoDB createUser failed: %s", e
                     )
                     raise
-            self.client = MongoClient(
-                self.config.mongodb_host,
-                username=self.config.mongodb_username,
-                password=self.config.mongodb_password,
-            )
+            self.client = self._open_sync_client()
         else:
-            self.client = MongoClient(self.config.mongodb_host)
+            self.client = self._open_sync_client()
         self.db = self.client[self.config.database]
         self.site_db = self.client[self.config.site_database]
         try:
@@ -677,6 +710,13 @@ class Mongo(object):
 
         # TODO: add indexes for peers
 
+        timeout_kwargs = self._query_timeout_kwargs()
+        if timeout_kwargs:
+            old = self.client
+            self.client = self._open_sync_client(**timeout_kwargs)
+            self.db = self.client[self.config.database]
+            self.site_db = self.client[self.config.site_database]
+            old.close()
         if (
             hasattr(self.config, "mongodb_username")
             and hasattr(self.config, "mongodb_password")
@@ -688,15 +728,19 @@ class Mongo(object):
                 username=self.config.mongodb_username,
                 password=self.config.mongodb_password,
                 event_listeners=[listener],
+                **timeout_kwargs,
             )
         else:
             self.async_client = MotorClient(
-                self.config.mongodb_host, event_listeners=[listener]
+                self.config.mongodb_host,
+                event_listeners=[listener],
+                **timeout_kwargs,
             )
         self.async_db = self.async_client[self.config.database]
         # self.async_db = self.async_client[self.config.database]
         self.async_site_db = self.async_client[self.config.site_database]
         self.async_db.slow_queries = []
+        self.get_balance_db()
         # convert block time from string to number
         blocks_to_convert = self.db.blocks.find({"time": {"$type": 2}})
         for block in blocks_to_convert:

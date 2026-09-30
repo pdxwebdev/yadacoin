@@ -372,7 +372,7 @@ AGENT_TYPES = [
             "- cache_validator_wait (integer): Seconds between cache validation. Default: 3550\n"
             "- mempool_cleaner_wait (integer): Seconds between mempool cleans. Default: 1200\n"
             "- nonce_processor_wait (integer): Seconds between nonce queue checks. Default: 1\n"
-            "- mongo_query_timeout (integer): Max MongoDB query time in ms. Default: 30000\n"
+            "- mongo_query_timeout (integer): Max MongoDB query time in ms. Omit, null, or 0 for no cap. Default: none\n"
             "- http_request_timeout (integer): Max HTTP request time in ms. Default: 3000\n"
             "- masternode_fee_minimum (integer): Min YDA fee for masternode services. Default: 1\n"
             "- balance_min_utxo (integer): Min UTXO amount to include in balance. Default: 1\n"

@@ -52,6 +52,10 @@ class BlockChainUtils(object):
         self.mongo = self.config.mongo
         self.latest_block = None
         self.app_log = getLogger("tornado.application")
+        self._balance_scan_sem = asyncio.Semaphore(1)
+        self._balance_refresh_tasks = {}
+        self._kel_addresses_cache = {}
+        self._wallet_refresh_tasks = {}
 
     def invalidate_latest_block(self):
         self.latest_block = None
@@ -119,22 +123,47 @@ class BlockChainUtils(object):
     async def _async_empty_set(self):
         return set()
 
-    async def _aggregate_blocks(self, pipeline, hint=None, length=1):
-        """Run a blocks aggregation, falling back without hint if the index is missing."""
+    def _sync_aggregate_blocks(self, pipeline, hint=None, length=1):
         kwargs = {"allowDiskUse": True}
+        coll = self.mongo.get_balance_db().blocks
         if hint:
             try:
-                return await self.mongo.async_db.blocks.aggregate(
-                    pipeline, hint=hint, **kwargs
-                ).to_list(length=length)
+                docs = list(coll.aggregate(pipeline, hint=hint, **kwargs))
+                return docs if length is None else docs[:length]
             except Exception as e:
                 self.config.app_log.warning(
                     "blocks aggregate hint=%s failed (%s); retrying without hint",
                     hint,
                     e,
                 )
-        return await self.mongo.async_db.blocks.aggregate(pipeline, **kwargs).to_list(
-            length=length
+        docs = list(coll.aggregate(pipeline, **kwargs))
+        return docs if length is None else docs[:length]
+
+    async def _aggregate_blocks(self, pipeline, hint=None, length=1):
+        """Run a blocks aggregation off the HTTP Motor pool."""
+        if getattr(self.mongo, "balance_executor", None) is None:
+            kwargs = {"allowDiskUse": True}
+            if hint:
+                try:
+                    return await self.mongo.async_db.blocks.aggregate(
+                        pipeline, hint=hint, **kwargs
+                    ).to_list(length=length)
+                except Exception as e:
+                    self.config.app_log.warning(
+                        "blocks aggregate hint=%s failed (%s); retrying without hint",
+                        hint,
+                        e,
+                    )
+            return await self.mongo.async_db.blocks.aggregate(
+                pipeline, **kwargs
+            ).to_list(length=length)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self.mongo.balance_executor,
+            self._sync_aggregate_blocks,
+            pipeline,
+            hint,
+            length,
         )
 
     async def _iter_blocks_aggregate(self, pipeline, hint=None):
@@ -826,7 +855,45 @@ class BlockChainUtils(object):
                 "Invalidated wallet_unspent_cache for %s: %s", address, reason
             )
 
+    def _schedule_balance_refresh(self, address):
+        if address in self._balance_refresh_tasks:
+            return self._balance_refresh_tasks[address]
+        task = asyncio.get_running_loop().create_task(
+            self._refresh_final_balance(address)
+        )
+        self._balance_refresh_tasks[address] = task
+
+        def _done(done, addr=address):
+            self._balance_refresh_tasks.pop(addr, None)
+            if not done.cancelled() and done.exception():
+                self.config.app_log.warning(
+                    "balance refresh failed for %s: %s", addr, done.exception()
+                )
+
+        task.add_done_callback(_done)
+        return task
+
+    async def _refresh_final_balance(self, address):
+        async with self._balance_scan_sem:
+            return await self._compute_final_balance(address)
+
     async def get_final_balance(self, address):
+        cache_doc = await self._get_wallet_balance_cache(address)
+        latest_block = await self.get_latest_block_async()
+        if cache_doc and cache_doc.get("balance") is not None:
+            at_tip = bool(
+                latest_block
+                and cache_doc.get("last_block_hash") == latest_block.get("hash")
+            )
+            if not at_tip:
+                self._schedule_balance_refresh(address)
+            return float(cache_doc.get("balance") or 0.0)
+        existing = self._balance_refresh_tasks.get(address)
+        if existing is not None:
+            return await existing
+        return await self._schedule_balance_refresh(address)
+
+    async def _compute_final_balance(self, address):
         start = precise_time()
         public_key = await self.get_reverse_public_key(address)
         latest_block = await self.get_latest_block_async()
@@ -921,7 +988,45 @@ class BlockChainUtils(object):
         )
         return final_balance
 
-    async def get_wallet_balance(self, address, amount_needed=None):
+    def _schedule_wallet_refresh(self, address):
+        if address in self._wallet_refresh_tasks:
+            return self._wallet_refresh_tasks[address]
+        task = asyncio.get_running_loop().create_task(
+            self.get_wallet_balance(address, wait=True)
+        )
+        self._wallet_refresh_tasks[address] = task
+
+        def _done(done, addr=address):
+            self._wallet_refresh_tasks.pop(addr, None)
+            if not done.cancelled() and done.exception():
+                self.config.app_log.warning(
+                    "wallet refresh failed for %s: %s", addr, done.exception()
+                )
+
+        task.add_done_callback(_done)
+        return task
+
+    async def _cached_kel_addresses(self, address):
+        try:
+            latest = await self.get_latest_block_async()
+        except Exception:
+            latest = None
+        tip = latest.get("hash") if isinstance(latest, dict) else None
+        cached = self._kel_addresses_cache.get(address)
+        if cached and cached[0] == tip:
+            return cached[1]
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        try:
+            addresses = await KeyEventLog.get_kel_addresses(
+                address=address, onchain_only=True
+            )
+        except Exception:
+            addresses = frozenset({address}) if address else frozenset()
+        self._kel_addresses_cache[address] = (tip, addresses)
+        return addresses
+
+    async def get_wallet_balance(self, address, amount_needed=None, wait=True):
         """Return spendable chain balance for *address*.
 
         When *address* belongs to a KEL, sums ``get_final_balance`` across every
@@ -929,14 +1034,18 @@ class BlockChainUtils(object):
         spending lets the tip unlock prior entries, so wallets must show the
         full identity total rather than a single entry.
         """
-        from yadacoin.core.keyeventlog import KeyEventLog
+        if not wait:
+            cached = self._kel_addresses_cache.get(address)
+            kel_addresses = cached[1] if cached else frozenset({address})
+            total = 0.0
+            for kel_address in kel_addresses:
+                cache_doc = await self._get_wallet_balance_cache(kel_address)
+                if cache_doc and cache_doc.get("balance") is not None:
+                    total += float(cache_doc.get("balance") or 0.0)
+            self._schedule_wallet_refresh(address)
+            return total
 
-        try:
-            kel_addresses = await KeyEventLog.get_kel_addresses(
-                address=address, onchain_only=True
-            )
-        except Exception:
-            kel_addresses = frozenset({address}) if address else frozenset()
+        kel_addresses = await self._cached_kel_addresses(address)
 
         if not kel_addresses:
             return await self.get_final_balance(address)
@@ -945,9 +1054,9 @@ class BlockChainUtils(object):
             only = next(iter(kel_addresses))
             return await self.get_final_balance(only)
 
-        parts = await asyncio.gather(
-            *[self.get_final_balance(a) for a in kel_addresses]
-        )
+        parts = []
+        for kel_address in kel_addresses:
+            parts.append(await self.get_final_balance(kel_address))
         total = float(sum(float(p or 0.0) for p in parts))
         self.config.app_log.info(
             "KEL wallet balance for %s: %.8f across %s addresses",
@@ -957,30 +1066,54 @@ class BlockChainUtils(object):
         )
         return total
 
-    async def get_public_key_address_pairs(self, address):
-        pipeline = [
-            {"$match": {"transactions.outputs.to": address}},
-            {"$unwind": "$transactions"},
-            {"$unwind": "$transactions.outputs"},
-            {"$match": {"transactions.outputs.to": address}},
-            {
-                "$group": {
-                    "_id": None,
-                    "unique_public_keys": {"$addToSet": "$transactions.public_key"},
-                }
-            },
-            {
-                "$project": {
-                    "_id": 0,
-                    "unique_public_keys": 1,
-                }
-            },
-        ]
-        # Return the cursor directly without awaiting it
-        public_key_address_pair_list = self.mongo.async_db.blocks.aggregate(
-            pipeline, allowDiskUse=True, hint="__to"
+    def _sync_public_keys_paid_to(self, address):
+        coll = self.mongo.get_balance_db().blocks
+        cursor = (
+            coll.find(
+                {"transactions.outputs.to": address},
+                {"transactions.public_key": 1, "transactions.outputs.to": 1},
+            )
+            .hint("__to")
+            .limit(20)
         )
-        return await public_key_address_pair_list.to_list(length=None)
+        keys = []
+        seen = set()
+        for block in cursor:
+            for txn in block.get("transactions") or []:
+                outs = txn.get("outputs") or []
+                if not any(
+                    isinstance(out, dict) and out.get("to") == address for out in outs
+                ):
+                    continue
+                public_key = txn.get("public_key")
+                if public_key and public_key not in seen:
+                    seen.add(public_key)
+                    keys.append(public_key)
+        return keys
+
+    async def get_public_key_address_pairs(self, address):
+        if getattr(self.mongo, "balance_executor", None) is None:
+            pipeline = [
+                {"$match": {"transactions.outputs.to": address}},
+                {"$unwind": "$transactions"},
+                {"$unwind": "$transactions.outputs"},
+                {"$match": {"transactions.outputs.to": address}},
+                {
+                    "$group": {
+                        "_id": None,
+                        "unique_public_keys": {"$addToSet": "$transactions.public_key"},
+                    }
+                },
+                {"$project": {"_id": 0, "unique_public_keys": 1}},
+            ]
+            return await self._aggregate_blocks(pipeline, hint="__to", length=None)
+        loop = asyncio.get_running_loop()
+        keys = await loop.run_in_executor(
+            self.mongo.balance_executor, self._sync_public_keys_paid_to, address
+        )
+        if not keys:
+            return []
+        return [{"unique_public_keys": keys}]
 
     async def get_reverse_public_key(self, address):
         reversed_public_key = await self.mongo.async_db.reversed_public_keys.find_one(
@@ -1809,19 +1942,18 @@ class BlockChainUtils(object):
             if len(kel_addresses) > 1:
                 start_time = precise_time()
                 balance_task = asyncio.create_task(self.get_wallet_balance(address))
-                parts = await asyncio.gather(
-                    *[
-                        self.get_unspent_outputs(
-                            a,
+                parts = []
+                for kel_address in kel_addresses:
+                    parts.append(
+                        await self.get_unspent_outputs(
+                            kel_address,
                             amount_needed=amount_needed,
                             min_value=min_value,
                             max_utxos=max_utxos,
                             from_index=from_index,
                             _kel_expanded=True,
                         )
-                        for a in kel_addresses
-                    ]
-                )
+                    )
                 balance = await balance_task
                 merged = []
                 seen = set()

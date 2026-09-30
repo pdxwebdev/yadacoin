@@ -1443,7 +1443,9 @@ class TestWalletCacheAndSelectionCoverage(BUTestCase):
             return seq.pop(0)
 
         mock_db.blocks.aggregate.side_effect = agg2
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
+        with patch.object(self.config.mongo, "async_db", new=mock_db), patch.object(
+            self.bu.mongo, "balance_executor", None
+        ):
             result = await self.bu._aggregate_blocks([{"$match": {}}], hint="h")
         self.assertEqual(result, [{"ok": 1}])
 

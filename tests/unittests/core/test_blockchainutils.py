@@ -1055,7 +1055,11 @@ class TestBlockchainUtilsCoverage(AsyncTestCase):
         )
         bu._save_wallet_balance_cache = mock.AsyncMock(return_value=98.0)
         result = await bu.get_final_balance("addr")
-        self.assertEqual(result, 98.0)
+        self.assertEqual(result, 100.0)
+        bu._compute_balance_components.assert_not_awaited()
+        refresh = bu._balance_refresh_tasks.get("addr")
+        self.assertIsNotNone(refresh)
+        await refresh
         bu._compute_balance_components.assert_awaited_once_with(
             "addr", public_key="pk", from_index=10
         )
@@ -1163,7 +1167,11 @@ class TestBlockchainUtilsCoverage(AsyncTestCase):
         )
         bu._save_wallet_balance_cache = mock.AsyncMock(return_value=3.0)
         result = await bu.get_final_balance("addr")
-        self.assertEqual(result, 3.0)
+        self.assertEqual(result, 77.5)
+        refresh = bu._balance_refresh_tasks.get("addr")
+        self.assertIsNotNone(refresh)
+        await refresh
+        self.assertEqual(await refresh, 3.0)
         bu._invalidate_wallet_balance_cache.assert_awaited_once()
         # full recompute path (no from_index)
         bu._compute_balance_components.assert_awaited_once_with("addr", public_key="pk")

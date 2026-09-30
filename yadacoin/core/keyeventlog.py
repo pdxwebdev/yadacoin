@@ -2535,8 +2535,23 @@ class KeyEventLog:
         cursor = config.mongo.async_db.blocks.aggregate(
             [
                 {"$match": {"transactions.inception_public_key_hash": inception_pkh}},
+                {
+                    "$project": {
+                        "transactions": {
+                            "$filter": {
+                                "input": "$transactions",
+                                "as": "txn",
+                                "cond": {
+                                    "$eq": [
+                                        "$$txn.inception_public_key_hash",
+                                        inception_pkh,
+                                    ]
+                                },
+                            }
+                        }
+                    }
+                },
                 {"$unwind": "$transactions"},
-                {"$match": {"transactions.inception_public_key_hash": inception_pkh}},
                 {"$sort": {"transactions.counter": 1}},
             ]
         )
