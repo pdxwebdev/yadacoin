@@ -508,6 +508,106 @@ def is_kel_chain_complete(entries) -> bool:
     return False
 
 
+def walk_unique_confirming_extension(base_tip, candidates):
+    """Return the confirming tip of the unique complete chain extending *base_tip*.
+
+    ``None`` when there is no extension, the walk is ambiguous, or it does not
+    end on CONFIRMING.  Used so a block coinbase is parented after operator
+    announcements instead of forking the same KEL slot.
+    """
+    if base_tip is None:
+        return None
+    tip_pkh = getattr(base_tip, "public_key_hash", None) or ""
+    if not isinstance(tip_pkh, str) or not tip_pkh:
+        return None
+
+    children_of = {}
+    for txn in candidates or []:
+        prev = getattr(txn, "prev_public_key_hash", None) or ""
+        if not isinstance(prev, str) or not prev:
+            continue
+        if not getattr(txn, "are_kel_fields_populated", lambda: False)():
+            continue
+        children_of.setdefault(prev, []).append(txn)
+
+    prev = base_tip
+    chain = []
+    seen = set()
+    previous_onchain = True
+    while len(chain) < 64:
+        prev_pkh = getattr(prev, "public_key_hash", None) or ""
+        if not isinstance(prev_pkh, str) or not prev_pkh:
+            break
+        try:
+            prev_flag = classify_key_event_flag(prev)
+        except Exception:
+            break
+        kids = []
+        for kid in children_of.get(prev_pkh, []):
+            sig = getattr(kid, "transaction_signature", None)
+            if not sig or sig in seen:
+                continue
+            try:
+                kid_flag = classify_key_event_flag(kid)
+            except Exception:
+                continue
+            if not kel_successor_flag_allowed(prev_flag, kid_flag):
+                continue
+            try:
+                verify_kel_step(
+                    prev,
+                    kid,
+                    previous_onchain=previous_onchain,
+                    latest_entry=prev,
+                )
+            except Exception:
+                continue
+            kids.append(kid)
+        if len(kids) != 1:
+            break
+        nxt = kids[0]
+        seen.add(nxt.transaction_signature)
+        chain.append(nxt)
+        prev = nxt
+        previous_onchain = False
+
+    if not is_kel_chain_complete(chain):
+        return None
+    return chain[-1]
+
+
+async def mempool_confirming_extension(base_tip, config=None, candidates=None):
+    """Mempool confirming tip that uniquely extends *base_tip*, or None."""
+    if candidates is None:
+        config = config or Config()
+        try:
+            mongo = getattr(config, "mongo", None)
+            db = getattr(mongo, "async_db", None) if mongo is not None else None
+            coll = getattr(db, "miner_transactions", None) if db is not None else None
+            if coll is None:
+                return None
+            loaded = []
+            cursor = coll.find(
+                {"prev_public_key_hash": {"$exists": True, "$nin": [None, ""]}}
+            )
+            async for doc in cursor:
+                if not isinstance(doc, dict):
+                    continue
+                try:
+                    txn = Transaction.from_dict(doc)
+                except Exception:
+                    continue
+                if txn.are_kel_fields_populated():
+                    loaded.append(txn)
+            candidates = loaded
+        except Exception:
+            return None
+    try:
+        return walk_unique_confirming_extension(base_tip, candidates)
+    except Exception:
+        return None
+
+
 class KeyEvent:
     def __init__(
         self,

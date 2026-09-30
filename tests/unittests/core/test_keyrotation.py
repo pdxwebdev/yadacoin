@@ -1358,6 +1358,47 @@ class TestQueueReanchor(AsyncTestCase):
         self.assertTrue(result.signer_public_key)
         self.assertIsNotNone(result.coinbase_confirming)
 
+    async def test_resolve_mining_tip_follows_mempool_extension(self):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        cfg = _make_config(kel_anchor_public_key="02pub")
+        mgr = NodeKeyRotationManager(cfg)
+        onchain = MagicMock()
+        onchain.public_key_hash = "onchain"
+        onchain.counter = 2
+        extended = MagicMock()
+        extended.public_key_hash = "extended"
+        extended.counter = 4
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_onchain_hashlink_tip",
+            new=AsyncMock(return_value=onchain),
+        ), patch(
+            "yadacoin.core.keyeventlog.mempool_confirming_extension",
+            new=AsyncMock(return_value=extended),
+        ):
+            tip, source = await mgr._resolve_mining_kel_tip("02ab")
+        self.assertIs(tip, extended)
+        self.assertEqual(source, "onchain_hashlink+mempool_extension")
+
+    async def test_resolve_mining_tip_ignores_extension_lookup_failure(self):
+        from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+        cfg = _make_config(kel_anchor_public_key="02pub")
+        mgr = NodeKeyRotationManager(cfg)
+        onchain = MagicMock()
+        onchain.public_key_hash = "onchain"
+        onchain.counter = 2
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_onchain_hashlink_tip",
+            new=AsyncMock(return_value=onchain),
+        ), patch(
+            "yadacoin.core.keyeventlog.mempool_confirming_extension",
+            new=AsyncMock(side_effect=RuntimeError("mongo down")),
+        ):
+            tip, source = await mgr._resolve_mining_kel_tip("02ab")
+        self.assertIs(tip, onchain)
+        self.assertEqual(source, "onchain_hashlink")
+
     async def test_block_path_returns_coinbase_confirming_only(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager, ReanchorTriplet
 

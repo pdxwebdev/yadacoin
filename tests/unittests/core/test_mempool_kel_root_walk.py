@@ -1722,3 +1722,98 @@ class TestEnsureKelTags(unittest.IsolatedAsyncioTestCase):
 
         await Block.ensure_kel_tags([])
         await Block.ensure_kel_tags(None)
+
+
+class TestMempoolConfirmingExtension(AsyncTestCase):
+    def _patch_step(self):
+        return patch("yadacoin.core.keyeventlog.verify_kel_step", return_value=None)
+
+    async def test_unique_unconfirmed_confirming_pair_is_extension_tip(self):
+        from yadacoin.core.keyeventlog import walk_unique_confirming_extension
+
+        tip = _kel_txn(
+            "T", "U", "C", prev="P", relationship="", outputs_to="U", sig="tip"
+        )
+        ann_u = _kel_txn(
+            "U", "C", "D", prev="T", relationship="file", outputs_to="C", sig="u"
+        )
+        ann_c = _kel_txn(
+            "C", "D", "E", prev="U", relationship="", outputs_to="D", sig="c"
+        )
+        with self._patch_step():
+            extended = walk_unique_confirming_extension(tip, [ann_u, ann_c])
+        self.assertIs(extended, ann_c)
+
+    async def test_missing_confirming_is_not_an_extension(self):
+        from yadacoin.core.keyeventlog import walk_unique_confirming_extension
+
+        tip = _kel_txn(
+            "T", "U", "C", prev="P", relationship="", outputs_to="U", sig="tip"
+        )
+        ann_u = _kel_txn(
+            "U", "C", "D", prev="T", relationship="file", outputs_to="C", sig="u"
+        )
+        with self._patch_step():
+            self.assertIsNone(walk_unique_confirming_extension(tip, [ann_u]))
+
+    async def test_two_children_of_tip_are_ambiguous(self):
+        from yadacoin.core.keyeventlog import walk_unique_confirming_extension
+
+        tip = _kel_txn(
+            "T", "U", "C", prev="P", relationship="", outputs_to="U", sig="tip"
+        )
+        a = _kel_txn("U", "C", "D", prev="T", relationship="a", outputs_to="C", sig="a")
+        b = _kel_txn("U", "C", "D", prev="T", relationship="b", outputs_to="C", sig="b")
+        with self._patch_step():
+            self.assertIsNone(walk_unique_confirming_extension(tip, [a, b]))
+
+
+class TestTemplateKelDoesNotDiscardAnnouncement(AsyncTestCase):
+    async def test_coinbase_fork_defers_file_announcement_pair(self):
+        from yadacoin.core.block import Block
+
+        ann_u = _kel_txn(
+            "U", "C", "D", prev="T", relationship="file", outputs_to="C", sig="ann-u"
+        )
+        ann_c = _kel_txn(
+            "C", "D", "E", prev="U", relationship="", outputs_to="D", sig="ann-c"
+        )
+        coinbase = _kel_txn(
+            "U", "C", "D", prev="T", relationship="", outputs_to="C", sig="cb"
+        )
+        coinbase.coinbase = True
+        coinbase.template_kel = True
+        coinbase_c = _kel_txn(
+            "C", "D", "E", prev="U", relationship="", outputs_to="D", sig="cb-c"
+        )
+        coinbase_c.template_kel = True
+
+        async def fake_root(txn):
+            return txn.transaction_signature in ("ann-u", "cb"), None
+
+        with patch(
+            "yadacoin.core.keyeventlog.is_mempool_kel_root",
+            new=AsyncMock(side_effect=fake_root),
+        ), patch("yadacoin.core.keyeventlog.verify_kel_step", return_value=None), patch(
+            "yadacoin.core.keyeventlog.KeyEvent.verify_fields", return_value=None
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEvent.verify_unconfirmed", return_value=None
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEvent.verify_confirming", return_value=None
+        ), patch(
+            "yadacoin.core.block.Config"
+        ) as m:
+            cfg = MagicMock()
+            cfg.app_log = MagicMock()
+            cfg.mongo.async_db.miner_transactions.delete_one = AsyncMock()
+            cfg.mongo.async_db.failed_transactions.insert_one = AsyncMock()
+            m.return_value = cfg
+            txns = [ann_u, ann_c, coinbase, coinbase_c]
+            accepted, rejected = await Block.select_kel_chains_for_block(txns)
+
+        cfg.mongo.async_db.failed_transactions.insert_one.assert_not_awaited()
+        self.assertEqual(rejected, [])
+        self.assertIn(coinbase, accepted)
+        self.assertIn(coinbase_c, accepted)
+        self.assertNotIn(ann_u, txns)
+        self.assertNotIn(ann_c, txns)

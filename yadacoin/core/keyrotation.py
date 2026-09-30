@@ -2248,9 +2248,12 @@ class NodeKeyRotationManager:
         skips).  If missing (e.g. inception still mempool-only), fall back to
         :meth:`KeyEventLog.get_latest` with mempool allowed — matching the
         module contract that block generation parents off the **live** main
-        KEL tip.  Auth/branch tips are not used (lookup is by K0 public key).
+        KEL tip.  A unique complete mempool chain extending that tip (file
+        announcements and other operator U/C pairs) is then followed so the
+        coinbase does not fork the same slot and discard those transactions.
+        Auth/branch tips are not used (lookup is by K0 public key).
         """
-        from yadacoin.core.keyeventlog import KeyEventLog
+        from yadacoin.core.keyeventlog import KeyEventLog, mempool_confirming_extension
 
         config = self.config
         latest = None
@@ -2291,6 +2294,25 @@ class NodeKeyRotationManager:
                 "on-chain and in mempool — check seed/SECOND_FACTOR and "
                 "that startup_check created/found inception".format(k0_pub_hex[:16])
             )
+
+        try:
+            extended = await mempool_confirming_extension(latest, config=config)
+        except Exception as exc:
+            config.app_log.warning(
+                "NodeKeyRotationManager: mempool KEL extension lookup failed: %s",
+                exc,
+            )
+            extended = None
+        if extended is not None:
+            config.app_log.info(
+                "NodeKeyRotationManager: parenting coinbase after mempool KEL "
+                "extension pkh=%s counter=%s (base=%s)",
+                getattr(extended, "public_key_hash", ""),
+                getattr(extended, "counter", None),
+                source,
+            )
+            latest = extended
+            source = "{}+mempool_extension".format(source)
         return latest, source
 
     async def _queue_reanchor(self, block=None):
