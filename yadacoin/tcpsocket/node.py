@@ -3734,6 +3734,9 @@ class NodeRPC(BaseRPC):
                 doc,
                 upsert=True,
             )
+            note = getattr(self.config.kel_manager, "note_peer_branch_added", None)
+            if note:
+                note(branch_pkh, _peer_branch_key, 1)
             next_counter += 1
 
     async def _request_branch_sync_if_needed(

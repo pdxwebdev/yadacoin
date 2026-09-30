@@ -257,8 +257,9 @@ class PeerBranchHealth(HealthItem):
         total = int(snap.get("total_peer_branch_docs") or 0)
         oversize = snap.get("oversize_peers") or []
         blocked = int(snap.get("advances_blocked") or 0)
+        messages = []
         if oversize:
-            self.report_bad_health(
+            messages.append(
                 "PeerBranchHealth: oversize peer branches: "
                 + ", ".join(
                     f"{p.get('peer') or p.get('branch')} docs={p.get('docs')}"
@@ -266,9 +267,15 @@ class PeerBranchHealth(HealthItem):
                 )
             )
         if total > max_total:
-            self.report_bad_health(
+            messages.append(
                 f"PeerBranchHealth: total peer-branch docs {total} > {max_total}"
             )
+        signature = "\n".join(messages)
+        if signature != getattr(self, "_last_peer_branch_msg", ""):
+            self._last_peer_branch_msg = signature
+            for message in messages:
+                self.report_bad_health(message)
+        if total > max_total:
             return self.report_status(False)
         if blocked and blocked > 0:
             # Rate-limit fired — warn but do not mark node dead.

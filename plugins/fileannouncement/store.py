@@ -208,7 +208,6 @@ async def find_file_announcements(config, file_id: str) -> list:
                 {"transactions.relationship.file.file_id": file_id},
                 {"transactions": 1, "index": 1},
             )
-            .sort("index", -1)
             .limit(20)
         )
         async for block in cursor:
@@ -227,6 +226,7 @@ async def find_file_announcements(config, file_id: str) -> list:
                 )
     except Exception:
         pass
+    found.sort(key=lambda item: int(item.get("block_index") or 0), reverse=True)
     try:
         cursor = (
             _db(config)
@@ -234,7 +234,6 @@ async def find_file_announcements(config, file_id: str) -> list:
                 {"relationship.file.file_id": file_id},
                 {"_id": 0},
             )
-            .sort([("time", -1)])
             .limit(20)
         )
         async for txn in cursor:
@@ -433,18 +432,9 @@ async def iter_live_file_txns(config) -> list:
     """File announcements currently in confirmed blocks or the mempool."""
     found = []
     try:
-        cursor = (
-            _db(config)
-            .blocks.find(
-                {
-                    "transactions.relationship.file.file_id": {
-                        "$exists": True,
-                        "$ne": "",
-                    }
-                },
-                {"transactions": 1, "index": 1, "time": 1},
-            )
-            .sort("index", -1)
+        cursor = _db(config).blocks.find(
+            {"transactions.relationship.file.file_id": {"$gt": ""}},
+            {"transactions": 1, "index": 1, "time": 1},
         )
         async for block in cursor:
             for txn in block.get("transactions") or []:
@@ -462,14 +452,11 @@ async def iter_live_file_txns(config) -> list:
                 )
     except Exception:
         pass
+    found.sort(key=lambda item: int(item.get("block_index") or 0), reverse=True)
     try:
-        cursor = (
-            _db(config)
-            .miner_transactions.find(
-                {"relationship.file.file_id": {"$exists": True, "$ne": ""}},
-                {"_id": 0},
-            )
-            .sort([("time", -1)])
+        cursor = _db(config).miner_transactions.find(
+            {"relationship.file.file_id": {"$gt": ""}},
+            {"_id": 0},
         )
         async for txn in cursor:
             rel = _file_payload(txn.get("relationship"))
@@ -801,45 +788,21 @@ async def find_same_user_duplicate(
     return None
 
 
-def _text_match_clauses(prefix: str, regex):
-    return [
-        {f"{prefix}.title": regex},
-        {f"{prefix}.description": regex},
-        {f"{prefix}.keywords": regex},
-        {f"{prefix}.file_id": regex},
-        {f"{prefix}.filename": regex},
-    ]
-
-
-def _video_match_clauses(prefix: str):
-    return [
-        {f"{prefix}.mime_type": {"$regex": r"^video/", "$options": "i"}},
-        {
-            f"{prefix}.filename": {
-                "$regex": r"\.(mp4|webm|mov|m4v|mkv|ogv)$",
-                "$options": "i",
-            }
-        },
-    ]
+def _file_text_matches(file_doc: dict, query: str, transaction_id: str = "") -> bool:
+    view = dict(file_doc or {})
+    view["transaction_id"] = transaction_id or view.get("transaction_id") or ""
+    return _text_matches(view, query)
 
 
 async def search_chain(config, query: str, limit: int = 50) -> list:
     """Search confirmed + mempool file announcements by title/description/keywords/file_id."""
     q = (query or "").strip()
-    escaped = re.escape(q) if q else None
-    regex = {"$regex": escaped, "$options": "i"} if escaped else {"$exists": True}
-    match = {"$or": _text_match_clauses("transactions.relationship.file", regex)}
+    limit = max(1, int(limit))
     results = []
     pipeline = [
-        {"$match": match},
+        {"$match": {"transactions.relationship.file.file_id": {"$gt": ""}}},
         {"$unwind": "$transactions"},
-        {
-            "$match": {
-                "$or": _text_match_clauses("transactions.relationship.file", regex)
-            }
-        },
-        {"$sort": {"index": -1}},
-        {"$limit": int(limit)},
+        {"$match": {"transactions.relationship.file.file_id": {"$gt": ""}}},
         {
             "$project": {
                 "_id": 0,
@@ -852,6 +815,10 @@ async def search_chain(config, query: str, limit: int = 50) -> list:
         async for doc in _db(config).blocks.aggregate(pipeline):
             txn = doc.get("transaction") or {}
             rel = (txn.get("relationship") or {}).get("file") or {}
+            if not rel.get("file_id"):
+                continue
+            if not _file_text_matches(rel, q, txn.get("id") or ""):
+                continue
             results.append(
                 {
                     "source": "chain",
@@ -862,16 +829,18 @@ async def search_chain(config, query: str, limit: int = 50) -> list:
             )
     except Exception:
         pass
+    results.sort(key=lambda item: int(item.get("block_index") or 0), reverse=True)
 
-    mem_filt = {"$or": _text_match_clauses("relationship.file", regex)}
     try:
-        async for txn in (
-            _db(config)
-            .miner_transactions.find(mem_filt, {"_id": 0})
-            .sort([("time", -1)])
-            .limit(int(limit))
+        async for txn in _db(config).miner_transactions.find(
+            {"relationship.file.file_id": {"$gt": ""}},
+            {"_id": 0},
         ):
             rel = (txn.get("relationship") or {}).get("file") or {}
+            if not rel.get("file_id"):
+                continue
+            if not _file_text_matches(rel, q, txn.get("id") or ""):
+                continue
             results.append(
                 {
                     "source": "mempool",
@@ -880,9 +849,11 @@ async def search_chain(config, query: str, limit: int = 50) -> list:
                     "file": rel,
                 }
             )
+            if len(results) >= limit * 2:
+                break
     except Exception:
         pass
-    return results
+    return results[:limit]
 
 
 async def search_videos(
@@ -893,8 +864,6 @@ async def search_videos(
     skip = max(0, int(skip))
     fetch_n = limit + skip + 50
     q = (query or "").strip()
-    escaped = re.escape(q) if q else None
-    text_regex = {"$regex": escaped, "$options": "i"} if escaped else {"$exists": True}
 
     seen = set()
     results = []
@@ -932,30 +901,10 @@ async def search_videos(
         merged["file"] = live.get("file") or f
         _add(merged)
 
-    text_or = _text_match_clauses("transactions.relationship.file", text_regex)
-    video_or = _video_match_clauses("transactions.relationship.file")
-    if q:
-        txn_match = {"$and": [{"$or": text_or}, {"$or": video_or}]}
-        block_match = {
-            "$and": [
-                {
-                    "$or": _text_match_clauses(
-                        "transactions.relationship.file", text_regex
-                    )
-                },
-                {"$or": video_or},
-            ]
-        }
-    else:
-        txn_match = {"$or": video_or}
-        block_match = {"$or": video_or}
-
     pipeline = [
-        {"$match": block_match},
+        {"$match": {"transactions.relationship.file.file_id": {"$gt": ""}}},
         {"$unwind": "$transactions"},
-        {"$match": txn_match},
-        {"$sort": {"index": -1}},
-        {"$limit": int(fetch_n)},
+        {"$match": {"transactions.relationship.file.file_id": {"$gt": ""}}},
         {
             "$project": {
                 "_id": 0,
@@ -964,11 +913,16 @@ async def search_videos(
             }
         },
     ]
+    chain_hits = []
     try:
         async for doc in _db(config).blocks.aggregate(pipeline):
             txn = doc.get("transaction") or {}
             rel = (txn.get("relationship") or {}).get("file") or {}
-            await _add_live(
+            if not is_video_file(rel):
+                continue
+            if not _file_text_matches(rel, q, txn.get("id") or ""):
+                continue
+            chain_hits.append(
                 {
                     "source": "chain",
                     "block_index": doc.get("block_index"),
@@ -979,21 +933,24 @@ async def search_videos(
             )
     except Exception:
         pass
+    chain_hits.sort(key=lambda item: int(item.get("block_index") or 0), reverse=True)
+    for item in chain_hits:
+        if len(results) >= fetch_n:
+            break
+        await _add_live(item)
 
-    mem_text = _text_match_clauses("relationship.file", text_regex)
-    mem_video = _video_match_clauses("relationship.file")
-    if q:
-        mem_filt = {"$and": [{"$or": mem_text}, {"$or": mem_video}]}
-    else:
-        mem_filt = {"$or": mem_video}
     try:
-        async for txn in (
-            _db(config)
-            .miner_transactions.find(mem_filt, {"_id": 0})
-            .sort([("time", -1)])
-            .limit(int(fetch_n))
+        async for txn in _db(config).miner_transactions.find(
+            {"relationship.file.file_id": {"$gt": ""}},
+            {"_id": 0},
         ):
+            if len(results) >= fetch_n:
+                break
             rel = (txn.get("relationship") or {}).get("file") or {}
+            if not is_video_file(rel):
+                continue
+            if not _file_text_matches(rel, q, txn.get("id") or ""):
+                continue
             await _add_live(
                 {
                     "source": "mempool",

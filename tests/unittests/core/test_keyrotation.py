@@ -2740,7 +2740,7 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         self.assertGreaterEqual(
             mgr._peer_branch_monitor_stats.get("advances_blocked", 0), 1
         )
-        snap = await mgr.peer_branch_monitor_snapshot()
+        snap = await mgr.peer_branch_monitor_snapshot(refresh=True)
         self.assertIn("limits", snap)
         self.assertGreaterEqual(snap.get("total_peer_branch_docs", 0), 1)
 
@@ -2779,7 +2779,7 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
 
         # Snapshot oversize_peers + aggregate path
         mgr.PEER_BRANCH_MAX_DOCS_PER_PEER = 1
-        snap = await mgr.peer_branch_monitor_snapshot()
+        snap = await mgr.peer_branch_monitor_snapshot(refresh=True)
         self.assertTrue(snap.get("oversize_peers") or snap.get("max_docs_peer", 0) >= 1)
         self.assertIn("epoch_steps", snap.get("limits") or {})
 
@@ -2788,7 +2788,7 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
             raise RuntimeError("no agg")
 
         kel.aggregate = boom_agg
-        snap2 = await mgr.peer_branch_monitor_snapshot()
+        snap2 = await mgr.peer_branch_monitor_snapshot(refresh=True)
         self.assertIn("error", snap2)
 
         # Aggregate failure and count also fails
@@ -2797,7 +2797,7 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
 
         orig_count = kel.count_documents
         kel.count_documents = boom_count
-        snap2b = await mgr.peer_branch_monitor_snapshot()
+        snap2b = await mgr.peer_branch_monitor_snapshot(refresh=True)
         self.assertIn("error", snap2b)
         kel.count_documents = orig_count
 
@@ -2815,7 +2815,7 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
 
         kel.aggregate = ok_agg
         kel.count_documents = boom_count
-        snap3 = await mgr.peer_branch_monitor_snapshot()
+        snap3 = await mgr.peer_branch_monitor_snapshot(refresh=True)
         self.assertEqual(snap3.get("max_docs_peer"), 5)
         kel.count_documents = orig_count
 
@@ -4171,7 +4171,7 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         ):
             await mgr4.advance_peer_auth_ratchet("mon_peer")
             await mgr4.advance_peer_auth_ratchet("mon_peer")
-        snap = await mgr4.peer_branch_monitor_snapshot()
+        snap = await mgr4.peer_branch_monitor_snapshot(refresh=True)
         self.assertTrue(snap.get("oversize_peers") or snap.get("max_docs_peer", 0) >= 1)
 
         # After reroot, bad epoch_len on returned state (except path 1928-1929)

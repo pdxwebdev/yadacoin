@@ -308,6 +308,7 @@ class NodeKeyRotationManager:
             "last_check": 0,
             "alerts": [],
         }
+        self._peer_branch_doc_counts: dict = {}
         # Stash for the next mint after reroot_peer_branch (generation / link).
         self._peer_branch_next_generation: dict = {}
         self._peer_branch_supersedes: dict = {}
@@ -1056,6 +1057,7 @@ class NodeKeyRotationManager:
             except (TypeError, ValueError):
                 old_gen = 0
             await self._supersede_peer_branch(identity_announcement, old_inception)
+            self.forget_peer_branch_count(old_inception)
         self._peer_branches.pop(identity_announcement, None)
         self._peer_branch_advance_times.pop(identity_announcement, None)
         self._peer_branch_next_generation[identity_announcement] = old_gen + 1
@@ -2100,6 +2102,7 @@ class NodeKeyRotationManager:
                     "superseded": {"$ne": True},
                 }
             )
+            self.remember_peer_branch_count(branch, identity_announcement, n_docs)
             if n_docs > self.PEER_BRANCH_MAX_DOCS_PER_PEER:
                 self._peer_branch_alert(
                     identity_announcement,
@@ -2123,8 +2126,76 @@ class NodeKeyRotationManager:
             del alerts[:-50]
         self.config.app_log.error("PeerBranchMonitor: %s", message)
 
-    async def peer_branch_monitor_snapshot(self) -> dict:
-        """Aggregate peer-branch key_event_log sizes for health / get-status."""
+    def remember_peer_branch_count(self, branch: str, peer: str, n: int) -> None:
+        branch = (branch or "").strip()
+        if not branch:
+            return
+        self._peer_branch_doc_counts[branch] = {
+            "docs": int(n),
+            "peer": (peer or "")[:48],
+        }
+
+    def note_peer_branch_added(self, branch: str, peer: str = "", n: int = 1) -> None:
+        branch = (branch or "").strip()
+        if not branch or int(n) <= 0:
+            return
+        cur = dict(self._peer_branch_doc_counts.get(branch) or {})
+        cur["docs"] = int(cur.get("docs") or 0) + int(n)
+        if peer:
+            cur["peer"] = (peer or "")[:48]
+        self._peer_branch_doc_counts[branch] = cur
+
+    def forget_peer_branch_count(self, branch: str) -> None:
+        self._peer_branch_doc_counts.pop((branch or "").strip(), None)
+
+    def peer_branch_cached_snapshot(self) -> dict:
+        """In-memory counts from connect and branch_sync writes. No collection scan."""
+        oversize = []
+        total = 0
+        max_docs = 0
+        for branch, row in self._peer_branch_doc_counts.items():
+            n = int((row or {}).get("docs") or 0)
+            total += n
+            if n > max_docs:
+                max_docs = n
+            if n > self.PEER_BRANCH_MAX_DOCS_PER_PEER:
+                oversize.append(
+                    {
+                        "branch": (branch or "")[:24],
+                        "peer": ((row or {}).get("peer") or "")[:32],
+                        "docs": n,
+                    }
+                )
+        oversize.sort(key=lambda item: item["docs"], reverse=True)
+        return {
+            "total_peer_branch_docs": total,
+            "peers": len(self._peer_branch_doc_counts),
+            "max_docs_peer": max_docs,
+            "oversize_peers": oversize[:5],
+            "advances_blocked": int(
+                self._peer_branch_monitor_stats.get("advances_blocked") or 0
+            ),
+            "recent_alerts": list(self._peer_branch_monitor_stats.get("alerts") or [])[
+                -10:
+            ],
+            "limits": {
+                "max_advances_per_window": self.PEER_BRANCH_MAX_ADVANCES_PER_WINDOW,
+                "advance_window_s": self.PEER_BRANCH_ADVANCE_WINDOW_S,
+                "max_docs_per_peer": self.PEER_BRANCH_MAX_DOCS_PER_PEER,
+                "epoch_steps": self.PEER_BRANCH_EPOCH_STEPS,
+                "max_total_docs": self.PEER_BRANCH_MAX_TOTAL_DOCS,
+            },
+            "cached": True,
+        }
+
+    async def peer_branch_monitor_snapshot(self, refresh: bool = False) -> dict:
+        """Peer-branch sizes for health. Default is the connect/sync cache.
+
+        Pass refresh=True to aggregate key_event_log. The status loop must not.
+        """
+        if not refresh:
+            self._peer_branch_monitor_stats["last_check"] = time.time()
+            return self.peer_branch_cached_snapshot()
         stats = {
             "total_peer_branch_docs": 0,
             "peers": 0,
