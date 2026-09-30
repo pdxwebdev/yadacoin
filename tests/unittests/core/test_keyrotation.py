@@ -4210,6 +4210,49 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         st6, _ = await mgr6._ensure_peer_branch_ready("bad_gen_resume")
         self.assertEqual(st6.get("branch_generation"), 0)
 
+    async def test_peer_branch_cache_snapshot_without_refresh(self):
+        """In-memory count cache: empty keys, increments, and default snapshot."""
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        mgr = self._make_mgr(cfg)
+        mgr.PEER_BRANCH_MAX_DOCS_PER_PEER = 2
+
+        mgr.remember_peer_branch_count("", "peer", 9)
+        mgr.remember_peer_branch_count("   ", "peer", 9)
+        mgr.note_peer_branch_added("", "peer", 1)
+        mgr.note_peer_branch_added("branch-a", "peer", 0)
+        mgr.note_peer_branch_added("branch-a", "", -1)
+        self.assertEqual(mgr._peer_branch_doc_counts, {})
+
+        mgr.note_peer_branch_added("branch-a", "", 1)
+        self.assertEqual(mgr._peer_branch_doc_counts["branch-a"]["docs"], 1)
+        self.assertNotIn("peer", mgr._peer_branch_doc_counts["branch-a"])
+
+        mgr.note_peer_branch_added("branch-a", "p" * 60, 4)
+        self.assertEqual(mgr._peer_branch_doc_counts["branch-a"]["docs"], 5)
+        self.assertEqual(len(mgr._peer_branch_doc_counts["branch-a"]["peer"]), 48)
+
+        mgr.remember_peer_branch_count("branch-b", "pb", 1)
+        mgr.note_peer_branch_added("branch-b", "pb", 3)
+        self.assertEqual(mgr._peer_branch_doc_counts["branch-b"]["docs"], 4)
+        mgr._peer_branch_doc_counts["branch-empty"] = None
+
+        for i in range(6):
+            mgr.remember_peer_branch_count(f"over-{i}", f"peer-{i}", 10 + i)
+
+        snap = mgr.peer_branch_cached_snapshot()
+        self.assertTrue(snap["cached"])
+        self.assertEqual(len(snap["oversize_peers"]), 5)
+        docs = [item["docs"] for item in snap["oversize_peers"]]
+        self.assertEqual(docs, sorted(docs, reverse=True))
+        self.assertEqual(docs[0], 15)
+        self.assertLessEqual(len(snap["oversize_peers"][0]["peer"]), 32)
+
+        cold = await mgr.peer_branch_monitor_snapshot()
+        self.assertTrue(cold["cached"])
+        self.assertGreater(mgr._peer_branch_monitor_stats.get("last_check") or 0, 0)
+        self.assertEqual(cold["oversize_peers"], snap["oversize_peers"])
+        self.assertEqual(cold["max_docs_peer"], 15)
+
 
 # ---------------------------------------------------------------------------
 # _walk_forward
