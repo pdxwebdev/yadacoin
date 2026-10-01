@@ -163,19 +163,27 @@ jobs:
           ref: ${{ needs.release.outputs.tag }}
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.7"
+          python-version: "3.9"
 
       - name: Install 7-Zip
         run: choco install 7zip -y
 
       - name: Install dependencies
+        shell: bash
         run: |
+          set -euo pipefail
+          if ! command -v cmake >/dev/null 2>&1; then
+            choco install cmake -y
+          fi
+          cmake --version
           grep -vE "pyrx|yadacoin-agent-auth|sendgrid|mixpanel|ua_parser|twilio|centeridentity|python-jose|openai|resend|discord\.py|PyGithub|web3|eth_account|eth_abi|stripe" requirements.txt > filtered_requirements.txt
           python -m pip install --upgrade pip
           python -m pip install -r filtered_requirements.txt
-          python -m pip install pyinstaller pytest==7.4.4
+          python -m pip install pybind11 "pyinstaller==5.13.2" pytest==7.4.4
+          python -m pip install "git+https://github.com/pdxwebdev/pyrx"
+          python -c "import pyrx, pathlib; print(pathlib.Path(pyrx.__file__).resolve())" > pyrx_pyd_path.txt
 
       - name: Build with PyInstaller
         run: pyinstaller yadacoin/app.spec
@@ -187,7 +195,8 @@ jobs:
 
       - name: Add additional file to the zip
         run: |
-          move winlibs/pyrx.cp37-win_amd64.pyd YadaCoin/
+          New-Item -ItemType Directory -Force -Path YadaCoin | Out-Null
+          Copy-Item (Get-Content -Raw pyrx_pyd_path.txt).Trim() YadaCoin/
           move VERSION YadaCoin/
           move MIN_VERSION YadaCoin/
           7z u yadacoin-windows.zip ./YadaCoin/
