@@ -183,6 +183,7 @@ jobs:
           python -m pip install -r filtered_requirements.txt
           python -m pip install pybind11 "pyinstaller==5.13.2" pytest==7.4.4
           python -m pip install --no-build-isolation "git+https://github.com/pdxwebdev/pyrx"
+          python -m pip install "setuptools<82"
           python -c "import pyrx, pathlib; print(pathlib.Path(pyrx.__file__).resolve())" > pyrx_pyd_path.txt
 
       - name: Build with PyInstaller
