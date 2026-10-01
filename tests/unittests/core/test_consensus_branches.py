@@ -1814,6 +1814,22 @@ class TestInsertBlock(ConsensusBase):
             # The outer try/except swallows; force observation via app_log
             await self.consensus.insert_block(block, MagicMock())
 
+    async def test_insert_block_kel_helpers_swallow_errors(self):
+        block = _mk_block()
+        self.consensus.config.mp = None
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.clear_output_tags_for_reorg",
+            new=AsyncMock(side_effect=RuntimeError("clear")),
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.apply_reorg_output_tag_clear",
+            new=AsyncMock(side_effect=RuntimeError("apply")),
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.stamp_known_block_outputs",
+            new=AsyncMock(side_effect=RuntimeError("stamp")),
+        ):
+            result = await self.consensus.insert_block(block, MagicMock())
+        self.assertTrue(result)
+
     async def test_insert_block_at_content_takedown_fork_calls_apply(self):
         """consensus.py line 555: block.index >= CONTENT_TAKEDOWN_FORK triggers _apply_content_takedowns."""
         from yadacoin.core.chain import CHAIN

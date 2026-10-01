@@ -581,6 +581,43 @@ class TestMongoInitPaths(AsyncTestCase):
                 with self.assertRaises(Exception):
                     Mongo()
 
+    def test_query_timeout_kwargs_nonpositive(self):
+        m = Mongo.__new__(Mongo)
+        m.config = Config()
+        original = m.config.mongo_query_timeout
+        try:
+            m.config.mongo_query_timeout = 0
+            self.assertEqual(m._query_timeout_kwargs(), {})
+            m.config.mongo_query_timeout = -5
+            self.assertEqual(m._query_timeout_kwargs(), {})
+        finally:
+            m.config.mongo_query_timeout = original
+
+    def test_init_reopens_client_when_query_timeout_set(self):
+        config = Config()
+        original = config.mongo_query_timeout
+        config.mongo_query_timeout = 5000
+        mock_db = self._make_default_mock_db()
+        mock_client = MagicMock()
+        mock_client.__getitem__.return_value = mock_db
+        try:
+            with mock.patch(
+                "yadacoin.core.mongo.MongoClient", return_value=mock_client
+            ) as client_cls, mock.patch(
+                "yadacoin.core.mongo.MotorClient", return_value=MagicMock()
+            ):
+                m = Mongo()
+            self.assertIsNotNone(m)
+            mock_client.close.assert_called()
+            self.assertTrue(
+                any(
+                    call.kwargs.get("timeoutMS") == 5000
+                    for call in client_cls.call_args_list
+                )
+            )
+        finally:
+            config.mongo_query_timeout = original
+
     def test_init_block_time_conversion(self):
         """Lines 468-471: block with string time gets converted."""
         mock_db = self._make_default_mock_db()

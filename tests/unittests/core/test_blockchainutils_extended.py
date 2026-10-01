@@ -883,7 +883,9 @@ class TestBalanceMethods(BUTestCase):
 
     async def test_get_total_received_balance_returns_value(self):
         mock_db = await self._make_mock_db_with_aggregate_result(10.5)
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
+        with patch.object(self.config.mongo, "async_db", new=mock_db), patch.object(
+            self.bu.mongo, "balance_executor", None
+        ):
             result = await self.bu.get_total_received_balance(self.config.address)
         self.assertAlmostEqual(result, 10.5)
 
@@ -905,7 +907,9 @@ class TestBalanceMethods(BUTestCase):
         mock_db.reversed_public_keys.find_one = AsyncMock(
             return_value={"public_key": self.config.public_key}
         )
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
+        with patch.object(self.config.mongo, "async_db", new=mock_db), patch.object(
+            self.bu.mongo, "balance_executor", None
+        ):
             result = await self.bu.get_spent_balance(self.config.address)
         self.assertAlmostEqual(result, 3.15)
 
@@ -1458,7 +1462,9 @@ class TestWalletCacheAndSelectionCoverage(BUTestCase):
         mock_db.blocks.aggregate.return_value.to_list = AsyncMock(
             return_value=[{"totalSpent": 1.5}]
         )
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
+        with patch.object(self.config.mongo, "async_db", new=mock_db), patch.object(
+            self.bu.mongo, "balance_executor", None
+        ):
             result = await self.bu.get_total_spent_balance(
                 "addr", public_key="pk", from_index=10
             )
@@ -1472,7 +1478,9 @@ class TestWalletCacheAndSelectionCoverage(BUTestCase):
             return_value=[{"totalReceived": 4.0}]
         )
         self.bu.get_reverse_public_key = AsyncMock(return_value=None)
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
+        with patch.object(self.config.mongo, "async_db", new=mock_db), patch.object(
+            self.bu.mongo, "balance_executor", None
+        ):
             result = await self.bu.get_received_from_others_balance(
                 "addr", public_key=None, from_index=3
             )
@@ -1485,7 +1493,9 @@ class TestWalletCacheAndSelectionCoverage(BUTestCase):
         mock_db.blocks.aggregate.return_value.to_list = AsyncMock(
             return_value=[{"totalReceived": 2.0}]
         )
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
+        with patch.object(self.config.mongo, "async_db", new=mock_db), patch.object(
+            self.bu.mongo, "balance_executor", None
+        ):
             result = await self.bu.get_received_solo_mining_balance(
                 "addr", public_key="pk", from_index=5
             )
@@ -1497,7 +1507,9 @@ class TestWalletCacheAndSelectionCoverage(BUTestCase):
             return_value=[{"totalReceived": 2.5}]
         )
         self.bu.get_reverse_public_key = AsyncMock(return_value=None)
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
+        with patch.object(self.config.mongo, "async_db", new=mock_db), patch.object(
+            self.bu.mongo, "balance_executor", None
+        ):
             r1 = await self.bu.get_masternode_coinbase_balance(
                 "addr", public_key="pk", from_index=1
             )
@@ -1513,7 +1525,9 @@ class TestWalletCacheAndSelectionCoverage(BUTestCase):
             return_value=[{"totalSpent": 9.0}]
         )
         self.bu.get_reverse_public_key = AsyncMock(return_value="pk")
-        with patch.object(self.config.mongo, "async_db", new=mock_db):
+        with patch.object(self.config.mongo, "async_db", new=mock_db), patch.object(
+            self.bu.mongo, "balance_executor", None
+        ):
             result = await self.bu.get_spent_balance("addr", from_index=500)
         self.assertEqual(result, 9.0)
         pipeline = mock_db.blocks.aggregate.call_args[0][0]

@@ -209,6 +209,49 @@ class TestBroadcastMempool(AsyncTestCase):
         txn.to_dict.return_value = {"id": "t1"}
         await TU._broadcast_mempool(cfg, txn)
 
+    async def test_broadcast_stamps_inception_on_outputs(self):
+        from types import SimpleNamespace
+
+        cfg = MagicMock(spec=["mongo"])
+        cfg.mongo.async_db.miner_transactions.insert_one = AsyncMock()
+        txn = MagicMock()
+        txn.to_dict.return_value = {"id": "t1"}
+        txn.outputs = [
+            SimpleNamespace(to=None),
+            SimpleNamespace(to=""),
+            SimpleNamespace(to="nostamp"),
+            SimpleNamespace(to="addr"),
+        ]
+
+        async def inception_for_address(address):
+            if address == "addr":
+                return "inc"
+            return None
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.inception_for_address",
+            new=inception_for_address,
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog._stamp_output_inception",
+            new=AsyncMock(),
+        ) as stamp:
+            await TU._broadcast_mempool(cfg, txn)
+        stamp.assert_awaited_once_with("addr", "inc")
+
+    async def test_broadcast_swallows_inception_errors(self):
+        from types import SimpleNamespace
+
+        cfg = MagicMock(spec=["mongo"])
+        cfg.mongo.async_db.miner_transactions.insert_one = AsyncMock()
+        txn = MagicMock()
+        txn.to_dict.return_value = {"id": "t1"}
+        txn.outputs = [SimpleNamespace(to="addr")]
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.inception_for_address",
+            new=AsyncMock(side_effect=RuntimeError("stamp")),
+        ):
+            await TU._broadcast_mempool(cfg, txn)
+
 
 class TestTUSendKelPaths(AsyncTestCase):
     async def asyncSetUp(self):
