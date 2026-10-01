@@ -1,2 +1,4 @@
 # Optional. Required only when using the sia.storage backend.
-sia-storage
+# 0.12+ SharedSdk views another user's announcement with its sharing key.
+# An App Key is still required to upload and announce.
+sia-storage>=0.12.0

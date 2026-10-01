@@ -125,6 +125,23 @@ class TestFileAnnouncementBackends(AsyncTestCase):
         with self.assertRaises(Exception):
             get_backend("ipfs")
 
+    async def test_view_without_app_key_requires_sharing_credential(self):
+        from plugins.fileannouncement.backends import (
+            SiaStorageBackend,
+            is_sharing_credential,
+            sharing_credential,
+        )
+
+        cred = sharing_credential(bytes(range(32)))
+        self.assertTrue(is_sharing_credential(cred))
+        self.assertTrue(cred.startswith("sia-share:v1:"))
+        self.assertFalse(is_sharing_credential("https://sia.storage/share/x"))
+        backend = SiaStorageBackend("")
+        with self.assertRaises(Exception) as ctx:
+            await backend.object_size("ab" * 32, share_url="https://sia.storage/share/x")
+        self.assertIn("sharing key", str(ctx.exception).lower())
+        self.assertNotIn("64-character", str(ctx.exception))
+
 
 class TestFileAnnouncementStoreHelpers(AsyncTestCase):
     async def test_search_filter_or_fields(self):

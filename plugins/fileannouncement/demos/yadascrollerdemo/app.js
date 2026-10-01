@@ -439,9 +439,9 @@
     }
   }
 
-  async function streamOk(item, signal) {
+  async function streamFailure(item, signal) {
     const url = streamUrl(item);
-    if (!url) return false;
+    if (!url) return "missing stream";
     try {
       const res = await fetch(url, {
         method: "GET",
@@ -450,10 +450,11 @@
         signal,
       });
       if (res.status !== 200 && res.status !== 206) {
+        let msg = "";
         try {
-          await res.arrayBuffer();
+          msg = (await res.text()).trim();
         } catch (_) {}
-        return false;
+        return msg || `playback failed (${res.status})`;
       }
       const type = (res.headers.get("content-type") || "")
         .split(";")[0]
@@ -468,15 +469,16 @@
         try {
           await res.arrayBuffer();
         } catch (_) {}
-        return false;
+        return "stream is not a video";
       }
-      if (res.headers.get("content-length") === "0") return false;
+      if (res.headers.get("content-length") === "0") return "empty stream";
       try {
         await res.arrayBuffer();
       } catch (_) {}
-      return true;
-    } catch (_) {
-      return false;
+      return "";
+    } catch (err) {
+      if (err && err.name === "AbortError") return "";
+      return (err && err.message) || "playback failed";
     }
   }
 
@@ -530,22 +532,28 @@
         if (content) seen.add(content);
         candidates.push(item);
       }
-      const rest = candidates.slice(1);
+      let firstFailure = "";
+      const accept = async (item) => {
+        if (gen !== feedGen || signal.aborted) return;
+        const failure = await streamFailure(item, signal);
+        if (failure) {
+          if (!firstFailure) firstFailure = failure;
+          return;
+        }
+        if (gen !== feedGen || signal.aborted) return;
+        appendSlide(item);
+      };
       if (candidates[0]) {
-        appendSlide(candidates[0]);
-        showStatus("");
+        showStatus("Opening video…", 0);
+        await accept(candidates[0]);
       }
+      if (gen !== feedGen) return;
       const probeRest = async () => {
-        await mapPool(rest, 1, async (item) => {
-          if (gen !== feedGen || signal.aborted) return;
-          if (!(await streamOk(item, signal))) return;
-          if (gen !== feedGen || signal.aborted) return;
-          appendSlide(item);
-        });
+        await mapPool(candidates.slice(1), 1, accept);
         if (gen !== feedGen) return;
         if (!videos.length) {
           emptyEl.hidden = false;
-          showStatus("");
+          showStatus(firstFailure || "", firstFailure ? 8000 : 0);
         } else {
           showStatus(`${videos.length} video${videos.length === 1 ? "" : "s"}`);
         }
@@ -553,19 +561,13 @@
       if (!candidates[0]) {
         emptyEl.hidden = false;
         showStatus("");
+      } else if (!videos.length) {
+        emptyEl.hidden = false;
+        showStatus(firstFailure || "playback failed", 8000);
+        probeRest();
       } else {
-        const firstVideo = feed.querySelector("video");
-        let started = false;
-        const kick = () => {
-          if (started || gen !== feedGen) return;
-          started = true;
-          probeRest();
-        };
-        if (firstVideo) {
-          firstVideo.addEventListener("loadeddata", kick, { once: true });
-          firstVideo.addEventListener("error", kick, { once: true });
-        }
-        setTimeout(kick, 1200);
+        showStatus("");
+        probeRest();
       }
     } catch (err) {
       if (gen !== feedGen || signal.aborted) return;

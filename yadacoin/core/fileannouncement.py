@@ -68,7 +68,9 @@ class FileAnnouncement:
     ------
     backend      : storage backend name (e.g. ``sia``)
     file_id      : identifier returned by the backend (Sia Object ID)
-    share_url    : public Sia share URL (CreateSharedObjectURL); anyone can read it
+    share_url    : public read credential. sia-share:v1:<64-hex seed> lets any
+                   node download via SharedSdk with no App Key. Older values are
+                   HTTP share URLs and still need the viewer's App Key.
     title        : human-readable title
     description  : longer description
     keywords     : list of search keywords

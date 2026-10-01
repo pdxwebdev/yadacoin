@@ -14,6 +14,7 @@ Full license terms: see LICENSE.txt in this repository.
 """Pluggable file storage backends. Sia (https://sia.storage) is implemented now."""
 
 import hashlib
+import inspect
 import json
 import time
 from abc import ABC, abstractmethod
@@ -35,6 +36,41 @@ class StorageBackendError(Exception):
 def is_share_url(value: str) -> bool:
     v = (value or "").strip().lower()
     return v.startswith(("http://", "https://", "sia://"))
+
+
+SHARE_KEY_PREFIX = "sia-share:v1:"
+_VIEW_NEEDS_SHARE = (
+    "this announcement has no sharing key, so it cannot be viewed without an App Key. "
+    "The publisher must re-save it with sia-storage 0.12 or newer."
+)
+
+
+def looks_like_sharing_credential(value: str) -> bool:
+    return (value or "").strip().lower().startswith(SHARE_KEY_PREFIX)
+
+
+def sharing_seed(value: str):
+    raw = (value or "").strip()
+    if not looks_like_sharing_credential(raw):
+        return None
+    hexpart = raw[len(SHARE_KEY_PREFIX) :].strip()
+    if len(hexpart) != 64:
+        raise StorageBackendError("sharing key credential is not 64 hex characters")
+    try:
+        return bytes.fromhex(hexpart)
+    except ValueError as exc:
+        raise StorageBackendError("sharing key credential contains invalid hex") from exc
+
+
+def is_sharing_credential(value: str) -> bool:
+    try:
+        return sharing_seed(value) is not None
+    except StorageBackendError:
+        return False
+
+
+def sharing_credential(seed: bytes) -> str:
+    return SHARE_KEY_PREFIX + seed.hex()
 
 
 class StorageBackend(ABC):
@@ -175,6 +211,7 @@ class MemoryStorageBackend(StorageBackend):
 
 
 _SDK_CACHE: Dict[tuple, object] = {}
+_SHARED_SDK_CACHE: Dict[tuple, object] = {}
 _OBJECT_CACHE: Dict[tuple, tuple] = {}
 _OBJECT_CACHE_TTL = 600
 
@@ -239,8 +276,54 @@ class SiaStorageBackend(StorageBackend):
     def _drop_sdk(self):
         _SDK_CACHE.pop((self.indexer_url, self.app_key_hex), None)
 
-    async def _object(self, file_id: str, share_url: str = ""):
+    def _drop_shared_sdk(self, seed: bytes):
+        _SHARED_SDK_CACHE.pop((self.indexer_url, seed.hex()), None)
+
+    async def _shared_sdk(self, seed: bytes):
+        try:
+            from sia_storage import SharedSdk
+        except ImportError as exc:
+            raise StorageBackendError(
+                "sia-storage>=0.12.0 is required to view a shared file without an App Key. "
+                "Run: pip install -U 'sia-storage>=0.12.0'"
+            ) from exc
+        cache_key = (self.indexer_url, seed.hex())
+        cached = _SHARED_SDK_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+        sdk = await SharedSdk.connect(self.indexer_url, seed)
+        _SHARED_SDK_CACHE[cache_key] = sdk
+        return sdk
+
+    async def _fetch_shared_object(self, sdk, link: str):
+        if hasattr(sdk, "object_from_share_url"):
+            return await sdk.object_from_share_url(link)
+        return await sdk.shared_object(link)
+
+    async def _client_and_object(self, file_id: str, share_url: str = ""):
         link = (share_url or "").strip()
+        seed = sharing_seed(link)
+        if seed is not None:
+            ident = (file_id or "").strip()
+            cache_key = (self.indexer_url, seed.hex(), ident)
+            hit = _OBJECT_CACHE.get(cache_key)
+            now = time.monotonic()
+            if hit and hit[1] > now:
+                return hit[0]
+            try:
+                sdk = await self._shared_sdk(seed)
+                obj = await sdk.object(ident)
+            except StorageBackendError:
+                raise
+            except Exception:
+                self._drop_shared_sdk(seed)
+                _OBJECT_CACHE.pop(cache_key, None)
+                raise
+            packed = (sdk, obj)
+            _OBJECT_CACHE[cache_key] = (packed, now + _OBJECT_CACHE_TTL)
+            return packed
+        if len(self.app_key_hex) != 64:
+            raise StorageBackendError(_VIEW_NEEDS_SHARE)
         ident = link or (file_id or "").strip()
         cache_key = (self.indexer_url, self.app_key_hex, ident)
         hit = _OBJECT_CACHE.get(cache_key)
@@ -250,19 +333,20 @@ class SiaStorageBackend(StorageBackend):
         sdk = await self._sdk()
         try:
             if is_share_url(link) or is_share_url(file_id):
-                obj = await sdk.shared_object(link or file_id.strip())
+                obj = await self._fetch_shared_object(sdk, link or file_id.strip())
             else:
                 obj = await sdk.object(file_id.strip())
         except Exception:
             self._drop_sdk()
             _OBJECT_CACHE.pop(cache_key, None)
             raise
-        _OBJECT_CACHE[cache_key] = (obj, now + _OBJECT_CACHE_TTL)
-        return obj
+        packed = (sdk, obj)
+        _OBJECT_CACHE[cache_key] = (packed, now + _OBJECT_CACHE_TTL)
+        return packed
 
     async def object_size(self, file_id: str, share_url: str = "") -> int:
         try:
-            obj = await self._object(file_id, share_url)
+            _sdk, obj = await self._client_and_object(file_id, share_url)
             return int(obj.size())
         except StorageBackendError:
             raise
@@ -277,14 +361,17 @@ class SiaStorageBackend(StorageBackend):
         length: Optional[int] = None,
     ):
         try:
+            sdk, obj = await self._client_and_object(file_id, share_url)
             from sia_storage import DownloadOptions
+        except StorageBackendError:
+            raise
         except ImportError as exc:
             raise StorageBackendError(
-                "sia-storage SDK is not installed. Run: pip install sia-storage"
+                "sia-storage SDK is not installed. Run: pip install -U 'sia-storage>=0.12.0'"
             ) from exc
+        except Exception as exc:
+            raise StorageBackendError(str(exc)) from exc
         try:
-            sdk = await self._sdk()
-            obj = await self._object(file_id, share_url)
             total = int(obj.size())
             opts = DownloadOptions(
                 offset=int(offset or 0),
@@ -350,9 +437,7 @@ class SiaStorageBackend(StorageBackend):
         obj.update_metadata(json.dumps(meta).encode())
         await sdk.pin_object(obj)
         size = obj.size() if hasattr(obj, "size") else len(content)
-        share_url = str(
-            sdk.share_object(obj, datetime.now(timezone.utc) + SHARE_URL_TTL)
-        )
+        share_url = await self._grant_share(sdk, obj)
         return {
             "file_id": str(obj.id()),
             "size": size,
@@ -360,21 +445,33 @@ class SiaStorageBackend(StorageBackend):
             "duplicate": False,
         }
 
+    async def _grant_share(self, sdk, obj) -> str:
+        create = getattr(sdk, "create_sharing_key", None)
+        attach = getattr(sdk, "share_object", None)
+        if create is None or not inspect.iscoroutinefunction(attach):
+            raise StorageBackendError(
+                "sia-storage>=0.12.0 is required to publish a sharing key. "
+                "Run: pip install -U 'sia-storage>=0.12.0'"
+            )
+        expires = datetime.now(timezone.utc) + SHARE_URL_TTL
+        key = await create("yadacoin-file-announcement", expires)
+        await attach(key, obj)
+        return sharing_credential(key.seed())
+
     async def share(self, file_id: str) -> str:
-        """CreateSharedObjectURL for an object this app key already owns."""
+        """Attach an owned object to a new sharing key and return its credential."""
         sdk = await self._sdk()
         obj = await sdk.object(file_id.strip())
-        return str(sdk.share_object(obj, datetime.now(timezone.utc) + SHARE_URL_TTL))
+        return await self._grant_share(sdk, obj)
 
     async def download(self, file_id: str, share_url: str = "") -> dict:
+        sdk, obj = await self._client_and_object(file_id, share_url)
         try:
             from sia_storage import DownloadOptions
         except ImportError as exc:
             raise StorageBackendError(
-                "sia-storage SDK is not installed. Run: pip install sia-storage"
+                "sia-storage SDK is not installed. Run: pip install -U 'sia-storage>=0.12.0'"
             ) from exc
-        sdk = await self._sdk()
-        obj = await self._object(file_id, share_url)
         async with sdk.download(obj, DownloadOptions()) as d:
             raw = await d.read_all()
         meta = {}

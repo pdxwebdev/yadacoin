@@ -30,7 +30,7 @@ from yadacoin.core.keyrotation import NodeKeyRotationManager, derive_secure_path
 from yadacoin.core.transaction import NotEnoughMoneyException, Transaction
 
 from . import store
-from .backends import StorageBackendError, get_backend
+from .backends import StorageBackendError, get_backend, is_sharing_credential
 
 app_log = getLogger("tornado.application")
 
@@ -660,7 +660,7 @@ async def update_file(
     new_description = existing["description"] if description is None else description
     new_keywords = existing.get("keywords") if keywords is None else keywords
     share_url = existing.get("share_url") or ""
-    if not share_url:
+    if not is_sharing_credential(share_url):
         backend, _name, _settings = await _backend_from_settings(
             config, existing.get("backend")
         )
@@ -668,7 +668,7 @@ async def update_file(
             try:
                 share_url = await backend.share(existing["file_id"])
             except Exception:
-                share_url = ""
+                share_url = existing.get("share_url") or ""
     ann = FileAnnouncement(
         file_id=existing["file_id"],
         title=new_title,

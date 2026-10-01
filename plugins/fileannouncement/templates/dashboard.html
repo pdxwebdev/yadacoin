@@ -357,9 +357,10 @@
       <div class="card">
         <h2>Storage settings</h2>
         <p class="muted">
-          Connect <a href="https://sia.storage" target="_blank" rel="noopener">sia.storage</a> with an App Key
-          registered for <strong>this</strong> plugin (not AI Agent or a generic account secret).
-          Generate one: <code>python -m plugins.fileannouncement.onboard</code>
+          An App Key is required only to upload and announce. Viewing another user's file uses the
+          sharing key in that announcement and does not need an App Key on this node.
+          Generate a publishing key: <code>python -m plugins.fileannouncement.onboard</code>.
+          Re-save older announcements so they include a sharing key.
         </p>
         <form id="settings-form">
           <label>Default backend</label>
@@ -556,7 +557,7 @@ async function loadSettings() {
   $("[name=sia_indexer_url]", $("#settings-form")).value = s.sia_indexer_url || "https://sia.storage";
   $("#settings-key-hint").textContent = s.sia_app_key_configured
     ? `Configured: ${s.sia_app_key}`
-    : "No App Key stored yet.";
+    : "No App Key stored. Uploads need one. Playback of other users' sharing-key announcements does not.";
 }
 
 async function loadReasons() {
