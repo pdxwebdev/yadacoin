@@ -3322,6 +3322,8 @@ class TestCoverageGapsTo100(TransactionTestCase):
             hit,
         )
         self.assertIsNone(txn._kel_txn_matching_address("missing", batch_txns=[hit]))
+        self.assertIsNone(txn._kel_txn_matching_address("y", batch_txns=[hit]))
+        self.assertIsNone(txn._kel_txn_matching_address("z", batch_txns=[hit]))
 
     async def test_output_owned_inbound_matching(self):
         """Lines 1988-2000: inbound same-inc and prerotated ownership."""
@@ -3371,11 +3373,34 @@ class TestCoverageGapsTo100(TransactionTestCase):
                 "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
                 new=AsyncMock(return_value=False),
             ):
-                self.assertTrue(
+                self.assertFalse(
                     await txn._output_owned_by_kel_spender(
                         "1OutPre",
                         "spender",
                         True,
                         batch_txns=[inbound2],
+                    )
+                )
+                foreign = MagicMock()
+                foreign.are_kel_fields_populated = lambda: True
+                foreign.inception_public_key_hash = "1Inc"
+                foreign.public_key_hash = "1Own"
+                foreign.prerotated_key_hash = "1Pre"
+                foreign.twice_prerotated_key_hash = "1Foreign"
+                foreign.prev_public_key_hash = "1ForeignPrev"
+                self.assertFalse(
+                    await txn._output_owned_by_kel_spender(
+                        "1Foreign",
+                        "spender",
+                        True,
+                        batch_txns=[foreign],
+                    )
+                )
+                self.assertFalse(
+                    await txn._output_owned_by_kel_spender(
+                        "1ForeignPrev",
+                        "spender",
+                        True,
+                        batch_txns=[foreign],
                     )
                 )

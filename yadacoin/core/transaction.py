@@ -2099,18 +2099,13 @@ class Transaction(object):
     def _kel_txn_matching_address(
         self, address, batch_txns=None, extra_blocks=None, block=None
     ):
-        """Find a KEL txn in inbound view that involves *address*."""
+        """Find a KEL txn whose public_key_hash is *address*."""
         block_index = getattr(block, "index", None) if block is not None else None
 
         def _matches(t):
             if not t or not getattr(t, "are_kel_fields_populated", lambda: False)():
                 return False
-            return address in (
-                getattr(t, "public_key_hash", None),
-                getattr(t, "prerotated_key_hash", None),
-                getattr(t, "twice_prerotated_key_hash", None),
-                getattr(t, "prev_public_key_hash", None),
-            )
+            return address == getattr(t, "public_key_hash", None)
 
         for t in batch_txns or []:
             if _matches(t):
@@ -2151,20 +2146,16 @@ class Transaction(object):
             inbound = self._kel_txn_matching_address(
                 out_to, batch_txns=batch_txns, extra_blocks=extra_blocks, block=block
             )
-            if inbound is not None:
-                out_tag = getattr(
-                    inbound, "inception_public_key_hash", None
-                ) or getattr(inbound, "public_key_hash", None)
-                if out_tag == my_inc:
-                    return True
-                # Output is this entry's prerotated / pkh under same walk.
-                if out_to in (
-                    getattr(inbound, "prerotated_key_hash", None),
-                    getattr(inbound, "public_key_hash", None),
-                ):
-                    inb_inc = getattr(inbound, "inception_public_key_hash", None)
-                    if not inb_inc or inb_inc == my_inc:
-                        return True
+            inb_inc = (
+                getattr(inbound, "inception_public_key_hash", None) if inbound else None
+            )
+            if (
+                inbound is not None
+                and inb_inc
+                and inb_inc == my_inc
+                and out_to == getattr(inbound, "public_key_hash", None)
+            ):
+                return True
 
             # Output may itself be a KEL-tagged coinbase with inception field.
             # Prefer that over get_inception when the parent is in-memory.
