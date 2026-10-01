@@ -3441,9 +3441,11 @@ class KeyEventLog:
                             config.app_log.debug(
                                 "get_inception: fast_path returning inception txn=%s public_key=%s",
                                 inception.transaction_signature[:16],
-                                inception.public_key[:16]
-                                if inception.public_key
-                                else None,
+                                (
+                                    inception.public_key[:16]
+                                    if inception.public_key
+                                    else None
+                                ),
                             )
                     return inception
 
@@ -3470,9 +3472,11 @@ class KeyEventLog:
                         "get_inception: slow_path onchain txn=%s public_key=%s prev_pkh=%s",
                         txn.transaction_signature[:16],
                         txn.public_key[:16] if txn.public_key else None,
-                        txn.prev_public_key_hash[:16]
-                        if txn.prev_public_key_hash
-                        else None,
+                        (
+                            txn.prev_public_key_hash[:16]
+                            if txn.prev_public_key_hash
+                            else None
+                        ),
                     )
                 if not txn.prev_public_key_hash or (
                     segment_only and is_recovers_inception(txn)
@@ -3516,9 +3520,11 @@ class KeyEventLog:
                         "get_inception: slow_path mempool txn=%s public_key=%s prev_pkh=%s",
                         txn.transaction_signature[:16],
                         txn.public_key[:16] if txn.public_key else None,
-                        txn.prev_public_key_hash[:16]
-                        if txn.prev_public_key_hash
-                        else None,
+                        (
+                            txn.prev_public_key_hash[:16]
+                            if txn.prev_public_key_hash
+                            else None
+                        ),
                     )
                 if not txn.prev_public_key_hash or (
                     segment_only and is_recovers_inception(txn)
@@ -3582,5 +3588,177 @@ class KeyEventLog:
                     {"$set": block_set},
                     array_filters=[{"elem.id": entry.transaction_signature}],
                 )
+            await KeyEventLog.ensure_output_tags([entry])
         except Exception:
             pass
+
+    @staticmethod
+    async def ensure_output_tags(log):
+        inception = None
+        for txn in log or []:
+            inception = getattr(txn, "inception_public_key_hash", None) or (
+                txn.get("inception_public_key_hash") if isinstance(txn, dict) else None
+            )
+            if inception:
+                break
+        if not inception:
+            return None
+        for txn in log or []:
+            inc = getattr(txn, "inception_public_key_hash", None) or (
+                txn.get("inception_public_key_hash") if isinstance(txn, dict) else None
+            )
+            inc = inc or inception
+            for field in (
+                "public_key_hash",
+                "prerotated_key_hash",
+                "twice_prerotated_key_hash",
+            ):
+                address = getattr(txn, field, None) or (
+                    txn.get(field) if isinstance(txn, dict) else None
+                )
+                if address:
+                    await KeyEventLog._stamp_output_inception(address, inc)
+        return inception
+
+    @staticmethod
+    async def inception_for_address(address):
+        if not address:
+            return None
+        config = Config()
+        fields = (
+            ("public_key_hash", "__txn_public_key_hash"),
+            ("prerotated_key_hash", "__txn_prerotated_key_hash"),
+            ("twice_prerotated_key_hash", "__txn_twice_prerotated_key_hash"),
+        )
+        projection = {
+            "transactions.public_key_hash": 1,
+            "transactions.prerotated_key_hash": 1,
+            "transactions.twice_prerotated_key_hash": 1,
+            "transactions.inception_public_key_hash": 1,
+        }
+        for field, hint in fields:
+            query = {
+                f"transactions.{field}": address,
+                "transactions.inception_public_key_hash": {"$gt": ""},
+            }
+            try:
+                doc = await config.mongo.async_db.blocks.find_one(
+                    query, projection, hint=hint
+                )
+            except Exception:
+                doc = await config.mongo.async_db.blocks.find_one(query, projection)
+            inception = KeyEventLog._inception_on_matching_txn(
+                (doc or {}).get("transactions") or [], field, address
+            )
+            if inception:
+                return inception
+        for field, _hint in fields:
+            doc = await config.mongo.async_db.miner_transactions.find_one(
+                {field: address, "inception_public_key_hash": {"$gt": ""}}
+            )
+            if isinstance(doc, dict) and doc.get(field) == address:
+                inception = doc.get("inception_public_key_hash")
+                if inception:
+                    return inception
+        return None
+
+    @staticmethod
+    def _inception_on_matching_txn(transactions, field, address):
+        for txn in transactions or []:
+            if not isinstance(txn, dict):
+                continue
+            if txn.get(field) != address:
+                continue
+            inception = txn.get("inception_public_key_hash")
+            if inception:
+                return inception
+        return None
+
+    @staticmethod
+    async def _stamp_output_inception(address, inception):
+        config = Config()
+        await config.mongo.async_db.blocks.update_many(
+            {"transactions.outputs.to": address},
+            {
+                "$set": {
+                    "transactions.$[txn].outputs.$[out].inception_public_key_hash": inception
+                }
+            },
+            array_filters=[{"txn.outputs.to": address}, {"out.to": address}],
+        )
+        await config.mongo.async_db.miner_transactions.update_many(
+            {"outputs.to": address},
+            {"$set": {"outputs.$[out].inception_public_key_hash": inception}},
+            array_filters=[{"out.to": address}],
+        )
+
+    @staticmethod
+    async def clear_output_tags_for_reorg(min_index):
+        config = Config()
+        addresses = set()
+        fields = (
+            "public_key_hash",
+            "prerotated_key_hash",
+            "twice_prerotated_key_hash",
+        )
+        async for block in config.mongo.async_db.blocks.find(
+            {"index": {"$gte": min_index}},
+            {f"transactions.{field}": 1 for field in fields},
+        ):
+            for txn in block.get("transactions") or []:
+                for field in fields:
+                    val = txn.get(field)
+                    if val:
+                        addresses.add(val)
+        return addresses
+
+    @staticmethod
+    async def apply_reorg_output_tag_clear(addresses):
+        config = Config()
+        for address in addresses or []:
+            if await KeyEventLog.inception_for_address(address):
+                continue
+            await config.mongo.async_db.blocks.update_many(
+                {"transactions.outputs.to": address},
+                {
+                    "$unset": {
+                        "transactions.$[txn].outputs.$[out].inception_public_key_hash": ""
+                    }
+                },
+                array_filters=[{"txn.outputs.to": address}, {"out.to": address}],
+            )
+            await config.mongo.async_db.miner_transactions.update_many(
+                {"outputs.to": address},
+                {"$unset": {"outputs.$[out].inception_public_key_hash": ""}},
+                array_filters=[{"out.to": address}],
+            )
+
+    @staticmethod
+    async def stamp_known_block_outputs(index, transactions):
+        config = Config()
+        addresses = []
+        for txn in transactions or []:
+            outputs = getattr(txn, "outputs", None)
+            if outputs is None and isinstance(txn, dict):
+                outputs = txn.get("outputs") or []
+            for out in outputs or []:
+                to = getattr(out, "to", None) or (
+                    out.get("to") if isinstance(out, dict) else None
+                )
+                if to:
+                    addresses.append(to)
+        if not addresses:
+            return
+        for address in set(addresses):
+            inception = await KeyEventLog.inception_for_address(address)
+            if not inception:
+                continue
+            await config.mongo.async_db.blocks.update_one(
+                {"index": index, "transactions.outputs.to": address},
+                {
+                    "$set": {
+                        "transactions.$[txn].outputs.$[out].inception_public_key_hash": inception
+                    }
+                },
+                array_filters=[{"txn.outputs.to": address}, {"out.to": address}],
+            )

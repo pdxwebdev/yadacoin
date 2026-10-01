@@ -172,6 +172,19 @@ class TU(object):  # Transaction Utilities
     @classmethod
     async def _broadcast_mempool(cls, config, transaction):
         await config.mongo.async_db.miner_transactions.insert_one(transaction.to_dict())
+        try:
+            from yadacoin.core.keyeventlog import KeyEventLog
+
+            for out in getattr(transaction, "outputs", None) or []:
+                to = getattr(out, "to", None)
+                if not to:
+                    continue
+                inception = await KeyEventLog.inception_for_address(to)
+                if not inception:
+                    continue
+                await KeyEventLog._stamp_output_inception(to, inception)
+        except Exception:
+            pass
         if not hasattr(config, "peer") or config.peer is None:
             return
         async for peer_stream in config.peer.get_sync_peers():

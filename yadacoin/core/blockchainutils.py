@@ -56,6 +56,7 @@ class BlockChainUtils(object):
         self._balance_refresh_tasks = {}
         self._kel_addresses_cache = {}
         self._wallet_refresh_tasks = {}
+        self._memory_balances = {}
 
     def invalidate_latest_block(self):
         self.latest_block = None
@@ -1006,6 +1007,147 @@ class BlockChainUtils(object):
         task.add_done_callback(_done)
         return task
 
+    def _sync_tagged_balance(self, inception):
+        coll = self.mongo.get_balance_db().blocks
+        projection = {
+            "time": 1,
+            "transactions.id": 1,
+            "transactions.outputs": 1,
+            "transactions.inception_public_key_hash": 1,
+        }
+        try:
+            out_cursor = coll.find(
+                {"transactions.outputs.inception_public_key_hash": inception},
+                projection,
+            ).hint("__txn_outputs_inception")
+        except Exception:
+            out_cursor = coll.find(
+                {"transactions.outputs.inception_public_key_hash": inception},
+                projection,
+            )
+        received = {}
+        for block in out_cursor:
+            for txn in block.get("transactions") or []:
+                tid = txn.get("id")
+                outs = []
+                for out in txn.get("outputs") or []:
+                    if not isinstance(out, dict):
+                        continue
+                    if out.get("inception_public_key_hash") != inception:
+                        continue
+                    outs.append({"to": out.get("to"), "value": out.get("value")})
+                if tid and outs:
+                    received[tid] = {
+                        "id": tid,
+                        "time": block.get("time"),
+                        "outputs": outs,
+                    }
+        spent = self._spent_ids(coll, list(received))
+        return [doc for tid, doc in received.items() if tid not in spent]
+
+    def _spent_ids(self, coll, ids):
+        spent = set()
+        for start in range(0, len(ids), 400):
+            chunk = ids[start : start + 400]
+            try:
+                cursor = coll.find(
+                    {"transactions.inputs.id": {"$in": chunk}},
+                    {"transactions.inputs.id": 1},
+                ).hint("__txn_inputs_id")
+            except Exception:
+                cursor = coll.find(
+                    {"transactions.inputs.id": {"$in": chunk}},
+                    {"transactions.inputs.id": 1},
+                )
+            for block in cursor:
+                for txn in block.get("transactions") or []:
+                    for inp in txn.get("inputs") or []:
+                        if isinstance(inp, dict) and inp.get("id") in chunk:
+                            spent.add(inp["id"])
+        return spent
+
+    async def _tagged_kel_balance(self, address):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        try:
+            inception = await KeyEventLog.inception_for_address(address)
+        except Exception:
+            return None
+        if not inception:
+            return None
+        if getattr(self.mongo, "balance_executor", None) is None:
+            return None
+        utxos = await self._load_tagged_utxos(inception)
+        if not utxos:
+            return 0.0
+        return sum(self._utxo_value(item) for item in utxos)
+
+    async def _load_tagged_utxos(self, inception):
+        if getattr(self.mongo, "balance_executor", None) is None:
+            return None
+        loop = asyncio.get_running_loop()
+        utxos = await loop.run_in_executor(
+            self.mongo.balance_executor, self._sync_tagged_balance, inception
+        )
+        ids = [item.get("id") for item in utxos if item.get("id")]
+        if not ids:
+            return utxos
+        spent = set()
+        for start in range(0, len(ids), 400):
+            chunk = ids[start : start + 400]
+            async for txn in self.mongo.async_db.miner_transactions.find(
+                {"inputs.id": {"$in": chunk}}, {"inputs.id": 1}
+            ):
+                for inp in txn.get("inputs") or []:
+                    if isinstance(inp, dict) and inp.get("id") in chunk:
+                        spent.add(inp["id"])
+        return [item for item in utxos if item.get("id") not in spent]
+
+    async def tagged_kel_utxos(self, address, amount_needed=0, max_utxos=None):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        if max_utxos is None or max_utxos > CHAIN.MAX_INPUTS:
+            max_utxos = CHAIN.MAX_INPUTS
+        try:
+            inception = await KeyEventLog.inception_for_address(address)
+        except Exception:
+            return None
+        if not inception or getattr(self.mongo, "balance_executor", None) is None:
+            return None
+        utxos = await self._load_tagged_utxos(inception)
+        if utxos is None:
+            return None
+        utxos = sorted(
+            utxos, key=lambda item: (-self._utxo_value(item), item.get("time") or 0)
+        )
+        balance = sum(self._utxo_value(item) for item in utxos)
+        capped = utxos[:max_utxos]
+        max_transferable = self.floor_to_two_decimal_places(
+            sum(self._utxo_value(item) for item in capped)
+        )
+        if amount_needed:
+            selected = []
+            total = 0.0
+            for item in utxos:
+                selected.append(item)
+                total += self._utxo_value(item)
+                if total >= float(amount_needed) or len(selected) >= max_utxos:
+                    break
+            capped = selected
+        return {
+            "unspent_utxos": capped,
+            "balance": float(balance),
+            "max_transferable_value": float(max_transferable),
+        }
+
+    async def _tagged_utxos_for_inception(self, inception):
+        if getattr(self.mongo, "balance_executor", None) is None:
+            return None
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self.mongo.balance_executor, self._sync_unspent_tagged, inception
+        )
+
     async def _cached_kel_addresses(self, address):
         try:
             latest = await self.get_latest_block_async()
@@ -1037,13 +1179,19 @@ class BlockChainUtils(object):
         if not wait:
             cached = self._kel_addresses_cache.get(address)
             kel_addresses = cached[1] if cached else frozenset({address})
-            total = 0.0
-            for kel_address in kel_addresses:
-                cache_doc = await self._get_wallet_balance_cache(kel_address)
-                if cache_doc and cache_doc.get("balance") is not None:
-                    total += float(cache_doc.get("balance") or 0.0)
+            total = sum(
+                float(self._memory_balances.get(kel_address) or 0.0)
+                for kel_address in kel_addresses
+            )
+            if address in self._memory_balances and len(kel_addresses) == 1:
+                total = float(self._memory_balances[address])
             self._schedule_wallet_refresh(address)
             return total
+
+        tagged = await self._tagged_kel_balance(address)
+        if tagged is not None:
+            self._memory_balances[address] = float(tagged)
+            return tagged
 
         kel_addresses = await self._cached_kel_addresses(address)
 
@@ -1052,12 +1200,18 @@ class BlockChainUtils(object):
 
         if len(kel_addresses) == 1:
             only = next(iter(kel_addresses))
-            return await self.get_final_balance(only)
+            total = float(await self.get_final_balance(only) or 0.0)
+            self._memory_balances[address] = total
+            self._memory_balances[only] = total
+            return total
 
         parts = []
         for kel_address in kel_addresses:
             parts.append(await self.get_final_balance(kel_address))
         total = float(sum(float(p or 0.0) for p in parts))
+        self._memory_balances[address] = total
+        for kel_address, part in zip(kel_addresses, parts):
+            self._memory_balances[kel_address] = float(part or 0.0)
         self.config.app_log.info(
             "KEL wallet balance for %s: %.8f across %s addresses",
             address,
@@ -1930,6 +2084,11 @@ class BlockChainUtils(object):
             max_utxos = CHAIN.MAX_INPUTS
 
         if not _kel_expanded:
+            tagged = await self.tagged_kel_utxos(
+                address, amount_needed=amount_needed, max_utxos=max_utxos
+            )
+            if tagged is not None:
+                return tagged
             from yadacoin.core.keyeventlog import KeyEventLog
 
             try:

@@ -252,6 +252,11 @@ class Mongo(object):
             name="__txn_inception_public_key_hash",
             sparse=True,
         )
+        __txn_outputs_inception = IndexModel(
+            [("transactions.outputs.inception_public_key_hash", ASCENDING)],
+            name="__txn_outputs_inception",
+            sparse=True,
+        )
         __txn_inception_public_key_hash_counter = IndexModel(
             [
                 ("transactions.inception_public_key_hash", ASCENDING),
@@ -352,6 +357,7 @@ class Mongo(object):
                     __txn_prev_public_key_hash,
                     __txn_inception_public_key_hash,
                     __txn_inception_public_key_hash_counter,
+                    __txn_outputs_inception,
                     __txn_rel_agent,
                     _txn_rel_identity_username,
                     _txn_rel_identity_username_signature,

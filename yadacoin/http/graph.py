@@ -129,6 +129,34 @@ class GraphRIDWalletHandler(BaseGraphHandler):
         if amount_needed:
             amount_needed = float(amount_needed)
 
+        if method == "new":
+            started = time.perf_counter()
+            tagged = None
+            loader = getattr(self.config.BU, "tagged_kel_utxos", None)
+            if callable(loader):
+                try:
+                    tagged = await loader(
+                        address,
+                        amount_needed=amount_needed,
+                        max_utxos=CHAIN.MAX_INPUTS,
+                    )
+                except Exception:
+                    tagged = None
+            if isinstance(tagged, dict):
+                elapsed = time.perf_counter() - started
+                wallet = {
+                    "pending_balance": "0.00000000",
+                    "chain_balance": "{0:.8f}".format(tagged["balance"]),
+                    "balance": "{0:.8f}".format(tagged["balance"]),
+                    "max_transferable_value": "{0:.8f}".format(
+                        tagged["max_transferable_value"]
+                    ),
+                    "processing_time_seconds": "{0:.2f}".format(elapsed),
+                    "unspent_transactions": tagged["unspent_utxos"],
+                    "unspent_mempool_txns": [],
+                }
+                return self.render_as_json(wallet, indent=4)
+
         from yadacoin.core.keyeventlog import KeyEventLog
 
         try:
@@ -229,7 +257,9 @@ class GraphRIDWalletHandler(BaseGraphHandler):
             unspent_txns = []
             seen_ids = set()
             for kel_addr in wallet_addresses:
-                async for x in self.config.BU.get_wallet_unspent_transactions_for_spending(
+                async for (
+                    x
+                ) in self.config.BU.get_wallet_unspent_transactions_for_spending(
                     kel_addr,
                     inc_mempool=True,
                     amount_needed=amount_needed,

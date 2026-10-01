@@ -788,9 +788,22 @@ class Consensus(object):
     async def insert_block(self, block, stream):
         self.app_log.debug("insert_block")
         try:
+            doomed_tags = []
+            try:
+                from yadacoin.core.keyeventlog import KeyEventLog
+
+                doomed_tags = await KeyEventLog.clear_output_tags_for_reorg(block.index)
+            except Exception:
+                doomed_tags = []
             await self.mongo.async_db.blocks.delete_many(
                 {"index": {"$gte": block.index}}
             )
+            try:
+                from yadacoin.core.keyeventlog import KeyEventLog
+
+                await KeyEventLog.apply_reorg_output_tag_clear(doomed_tags)
+            except Exception:
+                pass
 
             # Tags were stripped/derived in test_block; re-derive for persistence
             # so insert remains correct if called without test_block.
@@ -811,6 +824,14 @@ class Consensus(object):
             await self.mongo.async_db.blocks.replace_one(
                 {"index": block.index}, db_block, upsert=True
             )
+            try:
+                from yadacoin.core.keyeventlog import KeyEventLog
+
+                await KeyEventLog.stamp_known_block_outputs(
+                    block.index, block.transactions
+                )
+            except Exception:
+                pass
 
             await self.mongo.async_db.miner_transactions.delete_many(
                 {"id": {"$in": [x.transaction_signature for x in block.transactions]}}
