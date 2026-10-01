@@ -174,13 +174,11 @@ jobs:
         run: |
           grep -vE "pyrx|yadacoin-agent-auth|sendgrid|mixpanel|ua_parser|twilio|centeridentity|python-jose|openai|resend|discord\.py|PyGithub|web3|eth_account|eth_abi|stripe" requirements.txt > filtered_requirements.txt
           python -m pip install --upgrade pip
-          pip install -r filtered_requirements.txt
-          pip install pyinstaller pytest==7.4.4
+          python -m pip install -r filtered_requirements.txt
+          python -m pip install pyinstaller pytest==7.4.4
 
       - name: Build with PyInstaller
-        run: |
-          python -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())" > site_packages_path.txt
-          pyinstaller yadacoin/app.spec
+        run: pyinstaller yadacoin/app.spec
 
       - name: Zip the contents of dist directory
         run: |

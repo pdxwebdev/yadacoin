@@ -1,11 +1,14 @@
 # -*- mode: python -*-
 import os
+import mnemonic
 
 spec_root = os.path.abspath(SPECPATH)
 print(spec_root)
 block_cipher = None
-with open('site_packages_path.txt', 'r') as f:
-    site_packages_path = f.read().strip()
+mnemonic_wordlist = os.path.join(os.path.dirname(mnemonic.__file__), 'wordlist', 'english.txt')
+if not os.path.isfile(mnemonic_wordlist):
+    raise SystemExit('mnemonic wordlist not found: %s' % mnemonic_wordlist)
+print(mnemonic_wordlist)
 
 a = Analysis(['app.py'],
              pathex=[spec_root],
@@ -18,7 +21,7 @@ a = Analysis(['app.py'],
           ('../plugins/yadacoinpool/static', 'plugins/yadacoinpool/static'),
 		('../static', 'static/'),
 		('../templates/', 'templates/'),
-		(os.path.join(site_packages_path, 'mnemonic', 'wordlist', 'english.txt'), 'mnemonic/wordlist/'),
+		(mnemonic_wordlist, 'mnemonic/wordlist/'),
 	     ],
              hiddenimports=['eccsnacks', 'chardet'],
              hookspath=[],
