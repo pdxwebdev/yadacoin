@@ -167637,8 +167637,7 @@ rxjs_1.Observable.fromEvent = rxjs_1.fromEvent;
 
 /***/ }),
 /* 684 */,
-/* 685 */,
-/* 686 */
+/* 685 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -167649,7 +167648,7 @@ rxjs_1.Observable.fromEvent = rxjs_1.fromEvent;
 
 
 
-var QRCode = __webpack_require__(687);
+var QRCode = __webpack_require__(686);
 var NgxQRCodeComponent = (function () {
     /**
      * @param {?} renderer
@@ -167810,12 +167809,12 @@ NgxQRCodeModule.ctorParameters = function () { return []; };
 
 
 /***/ }),
-/* 687 */
+/* 686 */
 /***/ (function(module, exports, __webpack_require__) {
 
-var QRCode = __webpack_require__(688)
-var CanvasRenderer = __webpack_require__(704)
-var SvgRenderer = __webpack_require__(705)
+var QRCode = __webpack_require__(687)
+var CanvasRenderer = __webpack_require__(703)
+var SvgRenderer = __webpack_require__(704)
 
 function renderCanvas (renderFunc, canvas, text, opts, cb) {
   var argsNum = arguments.length - 1
@@ -167871,23 +167870,23 @@ exports.qrcodedraw = function () {
 
 
 /***/ }),
-/* 688 */
+/* 687 */
 /***/ (function(module, exports, __webpack_require__) {
 
 var Buffer = __webpack_require__(82)
 var Utils = __webpack_require__(69)
 var ECLevel = __webpack_require__(234)
-var BitBuffer = __webpack_require__(689)
-var BitMatrix = __webpack_require__(690)
-var AlignmentPattern = __webpack_require__(691)
-var FinderPattern = __webpack_require__(692)
-var MaskPattern = __webpack_require__(693)
+var BitBuffer = __webpack_require__(688)
+var BitMatrix = __webpack_require__(689)
+var AlignmentPattern = __webpack_require__(690)
+var FinderPattern = __webpack_require__(691)
+var MaskPattern = __webpack_require__(692)
 var ECCode = __webpack_require__(415)
-var ReedSolomonEncoder = __webpack_require__(694)
+var ReedSolomonEncoder = __webpack_require__(693)
 var Version = __webpack_require__(416)
-var FormatInfo = __webpack_require__(697)
+var FormatInfo = __webpack_require__(696)
 var Mode = __webpack_require__(70)
-var Segments = __webpack_require__(698)
+var Segments = __webpack_require__(697)
 var isArray = __webpack_require__(97)
 
 /**
@@ -168371,7 +168370,7 @@ exports.create = function create (data, options) {
 
 
 /***/ }),
-/* 689 */
+/* 688 */
 /***/ (function(module, exports) {
 
 function BitBuffer () {
@@ -168414,7 +168413,7 @@ module.exports = BitBuffer
 
 
 /***/ }),
-/* 690 */
+/* 689 */
 /***/ (function(module, exports, __webpack_require__) {
 
 var Buffer = __webpack_require__(82)
@@ -168489,7 +168488,7 @@ module.exports = BitMatrix
 
 
 /***/ }),
-/* 691 */
+/* 690 */
 /***/ (function(module, exports, __webpack_require__) {
 
 /**
@@ -168578,7 +168577,7 @@ exports.getPositions = function getPositions (version) {
 
 
 /***/ }),
-/* 692 */
+/* 691 */
 /***/ (function(module, exports, __webpack_require__) {
 
 var getSymbolSize = __webpack_require__(69).getSymbolSize
@@ -168606,7 +168605,7 @@ exports.getPositions = function getPositions (version) {
 
 
 /***/ }),
-/* 693 */
+/* 692 */
 /***/ (function(module, exports) {
 
 /**
@@ -168825,11 +168824,11 @@ exports.getBestMask = function getBestMask (data, setupFormatFunc) {
 
 
 /***/ }),
-/* 694 */
+/* 693 */
 /***/ (function(module, exports, __webpack_require__) {
 
 var Buffer = __webpack_require__(82)
-var Polynomial = __webpack_require__(695)
+var Polynomial = __webpack_require__(694)
 
 function ReedSolomonEncoder (degree) {
   this.genPoly = undefined
@@ -168890,11 +168889,11 @@ module.exports = ReedSolomonEncoder
 
 
 /***/ }),
-/* 695 */
+/* 694 */
 /***/ (function(module, exports, __webpack_require__) {
 
 var Buffer = __webpack_require__(82)
-var GF = __webpack_require__(696)
+var GF = __webpack_require__(695)
 
 /**
  * Multiplies two polynomials inside Galois Field
@@ -168960,7 +168959,7 @@ exports.generateECPolynomial = function generateECPolynomial (degree) {
 
 
 /***/ }),
-/* 696 */
+/* 695 */
 /***/ (function(module, exports, __webpack_require__) {
 
 var Buffer = __webpack_require__(82)
@@ -169038,7 +169037,7 @@ exports.mul = function mul (x, y) {
 
 
 /***/ }),
-/* 697 */
+/* 696 */
 /***/ (function(module, exports, __webpack_require__) {
 
 var Utils = __webpack_require__(69)
@@ -169073,17 +169072,17 @@ exports.getEncodedBits = function getEncodedBits (errorCorrectionLevel, mask) {
 
 
 /***/ }),
-/* 698 */
+/* 697 */
 /***/ (function(module, exports, __webpack_require__) {
 
 var Mode = __webpack_require__(70)
-var NumericData = __webpack_require__(699)
-var AlphanumericData = __webpack_require__(700)
-var ByteData = __webpack_require__(701)
-var KanjiData = __webpack_require__(702)
+var NumericData = __webpack_require__(698)
+var AlphanumericData = __webpack_require__(699)
+var ByteData = __webpack_require__(700)
+var KanjiData = __webpack_require__(701)
 var Regex = __webpack_require__(417)
 var Utils = __webpack_require__(69)
-var dijkstra = __webpack_require__(703)
+var dijkstra = __webpack_require__(702)
 
 /**
  * Returns UTF8 byte length
@@ -169409,7 +169408,7 @@ exports.rawSplit = function rawSplit (data) {
 
 
 /***/ }),
-/* 699 */
+/* 698 */
 /***/ (function(module, exports, __webpack_require__) {
 
 var Mode = __webpack_require__(70)
@@ -169458,7 +169457,7 @@ module.exports = NumericData
 
 
 /***/ }),
-/* 700 */
+/* 699 */
 /***/ (function(module, exports, __webpack_require__) {
 
 var Mode = __webpack_require__(70)
@@ -169523,7 +169522,7 @@ module.exports = AlphanumericData
 
 
 /***/ }),
-/* 701 */
+/* 700 */
 /***/ (function(module, exports, __webpack_require__) {
 
 var Buffer = __webpack_require__(82)
@@ -169556,7 +169555,7 @@ module.exports = ByteData
 
 
 /***/ }),
-/* 702 */
+/* 701 */
 /***/ (function(module, exports, __webpack_require__) {
 
 var Mode = __webpack_require__(70)
@@ -169616,7 +169615,7 @@ module.exports = KanjiData
 
 
 /***/ }),
-/* 703 */
+/* 702 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -169788,7 +169787,7 @@ if (true) {
 
 
 /***/ }),
-/* 704 */
+/* 703 */
 /***/ (function(module, exports, __webpack_require__) {
 
 var Utils = __webpack_require__(418)
@@ -169857,7 +169856,7 @@ exports.renderToDataURL = function renderToDataURL (qrData, canvas, options) {
 
 
 /***/ }),
-/* 705 */
+/* 704 */
 /***/ (function(module, exports, __webpack_require__) {
 
 var Utils = __webpack_require__(418)
@@ -169905,7 +169904,7 @@ exports.render = function render (qrData, options) {
 
 
 /***/ }),
-/* 706 */
+/* 705 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -170080,7 +170079,7 @@ var Clipboard = (function (_super) {
 //# sourceMappingURL=index.js.map
 
 /***/ }),
-/* 707 */
+/* 706 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -171461,7 +171460,7 @@ var File = (function (_super) {
 //# sourceMappingURL=index.js.map
 
 /***/ }),
-/* 708 */
+/* 707 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -171469,7 +171468,7 @@ var File = (function (_super) {
 /* unused harmony namespace reexport */
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__tooltip_directive__ = __webpack_require__(419);
 /* unused harmony namespace reexport */
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__tooltips_module__ = __webpack_require__(709);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__tooltips_module__ = __webpack_require__(708);
 /* harmony namespace reexport (by used) */ __webpack_require__.d(__webpack_exports__, "a", function() { return __WEBPACK_IMPORTED_MODULE_2__tooltips_module__["a"]; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__tooltip_cotroller__ = __webpack_require__(237);
 /* unused harmony namespace reexport */
@@ -171480,7 +171479,7 @@ var File = (function (_super) {
 //# sourceMappingURL=index.js.map
 
 /***/ }),
-/* 709 */
+/* 708 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -171518,7 +171517,7 @@ var TooltipsModule = (function () {
 //# sourceMappingURL=tooltips.module.js.map
 
 /***/ }),
-/* 710 */
+/* 709 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -171539,7 +171538,7 @@ var TooltipsModule = (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__angular_platform_browser__ = __webpack_require__(48);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_animations__ = __webpack_require__(236);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_animations_browser__ = __webpack_require__(711);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_animations_browser__ = __webpack_require__(710);
 
 /**
  * @license Angular v4.4.7
@@ -172284,7 +172283,7 @@ NoopAnimationsModule.ctorParameters = function () { return []; };
 
 
 /***/ }),
-/* 711 */
+/* 710 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";

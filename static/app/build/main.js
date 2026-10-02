@@ -5145,13 +5145,15 @@ var TransactionService = /** @class */ (function () {
                     catch (e) {
                         data = {};
                     }
-                    if (data && data.status === "error") {
-                        return reject(data.message || "send failed");
-                    }
-                    if (data && data.error) {
-                        return reject(data.error === "not authorized"
-                            ? "operator session required — authenticate first"
-                            : data.error || data.message || "send failed");
+                    if (data && (data.status === "error" || data.error)) {
+                        var detail = data.message ||
+                            data.error ||
+                            "send failed";
+                        if (detail === "not authorized" ||
+                            data.error === "not authorized") {
+                            return reject("operator session required — authenticate first");
+                        }
+                        return reject(detail);
                     }
                     resolve(data);
                 }, function (err) {
@@ -8341,8 +8343,7 @@ var CreatePromoPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__sendreceive_sendreceive__ = __webpack_require__(136);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ionic_native_google_maps__ = __webpack_require__(410);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_websocket_service__ = __webpack_require__(36);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__app_groups__ = __webpack_require__(684);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__mail_mail__ = __webpack_require__(231);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__mail_mail__ = __webpack_require__(231);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -8363,7 +8364,6 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-
 
 
 
@@ -8961,43 +8961,21 @@ var Settings = /** @class */ (function () {
         if (this.settingsService.remoteSettings.restricted) {
             return this.set(key)
                 .then(function () {
-                return _this.graphService.refreshFriendsAndGroups();
-            })
-                .then(function () {
                 return _this.graphService.getUserType(_this.bulletinSecretService.identity.username);
             })
                 .then(function (result) {
                 if (result.status) {
-                    var userType = result.type;
                     _this.bulletinSecretService.identity.type = result.type;
                     _this.bulletinSecretService.identity.parent = result.parent;
-                    if (userType === "member_contact") {
-                        if (!_this.graphService.isAdded(_this.bulletinSecretService.identity.parent))
-                            return _this.joinGroup(_this.bulletinSecretService.identity.parent);
-                    }
-                    else if (userType === "organization_member") {
-                        if (!_this.graphService.isAdded(_this.bulletinSecretService.identity.parent))
-                            return _this.joinGroup(_this.bulletinSecretService.identity.parent);
-                    }
-                    else if (userType === "organization") {
-                        if (!_this.graphService.isAdded(_this.bulletinSecretService.identity.parent))
-                            return _this.joinGroup(_this.bulletinSecretService.identity.parent);
-                    }
-                    else if (userType === "admin") {
-                        return new Promise(function (resolve, reject) {
-                            return resolve(null);
-                        });
-                    }
+                    return;
                 }
-                else {
-                    _this.bulletinSecretService.unset();
-                    var toast = _this.toastCtrl.create({
-                        message: result.message,
-                        duration: 10000,
-                    });
-                    toast.present();
-                    throw result.message;
-                }
+                _this.bulletinSecretService.unset();
+                var toast = _this.toastCtrl.create({
+                    message: result.message,
+                    duration: 10000,
+                });
+                toast.present();
+                throw result.message;
             })
                 .then(function () {
                 return _this.websocketService.init();
@@ -9011,7 +8989,7 @@ var Settings = /** @class */ (function () {
                     {
                         title: "Inbox",
                         label: "Inbox",
-                        component: __WEBPACK_IMPORTED_MODULE_18__mail_mail__["a" /* MailPage */],
+                        component: __WEBPACK_IMPORTED_MODULE_17__mail_mail__["a" /* MailPage */],
                         count: false,
                         color: "",
                         root: true,
@@ -9019,7 +8997,7 @@ var Settings = /** @class */ (function () {
                     {
                         title: "Sent",
                         label: "Sent",
-                        component: __WEBPACK_IMPORTED_MODULE_18__mail_mail__["a" /* MailPage */],
+                        component: __WEBPACK_IMPORTED_MODULE_17__mail_mail__["a" /* MailPage */],
                         count: false,
                         color: "",
                         root: true,
@@ -9034,32 +9012,7 @@ var Settings = /** @class */ (function () {
             });
         }
         else {
-            var addedDefaults_1 = false;
             return this.set(key)
-                .then(function () {
-                return _this.graphService.refreshFriendsAndGroups();
-            })
-                .then(function () {
-                var promises = [];
-                for (var i = 0; i < __WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_groups.length; i++) {
-                    if (!_this.graphService.isAdded(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_groups[i])) {
-                        promises.push(_this.graphService.addGroup(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_groups[i], undefined, undefined, undefined, false));
-                        addedDefaults_1 = true;
-                    }
-                }
-                for (var i = 0; i < __WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_markets.length; i++) {
-                    if (!_this.graphService.isAdded(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_markets[i])) {
-                        promises.push(_this.graphService.addGroup(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_markets[i], undefined, undefined, undefined, false));
-                        addedDefaults_1 = true;
-                    }
-                }
-                return Promise.all(promises);
-            })
-                .then(function () {
-                return addedDefaults_1
-                    ? _this.graphService.refreshFriendsAndGroups()
-                    : null;
-            })
                 .then(function () {
                 if (showModal) {
                     _this.loadingModal.dismiss();
@@ -10236,7 +10189,7 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_common__ = __webpack_require__(61);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_component__ = __webpack_require__(573);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__pages_home_home__ = __webpack_require__(225);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__ = __webpack_require__(685);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__ = __webpack_require__(684);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_list_list__ = __webpack_require__(67);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_settings_settings__ = __webpack_require__(409);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_chat_chat__ = __webpack_require__(227);
@@ -10249,7 +10202,7 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__ionic_native_status_bar__ = __webpack_require__(349);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__ionic_native_splash_screen__ = __webpack_require__(351);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ionic_native_qr_scanner__ = __webpack_require__(401);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20_ngx_qrcode2__ = __webpack_require__(686);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20_ngx_qrcode2__ = __webpack_require__(685);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__ionic_storage__ = __webpack_require__(46);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_22__graph_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_23__bulletinSecret_service__ = __webpack_require__(12);
@@ -10261,12 +10214,12 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__opengraphparser_service__ = __webpack_require__(139);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_30__firebase_service__ = __webpack_require__(230);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__pages_sendreceive_sendreceive__ = __webpack_require__(136);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__ionic_native_clipboard__ = __webpack_require__(706);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__ionic_native_clipboard__ = __webpack_require__(705);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_33__ionic_native_social_sharing__ = __webpack_require__(104);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_34__ionic_native_badge__ = __webpack_require__(395);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_35__ionic_native_deeplinks__ = __webpack_require__(413);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_36__ionic_native_firebase__ = __webpack_require__(408);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_37__ionic_native_file__ = __webpack_require__(707);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_37__ionic_native_file__ = __webpack_require__(706);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_38_ionic2_auto_complete__ = __webpack_require__(396);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_39__autocomplete_provider__ = __webpack_require__(106);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_40__ionic_native_google_maps__ = __webpack_require__(410);
@@ -10275,8 +10228,8 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_43__pages_web_web__ = __webpack_require__(232);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_44__pages_web_mypages__ = __webpack_require__(414);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_45__pages_web_buildpage__ = __webpack_require__(233);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_46_ionic_tooltips__ = __webpack_require__(708);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_47__angular_platform_browser_animations__ = __webpack_require__(710);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_46_ionic_tooltips__ = __webpack_require__(707);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_47__angular_platform_browser_animations__ = __webpack_require__(709);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_48__pages_assets_assets__ = __webpack_require__(229);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_49__pages_assets_assetitem__ = __webpack_require__(405);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_50__pages_assets_createasset__ = __webpack_require__(404);
@@ -11981,56 +11934,6 @@ var ProfilePage = /** @class */ (function () {
 /***/ }),
 
 /***/ 684:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony default export */ __webpack_exports__["a"] = ({
-    default_groups: [
-        {
-            "username": "Text Channels",
-            "username_signature": "MEQCIE29etn0ZKakmbuI7uaSLwf7O+W3fyX9HDtGSZspagknAiBKfSM2H8/T/b9mIxvzDIjh05nw0V7nrN22/+pcArlj6w==",
-            "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
-            "collection": "group"
-        },
-        {
-            "username": "Yada Protocol",
-            "username_signature": "MEQCIAZ0wJYLDxJei2Za7XMzbx+AOqeH2PpB6suzTF/bvqgkAiBJYnznzkNlfqjY+1bRUnn5bIuIxL0wz2Mi/TB81487rA==",
-            "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
-            "collection": "group"
-        },
-        {
-            "username": "Yada App",
-            "username_signature": "MEUCIQCa091+XlEyJ4w44Az4xFLySEvzf8WS7nv3qVmAj0L7bgIgaSkLRBCDHt/MIfmlNDN7UsnGYc+9HitPMgsCEZDG4xY=",
-            "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
-            "collection": "group"
-        },
-        {
-            "username": "YadaCoin",
-            "username_signature": "MEQCIDMpt/iX+l60D3ZpANgib973gxwxMwMXoEZ2BF/6A5U6AiBHM1GyMQORffO/YM8dG386/2PBTHCYd0YZu+GaWt5Geg==",
-            "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
-            "collection": "group"
-        },
-    ],
-    default_markets: [
-        {
-            "username": "Marketplace",
-            "username_signature": "MEUCIQDkV0OjvBtW5g6Hm7OtplD4AkeFcCUBT+UaMMTwYggARAIgK74HoNW5WD7uHpTZPv6WieE1igEgTva7kcmxJm/H6Wc=",
-            "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
-            "collection": "market"
-        },
-        {
-            "username": "Promotions",
-            "username_signature": "MEQCIHF50YImuU7az7tAn5MbM3Z+1YN6gN/zEPretnSLdJ3XAiBMTv1DN+TL4strit+PORmgw2xSk52zKzHjpdB2yfxjJg==",
-            "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
-            "collection": "market"
-        },
-    ]
-});
-//# sourceMappingURL=groups.js.map
-
-/***/ }),
-
-/***/ 685:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
