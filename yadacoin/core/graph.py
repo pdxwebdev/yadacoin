@@ -17,6 +17,7 @@ import logging
 import time
 
 from yadacoin.core.graphutils import GraphUtils as GU
+from yadacoin.core.graphutils import collection_rids
 
 
 class Graph(object):
@@ -419,8 +420,10 @@ class Graph(object):
         self.reacts = out
 
     async def get_collection(self):
-        if not self.rids:
+        rids = collection_rids(self.rids)
+        if not rids:
             return
+        self.rids = rids
         await self.update_collection_last_activity()
         self.collection = []
         async for x in GU().get_collection(self.rids):

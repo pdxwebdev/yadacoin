@@ -694,6 +694,34 @@ class Mongo(object):
         except:
             pass
 
+        __mc_rid_height = IndexModel(
+            [("rid", ASCENDING), ("height", DESCENDING)],
+            name="__mc_rid_height",
+        )
+        __mc_requester_rid_height = IndexModel(
+            [("requester_rid", ASCENDING), ("height", DESCENDING)],
+            name="__mc_requester_rid_height",
+        )
+        __mc_requested_rid_height = IndexModel(
+            [("requested_rid", ASCENDING), ("height", DESCENDING)],
+            name="__mc_requested_rid_height",
+        )
+        __mc_id_height = IndexModel(
+            [("id", ASCENDING), ("height", ASCENDING)],
+            name="__mc_id_height",
+        )
+        try:
+            self.db.messages_cache.create_indexes(
+                [
+                    __mc_rid_height,
+                    __mc_requester_rid_height,
+                    __mc_requested_rid_height,
+                    __mc_id_height,
+                ]
+            )
+        except:
+            pass
+
         __timestamp = IndexModel([("timestamp", DESCENDING)], name="__timestamp")
         __archived = IndexModel([("archived", ASCENDING)], name="__archived")
         __timestamp_archived = IndexModel(

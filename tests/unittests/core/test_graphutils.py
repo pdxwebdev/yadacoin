@@ -4,7 +4,7 @@ Branch coverage tests for yadacoin.core.graphutils.
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from yadacoin.core.graphutils import GraphUtils
+from yadacoin.core.graphutils import GraphUtils, collection_rids
 
 from ..test_setup import AsyncTestCase
 
@@ -1257,53 +1257,88 @@ class TestFriendRequests(AsyncTestCase):
 
 
 class TestGetCollection(AsyncTestCase):
+    def test_collection_rids_filters_junk(self):
+        good = "ab" * 32
+        self.assertEqual(collection_rids([]), [])
+        self.assertEqual(collection_rids(None), [])
+        self.assertEqual(collection_rids(""), [])
+        self.assertEqual(
+            collection_rids(["", "e", "1' OR 1=1", good, good.upper(), None]),
+            [good],
+        )
+        self.assertEqual(collection_rids(good), [good])
+
     async def test_no_rids(self):
         gu, cfg = _make_gu()
         out = [x async for x in gu.get_collection([])]
         self.assertEqual(out, [])
+        cfg.mongo.async_db.messages_cache.find_one.assert_not_called()
+
+    async def test_blank_rids_skip_scan(self):
+        gu, cfg = _make_gu()
+        out = [x async for x in gu.get_collection(["", "e", "sleep(15)"])]
+        self.assertEqual(out, [])
+        cfg.mongo.async_db.blocks.find.assert_not_called()
+        cfg.mongo.async_db.messages_cache.find_one.assert_not_called()
 
     async def test_with_cache_and_yields(self):
         gu, cfg = _make_gu()
+        rid = "ab" * 32
         cfg.mongo.async_db.messages_cache.find_one = AsyncMock(
             return_value={"height": 50}
         )
-        cfg.mongo.async_db.messages_cache.update_one = AsyncMock()
-        # transactions aggregator
-        cfg.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_async_iter_cursor(
-                [
-                    {
-                        "txn": {
-                            "id": "t1",
-                            "rid": "rid1",
-                            "requester_rid": None,
-                            "requested_rid": None,
-                        },
-                        "height": 60,
-                        "block_hash": "h",
-                    }
-                ]
+        cfg.mongo.async_db.messages_cache.bulk_write = AsyncMock()
+        block = {
+            "transactions": [
+                {
+                    "id": "t1",
+                    "rid": rid,
+                    "requester_rid": None,
+                    "requested_rid": None,
+                }
+            ],
+            "index": 60,
+            "hash": "h",
+        }
+
+        def _hinted(docs):
+            cursor = _async_iter_cursor(docs)
+            cursor.hint = MagicMock(return_value=cursor)
+            return cursor
+
+        cfg.mongo.async_db.blocks.find = MagicMock(
+            side_effect=lambda query, *args, **kwargs: _hinted(
+                [block] if "transactions.rid" in query else []
             )
         )
         cfg.mongo.async_db.messages_cache.find = MagicMock(
             return_value=_async_iter_cursor([{"txn": {"id": "t1"}, "height": 60}])
         )
-        out = [x async for x in gu.get_collection(["rid1"])]
+        out = [x async for x in gu.get_collection([rid])]
         self.assertEqual(len(out), 1)
-        cfg.mongo.async_db.messages_cache.update_one.assert_awaited()
+        cfg.mongo.async_db.messages_cache.bulk_write.assert_awaited()
+        hinted = cfg.mongo.async_db.blocks.find.call_args_list[0].args[0]
+        self.assertEqual(hinted["index"], {"$gt": 50})
+        self.assertNotIn("$or", hinted)
 
     async def test_with_no_cache_scalar_rid(self):
         gu, cfg = _make_gu()
+        rid = "cd" * 32
         cfg.mongo.async_db.messages_cache.find_one = AsyncMock(return_value=None)
-        cfg.mongo.async_db.messages_cache.update_one = AsyncMock()
-        cfg.mongo.async_db.blocks.aggregate = MagicMock(
-            return_value=_async_iter_cursor([])
-        )
+        cfg.mongo.async_db.messages_cache.bulk_write = AsyncMock()
+
+        def _hinted(docs):
+            cursor = _async_iter_cursor(docs)
+            cursor.hint = MagicMock(return_value=cursor)
+            return cursor
+
+        cfg.mongo.async_db.blocks.find = MagicMock(return_value=_hinted([]))
         cfg.mongo.async_db.messages_cache.find = MagicMock(
             return_value=_async_iter_cursor([])
         )
-        out = [x async for x in gu.get_collection("rid1")]
+        out = [x async for x in gu.get_collection(rid)]
         self.assertEqual(out, [])
+        cfg.mongo.async_db.messages_cache.bulk_write.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -601,7 +601,7 @@ class TestGetCollection(AsyncTestCase):
         self.assertEqual(g.collection, [])
 
     async def test_collects_with_new_count(self):
-        g = await _build_graph(rids=["r1"])
+        g = await _build_graph(rids=["ab" * 32])
         g.config.mongo.async_db.user_collection_last_activity.find_one = AsyncMock(
             return_value={"time": 100}
         )

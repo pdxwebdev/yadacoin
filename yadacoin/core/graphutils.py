@@ -19,6 +19,7 @@ from time import time
 
 import bson
 from eccsnacks.curve25519 import scalarmult
+from pymongo import UpdateOne
 
 from yadacoin.core.config import Config
 from yadacoin.core.crypt import Crypt
@@ -32,6 +33,30 @@ from yadacoin.core.transactionutils import TU
 
 # Circular reference
 # from yadacoin.block import Block
+
+
+def collection_rids(rids):
+    if not rids:
+        return []
+    if isinstance(rids, str):
+        rids = [rids]
+    elif not isinstance(rids, (list, tuple, set)):
+        return []
+    out = []
+    seen = set()
+    for rid in rids:
+        if not isinstance(rid, str):
+            continue
+        rid = rid.strip().lower()
+        if len(rid) != 64 or rid in seen:
+            continue
+        try:
+            int(rid, 16)
+        except ValueError:
+            continue
+        seen.add(rid)
+        out.append(rid)
+    return out
 
 
 class GraphUtils(object):
@@ -1100,90 +1125,8 @@ class GraphUtils(object):
         ):
             yield x["txn"]
 
-    async def get_collection(self, rids=[]):
-        if not rids:
-            return
-        if not isinstance(rids, list):
-            rids = [
-                rids,
-            ]
-
-        message_cache = await self.mongo.async_db.messages_cache.find_one(
-            {
-                "$or": [
-                    {"rid": {"$in": rids}},
-                    {"requester_rid": {"$in": rids}},
-                    {"requested_rid": {"$in": rids}},
-                ]
-            },
-            sort=[("height", -1)],
-        )
-
-        if message_cache:
-            block_height = message_cache["height"]
-        else:
-            block_height = 0
-
-        transactions = self.mongo.async_db.blocks.aggregate(
-            [
-                {
-                    "$match": {
-                        "index": {"$gt": block_height},
-                        "$or": [
-                            {"transactions.rid": {"$in": rids}},
-                            {"transactions.requester_rid": {"$in": rids}},
-                            {"transactions.requested_rid": {"$in": rids}},
-                        ],
-                    }
-                },
-                {"$unwind": "$transactions"},
-                {
-                    "$project": {
-                        "_id": 0,
-                        "txn": "$transactions",
-                        "height": "$index",
-                        "block_hash": "$hash",
-                    }
-                },
-                {
-                    "$match": {
-                        "$or": [
-                            {"txn.rid": {"$in": rids}},
-                            {"txn.requester_rid": {"$in": rids}},
-                            {"txn.requested_rid": {"$in": rids}},
-                        ]
-                    }
-                },
-                {"$sort": {"height": 1}},
-            ]
-        )
-
-        async for x in transactions:
-            self.app_log.debug("caching messages at height: {}".format(x["height"]))
-            await self.mongo.async_db.messages_cache.update_one(
-                {
-                    "rid": x["txn"].get("rid"),
-                    "requester_rid": x["txn"].get("requester_rid"),
-                    "requested_rid": x["txn"].get("requested_rid"),
-                    "height": x["height"],
-                    "id": x["txn"]["id"],
-                },
-                {
-                    "$set": {
-                        "rid": x["txn"].get("rid"),
-                        "requester_rid": x["txn"].get("requester_rid"),
-                        "requested_rid": x["txn"].get("requested_rid"),
-                        "height": x["height"],
-                        "block_hash": x["block_hash"],
-                        "id": x["txn"]["id"],
-                        "txn": x["txn"],
-                        "cache_time": time(),
-                    }
-                },
-                upsert=True,
-            )
-
-        query = {
+    def _messages_cache_query(self, rids):
+        return {
             "$or": [
                 {"rid": {"$in": rids}},
                 {"requester_rid": {"$in": rids}},
@@ -1191,7 +1134,86 @@ class GraphUtils(object):
             ]
         }
 
-        async for x in self.mongo.async_db.messages_cache.find(query):
+    async def _new_collection_txns(self, rids, block_height):
+        rid_set = set(rids)
+        seen = set()
+        fields = (
+            ("transactions.rid", "__txn_rid"),
+            ("transactions.requester_rid", "__txn_requester_rid"),
+            ("transactions.requested_rid", "__txn_requested_rid"),
+        )
+        projection = {"_id": 0, "transactions": 1, "index": 1, "hash": 1}
+        for field, hint in fields:
+            cursor = self.mongo.async_db.blocks.find(
+                {field: {"$in": rids}, "index": {"$gt": block_height}},
+                projection,
+            ).hint(hint)
+            async for block in cursor:
+                for txn in block.get("transactions") or []:
+                    txn_id = txn.get("id")
+                    if not txn_id or txn_id in seen:
+                        continue
+                    if not (
+                        txn.get("rid") in rid_set
+                        or txn.get("requester_rid") in rid_set
+                        or txn.get("requested_rid") in rid_set
+                    ):
+                        continue
+                    seen.add(txn_id)
+                    yield {
+                        "txn": txn,
+                        "height": block["index"],
+                        "block_hash": block.get("hash"),
+                    }
+
+    async def get_collection(self, rids=[]):
+        rids = collection_rids(rids)
+        if not rids:
+            return
+
+        message_cache = await self.mongo.async_db.messages_cache.find_one(
+            self._messages_cache_query(rids),
+            sort=[("height", -1)],
+        )
+        block_height = message_cache["height"] if message_cache else 0
+
+        ops = []
+        async for x in self._new_collection_txns(rids, block_height):
+            self.app_log.debug("caching messages at height: {}".format(x["height"]))
+            txn = x["txn"]
+            ops.append(
+                UpdateOne(
+                    {
+                        "rid": txn.get("rid"),
+                        "requester_rid": txn.get("requester_rid"),
+                        "requested_rid": txn.get("requested_rid"),
+                        "height": x["height"],
+                        "id": txn["id"],
+                    },
+                    {
+                        "$set": {
+                            "rid": txn.get("rid"),
+                            "requester_rid": txn.get("requester_rid"),
+                            "requested_rid": txn.get("requested_rid"),
+                            "height": x["height"],
+                            "block_hash": x["block_hash"],
+                            "id": txn["id"],
+                            "txn": txn,
+                            "cache_time": time(),
+                        }
+                    },
+                    upsert=True,
+                )
+            )
+            if len(ops) >= 200:
+                await self.mongo.async_db.messages_cache.bulk_write(ops, ordered=False)
+                ops = []
+        if ops:
+            await self.mongo.async_db.messages_cache.bulk_write(ops, ordered=False)
+
+        async for x in self.mongo.async_db.messages_cache.find(
+            self._messages_cache_query(rids)
+        ):
             x["txn"]["height"] = x["height"]
             yield x["txn"]
 
