@@ -542,6 +542,7 @@ class TestMongoInitPaths(AsyncTestCase):
             "miner_transactions",
             "failed_transactions",
             "user_collection_last_activity",
+            "messages_cache",
         ]:
             getattr(mock_db, coll_name).create_indexes.side_effect = Exception(
                 "dup index"
