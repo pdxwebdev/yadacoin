@@ -95,7 +95,6 @@ if __name__ == "__main__":
         pk = PrivateKey.from_hex(num)
         config = Config.generate(prv=pk.to_hex())
         config.username = args.username
-        print(config.to_json())
     elif args.which == "update":
         with open(args.config) as f:
             identity = json.loads(f.read())
@@ -106,7 +105,6 @@ if __name__ == "__main__":
                 username = args.username
             config.username = username
             config.username_signature = config.get_bulletin_secret()
-            print(config.to_json())
     elif args.which == "auto":
         config = Config.generate(db_name=args.db_name, username=args.username)
         filename = "config.json"
@@ -118,5 +116,3 @@ if __name__ == "__main__":
             if not os.path.isfile(args.create):
                 with open(args.create, "w") as f:
                     f.write(config.to_json(include_sensitive=True))
-        else:
-            print(config.to_json())

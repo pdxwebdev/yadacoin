@@ -40,23 +40,23 @@ class TestGenerateConfig(unittest.TestCase):
             runpy.run_path(str(script), run_name="__main__")
         return output.getvalue()
 
-    def assert_redacted_output(self, output):
-        self.assertEqual(json.loads(output), {"username": "testnode"})
-        self.config.to_json.assert_called_once_with()
+    def assert_no_output(self, output):
+        self.assertEqual(output, "")
+        self.config.to_json.assert_not_called()
 
-    def test_new_prints_without_sensitive_fields(self):
-        self.assert_redacted_output(self.run_generator("new", "testnode"))
+    def test_new_does_not_print_config(self):
+        self.assert_no_output(self.run_generator("new", "testnode"))
 
-    def test_update_prints_without_sensitive_fields(self):
+    def test_update_does_not_print_config(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
             path.write_text(json.dumps({"xprv": "test-only-value"}))
-            self.assert_redacted_output(
+            self.assert_no_output(
                 self.run_generator("update", str(path), "testnode")
             )
 
-    def test_auto_prints_without_sensitive_fields(self):
-        self.assert_redacted_output(self.run_generator("auto", "-u", "testnode"))
+    def test_auto_does_not_print_config(self):
+        self.assert_no_output(self.run_generator("auto", "-u", "testnode"))
 
     def test_auto_file_writes_include_sensitive_fields(self):
         with tempfile.TemporaryDirectory() as directory:
