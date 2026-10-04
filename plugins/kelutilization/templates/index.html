@@ -323,24 +323,28 @@
           >
             —
           </div>
-          <div class="card-sub">all time</div>
+          <div class="card-sub" id="c-kel-total-sub">
+            includes coinbase
+          </div>
         </div>
         <div class="card blue">
-          <div class="card-label">Total Txns</div>
-          <div class="card-value" id="c-total">
+          <div class="card-label">Coinbase KEL</div>
+          <div class="card-value" id="c-coinbase">
             —
           </div>
-          <div class="card-sub">all time</div>
+          <div class="card-sub" id="c-coinbase-sub">
+            miner coinbase entries
+          </div>
         </div>
         <div class="card green">
           <div class="card-label">
-            KEL Adoption
+            Blocks with KEL
           </div>
           <div class="card-value" id="c-pct">
             —
           </div>
-          <div class="card-sub">
-            % of all transactions
+          <div class="card-sub" id="c-pct-sub">
+            blocks containing a KEL entry
           </div>
         </div>
         <div class="card orange">
@@ -414,7 +418,7 @@
               class="dot"
               style="background: #63b3ed"
             ></span>
-            KEL Share of Daily Transactions (%)
+            KEL Share (%)
           </div>
           <canvas
             id="chart-pct"
@@ -533,25 +537,92 @@
         return res.json();
       }
 
-      function renderSummary(data) {
+      function saneStats(stats) {
+        const now = Date.now() / 1000;
+        return (stats || []).filter(
+          (d) =>
+            d.timestamp >= 1483228800 &&
+            d.timestamp <= now + 86400 * 2,
+        );
+      }
+
+      function rangeTotals(stats) {
+        return stats.reduce(
+          (acc, d) => {
+            acc.kel += d.kel_count || 0;
+            acc.coinbase += d.coinbase_kel_count || 0;
+            acc.inception += d.inception_count || 0;
+            acc.rotation += d.rotation_count || 0;
+            acc.total += d.total_count || 0;
+            acc.blocks += d.block_count || 0;
+            acc.kelBlocks += d.kel_block_count || 0;
+            return acc;
+          },
+          {
+            kel: 0,
+            coinbase: 0,
+            inception: 0,
+            rotation: 0,
+            total: 0,
+            blocks: 0,
+            kelBlocks: 0,
+          },
+        );
+      }
+
+      function renderSummary(summary, stats) {
+        const range = rangeTotals(stats);
+        const hasRange = stats.length > 0;
+        const kel = hasRange
+          ? range.kel
+          : summary.kel_txns || 0;
+        const coinbase = hasRange
+          ? range.coinbase
+          : summary.coinbase_kel_txns || 0;
+        const blocks = hasRange
+          ? range.blocks
+          : summary.total_blocks || 0;
+        const kelBlocks = hasRange
+          ? range.kelBlocks
+          : summary.kel_blocks || 0;
+        const blockPct = blocks
+          ? ((kelBlocks / blocks) * 100).toFixed(2)
+          : summary.block_kel_pct || 0;
         document.getElementById(
           "c-kel-total",
-        ).textContent = fmtNum(data.kel_txns);
+        ).textContent = fmtNum(kel);
         document.getElementById(
-          "c-total",
-        ).textContent = fmtNum(data.total_txns);
+          "c-kel-total-sub",
+        ).textContent = hasRange
+          ? `all time ${fmtNum(summary.kel_txns || 0)}`
+          : "all time";
+        document.getElementById(
+          "c-coinbase",
+        ).textContent = fmtNum(coinbase);
+        document.getElementById(
+          "c-coinbase-sub",
+        ).textContent = `all time ${fmtNum(
+          summary.coinbase_kel_txns || 0,
+        )}`;
         document.getElementById(
           "c-pct",
-        ).textContent = data.kel_pct + "%";
+        ).textContent = blockPct + "%";
+        document.getElementById(
+          "c-pct-sub",
+        ).textContent = `${fmtNum(kelBlocks)} / ${fmtNum(blocks)} blocks`;
         document.getElementById(
           "c-inception",
         ).textContent = fmtNum(
-          data.inception_txns,
+          hasRange
+            ? range.inception
+            : summary.inception_txns || 0,
         );
         document.getElementById(
           "c-rotation",
         ).textContent = fmtNum(
-          data.rotation_txns,
+          hasRange
+            ? range.rotation
+            : summary.rotation_txns || 0,
         );
       }
 
@@ -583,6 +654,9 @@
         );
         const pctData = stats.map(
           (d) => d.kel_pct,
+        );
+        const blockPct = stats.map(
+          (d) => d.block_kel_pct || 0,
         );
 
         // ── Bar chart (stacked inception + rotation) ──────────────
@@ -624,7 +698,8 @@
                       const d = stats[idx];
                       return [
                         `Total txns: ${d.total_count.toLocaleString()}`,
-                        `KEL share: ${d.kel_pct}%`,
+                        `Coinbase KEL: ${(d.coinbase_kel_count || 0).toLocaleString()}`,
+                        `Blocks with KEL: ${(d.kel_block_count || 0).toLocaleString()} / ${(d.block_count || 0).toLocaleString()}`,
                       ];
                     },
                   },
@@ -691,7 +766,18 @@
                   borderColor: "#63b3ed",
                   backgroundColor:
                     "rgba(99,179,237,0.08)",
-                  fill: true,
+                  fill: false,
+                  tension: 0.3,
+                  pointRadius: 0,
+                  borderWidth: 2,
+                },
+                {
+                  label: "Blocks with KEL %",
+                  data: blockPct,
+                  borderColor: "#68d391",
+                  backgroundColor:
+                    "rgba(104,211,145,0.08)",
+                  fill: false,
                   tension: 0.3,
                   pointRadius: 0,
                   borderWidth: 2,
@@ -747,9 +833,10 @@
               fetchStats(granularity, days),
             ]);
 
-          renderSummary(summary);
+          const clean = saneStats(stats);
+          renderSummary(summary, clean);
 
-          if (stats.length === 0) {
+          if (clean.length === 0) {
             document.getElementById(
               "loading",
             ).innerHTML =
@@ -757,7 +844,7 @@
             return;
           }
 
-          renderCharts(stats, granularity);
+          renderCharts(clean, granularity);
           document.getElementById(
             "charts-area",
           ).style.display = "grid";
