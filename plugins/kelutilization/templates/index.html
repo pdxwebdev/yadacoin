@@ -480,19 +480,16 @@
         },
       };
 
-      function fmtDate(ts, granularity) {
-        const d = new Date(ts * 1000);
-        if (granularity === "weekly") {
-          return d.toLocaleDateString("en-US", {
+      function fmtDate(ts) {
+        return new Date(ts * 1000).toLocaleDateString(
+          "en-US",
+          {
             month: "short",
             day: "numeric",
             year: "2-digit",
-          });
-        }
-        return d.toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        });
+            timeZone: "UTC",
+          },
+        );
       }
 
       function fmtNum(n) {
@@ -537,13 +534,20 @@
         return res.json();
       }
 
-      function saneStats(stats) {
+      function saneStats(stats, days) {
         const now = Date.now() / 1000;
-        return (stats || []).filter(
-          (d) =>
-            d.timestamp >= 1483228800 &&
-            d.timestamp <= now + 86400 * 2,
-        );
+        const hi = now + 86400;
+        const span = Number(days) || 0;
+        const lo =
+          span > 0
+            ? now - span * 86400 - 86400
+            : 1483228800;
+        return (stats || [])
+          .filter(
+            (d) =>
+              d.timestamp >= lo && d.timestamp <= hi,
+          )
+          .sort((a, b) => a.timestamp - b.timestamp);
       }
 
       function rangeTotals(stats) {
@@ -641,7 +645,7 @@
       function renderCharts(stats, granularity) {
         destroyCharts();
         const labels = stats.map((d) =>
-          fmtDate(d.timestamp, granularity),
+          fmtDate(d.timestamp),
         );
         const inception = stats.map(
           (d) => d.inception_count,
@@ -710,6 +714,8 @@
                 x: {
                   ...CHART_DEFAULTS.scales.x,
                   stacked: true,
+                  min: 0,
+                  max: Math.max(labels.length - 1, 0),
                 },
                 y: {
                   ...CHART_DEFAULTS.scales.y,
@@ -833,7 +839,7 @@
               fetchStats(granularity, days),
             ]);
 
-          const clean = saneStats(stats);
+          const clean = saneStats(stats, days);
           renderSummary(summary, clean);
 
           if (clean.length === 0) {

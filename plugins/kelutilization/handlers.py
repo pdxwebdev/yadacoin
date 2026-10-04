@@ -332,11 +332,16 @@ def _empty_summary() -> dict:
     }
 
 
+def _no_store(handler):
+    handler.set_header("Cache-Control", "no-store")
+
+
 class KelUtilizationAppHandler(BaseHandler):
     def get_template_path(self):
         return os.path.join(os.path.dirname(__file__), "templates")
 
     async def get(self):
+        _no_store(self)
         return self.render("index.html")
 
 
@@ -356,6 +361,7 @@ class KelStatsHandler(BaseHandler):
         except ValueError:
             days = 90
 
+        _no_store(self)
         cache_key = ("stats", granularity, days)
         cached = _cache_get(cache_key, _STATS_TTL)
         if cached is not None:
@@ -405,6 +411,7 @@ class KelSummaryHandler(BaseHandler):
     """Overall KEL utilization, including coinbase key events and block coverage."""
 
     async def get(self):
+        _no_store(self)
         cache_key = ("summary",)
         cached = _cache_get(cache_key, _SUMMARY_TTL)
         if cached is not None:
