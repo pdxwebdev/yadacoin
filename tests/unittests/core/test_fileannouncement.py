@@ -135,6 +135,14 @@ class TestFileAnnouncement(AsyncTestCase):
         self.assertEqual(again.thumbnail_file_id, "b" * 64)
         self.assertEqual(again.thumbnail_share_url, with_thumb.thumbnail_share_url)
 
+    async def test_thumbnail_fields_too_long_raise(self):
+        with self.assertRaises(ValueError) as ctx:
+            self._ann(thumbnail_file_id="b" * (MAX_FILE_ID_LEN + 1))
+        self.assertIn("thumbnail_file_id", str(ctx.exception))
+        with self.assertRaises(ValueError) as ctx:
+            self._ann(thumbnail_share_url="s" * (MAX_SHARE_URL_LEN + 1))
+        self.assertIn("thumbnail_share_url", str(ctx.exception))
+
     async def test_to_string_deterministic(self):
         a = self._ann()
         b = self._ann()
