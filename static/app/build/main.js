@@ -8433,7 +8433,10 @@ var Settings = /** @class */ (function () {
             this.peerService.mode = true;
         this.prefix = "usernames-";
         this.ci = new CenterIdentity(undefined, undefined, undefined, undefined, true, 5);
-        this.refresh(null)
+        this.consumeYadaPasswordSignin()
+            .then(function () {
+            return _this.refresh(null);
+        })
             .then(function () {
             return _this.peerService.go();
         })
@@ -9146,7 +9149,7 @@ var Settings = /** @class */ (function () {
             _this.operatorSessionActive = false;
             _this.loadingModal.dismiss().catch(function () { });
             var toast = _this.toastCtrl.create({
-                message: "Operator identity saved for this node. Authenticate with Yada Password — no WIF stored.",
+                message: "Operator identity saved for this node. Sign in with Yada Password — no WIF stored.",
                 duration: 3500,
             });
             toast.present();
@@ -9162,64 +9165,38 @@ var Settings = /** @class */ (function () {
             a.present();
         });
     };
-    Settings.prototype.authenticateOperator = function () {
+    Settings.prototype.consumeYadaPasswordSignin = function () {
         var _this = this;
+        var token = null;
+        try {
+            token = sessionStorage.getItem("yadaOperatorToken");
+            if (token) {
+                sessionStorage.removeItem("yadaOperatorToken");
+            }
+        }
+        catch (e) { }
+        if (!token) {
+            return Promise.resolve(null);
+        }
+        return this.bulletinSecretService.get().then(function () {
+            if (!_this.bulletinSecretService.isOperator()) {
+                return null;
+            }
+            return _this.setOperatorSession(token);
+        });
+    };
+    Settings.prototype.authenticateOperator = function () {
         if (!this.bulletinSecretService.isOperator()) {
             return Promise.reject("not an operator identity");
         }
-        var baseUrl = this.settingsService.remoteSettingsUrl ||
-            (this.settingsService.remoteSettings &&
-                this.settingsService.remoteSettings.baseUrl);
-        if (!baseUrl) {
-            return Promise.reject("node URL missing");
-        }
-        // Prefer the typed node username; never a personal wallet identity.
         var username = this.resolveOperatorUsername();
         if (!username) {
             return Promise.reject("enter the node username before authenticating");
         }
         this.operatorUsername = username;
-        this.operatorAuthPending = true;
-        this.loadingModal = this.loadingCtrl.create({
-            content: "Waiting for approve in Yada Password… Open the extension or app and Approve.",
-        });
-        this.loadingModal.present();
-        return this.createOperatorAuthSession(baseUrl, username)
-            .then(function (session) { return _this.pollOperatorAuthSession(baseUrl, session); })
-            .then(function (view) {
-            _this.operatorAuthPending = false;
-            _this.loadingModal.dismiss().catch(function () { });
-            if (!view || view.session_status === "denied") {
-                throw (view && view.message) || "request denied";
-            }
-            if (view.session_status === "expired") {
-                throw "auth request expired — try again";
-            }
-            var token = view.token;
-            if (!token) {
-                throw ((view && view.message) ||
-                    "approved but no operator token — ensure vault matches this node");
-            }
-            return _this.setOperatorSession(token).then(function () {
-                var toast = _this.toastCtrl.create({
-                    message: "Node operator session active",
-                    duration: 2500,
-                });
-                toast.present();
-                return view;
-            });
-        })
-            .catch(function (err) {
-            _this.operatorAuthPending = false;
-            _this.loadingModal.dismiss().catch(function () { });
-            var a = _this.alertCtrl.create({
-                title: "Authentication failed",
-                subTitle: err && err.toString ? err.toString() : err,
-                buttons: ["Ok"],
-            });
-            a.present();
-            return Promise.reject(err);
-        });
+        var keyname = this.bulletinSecretService.keyname || "";
+        window.location.assign("/app?operator_signin=1&keyname=" + encodeURIComponent(keyname));
+        return Promise.resolve(null);
     };
     Settings.prototype.createOperatorAuthSession = function (baseUrl, username) {
         var _this = this;
@@ -9570,7 +9547,7 @@ var Settings = /** @class */ (function () {
     };
     Settings = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: "page-settings",template:/*ion-inline-start:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/settings/settings.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Sign-in</h1>\n  <h3>Create an identity</h3>\n  <button\n    ion-button\n    secondary\n    (click)="createWallet()"\n    *ngIf="!settingsService.remoteSettings.restricted"\n  >\n    Create identity\n  </button>\n  <button\n    ion-button\n    secondary\n    (click)="createWalletFromInvite()"\n    *ngIf="settingsService.remoteSettings.restricted"\n  >\n    Create identity from Code\n  </button>\n  <h3 *ngIf="keys && keys.length > 0">Select an identity</h3>\n  <ion-list>\n    <button\n      *ngFor="let key of keys"\n      ion-item\n      (click)="selectIdentity(key.type === \'operator\' ? key.keyname : key.username)"\n      [color]="key.active ? \'primary\' : settingsService.remoteSettings.restricted ? \'light\' : \'dark\'"\n    >\n      <ion-icon\n        [name]="key.type === \'operator\' ? \'settings\' : \'person\'"\n        item-start\n        [color]="\'dark\'"\n      ></ion-icon>\n      {{key.username}}\n    </button>\n  </ion-list>\n  <ion-list\n    *ngIf="bulletinSecretService.keyname && !bulletinSecretService.isOperator() && !centerIdentityExportEnabled"\n  >\n    <ion-item>\n      Make the active identity available anywhere using the YadaCoin blockchain\n      and maps provided by Center Identity\n      <button ion-button secondary (click)="enableCenterIdentityExport()">\n        Enable\n      </button>\n    </ion-item>\n  </ion-list>\n  <ion-list\n    *ngIf="bulletinSecretService.keyname && centerIdentityExportEnabled"\n  >\n    <ion-item\n      style="\n        background: linear-gradient(\n          90deg,\n          rgba(255, 255, 255, 1) 0%,\n          #191919 75%\n        );\n        color: black;\n      "\n      ><img\n        src="assets/center-identity-logo1024x500.png"\n        height="65"\n        style="vertical-align: middle"\n    /></ion-item>\n    <ion-item>\n      <ion-input\n        type="text"\n        placeholder="Public username"\n        [(ngModel)]="bulletinSecretService.identity.username"\n        disabled\n      ></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very\n      memorable)\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very\n      memorable)\n      <ion-input\n        type="text"\n        placeholder="Private username"\n        [(ngModel)]="centerIdentityPrivateUsername"\n      ></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private location that nobody knows except for you (must be very\n      memorable)\n      <div id="map-export" style="width: 500px; height: 500px"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentitySaveSuccess">\n      <button ion-button secondary (click)="saveKeyUsingCenterIdentity()">\n        Save to blockchain\n      </button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentitySaveSuccess">\n      <button\n        ion-button\n        primary\n        (click)="saveKeyUsingCenterIdentity()"\n        disabled\n      >\n        Success!\n      </button>\n    </ion-item>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname && !bulletinSecretService.isOperator()">\n    <hr />\n    <h4>Export wif (private, do not share)</h4>\n    <ion-item *ngIf="!exportKeyEnabled">\n      <button ion-button secondary (click)="exportKey()">\n        Export active identity\n      </button>\n    </ion-item>\n    <ion-item *ngIf="exportKeyEnabled">\n      <ion-input type="text" [(ngModel)]="activeKey"></ion-input>\n    </ion-item>\n    <h4>\n      Public identity (share this with your friends)\n      <ion-spinner *ngIf="busy"></ion-spinner>\n    </h4>\n    <ion-item *ngIf="settingsService.remoteSettings.restricted">\n      <ion-textarea\n        type="text"\n        [(ngModel)]="identitySkylink"\n        autoGrow="true"\n        rows="1"\n      ></ion-textarea>\n    </ion-item>\n    <ion-item *ngIf="!settingsService.remoteSettings.restricted">\n      <ion-textarea\n        type="text"\n        [value]="bulletinSecretService.identityJson()"\n        autoGrow="true"\n        rows="5"\n      ></ion-textarea>\n    </ion-item>\n  </ion-list>\n  <h4>Import using location</h4>\n  <ion-item *ngIf="!centerIdentityImportEnabled">\n    <button ion-button secondary (click)="enableCenterIdentityImport()">\n      Choose location\n    </button>\n  </ion-item>\n  <ion-list *ngIf="centerIdentityImportEnabled">\n    <ion-item>\n      Enter your private username\n      <ion-input\n        type="text"\n        placeholder="Private username"\n        [(ngModel)]="centerIdentityPrivateUsername"\n      ></ion-input>\n    </ion-item>\n    <ion-item>\n      Select your private location\n      <div id="map-import" style="width: 500px; height: 500px"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentityImportSuccess">\n      <button ion-button secondary (click)="getKeyUsingCenterIdentity()">\n        Get from blockchain <ion-spinner *ngIf="CIBusy"></ion-spinner>\n      </button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentityImportSuccess">\n      <button ion-button primary (click)="getKeyUsingCenterIdentity()" disabled>\n        Success!\n      </button>\n    </ion-item>\n  </ion-list>\n  <h4>Import WIF</h4>\n  <ion-item>\n    <button ion-button secondary (click)="importKey()">Import identity</button>\n  </ion-item>\n  <hr />\n  <h3>Node operator (no WIF)</h3>\n  <p>\n    Control this node&rsquo;s treasury without importing the node seed. Enter the\n    <strong>node</strong> username (same as Yada Password vault for this node).\n    Authenticate with approve/reject in the app or extension; keys stay on the node.\n  </p>\n  <ion-item>\n    <p>\n      Node:\n      <strong>{{ currentNodeHost() }}</strong>\n    </p>\n  </ion-item>\n  <ion-item>\n    <ion-label stacked>Node username</ion-label>\n    <ion-input\n      type="text"\n      placeholder="node username"\n      [(ngModel)]="operatorUsername"\n      autocomplete="username"\n    ></ion-input>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="importNodeOperator()">\n      Connect as operator\n    </button>\n  </ion-item>\n  <ion-list *ngIf="bulletinSecretService.isOperator()">\n    <ion-item>\n      <p>\n        Active operator:\n        <strong>{{ bulletinSecretService.username }}</strong>\n        @\n        {{ bulletinSecretService.operatorHost || currentNodeHost() }}\n      </p>\n      <p *ngIf="bulletinSecretService.address">\n        Node address: {{ bulletinSecretService.address }}\n      </p>\n      <p *ngIf="operatorSessionActive" style="color: #3fb950">\n        Operator session active\n      </p>\n      <p *ngIf="!operatorSessionActive" style="color: #f85149">\n        Not authenticated — approve in Yada Password\n      </p>\n    </ion-item>\n  <ion-item>\n    <p *ngIf="operatorAuthPending">\n      Check Yada Password (extension or app) and Approve the operator request.\n    </p>\n    <button\n      ion-button\n      secondary\n      (click)="authenticateOperator()"\n      [disabled]="operatorAuthPending"\n    >\n      Authenticate with Yada Password\n    </button>\n  </ion-item>\n    <ion-item>\n      <button ion-button secondary (click)="checkOperatorSession()">\n        Check session\n      </button>\n    </ion-item>\n  </ion-list>\n</ion-content>\n'/*ion-inline-end:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/settings/settings.html"*/,
+            selector: "page-settings",template:/*ion-inline-start:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/settings/settings.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Sign-in</h1>\n  <h3>Create an identity</h3>\n  <button\n    ion-button\n    secondary\n    (click)="createWallet()"\n    *ngIf="!settingsService.remoteSettings.restricted"\n  >\n    Create identity\n  </button>\n  <button\n    ion-button\n    secondary\n    (click)="createWalletFromInvite()"\n    *ngIf="settingsService.remoteSettings.restricted"\n  >\n    Create identity from Code\n  </button>\n  <h3 *ngIf="keys && keys.length > 0">Select an identity</h3>\n  <ion-list>\n    <button\n      *ngFor="let key of keys"\n      ion-item\n      (click)="selectIdentity(key.type === \'operator\' ? key.keyname : key.username)"\n      [color]="key.active ? \'primary\' : settingsService.remoteSettings.restricted ? \'light\' : \'dark\'"\n    >\n      <ion-icon\n        [name]="key.type === \'operator\' ? \'settings\' : \'person\'"\n        item-start\n        [color]="\'dark\'"\n      ></ion-icon>\n      {{key.username}}\n    </button>\n  </ion-list>\n  <ion-list\n    *ngIf="bulletinSecretService.keyname && !bulletinSecretService.isOperator() && !centerIdentityExportEnabled"\n  >\n    <ion-item>\n      Make the active identity available anywhere using the YadaCoin blockchain\n      and maps provided by Center Identity\n      <button ion-button secondary (click)="enableCenterIdentityExport()">\n        Enable\n      </button>\n    </ion-item>\n  </ion-list>\n  <ion-list\n    *ngIf="bulletinSecretService.keyname && centerIdentityExportEnabled"\n  >\n    <ion-item\n      style="\n        background: linear-gradient(\n          90deg,\n          rgba(255, 255, 255, 1) 0%,\n          #191919 75%\n        );\n        color: black;\n      "\n      ><img\n        src="assets/center-identity-logo1024x500.png"\n        height="65"\n        style="vertical-align: middle"\n    /></ion-item>\n    <ion-item>\n      <ion-input\n        type="text"\n        placeholder="Public username"\n        [(ngModel)]="bulletinSecretService.identity.username"\n        disabled\n      ></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very\n      memorable)\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very\n      memorable)\n      <ion-input\n        type="text"\n        placeholder="Private username"\n        [(ngModel)]="centerIdentityPrivateUsername"\n      ></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private location that nobody knows except for you (must be very\n      memorable)\n      <div id="map-export" style="width: 500px; height: 500px"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentitySaveSuccess">\n      <button ion-button secondary (click)="saveKeyUsingCenterIdentity()">\n        Save to blockchain\n      </button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentitySaveSuccess">\n      <button\n        ion-button\n        primary\n        (click)="saveKeyUsingCenterIdentity()"\n        disabled\n      >\n        Success!\n      </button>\n    </ion-item>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname && !bulletinSecretService.isOperator()">\n    <hr />\n    <h4>Export wif (private, do not share)</h4>\n    <ion-item *ngIf="!exportKeyEnabled">\n      <button ion-button secondary (click)="exportKey()">\n        Export active identity\n      </button>\n    </ion-item>\n    <ion-item *ngIf="exportKeyEnabled">\n      <ion-input type="text" [(ngModel)]="activeKey"></ion-input>\n    </ion-item>\n    <h4>\n      Public identity (share this with your friends)\n      <ion-spinner *ngIf="busy"></ion-spinner>\n    </h4>\n    <ion-item *ngIf="settingsService.remoteSettings.restricted">\n      <ion-textarea\n        type="text"\n        [(ngModel)]="identitySkylink"\n        autoGrow="true"\n        rows="1"\n      ></ion-textarea>\n    </ion-item>\n    <ion-item *ngIf="!settingsService.remoteSettings.restricted">\n      <ion-textarea\n        type="text"\n        [value]="bulletinSecretService.identityJson()"\n        autoGrow="true"\n        rows="5"\n      ></ion-textarea>\n    </ion-item>\n  </ion-list>\n  <h4>Import using location</h4>\n  <ion-item *ngIf="!centerIdentityImportEnabled">\n    <button ion-button secondary (click)="enableCenterIdentityImport()">\n      Choose location\n    </button>\n  </ion-item>\n  <ion-list *ngIf="centerIdentityImportEnabled">\n    <ion-item>\n      Enter your private username\n      <ion-input\n        type="text"\n        placeholder="Private username"\n        [(ngModel)]="centerIdentityPrivateUsername"\n      ></ion-input>\n    </ion-item>\n    <ion-item>\n      Select your private location\n      <div id="map-import" style="width: 500px; height: 500px"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentityImportSuccess">\n      <button ion-button secondary (click)="getKeyUsingCenterIdentity()">\n        Get from blockchain <ion-spinner *ngIf="CIBusy"></ion-spinner>\n      </button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentityImportSuccess">\n      <button ion-button primary (click)="getKeyUsingCenterIdentity()" disabled>\n        Success!\n      </button>\n    </ion-item>\n  </ion-list>\n  <h4>Import WIF</h4>\n  <ion-item>\n    <button ion-button secondary (click)="importKey()">Import identity</button>\n  </ion-item>\n  <hr />\n  <h3>Node operator (no WIF)</h3>\n  <p>\n    Control this node&rsquo;s treasury without importing the node seed. Enter the\n    <strong>node</strong> username (same as Yada Password vault for this node).\n    Sign in on the shared Yada Password page. Keys stay in the extension.\n  </p>\n  <ion-item>\n    <p>\n      Node:\n      <strong>{{ currentNodeHost() }}</strong>\n    </p>\n  </ion-item>\n  <ion-item>\n    <ion-label stacked>Node username</ion-label>\n    <ion-input\n      type="text"\n      placeholder="node username"\n      [(ngModel)]="operatorUsername"\n      autocomplete="username"\n    ></ion-input>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="importNodeOperator()">\n      Connect as operator\n    </button>\n  </ion-item>\n  <ion-list *ngIf="bulletinSecretService.isOperator()">\n    <ion-item>\n      <p>\n        Active operator:\n        <strong>{{ bulletinSecretService.username }}</strong>\n        @\n        {{ bulletinSecretService.operatorHost || currentNodeHost() }}\n      </p>\n      <p *ngIf="bulletinSecretService.address">\n        Node address: {{ bulletinSecretService.address }}\n      </p>\n      <p *ngIf="operatorSessionActive" style="color: #3fb950">\n        Operator session active\n      </p>\n      <p *ngIf="!operatorSessionActive" style="color: #f85149">\n        Not authenticated — sign in with Yada Password\n      </p>\n    </ion-item>\n  <ion-item>\n    <p *ngIf="operatorAuthPending">\n      Check Yada Password (extension or app) and Approve the operator request.\n    </p>\n    <button\n      ion-button\n      secondary\n      (click)="authenticateOperator()"\n      [disabled]="operatorAuthPending"\n    >\n      Sign in with Yada Password\n    </button>\n  </ion-item>\n    <ion-item>\n      <button ion-button secondary (click)="checkOperatorSession()">\n        Check session\n      </button>\n    </ion-item>\n  </ion-list>\n</ion-content>\n'/*ion-inline-end:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/settings/settings.html"*/,
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],

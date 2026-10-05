@@ -14,6 +14,7 @@ Full license terms: see LICENSE.txt in this repository.
 import json
 import os
 
+from plugins.yadapasswordsignin.handlers import redirect_to_signin
 from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.http.base import BaseHandler
 
@@ -43,17 +44,12 @@ class BaseCredentialIssuerHandler(BaseHandler):
             return
         if await self.wallet_is_unlocked():
             return
-        self.set_status(401)
         path = self.request.path or ""
         if path.startswith("/credential-issuer/api/"):
+            self.set_status(401)
             self.render_as_json({"status": False, "error": "not authorized"})
         else:
-            # RequestHandler.render() finishes; do not call finish() again
-            self.render(
-                "locked.html",
-                yadacoin=self.yadacoin_vars,
-                title="YadaCoin - Credential Issuer",
-            )
+            redirect_to_signin(self, "credential-issuer")
 
     def _error(self, status, message):
         self.set_status(status)

@@ -15,6 +15,7 @@ Full license terms: see LICENSE.txt in this repository.
 Handlers required by the web operations
 """
 
+from plugins.yadapasswordsignin.handlers import redirect_to_signin
 from yadacoin.http.base import BaseHandler
 
 
@@ -32,8 +33,15 @@ class HomeHandler(BaseHandler):
 class AppHandler(BaseHandler):
     async def get(self):
         """
-        :return:
+        Wallet. Operator sign-in is the shared Yada Password page.
         """
+        if self.get_query_argument("operator_signin", "") == "1":
+            return redirect_to_signin(
+                self,
+                "wallet",
+                next_path="/app",
+                keyname=self.get_query_argument("keyname", ""),
+            )
         self.render("app.html")
 
 

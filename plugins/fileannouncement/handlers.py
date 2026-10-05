@@ -21,6 +21,7 @@ import tornado.web
 from tornado.iostream import StreamClosedError
 
 from plugins.keyrotation.handlers import KelUnlockHandler
+from plugins.yadapasswordsignin.handlers import redirect_to_signin
 from yadacoin.core.contenttakedown import TakedownReasonCode
 from yadacoin.http.base import BaseHandler
 
@@ -268,18 +269,12 @@ class BaseFileAnnouncementHandler(BaseHandler):
             return
         if await self.kel_is_unlocked() or await self.wallet_is_unlocked():
             return
-        self.set_status(401)
         path = self.request.path or ""
         if path.startswith("/file-announcements/api/"):
-            # render_as_json already finishes the request
+            self.set_status(401)
             self.render_as_json({"status": False, "error": "not authorized"})
         else:
-            # RequestHandler.render() finishes; do not call finish() again
-            self.render(
-                "locked.html",
-                yadacoin=self.yadacoin_vars,
-                title="YadaCoin - File Announcements",
-            )
+            redirect_to_signin(self, "file-announcements")
 
     def _error(self, status, message):
         self.set_status(status)

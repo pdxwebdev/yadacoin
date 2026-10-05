@@ -14,6 +14,7 @@ Full license terms: see LICENSE.txt in this repository.
 import json
 import os
 
+from plugins.yadapasswordsignin.handlers import redirect_to_signin
 from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.http.base import BaseHandler
 
@@ -62,17 +63,12 @@ class BaseLivestreamWalletHandler(BaseHandler, _JsonMixin):
             return
         if await self.wallet_is_unlocked():
             return
-        self.set_status(401)
         path = self.request.path or ""
         if path.startswith("/livestream-announcements/api/"):
+            self.set_status(401)
             self.render_as_json({"status": False, "error": "not authorized"})
         else:
-            # RequestHandler.render() finishes; do not call finish() again
-            self.render(
-                "locked.html",
-                yadacoin=self.yadacoin_vars,
-                title="YadaCoin - Livestream",
-            )
+            redirect_to_signin(self, "livestream")
 
 
 class BaseLivestreamPublicHandler(BaseHandler, _JsonMixin):
