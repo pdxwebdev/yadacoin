@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#000000" />
   <title>Yada Scroller Demo</title>
   <base href="/file-announcements/demo/yadascroller/" />
-  <link rel="stylesheet" href="styles.css?v=14" />
+  <link rel="stylesheet" href="styles.css?v=15" />
 </head>
 <body>
   <div id="app">
@@ -54,6 +54,9 @@
             <div><strong id="stat-gifts">—</strong><span>Gifts</span></div>
             <div><strong id="stat-followers">—</strong><span>Followers</span></div>
             <div><strong id="stat-following">—</strong><span>Following</span></div>
+            <button type="button" class="stat" id="stat-badges-btn" aria-label="Badges">
+              <strong id="stat-badges">—</strong><span>Badges</span>
+            </button>
           </div>
           <div class="profile-actions" id="profile-actions" hidden>
             <button type="button" class="pill" id="edit-avatar">Edit avatar</button>
@@ -63,6 +66,18 @@
         </div>
         <div id="profile-grid" class="profile-grid"></div>
         <p id="profile-empty" class="profile-empty" hidden>No uploads yet</p>
+      </div>
+    </section>
+
+    <section id="badges" class="profile" hidden>
+      <header class="profile-top">
+        <button type="button" id="badges-back" aria-label="Back">‹</button>
+        <div class="profile-top-title" id="badges-title">Badges</div>
+      </header>
+      <div class="profile-scroll">
+        <div id="badge-list" class="badge-list"></div>
+        <p id="badge-empty" class="profile-empty" hidden>No credentials yet</p>
+        <article id="badge-detail" class="badge-detail" hidden></article>
       </div>
     </section>
 
@@ -129,6 +144,6 @@
     </dialog>
   </div>
   <script src="/app/assets/qrcode.js"></script>
-  <script src="app.js?v=20"></script>
+  <script src="app.js?v=21"></script>
 </body>
 </html>

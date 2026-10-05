@@ -861,3 +861,121 @@ class TestProfileLookup(AsyncTestCase):
             "1FPVi9gaMB9xqtKCTwD5ABBW1XziRzMttq",
         )
         self.assertEqual(await inception_for_username(config, "missing"), "")
+
+    async def test_received_credentials_for_subject(self):
+        from plugins.fileannouncement.store import (
+            received_credentials,
+            username_signature_for_inception,
+        )
+
+        config = self._config()
+        config.mongo.async_db.blocks.rows = [
+            {
+                "time": 100,
+                "transactions": [
+                    {"id": "reanchor", "relationship": "reanchor"},
+                    {
+                        "id": "id-txn",
+                        "inception_public_key_hash": "owner-a",
+                        "relationship": {
+                            "identity": {
+                                "username": "alice",
+                                "username_signature": "alice-sig",
+                            }
+                        },
+                    },
+                    {
+                        "id": "issuer-txn",
+                        "inception_public_key_hash": "owner-b",
+                        "relationship": {
+                            "identity": {
+                                "username": "issuer",
+                                "username_signature": "issuer-sig",
+                            }
+                        },
+                    },
+                    {
+                        "id": "cred-1",
+                        "time": 200,
+                        "relationship": {
+                            "credential": {
+                                "subject_username_signature": "alice-sig",
+                                "issuer_username_signature": "issuer-sig",
+                                "issuer_identity_announcement": "issuer-txn",
+                                "claim": "ageOver18",
+                                "expires": 9_999_999_999,
+                                "vc": {
+                                    "type": [
+                                        "VerifiableCredential",
+                                        "AgeOver18Credential",
+                                    ],
+                                    "credentialSubject": {
+                                        "id": "did:yadacoin:alice-sig",
+                                        "ageOver18": True,
+                                    },
+                                },
+                            }
+                        },
+                    },
+                    {
+                        "id": "other-cred",
+                        "time": 300,
+                        "relationship": {
+                            "credential": {
+                                "subject_username_signature": "bob-sig",
+                                "issuer_username_signature": "issuer-sig",
+                                "issuer_identity_announcement": "issuer-txn",
+                                "claim": "ageOver18",
+                                "expires": 9_999_999_999,
+                                "vc": {},
+                            }
+                        },
+                    },
+                ],
+            }
+        ]
+        config.mongo.async_db.miner_transactions.rows = [
+            {
+                "id": "cred-1",
+                "time": 50,
+                "relationship": {
+                    "credential": {
+                        "subject_username_signature": "alice-sig",
+                        "issuer_username_signature": "issuer-sig",
+                        "issuer_identity_announcement": "issuer-txn",
+                        "claim": "member",
+                        "expires": 1,
+                        "vc": {"proof": {"commitment": "aa", "R": "bb", "s": "cc"}},
+                    }
+                },
+            },
+            {
+                "id": "cred-mem",
+                "relationship": {
+                    "credential": {
+                        "subject_username_signature": "alice-sig",
+                        "issuer_username_signature": "issuer-sig",
+                        "issuer_identity_announcement": "issuer-txn",
+                        "claim": "member",
+                        "expires": 1,
+                        "vc": {"proof": {"commitment": "aa", "R": "bb", "s": "cc"}},
+                    }
+                },
+            },
+        ]
+        self.assertEqual(
+            await username_signature_for_inception(config, "owner-a"), "alice-sig"
+        )
+        self.assertEqual(await username_signature_for_inception(config, "nobody"), "")
+        rows = await received_credentials(config, "alice-sig")
+        self.assertEqual(
+            [row["transaction_id"] for row in rows], ["cred-1", "cred-mem"]
+        )
+        self.assertEqual(rows[0]["claim"], "ageOver18")
+        self.assertEqual(rows[0]["source"], "chain")
+        self.assertEqual(rows[0]["issuer_username"], "issuer")
+        self.assertEqual(rows[0]["subject_username"], "alice")
+        self.assertIsNone(rows[0]["proof_valid"])
+        self.assertEqual(rows[1]["source"], "mempool")
+        self.assertFalse(rows[1]["proof_valid"])
+        self.assertEqual(await received_credentials(config, ""), [])

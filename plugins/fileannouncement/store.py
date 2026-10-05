@@ -871,6 +871,203 @@ async def identity_for_inception(config, inception_public_key_hash: str) -> dict
     }
 
 
+def _identity_payload(txn: dict):
+    if not isinstance(txn, dict):
+        return None
+    relationship = txn.get("relationship")
+    if not isinstance(relationship, dict):
+        return None
+    identity = relationship.get("identity")
+    if not isinstance(identity, dict):
+        return None
+    username = (identity.get("username") or "").strip()
+    signature = (identity.get("username_signature") or "").strip()
+    if not username and not signature:
+        return None
+    return {
+        "username": username,
+        "username_signature": signature,
+        "keys": _identity_keys(txn),
+    }
+
+
+async def _scan_relationship_txns(config, chain_query, mempool_query, absorb):
+    """Visit mempool transactions first, then confirmed ones so chain wins."""
+    try:
+        async for txn in _db(config).miner_transactions.find(mempool_query, {"_id": 0}):
+            try:
+                absorb(txn, "mempool", 0)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    try:
+        cursor = _db(config).blocks.find(
+            chain_query, {"transactions": 1, "time": 1, "index": 1}
+        )
+        async for block in cursor:
+            try:
+                block_time = int(block.get("time") or 0)
+            except (TypeError, ValueError):
+                block_time = 0
+            for txn in block.get("transactions") or []:
+                try:
+                    absorb(txn, "chain", block_time)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+
+async def username_signature_for_inception(
+    config, inception_public_key_hash: str
+) -> str:
+    """username_signature from the identity announcement for this inception hash."""
+    pkh = (inception_public_key_hash or "").strip()
+    if not pkh:
+        return ""
+    found = {"signature": ""}
+
+    def _absorb(txn, _source, _block_time):
+        payload = _identity_payload(txn)
+        if not payload or pkh not in payload["keys"]:
+            return
+        if payload["username_signature"]:
+            found["signature"] = payload["username_signature"]
+
+    await _scan_relationship_txns(
+        config,
+        {"transactions.relationship.identity.username_signature": {"$gt": ""}},
+        {"relationship.identity.username_signature": {"$gt": ""}},
+        _absorb,
+    )
+    return found["signature"]
+
+
+async def usernames_by_signature(config) -> dict:
+    """Map identity username_signature to username. Chain overwrites mempool."""
+    index = {}
+
+    def _absorb(txn, _source, _block_time):
+        payload = _identity_payload(txn)
+        if not payload or not payload["username_signature"] or not payload["username"]:
+            return
+        index[payload["username_signature"]] = payload["username"]
+
+    await _scan_relationship_txns(
+        config,
+        {"transactions.relationship.identity.username": {"$gt": ""}},
+        {"relationship.identity.username": {"$gt": ""}},
+        _absorb,
+    )
+    return index
+
+
+def _proof_valid(subject_username_signature: str, vc):
+    if not isinstance(vc, dict):
+        return None
+    proof = vc.get("proof")
+    if not isinstance(proof, dict):
+        return None
+    commitment = proof.get("commitment")
+    r_point = proof.get("R")
+    scalar = proof.get("s")
+    if not commitment or not r_point or not scalar:
+        return None
+    from yadacoin.core.locationrecovery import verify_proof
+
+    return bool(
+        verify_proof(
+            str(commitment),
+            str(r_point),
+            str(scalar),
+            prev_key_hash=subject_username_signature or None,
+        )
+    )
+
+
+def _credential_time(txn: dict, block_time: int) -> int:
+    for raw in (txn.get("time"), block_time):
+        try:
+            stamp = int(raw or 0)
+        except (TypeError, ValueError):
+            continue
+        if stamp > 0:
+            return stamp
+    return 0
+
+
+def _public_credential(txn: dict, source: str, block_time: int, names: dict):
+    if not isinstance(txn, dict):
+        return None
+    relationship = txn.get("relationship")
+    if not isinstance(relationship, dict):
+        return None
+    cred = relationship.get("credential")
+    if not isinstance(cred, dict):
+        return None
+    subject = (cred.get("subject_username_signature") or "").strip()
+    issuer = (cred.get("issuer_username_signature") or "").strip()
+    claim = (cred.get("claim") or "").strip()
+    if not subject or not claim:
+        return None
+    tid = (txn.get("id") or txn.get("transaction_signature") or "").strip()
+    if not tid:
+        return None
+    try:
+        expires = int(cred.get("expires") or 0)
+    except (TypeError, ValueError):
+        expires = 0
+    vc = cred.get("vc") if isinstance(cred.get("vc"), dict) else {}
+    return {
+        "transaction_id": tid,
+        "claim": claim,
+        "expires": expires,
+        "issuer_username_signature": issuer,
+        "issuer_username": names.get(issuer) or "",
+        "issuer_identity_announcement": (
+            cred.get("issuer_identity_announcement") or ""
+        ).strip(),
+        "subject_username_signature": subject,
+        "subject_username": names.get(subject) or "",
+        "source": source,
+        "time": _credential_time(txn, block_time),
+        "proof_valid": _proof_valid(subject, vc),
+        "vc": vc,
+    }
+
+
+async def received_credentials(config, subject_username_signature: str) -> list:
+    """Credential announcements received by this identity, newest first.
+
+    Confirmed announcements replace a mempool copy of the same transaction.
+    """
+    subject = (subject_username_signature or "").strip()
+    if not subject:
+        return []
+    names = await usernames_by_signature(config)
+    found = {}
+
+    def _absorb(txn, source, block_time):
+        item = _public_credential(txn, source, block_time, names)
+        if not item or item["subject_username_signature"] != subject:
+            return
+        found[item["transaction_id"]] = item
+
+    await _scan_relationship_txns(
+        config,
+        {"transactions.relationship.credential.subject_username_signature": subject},
+        {"relationship.credential.subject_username_signature": subject},
+        _absorb,
+    )
+    rows = list(found.values())
+    rows.sort(
+        key=lambda row: (int(row.get("time") or 0), row.get("transaction_id") or ""),
+        reverse=True,
+    )
+    return rows
+
+
 async def files_for_inception(
     config, inception_public_key_hash: str, limit: int = 200
 ) -> list:

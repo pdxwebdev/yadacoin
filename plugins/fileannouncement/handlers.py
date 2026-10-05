@@ -954,6 +954,19 @@ async def _follower_count(config, identity_txn_id: str) -> int:
     return len(announcers)
 
 
+async def _resolve_public_inception(config, username="", transaction_id="", owner=""):
+    inception = ""
+    if username:
+        inception = await store.inception_for_username(config, username)
+    elif transaction_id:
+        live = await store.get_live_by_transaction_id(config, transaction_id)
+        if live:
+            inception = (live.get("owner") or "").strip()
+    if not inception:
+        inception = (owner or "").strip()
+    return inception
+
+
 async def _profile_payload(config, inception: str, is_me: bool) -> dict:
     ident = await store.identity_for_inception(config, inception)
     username = ident.get("username") or ""
@@ -962,6 +975,8 @@ async def _profile_payload(config, inception: str, is_me: bool) -> dict:
     following = await _following_count(config, inception)
     identity_txn_id = await _identity_announcement_txn_id(config, inception)
     followers = await _follower_count(config, identity_txn_id)
+    signature = await store.username_signature_for_inception(config, inception)
+    badges = await store.received_credentials(config, signature)
     return {
         "inception_public_key_hash": inception,
         "username": username,
@@ -969,6 +984,7 @@ async def _profile_payload(config, inception: str, is_me: bool) -> dict:
         "gifts": gifts,
         "following": following,
         "followers": followers,
+        "badges": len(badges),
         "identity_announcement": identity_txn_id,
         "videos": [_public_file_item(row, username) for row in rows],
     }
@@ -981,15 +997,9 @@ class PublicProfileHandler(BaseHandler):
         transaction_id = (self.get_query_argument("transaction_id", "") or "").strip()
         owner = (self.get_query_argument("owner", "") or "").strip()
         username = (self.get_query_argument("username", "") or "").strip()
-        inception = ""
-        if username:
-            inception = await store.inception_for_username(self.config, username)
-        elif transaction_id:
-            live = await store.get_live_by_transaction_id(self.config, transaction_id)
-            if live:
-                inception = (live.get("owner") or "").strip()
-        if not inception:
-            inception = owner
+        inception = await _resolve_public_inception(
+            self.config, username, transaction_id, owner
+        )
         if not inception:
             self.set_status(404)
             return self.render_as_json(
@@ -1010,6 +1020,41 @@ class PublicProfileHandler(BaseHandler):
             self.config, inception, bool(me and me == inception)
         )
         return self.render_as_json({"status": True, "profile": profile})
+
+
+class PublicBadgesHandler(BaseHandler):
+    """GET /file-announcements/api/v1/public/badges — received credentials."""
+
+    async def get(self):
+        transaction_id = (self.get_query_argument("transaction_id", "") or "").strip()
+        owner = (self.get_query_argument("owner", "") or "").strip()
+        username = (self.get_query_argument("username", "") or "").strip()
+        inception = await _resolve_public_inception(
+            self.config, username, transaction_id, owner
+        )
+        if not inception:
+            self.set_status(404)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "error": (
+                        "file announcement not found"
+                        if transaction_id
+                        else "user not found"
+                    ),
+                }
+            )
+        ident = await store.identity_for_inception(self.config, inception)
+        signature = await store.username_signature_for_inception(self.config, inception)
+        badges = await store.received_credentials(self.config, signature)
+        return self.render_as_json(
+            {
+                "status": True,
+                "username": ident.get("username") or "",
+                "count": len(badges),
+                "badges": badges,
+            }
+        )
 
 
 class PublicMeHandler(BaseHandler):
@@ -1278,6 +1323,7 @@ HANDLERS = [
     (r"/file-announcements/api/v1/takedown-reasons", FileTakedownReasonsHandler),
     (r"/file-announcements/api/v1/public/videos", PublicVideoListHandler),
     (r"/file-announcements/api/v1/public/profile", PublicProfileHandler),
+    (r"/file-announcements/api/v1/public/badges", PublicBadgesHandler),
     (r"/file-announcements/api/v1/public/me", PublicMeHandler),
     (
         r"/file-announcements/api/v1/public/takedown-reasons",

@@ -1,6 +1,7 @@
 (() => {
   const API_VIDEOS = "/file-announcements/api/v1/public/videos";
   const API_PROFILE = "/file-announcements/api/v1/public/profile";
+  const API_BADGES = "/file-announcements/api/v1/public/badges";
   const API_ME = "/file-announcements/api/v1/public/me";
   const API_REASONS = "/file-announcements/api/v1/public/takedown-reasons";
   const API_TAKEDOWN = "/file-announcements/api/v1/public/takedown";
@@ -45,6 +46,14 @@
   const statGifts = document.getElementById("stat-gifts");
   const statFollowing = document.getElementById("stat-following");
   const statFollowers = document.getElementById("stat-followers");
+  const statBadges = document.getElementById("stat-badges");
+  const statBadgesBtn = document.getElementById("stat-badges-btn");
+  const badgesEl = document.getElementById("badges");
+  const badgesBack = document.getElementById("badges-back");
+  const badgesTitle = document.getElementById("badges-title");
+  const badgeList = document.getElementById("badge-list");
+  const badgeEmpty = document.getElementById("badge-empty");
+  const badgeDetail = document.getElementById("badge-detail");
   const editAvatar = document.getElementById("edit-avatar");
   const editUsername = document.getElementById("edit-username");
   const editUpload = document.getElementById("edit-upload");
@@ -98,6 +107,8 @@
   let giftTarget = null;
   /** @type {object | null} */
   let playerItem = null;
+  /** @type {Array<object>} */
+  let badgeItems = [];
 
   const probe = document.createElement("video");
 
@@ -966,6 +977,26 @@
     const transaction_id = params.get("transaction_id") || "";
     const owner = params.get("owner") || "";
     const username = (params.get("username") || "").replace(/^@/, "");
+    const atBadges = path.match(/^\/@([^/]+)\/badges(?:\/([^/]+))?$/);
+    if (atBadges) {
+      return {
+        view: "badges",
+        username: decodeURIComponent(atBadges[1]),
+        owner: "",
+        transaction_id: "",
+        badge_id: atBadges[2] ? decodeURIComponent(atBadges[2]) : "",
+      };
+    }
+    const profileBadges = path.match(/^\/profile\/badges(?:\/([^/]+))?$/);
+    if (profileBadges) {
+      return {
+        view: "badges",
+        username,
+        owner,
+        transaction_id,
+        badge_id: profileBadges[1] ? decodeURIComponent(profileBadges[1]) : "",
+      };
+    }
     if (path === "/me" || path === "me" || path === "/publish" || path === "publish") {
       return { view: "publish", transaction_id: "" };
     }
@@ -987,6 +1018,197 @@
       return { view: "profile", owner, transaction_id, username: "" };
     }
     return { view: "feed", transaction_id: path === "/" || path === "" ? transaction_id : "" };
+  }
+
+  function badgesHash(route, badgeId) {
+    const id = badgeId ? `/${encodeURIComponent(badgeId)}` : "";
+    if (route && route.username) {
+      return `#/@${encodeURIComponent(route.username)}/badges${id}`;
+    }
+    const params = new URLSearchParams();
+    if (route && route.owner) params.set("owner", route.owner);
+    else if (route && route.transaction_id) params.set("transaction_id", route.transaction_id);
+    const query = params.toString();
+    return `#/profile/badges${id}${query ? `?${query}` : ""}`;
+  }
+
+  function claimLabel(claim) {
+    if (claim === "ageOver18") return "18+";
+    return claim || "Credential";
+  }
+
+  function claimMark(claim) {
+    if (claim === "ageOver18") return "18+";
+    return "🏅";
+  }
+
+  function shortId(value) {
+    const text = String(value || "");
+    if (!text) return "—";
+    if (text.length <= 18) return text;
+    return `${text.slice(0, 8)}…${text.slice(-6)}`;
+  }
+
+  function formatWhen(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return "";
+    try {
+      return new Date(n * 1000).toLocaleDateString();
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function formatExpiry(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return "—";
+    try {
+      return new Date(n * 1000).toLocaleString();
+    } catch (_) {
+      return "—";
+    }
+  }
+
+  function isExpired(item) {
+    const n = Number(item && item.expires);
+    return Number.isFinite(n) && n > 0 && n * 1000 < Date.now();
+  }
+
+  function issuerLabel(item) {
+    if (item && item.issuer_username) return `@${item.issuer_username}`;
+    return shortId(item && item.issuer_username_signature);
+  }
+
+  function proofLabel(value) {
+    if (value === true) return "Valid";
+    if (value === false) return "Invalid";
+    return "Not present";
+  }
+
+  function subjectClaims(vc) {
+    const subject = vc && vc.credentialSubject;
+    if (!subject || typeof subject !== "object") return "";
+    return Object.keys(subject)
+      .filter((key) => key !== "id")
+      .map((key) => `${key}: ${subject[key]}`)
+      .join(", ");
+  }
+
+  function credentialBody(item) {
+    const vc = Object.assign({}, (item && item.vc) || {});
+    delete vc.proof;
+    try {
+      return JSON.stringify(vc, null, 2);
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function renderBadgeDetail(item) {
+    badgeList.hidden = true;
+    badgeEmpty.hidden = true;
+    badgeDetail.hidden = false;
+    if (!item) {
+      badgesTitle.textContent = "Badge";
+      badgeDetail.innerHTML = `<p class="badge-status">Credential not found</p>`;
+      return;
+    }
+    const expired = isExpired(item);
+    const vc = item.vc || {};
+    const types = Array.isArray(vc.type) ? vc.type.filter(Boolean).join(", ") : "";
+    const rows = [
+      ["Issuer", issuerLabel(item)],
+      ["Expires", formatExpiry(item.expires)],
+      ["Source", item.source === "mempool" ? "Mempool" : "On chain"],
+      ["Proof", proofLabel(item.proof_valid)],
+      ["Types", types],
+      ["Claims", subjectClaims(vc)],
+      ["Subject", item.subject_username ? `@${item.subject_username}` : shortId(item.subject_username_signature)],
+      ["Transaction", item.transaction_id],
+      ["Issuer announcement", item.issuer_identity_announcement],
+    ].filter((row) => row[1]);
+    badgesTitle.textContent = claimLabel(item.claim);
+    const statusClass = expired ? "bad" : item.proof_valid === false ? "bad" : "ok";
+    const status = expired ? "Expired" : "Received credential";
+    badgeDetail.innerHTML = `
+      <h2>${escapeHtml(claimLabel(item.claim))}</h2>
+      <p class="badge-status ${statusClass}">${escapeHtml(status)}</p>
+      ${rows
+        .map(
+          ([label, value]) =>
+            `<div class="kv"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`
+        )
+        .join("")}
+      <pre class="badge-raw">${escapeHtml(credentialBody(item))}</pre>
+    `;
+  }
+
+  function renderBadgeList(items) {
+    badgeItems = items || [];
+    badgeDetail.hidden = true;
+    badgeDetail.innerHTML = "";
+    badgesTitle.textContent = "Badges";
+    badgeList.innerHTML = "";
+    if (!badgeItems.length) {
+      badgeList.hidden = true;
+      badgeEmpty.hidden = false;
+      badgeEmpty.textContent = "No credential announcements yet";
+      return;
+    }
+    badgeEmpty.hidden = true;
+    badgeList.hidden = false;
+    badgeItems.forEach((item) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = `badge-row${isExpired(item) ? " expired" : ""}`;
+      const when = formatWhen(item.time) || formatWhen(item.expires);
+      row.innerHTML = `
+        <span class="badge-mark">${escapeHtml(claimMark(item.claim))}</span>
+        <span><strong>${escapeHtml(claimLabel(item.claim))}</strong><em>${escapeHtml(issuerLabel(item))}</em></span>
+        <span class="when">${escapeHtml(when)}</span>
+      `;
+      row.addEventListener("click", () => {
+        location.hash = badgesHash(parseRoute(), item.transaction_id);
+      });
+      badgeList.appendChild(row);
+    });
+  }
+
+  async function loadBadges(route) {
+    const requested = (route && route.badge_id) || "";
+    badgeItems = [];
+    badgeList.innerHTML = "";
+    badgeDetail.hidden = true;
+    badgeDetail.innerHTML = "";
+    badgeList.hidden = true;
+    badgeEmpty.hidden = false;
+    badgeEmpty.textContent = "Loading…";
+    badgesTitle.textContent = requested ? "Badge" : "Badges";
+    try {
+      const params = new URLSearchParams();
+      if (route.username) params.set("username", route.username);
+      else if (route.owner) params.set("owner", route.owner);
+      else if (route.transaction_id) params.set("transaction_id", route.transaction_id);
+      const res = await fetch(`${API_BADGES}?${params.toString()}`, { credentials: "same-origin" });
+      const data = await res.json().catch(() => ({}));
+      if (viewName !== "badges") return;
+      if ((parseRoute().badge_id || "") !== requested) return;
+      if (!res.ok || data.status === false) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      const items = data.badges || [];
+      if (requested) {
+        renderBadgeDetail(items.find((item) => item.transaction_id === requested) || null);
+        return;
+      }
+      renderBadgeList(items);
+    } catch (err) {
+      if (viewName !== "badges") return;
+      badgeList.hidden = true;
+      badgeDetail.hidden = true;
+      badgeEmpty.hidden = false;
+      badgeEmpty.textContent = err.message || "Could not load badges";
+    }
   }
 
   function pauseFeed() {
@@ -1066,6 +1288,7 @@
     statGifts.textContent = formatGifts(profile && profile.gifts);
     statFollowing.textContent = formatCount(profile && profile.following);
     statFollowers.textContent = formatCount(profile && profile.followers);
+    statBadges.textContent = formatCount(profile && profile.badges);
     profileGrid.innerHTML = "";
     if (!profileVideos.length) {
       profileEmpty.hidden = false;
@@ -1098,6 +1321,7 @@
     statGifts.textContent = "—";
     statFollowing.textContent = "—";
     statFollowers.textContent = "—";
+    statBadges.textContent = "—";
     profileGrid.innerHTML = "";
     profileEmpty.hidden = true;
   }
@@ -1110,6 +1334,7 @@
     statGifts.textContent = "—";
     statFollowing.textContent = "—";
     statFollowers.textContent = "—";
+    statBadges.textContent = "—";
     try {
       let url = API_ME;
       if (route.view === "profile") {
@@ -1144,6 +1369,7 @@
     const onProfile = viewName === "profile";
     appEl.classList.toggle("view-profile", !onFeed);
     profileEl.hidden = !onProfile;
+    badgesEl.hidden = viewName !== "badges";
     publishEl.hidden = viewName !== "publish";
     navFyp.classList.toggle("active", onFeed);
     navProfile.classList.toggle("active", viewName === "publish");
@@ -1158,12 +1384,14 @@
     }
     pauseFeed();
     if (onProfile) loadProfile(route);
+    if (viewName === "badges") loadBadges(route);
   }
 
   function leaveOverlay() {
     if (
       location.hash.startsWith("#/profile") ||
       location.hash.startsWith("#/@") ||
+      location.hash.startsWith("#/badges") ||
       location.hash.startsWith("#/publish") ||
       location.hash === "#/me"
     ) {
@@ -1174,6 +1402,17 @@
   }
 
   profileBack.addEventListener("click", leaveOverlay);
+  badgesBack.addEventListener("click", () => {
+    const route = parseRoute();
+    if (route.view === "badges" && route.badge_id) {
+      location.hash = badgesHash(route, "");
+      return;
+    }
+    leaveOverlay();
+  });
+  statBadgesBtn.addEventListener("click", () => {
+    location.hash = badgesHash(parseRoute(), "");
+  });
   publishBack.addEventListener("click", leaveOverlay);
   function activeItem() {
     if (!playerEl.hidden && playerItem) return playerItem;

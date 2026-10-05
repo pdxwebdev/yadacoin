@@ -481,9 +481,26 @@ body {
 .stats {
   display: flex;
   justify-content: center;
-  gap: 28px;
+  flex-wrap: wrap;
+  gap: 12px 16px;
   margin-top: 16px;
   width: 100%;
+}
+
+.stats .stat {
+  display: block;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+
+.stats .stat:active {
+  opacity: 0.7;
 }
 
 .stats strong {
@@ -507,8 +524,117 @@ body {
 
 .profile-actions[hidden],
 .profile-empty[hidden],
-.profile-sub[hidden] {
+.profile-sub[hidden],
+.badge-list[hidden],
+.badge-detail[hidden] {
   display: none !important;
+}
+
+.badge-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.badge-row {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  border-bottom: 1px solid #222;
+  background: #000;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.badge-row.expired {
+  opacity: 0.55;
+}
+
+.badge-mark {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: #1f1f1f;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.badge-row strong {
+  display: block;
+  font-size: 15px;
+}
+
+.badge-row em {
+  display: block;
+  margin-top: 2px;
+  font-style: normal;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.badge-row .when {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.badge-detail {
+  padding: 8px 16px 24px;
+}
+
+.badge-detail h2 {
+  margin: 8px 0 4px;
+  font-size: 22px;
+}
+
+.badge-status {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.badge-status.ok {
+  color: #3dd68c;
+}
+
+.badge-status.bad {
+  color: #ff7b72;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 108px 1fr;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid #222;
+  font-size: 13px;
+}
+
+.kv span {
+  color: var(--muted);
+}
+
+.kv strong {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.badge-raw {
+  margin: 16px 0 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #111;
+  color: #d0d0d0;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .pill {
