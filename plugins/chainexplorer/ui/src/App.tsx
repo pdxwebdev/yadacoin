@@ -291,7 +291,7 @@ export function App() {
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="Wallet address, txn id, block height, username, file title…"
+            placeholder="Username, wallet address, txn id, block height, file title…"
             aria-label="Search the chain"
           />
           <button className="btn" type="submit">

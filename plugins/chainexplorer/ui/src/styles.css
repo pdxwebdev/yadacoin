@@ -529,6 +529,35 @@ main {
 .raw-toggle summary:hover { color: var(--link); }
 .pager { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 
+.count-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.card-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 4px 0;
+}
+
+.pill.ghost {
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+.key-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.key-list li { margin: 4px 0; }
+
 @media (max-width: 900px) {
   .stats, .meta { grid-template-columns: repeat(2, 1fr); }
   .lane-body { flex-direction: column; }

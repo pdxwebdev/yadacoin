@@ -101,10 +101,37 @@ export type FeeEstimate = {
   };
 };
 
+export type AnnouncementHit = {
+  kind: string;
+  source?: string;
+  block_index?: number;
+  block_hash?: string;
+  reason?: string;
+  error?: string;
+  txn?: Txn;
+};
+
+export type IdentityProfile = {
+  username?: string;
+  username_signature?: string;
+  identity_type?: string;
+  public_key?: string;
+  public_keys?: string[];
+  addresses?: string[];
+  transaction_id?: string;
+  source?: string;
+  block_index?: number;
+  block_hash?: string;
+};
+
 export type SearchPayload = {
   resultType?: string;
   result?: unknown;
   balance?: string;
+  username?: string;
+  identity?: IdentityProfile;
+  counts?: Record<string, number>;
+  announcements?: AnnouncementHit[];
 };
 
 export type Panel = "chain" | "search" | "mempool";

@@ -15,7 +15,15 @@ import {
   txnMatches,
   txnsOf,
 } from "../format";
-import type { Block, FeeEstimate, MempoolPage, SearchPayload, Txn } from "../types";
+import type {
+  AnnouncementHit,
+  Block,
+  FeeEstimate,
+  IdentityProfile,
+  MempoolPage,
+  SearchPayload,
+  Txn,
+} from "../types";
 
 type Props = {
   mode: "chain" | "search" | "mempool";
@@ -81,6 +89,55 @@ function SafeHref({ href }: { href?: string }) {
     </a>
   );
 }
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function textOf(value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item)).join(", ");
+  }
+  return String(value);
+}
+
+function kindLabel(kind: string, relationship?: Txn["relationship"]): string {
+  if (kind === "branch" && textOf(asRecord(relationship?.branch)?.type) === "livestream") {
+    return "Livestream";
+  }
+  const labels: Record<string, string> = {
+    identity: "Identity",
+    node: "Node",
+    agent: "Agent",
+    file: "File",
+    credential: "Credential",
+    branch: "Branch",
+    rotation: "Rotation",
+    recovery: "Recovery",
+    recovers: "Recovery proof",
+    content_takedown: "Takedown",
+  };
+  return labels[kind] || kind.replaceAll("_", " ");
+}
+
+const KIND_ORDER = [
+  "identity",
+  "node",
+  "agent",
+  "file",
+  "credential",
+  "branch",
+  "rotation",
+  "recovery",
+  "recovers",
+  "content_takedown",
+];
 
 function RawData({ value }: { value: unknown }) {
   return (
@@ -199,6 +256,7 @@ function TxnBody({
           </Field>
         </section>
       ) : null}
+      <RelationshipFacts txn={txn} onSearch={onSearch} />
       <div className="io">
         <section>
           <h3>Inputs</h3>
@@ -237,6 +295,241 @@ function TxnBody({
         </details>
       ) : null}
       <RawData value={txn} />
+    </article>
+  );
+}
+
+function RelationshipFacts({
+  txn,
+  onSearch,
+}: {
+  txn: Txn;
+  onSearch: (term: string) => void;
+}) {
+  const rel = txn.relationship || {};
+  const node = asRecord(rel.node);
+  const agent = asRecord(rel.agent);
+  const credential = asRecord(rel.credential);
+  const branch = asRecord(rel.branch);
+  const rotation = asRecord(rel.rotation);
+  const recovery = rel.recovery;
+  const recovers = asRecord(rel.recovers);
+  const takedown = asRecord(rel.content_takedown);
+  const nodeIdentity = asRecord(node?.identity);
+  const agentIdentity = asRecord(agent?.identity);
+  if (!node && !agent && !credential && !branch && !rotation && recovery == null && !recovers && !takedown) {
+    return null;
+  }
+  return (
+    <>
+      {node ? (
+        <section className="subcard">
+          <h3>Node</h3>
+          <Field label="Host">{textOf(node.host)}</Field>
+          <Field label="Port">{textOf(node.port)}</Field>
+          <Field label="HTTP">{textOf(node.http_host)}</Field>
+          <Field label="HTTP port">{textOf(node.http_port)}</Field>
+          <Field label="Identity announcement">
+            <Term value={textOf(node.identity_announcement)} onSearch={onSearch} />
+          </Field>
+          <Field label="Username">
+            <Term value={textOf(nodeIdentity?.username)} onSearch={onSearch} full />
+          </Field>
+        </section>
+      ) : null}
+      {agent ? (
+        <section className="subcard">
+          <h3>Agent</h3>
+          <Field label="Label">{textOf(agent.label)}</Field>
+          <Field label="Type">{textOf(agent.agent_type)}</Field>
+          <Field label="Description">{textOf(agent.description)}</Field>
+          <Field label="Capabilities">{textOf(agent.capabilities)}</Field>
+          <Field label="Endpoint">
+            <SafeHref href={textOf(agent.endpoint_url)} />
+          </Field>
+          <Field label="Username">
+            <Term value={textOf(agentIdentity?.username)} onSearch={onSearch} full />
+          </Field>
+        </section>
+      ) : null}
+      {credential ? (
+        <section className="subcard">
+          <h3>Credential</h3>
+          <Field label="Claim">{textOf(credential.claim)}</Field>
+          <Field label="Expires">{textOf(credential.expires)}</Field>
+          <Field label="Subject">
+            <Term value={textOf(credential.subject_username_signature)} onSearch={onSearch} />
+          </Field>
+          <Field label="Issuer">
+            <Term value={textOf(credential.issuer_username_signature)} onSearch={onSearch} />
+          </Field>
+        </section>
+      ) : null}
+      {branch ? (
+        <section className="subcard">
+          <h3>{textOf(branch.type) === "livestream" ? "Livestream" : "Branch"}</h3>
+          <Field label="Type">{textOf(branch.type) || "peer"}</Field>
+          <Field label="Identity announcement">
+            <Term value={textOf(branch.identity_announcement)} onSearch={onSearch} />
+          </Field>
+          <Field label="Prerotated key hash">
+            <Term value={textOf(branch.prerotated_key_hash)} onSearch={onSearch} />
+          </Field>
+        </section>
+      ) : null}
+      {rotation ? (
+        <section className="subcard">
+          <h3>Rotation</h3>
+          <Field label="Curve">{textOf(rotation.curve)}</Field>
+          <Field label="Key hash">
+            <Term value={textOf(rotation.key_hash)} onSearch={onSearch} />
+          </Field>
+          <Field label="DTLS">{textOf(rotation.dtls_fingerprint)}</Field>
+        </section>
+      ) : null}
+      {recovery != null ? (
+        <section className="subcard">
+          <h3>Recovery</h3>
+          <Field label="Witness">
+            {typeof recovery === "string" ? (
+              <Term value={recovery} onSearch={onSearch} />
+            ) : (
+              <Term value={textOf(asRecord(recovery)?.witness_hash)} onSearch={onSearch} />
+            )}
+          </Field>
+        </section>
+      ) : null}
+      {recovers ? (
+        <section className="subcard">
+          <h3>Recovery proof</h3>
+          <Field label="Commitment">
+            <Term value={textOf(recovers.commitment)} onSearch={onSearch} />
+          </Field>
+        </section>
+      ) : null}
+      {takedown ? (
+        <section className="subcard">
+          <h3>Takedown</h3>
+          <Field label="Reason">{textOf(takedown.reason_code)}</Field>
+          <Field label="Transaction">
+            <Term value={textOf(takedown.transaction_id)} onSearch={onSearch} />
+          </Field>
+        </section>
+      ) : null}
+    </>
+  );
+}
+
+function UsernameDossier({
+  search,
+  onSearch,
+}: {
+  search: SearchPayload;
+  onSearch: (term: string) => void;
+}) {
+  const identity: IdentityProfile = search.identity || {};
+  const announcements = search.announcements || [];
+  const counts = search.counts || {};
+  const grouped = KIND_ORDER.map((kind) => ({
+    kind,
+    items: announcements.filter((hit) => hit.kind === kind),
+  })).filter((group) => group.items.length > 0);
+  const extra = announcements.filter((hit) => !KIND_ORDER.includes(hit.kind));
+  if (extra.length) {
+    grouped.push({ kind: "other", items: extra });
+  }
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>{identity.username || search.username || "Username"}</h2>
+        <p>
+          {announcements.length.toLocaleString()} announcement
+          {announcements.length === 1 ? "" : "s"}
+          {identity.identity_type ? ` · ${identity.identity_type}` : ""}
+          {identity.source ? ` · ${identity.source}` : ""}
+        </p>
+      </header>
+      {search.balance ? (
+        <div className="balance">
+          Balance <strong>{search.balance}</strong> YDA
+        </div>
+      ) : null}
+      <div className="count-row">
+        {Object.entries(counts).map(([kind, count]) => (
+          <span className="pill" key={kind}>
+            {kindLabel(kind)} {count}
+          </span>
+        ))}
+      </div>
+      <div className="meta">
+        <Field label="Username signature">
+          <Term value={identity.username_signature} onSearch={onSearch} />
+        </Field>
+        <Field label="Public key">
+          <Term value={identity.public_key} onSearch={onSearch} />
+        </Field>
+        <Field label="Address">
+          <Term value={identity.addresses?.[0]} onSearch={onSearch} full />
+        </Field>
+        <Field label="Identity txn">
+          <Term value={identity.transaction_id} onSearch={onSearch} />
+        </Field>
+        <Field label="Block">
+          {identity.block_hash ? (
+            <Term value={identity.block_hash} onSearch={onSearch} />
+          ) : identity.block_index != null ? (
+            String(identity.block_index)
+          ) : (
+            ""
+          )}
+        </Field>
+      </div>
+      {(identity.public_keys || []).length > 1 ? (
+        <Field label="Known keys">
+          <ul className="key-list">
+            {identity.public_keys?.map((key) => (
+              <li key={key}>
+                <Term value={key} onSearch={onSearch} />
+              </li>
+            ))}
+          </ul>
+        </Field>
+      ) : null}
+      {grouped.map((group) => (
+        <section key={group.kind}>
+          <h3 className="list-title">{kindLabel(group.kind, group.items[0]?.txn?.relationship)}</h3>
+          {group.items.map((hit, index) => (
+            <AnnouncementCard key={`${hit.kind}-${hit.txn?.id || hit.txn?.hash || index}`} hit={hit} onSearch={onSearch} />
+          ))}
+        </section>
+      ))}
+    </section>
+  );
+}
+
+function AnnouncementCard({
+  hit,
+  onSearch,
+}: {
+  hit: AnnouncementHit;
+  onSearch: (term: string) => void;
+}) {
+  if (!hit.txn) {
+    return null;
+  }
+  return (
+    <article className="hit-card">
+      <div className="card-kicker">
+        <span className="pill">{kindLabel(hit.kind, hit.txn.relationship)}</span>
+        {hit.source ? <span className="pill ghost">{hit.source}</span> : null}
+        {hit.block_index != null ? <span>#{hit.block_index.toLocaleString()}</span> : null}
+        {hit.block_hash ? <Term value={hit.block_hash} onSearch={onSearch} /> : null}
+      </div>
+      <TxnBody
+        txn={hit.txn}
+        onSearch={onSearch}
+        failed={hit.source === "failed"}
+      />
     </article>
   );
 }
@@ -397,6 +690,10 @@ export function Detail({
         </div>
       </section>
     );
+  }
+
+  if (mode === "search" && search?.resultType === "username_profile" && !searching) {
+    return <UsernameDossier search={search} onSearch={onSearch} />;
   }
 
   if (mode === "search") {

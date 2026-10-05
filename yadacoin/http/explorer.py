@@ -43,6 +43,186 @@ def _file_announcement_query(prefix, term):
     return {"$or": [{f"{prefix}.{field}": regex} for field in _FILE_SEARCH_FIELDS]}
 
 
+_ANNOUNCEMENT_KEYS = (
+    "identity",
+    "node",
+    "agent",
+    "file",
+    "credential",
+    "branch",
+    "rotation",
+    "recovery",
+    "recovers",
+    "content_takedown",
+)
+
+_USERNAME_PATHS = (
+    "relationship.identity.username",
+    "relationship.node.identity.username",
+    "relationship.agent.identity.username",
+)
+
+_SIGNATURE_PATHS = (
+    "relationship.identity.username_signature",
+    "relationship.node.identity.username_signature",
+    "relationship.agent.identity.username_signature",
+    "relationship.credential.subject_username_signature",
+    "relationship.credential.issuer_username_signature",
+)
+
+_IDENTITY_TXN_PATHS = (
+    "relationship.node.identity_announcement",
+    "relationship.branch.identity_announcement",
+    "relationship.credential.issuer_identity_announcement",
+)
+
+_PROFILE_LIMIT = 100
+
+
+def _username_values(username):
+    text = (username or "").strip()
+    if not text:
+        return []
+    values = [text]
+    lowered = text.lower()
+    if lowered not in values:
+        values.append(lowered)
+    return values
+
+
+def _eq(prefix, path, value):
+    if isinstance(value, (list, tuple, set)):
+        values = [item for item in value if item]
+        if not values:
+            return None
+        if len(values) == 1:
+            return {f"{prefix}{path}": values[0]}
+        return {f"{prefix}{path}": {"$in": values}}
+    if not value:
+        return None
+    return {f"{prefix}{path}": value}
+
+
+def _nested(value, *keys):
+    current = value
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _announcement_kind(relationship):
+    if not isinstance(relationship, dict):
+        return None
+    for key in _ANNOUNCEMENT_KEYS:
+        if key in relationship:
+            return key
+    return None
+
+
+def _same_username(left, right):
+    if not isinstance(left, str) or not isinstance(right, str):
+        return False
+    return left.strip().lower() == right.strip().lower()
+
+
+def _signature_values(relationship):
+    values = []
+    for path in (
+        ("identity", "username_signature"),
+        ("node", "identity", "username_signature"),
+        ("agent", "identity", "username_signature"),
+        ("credential", "subject_username_signature"),
+        ("credential", "issuer_username_signature"),
+    ):
+        value = _nested(relationship, *path)
+        if isinstance(value, str) and value:
+            values.append(value)
+    return values
+
+
+def _identity_from_txn(txn):
+    identity = _nested(txn, "relationship", "identity")
+    if not isinstance(identity, dict) or not identity.get("username"):
+        return None
+    return identity
+
+
+def _txn_linked(txn, username, signature, identity_txn_id, public_keys):
+    if not isinstance(txn, dict):
+        return False
+    relationship = txn.get("relationship") or {}
+    if not _announcement_kind(relationship):
+        return False
+    if username:
+        for path in (
+            ("identity", "username"),
+            ("node", "identity", "username"),
+            ("agent", "identity", "username"),
+        ):
+            if _same_username(_nested(relationship, *path), username):
+                return True
+    if signature and signature in _signature_values(relationship):
+        return True
+    if identity_txn_id:
+        if txn.get("id") == identity_txn_id:
+            return True
+        for path in (
+            ("node", "identity_announcement"),
+            ("branch", "identity_announcement"),
+            ("credential", "issuer_identity_announcement"),
+        ):
+            if _nested(relationship, *path) == identity_txn_id:
+                return True
+    if public_keys and txn.get("public_key") in public_keys:
+        return True
+    return False
+
+
+def _profile_queries(prefix, username, signature, identity_txn_id, public_keys):
+    queries = []
+    usernames = _username_values(username)
+    if usernames:
+        for path in _USERNAME_PATHS:
+            queries.append(_eq(prefix, path, usernames))
+    if signature:
+        for path in _SIGNATURE_PATHS:
+            queries.append(_eq(prefix, path, signature))
+    if identity_txn_id:
+        queries.append(_eq(prefix, "id", identity_txn_id))
+        for path in _IDENTITY_TXN_PATHS:
+            queries.append(_eq(prefix, path, identity_txn_id))
+    if public_keys:
+        keys = [key for key in public_keys if key]
+        for key in _ANNOUNCEMENT_KEYS:
+            query = _eq(prefix, "public_key", keys)
+            if not query:
+                continue
+            query[f"{prefix}relationship.{key}"] = {"$exists": True}
+            queries.append(query)
+    return [query for query in queries if query]
+
+
+def _stamp_time(doc, fallback=None):
+    stamped = dict(doc)
+    if stamped.get("time") in (None, ""):
+        stamped["time"] = 0 if fallback is None else fallback
+    try:
+        return changetime(stamped)
+    except Exception:
+        return stamped
+
+
+def _address_for_public_key(public_key):
+    try:
+        from bitcoin.wallet import P2PKHBitcoinAddress
+
+        return str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+    except Exception:
+        return ""
+
+
 class HashrateAPIHandler(BaseHandler):
     async def refresh(self):
         from yadacoin.core.block import Block
@@ -125,6 +305,295 @@ class ExplorerSearchHandler(BaseHandler):
                     ],
                 }
             )
+
+    async def _iter_docs(self, collection, queries):
+        docs = []
+        seen = set()
+        for query in queries:
+            try:
+                cursor = collection.find(query, {"_id": 0}).limit(_PROFILE_LIMIT)
+                async for doc in cursor:
+                    key = doc.get("hash") or doc.get("id") or id(doc)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    docs.append(doc)
+            except Exception:
+                continue
+        return docs
+
+    async def _keys_for_identity(self, public_key):
+        keys = set()
+        if public_key:
+            keys.add(public_key)
+        if not public_key:
+            return keys
+        try:
+            from yadacoin.core.keyeventlog import KeyEventLog
+
+            log = await KeyEventLog.get_log(public_key=public_key, onchain_only=False)
+        except Exception:
+            return keys
+        for entry in log or []:
+            key = getattr(entry, "public_key", None)
+            if not key and isinstance(entry, dict):
+                key = entry.get("public_key")
+            if key:
+                keys.add(key)
+        return keys
+
+    async def _identity_anchor(self, term):
+        username = (term or "").strip()
+        if not username or len(username) > 253:
+            return None
+        db = self.config.mongo.async_db
+        usernames = _username_values(username)
+        if not usernames:
+            return None
+        block = await db.blocks.find_one(
+            _eq("transactions.", "relationship.identity.username", usernames),
+            {"_id": 0},
+        )
+        if isinstance(block, dict):
+            for txn in block.get("transactions") or []:
+                identity = _identity_from_txn(txn)
+                if identity and _same_username(identity.get("username"), username):
+                    return {
+                        "block": block,
+                        "txn": txn,
+                        "identity": identity,
+                        "source": "blockchain",
+                    }
+        mempool = await db.miner_transactions.find_one(
+            _eq("", "relationship.identity.username", usernames),
+            {"_id": 0},
+        )
+        if isinstance(mempool, dict):
+            identity = _identity_from_txn(mempool)
+            if identity and _same_username(identity.get("username"), username):
+                return {
+                    "block": None,
+                    "txn": mempool,
+                    "identity": identity,
+                    "source": "mempool",
+                }
+        signature = username.replace(" ", "+")
+        try:
+            base64.b64decode(signature)
+        except Exception:
+            return None
+        block = await db.blocks.find_one(
+            {"transactions.relationship.identity.username_signature": signature},
+            {"_id": 0},
+        )
+        if isinstance(block, dict):
+            for txn in block.get("transactions") or []:
+                identity = _identity_from_txn(txn)
+                if identity and identity.get("username_signature") == signature:
+                    return {
+                        "block": block,
+                        "txn": txn,
+                        "identity": identity,
+                        "source": "blockchain",
+                    }
+        mempool = await db.miner_transactions.find_one(
+            {"relationship.identity.username_signature": signature},
+            {"_id": 0},
+        )
+        if isinstance(mempool, dict):
+            identity = _identity_from_txn(mempool)
+            if identity and identity.get("username_signature") == signature:
+                return {
+                    "block": None,
+                    "txn": mempool,
+                    "identity": identity,
+                    "source": "mempool",
+                }
+        return None
+
+    def _profile_hit(self, kind, source, txn, block=None, reason="", error=""):
+        raw = dict(txn)
+        if reason and not raw.get("reason"):
+            raw["reason"] = reason
+        if error and not raw.get("error"):
+            raw["error"] = error
+        fallback = block.get("time") if isinstance(block, dict) else None
+        stamped = _stamp_time(raw, fallback)
+        hit = {"kind": kind, "source": source, "txn": stamped}
+        if isinstance(block, dict):
+            if block.get("index") is not None:
+                hit["block_index"] = block.get("index")
+            if block.get("hash"):
+                hit["block_hash"] = block.get("hash")
+        if reason:
+            hit["reason"] = reason
+        if error:
+            hit["error"] = error
+        return hit
+
+    def _remember_hit(self, hits, seen, hit):
+        txn = hit.get("txn") or {}
+        key = (
+            hit.get("source"),
+            hit.get("kind"),
+            txn.get("id") or txn.get("hash") or txn.get("rid"),
+            hit.get("block_index"),
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        hits.append(hit)
+
+    async def username_profile(self, term):
+        anchor = await self._identity_anchor(term)
+        if not anchor:
+            return None
+        identity = anchor["identity"]
+        username = identity.get("username") or (term or "").strip()
+        signature = identity.get("username_signature") or ""
+        anchor_txn = anchor["txn"]
+        identity_txn_id = anchor_txn.get("id") or ""
+        public_key = anchor_txn.get("public_key") or ""
+        public_keys = await self._keys_for_identity(public_key)
+        addresses = []
+        for key in public_keys:
+            address = _address_for_public_key(key)
+            if address and address not in addresses:
+                addresses.append(address)
+
+        hits = []
+        seen = set()
+        self._remember_hit(
+            hits,
+            seen,
+            self._profile_hit(
+                "identity",
+                anchor["source"],
+                anchor_txn,
+                anchor.get("block"),
+            ),
+        )
+        db = self.config.mongo.async_db
+        try:
+            clauses = _profile_queries(
+                "transactions.",
+                username,
+                signature,
+                identity_txn_id,
+                public_keys,
+            )
+            if clauses:
+                for block in await self._iter_docs(db.blocks, clauses):
+                    for inner in block.get("transactions") or []:
+                        if not _txn_linked(
+                            inner, username, signature, identity_txn_id, public_keys
+                        ):
+                            continue
+                        self._remember_hit(
+                            hits,
+                            seen,
+                            self._profile_hit(
+                                _announcement_kind(inner.get("relationship")),
+                                "blockchain",
+                                inner,
+                                block,
+                            ),
+                        )
+        except Exception:
+            pass
+        try:
+            clauses = _profile_queries(
+                "", username, signature, identity_txn_id, public_keys
+            )
+            if clauses:
+                for inner in await self._iter_docs(db.miner_transactions, clauses):
+                    if not _txn_linked(
+                        inner, username, signature, identity_txn_id, public_keys
+                    ):
+                        continue
+                    self._remember_hit(
+                        hits,
+                        seen,
+                        self._profile_hit(
+                            _announcement_kind(inner.get("relationship")),
+                            "mempool",
+                            inner,
+                        ),
+                    )
+        except Exception:
+            pass
+        try:
+            clauses = _profile_queries(
+                "txn.", username, signature, identity_txn_id, public_keys
+            )
+            if clauses:
+                for wrapper in await self._iter_docs(db.failed_transactions, clauses):
+                    inner = wrapper.get("txn") if isinstance(wrapper, dict) else None
+                    if not isinstance(inner, dict):
+                        inner = wrapper if isinstance(wrapper, dict) else None
+                    if not _txn_linked(
+                        inner, username, signature, identity_txn_id, public_keys
+                    ):
+                        continue
+                    self._remember_hit(
+                        hits,
+                        seen,
+                        self._profile_hit(
+                            _announcement_kind(inner.get("relationship")),
+                            "failed",
+                            inner,
+                            reason=wrapper.get("reason")
+                            or wrapper.get("exception")
+                            or "",
+                            error=wrapper.get("error") or "",
+                        ),
+                    )
+        except Exception:
+            pass
+
+        def rank(hit):
+            source_rank = {"blockchain": 0, "mempool": 1, "failed": 2}.get(
+                hit.get("source"), 3
+            )
+            kind_rank = 0 if hit.get("kind") == "identity" else 1
+            return (kind_rank, source_rank, -(hit.get("block_index") or 0))
+
+        hits.sort(key=rank)
+        counts = {}
+        for hit in hits:
+            counts[hit["kind"]] = counts.get(hit["kind"], 0) + 1
+        payload = {
+            "resultType": "username_profile",
+            "username": username,
+            "identity": {
+                "username": username,
+                "username_signature": signature,
+                "identity_type": identity.get("identity_type") or "",
+                "public_key": public_key,
+                "public_keys": sorted(public_keys),
+                "addresses": addresses,
+                "transaction_id": identity_txn_id,
+                "source": anchor["source"],
+            },
+            "counts": counts,
+            "announcements": hits,
+            "result": [hit["txn"] for hit in hits],
+        }
+        block = anchor.get("block")
+        if isinstance(block, dict):
+            if block.get("index") is not None:
+                payload["identity"]["block_index"] = block.get("index")
+            if block.get("hash"):
+                payload["identity"]["block_hash"] = block.get("hash")
+        if addresses:
+            try:
+                amount = await self.config.BU.get_wallet_balance(
+                    addresses[0], wait=False
+                )
+                payload["balance"] = "{0:.8f}".format(float(amount))
+            except Exception:
+                pass
+        return payload
 
     async def get(self):
         term = self.get_argument("term", False)
@@ -338,46 +807,9 @@ class ExplorerSearchHandler(BaseHandler):
             pass
 
         try:
-            res = await self.config.mongo.async_db.blocks.count_documents(
-                {"transactions.relationship.identity.username": term}
-            )
-            if res:
-                return self.render_as_json(
-                    {
-                        "resultType": "txn_identity_username",
-                        "result": [
-                            changetime(x)
-                            async for x in self.config.mongo.async_db.blocks.find(
-                                {"transactions.relationship.identity.username": term},
-                                {"_id": 0},
-                            ).limit(10)
-                        ],
-                    }
-                )
-        except:
-            pass
-
-        try:
-            identity_sig = term.replace(" ", "+")
-            base64.b64decode(identity_sig)
-            res = await self.config.mongo.async_db.blocks.count_documents(
-                {"transactions.relationship.identity.username_signature": identity_sig}
-            )
-            if res:
-                return self.render_as_json(
-                    {
-                        "resultType": "txn_identity_username_signature",
-                        "result": [
-                            changetime(x)
-                            async for x in self.config.mongo.async_db.blocks.find(
-                                {
-                                    "transactions.relationship.identity.username_signature": identity_sig
-                                },
-                                {"_id": 0},
-                            ).limit(10)
-                        ],
-                    }
-                )
+            profile = await self.username_profile(term)
+            if profile:
+                return self.render_as_json(profile)
         except:
             pass
 
@@ -506,49 +938,6 @@ class ExplorerSearchHandler(BaseHandler):
                             changetime(x)
                             async for x in self.config.mongo.async_db.miner_transactions.find(
                                 {"rid": term}, {"_id": 0}
-                            )
-                        ],
-                    }
-                )
-        except:
-            pass
-
-        try:
-            res = await self.config.mongo.async_db.miner_transactions.count_documents(
-                {"relationship.identity.username": term}
-            )
-            if res:
-                return self.render_as_json(
-                    {
-                        "resultType": "mempool_identity_username",
-                        "result": [
-                            changetime(x)
-                            async for x in self.config.mongo.async_db.miner_transactions.find(
-                                {"relationship.identity.username": term}, {"_id": 0}
-                            )
-                        ],
-                    }
-                )
-        except:
-            pass
-
-        try:
-            identity_sig = term.replace(" ", "+")
-            base64.b64decode(identity_sig)
-            res = await self.config.mongo.async_db.miner_transactions.count_documents(
-                {"relationship.identity.username_signature": identity_sig}
-            )
-            if res:
-                return self.render_as_json(
-                    {
-                        "resultType": "mempool_identity_username_signature",
-                        "result": [
-                            changetime(x)
-                            async for x in self.config.mongo.async_db.miner_transactions.find(
-                                {
-                                    "relationship.identity.username_signature": identity_sig
-                                },
-                                {"_id": 0},
                             )
                         ],
                     }

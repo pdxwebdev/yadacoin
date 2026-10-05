@@ -210,6 +210,7 @@ export function resultLabel(resultType: string | undefined): string {
     txn_outputs_to: "Address",
     txn_identity_username: "Identity",
     txn_identity_username_signature: "Identity signature",
+    username_profile: "Username",
     txn_file_announcement: "File announcement",
   };
   if (labels[resultType]) {

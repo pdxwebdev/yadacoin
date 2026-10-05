@@ -194,6 +194,7 @@ class TestExplorerSearchHandler(ExplorerHttpTestCase):
         mock_db.miner_transactions.find = MagicMock(
             return_value=make_async_iter_cursor([])
         )
+        mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
         self.config.mongo.async_db = mock_db
         self.config.BU = MagicMock()
         self.config.BU.get_wallet_balance = AsyncMock(return_value=0.0)
@@ -288,10 +289,12 @@ class TestExplorerSearchHandlerFoundPaths(ExplorerHttpTestCase):
                 [{"index": 1, "hash": "abc", "time": 1000}]
             )
         )
+        self.mock_db.blocks.find_one = AsyncMock(return_value=None)
         self.mock_db.miner_transactions.count_documents = AsyncMock(return_value=0)
         self.mock_db.miner_transactions.find = MagicMock(
             return_value=make_async_iter_cursor([])
         )
+        self.mock_db.miner_transactions.find_one = AsyncMock(return_value=None)
         self.mock_db.failed_transactions.count_documents = AsyncMock(return_value=0)
         self.mock_db.failed_transactions.find = MagicMock(
             return_value=make_async_iter_cursor([])
@@ -558,31 +561,130 @@ class TestExplorerSearchHandlerFoundPaths(ExplorerHttpTestCase):
             return 0
 
         self.mock_db.blocks.count_documents = AsyncMock(side_effect=side_effect)
+        block = {
+            "index": 42,
+            "hash": "a" * 64,
+            "time": 1000,
+            "transactions": [
+                {
+                    "id": "identity-txn",
+                    "time": 1000,
+                    "relationship": {
+                        "identity": {
+                            "username": term,
+                            "username_signature": "sig",
+                            "identity_type": "dns",
+                        }
+                    },
+                }
+            ],
+        }
+        self.mock_db.blocks.find_one = AsyncMock(return_value=block)
+        self.mock_db.blocks.find = MagicMock(
+            return_value=make_async_iter_cursor([block])
+        )
+        response = self.fetch(f"/explorer-search?term={term}")
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertEqual(data["resultType"], "username_profile")
+        self.assertEqual(data["username"], term)
+        self.assertEqual(data["announcements"][0]["kind"], "identity")
+
+    def test_username_profile_includes_related_announcements(self):
+        term = "alice.example.com"
+        pubkey = "ab" * 33
+        identity_txn = {
+            "id": "identity-txn",
+            "public_key": pubkey,
+            "time": 1000,
+            "relationship": {
+                "identity": {
+                    "username": term,
+                    "username_signature": "sig",
+                    "identity_type": "dns",
+                }
+            },
+        }
+        node_txn = {
+            "id": "node-txn",
+            "public_key": pubkey,
+            "time": 1100,
+            "relationship": {
+                "node": {
+                    "host": "node.example.com",
+                    "port": 8000,
+                    "identity": {"username": term, "username_signature": "sig"},
+                }
+            },
+        }
+        file_txn = {
+            "id": "file-txn",
+            "public_key": pubkey,
+            "time": 1200,
+            "relationship": {
+                "file": {
+                    "title": "Passport scan",
+                    "file_id": "sia-1",
+                    "filename": "passport.jpg",
+                }
+            },
+        }
+        credential_txn = {
+            "id": "cred-txn",
+            "public_key": "cc" * 33,
+            "time": 1300,
+            "relationship": {
+                "credential": {
+                    "subject_username_signature": "sig",
+                    "issuer_username_signature": "issuer-sig",
+                    "claim": "ageOver18",
+                }
+            },
+        }
+        identity_block = {
+            "index": 42,
+            "hash": "a" * 64,
+            "time": 1000,
+            "transactions": [identity_txn],
+        }
+        self.mock_db.blocks.find_one = AsyncMock(return_value=identity_block)
         self.mock_db.blocks.find = MagicMock(
             return_value=make_async_iter_cursor(
                 [
                     {
-                        "index": 42,
-                        "time": 1000,
-                        "transactions": [
-                            {
-                                "relationship": {
-                                    "identity": {
-                                        "username": term,
-                                        "username_signature": "sig",
-                                        "identity_type": "dns",
-                                    }
-                                }
-                            }
-                        ],
-                    }
+                        "index": 60,
+                        "hash": "d" * 64,
+                        "time": 1200,
+                        "transactions": [file_txn],
+                    },
+                    {
+                        "index": 55,
+                        "hash": "e" * 64,
+                        "time": 1300,
+                        "transactions": [credential_txn],
+                    },
+                    {
+                        "index": 50,
+                        "hash": "c" * 64,
+                        "time": 1100,
+                        "transactions": [node_txn],
+                    },
+                    identity_block,
                 ]
             )
         )
         response = self.fetch(f"/explorer-search?term={term}")
         self.assertEqual(response.code, 200)
         data = json.loads(response.body)
-        self.assertEqual(data["resultType"], "txn_identity_username")
+        kinds = [hit["kind"] for hit in data["announcements"]]
+        self.assertEqual(data["resultType"], "username_profile")
+        self.assertEqual(kinds[0], "identity")
+        self.assertEqual(set(kinds), {"identity", "node", "file", "credential"})
+        self.assertEqual(data["counts"]["file"], 1)
+        self.assertEqual(
+            data["announcements"][0]["txn"]["relationship"]["identity"]["username"],
+            term,
+        )
 
     def test_found_by_identity_username_signature(self):
         import base64 as b64_mod
@@ -597,30 +699,39 @@ class TestExplorerSearchHandlerFoundPaths(ExplorerHttpTestCase):
             return 0
 
         self.mock_db.blocks.count_documents = AsyncMock(side_effect=side_effect)
+        block = {
+            "index": 43,
+            "hash": "b" * 64,
+            "time": 1000,
+            "transactions": [
+                {
+                    "id": "sig-txn",
+                    "time": 1000,
+                    "relationship": {
+                        "identity": {
+                            "username": "bob",
+                            "username_signature": term,
+                        }
+                    },
+                }
+            ],
+        }
+
+        async def find_one(query, *args, **kwargs):
+            if "username_signature" in str(query):
+                return block
+            return None
+
+        self.mock_db.blocks.find_one = AsyncMock(side_effect=find_one)
         self.mock_db.blocks.find = MagicMock(
-            return_value=make_async_iter_cursor(
-                [
-                    {
-                        "index": 43,
-                        "time": 1000,
-                        "transactions": [
-                            {
-                                "relationship": {
-                                    "identity": {
-                                        "username": "bob",
-                                        "username_signature": term,
-                                    }
-                                }
-                            }
-                        ],
-                    }
-                ]
-            )
+            return_value=make_async_iter_cursor([block])
         )
         response = self.fetch(f"/explorer-search?term={term}")
         self.assertEqual(response.code, 200)
         data = json.loads(response.body)
-        self.assertEqual(data["resultType"], "txn_identity_username_signature")
+        self.assertEqual(data["resultType"], "username_profile")
+        self.assertEqual(data["username"], "bob")
+        self.assertEqual(data["identity"]["username_signature"], term)
 
     def test_found_by_file_announcement(self):
         import re
@@ -688,30 +799,31 @@ class TestExplorerSearchHandlerFoundPaths(ExplorerHttpTestCase):
             return 0
 
         self.mock_db.blocks.count_documents = AsyncMock(return_value=0)
+        txn = {
+            "id": "mempool-identity",
+            "time": 1000,
+            "relationship": {
+                "identity": {
+                    "username": term,
+                    "username_signature": "sig",
+                }
+            },
+            "inputs": [],
+            "outputs": [],
+        }
+        self.mock_db.miner_transactions.find_one = AsyncMock(return_value=txn)
         self.mock_db.miner_transactions.count_documents = AsyncMock(
             side_effect=mempool_side_effect
         )
         self.mock_db.miner_transactions.find = MagicMock(
-            return_value=make_async_iter_cursor(
-                [
-                    {
-                        "time": 1000,
-                        "relationship": {
-                            "identity": {
-                                "username": term,
-                                "username_signature": "sig",
-                            }
-                        },
-                        "inputs": [],
-                        "outputs": [],
-                    }
-                ]
-            )
+            return_value=make_async_iter_cursor([txn])
         )
         response = self.fetch(f"/explorer-search?term={term}")
         self.assertEqual(response.code, 200)
         data = json.loads(response.body)
-        self.assertEqual(data["resultType"], "mempool_identity_username")
+        self.assertEqual(data["resultType"], "username_profile")
+        self.assertEqual(data["identity"]["source"], "mempool")
+        self.assertEqual(data["announcements"][0]["kind"], "identity")
 
     def test_found_in_mempool_by_file_announcement(self):
         term = "demo-video"

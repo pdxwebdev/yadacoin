@@ -304,6 +304,25 @@ class Mongo(object):
             name="__txn_rel_content_takedown_id",
             sparse=True,
         )
+        __txn_profile_fields = [
+            "transactions.relationship.node.identity.username",
+            "transactions.relationship.agent.identity.username",
+            "transactions.relationship.node.identity.username_signature",
+            "transactions.relationship.agent.identity.username_signature",
+            "transactions.relationship.credential.subject_username_signature",
+            "transactions.relationship.credential.issuer_username_signature",
+            "transactions.relationship.node.identity_announcement",
+            "transactions.relationship.branch.identity_announcement",
+            "transactions.relationship.credential.issuer_identity_announcement",
+        ]
+        __txn_profile_indexes = [
+            IndexModel(
+                [(field, ASCENDING)],
+                name="__" + field.replace(".", "_"),
+                sparse=True,
+            )
+            for field in __txn_profile_fields
+        ]
         __public_key_outputs_to = IndexModel(
             [
                 ("public_key", ASCENDING),
@@ -372,6 +391,7 @@ class Mongo(object):
                     __public_key_outputs_to,
                     __txn_public_key_outputs_to,
                 ]
+                + __txn_profile_indexes
             )
         except:
             pass
@@ -548,6 +568,27 @@ class Mongo(object):
             name="__rel_content_takedown_id",
             sparse=True,
         )
+        __mempool_profile_fields = [
+            "relationship.identity.username",
+            "relationship.identity.username_signature",
+            "relationship.node.identity.username",
+            "relationship.agent.identity.username",
+            "relationship.node.identity.username_signature",
+            "relationship.agent.identity.username_signature",
+            "relationship.credential.subject_username_signature",
+            "relationship.credential.issuer_username_signature",
+            "relationship.node.identity_announcement",
+            "relationship.branch.identity_announcement",
+            "relationship.credential.issuer_identity_announcement",
+        ]
+        __mempool_profile_indexes = [
+            IndexModel(
+                [(field, ASCENDING)],
+                name="__" + field.replace(".", "_"),
+                sparse=True,
+            )
+            for field in __mempool_profile_fields
+        ]
         try:
             self.db.miner_transactions.create_indexes(
                 [
@@ -571,6 +612,7 @@ class Mongo(object):
                     __rel_file_thumbnail_id,
                     __rel_content_takedown_id,
                 ]
+                + __mempool_profile_indexes
             )
         except:
             pass
@@ -599,6 +641,15 @@ class Mongo(object):
         __fee_time = IndexModel(
             [("txn.fee", DESCENDING), ("txn.time", ASCENDING)], name="__fee_time"
         )
+        __failed_profile_fields = ["txn." + field for field in __mempool_profile_fields]
+        __failed_profile_indexes = [
+            IndexModel(
+                [(field, ASCENDING)],
+                name="__" + field.replace(".", "_"),
+                sparse=True,
+            )
+            for field in __failed_profile_fields
+        ]
         try:
             self.db.failed_transactions.create_indexes(
                 [
@@ -615,6 +666,7 @@ class Mongo(object):
                     __inputs_id,
                     __fee_time,
                 ]
+                + __failed_profile_indexes
             )
         except:
             pass
