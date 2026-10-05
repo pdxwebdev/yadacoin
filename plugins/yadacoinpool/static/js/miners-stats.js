@@ -81,7 +81,7 @@ function minerStats_updateStatsTable(stats, totalHashrate) {
             <td>${stat.worker_name}</td>
             <td>${formatHashrate(stat.worker_hashrate)}</td>
             <td>${timeAgo} sec ago</td>
-            <td>${stat.status === "Online" ? "✅ Online" : "⚠️ Offline"}</td>
+            <td>${stat.status === "Online" ? "Online" : "Offline"}</td>
         `;
         tableBody.appendChild(row);
     });
@@ -145,8 +145,7 @@ function minerStats_updatePayoutsTable(payouts) {
 
         row.innerHTML = `
             <td>${new Date(payout.time * 1000).toLocaleString()}</td>
-            <td class="text-start"><a href="https://yadacoin.io/explorer?term=${payout.hash}" target="_blank">
-                ${payout.hash.substring(0, 36)}...</a></td>
+            <td class="mono"><a href="/explorer?term=${payout.hash}">${payout.hash.substring(0, 18)}…</a></td>
             <td>${payout.amount.toFixed(6)} YDA</td>
             <td>${forBlockText}</td>
             <td>${blockText}</td>

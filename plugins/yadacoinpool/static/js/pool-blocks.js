@@ -22,7 +22,7 @@ async function loadPoolBlocksData() {
     } catch (error) {
         console.error("❌ Error fetching blocks:", error);
         document.getElementById("blocks-table-body").innerHTML =
-            `<tr><td colspan="5" class="text-center text-danger">Error loading blocks</td></tr>`;
+            `<tr><td colspan="5" class="bad">Error loading blocks</td></tr>`;
     }
 }
 
@@ -45,9 +45,8 @@ function updateBlocksTable() {
             <td>${block.height}</td>
             <td>${new Date(block.time * 1000).toLocaleString()}</td>
             <td>${block.difficulty.toFixed(3)}</td>
-            <td class="text-start hash-cell"><a href="https://yadacoin.io/explorer?term=${block.hash}" target="_blank">${block.hash}</a></td>
-            <td>${block.txn_count}</td>
-            <td>${block.reward.toFixed(4)} YDA</td>
+            <td class="mono hash-cell"><a href="/explorer?term=${block.hash}">${block.hash}</a></td>
+            <td class="right">${Number(block.reward || 0).toFixed(4)} YDA</td>
         `;
         tableBody.appendChild(row);
     });

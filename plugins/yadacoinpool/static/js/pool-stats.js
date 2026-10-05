@@ -1,58 +1,45 @@
 async function loadSection(section) {
     const contentDiv = document.getElementById("content");
+    const nav = document.getElementById("nav");
+    if (nav) nav.classList.remove("open");
+    document.querySelectorAll(".top nav a[data-section]").forEach(link => {
+        link.classList.toggle("active", link.dataset.section === section);
+    });
+    if (window.__poolRefresh) {
+        clearInterval(window.__poolRefresh);
+        window.__poolRefresh = null;
+    }
 
     try {
-        console.log(`📡 Loading section: ${section}`);
         const response = await fetch(`/yadacoinpoolstatic/content/${section}.html`);
         if (!response.ok) throw new Error("Section not found");
-
         contentDiv.innerHTML = await response.text();
-        console.log(`✅ Section ${section} loaded.`);
-
-        await loadScript(`/yadacoinpoolstatic/js/${section}.js`, () => {
-            console.log(`✅ Script for ${section} loaded.`);
-
-            setTimeout(() => {
-                if (section === "dashboard" && typeof loadDashboardData === "function") {
-                    loadDashboardData();
-                } 
-                else if (section === "pool-blocks" && typeof loadPoolBlocksData === "function") {
-                    loadPoolBlocksData();
-                } 
-                else if (section === "pool-payouts" && typeof loadPoolPayoutsData === "function") {
-                    loadPoolPayoutsData();
-                } 
-                else if (section === "miners-stats" && typeof loadMinerStatsData === "function") {
-                    console.log("🟢 Calling loadMinerStatsData()...");
-                    loadMinerStatsData();
-                } 
-                else if (section === "get-start" && typeof loadGetStartData === "function") { 
-                    console.log("🟢 Calling loadGetStartData()...");
-                    loadGetStartData();
-                }
-                else {
-                    console.warn(`⚠ No load function defined for ${section}`);
-                }
-            }, 100);
-
-        });
-
+        await loadScript(`/yadacoinpoolstatic/js/${section}.js?t=${Date.now()}`);
+        const starters = {
+            dashboard: "loadDashboardData",
+            "pool-blocks": "loadPoolBlocksData",
+            "pool-payouts": "loadPoolPayoutsData",
+            "miners-stats": "loadMinerStatsData",
+            "get-start": "loadGetStartData",
+        };
+        const starter = window[starters[section]];
+        if (typeof starter === "function") starter();
+        if (section === "dashboard") {
+            window.__poolRefresh = setInterval(() => {
+                if (typeof loadDashboardData === "function") loadDashboardData();
+            }, 20000);
+        }
     } catch (error) {
-        contentDiv.innerHTML = "<h2>Error loading section.</h2>";
-        console.error(`❌ Error loading section ${section}:`, error);
+        contentDiv.innerHTML = "<section class='panel'><h2>Error loading section.</h2></section>";
     }
 }
 
-async function loadScript(scriptPath, callback) {
+function loadScript(scriptPath) {
     return new Promise((resolve, reject) => {
-        let script = document.createElement("script");
+        const script = document.createElement("script");
         script.src = scriptPath;
-        script.onload = () => {
-            console.log(`✅ Loaded script: ${scriptPath}`);
-            if (callback) callback();
-            resolve();
-        };
-        script.onerror = () => reject(new Error(`❌ Error loading script: ${scriptPath}`));
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error(scriptPath));
         document.body.appendChild(script);
     });
 }

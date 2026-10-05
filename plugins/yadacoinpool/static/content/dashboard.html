@@ -1,87 +1,121 @@
-<div class="container mt-4">
-    <div class="row">
-        <div class="col-md-3 mb-3">
-            <div class="box shadow-sm p-3">
-                <h5><b><i class="fas fa-tachometer-alt"></i> POOL HASH RATE</b></h5>
-                <div id="pool-hash-rate">Loading...</div>
-                <small class="text-muted">(<span id="pool-percentage">Loading...</span>)</small>
-            </div>
-        </div>
-        <div class="col-md-3 mb-3">
-            <div class="box shadow-sm p-3">
-                <h5><b><i class="fas fa-cube"></i> BLOCKS FOUND</b></h5>
-                <div id="pool-blocks-found">Loading...</div>
-            </div>
-        </div>
-        <div class="col-md-3 mb-3">
-            <div class="box shadow-sm p-3">
-                <h5><b><i class="fas fa-clock"></i> BLOCK FOUND EVERY</b></h5>
-                <div id="pool-avg-block-time">Loading...</div>
-            </div>
-        </div>
-        <div class="col-md-3 mb-3">
-            <div class="box shadow-sm p-3">
-                <h5><b><i class="fas fa-calendar-alt"></i> LAST BLOCK FOUND</b></h5>
-                <div id="pool-last-block">Loading...</div>
-                <small class="text-muted" id="pool-last-block-time">Loading...</small>
-            </div>
-        </div>
+<section class="stats" id="pool-stats">
+    <div>
+        <span>Pool hash rate</span>
+        <strong id="pool-hash-rate">Loading...</strong>
+        <em id="pool-percentage"></em>
     </div>
+    <div>
+        <span>Blocks found</span>
+        <strong id="pool-blocks-found">Loading...</strong>
+    </div>
+    <div>
+        <span>Block found every</span>
+        <strong id="pool-avg-block-time">Loading...</strong>
+    </div>
+    <div>
+        <span>Last block found</span>
+        <strong id="pool-last-block">Loading...</strong>
+        <em id="pool-last-block-time"></em>
+    </div>
+    <div>
+        <span>Network hash rate</span>
+        <strong id="network-hash-rate">Loading...</strong>
+    </div>
+    <div>
+        <span>Difficulty</span>
+        <strong id="network-difficulty">Loading...</strong>
+    </div>
+    <div>
+        <span>Height</span>
+        <strong id="network-height">Loading...</strong>
+        <em id="network-last-block"></em>
+    </div>
+    <div>
+        <span>Block reward</span>
+        <strong id="miners-reward">Loading...</strong>
+        <em id="master-nodes-reward"></em>
+    </div>
+    <div>
+        <span>Miners / workers</span>
+        <strong id="pool-counts">—</strong>
+    </div>
+    <div>
+        <span>Pool fee</span>
+        <strong id="pool-fee">Loading...</strong>
+    </div>
+    <div>
+        <span>Minimum payout</span>
+        <strong id="pool-min-payout">Loading...</strong>
+        <em id="pool-payout-frequency"></em>
+    </div>
+    <div>
+        <span>Payout scheme</span>
+        <strong id="pool-payout-scheme">Loading...</strong>
+    </div>
+</section>
 
-    <div class="row">
-        <div class="col-md-3 mb-3">
-            <div class="box shadow-sm p-3">
-                <h5><b><i class="fas fa-network-wired"></i> NETWORK HASH RATE</b></h5>
-                <div id="network-hash-rate">Loading...</div>
-            </div>
-        </div>
-        <div class="col-md-3 mb-3">
-            <div class="box shadow-sm p-3">
-                <h5><b><i class="fas fa-chart-line"></i> DIFFICULTY</b></h5>
-                <div id="network-difficulty">Loading...</div>
-            </div>
-        </div>
-        <div class="col-md-3 mb-3">
-            <div class="box shadow-sm p-3">
-                <h5><b><i class="fas fa-layer-group"></i> BLOCKCHAIN HEIGHT</b></h5>
-                <div id="network-height">Loading...</div>
-                <small class="text-muted" id="network-last-block">Loading...</small>
-            </div>
-        </div>
-        <div class="col-md-3 mb-3">
-            <div class="box shadow-sm p-3">
-                <h5><b><i class="fas fa-coins"></i> BLOCK REWARD</b></h5>
-                <div>Miners: <b><span id="miners-reward">Loading...</span> YDA</b></div>
-                <div>Master Nodes: <b><span id="master-nodes-reward">Loading...</span> YDA</b></div>
-            </div>
+<section class="lane" id="mining-block">
+    <div class="lane-head">
+        <div>
+            <div class="dock-kicker">Currently mining</div>
+            <h2 id="mining-height">—</h2>
+            <p id="mining-status">Waiting for template</p>
         </div>
     </div>
+    <div class="mining-grid">
+        <div>
+            <span class="kicker">Version</span>
+            <strong id="mining-version">—</strong>
+        </div>
+        <div>
+            <span class="kicker">Transactions</span>
+            <strong id="mining-txns">—</strong>
+        </div>
+        <div>
+            <span class="kicker">Previous time</span>
+            <strong id="mining-prev">—</strong>
+        </div>
+        <div>
+            <span class="kicker">Special min</span>
+            <strong id="mining-special">—</strong>
+        </div>
+        <div class="wide">
+            <span class="kicker">Target</span>
+            <div class="mono" id="mining-target">—</div>
+        </div>
+        <div class="wide">
+            <span class="kicker">Header</span>
+            <div class="mono" id="mining-header">—</div>
+        </div>
+    </div>
+    <details class="txn-section" id="mining-txns">
+        <summary>Transactions <em id="mining-txn-count"></em></summary>
+        <div id="mining-txns-list" class="txn-list"></div>
+    </details>
+</section>
 
-    <div class="row">
-        <div class="col-md-3 mb-3">
-            <div class="box shadow-sm p-3">
-                <h5><b><i class="fas fa-users"></i> CONNECTED MINERS</b></h5>
-                <div><span id="pool-worker-count">Loading...</span> / <span id="pool-miner-count">Loading...</span></div>
-            </div>
-        </div>
-        <div class="col-md-3 mb-3">
-            <div class="box shadow-sm p-3">
-                <h5><b><i class="fas fa-percent"></i> POOL FEE</b></h5>
-                <div id="pool-fee">Loading...</div>
-            </div>
-        </div>
-        <div class="col-md-3 mb-3">
-            <div class="box shadow-sm p-3">
-                <h5><b><i class="fas fa-wallet"></i> MINIMUM PAYOUT</b></h5>
-                <div id="pool-min-payout">Loading...</div>
-                <small class="text-muted" id="pool-payout-frequency">Loading...</small>
-            </div>
-        </div>
-        <div class="col-md-3 mb-3">
-            <div class="box shadow-sm p-3">
-                <h5><b><i class="fas fa-exchange-alt"></i> PAYOUT SCHEME</b></h5>
-                <div id="pool-payout-scheme">Loading...</div>
-            </div>
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h2>Leaderboard</h2>
+            <p>Miners ranked by hashrate over the last 20 minutes</p>
         </div>
     </div>
-</div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Miner</th>
+                    <th class="right">Hashrate</th>
+                    <th class="right">Shares</th>
+                    <th class="right">Workers</th>
+                    <th>Last share</th>
+                </tr>
+            </thead>
+            <tbody id="leaderboard-body">
+                <tr><td colspan="6" class="muted">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>

@@ -1,98 +1,59 @@
 function loadGetStartData() {
-    console.log("🔄 Fetching pool connection details...");
-
-    fetch('/get-start')
+    fetch("/get-start")
         .then(response => response.json())
         .then(data => {
-            document.getElementById("pool-url").textContent = `${data.pool.pool_url}:${data.pool.pool_port}`;
-            document.getElementById("pool-port").textContent = data.pool.pool_port;
-            document.getElementById("pool-diff").textContent = data.pool.pool_diff;
-            document.getElementById("pool-algorithm").textContent = data.pool.algorithm;
+            const pool = data.pool || {};
+            const url = document.getElementById("pool-url");
+            if (url) url.textContent = `${pool.pool_url}:${pool.pool_port}`;
+            const port = document.getElementById("pool-port");
+            if (port) port.textContent = pool.pool_port ?? "—";
+            const diff = document.getElementById("pool-diff");
+            if (diff) diff.textContent = pool.pool_diff ?? "—";
+            const algo = document.getElementById("pool-algorithm");
+            if (algo) algo.textContent = pool.algorithm ?? "—";
         })
-        .catch(error => {
-            console.error("❌ Error fetching pool details:", error);
-        });
+        .catch(() => {});
 
-    setupMinerSoftwareDropdown()
-}
-
-function setupMinerSoftwareDropdown() {
-    console.log("🔧 Setting up miner software dropdown...");
-
-    const miners = ["XMRig", "XMRigCC", "SRB Miner"];
-    const minerMenu = document.getElementById("minerSoftwareMenu");
-    const minerDropdownButton = document.getElementById("minerSoftwareDropdown");
-
-    minerMenu.innerHTML = ""
-
-    miners.forEach(miner => {
-        let listItem = document.createElement("li");
-        let link = document.createElement("a");
-        link.classList.add("dropdown-item");
-        link.href = "#";
-        link.setAttribute("data-software", miner);
-        link.textContent = miner;
-
-        link.addEventListener("click", function (event) {
-            event.preventDefault();
-            console.log(`🟢 Selected miner software: ${miner}`);
-            selectedSoftware = miner;
-            minerDropdownButton.textContent = miner;
-        });
-
-        listItem.appendChild(link);
-        minerMenu.appendChild(listItem);
+    const select = document.getElementById("miner-software");
+    if (!select || select.dataset.ready) return;
+    ["XMRig", "XMRigCC", "SRB Miner"].forEach(miner => {
+        const option = document.createElement("option");
+        option.value = miner;
+        option.textContent = miner;
+        select.appendChild(option);
     });
-
-    console.log("✅ Miner software dropdown is ready.");
+    select.dataset.ready = "1";
+    document.getElementById("generate-config").addEventListener("click", generateConfig);
 }
 
-if (typeof selectedSoftware === "undefined") {
-    var selectedSoftware = "";
-}
-
-document.getElementById("generate-config").addEventListener("click", function () {
+function generateConfig() {
     const wallet = document.getElementById("wallet-address").value.trim();
     const workerId = document.getElementById("worker-id").value.trim();
-    const poolUrl = document.getElementById("pool-url").textContent
-
-    if (!wallet) {
-        alert("❌ Please enter your wallet address.");
+    const software = document.getElementById("miner-software").value;
+    const poolUrl = document.getElementById("pool-url").textContent;
+    const result = document.getElementById("config-result");
+    if (!wallet || !software) {
+        result.hidden = false;
+        result.textContent = "Enter a wallet address and choose miner software.";
         return;
     }
-    if (!selectedSoftware) {
-        alert("❌ Please select miner software.");
-        return;
+    const user = workerId ? `${wallet}.${workerId}` : wallet;
+    let text = "";
+    if (software === "SRB Miner") {
+        text = `./SRBMiner-MULTI --algorithm randomyada --pool ${poolUrl} --wallet ${user} --password x --cpu-threads 0 --disable-gpu --keepalive true`;
+    } else {
+        text = JSON.stringify({
+            algo: "rx/yada",
+            coin: null,
+            url: poolUrl,
+            user,
+            pass: "x",
+            "rig-id": null,
+            nicehash: false,
+            keepalive: true,
+            enabled: true,
+        }, null, 2);
     }
-
-    let userConfig = wallet;
-    if (workerId) userConfig += `.${workerId}`;
-
-    let configResult = "";
-
-    if (selectedSoftware === "SRB Miner") {
-        configResult = `
-<pre>
-./SRBMiner-MULTI --algorithm randomyada --pool ${poolUrl} --wallet ${userConfig} --password x --cpu-threads 0 --disable-gpu --keepalive true
-</pre>`;
-    } else if (selectedSoftware === "XMRig" || selectedSoftware === "XMRigCC") {
-        configResult = `
-<pre>
-{
-"algo": "rx/yada",
-"coin": null,
-"url": "${poolUrl}",
-"user": "${userConfig}",
-"pass": "x",
-"rig-id": null,
-"nicehash": false,
-"keepalive": true,
-"enabled": true
+    result.hidden = false;
+    result.textContent = text;
 }
-</pre>`;
-    }
-
-    console.log(`✅ Generated config for ${selectedSoftware}:`, configResult);
-    document.getElementById("config-result").innerHTML = configResult;
-    document.getElementById("config-result").classList.remove("d-none");
-});

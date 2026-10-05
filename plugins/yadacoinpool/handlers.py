@@ -453,6 +453,53 @@ class PoolInfoHandler(BaseWebHandler):
         )
 
 
+class PoolLeaderboardHandler(BaseWebHandler):
+    async def get(self):
+        window = 1200
+        now = time.time()
+        rows = await self.config.mongo.async_db.shares.aggregate(
+            [
+                {"$match": {"time": {"$gt": now - window}}},
+                {
+                    "$group": {
+                        "_id": {
+                            "$ifNull": [
+                                "$address_only",
+                                {
+                                    "$arrayElemAt": [
+                                        {"$split": ["$address", "."]},
+                                        0,
+                                    ]
+                                },
+                            ]
+                        },
+                        "shares": {"$sum": 1},
+                        "last_share": {"$max": "$time"},
+                        "workers": {"$addToSet": "$address"},
+                    }
+                },
+                {"$sort": {"shares": -1, "last_share": -1}},
+                {"$limit": 100},
+            ]
+        ).to_list(100)
+        miners = []
+        for row in rows:
+            address = row.get("_id") or ""
+            if not address:
+                continue
+            shares = int(row.get("shares") or 0)
+            miners.append(
+                {
+                    "address": address,
+                    "hashrate": int((shares * self.config.pool_diff) / window),
+                    "shares": shares,
+                    "workers": len([w for w in (row.get("workers") or []) if w]),
+                    "last_share": row.get("last_share") or 0,
+                }
+            )
+        self.render_as_json({"miners": miners, "window": window})
+
+
 class PoolBlocksHandler(BaseWebHandler):
     async def get(self):
         # Full won-block listing via inception-tagged coinbases (same cache as
@@ -660,6 +707,7 @@ class GetStartHandler(BaseHandler):
 HANDLERS = [
     (r"/market-info", MarketInfoHandler),
     (r"/pool-info", PoolInfoHandler),
+    (r"/pool-leaderboard", PoolLeaderboardHandler),
     (r"/pool-blocks", PoolBlocksHandler),
     (r"/pool-payouts", PoolPayoutsHandler),
     (r"/get-start", GetStartHandler),

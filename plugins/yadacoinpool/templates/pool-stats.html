@@ -4,51 +4,32 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YadaCoin Pool</title>
-    <link rel="icon" type="image/png" href="/yadacoinpoolstatic/img/logo.ico">
-    <script src="/yadacoinpoolstatic/js/pool-stats.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="icon" type="image/png" href="/yadacoinstatic/yadalogo192.png">
     <link rel="stylesheet" href="/yadacoinpoolstatic/style.css">
 </head>
 <body>
-
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="#">⛏ YadaCoin Pool</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="#" onclick="loadSection('dashboard')">Dashboard</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#" onclick="loadSection('pool-blocks')">Pool Blocks</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#" onclick="loadSection('pool-payouts')">Pool Payouts</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#" onclick="loadSection('miners-stats')">Miner Statistics</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#" onclick="loadSection('get-start')">Getting Started</a>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </nav>
-
-    <div class="container mt-4">
+    <header class="top">
+        <a class="brand" href="/pool">
+            <img src="/yadacoinstatic/yadalogo192.png" alt="">
+            <span>
+                <strong>YadaCoin</strong>
+                <em>Pool</em>
+            </span>
+        </a>
+        <button class="menu-btn" type="button" onclick="document.getElementById('nav').classList.toggle('open')">Menu</button>
+        <nav id="nav">
+            <a href="#" data-section="dashboard" onclick="loadSection('dashboard'); return false;">Dashboard</a>
+            <a href="#" data-section="pool-blocks" onclick="loadSection('pool-blocks'); return false;">Blocks</a>
+            <a href="#" data-section="pool-payouts" onclick="loadSection('pool-payouts'); return false;">Payouts</a>
+            <a href="#" data-section="miners-stats" onclick="loadSection('miners-stats'); return false;">Miner</a>
+            <a href="#" data-section="get-start" onclick="loadSection('get-start'); return false;">Start</a>
+            <a href="/explorer">Explorer</a>
+            <span class="live" id="live">offline</span>
+        </nav>
+    </header>
+    <main>
         <div id="content">Loading...</div>
-    </div>
-
-    <footer class="bg-dark text-white text-center py-3 fixed-bottom">
-        <div class="container">
-            by @Rakni for YadaCoin 2025
-        </div>
-    </footer>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    </main>
+    <script src="/yadacoinpoolstatic/js/pool-stats.js"></script>
 </body>
 </html>
