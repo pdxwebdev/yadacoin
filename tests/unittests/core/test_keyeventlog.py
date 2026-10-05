@@ -8133,3 +8133,44 @@ class TestInceptionTagAndSpendConflictGaps(AsyncTestCase):
                         inception_b="only_b",
                     )
                 )
+
+
+class TestClearOutputTagsForReorg(AsyncTestCase):
+    async def test_collects_key_hashes_from_reorg_blocks(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        class _Cursor:
+            def __init__(self, docs):
+                self._docs = list(docs)
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if not self._docs:
+                    raise StopAsyncIteration
+                return self._docs.pop(0)
+
+        blocks = MagicMock()
+        blocks.find = MagicMock(
+            return_value=_Cursor(
+                [
+                    {
+                        "transactions": [
+                            {
+                                "public_key_hash": "1Addr",
+                                "prerotated_key_hash": "",
+                                "twice_prerotated_key_hash": None,
+                            },
+                            {"prerotated_key_hash": "1Pre"},
+                        ]
+                    },
+                    {"transactions": None},
+                ]
+            )
+        )
+        cfg = MagicMock()
+        cfg.mongo.async_db.blocks = blocks
+        with patch("yadacoin.core.keyeventlog.Config", return_value=cfg):
+            addresses = await KeyEventLog.clear_output_tags_for_reorg(10)
+        self.assertEqual(addresses, {"1Addr", "1Pre"})

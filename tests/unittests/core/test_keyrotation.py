@@ -4253,6 +4253,56 @@ class TestPeerBranchAuthRatchet(AsyncTestCase):
         self.assertEqual(cold["oversize_peers"], snap["oversize_peers"])
         self.assertEqual(cold["max_docs_peer"], 15)
 
+    async def test_branch_identity_cleared_before_fork(self):
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.transaction import Transaction
+
+        cfg = _make_branch_config(self.PRIV_HEX, self.PUB_HEX, self._cc_hex())
+        latest = MagicMock()
+        latest.block.index = CHAIN.KEL_BRANCH_IDENTITY_FORK - 1
+        cfg.LatestBlock = latest
+        mgr = self._make_mgr(cfg)
+        with self._patch_kel_depth(mgr), patch(
+            "yadacoin.core.transaction.Config", return_value=cfg
+        ), patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username_signature",
+            new=AsyncMock(return_value={"txn": {"id": "identity-txn"}}),
+        ):
+            await mgr.advance_peer_auth_ratchet("peerA_username_signature")
+        announce = next(
+            t
+            for t in cfg.mongo.async_db.miner_transactions.docs
+            if isinstance(t.get("relationship"), dict)
+            and "branch" in t.get("relationship", {})
+        )
+        announce_txn = Transaction.from_dict(announce)
+        self.assertEqual(announce_txn.relationship.identity_announcement, "")
+
+
+class TestBranchIdentityHelpers(AsyncTestCase):
+    async def test_fork_active_and_lookup_edges(self):
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.keyrotation import (
+            _branch_identity_fork_active,
+            _peer_identity_announcement_txn_id,
+        )
+
+        self.assertFalse(_branch_identity_fork_active(object()))
+        latest = MagicMock()
+        latest.block.index = CHAIN.KEL_BRANCH_IDENTITY_FORK
+        cfg = MagicMock()
+        cfg.LatestBlock = latest
+        self.assertTrue(_branch_identity_fork_active(cfg))
+        self.assertEqual(await _peer_identity_announcement_txn_id(cfg, ""), "")
+        self.assertEqual(
+            await _peer_identity_announcement_txn_id(cfg, "livestream:chan"), ""
+        )
+        with patch(
+            "yadacoin.core.identityannouncement.IdentityAnnouncement.get_by_username_signature",
+            new=AsyncMock(side_effect=RuntimeError("lookup failed")),
+        ):
+            self.assertEqual(await _peer_identity_announcement_txn_id(cfg, "sig"), "")
+
 
 # ---------------------------------------------------------------------------
 # _walk_forward

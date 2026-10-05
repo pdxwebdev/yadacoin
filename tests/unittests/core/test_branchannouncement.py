@@ -224,6 +224,23 @@ class TestBranchAnnouncementType(unittest.TestCase):
         again = BranchAnnouncement.from_dict(bare.to_dict())
         self.assertEqual(again.to_string(), bare.to_string())
 
+    def test_none_identity_announcement_is_omitted(self):
+        ba = BranchAnnouncement(
+            prerotated_key_hash=_PRE,
+            twice_prerotated_key_hash=_TWICE,
+            identity_announcement=None,
+        )
+        self.assertEqual(ba.identity_announcement, "")
+        self.assertNotIn("identity_announcement", ba.to_dict())
+
+    def test_repr_includes_identity_announcement(self):
+        ba = BranchAnnouncement(
+            prerotated_key_hash=_PRE,
+            twice_prerotated_key_hash=_TWICE,
+            identity_announcement="identitytxn",
+        )
+        self.assertIn("identity_announcement='identitytxn'", repr(ba))
+
     def test_identity_announcement_non_string_raises(self):
         with self.assertRaises(ValueError):
             BranchAnnouncement(
