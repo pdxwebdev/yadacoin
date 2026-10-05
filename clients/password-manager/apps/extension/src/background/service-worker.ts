@@ -137,6 +137,22 @@ async function refreshInception(
 
 const EXT_VERSION = "0.1.7";
 
+function reportProgress(
+  sender: chrome.runtime.MessageSender,
+  requestId: unknown,
+  message: string
+): void {
+  const tabId = sender.tab && sender.tab.id;
+  if (tabId == null || requestId == null || requestId === "") return;
+  chrome.tabs.sendMessage(
+    tabId,
+    { type: "YADA_PASSWORD_PROGRESS", requestId, message },
+    () => {
+      void chrome.runtime.lastError;
+    }
+  );
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   console.info("Yada Password extension installed", EXT_VERSION);
   void ensureMigrated();
@@ -144,12 +160,14 @@ chrome.runtime.onInstalled.addListener(() => {
   void import("../shared/home.js").then((m) => m.refreshTopologyCache()).catch(() => {});
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== "object") return false;
 
   if (message.type === "YADA_REGISTER_SITE") {
     void (async () => {
+      const say = (text: string) => reportProgress(sender, message.requestId, text);
       try {
+        say("Resolving password home…");
         const origin = String(message.origin || "").toLowerCase();
         if (!origin.startsWith("http")) {
           sendResponse({ ok: false, message: "invalid origin" });
@@ -169,7 +187,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, message: "no vault" });
           return;
         }
+        say("Syncing the key event log…");
         v = await refreshInception(v, baseUrl);
+        say("Registering this origin on the node…");
         const identity: VaultIdentity = unlockIdentity(
           v.mnemonic,
           v.secondFactor,
@@ -185,6 +205,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         v.tipPrevPkh = result.identity.tipPrevPkh;
         v.nodeUrl = baseUrl;
         v.sites[result.site.branchPeer] = storeSite(result.site);
+        say("Saving vault…");
         await saveVault(v);
         sendResponse({
           ok: true,
@@ -210,7 +231,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === "YADA_SIGNIN_ROTATE") {
     void (async () => {
+      const say = (text: string) => reportProgress(sender, message.requestId, text);
       try {
+        say("Resolving password home…");
         const origin = String(message.origin || "").toLowerCase();
         if (!origin.startsWith("http")) {
           sendResponse({ ok: false, message: "invalid origin" });
@@ -225,11 +248,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           });
           return;
         }
+        say("Unlocking vault…");
         let v = await loadVault();
         if (!v) {
           sendResponse({ ok: false, message: "no vault" });
           return;
         }
+        say("Syncing the key event log…");
         v = await refreshInception(v, baseUrl);
         const identity: VaultIdentity = unlockIdentity(
           v.mnemonic,
@@ -244,13 +269,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         let stored = v.sites[origin];
         let site: SiteRegistration;
         if (!stored) {
+          say("Resyncing this origin from the node…");
           site = await resyncSiteFromNode({ baseUrl }, identity, origin);
         } else {
+          say("Loading this origin…");
           site = siteFromStored(stored);
         }
+        say("Rotating the password on the node…");
         const result = await rotateSitePassword({ baseUrl }, identity, site);
         v.sites[origin] = storeSite(result.site);
         v.nodeUrl = baseUrl;
+        say("Saving vault…");
         await saveVault(v);
         sendResponse({
           ok: true,
@@ -277,7 +306,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === "YADA_RESYNC_SITE") {
     void (async () => {
+      const say = (text: string) => reportProgress(sender, message.requestId, text);
       try {
+        say("Resolving password home…");
         const origin = String(message.origin || "").toLowerCase();
         if (!origin.startsWith("http")) {
           sendResponse({ ok: false, message: "invalid origin" });
@@ -292,11 +323,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           });
           return;
         }
+        say("Unlocking vault…");
         let v = await loadVault();
         if (!v) {
           sendResponse({ ok: false, message: "no vault" });
           return;
         }
+        say("Syncing the key event log…");
         v = await refreshInception(v, baseUrl);
         const identity: VaultIdentity = unlockIdentity(
           v.mnemonic,
@@ -312,6 +345,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         for (const [k, s] of Object.entries(v.sites || {})) {
           sites[k] = siteFromStored(s);
         }
+        say("Resyncing vault from the node…");
         const full = await resyncVaultFromNode({ baseUrl }, identity, sites);
         let site = full.sites[origin];
         if (!site) {
@@ -330,6 +364,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           inceptionDone: full.kelDepth > 0,
           sites: nextSites,
         };
+        say("Saving vault…");
         await saveVault(nextVault);
         sendResponse({
           ok: true,

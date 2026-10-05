@@ -13,6 +13,34 @@
     p { color: #8b949e; line-height: 1.5; }
     .err { color: #f85149; margin-top: 8px; }
     .ok { color: #3fb950; margin-top: 8px; }
+    .busy { color: #d29922; margin-top: 8px; }
+    .busy::before {
+      content: "";
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-right: 8px;
+      border: 2px solid #30363d;
+      border-top-color: #d29922;
+      border-radius: 50%;
+      vertical-align: -2px;
+      animation: yada-spin 0.8s linear infinite;
+    }
+    .track { display: none; height: 3px; margin-top: 16px; background: #21262d; border-radius: 99px; overflow: hidden; }
+    .track.on { display: block; }
+    .track > span {
+      display: block;
+      height: 100%;
+      width: 35%;
+      background: #d29922;
+      animation: yada-slide 1.1s ease-in-out infinite;
+    }
+    button:disabled { opacity: 0.55; cursor: default; }
+    @keyframes yada-spin { to { transform: rotate(360deg); } }
+    @keyframes yada-slide {
+      0% { transform: translateX(-120%); }
+      100% { transform: translateX(320%); }
+    }
     code { color: #c9d1d9; }
   </style>
 </head>
@@ -29,7 +57,8 @@
         <button type="button" id="signinBtn" disabled>Sign in</button>
         <a class="btn secondary" href="/password-rotation">Extension harness</a>
       </p>
-      <div id="msg"></div>
+      <div id="msg" role="status" aria-live="polite"></div>
+      <div id="track" class="track" aria-hidden="true"><span></span></div>
     </div>
   </main>
   <script>
@@ -40,15 +69,30 @@
     let reqSeq = 0;
     const $msg = document.getElementById("msg");
     const $st = document.getElementById("extStatus");
+    const $track = document.getElementById("track");
+    const SIGNIN_LABEL = "Sign in";
+    const REGISTER_LABEL = "Register this origin";
+    const RESYNC_LABEL = "Resync";
+    let working = false;
+    let activeRequestId = "";
+    let progressTimer = null;
+    let progressStarted = 0;
+    let progressLabel = "";
     window.addEventListener("message", (event) => {
       if (event.source !== window) return;
       if (event.data && event.data.type === "YADA_PASSWORD_READY") {
         extReady = true;
         $st.textContent = "Extension ready.";
         $st.className = "ok";
-        document.getElementById("registerBtn").disabled = false;
-        document.getElementById("resyncBtn").disabled = false;
-        document.getElementById("signinBtn").disabled = false;
+        setButtonsLocked(working);
+      }
+      if (
+        event.data &&
+        event.data.type === "YADA_PASSWORD_PROGRESS" &&
+        event.data.requestId === activeRequestId &&
+        event.data.message
+      ) {
+        showProgress(String(event.data.message));
       }
     });
     setTimeout(() => {
@@ -73,12 +117,45 @@
           resolve(d);
         }
         window.addEventListener("message", onMsg);
+        activeRequestId = requestId;
         window.postMessage({ type, requestId }, "*");
       });
     }
     function setMsg(text, kind) {
       $msg.textContent = text || "";
       $msg.className = kind || "";
+    }
+    function setButtonsLocked(locked) {
+      const off = locked || !extReady;
+      document.getElementById("registerBtn").disabled = off;
+      document.getElementById("resyncBtn").disabled = off;
+      document.getElementById("signinBtn").disabled = off;
+    }
+    function showProgress(label) {
+      progressLabel = label;
+      const secs = progressStarted
+        ? Math.floor((Date.now() - progressStarted) / 1000)
+        : 0;
+      setMsg(label + (secs > 0 ? " · " + secs + "s" : ""), "busy");
+      $track.className = "track on";
+    }
+    function startProgress(label) {
+      stopProgress();
+      working = true;
+      progressStarted = Date.now();
+      setButtonsLocked(true);
+      showProgress(label);
+      progressTimer = setInterval(() => showProgress(progressLabel), 1000);
+    }
+    function stopProgress() {
+      if (progressTimer) clearInterval(progressTimer);
+      progressTimer = null;
+      progressStarted = 0;
+      progressLabel = "";
+      working = false;
+      activeRequestId = "";
+      $track.className = "track";
+      setButtonsLocked(false);
     }
     function stashOperatorToken(token) {
       if (!token) return;
@@ -126,27 +203,41 @@
       window.location.assign("/");
     }
     document.getElementById("resyncBtn").onclick = async () => {
-      setMsg("");
+      const btn = document.getElementById("resyncBtn");
+      startProgress("Contacting the extension to resync…");
+      btn.textContent = "Resyncing…";
       try {
         const data = await extRequest("YADA_PASSWORD_RESYNC", "YADA_PASSWORD_RESYNC_RESULT");
         if (!data.ok) throw new Error(data.message || "resync failed");
+        stopProgress();
         setMsg(data.message || "Resynced to the node tip. Click Sign in.", "ok");
       } catch (e) {
+        stopProgress();
         setMsg(String(e.message || e), "err");
+      } finally {
+        btn.textContent = RESYNC_LABEL;
       }
     };
     document.getElementById("registerBtn").onclick = async () => {
-      setMsg("");
+      const btn = document.getElementById("registerBtn");
+      startProgress("Contacting the extension to register this origin…");
+      btn.textContent = "Registering…";
       try {
         const data = await extRequest("YADA_PASSWORD_REGISTER", "YADA_PASSWORD_REGISTER_RESULT");
         if (!data.ok) throw new Error(data.message || "register failed");
+        stopProgress();
         setMsg("Registered this origin. Click Sign in.", "ok");
       } catch (e) {
+        stopProgress();
         setMsg(String(e.message || e), "err");
+      } finally {
+        btn.textContent = REGISTER_LABEL;
       }
     };
     document.getElementById("signinBtn").onclick = async () => {
-      setMsg("");
+      const btn = document.getElementById("signinBtn");
+      startProgress("Contacting the Yada Password extension…");
+      btn.textContent = "Signing in…";
       try {
         const data = await extRequest("YADA_PASSWORD_SIGNIN", "YADA_PASSWORD_SIGNIN_RESULT");
         if (!data.ok || data.authenticated === false) {
@@ -155,13 +246,17 @@
         if (!data.password) {
           throw new Error("extension returned no password — resync then sign in again");
         }
-        setMsg("Extension OK — opening operator session…", "ok");
+        showProgress("Extension signed in — opening operator session…");
         const session = await openSession(data.password, data.homeNode || data.home_node || "");
         stashOperatorToken(session && session.token);
+        stopProgress();
         setMsg("Session opened — continuing…", "ok");
         goNext();
       } catch (e) {
+        stopProgress();
         setMsg(String(e.message || e), "err");
+      } finally {
+        btn.textContent = SIGNIN_LABEL;
       }
     };
   </script>

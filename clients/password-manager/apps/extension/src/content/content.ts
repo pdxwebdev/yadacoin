@@ -23,6 +23,7 @@ window.addEventListener("message", (event) => {
       {
         type: "YADA_REGISTER_SITE",
         origin: window.location.origin.toLowerCase(),
+        requestId,
       },
       (response) => {
         const err = chrome.runtime.lastError;
@@ -46,6 +47,7 @@ window.addEventListener("message", (event) => {
       {
         type: "YADA_SIGNIN_ROTATE",
         origin: window.location.origin.toLowerCase(),
+        requestId,
       },
       (response) => {
         const err = chrome.runtime.lastError;
@@ -69,6 +71,7 @@ window.addEventListener("message", (event) => {
       {
         type: "YADA_RESYNC_SITE",
         origin: window.location.origin.toLowerCase(),
+        requestId,
       },
       (response) => {
         const err = chrome.runtime.lastError;
@@ -108,6 +111,18 @@ window.addEventListener("message", (event) => {
       }
     );
   }
+});
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (!msg || msg.type !== "YADA_PASSWORD_PROGRESS") return;
+  window.postMessage(
+    {
+      type: "YADA_PASSWORD_PROGRESS",
+      requestId: msg.requestId,
+      message: msg.message,
+    },
+    "*"
+  );
 });
 
 window.postMessage({ type: "YADA_PASSWORD_READY" }, "*");
