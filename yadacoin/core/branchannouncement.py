@@ -21,7 +21,8 @@ commits the first public peer-branch signer and its next hop on-chain:
         "branch": {
             "prerotated_key_hash": "<addr(Kp0)>",
             "twice_prerotated_key_hash": "<addr(Kp1)>",
-            "type": "livestream"   # omitted for untyped / peer branches
+            "type": "livestream",  # omitted for untyped / peer branches
+            "identity_announcement": "<identity announcement txn id>"  # optional
         }
     }
 
@@ -70,7 +71,12 @@ class BranchAnnouncement:
     RELATIONSHIP_KEY = "branch"
 
     def __init__(
-        self, prerotated_key_hash, twice_prerotated_key_hash, type="", **kwargs
+        self,
+        prerotated_key_hash,
+        twice_prerotated_key_hash,
+        type="",
+        identity_announcement="",
+        **kwargs,
     ):
         if not prerotated_key_hash or not isinstance(prerotated_key_hash, str):
             raise ValueError(
@@ -85,7 +91,16 @@ class BranchAnnouncement:
         self.prerotated_key_hash = prerotated_key_hash
         self.twice_prerotated_key_hash = twice_prerotated_key_hash
         self.branch_type = normalize_branch_type(type)
-        self.extra_fields = {k: v for k, v in kwargs.items() if k != "type"}
+        if identity_announcement is None:
+            identity_announcement = ""
+        if not isinstance(identity_announcement, str):
+            raise ValueError("identity_announcement must be a transaction id string")
+        self.identity_announcement = identity_announcement.strip()
+        self.extra_fields = {
+            k: v
+            for k, v in kwargs.items()
+            if k not in ("type", "identity_announcement")
+        }
 
     @staticmethod
     def get_string(value) -> str:
@@ -103,6 +118,8 @@ class BranchAnnouncement:
         }
         if self.branch_type:
             d["type"] = self.branch_type
+        if self.identity_announcement:
+            d["identity_announcement"] = self.identity_announcement
         if self.extra_fields:
             d.update(self.extra_fields)
         return d
@@ -112,13 +129,16 @@ class BranchAnnouncement:
 
         Concatenates prerotated_key_hash then twice_prerotated_key_hash.
         Untyped / peer branches keep that historical preimage. Non-default
-        ``type`` is appended.
+        ``type`` is appended. A set ``identity_announcement`` is appended after
+        that so an absent id does not change existing hashes.
         """
         preimage = self.get_string(self.prerotated_key_hash) + self.get_string(
             self.twice_prerotated_key_hash
         )
         if self.branch_type:
             preimage += self.branch_type
+        if self.identity_announcement:
+            preimage += self.identity_announcement
         return preimage
 
     @staticmethod
@@ -141,6 +161,8 @@ class BranchAnnouncement:
         extra = ""
         if self.branch_type:
             extra = f", type={self.branch_type!r}"
+        if self.identity_announcement:
+            extra += f", identity_announcement={self.identity_announcement!r}"
         return (
             f"BranchAnnouncement(prerotated_key_hash="
             f"{self.prerotated_key_hash!r}, twice_prerotated_key_hash="

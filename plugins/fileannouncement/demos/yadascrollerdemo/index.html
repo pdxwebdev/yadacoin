@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#000000" />
   <title>Yada Scroller Demo</title>
   <base href="/file-announcements/demo/yadascroller/" />
-  <link rel="stylesheet" href="styles.css?v=10" />
+  <link rel="stylesheet" href="styles.css?v=14" />
 </head>
 <body>
   <div id="app">
@@ -33,8 +33,12 @@
       </p>
     </div>
 
-    <div class="hint" id="hint">Swipe or scroll · report · mute</div>
-    <button type="button" id="mute-btn" class="mute-btn" aria-label="Toggle mute">🔇</button>
+    <div class="hint" id="hint">Swipe or scroll · gift · report · mute</div>
+    <div class="rail" id="rail">
+      <button type="button" id="rail-gift" class="gift-btn" aria-label="Send a gift" title="Send a gift">🎁</button>
+      <button type="button" id="rail-report" class="report-btn" aria-label="Report" title="Report">🚩</button>
+      <button type="button" id="mute-btn" class="mute-btn" aria-label="Toggle mute">🔇</button>
+    </div>
 
     <section id="profile" class="profile" hidden>
       <header class="profile-top">
@@ -47,7 +51,7 @@
           <h1 id="profile-name">Profile</h1>
           <p class="profile-sub" id="profile-sub" hidden></p>
           <div class="stats">
-            <div><strong id="stat-likes">—</strong><span>Likes</span></div>
+            <div><strong id="stat-gifts">—</strong><span>Gifts</span></div>
             <div><strong id="stat-followers">—</strong><span>Followers</span></div>
             <div><strong id="stat-following">—</strong><span>Following</span></div>
           </div>
@@ -87,6 +91,28 @@
       <button type="button" id="nav-profile" class="tab">Profile</button>
     </nav>
 
+    <dialog id="gift-dlg" class="gift-dlg">
+      <form method="dialog" id="gift-form">
+        <header class="gift-head">
+          <h2>Send a gift</h2>
+          <button type="button" class="btn ghost" id="gift-close">Close</button>
+        </header>
+        <p class="gift-to" id="gift-to"></p>
+        <label for="gift-chain">Chain</label>
+        <select id="gift-chain"></select>
+        <div id="gift-pick">
+          <div id="gift-grid" class="gift-grid"></div>
+        </div>
+        <div id="gift-pay" hidden>
+          <button type="button" class="btn ghost" id="gift-back">Gifts</button>
+          <p class="gift-picked" id="gift-picked"></p>
+          <div id="gift-qr" class="gift-qr"></div>
+          <p class="gift-address" id="gift-address"></p>
+          <p class="gift-note" id="gift-note"></p>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="report-dlg" class="report-dlg">
       <form method="dialog" id="report-form">
         <h2>Report content</h2>
@@ -102,6 +128,7 @@
       </form>
     </dialog>
   </div>
-  <script src="app.js?v=13"></script>
+  <script src="/app/assets/qrcode.js"></script>
+  <script src="app.js?v=20"></script>
 </body>
 </html>

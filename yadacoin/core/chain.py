@@ -144,6 +144,11 @@ class CHAIN(object):
     # relationship_hash preimage. Untyped / peer branches keep the historical
     # pre+twice preimage. Below this height, a non-empty branch type is rejected.
     KEL_BRANCH_TYPE_FORK = 610000
+    # Optional BranchAnnouncement.identity_announcement (identity announcement
+    # txn id) is included in the relationship_hash preimage when set. Absent
+    # keeps the historical preimage. Below this height a non-empty value is
+    # rejected. Placeholder height — set before mainnet activation.
+    KEL_BRANCH_IDENTITY_FORK = 612000
     # On-chain CredentialAnnouncement (W3C VC + recovery Schnorr ZKP).
     CREDENTIAL_ANNOUNCEMENT_FORK = 610000
 

@@ -8,6 +8,15 @@
   /** ~2s of video at ~2 Mbps ≈ 512 KiB; used for Range prefetch warm-up */
   const PREFETCH_BYTES = 512 * 1024;
   const PAGE_SIZE = 40;
+  const GIFT_CHAINS = [{ id: "yadacoin", label: "Yadacoin", symbol: "YDA" }];
+  const GIFTS = [
+    { id: "rose", name: "Rose", emoji: "🌹", price: 1 },
+    { id: "heart", name: "Heart", emoji: "❤️", price: 5 },
+    { id: "star", name: "Star", emoji: "⭐", price: 10 },
+    { id: "crown", name: "Crown", emoji: "👑", price: 50 },
+    { id: "rocket", name: "Rocket", emoji: "🚀", price: 100 },
+    { id: "diamond", name: "Diamond", emoji: "💎", price: 500 },
+  ];
 
   const feed = document.getElementById("feed");
   const statusEl = document.getElementById("status");
@@ -33,6 +42,9 @@
   const profileActions = document.getElementById("profile-actions");
   const profileGrid = document.getElementById("profile-grid");
   const profileEmpty = document.getElementById("profile-empty");
+  const statGifts = document.getElementById("stat-gifts");
+  const statFollowing = document.getElementById("stat-following");
+  const statFollowers = document.getElementById("stat-followers");
   const editAvatar = document.getElementById("edit-avatar");
   const editUsername = document.getElementById("edit-username");
   const editUpload = document.getElementById("edit-upload");
@@ -43,6 +55,20 @@
   const playerVideo = document.getElementById("player-video");
   const playerSpinner = document.getElementById("player-spinner");
   const playerCaption = document.getElementById("player-caption");
+  const railGift = document.getElementById("rail-gift");
+  const railReport = document.getElementById("rail-report");
+  const giftDlg = document.getElementById("gift-dlg");
+  const giftTo = document.getElementById("gift-to");
+  const giftChain = document.getElementById("gift-chain");
+  const giftPick = document.getElementById("gift-pick");
+  const giftGrid = document.getElementById("gift-grid");
+  const giftPay = document.getElementById("gift-pay");
+  const giftPicked = document.getElementById("gift-picked");
+  const giftQr = document.getElementById("gift-qr");
+  const giftAddress = document.getElementById("gift-address");
+  const giftNote = document.getElementById("gift-note");
+  const giftClose = document.getElementById("gift-close");
+  const giftBack = document.getElementById("gift-back");
   const navFyp = document.getElementById("nav-fyp");
   const navUpload = document.getElementById("nav-upload");
   const navProfile = document.getElementById("nav-profile");
@@ -68,6 +94,10 @@
   let viewName = "feed";
   /** @type {Array<object>} */
   let profileVideos = [];
+  /** @type {object | null} */
+  let giftTarget = null;
+  /** @type {object | null} */
+  let playerItem = null;
 
   const probe = document.createElement("video");
 
@@ -286,16 +316,7 @@
       e.stopPropagation();
       openProfile(item);
     });
-    const reportBtn = document.createElement("button");
-    reportBtn.type = "button";
-    reportBtn.textContent = "Report";
-    reportBtn.title = "Report / request takedown";
-    reportBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openReport(item);
-    });
     side.appendChild(avatarBtn);
-    side.appendChild(reportBtn);
     slide.appendChild(side);
 
     video.addEventListener("loadeddata", () => {
@@ -723,6 +744,97 @@
     }
   }
 
+  function creatorAddress(item) {
+    return String((item && item.public_key_hash) || "").trim();
+  }
+
+  function selectedChain() {
+    return GIFT_CHAINS.find((c) => c.id === giftChain.value) || GIFT_CHAINS[0];
+  }
+
+  function fillGiftChain() {
+    giftChain.innerHTML = "";
+    GIFT_CHAINS.forEach((chain) => {
+      const opt = document.createElement("option");
+      opt.value = chain.id;
+      opt.textContent = chain.label;
+      giftChain.appendChild(opt);
+    });
+    giftChain.value = GIFT_CHAINS[0].id;
+  }
+
+  function fillGiftGrid() {
+    giftGrid.innerHTML = "";
+    const symbol = selectedChain().symbol;
+    GIFTS.forEach((gift) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "gift-card";
+      btn.innerHTML = `<em>${gift.emoji}</em><strong>${escapeHtml(gift.name)}</strong><span>${gift.price} ${escapeHtml(symbol)}</span>`;
+      btn.addEventListener("click", () => selectGift(gift));
+      giftGrid.appendChild(btn);
+    });
+  }
+
+  function showGiftPicker() {
+    giftPick.hidden = false;
+    giftPay.hidden = true;
+    giftQr.innerHTML = "";
+  }
+
+  function renderGiftQr(address) {
+    giftQr.innerHTML = "";
+    if (typeof QRCode !== "function") {
+      giftNote.textContent = "QR library unavailable. Copy the address below.";
+      return;
+    }
+    new QRCode(giftQr, {
+      text: address,
+      width: 220,
+      height: 220,
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+    giftNote.textContent = "Scan to pay this address.";
+  }
+
+  function selectGift(gift) {
+    const address = creatorAddress(giftTarget);
+    const chain = selectedChain();
+    const who = giftTarget && giftTarget.username ? `@${giftTarget.username}` : "creator";
+    giftPicked.textContent = `${gift.emoji} ${gift.name} · ${gift.price} ${chain.symbol} · ${chain.label}`;
+    giftAddress.textContent = address;
+    giftPick.hidden = true;
+    giftPay.hidden = false;
+    if (!address) {
+      giftQr.innerHTML = "";
+      giftAddress.textContent = "";
+      giftNote.textContent = "This announcement has no public key hash.";
+      return;
+    }
+    renderGiftQr(address);
+  }
+
+  function openGift(item) {
+    giftTarget = item || null;
+    const who = item && item.username ? `@${item.username}` : "this creator";
+    const address = creatorAddress(item);
+    giftTo.textContent = address ? `To ${who}` : "This announcement has no public key hash";
+    fillGiftChain();
+    fillGiftGrid();
+    showGiftPicker();
+    giftDlg.showModal();
+  }
+
+  giftClose.addEventListener("click", () => {
+    giftDlg.close();
+    giftTarget = null;
+  });
+  giftBack.addEventListener("click", showGiftPicker);
+  giftChain.addEventListener("change", () => {
+    fillGiftGrid();
+    if (!giftPay.hidden) showGiftPicker();
+  });
+
   function openReport(item) {
     if (!item || !item.transaction_id) {
       showStatus("Cannot report: missing announcement transaction id", 4000);
@@ -894,8 +1006,10 @@
       playerVideo.load();
     } catch (_) {}
     playerEl.hidden = true;
+    appEl.classList.remove("player-open");
     playerSpinner.hidden = true;
     playerCaption.textContent = "";
+    playerItem = null;
   }
 
   function hidePlayerSpinner() {
@@ -909,9 +1023,11 @@
       return;
     }
     pauseFeed();
+    playerItem = item;
     playerCaption.textContent = item.title || item.filename || "";
     playerSpinner.hidden = false;
     playerEl.hidden = false;
+    appEl.classList.add("player-open");
     playerVideo.muted = muted;
     playerVideo.src = url;
     playerVideo.play().catch(() => {});
@@ -919,6 +1035,19 @@
 
   playerVideo.addEventListener("playing", hidePlayerSpinner);
   playerVideo.addEventListener("error", hidePlayerSpinner);
+
+  function formatCount(value) {
+    if (value === null || value === undefined || value === "") return "—";
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+    return n.toLocaleString();
+  }
+
+  function formatGifts(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+    return n.toLocaleString(undefined, { maximumFractionDigits: 8 });
+  }
 
   function renderProfile(profile) {
     profileVideos = (profile && profile.videos) || [];
@@ -934,6 +1063,9 @@
       profileSub.textContent = "No identity announcement";
     }
     profileActions.hidden = !(profile && profile.is_me);
+    statGifts.textContent = formatGifts(profile && profile.gifts);
+    statFollowing.textContent = formatCount(profile && profile.following);
+    statFollowers.textContent = formatCount(profile && profile.followers);
     profileGrid.innerHTML = "";
     if (!profileVideos.length) {
       profileEmpty.hidden = false;
@@ -963,6 +1095,9 @@
     profileSub.hidden = false;
     profileSub.textContent = message;
     profileActions.hidden = true;
+    statGifts.textContent = "—";
+    statFollowing.textContent = "—";
+    statFollowers.textContent = "—";
     profileGrid.innerHTML = "";
     profileEmpty.hidden = true;
   }
@@ -972,6 +1107,9 @@
     profileEmpty.hidden = true;
     profileName.textContent = "Loading…";
     profileActions.hidden = true;
+    statGifts.textContent = "—";
+    statFollowing.textContent = "—";
+    statFollowers.textContent = "—";
     try {
       let url = API_ME;
       if (route.view === "profile") {
@@ -1037,7 +1175,14 @@
 
   profileBack.addEventListener("click", leaveOverlay);
   publishBack.addEventListener("click", leaveOverlay);
+  function activeItem() {
+    if (!playerEl.hidden && playerItem) return playerItem;
+    return videos[activeIndex] || null;
+  }
+
   playerBack.addEventListener("click", closePlayer);
+  railGift.addEventListener("click", () => openGift(activeItem()));
+  railReport.addEventListener("click", () => openReport(activeItem()));
   editAvatar.addEventListener("click", () => showStatus("Edit avatar is coming soon"));
   editUsername.addEventListener("click", () => showStatus("Edit username is coming soon"));
   editUpload.addEventListener("click", () => showStatus("Upload is coming soon"));

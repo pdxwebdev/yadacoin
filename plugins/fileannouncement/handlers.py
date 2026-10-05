@@ -205,6 +205,7 @@ def _video_public_item(item: dict) -> dict:
         "backend": backend,
         "file_id": file_id,
         "owner": (item.get("owner") or "").strip(),
+        "public_key_hash": (item.get("public_key_hash") or "").strip(),
         "username": (item.get("username") or "").strip(),
         "stream_url": (
             f"/file-announcements/api/v1/public/stream/{quote(backend, safe='')}/"
@@ -725,6 +726,7 @@ def _public_file_item(row: dict, username: str = "") -> dict:
         "block_index": row.get("block_index"),
         "transaction_id": row.get("transaction_id") or "",
         "owner": row.get("owner") or "",
+        "public_key_hash": row.get("public_key_hash") or "",
         "username": username,
         "file": {
             "title": row.get("title") or "",
@@ -744,14 +746,230 @@ def _public_file_item(row: dict, username: str = "") -> dict:
     return item
 
 
+async def _kel_gift_balance(config, inception: str) -> float:
+    address = (inception or "").strip()
+    bu = getattr(config, "BU", None)
+    if not address or bu is None:
+        return 0.0
+    try:
+        return float(await bu.get_wallet_balance(address) or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _is_follow_branch(relationship) -> bool:
+    if not isinstance(relationship, dict):
+        return False
+    branch = relationship.get("branch")
+    if not isinstance(branch, dict):
+        return False
+    if not (branch.get("prerotated_key_hash") or "").strip():
+        return False
+    return (branch.get("type") or "").strip().lower() != "livestream"
+
+
+async def _following_count(config, inception: str) -> int:
+    """Branch announcements from this identity."""
+    inception = (inception or "").strip()
+    if not inception:
+        return 0
+    db = config.mongo.async_db
+    seen = set()
+
+    def _take(txn):
+        if not isinstance(txn, dict):
+            return
+        if (txn.get("inception_public_key_hash") or "").strip() != inception:
+            return
+        if not _is_follow_branch(txn.get("relationship")):
+            return
+        tid = (txn.get("id") or "").strip()
+        if tid:
+            seen.add(tid)
+
+    try:
+        cursor = db.blocks.aggregate(
+            [
+                {
+                    "$match": {
+                        "transactions.inception_public_key_hash": inception,
+                        "transactions.relationship.branch.prerotated_key_hash": {
+                            "$gt": ""
+                        },
+                    }
+                },
+                {"$unwind": "$transactions"},
+                {
+                    "$match": {
+                        "transactions.inception_public_key_hash": inception,
+                        "transactions.relationship.branch.prerotated_key_hash": {
+                            "$gt": ""
+                        },
+                    }
+                },
+                {"$project": {"transactions": 1}},
+            ]
+        )
+        async for doc in cursor:
+            _take(doc.get("transactions"))
+    except Exception:
+        pass
+    try:
+        async for txn in db.miner_transactions.find(
+            {
+                "inception_public_key_hash": inception,
+                "relationship.branch.prerotated_key_hash": {"$gt": ""},
+            },
+            {"_id": 0, "id": 1, "inception_public_key_hash": 1, "relationship": 1},
+        ):
+            _take(txn)
+    except Exception:
+        pass
+    return len(seen)
+
+
+async def _identity_announcement_txn_id(config, inception: str) -> str:
+    """Txn id of the identity announcement for this inception hash."""
+    inception = (inception or "").strip()
+    if not inception:
+        return ""
+    db = config.mongo.async_db
+    match = {
+        "$or": [
+            {"transactions.inception_public_key_hash": inception},
+            {"transactions.public_key_hash": inception},
+        ],
+        "transactions.relationship.identity.username": {"$gt": ""},
+    }
+
+    def _id(txn):
+        if not isinstance(txn, dict):
+            return ""
+        rel = txn.get("relationship") or {}
+        ident = rel.get("identity") if isinstance(rel, dict) else None
+        if not isinstance(ident, dict) or not (ident.get("username") or "").strip():
+            return ""
+        owner = (
+            txn.get("inception_public_key_hash") or txn.get("public_key_hash") or ""
+        ).strip()
+        if owner != inception:
+            return ""
+        return (txn.get("id") or "").strip()
+
+    try:
+        cursor = db.blocks.aggregate(
+            [
+                {"$match": match},
+                {"$unwind": "$transactions"},
+                {"$match": match},
+                {"$limit": 1},
+            ]
+        )
+        async for doc in cursor:
+            found = _id(doc.get("transactions"))
+            if found:
+                return found
+    except Exception:
+        pass
+    try:
+        txn = await db.miner_transactions.find_one(
+            {
+                "$or": [
+                    {"inception_public_key_hash": inception},
+                    {"public_key_hash": inception},
+                ],
+                "relationship.identity.username": {"$gt": ""},
+            },
+            {
+                "_id": 0,
+                "id": 1,
+                "inception_public_key_hash": 1,
+                "public_key_hash": 1,
+                "relationship": 1,
+            },
+        )
+    except Exception:
+        txn = None
+    return _id(txn)
+
+
+async def _follower_count(config, identity_txn_id: str) -> int:
+    """Distinct announcers whose branch points at this identity announcement."""
+    identity_txn_id = (identity_txn_id or "").strip()
+    if not identity_txn_id:
+        return 0
+    db = config.mongo.async_db
+    announcers = set()
+
+    def _take(txn):
+        if not isinstance(txn, dict):
+            return
+        rel = txn.get("relationship") or {}
+        branch = rel.get("branch") if isinstance(rel, dict) else None
+        if not isinstance(branch, dict):
+            return
+        if (branch.get("identity_announcement") or "").strip() != identity_txn_id:
+            return
+        if (branch.get("type") or "").strip().lower() == "livestream":
+            return
+        who = (
+            txn.get("inception_public_key_hash")
+            or txn.get("public_key_hash")
+            or txn.get("id")
+            or ""
+        ).strip()
+        if who:
+            announcers.add(who)
+
+    chain_match = {
+        "transactions.relationship.branch.identity_announcement": identity_txn_id
+    }
+    try:
+        cursor = db.blocks.aggregate(
+            [
+                {"$match": chain_match},
+                {"$unwind": "$transactions"},
+                {"$match": chain_match},
+                {"$project": {"transactions": 1}},
+            ]
+        )
+        async for doc in cursor:
+            _take(doc.get("transactions"))
+    except Exception:
+        pass
+    try:
+        async for txn in db.miner_transactions.find(
+            {"relationship.branch.identity_announcement": identity_txn_id},
+            {
+                "_id": 0,
+                "id": 1,
+                "inception_public_key_hash": 1,
+                "public_key_hash": 1,
+                "relationship": 1,
+            },
+        ):
+            _take(txn)
+    except Exception:
+        pass
+    return len(announcers)
+
+
 async def _profile_payload(config, inception: str, is_me: bool) -> dict:
     ident = await store.identity_for_inception(config, inception)
     username = ident.get("username") or ""
     rows = await store.files_for_inception(config, inception)
+    gifts = await _kel_gift_balance(config, inception)
+    following = await _following_count(config, inception)
+    identity_txn_id = await _identity_announcement_txn_id(config, inception)
+    followers = await _follower_count(config, identity_txn_id)
     return {
         "inception_public_key_hash": inception,
         "username": username,
         "is_me": bool(is_me),
+        "gifts": gifts,
+        "following": following,
+        "followers": followers,
+        "identity_announcement": identity_txn_id,
         "videos": [_public_file_item(row, username) for row in rows],
     }
 

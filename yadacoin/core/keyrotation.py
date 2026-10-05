@@ -232,6 +232,32 @@ def _read_second_factor() -> str:
 # ---------------------------------------------------------------------------
 
 
+def _branch_identity_fork_active(config) -> bool:
+    try:
+        latest = getattr(config, "LatestBlock", None)
+        index = int(latest.block.index)
+    except Exception:
+        return False
+    return index >= CHAIN.KEL_BRANCH_IDENTITY_FORK
+
+
+async def _peer_identity_announcement_txn_id(config, username_signature: str) -> str:
+    """Identity announcement txn id for a peer username_signature, or ""."""
+    sig = (username_signature or "").strip()
+    if not sig or sig.lower().startswith("livestream:"):
+        return ""
+    try:
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        found = await IdentityAnnouncement.get_by_username_signature(
+            sig, include_mempool=True, config=config
+        )
+    except Exception:
+        return ""
+    txn = (found or {}).get("txn") or {}
+    return (txn.get("id") or "").strip()
+
+
 class NodeKeyRotationManager:
     """Manages the mandatory KEL lifecycle for a running node.
 
@@ -1388,10 +1414,16 @@ class NodeKeyRotationManager:
             if not main_inception_pkh:
                 main_inception_pkh = kn_address
 
+            identity_txn_id = await _peer_identity_announcement_txn_id(
+                config, identity_announcement
+            )
+            if identity_txn_id and not _branch_identity_fork_active(config):
+                identity_txn_id = ""
             branch_rel = BranchAnnouncement(
                 prerotated_key_hash=kp0_address,
                 twice_prerotated_key_hash=kp1_address,
                 type=branch_type or "",
+                identity_announcement=identity_txn_id,
             )
             branch_rel_str = branch_rel.to_string()
 

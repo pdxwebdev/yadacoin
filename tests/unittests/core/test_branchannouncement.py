@@ -196,6 +196,42 @@ class TestBranchAnnouncementType(unittest.TestCase):
         )
         self.assertIn("type='livestream'", repr(ba))
 
+    def test_identity_announcement_omitted_keeps_historical_hash(self):
+        ba = BranchAnnouncement(
+            prerotated_key_hash=_PRE,
+            twice_prerotated_key_hash=_TWICE,
+            identity_announcement="",
+        )
+        self.assertEqual(ba.to_string(), _PRE + _TWICE)
+        self.assertNotIn("identity_announcement", ba.to_dict())
+
+    def test_identity_announcement_appended_after_type(self):
+        txn_id = "abc123identitytxn"
+        bare = BranchAnnouncement(
+            prerotated_key_hash=_PRE,
+            twice_prerotated_key_hash=_TWICE,
+            identity_announcement=txn_id,
+        )
+        typed = BranchAnnouncement(
+            prerotated_key_hash=_PRE,
+            twice_prerotated_key_hash=_TWICE,
+            type="livestream",
+            identity_announcement=txn_id,
+        )
+        self.assertEqual(bare.to_string(), _PRE + _TWICE + txn_id)
+        self.assertEqual(bare.to_dict()["identity_announcement"], txn_id)
+        self.assertEqual(typed.to_string(), _PRE + _TWICE + "livestream" + txn_id)
+        again = BranchAnnouncement.from_dict(bare.to_dict())
+        self.assertEqual(again.to_string(), bare.to_string())
+
+    def test_identity_announcement_non_string_raises(self):
+        with self.assertRaises(ValueError):
+            BranchAnnouncement(
+                prerotated_key_hash=_PRE,
+                twice_prerotated_key_hash=_TWICE,
+                identity_announcement=12,
+            )
+
     def test_to_dict_omits_type_when_empty(self):
         ba = BranchAnnouncement(
             prerotated_key_hash=_PRE, twice_prerotated_key_hash=_TWICE

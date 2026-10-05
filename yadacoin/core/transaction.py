@@ -984,6 +984,13 @@ class Transaction(object):
                         f"Typed branch announcement transactions not allowed before "
                         f"fork height {CHAIN.KEL_BRANCH_TYPE_FORK}"
                     )
+            if self.relationship.identity_announcement:
+                height = _relationship_verify_height(block)
+                if height < CHAIN.KEL_BRANCH_IDENTITY_FORK:
+                    raise InvalidTransactionException(
+                        f"Branch identity_announcement not allowed before fork height "
+                        f"{CHAIN.KEL_BRANCH_IDENTITY_FORK}"
+                    )
         elif isinstance(self.relationship, ContentTakedownAnnouncement):
             relationship = self.relationship.to_string()
             if not check_content_takedown:

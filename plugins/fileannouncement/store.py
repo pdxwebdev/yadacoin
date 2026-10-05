@@ -262,6 +262,7 @@ async def find_file_announcements(config, file_id: str) -> list:
                         "block_index": block.get("index"),
                         "transaction_id": txn.get("id") or "",
                         "owner": txn.get("inception_public_key_hash") or "",
+                        "public_key_hash": txn.get("public_key_hash") or "",
                         "file": rel,
                     }
                 )
@@ -295,6 +296,7 @@ async def find_file_announcements(config, file_id: str) -> list:
                     "block_index": None,
                     "transaction_id": txn.get("id") or "",
                     "owner": txn.get("inception_public_key_hash") or "",
+                    "public_key_hash": txn.get("public_key_hash") or "",
                     "file": rel,
                 }
             )
@@ -453,6 +455,7 @@ def _managed_view(
         "thumbnail_share_url": file_rel.get("thumbnail_share_url") or "",
         "supersedes": file_rel.get("supersedes") or "",
         "owner": txn.get("inception_public_key_hash") or "",
+        "public_key_hash": txn.get("public_key_hash") or "",
         "status": "mempool" if source == "mempool" else "confirmed",
         "source": source,
         "block_index": block_index,
@@ -1099,6 +1102,9 @@ async def search_videos(
             "transaction_id"
         )
         merged["owner"] = live.get("owner") or item.get("owner")
+        merged["public_key_hash"] = live.get("public_key_hash") or item.get(
+            "public_key_hash"
+        )
         merged["file"] = live.get("file") or f
         _add(merged)
 
@@ -1129,6 +1135,7 @@ async def search_videos(
                     "block_index": doc.get("block_index"),
                     "transaction_id": txn.get("id") or "",
                     "owner": txn.get("inception_public_key_hash") or "",
+                    "public_key_hash": txn.get("public_key_hash") or "",
                     "file": rel,
                 }
             )
@@ -1158,6 +1165,7 @@ async def search_videos(
                     "block_index": None,
                     "transaction_id": txn.get("id") or "",
                     "owner": txn.get("inception_public_key_hash") or "",
+                    "public_key_hash": txn.get("public_key_hash") or "",
                     "file": rel,
                 }
             )
