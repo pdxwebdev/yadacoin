@@ -562,6 +562,94 @@ class TestLiveAnnouncement(AsyncTestCase):
         ]
         self.assertIsNone(await live_announcement(config, "abc"))
 
+    async def test_search_videos_skips_dead_and_duplicate_hits(self):
+        from plugins.fileannouncement.store import search_videos
+
+        config = self._config()
+        config.mongo.async_db.blocks.rows = [
+            {
+                "index": 4,
+                "transactions": [
+                    {
+                        "id": "old",
+                        "inception_public_key_hash": "owner",
+                        "relationship": {
+                            "file": {
+                                "file_id": "vid",
+                                "backend": "sia",
+                                "filename": "clip.mp4",
+                                "mime_type": "video/mp4",
+                                "title": "Old",
+                                "size": 10,
+                            }
+                        },
+                    }
+                ],
+            },
+            {
+                "index": 9,
+                "transactions": [
+                    {
+                        "id": "new",
+                        "inception_public_key_hash": "owner",
+                        "relationship": {
+                            "file": {
+                                "file_id": "vid",
+                                "backend": "sia",
+                                "filename": "clip.mp4",
+                                "mime_type": "video/mp4",
+                                "title": "New",
+                                "size": 10,
+                            }
+                        },
+                    },
+                    {
+                        "id": "pic",
+                        "relationship": {
+                            "file": {
+                                "file_id": "img",
+                                "filename": "a.png",
+                                "mime_type": "image/png",
+                            }
+                        },
+                    },
+                    {
+                        "id": "gone",
+                        "inception_public_key_hash": "owner",
+                        "relationship": {
+                            "file": {
+                                "file_id": "other",
+                                "filename": "other.mp4",
+                                "mime_type": "video/mp4",
+                                "size": 3,
+                            }
+                        },
+                    },
+                ],
+            },
+        ]
+        config.mongo.async_db.miner_transactions.rows = [
+            {"relationship": {"content_takedown": {"transaction_id": "gone"}}},
+            {
+                "id": "pool",
+                "inception_public_key_hash": "owner2",
+                "relationship": {
+                    "file": {
+                        "file_id": "poolvid",
+                        "filename": "pool.mp4",
+                        "mime_type": "video/mp4",
+                        "size": 4,
+                    }
+                },
+            },
+        ]
+        config.mongo.async_db.file_announcement_retractions.rows = [
+            {"file_id": "poolvid", "transaction_id": "pool"}
+        ]
+        results = await search_videos(config, limit=40)
+        ids = [item["transaction_id"] for item in results]
+        self.assertEqual(ids, ["new"])
+
     async def test_list_live_files_ignores_local_collection(self):
         from plugins.fileannouncement.store import list_live_files
 

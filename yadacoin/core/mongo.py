@@ -294,6 +294,11 @@ class Mongo(object):
             name="__txn_rel_file_id",
             sparse=True,
         )
+        __txn_rel_file_thumbnail_id = IndexModel(
+            [("transactions.relationship.file.thumbnail_file_id", ASCENDING)],
+            name="__txn_rel_file_thumbnail_id",
+            sparse=True,
+        )
         __txn_rel_content_takedown_id = IndexModel(
             [("transactions.relationship.content_takedown.transaction_id", ASCENDING)],
             name="__txn_rel_content_takedown_id",
@@ -362,6 +367,7 @@ class Mongo(object):
                     _txn_rel_identity_username,
                     _txn_rel_identity_username_signature,
                     __txn_rel_file_id,
+                    __txn_rel_file_thumbnail_id,
                     __txn_rel_content_takedown_id,
                     __public_key_outputs_to,
                     __txn_public_key_outputs_to,
@@ -532,6 +538,11 @@ class Mongo(object):
             name="__rel_file_id",
             sparse=True,
         )
+        __rel_file_thumbnail_id = IndexModel(
+            [("relationship.file.thumbnail_file_id", ASCENDING)],
+            name="__rel_file_thumbnail_id",
+            sparse=True,
+        )
         __rel_content_takedown_id = IndexModel(
             [("relationship.content_takedown.transaction_id", ASCENDING)],
             name="__rel_content_takedown_id",
@@ -557,6 +568,7 @@ class Mongo(object):
                     __prev_public_key_hash,
                     __inception_public_key_hash,
                     __rel_file_id,
+                    __rel_file_thumbnail_id,
                     __rel_content_takedown_id,
                 ]
             )

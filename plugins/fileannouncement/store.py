@@ -143,6 +143,47 @@ def _share_url_for_rel(rel: dict, file_id: str) -> str:
     return ""
 
 
+async def _share_url_on_field(
+    config, file_id: str, block_field: str, mempool_field: str
+) -> str:
+    try:
+        cursor = (
+            _db(config)
+            .blocks.find(
+                {block_field: file_id},
+                {"transactions.relationship.file": 1, "index": 1},
+            )
+            .sort("index", -1)
+            .limit(8)
+        )
+        async for block in cursor:
+            for txn in block.get("transactions") or []:
+                rel = (txn.get("relationship") or {}).get("file") or {}
+                url = _share_url_for_rel(rel, file_id)
+                if url:
+                    return url
+    except Exception:
+        return ""
+    try:
+        cursor = (
+            _db(config)
+            .miner_transactions.find(
+                {mempool_field: file_id},
+                {"relationship.file": 1},
+            )
+            .sort([("time", -1)])
+            .limit(8)
+        )
+        async for txn in cursor:
+            rel = (txn.get("relationship") or {}).get("file") or {}
+            url = _share_url_for_rel(rel, file_id)
+            if url:
+                return url
+    except Exception:
+        return ""
+    return ""
+
+
 async def share_url_for_file(config, file_id: str) -> str:
     """Public Sia share URL from the local index, then confirmed blocks."""
     file_id = (file_id or "").strip()
@@ -161,52 +202,20 @@ async def share_url_for_file(config, file_id: str) -> str:
     url = _share_url_for_rel(thumb or {}, file_id)
     if url:
         return url
-    try:
-        cursor = (
-            _db(config)
-            .blocks.find(
-                {
-                    "$or": [
-                        {"transactions.relationship.file.file_id": file_id},
-                        {"transactions.relationship.file.thumbnail_file_id": file_id},
-                    ]
-                },
-                {"transactions.relationship.file": 1, "index": 1},
-            )
-            .sort("index", -1)
-            .limit(8)
-        )
-        async for block in cursor:
-            for txn in block.get("transactions") or []:
-                rel = (txn.get("relationship") or {}).get("file") or {}
-                url = _share_url_for_rel(rel, file_id)
-                if url:
-                    return url
-    except Exception:
-        return ""
-    try:
-        cursor = (
-            _db(config)
-            .miner_transactions.find(
-                {
-                    "$or": [
-                        {"relationship.file.file_id": file_id},
-                        {"relationship.file.thumbnail_file_id": file_id},
-                    ]
-                },
-                {"relationship.file": 1},
-            )
-            .sort([("time", -1)])
-            .limit(8)
-        )
-        async for txn in cursor:
-            rel = (txn.get("relationship") or {}).get("file") or {}
-            url = _share_url_for_rel(rel, file_id)
-            if url:
-                return url
-    except Exception:
-        return ""
-    return ""
+    url = await _share_url_on_field(
+        config,
+        file_id,
+        "transactions.relationship.file.file_id",
+        "relationship.file.file_id",
+    )
+    if url:
+        return url
+    return await _share_url_on_field(
+        config,
+        file_id,
+        "transactions.relationship.file.thumbnail_file_id",
+        "relationship.file.thumbnail_file_id",
+    )
 
 
 def _file_payload(relationship):
@@ -228,81 +237,73 @@ def _backend_matches(file_rel: dict, backend: str) -> bool:
     return actual == wanted
 
 
+def _announcement_hit(txn, source, block_index, file_id):
+    rel = _file_payload(txn.get("relationship"))
+    if not rel or (
+        rel.get("file_id") != file_id and rel.get("thumbnail_file_id") != file_id
+    ):
+        return None
+    return {
+        "source": source,
+        "block_index": block_index,
+        "transaction_id": txn.get("id") or "",
+        "owner": txn.get("inception_public_key_hash") or "",
+        "public_key_hash": txn.get("public_key_hash") or "",
+        "file": rel,
+    }
+
+
+async def _announcements_for_field(
+    config, file_id: str, block_field: str, mempool_field: str, limit: int = 20
+) -> list:
+    chain = []
+    cursor = (
+        _db(config)
+        .blocks.find({block_field: file_id}, {"transactions": 1, "index": 1})
+        .sort("index", -1)
+        .limit(int(limit))
+    )
+    async for block in cursor:
+        for txn in block.get("transactions") or []:
+            hit = _announcement_hit(txn, "chain", block.get("index"), file_id)
+            if hit:
+                chain.append(hit)
+    chain.sort(key=lambda item: int(item.get("block_index") or 0), reverse=True)
+    mempool = []
+    cursor = (
+        _db(config)
+        .miner_transactions.find({mempool_field: file_id}, {"_id": 0})
+        .limit(int(limit))
+    )
+    async for txn in cursor:
+        hit = _announcement_hit(txn, "mempool", None, file_id)
+        if hit:
+            mempool.append(hit)
+    return chain + mempool
+
+
 async def find_file_announcements(config, file_id: str) -> list:
     """File announcements still stored in confirmed blocks or the mempool."""
     file_id = (file_id or "").strip()
     if not file_id:
         return []
-    found = []
     try:
-        cursor = (
-            _db(config)
-            .blocks.find(
-                {
-                    "$or": [
-                        {"transactions.relationship.file.file_id": file_id},
-                        {"transactions.relationship.file.thumbnail_file_id": file_id},
-                    ]
-                },
-                {"transactions": 1, "index": 1},
-            )
-            .limit(20)
+        found = await _announcements_for_field(
+            config,
+            file_id,
+            "transactions.relationship.file.file_id",
+            "relationship.file.file_id",
         )
-        async for block in cursor:
-            for txn in block.get("transactions") or []:
-                rel = _file_payload(txn.get("relationship"))
-                if not rel or (
-                    rel.get("file_id") != file_id
-                    and rel.get("thumbnail_file_id") != file_id
-                ):
-                    continue
-                found.append(
-                    {
-                        "source": "chain",
-                        "block_index": block.get("index"),
-                        "transaction_id": txn.get("id") or "",
-                        "owner": txn.get("inception_public_key_hash") or "",
-                        "public_key_hash": txn.get("public_key_hash") or "",
-                        "file": rel,
-                    }
-                )
-    except Exception:
-        pass
-    found.sort(key=lambda item: int(item.get("block_index") or 0), reverse=True)
-    try:
-        cursor = (
-            _db(config)
-            .miner_transactions.find(
-                {
-                    "$or": [
-                        {"relationship.file.file_id": file_id},
-                        {"relationship.file.thumbnail_file_id": file_id},
-                    ]
-                },
-                {"_id": 0},
-            )
-            .limit(20)
+        if found:
+            return found
+        return await _announcements_for_field(
+            config,
+            file_id,
+            "transactions.relationship.file.thumbnail_file_id",
+            "relationship.file.thumbnail_file_id",
         )
-        async for txn in cursor:
-            rel = _file_payload(txn.get("relationship"))
-            if not rel or (
-                rel.get("file_id") != file_id
-                and rel.get("thumbnail_file_id") != file_id
-            ):
-                continue
-            found.append(
-                {
-                    "source": "mempool",
-                    "block_index": None,
-                    "transaction_id": txn.get("id") or "",
-                    "owner": txn.get("inception_public_key_hash") or "",
-                    "public_key_hash": txn.get("public_key_hash") or "",
-                    "file": rel,
-                }
-            )
     except Exception:
-        pass
-    return found
+        return []
 
 
 async def takedown_targets(config, txn_ids) -> set:
@@ -370,6 +371,48 @@ async def is_retracted(config, file_id: str = "", transaction_id: str = "") -> b
     except Exception:
         return False
     return bool(doc)
+
+
+async def retracted_ids(config, file_ids, transaction_ids) -> tuple:
+    """File ids and transaction ids that have a local retraction."""
+    files = []
+    seen_files = set()
+    for raw in file_ids or []:
+        fid = (raw or "").strip()
+        if fid and fid not in seen_files:
+            seen_files.add(fid)
+            files.append(fid)
+    txns = []
+    seen_txns = set()
+    for raw in transaction_ids or []:
+        tid = (raw or "").strip()
+        if tid and tid not in seen_txns:
+            seen_txns.add(tid)
+            txns.append(tid)
+    hit_files = set()
+    hit_txns = set()
+    if not files and not txns:
+        return hit_files, hit_txns
+    clauses = []
+    if files:
+        clauses.append({"file_id": {"$in": files}})
+    if txns:
+        clauses.append({"transaction_id": {"$in": txns}})
+    query = clauses[0] if len(clauses) == 1 else {"$or": clauses}
+    try:
+        cursor = _db(config)[RETRACTIONS_COLLECTION].find(
+            query, {"_id": 0, "file_id": 1, "transaction_id": 1}
+        )
+        async for doc in cursor:
+            fid = (doc.get("file_id") or "").strip()
+            tid = (doc.get("transaction_id") or "").strip()
+            if fid and fid in seen_files:
+                hit_files.add(fid)
+            if tid and tid in seen_txns:
+                hit_txns.add(tid)
+    except Exception:
+        return set(), set()
+    return hit_files, hit_txns
 
 
 async def retract_file(config, file_id: str = "", transaction_id: str = "") -> None:
@@ -1060,116 +1103,78 @@ async def search_chain(config, query: str, limit: int = 50) -> list:
     return results[:limit]
 
 
+def _video_hit(txn, source, block_index, query: str) -> Optional[dict]:
+    rel = (txn.get("relationship") or {}).get("file") or {}
+    if not is_video_file(rel):
+        return None
+    if not _file_text_matches(rel, query, txn.get("id") or ""):
+        return None
+    return {
+        "source": source,
+        "block_index": block_index,
+        "transaction_id": txn.get("id") or "",
+        "owner": txn.get("inception_public_key_hash") or "",
+        "public_key_hash": txn.get("public_key_hash") or "",
+        "file": rel,
+    }
+
+
 async def search_videos(
     config, query: str = "", limit: int = 50, skip: int = 0
 ) -> list:
     """Discover video announcements that are still in the mempool or on chain."""
     limit = max(1, min(int(limit), 200))
     skip = max(0, int(skip))
-    fetch_n = limit + skip + 50
     q = (query or "").strip()
-
-    seen = set()
-    results = []
-
-    def _add(item: dict):
-        f = item.get("file") or {}
-        if not f or not f.get("file_id"):
-            return
-        if not is_video_file(f):
-            return
-        owner = (item.get("owner") or f.get("owner") or "").strip()
-        if not owner and item.get("source") == "local":
-            owner = "local"
-        keys = video_feed_keys(f, owner)
-        if not keys or any(key in seen for key in keys):
-            return
-        seen.update(keys)
-        item["owner"] = owner
-        results.append(item)
-
-    async def _add_live(item: dict):
-        f = item.get("file") or {}
-        live = await live_announcement(
-            config, f.get("file_id") or "", f.get("backend") or ""
-        )
-        if not live:
-            return
-        merged = dict(item)
-        merged["source"] = live.get("source") or item.get("source")
-        merged["block_index"] = live.get("block_index")
-        merged["transaction_id"] = live.get("transaction_id") or item.get(
-            "transaction_id"
-        )
-        merged["owner"] = live.get("owner") or item.get("owner")
-        merged["public_key_hash"] = live.get("public_key_hash") or item.get(
-            "public_key_hash"
-        )
-        merged["file"] = live.get("file") or f
-        _add(merged)
-
-    pipeline = [
-        {"$match": {"transactions.relationship.file.file_id": {"$gt": ""}}},
-        {"$unwind": "$transactions"},
-        {"$match": {"transactions.relationship.file.file_id": {"$gt": ""}}},
-        {
-            "$project": {
-                "_id": 0,
-                "block_index": "$index",
-                "transaction": "$transactions",
-            }
-        },
-    ]
-    chain_hits = []
+    hits = []
     try:
-        async for doc in _db(config).blocks.aggregate(pipeline):
-            txn = doc.get("transaction") or {}
-            rel = (txn.get("relationship") or {}).get("file") or {}
-            if not is_video_file(rel):
-                continue
-            if not _file_text_matches(rel, q, txn.get("id") or ""):
-                continue
-            chain_hits.append(
-                {
-                    "source": "chain",
-                    "block_index": doc.get("block_index"),
-                    "transaction_id": txn.get("id") or "",
-                    "owner": txn.get("inception_public_key_hash") or "",
-                    "public_key_hash": txn.get("public_key_hash") or "",
-                    "file": rel,
-                }
-            )
+        cursor = _db(config).blocks.find(
+            {"transactions.relationship.file.file_id": {"$gt": ""}},
+            {"transactions": 1, "index": 1},
+        )
+        async for block in cursor:
+            for txn in block.get("transactions") or []:
+                hit = _video_hit(txn, "chain", block.get("index"), q)
+                if hit:
+                    hits.append(hit)
     except Exception:
         pass
-    chain_hits.sort(key=lambda item: int(item.get("block_index") or 0), reverse=True)
-    for item in chain_hits:
-        if len(results) >= fetch_n:
-            break
-        await _add_live(item)
-
+    hits.sort(key=lambda item: int(item.get("block_index") or 0), reverse=True)
     try:
         async for txn in _db(config).miner_transactions.find(
             {"relationship.file.file_id": {"$gt": ""}},
             {"_id": 0},
         ):
-            if len(results) >= fetch_n:
-                break
-            rel = (txn.get("relationship") or {}).get("file") or {}
-            if not is_video_file(rel):
-                continue
-            if not _file_text_matches(rel, q, txn.get("id") or ""):
-                continue
-            await _add_live(
-                {
-                    "source": "mempool",
-                    "block_index": None,
-                    "transaction_id": txn.get("id") or "",
-                    "owner": txn.get("inception_public_key_hash") or "",
-                    "public_key_hash": txn.get("public_key_hash") or "",
-                    "file": rel,
-                }
-            )
+            hit = _video_hit(txn, "mempool", None, q)
+            if hit:
+                hits.append(hit)
     except Exception:
         pass
-
+    taken = await takedown_targets(
+        config, [item.get("transaction_id") for item in hits]
+    )
+    retracted_files, retracted_txns = await retracted_ids(
+        config,
+        [(item.get("file") or {}).get("file_id") for item in hits],
+        [item.get("transaction_id") for item in hits],
+    )
+    seen = set()
+    results = []
+    for item in hits:
+        f = item.get("file") or {}
+        file_id = (f.get("file_id") or "").strip()
+        tid = (item.get("transaction_id") or "").strip()
+        if not file_id:
+            continue
+        if tid and (tid in taken or tid in retracted_txns):
+            continue
+        if file_id in retracted_files:
+            continue
+        owner = (item.get("owner") or "").strip()
+        keys = video_feed_keys(f, owner)
+        if not keys or any(key in seen for key in keys):
+            continue
+        seen.update(keys)
+        item["owner"] = owner
+        results.append(item)
     return results[skip : skip + limit]
