@@ -78,6 +78,8 @@ class FileAnnouncement:
     mime_type    : MIME type (optional)
     size         : size in bytes (optional)
     supersedes   : transaction id of a previous FileAnnouncement (optional)
+    thumbnail_file_id : backend id of a JPEG captured at upload (optional)
+    thumbnail_share_url : public read credential for that JPEG (optional)
     """
 
     RELATIONSHIP_KEY = "file"
@@ -94,6 +96,8 @@ class FileAnnouncement:
         size=None,
         supersedes: str = "",
         share_url: str = "",
+        thumbnail_file_id: str = "",
+        thumbnail_share_url: str = "",
         **kwargs,
     ):
         if not file_id or not isinstance(file_id, str):
@@ -122,6 +126,15 @@ class FileAnnouncement:
         if len(share_url) > MAX_SHARE_URL_LEN:
             raise ValueError(f"share_url exceeds {MAX_SHARE_URL_LEN} characters")
 
+        thumbnail_file_id = str(thumbnail_file_id or "").strip()
+        if len(thumbnail_file_id) > MAX_FILE_ID_LEN:
+            raise ValueError(f"thumbnail_file_id exceeds {MAX_FILE_ID_LEN} characters")
+        thumbnail_share_url = str(thumbnail_share_url or "").strip()
+        if len(thumbnail_share_url) > MAX_SHARE_URL_LEN:
+            raise ValueError(
+                f"thumbnail_share_url exceeds {MAX_SHARE_URL_LEN} characters"
+            )
+
         if size is not None:
             try:
                 size = int(size)
@@ -140,6 +153,8 @@ class FileAnnouncement:
         self.size = size
         self.supersedes = str(supersedes or "")
         self.share_url = share_url
+        self.thumbnail_file_id = thumbnail_file_id
+        self.thumbnail_share_url = thumbnail_share_url
         self.extra_fields = {k: v for k, v in kwargs.items()}
 
     @staticmethod
@@ -183,6 +198,10 @@ class FileAnnouncement:
             result["supersedes"] = self.supersedes
         if self.share_url:
             result["share_url"] = self.share_url
+        if self.thumbnail_file_id:
+            result["thumbnail_file_id"] = self.thumbnail_file_id
+        if self.thumbnail_share_url:
+            result["thumbnail_share_url"] = self.thumbnail_share_url
         if self.extra_fields:
             result.update(self.extra_fields)
         return result
@@ -200,6 +219,8 @@ class FileAnnouncement:
             + ",".join(self.keywords)
             + self.get_string(self.supersedes)
             + self.get_string(self.share_url)
+            + self.get_string(self.thumbnail_file_id)
+            + self.get_string(self.thumbnail_share_url)
         )
 
     def matches_query(self, query: str) -> bool:

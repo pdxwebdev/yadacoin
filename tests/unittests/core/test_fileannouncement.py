@@ -120,6 +120,21 @@ class TestFileAnnouncement(AsyncTestCase):
         self.assertEqual(again.share_url, shared.share_url)
         self.assertNotEqual(plain.to_string(), shared.to_string())
 
+    async def test_thumbnail_roundtrip_and_hash(self):
+        plain = self._ann()
+        with_thumb = self._ann(
+            thumbnail_file_id="b" * 64,
+            thumbnail_share_url="sia-share:v1:" + "c" * 64,
+        )
+        self.assertNotIn("thumbnail_file_id", plain.to_dict())
+        self.assertEqual(
+            plain.to_string(), with_thumb.to_string()[: len(plain.to_string())]
+        )
+        self.assertIn("b" * 64, with_thumb.to_string())
+        again = FileAnnouncement.from_dict(with_thumb.to_dict())
+        self.assertEqual(again.thumbnail_file_id, "b" * 64)
+        self.assertEqual(again.thumbnail_share_url, with_thumb.thumbnail_share_url)
+
     async def test_to_string_deterministic(self):
         a = self._ann()
         b = self._ann()

@@ -138,7 +138,9 @@ class TestFileAnnouncementBackends(AsyncTestCase):
         self.assertFalse(is_sharing_credential("https://sia.storage/share/x"))
         backend = SiaStorageBackend("")
         with self.assertRaises(Exception) as ctx:
-            await backend.object_size("ab" * 32, share_url="https://sia.storage/share/x")
+            await backend.object_size(
+                "ab" * 32, share_url="https://sia.storage/share/x"
+            )
         self.assertIn("sharing key", str(ctx.exception).lower())
         self.assertNotIn("64-character", str(ctx.exception))
 
@@ -277,6 +279,47 @@ class TestFileAnnouncementService(AsyncTestCase):
         self.assertEqual(rec["owner"], "user-a")
         self.assertTrue(rec["content_hash"])
         self.assertTrue(rec["file_id"])
+
+    async def test_create_file_stores_thumbnail_id(self):
+        from plugins.fileannouncement import service
+
+        config = MagicMock()
+        config.mongo.async_db.miner_transactions.replace_one = AsyncMock()
+        config.peer = None
+        config.nodeShared = None
+        fake_txn = MagicMock()
+        fake_txn.transaction_signature = "txn-sig"
+        fake_txn.inception_public_key_hash = "user-a"
+        fake_txn.confirming_txn = None
+        fake_txn.to_dict.return_value = {"id": "txn-sig"}
+        with patch.object(
+            service.store, "get_settings", AsyncMock(return_value={"backend": "memory"})
+        ), patch.object(
+            service.store, "insert_file", AsyncMock(side_effect=lambda c, r: r)
+        ), patch.object(
+            service.store, "add_history", AsyncMock(return_value={})
+        ), patch.object(
+            service.store, "find_same_user_duplicate", AsyncMock(return_value=None)
+        ), patch.object(
+            service.store, "clear_retraction", AsyncMock()
+        ), patch.object(
+            service, "_operator_id", AsyncMock(return_value="user-a")
+        ), patch.object(
+            service, "_generate_txn", AsyncMock(return_value=fake_txn)
+        ) as generate:
+            rec = await service.create_file(
+                config,
+                title="Clip",
+                content=b"video-bytes",
+                thumbnail=b"jpeg-bytes",
+                filename="clip.mp4",
+                mime_type="video/mp4",
+                backend_name="memory",
+            )
+        ann = generate.call_args[0][1]
+        self.assertTrue(ann.thumbnail_file_id)
+        self.assertNotEqual(ann.thumbnail_file_id, rec["file_id"])
+        self.assertEqual(rec["thumbnail_file_id"], ann.thumbnail_file_id)
 
     async def test_create_file_rejects_same_user_duplicate(self):
         from plugins.fileannouncement import service
@@ -612,3 +655,121 @@ class TestByteRange(AsyncTestCase):
             len(body),
         )
         self.assertEqual(uploaded["file_id"], hashlib.sha256(body).hexdigest())
+
+
+class TestProfileLookup(AsyncTestCase):
+    def _config(self):
+        config = MagicMock()
+        config.mongo.async_db = _DB()
+        return config
+
+    async def test_identity_and_files_for_inception(self):
+        from plugins.fileannouncement.store import (
+            files_for_inception,
+            identity_for_inception,
+        )
+
+        config = self._config()
+        config.mongo.async_db.blocks.rows = [
+            {
+                "index": 4,
+                "time": 40,
+                "transactions": [
+                    {
+                        "id": "id-txn",
+                        "public_key_hash": "rotated-key",
+                        "inception_public_key_hash": "owner-a",
+                        "relationship": {
+                            "identity": {
+                                "username": "alice",
+                                "username_signature": "sig",
+                            }
+                        },
+                    },
+                    {
+                        "id": "file-txn",
+                        "inception_public_key_hash": "owner-a",
+                        "time": 50,
+                        "relationship": {
+                            "file": {
+                                "file_id": "vid1",
+                                "backend": "sia",
+                                "title": "Clip",
+                                "filename": "clip.mp4",
+                                "mime_type": "video/mp4",
+                            }
+                        },
+                    },
+                    {
+                        "id": "other-file",
+                        "inception_public_key_hash": "owner-b",
+                        "time": 60,
+                        "relationship": {
+                            "file": {
+                                "file_id": "vid2",
+                                "backend": "sia",
+                                "title": "Other",
+                                "filename": "other.mp4",
+                                "mime_type": "video/mp4",
+                            }
+                        },
+                    },
+                ],
+            }
+        ]
+        ident = await identity_for_inception(config, "owner-a")
+        self.assertEqual(ident["username"], "alice")
+        self.assertEqual(ident["inception_public_key_hash"], "owner-a")
+        files = await files_for_inception(config, "owner-a")
+        self.assertEqual([row["file_id"] for row in files], ["vid1"])
+        missing = await identity_for_inception(config, "nobody")
+        self.assertEqual(missing["username"], "")
+
+    async def test_string_relationship_does_not_drop_username(self):
+        from plugins.fileannouncement.store import identity_for_inception
+
+        config = self._config()
+        config.mongo.async_db.blocks.rows = [
+            {
+                "index": 1,
+                "transactions": [
+                    {"id": "reanchor", "relationship": "reanchor"},
+                    {
+                        "id": "id-txn",
+                        "public_key_hash": "1FPVi9gaMB9xqtKCTwD5ABBW1XziRzMttq",
+                        "inception_public_key_hash": "1FPVi9gaMB9xqtKCTwD5ABBW1XziRzMttq",
+                        "relationship": {
+                            "identity": {
+                                "username": "yadacoin.io",
+                                "username_signature": "sig",
+                            }
+                        },
+                    },
+                ],
+            }
+        ]
+        ident = await identity_for_inception(
+            config, "1FPVi9gaMB9xqtKCTwD5ABBW1XziRzMttq"
+        )
+        self.assertEqual(ident["username"], "yadacoin.io")
+
+    async def test_inception_for_username(self):
+        from plugins.fileannouncement.store import inception_for_username
+
+        config = self._config()
+        config.mongo.async_db.blocks.rows = [
+            {
+                "transactions": [
+                    {
+                        "inception_public_key_hash": "1FPVi9gaMB9xqtKCTwD5ABBW1XziRzMttq",
+                        "public_key_hash": "1FPVi9gaMB9xqtKCTwD5ABBW1XziRzMttq",
+                        "relationship": {"identity": {"username": "yadacoin.io"}},
+                    }
+                ]
+            }
+        ]
+        self.assertEqual(
+            await inception_for_username(config, "@YadaCoin.io"),
+            "1FPVi9gaMB9xqtKCTwD5ABBW1XziRzMttq",
+        )
+        self.assertEqual(await inception_for_username(config, "missing"), "")

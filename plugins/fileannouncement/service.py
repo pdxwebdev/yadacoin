@@ -88,6 +88,11 @@ async def _operator_id(config) -> str:
     return str(keys.get("inception_public_key_hash") or "").strip()
 
 
+async def operator_inception_public_key_hash(config) -> str:
+    """Inception hash for this node, or empty when the KEL is not ready."""
+    return await _operator_id(config)
+
+
 async def _backend_from_settings(config, backend_name=None):
     settings = await store.get_settings(config)
     name = backend_name or settings.get("backend") or "sia"
@@ -527,6 +532,7 @@ async def create_file(
     file_id: str = "",
     backend_name: str = "",
     size=None,
+    thumbnail: bytes = None,
     on_progress=None,
 ):
     backend, name, _settings = await _backend_from_settings(config, backend_name)
@@ -570,6 +576,18 @@ async def create_file(
             )
         else:
             share_url = ""
+        thumbnail_file_id = ""
+        thumbnail_share_url = ""
+        if thumbnail:
+            _emit_progress(on_progress, {"phase": "sia"})
+            thumb = await backend.upload(
+                thumbnail,
+                filename="thumbnail.jpg",
+                mime_type="image/jpeg",
+                metadata={"title": title, "role": "thumbnail"},
+            )
+            thumbnail_file_id = thumb["file_id"]
+            thumbnail_share_url = thumb.get("share_url") or ""
         _emit_progress(on_progress, {"phase": "announcing"})
         if not share_url and hasattr(backend, "share"):
             try:
@@ -587,6 +605,8 @@ async def create_file(
             mime_type=mime_type,
             size=size,
             share_url=share_url,
+            thumbnail_file_id=thumbnail_file_id,
+            thumbnail_share_url=thumbnail_share_url,
         )
         txn = await _generate_txn(config, ann, fee=0.0)
         await _broadcast(config, txn)

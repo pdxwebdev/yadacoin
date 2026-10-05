@@ -691,6 +691,61 @@ function startUploadPoll(id, hasFile) {
   uploadPoll = setInterval(tick, 400);
 }
 
+function waitMedia(el, event) {
+  return new Promise((resolve, reject) => {
+    const ok = () => { cleanup(); resolve(); };
+    const bad = () => { cleanup(); reject(new Error("thumbnail failed")); };
+    const cleanup = () => {
+      el.removeEventListener(event, ok);
+      el.removeEventListener("error", bad);
+    };
+    el.addEventListener(event, ok, { once: true });
+    el.addEventListener("error", bad, { once: true });
+  });
+}
+
+async function captureThumbnail(file) {
+  if (!file || !String(file.type || "").startsWith("video/")) return null;
+  const url = URL.createObjectURL(file);
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  video.src = url;
+  try {
+    const ready = waitMedia(video, "loadeddata");
+    video.load();
+    await ready;
+    const duration = Number(video.duration);
+    const at = Number.isFinite(duration) && duration > 0 ? Math.min(1, duration / 2) : 0;
+    if (at > 0) {
+      const seeked = waitMedia(video, "seeked");
+      video.currentTime = at;
+      await seeked;
+    }
+    const srcW = video.videoWidth || 0;
+    const srcH = video.videoHeight || 0;
+    if (!srcW || !srcH) return null;
+    const maxW = 480;
+    const scale = srcW > maxW ? maxW / srcW : 1;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(srcW * scale));
+    canvas.height = Math.max(1, Math.round(srcH * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.72));
+    if (!blob || !blob.size) return null;
+    return new File([blob], "thumbnail.jpg", { type: "image/jpeg" });
+  } catch (err) {
+    return null;
+  } finally {
+    video.removeAttribute("src");
+    video.load();
+    URL.revokeObjectURL(url);
+  }
+}
+
 function newUploadId() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
   return "up" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
@@ -731,6 +786,11 @@ $("#upload-form").addEventListener("submit", async (e) => {
   const uploadId = newUploadId();
   fd.set("upload_id", uploadId);
   setUploading(true);
+  if (hasFile && String(file.type || "").startsWith("video/")) {
+    showUploadProgress(0, "Capturing thumbnail…");
+    const thumb = await captureThumbnail(file);
+    if (thumb) fd.set("thumbnail", thumb, "thumbnail.jpg");
+  }
   showUploadProgress(hasFile ? 0 : null, hasFile ? "Sending to node 0%" : "Announcing…");
   let announced = false;
   try {

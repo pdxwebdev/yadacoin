@@ -4,6 +4,7 @@
   --muted: rgba(255, 255, 255, 0.72);
   --overlay: rgba(0, 0, 0, 0.45);
   --accent: #fe2c55;
+  --nav-h: 56px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -130,13 +131,11 @@ body {
   background: #000;
 }
 
-.slide.ready .meta,
-.slide.ready .side-actions {
+.slide.ready .meta {
   visibility: visible;
 }
 
-.slide .meta,
-.slide .side-actions {
+.slide .meta {
   visibility: hidden;
 }
 
@@ -146,7 +145,7 @@ body {
   right: 56px;
   bottom: 0;
   z-index: 5;
-  padding: 0 16px calc(28px + var(--safe-bottom));
+  padding: 0 16px calc(var(--nav-h) + 16px + var(--safe-bottom));
   background: linear-gradient(to top, rgba(0, 0, 0, 0.75), transparent);
   pointer-events: none;
 }
@@ -237,7 +236,7 @@ body {
   top: calc(56px + var(--safe-top));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 40;
+  z-index: 70;
   background: var(--overlay);
   color: #fff;
   padding: 8px 14px;
@@ -253,7 +252,7 @@ body {
   z-index: 20;
   display: grid;
   place-content: center;
-  padding: 32px;
+  padding: 32px 32px calc(32px + var(--nav-h));
   text-align: center;
   background: #0a0a0a;
 }
@@ -289,7 +288,7 @@ body {
 
 .hint {
   position: absolute;
-  bottom: calc(12px + var(--safe-bottom));
+  bottom: calc(var(--nav-h) + 8px + var(--safe-bottom));
   left: 50%;
   transform: translateX(-50%);
   z-index: 25;
@@ -306,7 +305,7 @@ body {
 .mute-btn {
   position: absolute;
   right: 14px;
-  bottom: calc(88px + var(--safe-bottom));
+  bottom: calc(var(--nav-h) + 72px + var(--safe-bottom));
   z-index: 30;
   width: 44px;
   height: 44px;
@@ -322,7 +321,7 @@ body {
 .side-actions {
   position: absolute;
   right: 12px;
-  bottom: calc(150px + var(--safe-bottom));
+  bottom: calc(var(--nav-h) + 132px + var(--safe-bottom));
   z-index: 30;
   display: flex;
   flex-direction: column;
@@ -344,6 +343,369 @@ body {
   cursor: pointer;
   backdrop-filter: blur(6px);
   line-height: 1.1;
+}
+
+.side-actions .avatar-btn {
+  padding: 0;
+  overflow: hidden;
+  border: 2px solid #fff;
+  background: #2a2a2a;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.avatar-fallback {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: #fff;
+}
+
+.slide .who {
+  pointer-events: auto;
+  display: block;
+  margin: 0 0 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: left;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  cursor: pointer;
+}
+
+.profile {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  padding-bottom: calc(var(--nav-h) + var(--safe-bottom));
+}
+
+.profile[hidden],
+.player[hidden] {
+  display: none !important;
+}
+
+.profile-top {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  padding: calc(8px + var(--safe-top)) 8px 8px;
+}
+
+.profile-top button,
+.overlay-back {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  font-size: 32px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.profile-top-title {
+  text-align: center;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.profile-scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.profile-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 20px 18px;
+  text-align: center;
+}
+
+.avatar-lg {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #2a2a2a;
+  color: #fff;
+  font-size: 36px;
+  font-weight: 800;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+}
+
+.profile-head h1 {
+  margin: 12px 0 0;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.profile-sub {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.stats {
+  display: flex;
+  justify-content: center;
+  gap: 28px;
+  margin-top: 16px;
+  width: 100%;
+}
+
+.stats strong {
+  display: block;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.stats span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.profile-actions[hidden],
+.profile-empty[hidden],
+.profile-sub[hidden] {
+  display: none !important;
+}
+
+.pill {
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #1f1f1f;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: #111;
+}
+
+.tile {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  border: 0;
+  padding: 0;
+  background: #161616;
+  color: #fff;
+  cursor: pointer;
+}
+
+.tile img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tile .ph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 28px;
+}
+
+.tile .cap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 16px 6px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.profile-empty {
+  margin: 28px 20px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.doc {
+  padding: 8px 22px 32px;
+  text-align: left;
+}
+
+.doc h1 {
+  margin: 0 0 12px;
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 800;
+}
+
+.doc p,
+.doc li {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.doc ol {
+  margin: 16px 0 0;
+  padding-left: 1.2em;
+}
+
+.doc li + li {
+  margin-top: 12px;
+}
+
+.doc a {
+  color: #fff;
+}
+
+.player {
+  position: absolute;
+  inset: 0;
+  z-index: 55;
+  background: #000;
+  padding-bottom: calc(var(--nav-h) + var(--safe-bottom));
+}
+
+.player .spinner {
+  position: absolute;
+  inset: 0;
+  bottom: calc(var(--nav-h) + var(--safe-bottom));
+  display: grid;
+  place-items: center;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.player .spinner[hidden] {
+  display: none !important;
+}
+
+.player .spinner::after {
+  content: "";
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.player video {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  bottom: calc(var(--nav-h) + var(--safe-bottom));
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+  background: #000;
+}
+
+.overlay-back {
+  position: absolute;
+  top: calc(8px + var(--safe-top));
+  left: 8px;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.player-caption {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: calc(var(--nav-h) + 16px + var(--safe-bottom));
+  z-index: 2;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.tabbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  height: calc(var(--nav-h) + var(--safe-bottom));
+  padding: 0 8px var(--safe-bottom);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.92);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tabbar .tab {
+  height: var(--nav-h);
+  border: 0;
+  background: none;
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.tabbar .tab.active {
+  color: #fff;
+}
+
+.tab-plus {
+  width: 64px;
+}
+
+.plus-mark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 30px;
+  margin: 0 auto;
+  border-radius: 8px;
+  background: #fff;
+  color: #000;
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1;
+  box-shadow: -4px 0 0 #25f4ee, 4px 0 0 var(--accent);
+}
+
+#app.view-profile .top-bar,
+#app.view-profile .feed,
+#app.view-profile .hint,
+#app.view-profile .mute-btn,
+#app.view-profile .empty {
+  display: none;
 }
 
 .side-actions button:active {

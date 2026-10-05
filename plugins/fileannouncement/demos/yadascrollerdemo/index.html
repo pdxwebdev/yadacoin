@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#000000" />
   <title>Yada Scroller Demo</title>
   <base href="/file-announcements/demo/yadascroller/" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=10" />
 </head>
 <body>
   <div id="app">
@@ -36,6 +36,57 @@
     <div class="hint" id="hint">Swipe or scroll · report · mute</div>
     <button type="button" id="mute-btn" class="mute-btn" aria-label="Toggle mute">🔇</button>
 
+    <section id="profile" class="profile" hidden>
+      <header class="profile-top">
+        <button type="button" id="profile-back" aria-label="Back">‹</button>
+        <div class="profile-top-title" id="profile-top-title">Profile</div>
+      </header>
+      <div class="profile-scroll">
+        <div class="profile-head">
+          <div class="avatar-lg" id="profile-avatar" aria-hidden="true"></div>
+          <h1 id="profile-name">Profile</h1>
+          <p class="profile-sub" id="profile-sub" hidden></p>
+          <div class="stats">
+            <div><strong id="stat-likes">—</strong><span>Likes</span></div>
+            <div><strong id="stat-followers">—</strong><span>Followers</span></div>
+            <div><strong id="stat-following">—</strong><span>Following</span></div>
+          </div>
+          <div class="profile-actions" id="profile-actions" hidden>
+            <button type="button" class="pill" id="edit-avatar">Edit avatar</button>
+            <button type="button" class="pill" id="edit-username">Edit username</button>
+            <button type="button" class="pill" id="edit-upload">Upload</button>
+          </div>
+        </div>
+        <div id="profile-grid" class="profile-grid"></div>
+        <p id="profile-empty" class="profile-empty" hidden>No uploads yet</p>
+      </div>
+    </section>
+
+    <section id="publish" class="profile" hidden>
+      <header class="profile-top">
+        <button type="button" id="publish-back" aria-label="Back">‹</button>
+        <div class="profile-top-title">For yourself</div>
+      </header>
+      <div class="profile-scroll">
+        <article class="doc">
+          <p>Explainer video coming soon.</p>
+        </article>
+      </div>
+    </section>
+
+    <div id="player" class="player" hidden>
+      <button type="button" id="player-back" class="overlay-back" aria-label="Back">‹</button>
+      <video id="player-video" playsinline webkit-playsinline loop></video>
+      <div class="spinner" id="player-spinner" hidden></div>
+      <div class="player-caption" id="player-caption"></div>
+    </div>
+
+    <nav class="tabbar" aria-label="Primary">
+      <button type="button" id="nav-fyp" class="tab active">FYP</button>
+      <button type="button" id="nav-upload" class="tab tab-plus" aria-label="Upload"><span class="plus-mark">+</span></button>
+      <button type="button" id="nav-profile" class="tab">Profile</button>
+    </nav>
+
     <dialog id="report-dlg" class="report-dlg">
       <form method="dialog" id="report-form">
         <h2>Report content</h2>
@@ -51,6 +102,6 @@
       </form>
     </dialog>
   </div>
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=13"></script>
 </body>
 </html>

@@ -56,6 +56,8 @@ def record_from_announcement(
         "size": ann.size,
         "supersedes": ann.supersedes,
         "share_url": ann.share_url,
+        "thumbnail_file_id": ann.thumbnail_file_id,
+        "thumbnail_share_url": ann.thumbnail_share_url,
         "transaction_id": transaction_id,
         "status": status,
         "created_at": _now(),
@@ -131,6 +133,16 @@ async def get_file_by_file_id(config, file_id: str) -> Optional[dict]:
     return doc
 
 
+def _share_url_for_rel(rel: dict, file_id: str) -> str:
+    if not rel:
+        return ""
+    if rel.get("file_id") == file_id:
+        return str(rel.get("share_url") or "").strip()
+    if rel.get("thumbnail_file_id") == file_id:
+        return str(rel.get("thumbnail_share_url") or rel.get("share_url") or "").strip()
+    return ""
+
+
 async def share_url_for_file(config, file_id: str) -> str:
     """Public Sia share URL from the local index, then confirmed blocks."""
     file_id = (file_id or "").strip()
@@ -141,10 +153,24 @@ async def share_url_for_file(config, file_id: str) -> str:
     if url:
         return url
     try:
+        thumb = await _db(config)[FILES_COLLECTION].find_one(
+            {"thumbnail_file_id": file_id}, {"_id": 0}
+        )
+    except Exception:
+        thumb = None
+    url = _share_url_for_rel(thumb or {}, file_id)
+    if url:
+        return url
+    try:
         cursor = (
             _db(config)
             .blocks.find(
-                {"transactions.relationship.file.file_id": file_id},
+                {
+                    "$or": [
+                        {"transactions.relationship.file.file_id": file_id},
+                        {"transactions.relationship.file.thumbnail_file_id": file_id},
+                    ]
+                },
                 {"transactions.relationship.file": 1, "index": 1},
             )
             .sort("index", -1)
@@ -153,15 +179,21 @@ async def share_url_for_file(config, file_id: str) -> str:
         async for block in cursor:
             for txn in block.get("transactions") or []:
                 rel = (txn.get("relationship") or {}).get("file") or {}
-                if rel.get("file_id") == file_id and rel.get("share_url"):
-                    return str(rel["share_url"]).strip()
+                url = _share_url_for_rel(rel, file_id)
+                if url:
+                    return url
     except Exception:
         return ""
     try:
         cursor = (
             _db(config)
             .miner_transactions.find(
-                {"relationship.file.file_id": file_id},
+                {
+                    "$or": [
+                        {"relationship.file.file_id": file_id},
+                        {"relationship.file.thumbnail_file_id": file_id},
+                    ]
+                },
                 {"relationship.file": 1},
             )
             .sort([("time", -1)])
@@ -169,8 +201,9 @@ async def share_url_for_file(config, file_id: str) -> str:
         )
         async for txn in cursor:
             rel = (txn.get("relationship") or {}).get("file") or {}
-            if rel.get("file_id") == file_id and rel.get("share_url"):
-                return str(rel["share_url"]).strip()
+            url = _share_url_for_rel(rel, file_id)
+            if url:
+                return url
     except Exception:
         return ""
     return ""
@@ -205,7 +238,12 @@ async def find_file_announcements(config, file_id: str) -> list:
         cursor = (
             _db(config)
             .blocks.find(
-                {"transactions.relationship.file.file_id": file_id},
+                {
+                    "$or": [
+                        {"transactions.relationship.file.file_id": file_id},
+                        {"transactions.relationship.file.thumbnail_file_id": file_id},
+                    ]
+                },
                 {"transactions": 1, "index": 1},
             )
             .limit(20)
@@ -213,7 +251,10 @@ async def find_file_announcements(config, file_id: str) -> list:
         async for block in cursor:
             for txn in block.get("transactions") or []:
                 rel = _file_payload(txn.get("relationship"))
-                if not rel or rel.get("file_id") != file_id:
+                if not rel or (
+                    rel.get("file_id") != file_id
+                    and rel.get("thumbnail_file_id") != file_id
+                ):
                     continue
                 found.append(
                     {
@@ -231,14 +272,22 @@ async def find_file_announcements(config, file_id: str) -> list:
         cursor = (
             _db(config)
             .miner_transactions.find(
-                {"relationship.file.file_id": file_id},
+                {
+                    "$or": [
+                        {"relationship.file.file_id": file_id},
+                        {"relationship.file.thumbnail_file_id": file_id},
+                    ]
+                },
                 {"_id": 0},
             )
             .limit(20)
         )
         async for txn in cursor:
             rel = _file_payload(txn.get("relationship"))
-            if not rel or rel.get("file_id") != file_id:
+            if not rel or (
+                rel.get("file_id") != file_id
+                and rel.get("thumbnail_file_id") != file_id
+            ):
                 continue
             found.append(
                 {
@@ -400,6 +449,8 @@ def _managed_view(
         "size": file_rel.get("size"),
         "backend": file_rel.get("backend") or "sia",
         "share_url": file_rel.get("share_url") or "",
+        "thumbnail_file_id": file_rel.get("thumbnail_file_id") or "",
+        "thumbnail_share_url": file_rel.get("thumbnail_share_url") or "",
         "supersedes": file_rel.get("supersedes") or "",
         "owner": txn.get("inception_public_key_hash") or "",
         "status": "mempool" if source == "mempool" else "confirmed",
@@ -656,6 +707,156 @@ async def list_history(
 
 VIDEO_EXT_RE = re.compile(r"\.(mp4|webm|mov|m4v|mkv|ogv)$", re.I)
 VIDEO_MIME_RE = re.compile(r"^video/", re.I)
+
+
+def _identity_username(txn: dict) -> str:
+    if not isinstance(txn, dict):
+        return ""
+    relationship = txn.get("relationship")
+    if not isinstance(relationship, dict):
+        return ""
+    identity = relationship.get("identity")
+    if not isinstance(identity, dict):
+        return ""
+    return (identity.get("username") or "").strip()
+
+
+def _identity_keys(txn: dict) -> list:
+    keys = []
+    for raw in (
+        txn.get("inception_public_key_hash"),
+        txn.get("public_key_hash"),
+    ):
+        key = (raw or "").strip()
+        if key and key not in keys:
+            keys.append(key)
+    return keys
+
+
+async def identity_usernames(config) -> dict:
+    """Map inception / public-key hash to the identity-announcement username."""
+    index = {}
+
+    def _absorb(txn):
+        if not isinstance(txn, dict):
+            return
+        username = _identity_username(txn)
+        if not username:
+            return
+        for key in _identity_keys(txn):
+            index[key] = username
+
+    try:
+        async for txn in _db(config).miner_transactions.find(
+            {"relationship.identity.username": {"$gt": ""}},
+            {"_id": 0},
+        ):
+            _absorb(txn)
+    except Exception:
+        pass
+    try:
+        cursor = _db(config).blocks.find(
+            {"transactions.relationship.identity.username": {"$gt": ""}},
+            {"transactions": 1},
+        )
+        async for block in cursor:
+            for txn in block.get("transactions") or []:
+                try:
+                    _absorb(txn)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return index
+
+
+async def inception_for_username(config, username: str) -> str:
+    """Inception hash for an identity-announcement username."""
+    wanted = (username or "").strip().lstrip("@").lower()
+    if not wanted:
+        return ""
+    found = {}
+
+    def _absorb(txn):
+        if not isinstance(txn, dict):
+            return
+        name = _identity_username(txn)
+        if not name or name.lower() != wanted:
+            return
+        key = (
+            txn.get("inception_public_key_hash") or txn.get("public_key_hash") or ""
+        ).strip()
+        if key:
+            found["inception"] = key
+
+    try:
+        async for txn in _db(config).miner_transactions.find(
+            {"relationship.identity.username": {"$gt": ""}},
+            {"_id": 0},
+        ):
+            _absorb(txn)
+    except Exception:
+        pass
+    try:
+        cursor = _db(config).blocks.find(
+            {"transactions.relationship.identity.username": {"$gt": ""}},
+            {"transactions": 1},
+        )
+        async for block in cursor:
+            for txn in block.get("transactions") or []:
+                try:
+                    _absorb(txn)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return found.get("inception") or ""
+
+
+async def identity_for_inception(config, inception_public_key_hash: str) -> dict:
+    """Username from the identity announcement behind an inception hash."""
+    pkh = (inception_public_key_hash or "").strip()
+    if not pkh:
+        return {"inception_public_key_hash": "", "username": ""}
+    names = await identity_usernames(config)
+    return {
+        "inception_public_key_hash": pkh,
+        "username": names.get(pkh) or "",
+    }
+
+
+async def files_for_inception(
+    config, inception_public_key_hash: str, limit: int = 200
+) -> list:
+    """Live file announcements whose announcer inception hash matches."""
+    owner = (inception_public_key_hash or "").strip()
+    if not owner:
+        return []
+    limit = max(1, min(int(limit), 500))
+    items = await iter_live_file_txns(config)
+    owned = [item for item in items if (item.get("owner") or "").strip() == owner]
+    taken = await takedown_targets(
+        config, [item.get("transaction_id") for item in owned]
+    )
+    owned.sort(key=lambda row: int(row.get("updated_at") or 0), reverse=True)
+    seen = set()
+    matched = []
+    for item in owned:
+        tid = (item.get("transaction_id") or "").strip()
+        file_id = (item.get("file_id") or "").strip()
+        if tid and tid in taken:
+            continue
+        if await is_retracted(config, file_id=file_id, transaction_id=tid):
+            continue
+        backend = (item.get("backend") or "sia").strip().lower()
+        key = f"{backend}:{file_id}" if file_id else tid
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        matched.append(item)
+        if len(matched) >= limit:
+            break
+    return matched
 
 
 def is_video_file(file_doc: dict) -> bool:

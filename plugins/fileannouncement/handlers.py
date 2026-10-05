@@ -36,6 +36,7 @@ from .service import (
     download_file,
     forget_live,
     open_public_range,
+    operator_inception_public_key_hash,
     prepare_public_stream,
     takedown_file,
     update_file,
@@ -177,6 +178,16 @@ def clear_stream_cache():
     return deleted
 
 
+def _thumbnail_url(backend: str, thumbnail_file_id: str) -> str:
+    thumb = (thumbnail_file_id or "").strip()
+    if not thumb:
+        return ""
+    return (
+        f"/file-announcements/api/v1/public/stream/{quote(backend, safe='')}/"
+        f"{quote(thumb, safe='')}?mime_type=image%2Fjpeg&filename=thumb.jpg"
+    )
+
+
 def _video_public_item(item: dict) -> dict:
     f = item.get("file") or {}
     backend = (f.get("backend") or "sia").strip().lower()
@@ -194,12 +205,14 @@ def _video_public_item(item: dict) -> dict:
         "backend": backend,
         "file_id": file_id,
         "owner": (item.get("owner") or "").strip(),
+        "username": (item.get("username") or "").strip(),
         "stream_url": (
             f"/file-announcements/api/v1/public/stream/{quote(backend, safe='')}/"
             f"{quote(file_id, safe='')}"
             if file_id
             else ""
         ),
+        "thumbnail_url": _thumbnail_url(backend, f.get("thumbnail_file_id") or ""),
     }
 
 
@@ -317,6 +330,9 @@ class FileListHandler(BaseFileAnnouncementHandler):
             file_id = self.get_body_argument("file_id", "")
             backend = self.get_body_argument("backend", "")
             upload_id = self.get_body_argument("upload_id", "")
+            thumbnail = None
+            if self.request.files.get("thumbnail"):
+                thumbnail = self.request.files["thumbnail"][0].get("body") or None
         else:
             try:
                 data = _json_body(self)
@@ -330,6 +346,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
             file_id = data.get("file_id") or ""
             backend = data.get("backend") or ""
             upload_id = data.get("upload_id") or ""
+            thumbnail = None
             raw = data.get("content_b64") or ""
             if raw:
                 import base64
@@ -338,6 +355,8 @@ class FileListHandler(BaseFileAnnouncementHandler):
                     content = base64.b64decode(raw)
                 except Exception:
                     return self._error(400, "content_b64 is not valid base64")
+        if thumbnail and len(thumbnail) > 512 * 1024:
+            return self._error(400, "thumbnail exceeds 512KB")
         if not title:
             return self._error(400, "title is required")
         upload_id = str(upload_id or "").strip()
@@ -357,6 +376,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
                 mime_type=mime_type,
                 file_id=file_id,
                 backend_name=backend,
+                thumbnail=thumbnail,
                 on_progress=(
                     (lambda event, uid=upload_id: progress.apply(uid, event))
                     if tracked
@@ -663,6 +683,7 @@ class PublicVideoListHandler(BaseHandler):
 
     async def get(self):
         query = self.get_query_argument("q", "")
+        transaction_id = (self.get_query_argument("transaction_id", "") or "").strip()
         try:
             limit = min(int(self.get_query_argument("limit", 30)), 100)
             skip = max(int(self.get_query_argument("skip", 0)), 0)
@@ -672,11 +693,22 @@ class PublicVideoListHandler(BaseHandler):
                 {"status": False, "error": "limit and skip must be integers"}
             )
         tornado.ioloop.IOLoop.current().spawn_callback(prune_stream_cache, self.config)
-        raw = await store.search_videos(
-            self.config, query=query, limit=limit, skip=skip
-        )
-        results = [_video_public_item(item) for item in raw]
+        if transaction_id:
+            live = await store.get_live_by_transaction_id(self.config, transaction_id)
+            raw = [live] if live and store.is_video_file(live) else []
+            results = [_public_file_item(row) for row in raw]
+        else:
+            raw = await store.search_videos(
+                self.config, query=query, limit=limit, skip=skip
+            )
+            results = [_video_public_item(item) for item in raw]
         results = [r for r in results if r.get("file_id") and r.get("stream_url")]
+        try:
+            names = await store.identity_usernames(self.config)
+        except Exception:
+            names = {}
+        for item in results:
+            item["username"] = names.get(item.get("owner") or "", "")
         return self.render_as_json(
             {
                 "status": True,
@@ -685,6 +717,95 @@ class PublicVideoListHandler(BaseHandler):
                 "results": results,
             }
         )
+
+
+def _public_file_item(row: dict, username: str = "") -> dict:
+    shaped = {
+        "source": row.get("source") or "",
+        "block_index": row.get("block_index"),
+        "transaction_id": row.get("transaction_id") or "",
+        "owner": row.get("owner") or "",
+        "username": username,
+        "file": {
+            "title": row.get("title") or "",
+            "description": row.get("description") or "",
+            "keywords": list(row.get("keywords") or []),
+            "filename": row.get("filename") or "",
+            "mime_type": row.get("mime_type") or "",
+            "size": row.get("size") or 0,
+            "backend": row.get("backend") or "sia",
+            "file_id": row.get("file_id") or "",
+            "thumbnail_file_id": row.get("thumbnail_file_id") or "",
+        },
+    }
+    item = _video_public_item(shaped)
+    if not store.is_video_file(row):
+        item["stream_url"] = ""
+    return item
+
+
+async def _profile_payload(config, inception: str, is_me: bool) -> dict:
+    ident = await store.identity_for_inception(config, inception)
+    username = ident.get("username") or ""
+    rows = await store.files_for_inception(config, inception)
+    return {
+        "inception_public_key_hash": inception,
+        "username": username,
+        "is_me": bool(is_me),
+        "videos": [_public_file_item(row, username) for row in rows],
+    }
+
+
+class PublicProfileHandler(BaseHandler):
+    """GET /file-announcements/api/v1/public/profile — identity plus uploads."""
+
+    async def get(self):
+        transaction_id = (self.get_query_argument("transaction_id", "") or "").strip()
+        owner = (self.get_query_argument("owner", "") or "").strip()
+        username = (self.get_query_argument("username", "") or "").strip()
+        inception = ""
+        if username:
+            inception = await store.inception_for_username(self.config, username)
+        elif transaction_id:
+            live = await store.get_live_by_transaction_id(self.config, transaction_id)
+            if live:
+                inception = (live.get("owner") or "").strip()
+        if not inception:
+            inception = owner
+        if not inception:
+            self.set_status(404)
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "error": (
+                        "file announcement not found"
+                        if transaction_id
+                        else "user not found"
+                    ),
+                }
+            )
+        try:
+            me = await operator_inception_public_key_hash(self.config)
+        except Exception:
+            me = ""
+        profile = await _profile_payload(
+            self.config, inception, bool(me and me == inception)
+        )
+        return self.render_as_json({"status": True, "profile": profile})
+
+
+class PublicMeHandler(BaseHandler):
+    """GET /file-announcements/api/v1/public/me — this node's identity, if any."""
+
+    async def get(self):
+        try:
+            inception = await operator_inception_public_key_hash(self.config)
+        except Exception:
+            inception = ""
+        if not inception:
+            return self.render_as_json({"status": True, "profile": None})
+        profile = await _profile_payload(self.config, inception, True)
+        return self.render_as_json({"status": True, "profile": profile})
 
 
 class PublicStreamHandler(BaseHandler):
@@ -938,6 +1059,8 @@ HANDLERS = [
     (r"/file-announcements/api/v1/stream-cache", StreamCacheHandler),
     (r"/file-announcements/api/v1/takedown-reasons", FileTakedownReasonsHandler),
     (r"/file-announcements/api/v1/public/videos", PublicVideoListHandler),
+    (r"/file-announcements/api/v1/public/profile", PublicProfileHandler),
+    (r"/file-announcements/api/v1/public/me", PublicMeHandler),
     (
         r"/file-announcements/api/v1/public/takedown-reasons",
         PublicTakedownReasonsHandler,

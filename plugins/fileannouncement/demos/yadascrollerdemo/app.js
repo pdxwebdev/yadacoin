@@ -1,5 +1,7 @@
 (() => {
   const API_VIDEOS = "/file-announcements/api/v1/public/videos";
+  const API_PROFILE = "/file-announcements/api/v1/public/profile";
+  const API_ME = "/file-announcements/api/v1/public/me";
   const API_REASONS = "/file-announcements/api/v1/public/takedown-reasons";
   const API_TAKEDOWN = "/file-announcements/api/v1/public/takedown";
   const PREFETCH_COUNT = 10;
@@ -21,6 +23,29 @@
   const reportErr = document.getElementById("report-err");
   const reportCancel = document.getElementById("report-cancel");
   const reportSubmit = document.getElementById("report-submit");
+  const appEl = document.getElementById("app");
+  const profileEl = document.getElementById("profile");
+  const profileBack = document.getElementById("profile-back");
+  const profileTopTitle = document.getElementById("profile-top-title");
+  const profileAvatar = document.getElementById("profile-avatar");
+  const profileName = document.getElementById("profile-name");
+  const profileSub = document.getElementById("profile-sub");
+  const profileActions = document.getElementById("profile-actions");
+  const profileGrid = document.getElementById("profile-grid");
+  const profileEmpty = document.getElementById("profile-empty");
+  const editAvatar = document.getElementById("edit-avatar");
+  const editUsername = document.getElementById("edit-username");
+  const editUpload = document.getElementById("edit-upload");
+  const publishEl = document.getElementById("publish");
+  const publishBack = document.getElementById("publish-back");
+  const playerEl = document.getElementById("player");
+  const playerBack = document.getElementById("player-back");
+  const playerVideo = document.getElementById("player-video");
+  const playerSpinner = document.getElementById("player-spinner");
+  const playerCaption = document.getElementById("player-caption");
+  const navFyp = document.getElementById("nav-fyp");
+  const navUpload = document.getElementById("nav-upload");
+  const navProfile = document.getElementById("nav-profile");
 
   /** @type {Array<object>} */
   let videos = [];
@@ -40,10 +65,14 @@
   let observer = null;
   let feedGen = 0;
   let probeAbort = new AbortController();
+  let viewName = "feed";
+  /** @type {Array<object>} */
+  let profileVideos = [];
 
   const probe = document.createElement("video");
 
   function showStatus(msg, ms = 2800) {
+    if (viewName !== "feed" && (ms === 0 || !msg)) return;
     if (!msg) {
       statusEl.hidden = true;
       return;
@@ -94,6 +123,28 @@
       return /Safari/i.test(navigator.userAgent) && !/Chrome|Chromium|Edg/i.test(navigator.userAgent);
     }
     return false;
+  }
+
+  function avatarColor(name) {
+    const colors = ["#fe2c55", "#20d5ec", "#7c5cff", "#ffb703", "#3ddc97", "#4cc9f0"];
+    let n = 0;
+    const s = String(name || "?");
+    for (let i = 0; i < s.length; i++) n = (n + s.charCodeAt(i)) % colors.length;
+    return colors[n];
+  }
+
+  function avatarMarkup(username) {
+    const name = String(username || "").trim();
+    if (!name) {
+      return `<span class="avatar-fallback" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="8" r="4" fill="currentColor"/><path d="M4 20c1.6-3.6 4.4-5.2 8-5.2S18.4 16.4 20 20" fill="currentColor"/></svg></span>`;
+    }
+    return `<span class="avatar-fallback">${escapeHtml(name.slice(0, 1).toUpperCase())}</span>`;
+  }
+
+  function paintAvatar(el, username) {
+    const name = String(username || "").trim();
+    el.style.background = avatarColor(name || "?");
+    el.innerHTML = avatarMarkup(name);
   }
 
   function itemKey(item) {
@@ -174,11 +225,12 @@
     video.setAttribute("webkit-playsinline", "");
     video.loop = true;
     video.muted = muted;
-    video.autoplay = true;
-    video.preload = "auto";
+    video.autoplay = false;
+    video.preload = "none";
     video.controls = false;
     video.setAttribute("fetchpriority", "high");
     video.setAttribute("data-src", streamUrl(item));
+    if (item.thumbnail_url) video.poster = item.thumbnail_url;
     video.setAttribute("data-type", mimeFor(item));
 
     const spinner = document.createElement("div");
@@ -191,11 +243,29 @@
 
     const meta = document.createElement("div");
     meta.className = "meta";
-    meta.innerHTML = `
-      <h2>${escapeHtml(item.title || "Untitled")}</h2>
-      <p>${escapeHtml(item.description || "")}</p>
-      ${tags ? `<div class="tags">${tags}</div>` : ""}
-    `;
+    if (item.username) {
+      const who = document.createElement("button");
+      who.type = "button";
+      who.className = "who";
+      who.textContent = `@${item.username}`;
+      who.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openProfile(item);
+      });
+      meta.appendChild(who);
+    }
+    const title = document.createElement("h2");
+    title.textContent = item.title || "Untitled";
+    const desc = document.createElement("p");
+    desc.textContent = item.description || "";
+    meta.appendChild(title);
+    meta.appendChild(desc);
+    if (tags) {
+      const tagWrap = document.createElement("div");
+      tagWrap.className = "tags";
+      tagWrap.innerHTML = tags;
+      meta.appendChild(tagWrap);
+    }
 
     slide.appendChild(video);
     slide.appendChild(spinner);
@@ -203,6 +273,19 @@
 
     const side = document.createElement("div");
     side.className = "side-actions";
+    const avatarBtn = document.createElement("button");
+    avatarBtn.type = "button";
+    avatarBtn.className = "avatar-btn";
+    avatarBtn.title = item.username ? `@${item.username}` : "Profile";
+    avatarBtn.setAttribute(
+      "aria-label",
+      item.username ? `Open @${item.username}` : "Open profile"
+    );
+    paintAvatar(avatarBtn, item.username);
+    avatarBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openProfile(item);
+    });
     const reportBtn = document.createElement("button");
     reportBtn.type = "button";
     reportBtn.textContent = "Report";
@@ -211,11 +294,15 @@
       e.stopPropagation();
       openReport(item);
     });
+    side.appendChild(avatarBtn);
     side.appendChild(reportBtn);
     slide.appendChild(side);
 
     video.addEventListener("loadeddata", () => {
       slide.classList.add("ready");
+    });
+    video.addEventListener("play", () => {
+      if (Number(slide.dataset.index) !== activeIndex) video.pause();
     });
     slide.addEventListener(
       "error",
@@ -291,7 +378,7 @@
     video.muted = muted;
     pauseAllExcept(video);
     const play = () => {
-      if (!slide.isConnected) return;
+      if (!slide.isConnected || viewName !== "feed" || !playerEl.hidden) return;
       video.play().catch((err) => {
         if (err && err.name === "NotAllowedError") return;
         if (video.error) dropVideo(slide.dataset.key);
@@ -313,8 +400,10 @@
         if (!next) return;
         const nv = next.querySelector("video");
         if (!nv) return;
+        nv.autoplay = false;
         nv.preload = "auto";
         ensureSrc(nv);
+        nv.pause();
       },
       { once: true }
     );
@@ -496,7 +585,11 @@
     );
   }
 
-  async function loadVideos(q) {
+  let loadedPin = null;
+
+  async function loadVideos(q, pinId) {
+    pinId = pinId || "";
+    loadedPin = pinId;
     probeAbort.abort();
     probeAbort = new AbortController();
     const signal = probeAbort.signal;
@@ -513,6 +606,18 @@
         skip: "0",
       });
       if (q) params.set("q", q);
+      let pinned = null;
+      if (pinId) {
+        const pinRes = await fetch(
+          `${API_VIDEOS}?transaction_id=${encodeURIComponent(pinId)}`,
+          { credentials: "same-origin", signal }
+        );
+        if (pinRes.ok) {
+          const pinData = await pinRes.json();
+          pinned = (pinData.results || [])[0] || null;
+        }
+        if (!pinned) showStatus("Video not found", 4000);
+      }
       const res = await fetch(`${API_VIDEOS}?${params}`, {
         credentials: "same-origin",
         signal,
@@ -522,7 +627,9 @@
       if (!data.status) throw new Error(data.error || "search failed");
       const seen = new Set();
       const candidates = [];
+      if (pinned && pinned.stream_url && pinned.file_id) candidates.push(pinned);
       for (const item of data.results || []) {
+        if (pinId && item.transaction_id === pinId) continue;
         if (!item.stream_url || !item.file_id) continue;
         if (!canLikelyPlay(mimeFor(item))) continue;
         const id = itemKey(item);
@@ -697,7 +804,7 @@
   });
 
   window.addEventListener("keydown", (e) => {
-    if (reportDlg.open) return;
+    if (reportDlg.open || viewName !== "feed") return;
     if (e.target === searchEl) return;
     if (e.key === "ArrowDown" || e.key === "j") {
       e.preventDefault();
@@ -723,8 +830,241 @@
     }
   });
 
+  function displayName(profile) {
+    const name = String((profile && profile.username) || "").trim();
+    if (name) return `@${name}`;
+    return "Profile";
+  }
+
+  function openProfile(item) {
+    const name = String((item && item.username) || "").trim().replace(/^@/, "");
+    if (name) {
+      location.hash = `#/@${encodeURIComponent(name)}`;
+      return;
+    }
+    const params = new URLSearchParams();
+    if (item && item.owner) params.set("owner", item.owner);
+    location.hash = `#/profile?${params.toString()}`;
+  }
+
+  function parseRoute() {
+    const raw = (location.hash || "#/").replace(/^#/, "");
+    const path = raw.split("?")[0];
+    const params = new URLSearchParams(raw.includes("?") ? raw.slice(raw.indexOf("?") + 1) : "");
+    const transaction_id = params.get("transaction_id") || "";
+    const owner = params.get("owner") || "";
+    const username = (params.get("username") || "").replace(/^@/, "");
+    if (path === "/me" || path === "me" || path === "/publish" || path === "publish") {
+      return { view: "publish", transaction_id: "" };
+    }
+    if (path.startsWith("/@") && path.length > 2) {
+      return {
+        view: "profile",
+        username: decodeURIComponent(path.slice(2)),
+        owner: "",
+        transaction_id: "",
+      };
+    }
+    if (path === "/profile" && username) {
+      return { view: "profile", username, owner: "", transaction_id: "" };
+    }
+    if (path === "/profile" && transaction_id && !owner) {
+      return { view: "feed", transaction_id };
+    }
+    if (path === "/profile") {
+      return { view: "profile", owner, transaction_id, username: "" };
+    }
+    return { view: "feed", transaction_id: path === "/" || path === "" ? transaction_id : "" };
+  }
+
+  function pauseFeed() {
+    feed.querySelectorAll("video").forEach((v) => {
+      try {
+        v.pause();
+      } catch (_) {}
+    });
+  }
+
+  function closePlayer() {
+    try {
+      playerVideo.pause();
+    } catch (_) {}
+    playerVideo.removeAttribute("src");
+    try {
+      playerVideo.load();
+    } catch (_) {}
+    playerEl.hidden = true;
+    playerSpinner.hidden = true;
+    playerCaption.textContent = "";
+  }
+
+  function hidePlayerSpinner() {
+    playerSpinner.hidden = true;
+  }
+
+  function openPlayer(item) {
+    const url = streamUrl(item);
+    if (!url) {
+      showStatus("Playback isn't available for this file", 2500);
+      return;
+    }
+    pauseFeed();
+    playerCaption.textContent = item.title || item.filename || "";
+    playerSpinner.hidden = false;
+    playerEl.hidden = false;
+    playerVideo.muted = muted;
+    playerVideo.src = url;
+    playerVideo.play().catch(() => {});
+  }
+
+  playerVideo.addEventListener("playing", hidePlayerSpinner);
+  playerVideo.addEventListener("error", hidePlayerSpinner);
+
+  function renderProfile(profile) {
+    profileVideos = (profile && profile.videos) || [];
+    const name = displayName(profile);
+    profileTopTitle.textContent = profile && profile.username ? profile.username : "Profile";
+    profileName.textContent = name;
+    paintAvatar(profileAvatar, profile && profile.username);
+    if (profile && profile.username) {
+      profileSub.hidden = true;
+      profileSub.textContent = "";
+    } else {
+      profileSub.hidden = false;
+      profileSub.textContent = "No identity announcement";
+    }
+    profileActions.hidden = !(profile && profile.is_me);
+    profileGrid.innerHTML = "";
+    if (!profileVideos.length) {
+      profileEmpty.hidden = false;
+      profileEmpty.textContent = "No uploads yet";
+      return;
+    }
+    profileEmpty.hidden = true;
+    profileVideos.forEach((item, index) => {
+      const tile = document.createElement("button");
+      tile.type = "button";
+      tile.className = "tile";
+      const label = item.title || item.filename || "Upload";
+      const still = item.thumbnail_url
+        ? `<img alt="" src="${escapeHtml(item.thumbnail_url)}">`
+        : `<span class="ph">${item.stream_url ? "▶" : "▣"}</span>`;
+      tile.innerHTML = `${still}<span class="cap">${escapeHtml(label)}</span>`;
+      tile.addEventListener("click", () => openPlayer(profileVideos[index]));
+      profileGrid.appendChild(tile);
+    });
+  }
+
+  function renderMissingProfile(message) {
+    profileVideos = [];
+    profileTopTitle.textContent = "Profile";
+    profileName.textContent = "Profile";
+    paintAvatar(profileAvatar, "");
+    profileSub.hidden = false;
+    profileSub.textContent = message;
+    profileActions.hidden = true;
+    profileGrid.innerHTML = "";
+    profileEmpty.hidden = true;
+  }
+
+  async function loadProfile(route) {
+    profileGrid.innerHTML = "";
+    profileEmpty.hidden = true;
+    profileName.textContent = "Loading…";
+    profileActions.hidden = true;
+    try {
+      let url = API_ME;
+      if (route.view === "profile") {
+        const params = new URLSearchParams();
+        if (route.username) params.set("username", route.username);
+        else if (route.owner) params.set("owner", route.owner);
+        else if (route.transaction_id) params.set("transaction_id", route.transaction_id);
+        url = `${API_PROFILE}?${params.toString()}`;
+      }
+      const res = await fetch(url, { credentials: "same-origin" });
+      const data = await res.json().catch(() => ({}));
+      if (viewName === "feed") return;
+      if (!res.ok || data.status === false) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      if (!data.profile) {
+        renderMissingProfile("No identity announcement yet");
+        return;
+      }
+      renderProfile(data.profile);
+    } catch (err) {
+      if (viewName === "feed") return;
+      renderMissingProfile(err.message || "Could not load profile");
+    }
+  }
+
+  function syncRoute() {
+    const route = parseRoute();
+    viewName = route.view;
+    closePlayer();
+    const onFeed = viewName === "feed";
+    const onProfile = viewName === "profile";
+    appEl.classList.toggle("view-profile", !onFeed);
+    profileEl.hidden = !onProfile;
+    publishEl.hidden = viewName !== "publish";
+    navFyp.classList.toggle("active", onFeed);
+    navProfile.classList.toggle("active", viewName === "publish");
+    if (onFeed) {
+      const pin = route.transaction_id || "";
+      if (loadedPin !== pin) {
+        loadVideos(searchEl.value.trim(), pin);
+        return;
+      }
+      if (videos.length) activateIndex(activeIndex, false);
+      return;
+    }
+    pauseFeed();
+    if (onProfile) loadProfile(route);
+  }
+
+  function leaveOverlay() {
+    if (
+      location.hash.startsWith("#/profile") ||
+      location.hash.startsWith("#/@") ||
+      location.hash.startsWith("#/publish") ||
+      location.hash === "#/me"
+    ) {
+      history.back();
+      return;
+    }
+    location.hash = "#/";
+  }
+
+  profileBack.addEventListener("click", leaveOverlay);
+  publishBack.addEventListener("click", leaveOverlay);
+  playerBack.addEventListener("click", closePlayer);
+  editAvatar.addEventListener("click", () => showStatus("Edit avatar is coming soon"));
+  editUsername.addEventListener("click", () => showStatus("Edit username is coming soon"));
+  editUpload.addEventListener("click", () => showStatus("Upload is coming soon"));
+  function openPublish() {
+    if ((location.hash || "") === "#/publish") {
+      closePlayer();
+      syncRoute();
+      return;
+    }
+    location.hash = "#/publish";
+  }
+
+  navUpload.addEventListener("click", openPublish);
+  navFyp.addEventListener("click", () => {
+    const hash = location.hash || "";
+    if (!hash || hash === "#" || hash === "#/") {
+      closePlayer();
+      syncRoute();
+      return;
+    }
+    location.hash = "#/";
+  });
+  navProfile.addEventListener("click", openPublish);
+  window.addEventListener("hashchange", syncRoute);
+
   setTimeout(() => hintEl.classList.add("fade"), 4500);
 
   loadReasons();
-  loadVideos("");
+  syncRoute();
 })();
