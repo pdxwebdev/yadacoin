@@ -13,7 +13,7 @@ if (typeof payoutsPerPage === "undefined") {
 async function loadPoolPayoutsData() {
   console.log("📡 Fetching /pool-payouts...");
   try {
-    const response = await fetch("/pool-payouts");
+    const response = await fetch("/pool-payouts", { cache: "no-store" });
     const data = await response.json();
     console.log("✅ Payouts data received:", data);
     payoutsData = data.payouts;

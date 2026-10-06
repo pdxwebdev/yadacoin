@@ -13,7 +13,7 @@ if (typeof blocksPerPage === "undefined") {
 async function loadPoolBlocksData() {
     console.log("📡 Fetching /pool-blocks...");
     try {
-        const response = await fetch("/pool-blocks");
+        const response = await fetch("/pool-blocks", { cache: "no-store" });
         const data = await response.json();
         console.log("✅ Blocks data received:", data);
         blocksData = data.blocks;

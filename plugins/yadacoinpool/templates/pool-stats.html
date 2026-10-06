@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YadaCoin Pool</title>
     <link rel="icon" type="image/png" href="/yadacoinstatic/yadalogo192.png">
-    <link rel="stylesheet" href="/yadacoinpoolstatic/style.css">
+    <link rel="stylesheet" href="/yadacoinpoolstatic/style.css?t={{ asset_v }}">
 </head>
-<body>
+<body data-asset-v="{{ asset_v }}">
     <header class="top">
         <a class="brand" href="/pool">
             <img src="/yadacoinstatic/yadalogo192.png" alt="">
@@ -30,6 +30,6 @@
     <main>
         <div id="content">Loading...</div>
     </main>
-    <script src="/yadacoinpoolstatic/js/pool-stats.js"></script>
+    <script src="/yadacoinpoolstatic/js/pool-stats.js?t={{ asset_v }}"></script>
 </body>
 </html>

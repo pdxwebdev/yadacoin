@@ -8,6 +8,36 @@ from yadacoin import version
 from yadacoin.core.chain import CHAIN
 from yadacoin.http.base import BaseHandler
 
+_POOL_STATIC = os.path.join(os.path.dirname(__file__), "static")
+
+
+def pool_asset_version():
+    latest = 0
+    for folder in ("", "js", "content"):
+        path = os.path.join(_POOL_STATIC, folder) if folder else _POOL_STATIC
+        try:
+            names = os.listdir(path)
+        except OSError:
+            continue
+        for name in names:
+            if not name.endswith((".css", ".js", ".html")):
+                continue
+            try:
+                latest = max(latest, int(os.path.getmtime(os.path.join(path, name))))
+            except OSError:
+                continue
+    return str(latest or int(time.time()))
+
+
+class PoolStaticFileHandler(StaticFileHandler):
+    def get_cache_time(self, path, modified, mime_type):
+        return 0
+
+    def set_extra_headers(self, path):
+        self.set_header("Cache-Control", "no-store")
+        self.set_header("Pragma", "no-cache")
+
+
 # Site DB collection used to cache the pool's KEL-aware block summary so we do
 # not rebuild expensive aggregates on every request.  Only the count of won
 # blocks, the last five, spent coinbase ids, and the signing public_key set
@@ -263,6 +293,8 @@ async def get_pool_kel_public_keys(config, pool_public_key=None):
 class BaseWebHandler(BaseHandler):
     async def prepare(self):
         await super().prepare(exceptions=["/pool-info"])
+        self.set_header("Cache-Control", "no-store")
+        self.set_header("Pragma", "no-cache")
 
     def get_template_path(self):
         return os.path.join(os.path.dirname(__file__), "templates")
@@ -278,6 +310,7 @@ class PoolStatsInterfaceHandler(BaseWebHandler):
             rid=self.get_secure_cookie("rid"),
             title="YadaCoin - Pool Stats",
             mixpanel="pool stats page",
+            asset_v=pool_asset_version(),
         )
 
 
@@ -714,7 +747,7 @@ HANDLERS = [
     (r"/pool", PoolStatsInterfaceHandler),
     (
         r"/yadacoinpoolstatic/(.*)",
-        StaticFileHandler,
-        {"path": os.path.join(os.path.dirname(__file__), "static")},
+        PoolStaticFileHandler,
+        {"path": _POOL_STATIC},
     ),
 ]

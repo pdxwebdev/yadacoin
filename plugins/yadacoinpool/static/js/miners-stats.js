@@ -23,7 +23,7 @@ function loadMinerStatsData() {
 
 async function minerStats_fetchStats(address) {
     try {
-        const response = await fetch(`/miner-stats?address=${address}`);
+        const response = await fetch(`/miner-stats?address=${address}`, { cache: "no-store" });
         const data = await response.json();
 
         console.log("🔍 Miner stats received:", data);
@@ -44,7 +44,7 @@ async function minerStats_fetchStats(address) {
 
 async function minerStats_fetchPayouts(address) {
     try {
-        const response = await fetch(`/miner-payouts?address=${address}`);
+        const response = await fetch(`/miner-payouts?address=${address}`, { cache: "no-store" });
         const data = await response.json();
 
         if (data.error) {

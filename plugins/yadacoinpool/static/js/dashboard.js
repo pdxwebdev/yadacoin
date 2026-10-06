@@ -1,5 +1,5 @@
 function loadDashboardData() {
-    fetch("/pool-info")
+    fetch("/pool-info", { cache: "no-store" })
         .then(response => response.json())
         .then(updateDashboard)
         .catch(() => setLive(false));
@@ -46,7 +46,7 @@ function updateDashboard(data) {
 }
 
 function loadMiningBlock() {
-    fetch("/current-mining-block")
+    fetch("/current-mining-block", { cache: "no-store" })
         .then(response => response.json())
         .then(data => {
             if (!data || data.error || data.height === undefined) {
@@ -200,7 +200,7 @@ function formatCoins(value) {
 function loadLeaderboard() {
     const body = document.getElementById("leaderboard-body");
     if (!body) return;
-    fetch("/pool-leaderboard")
+    fetch("/pool-leaderboard", { cache: "no-store" })
         .then(response => response.json())
         .then(data => {
             const miners = data.miners || [];

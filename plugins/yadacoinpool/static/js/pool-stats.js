@@ -11,10 +11,14 @@ async function loadSection(section) {
     }
 
     try {
-        const response = await fetch(`/yadacoinpoolstatic/content/${section}.html`);
+        const assetV = (document.body && document.body.dataset.assetV) || Date.now();
+        const response = await fetch(
+            `/yadacoinpoolstatic/content/${section}.html?t=${encodeURIComponent(assetV)}`,
+            { cache: "no-store" }
+        );
         if (!response.ok) throw new Error("Section not found");
         contentDiv.innerHTML = await response.text();
-        await loadScript(`/yadacoinpoolstatic/js/${section}.js?t=${Date.now()}`);
+        await loadScript(`/yadacoinpoolstatic/js/${section}.js?t=${encodeURIComponent(assetV)}-${Date.now()}`);
         const starters = {
             dashboard: "loadDashboardData",
             "pool-blocks": "loadPoolBlocksData",

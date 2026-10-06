@@ -20,8 +20,14 @@ import time
 from yadacoin.http.base import BaseHandler
 
 
+def _no_store(handler):
+    handler.set_header("Cache-Control", "no-store")
+    handler.set_header("Pragma", "no-cache")
+
+
 class MinerStatsHandler(BaseHandler):
     async def get(self):
+        _no_store(self)
         address = self.get_query_argument("address", None)
         if not address:
             return self.render_as_json({"error": "No address provided"})
@@ -93,6 +99,7 @@ class MinerStatsHandler(BaseHandler):
 
 class MinerPayoutsHandler(BaseHandler):
     async def get(self):
+        _no_store(self)
         address = self.get_query_argument("address", None)
         if not address:
             return self.render_as_json({"error": "No address provided"})
@@ -190,6 +197,7 @@ class PoolScanMissedPayoutsHandler(BaseHandler):
 
 class CurrentMiningBlockHandler(BaseHandler):
     async def get(self):
+        _no_store(self)
         if not hasattr(self.config, "mp") or self.config.mp is None:
             return self.render_as_json({"error": "Mining pool not active"})
         block_info = await self.config.mp.block_to_mine_info()

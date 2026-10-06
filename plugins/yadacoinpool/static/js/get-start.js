@@ -1,5 +1,5 @@
 function loadGetStartData() {
-    fetch("/get-start")
+    fetch("/get-start", { cache: "no-store" })
         .then(response => response.json())
         .then(data => {
             const pool = data.pool || {};
