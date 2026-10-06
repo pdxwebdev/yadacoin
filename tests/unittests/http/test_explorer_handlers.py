@@ -686,6 +686,79 @@ class TestExplorerSearchHandlerFoundPaths(ExplorerHttpTestCase):
             term,
         )
 
+    def test_username_profile_ignores_failed_credentials(self):
+        term = "alice.example.com"
+        pubkey = "ab" * 33
+        identity_txn = {
+            "id": "identity-txn",
+            "public_key": pubkey,
+            "time": 1000,
+            "relationship": {
+                "identity": {
+                    "username": term,
+                    "username_signature": "sig",
+                    "identity_type": "dns",
+                }
+            },
+        }
+        identity_block = {
+            "index": 42,
+            "hash": "a" * 64,
+            "time": 1000,
+            "transactions": [identity_txn],
+        }
+        failed_cred = {
+            "reason": "KELChainDiscard",
+            "txn": {
+                "id": "failed-cred",
+                "public_key": pubkey,
+                "time": 1300,
+                "relationship": {
+                    "credential": {
+                        "subject_username_signature": "sig",
+                        "issuer_username_signature": "issuer-sig",
+                        "claim": "ageOver18",
+                    }
+                },
+            },
+        }
+        failed_file = {
+            "reason": "KELChainDiscard",
+            "txn": {
+                "id": "failed-file",
+                "public_key": pubkey,
+                "time": 1400,
+                "relationship": {"file": {"title": "scan", "file_id": "f1"}},
+            },
+        }
+        queries = []
+
+        def failed_find(query, *args, **kwargs):
+            queries.append(query)
+            text = str(query)
+            if "credential" in text:
+                return make_async_iter_cursor([failed_cred])
+            if "relationship.file" in text:
+                return make_async_iter_cursor([failed_file, failed_cred])
+            return make_async_iter_cursor([])
+
+        self.mock_db.blocks.find_one = AsyncMock(return_value=identity_block)
+        self.mock_db.blocks.find = MagicMock(
+            return_value=make_async_iter_cursor([identity_block])
+        )
+        self.mock_db.failed_transactions.find = MagicMock(side_effect=failed_find)
+        response = self.fetch(f"/explorer-search?term={term}")
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertEqual(data["resultType"], "username_profile")
+        self.assertFalse(any("credential" in str(query) for query in queries))
+        kinds = [hit["kind"] for hit in data["announcements"]]
+        self.assertNotIn("credential", kinds)
+        failed_hits = [
+            hit for hit in data["announcements"] if hit.get("source") == "failed"
+        ]
+        self.assertEqual([hit["kind"] for hit in failed_hits], ["file"])
+
     def test_found_by_identity_username_signature(self):
         import base64 as b64_mod
 

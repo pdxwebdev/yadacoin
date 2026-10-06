@@ -497,6 +497,44 @@ class TestNewTxnRelay(AsyncTestCase):
         queued = server.config.processing_queues.transaction_queue.add.call_args[0][0]
         self.assertIsInstance(queued, TransactionProcessingQueueItem)
 
+    async def test_newtxn_package_inserts_pair_together(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        server = self._server()
+        server.config.mongo.async_db.miner_transactions.bulk_write = AsyncMock()
+        server._broadcast_txn_package = AsyncMock()
+        unconfirmed = MagicMock()
+        unconfirmed.transaction_signature = "u"
+        unconfirmed.coinbase = False
+        unconfirmed.verify = AsyncMock()
+        unconfirmed.to_dict.return_value = {"id": "u"}
+        confirming = MagicMock()
+        confirming.transaction_signature = "c"
+        confirming.coinbase = False
+        confirming.verify = AsyncMock()
+        confirming.to_dict.return_value = {"id": "c"}
+        stream = MagicMock()
+        stream.peer.protocol_version = 4
+        stream.peer.rid = "sender"
+        stream.peer.host = "10.0.0.1"
+        body = {
+            "id": "req",
+            "params": {"transactions": [{"id": "u"}, {"id": "c"}]},
+        }
+        with patch(
+            "yadacoin.tcpsocket.node.Transaction.from_dict",
+            side_effect=[unconfirmed, confirming],
+        ), patch.object(server, "_is_coinbase_shaped", return_value=False):
+            await server.newtxn(body, stream)
+        server.config.processing_queues.transaction_queue.add.assert_not_called()
+        server.config.mongo.async_db.miner_transactions.bulk_write.assert_awaited()
+        ops = server.config.mongo.async_db.miner_transactions.bulk_write.await_args[0][
+            0
+        ]
+        self.assertEqual(len(ops), 2)
+        self.assertIs(confirming.verify.await_args.kwargs["batch_txns"][0], unconfirmed)
+        server._broadcast_txn_package.assert_awaited()
+
     async def test_newtxn_kel_null_fields_do_not_false_match(self):
         from unittest.mock import AsyncMock, MagicMock, patch
 

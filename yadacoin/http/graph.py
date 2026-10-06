@@ -622,15 +622,21 @@ class GraphTransactionHandler(BaseGraphHandler):
 
             await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
 
-            if "node" in self.config.modes:
-                async for peer_stream in self.config.peer.get_sync_peers():
-                    await self.config.nodeShared.write_params(
-                        peer_stream, "newtxn", {"transaction": x.to_dict()}
-                    )
-                    if peer_stream.peer.protocol_version > 1:
+        if "node" in self.config.modes and transactions:
+            payload = (
+                {"transactions": [item.to_dict() for item in transactions]}
+                if len(transactions) > 1
+                else {"transaction": transactions[0].to_dict()}
+            )
+            async for peer_stream in self.config.peer.get_sync_peers():
+                await self.config.nodeShared.write_params(
+                    peer_stream, "newtxn", payload
+                )
+                if peer_stream.peer.protocol_version > 1:
+                    for item in transactions:
                         self.config.nodeClient.retry_messages[
-                            (peer_stream.peer.rid, "newtxn", x.transaction_signature)
-                        ] = {"transaction": x.to_dict()}
+                            (peer_stream.peer.rid, "newtxn", item.transaction_signature)
+                        ] = payload
 
         return self.render_as_json([item.to_dict() for item in item_txns])
 

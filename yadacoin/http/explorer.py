@@ -180,22 +180,37 @@ def _txn_linked(txn, username, signature, identity_txn_id, public_keys):
     return False
 
 
-def _profile_queries(prefix, username, signature, identity_txn_id, public_keys):
+def _profile_queries(
+    prefix, username, signature, identity_txn_id, public_keys, include_credentials=True
+):
     queries = []
+    signature_paths = _SIGNATURE_PATHS
+    identity_paths = _IDENTITY_TXN_PATHS
+    announcement_keys = _ANNOUNCEMENT_KEYS
+    if not include_credentials:
+        signature_paths = tuple(
+            path for path in _SIGNATURE_PATHS if "credential" not in path
+        )
+        identity_paths = tuple(
+            path for path in _IDENTITY_TXN_PATHS if "credential" not in path
+        )
+        announcement_keys = tuple(
+            key for key in _ANNOUNCEMENT_KEYS if key != "credential"
+        )
     usernames = _username_values(username)
     if usernames:
         for path in _USERNAME_PATHS:
             queries.append(_eq(prefix, path, usernames))
     if signature:
-        for path in _SIGNATURE_PATHS:
+        for path in signature_paths:
             queries.append(_eq(prefix, path, signature))
     if identity_txn_id:
         queries.append(_eq(prefix, "id", identity_txn_id))
-        for path in _IDENTITY_TXN_PATHS:
+        for path in identity_paths:
             queries.append(_eq(prefix, path, identity_txn_id))
     if public_keys:
         keys = [key for key in public_keys if key]
-        for key in _ANNOUNCEMENT_KEYS:
+        for key in announcement_keys:
             query = _eq(prefix, "public_key", keys)
             if not query:
                 continue
@@ -524,7 +539,12 @@ class ExplorerSearchHandler(BaseHandler):
             pass
         try:
             clauses = _profile_queries(
-                "txn.", username, signature, identity_txn_id, public_keys
+                "txn.",
+                username,
+                signature,
+                identity_txn_id,
+                public_keys,
+                include_credentials=False,
             )
             if clauses:
                 for wrapper in await self._iter_docs(db.failed_transactions, clauses):
@@ -535,11 +555,14 @@ class ExplorerSearchHandler(BaseHandler):
                         inner, username, signature, identity_txn_id, public_keys
                     ):
                         continue
+                    kind = _announcement_kind(inner.get("relationship"))
+                    if kind == "credential":
+                        continue
                     self._remember_hit(
                         hits,
                         seen,
                         self._profile_hit(
-                            _announcement_kind(inner.get("relationship")),
+                            kind,
                             "failed",
                             inner,
                             reason=wrapper.get("reason")

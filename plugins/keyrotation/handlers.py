@@ -528,21 +528,6 @@ class DerivedChildKeyHandler(BaseHandler):
             upsert=True,
         )
 
-        if "node" in self.config.modes:
-            try:
-                async for peer_stream in self.config.peer.get_sync_peers():
-                    await self.config.nodeShared.write_params(
-                        peer_stream, "newtxn", {"transaction": txn.to_dict()}
-                    )
-                    if peer_stream.peer.protocol_version > 1:
-                        self.config.nodeClient.retry_messages[
-                            (peer_stream.peer.rid, "newtxn", txn.transaction_signature)
-                        ] = {"transaction": txn.to_dict()}
-            except Exception as exc:
-                self.config.app_log.warning(
-                    f"DerivedChildKeyHandler broadcast error: {exc}"
-                )
-
         # ------------------------------------------------------------------ #
         # 7b. When this is an UNCONFIRMED event (relationship is set),
         #     automatically build and broadcast the paired CONFIRMING txn.
@@ -604,26 +589,33 @@ class DerivedChildKeyHandler(BaseHandler):
                 upsert=True,
             )
 
-            if "node" in self.config.modes:
-                try:
-                    async for peer_stream in self.config.peer.get_sync_peers():
-                        await self.config.nodeShared.write_params(
-                            peer_stream,
-                            "newtxn",
-                            {"transaction": confirming_txn.to_dict()},
-                        )
-                        if peer_stream.peer.protocol_version > 1:
+        if "node" in self.config.modes:
+            package = [txn]
+            if confirming_txn is not None:
+                package.append(confirming_txn)
+            payload = (
+                {"transactions": [item.to_dict() for item in package]}
+                if len(package) > 1
+                else {"transaction": txn.to_dict()}
+            )
+            try:
+                async for peer_stream in self.config.peer.get_sync_peers():
+                    await self.config.nodeShared.write_params(
+                        peer_stream, "newtxn", payload
+                    )
+                    if peer_stream.peer.protocol_version > 1:
+                        for item in package:
                             self.config.nodeClient.retry_messages[
                                 (
                                     peer_stream.peer.rid,
                                     "newtxn",
-                                    confirming_txn.transaction_signature,
+                                    item.transaction_signature,
                                 )
-                            ] = {"transaction": confirming_txn.to_dict()}
-                except Exception as exc:
-                    self.config.app_log.warning(
-                        f"DerivedChildKeyHandler confirming broadcast error: {exc}"
-                    )
+                            ] = payload
+            except Exception as exc:
+                self.config.app_log.warning(
+                    f"DerivedChildKeyHandler broadcast error: {exc}"
+                )
 
         now = time.time()
 

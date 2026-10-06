@@ -124,30 +124,26 @@ async def _broadcast(config, txn: Transaction):
     if not peer or not node_shared:
         return
     try:
+        confirming = getattr(txn, "confirming_txn", None)
+        package = [txn]
+        if confirming is not None:
+            package.append(confirming)
+        payload = (
+            {"transactions": [item.to_dict() for item in package]}
+            if len(package) > 1
+            else {"transaction": txn.to_dict()}
+        )
         async for peer_stream in peer.get_sync_peers():
-            payload = {"transaction": txn.to_dict()}
             await node_shared.write_params(peer_stream, "newtxn", payload)
-            confirming = getattr(txn, "confirming_txn", None)
-            if confirming is not None:
-                await node_shared.write_params(
-                    peer_stream, "newtxn", {"transaction": confirming.to_dict()}
-                )
             if node_client and getattr(peer_stream.peer, "protocol_version", 1) > 1:
-                node_client.retry_messages[
-                    (
-                        peer_stream.peer.rid,
-                        "newtxn",
-                        txn.transaction_signature,
-                    )
-                ] = payload
-                if confirming is not None:
+                for item in package:
                     node_client.retry_messages[
                         (
                             peer_stream.peer.rid,
                             "newtxn",
-                            confirming.transaction_signature,
+                            item.transaction_signature,
                         )
-                    ] = {"transaction": confirming.to_dict()}
+                    ] = payload
     except Exception as exc:
         app_log.warning("file announcement broadcast failed: %s", exc)
 
@@ -323,13 +319,16 @@ async def _synthesize_confirming(config, unconfirmed, k0, second_factor):
         inception_public_key_hash=inception_pkh,
     )
     await _sign_kel_txn(confirming, child["private_key"], fee=0.0)
-    await _broadcast_confirming_only(config, confirming)
+    unconfirmed.confirming_txn = confirming
+    await _broadcast(config, unconfirmed)
     app_log.info(
         "fileannouncement: auto-broadcast CONFIRMING KEL for stuck tip %s → %s",
         tip_pkh[:16],
-        confirming.transaction_signature[:24]
-        if confirming.transaction_signature
-        else "",
+        (
+            confirming.transaction_signature[:24]
+            if confirming.transaction_signature
+            else ""
+        ),
     )
     return confirming
 

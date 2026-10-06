@@ -1215,6 +1215,171 @@ class NodeRPC(BaseRPC):
             except:
                 await peer_stream.write_params("service_provider_request", payload2)
 
+    def _kel_broadcast_groups(self, txns):
+        from yadacoin.core.keyeventlog import KeyEventFlag, classify_key_event_flag
+
+        by_pkh = {}
+        for txn in txns:
+            pkh = getattr(txn, "public_key_hash", None) or ""
+            if pkh and pkh not in by_pkh:
+                by_pkh[pkh] = txn
+        used = set()
+        groups = []
+        for txn in txns:
+            sig = getattr(txn, "transaction_signature", None)
+            if not sig or sig in used:
+                continue
+            try:
+                flag = classify_key_event_flag(txn)
+            except Exception:
+                flag = None
+            if flag != KeyEventFlag.CONFIRMING:
+                continue
+            parent = by_pkh.get(getattr(txn, "prev_public_key_hash", None) or "")
+            if parent is None or not getattr(parent, "transaction_signature", None):
+                used.add(sig)
+                continue
+            groups.append([parent, txn])
+            used.add(parent.transaction_signature)
+            used.add(sig)
+        for txn in txns:
+            sig = getattr(txn, "transaction_signature", None)
+            if not sig or sig in used:
+                continue
+            groups.append([txn])
+        return groups
+
+    def _newtxn_payload(self, txns):
+        if len(txns) == 1:
+            return {"transaction": txns[0].to_dict()}
+        return {"transactions": [txn.to_dict() for txn in txns]}
+
+    async def _accept_txn_package(self, raw_items, body, stream):
+        from pymongo import ReplaceOne
+
+        txns = []
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            txns.append(Transaction.from_dict(item))
+        if not txns:
+            return
+        for txn in txns:
+            if txn.coinbase or self._is_coinbase_shaped(txn):
+                self.config.app_log.warning(
+                    "Rejecting coinbase transaction in newtxn package: %s",
+                    txn.transaction_signature,
+                )
+                return
+        missing = []
+        for txn in txns:
+            existing = await self.config.mongo.async_db.miner_transactions.find_one(
+                {"id": txn.transaction_signature}
+            )
+            if not existing:
+                missing.append(txn)
+        if not missing:
+            await self._confirm_txn_ids(
+                stream, [txn.transaction_signature for txn in txns], body
+            )
+            return
+        check_max_inputs = (
+            self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK
+        )
+        check_masternode_fee = (
+            self.config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK
+        )
+        check_kel = self.config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK
+        check_dynamic_nodes = (
+            self.config.LatestBlock.block.index >= CHAIN.DYNAMIC_NODES_FORK
+        )
+        check_branch_announcement = (
+            self.config.LatestBlock.block.index >= CHAIN.KEL_BRANCH_ANNOUNCEMENT_FORK
+        )
+        check_credential_announcement = (
+            self.config.LatestBlock.block.index >= CHAIN.CREDENTIAL_ANNOUNCEMENT_FORK
+        )
+        for txn in missing:
+            try:
+                await txn.verify(
+                    check_input_spent=True,
+                    check_max_inputs=check_max_inputs,
+                    check_masternode_fee=check_masternode_fee,
+                    check_kel=check_kel,
+                    check_dynamic_nodes=check_dynamic_nodes,
+                    check_branch_announcement=check_branch_announcement,
+                    check_credential_announcement=check_credential_announcement,
+                    mempool=True,
+                    batch_txns=txns,
+                )
+            except Exception as exc:
+                self.config.app_log.warning(
+                    "newtxn package rejected; pair left intact: %s (%s)",
+                    txn.transaction_signature,
+                    exc,
+                )
+                return
+        await self.config.mongo.async_db.miner_transactions.bulk_write(
+            [
+                ReplaceOne(
+                    {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
+                )
+                for txn in missing
+            ],
+            ordered=True,
+        )
+        await self._confirm_txn_ids(
+            stream, [txn.transaction_signature for txn in txns], body
+        )
+        try:
+            await self._broadcast_txn_package(txns)
+        except Exception as exc:
+            self.config.app_log.warning("newtxn package relay failed: %s", exc)
+        for txn in txns:
+            await self.config.notifier.notify_new_transaction(txn)
+
+    async def _confirm_txn_ids(self, stream, txn_ids, body):
+        if stream.peer.protocol_version > 3:
+            await self.write_result(
+                stream,
+                "newtxn_confirmed",
+                {"transaction_ids": list(txn_ids)},
+                body["id"],
+            )
+        elif stream.peer.protocol_version > 2 and len(txn_ids) == 1:
+            await self.write_result(
+                stream,
+                "newtxn_confirmed",
+                {"transaction_id": txn_ids[0]},
+                body["id"],
+            )
+        for txn_id in txn_ids:
+            await self.config.mongo.async_db.txn_tracking.update_one(
+                {"rid": stream.peer.rid},
+                {
+                    "$set": {
+                        "host": stream.peer.host,
+                        f"transactions.{txn_id}": int(time.time()),
+                    }
+                },
+                upsert=True,
+            )
+
+    async def _broadcast_txn_package(self, txns):
+        payload = self._newtxn_payload(txns)
+        sigs = [txn.transaction_signature for txn in txns if txn.transaction_signature]
+
+        async def _send(peer_stream, retry_store):
+            if peer_stream.peer.protocol_version > 1:
+                for sig in sigs:
+                    retry_store[(peer_stream.peer.rid, "newtxn", sig)] = payload
+            await self.write_params(peer_stream, "newtxn", payload)
+
+        async for peer_stream in self.config.peer.get_inbound_streams():
+            await _send(peer_stream, self.retry_messages)
+        for peer_stream in await self.config.peer.get_outbound_streams():
+            await _send(peer_stream, self.config.nodeClient.retry_messages)
+
     async def newtxn(self, body, stream):
         """
         Handles incoming new transactions and ensures they are valid before processing.
@@ -1233,6 +1398,10 @@ class NodeRPC(BaseRPC):
         The method ensures efficient transaction propagation across the network while reducing unnecessary database queries.
         """
         payload = body.get("params", {})
+        packaged = payload.get("transactions")
+        if isinstance(packaged, list) and packaged:
+            await self._accept_txn_package(packaged, body, stream)
+            return
         transaction = payload.get("transaction")
         txn = None
 
@@ -1334,9 +1503,13 @@ class NodeRPC(BaseRPC):
     async def process_transaction_queue(self):
         mempool_transactions = []
 
-        async for txn in self.config.mongo.async_db.miner_transactions.find(
-            {"relationship.smart_contract": {"$exists": False}}
-        ).sort([("fee", -1), ("time", 1)]).limit(1000):
+        async for txn in (
+            self.config.mongo.async_db.miner_transactions.find(
+                {"relationship.smart_contract": {"$exists": False}}
+            )
+            .sort([("fee", -1), ("time", 1)])
+            .limit(1000)
+        ):
             try:
                 mempool_transactions.append(Transaction.from_dict(txn))
             except Exception as e:
@@ -1561,36 +1734,38 @@ class NodeRPC(BaseRPC):
 
         result = body.get("result", {})
 
+        txn_ids = list(result.get("transaction_ids") or [])
         txn_id = result.get("transaction_id")
+        if txn_id:
+            txn_ids.append(txn_id)
 
-        if txn_id is None and result.get("transaction"):
+        if not txn_ids and result.get("transaction"):
             txn = Transaction.from_dict(result.get("transaction"))
-            txn_id = txn.transaction_signature
+            txn_ids.append(txn.transaction_signature)
 
-        if not txn_id:
+        if not txn_ids:
             self.config.app_log.warning(
                 "[NEW_TXN_CONFIRM] Received confirmation without a transaction ID!"
             )
             return
 
-        retry_key = (stream.peer.rid, "newtxn", txn_id)
-        if retry_key in self.retry_messages:
-            del self.retry_messages[retry_key]
-
-        await self.config.mongo.async_db.txn_tracking.update_one(
-            {"rid": stream.peer.rid},
-            {
-                "$set": {
-                    "host": stream.peer.host,
-                    f"transactions.{txn_id}": int(time.time()),
-                }
-            },
-            upsert=True,
-        )
-
-        self.config.app_log.info(
-            f"[NEW_TXN_CONFIRM] Transaction {txn_id} confirmed by peer {stream.peer.rid}. Peer added to confirmed list."
-        )
+        for txn_id in txn_ids:
+            retry_key = (stream.peer.rid, "newtxn", txn_id)
+            if retry_key in self.retry_messages:
+                del self.retry_messages[retry_key]
+            await self.config.mongo.async_db.txn_tracking.update_one(
+                {"rid": stream.peer.rid},
+                {
+                    "$set": {
+                        "host": stream.peer.host,
+                        f"transactions.{txn_id}": int(time.time()),
+                    }
+                },
+                upsert=True,
+            )
+            self.config.app_log.info(
+                f"[NEW_TXN_CONFIRM] Transaction {txn_id} confirmed by peer {stream.peer.rid}. Peer added to confirmed list."
+            )
 
     async def newblock(self, body, stream):
         """
@@ -1779,6 +1954,7 @@ class NodeRPC(BaseRPC):
             self.config.LatestBlock.block.index >= CHAIN.CREDENTIAL_ANNOUNCEMENT_FORK
         )
         block_cache = {}
+        relayable = []
         async for x in self.config.mongo.async_db.miner_transactions.find({}):
             txn = Transaction.from_dict(x)
             block = await self._resolve_block_for_txn(txn, block_cache)
@@ -1790,26 +1966,31 @@ class NodeRPC(BaseRPC):
             if txn.coinbase or self._is_coinbase_shaped(txn):
                 await self._purge_mempool_txn(txn)
                 continue
+            relayable.append(txn)
+        for group in self._kel_broadcast_groups(relayable):
             try:
-                await txn.verify(
-                    check_max_inputs=check_max_inputs,
-                    check_masternode_fee=check_masternode_fee,
-                    check_kel=check_kel,
-                    check_dynamic_nodes=check_dynamic_nodes,
-                    check_branch_announcement=check_branch_announcement,
-                    check_credential_announcement=check_credential_announcement,
-                )
+                for txn in group:
+                    await txn.verify(
+                        check_max_inputs=check_max_inputs,
+                        check_masternode_fee=check_masternode_fee,
+                        check_kel=check_kel,
+                        check_dynamic_nodes=check_dynamic_nodes,
+                        check_branch_announcement=check_branch_announcement,
+                        check_credential_announcement=check_credential_announcement,
+                        mempool=True,
+                        batch_txns=group,
+                    )
             except Exception as e:
-                self.config.app_log.debug(
-                    f"send_mempool: skipping {txn.transaction_signature}: {e}"
-                )
+                sig = group[0].transaction_signature if group else ""
+                self.config.app_log.debug(f"send_mempool: skipping {sig}: {e}")
                 continue
-            payload = {"transaction": txn.to_dict()}
+            payload = self._newtxn_payload(group)
             await self.write_params(peer_stream, "newtxn", payload)
             if peer_stream.peer.protocol_version > 1:
-                self.retry_messages[
-                    (peer_stream.peer.rid, "newtxn", txn.transaction_signature)
-                ] = payload
+                for txn in group:
+                    self.retry_messages[
+                        (peer_stream.peer.rid, "newtxn", txn.transaction_signature)
+                    ] = payload
 
     async def send_mempool_to_sync_peers(self):
         """Push mempool once the node is fully synced with outbound peers."""
