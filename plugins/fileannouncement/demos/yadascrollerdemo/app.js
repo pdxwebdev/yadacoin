@@ -109,6 +109,8 @@
   let playerItem = null;
   /** @type {Array<object>} */
   let badgeItems = [];
+  let badgeDetailFromList = false;
+  let armBadgeDetailBack = false;
 
   const probe = document.createElement("video");
 
@@ -1168,6 +1170,7 @@
         <span class="when">${escapeHtml(when)}</span>
       `;
       row.addEventListener("click", () => {
+        armBadgeDetailBack = true;
         location.hash = badgesHash(parseRoute(), item.transaction_id);
       });
       badgeList.appendChild(row);
@@ -1405,9 +1408,20 @@
   badgesBack.addEventListener("click", () => {
     const route = parseRoute();
     if (route.view === "badges" && route.badge_id) {
-      location.hash = badgesHash(route, "");
+      const listHash = badgesHash(route, "");
+      if (badgeDetailFromList) {
+        badgeDetailFromList = false;
+        armBadgeDetailBack = false;
+        history.back();
+        return;
+      }
+      if (location.hash !== listHash) {
+        history.replaceState(history.state, "", listHash);
+      }
+      syncRoute();
       return;
     }
+    badgeDetailFromList = false;
     leaveOverlay();
   });
   statBadgesBtn.addEventListener("click", () => {
@@ -1445,7 +1459,15 @@
     location.hash = "#/";
   });
   navProfile.addEventListener("click", openPublish);
-  window.addEventListener("hashchange", syncRoute);
+  window.addEventListener("hashchange", () => {
+    if (armBadgeDetailBack) {
+      badgeDetailFromList = true;
+      armBadgeDetailBack = false;
+    } else {
+      badgeDetailFromList = false;
+    }
+    syncRoute();
+  });
 
   setTimeout(() => hintEl.classList.add("fade"), 4500);
 
