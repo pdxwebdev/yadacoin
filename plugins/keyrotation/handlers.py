@@ -228,6 +228,19 @@ class DerivedChildKeyHandler(BaseHandler):
         public_key = body.get("public_key", "").strip()
         second_factor = body.get("second_factor", "")
         relationship = body.get("relationship", "") or ""
+        private_key = body.get("private_key", "").strip()
+
+        # Ownership check: only the node that controls the configured
+        # private_key may trigger a rotation. Knowledge of public_key and
+        # second_factor alone is not sufficient proof of identity ownership.
+        node_private_key = getattr(self.config, "private_key", "") or ""
+        if not private_key or not _hmac_safe.compare_digest(
+            private_key, node_private_key
+        ):
+            self.set_status(401)
+            return self.render_as_json(
+                {"status": False, "message": "invalid private_key"}
+            )
 
         if not public_key or not second_factor:
             self.set_status(400)
