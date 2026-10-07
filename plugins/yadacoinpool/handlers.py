@@ -299,6 +299,11 @@ class BaseWebHandler(BaseHandler):
     def get_template_path(self):
         return os.path.join(os.path.dirname(__file__), "templates")
 
+    def get_template_namespace(self):
+        namespace = super().get_template_namespace()
+        namespace.setdefault("asset_v", pool_asset_version())
+        return namespace
+
 
 class PoolStatsInterfaceHandler(BaseWebHandler):
     async def get(self):
