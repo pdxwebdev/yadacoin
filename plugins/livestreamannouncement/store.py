@@ -194,6 +194,44 @@ async def get_active_grant(config, channel_id: str):
     return public_doc(doc) if doc else None
 
 
+async def mark_grant_publishing(config, channel_id: str):
+    await _db(config)[GRANTS].update_many(
+        {"channel_id": channel_id, "active": True},
+        {"$set": {"publishing": True, "published_at": _now()}},
+    )
+
+
+async def list_publishing_grants(config, limit=100):
+    cursor = (
+        _db(config)[GRANTS]
+        .find({"active": True, "publishing": True})
+        .sort("published_at", -1)
+        .limit(limit)
+    )
+    if hasattr(cursor, "to_list"):
+        docs = await cursor.to_list(length=limit)
+    else:
+        docs = []
+        async for d in cursor:
+            docs.append(d)
+    return [public_doc(d) for d in docs]
+
+
+async def ensure_channel(config, channel_id: str, **fields):
+    current = await get_channel(config, channel_id)
+    if current:
+        return await update_channel(config, channel_id, **fields)
+    doc = {
+        "channel_id": channel_id,
+        "title": "",
+        "description": "",
+        "status": "idle",
+        "branch_peer": f"livestream:{channel_id}",
+    }
+    doc.update(fields)
+    return await insert_channel(config, doc)
+
+
 async def deactivate_grants(config, channel_id: str):
     await _db(config)[GRANTS].update_many(
         {"channel_id": channel_id, "active": True},

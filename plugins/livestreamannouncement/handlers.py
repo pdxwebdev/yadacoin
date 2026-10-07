@@ -22,6 +22,7 @@ from . import store
 from .service import (
     LivestreamServiceError,
     accept_grant,
+    assert_publish_allowed,
     create_channel,
     go_live,
     issue_challenge,
@@ -207,6 +208,23 @@ class GrantRevokeHandler(BaseLivestreamPublicHandler):
         return self.render_as_json({"status": True, "result": result})
 
 
+class PublishAuthHandler(BaseLivestreamPublicHandler):
+    async def post(self):
+        try:
+            data = _json_body(self)
+        except ValueError as exc:
+            return self._error(400, str(exc))
+        if (data.get("action") or "publish") != "publish":
+            return self.render_as_json({"status": True})
+        try:
+            result = await assert_publish_allowed(
+                self.config, data.get("path") or data.get("channel_id") or ""
+            )
+        except LivestreamServiceError as exc:
+            return self._error(403, str(exc))
+        return self.render_as_json({"status": True, "result": result})
+
+
 class OnPublishHandler(BaseLivestreamPublicHandler):
     async def post(self):
         try:
@@ -238,7 +256,8 @@ class OnUnpublishHandler(BaseLivestreamPublicHandler):
 
 class LiveListHandler(BaseLivestreamPublicHandler):
     async def get(self):
-        results = await public_live_list(self.config)
+        local_only = (self.get_query_argument("local", "") or "") == "1"
+        results = await public_live_list(self.config, include_remote=not local_only)
         return self.render_as_json({"status": True, "results": results})
 
 
@@ -269,6 +288,7 @@ HANDLERS = [
     (r"/livestream-announcements/api/v1/challenge", ChallengeHandler),
     (r"/livestream-announcements/api/v1/grants", GrantHandler),
     (r"/livestream-announcements/api/v1/grants/revoke", GrantRevokeHandler),
+    (r"/livestream-announcements/api/v1/publish-auth", PublishAuthHandler),
     (r"/livestream-announcements/api/v1/on-publish", OnPublishHandler),
     (r"/livestream-announcements/api/v1/on-unpublish", OnUnpublishHandler),
     (r"/livestream-announcements/api/v1/live", LiveListHandler),

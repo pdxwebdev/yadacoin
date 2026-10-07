@@ -5,6 +5,9 @@
   const API_ME = "/file-announcements/api/v1/public/me";
   const API_REASONS = "/file-announcements/api/v1/public/takedown-reasons";
   const API_TAKEDOWN = "/file-announcements/api/v1/public/takedown";
+  const API_LIVE = "/livestream-announcements/api/v1/live";
+  const API_WATCH = "/livestream-announcements/api/v1/watch";
+  const HLS_SRC = "https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js";
   const PREFETCH_COUNT = 10;
   /** ~2s of video at ~2 Mbps ≈ 512 KiB; used for Range prefetch warm-up */
   const PREFETCH_BYTES = 512 * 1024;
@@ -64,6 +67,8 @@
   const playerVideo = document.getElementById("player-video");
   const playerSpinner = document.getElementById("player-spinner");
   const playerCaption = document.getElementById("player-caption");
+  const playerLive = document.getElementById("player-live");
+  const liveRow = document.getElementById("live-row");
   const railGift = document.getElementById("rail-gift");
   const railReport = document.getElementById("rail-report");
   const giftDlg = document.getElementById("gift-dlg");
@@ -107,6 +112,16 @@
   let giftTarget = null;
   /** @type {object | null} */
   let playerItem = null;
+  let currentProfile = null;
+  /** @type {Array<object>} */
+  let liveStreams = [];
+  /** @type {Map<string, object>} */
+  const liveByName = new Map();
+  /** @type {Map<string, object>} */
+  const liveByOwner = new Map();
+  let liveHls = null;
+  let livePc = null;
+  let liveWhep = "";
   /** @type {Array<object>} */
   let badgeItems = [];
   let badgeDetailFromList = false;
@@ -186,8 +201,60 @@
 
   function paintAvatar(el, username) {
     const name = String(username || "").trim();
-    el.style.background = avatarColor(name || "?");
-    el.innerHTML = avatarMarkup(name);
+    const color = avatarColor(name || "?");
+    el.style.background = color;
+    let face = el.querySelector(":scope > .avatar-face");
+    const tag = el.querySelector(":scope > .live-tag");
+    if (!face) {
+      el.innerHTML = "";
+      face = document.createElement("span");
+      face.className = "avatar-face";
+      el.appendChild(face);
+      if (tag) el.appendChild(tag);
+    }
+    face.style.background = color;
+    face.innerHTML = avatarMarkup(name);
+  }
+
+  function setLiveRing(el, on) {
+    if (!el) return;
+    el.classList.toggle("is-live", !!on);
+    let tag = el.querySelector(":scope > .live-tag");
+    if (on) {
+      if (!tag) {
+        tag = document.createElement("span");
+        tag.className = "live-tag";
+        tag.textContent = "LIVE";
+        el.appendChild(tag);
+      }
+      return;
+    }
+    if (tag) tag.remove();
+  }
+
+  function indexLive(list) {
+    liveStreams = list || [];
+    liveByName.clear();
+    liveByOwner.clear();
+    liveStreams.forEach((stream) => {
+      const name = String(stream.username || "").trim().toLowerCase();
+      if (name) liveByName.set(name, stream);
+      const owner = String(stream.owner || "").trim();
+      if (owner) liveByOwner.set(owner, stream);
+      const pkh = String(stream.public_key_hash || "").trim();
+      if (pkh) liveByOwner.set(pkh, stream);
+    });
+  }
+
+  function liveFor(item) {
+    if (!item) return null;
+    const name = String(item.username || "").trim().toLowerCase();
+    if (name && liveByName.has(name)) return liveByName.get(name);
+    const owner = String(item.owner || item.inception_public_key_hash || "").trim();
+    if (owner && liveByOwner.has(owner)) return liveByOwner.get(owner);
+    const pkh = String(item.public_key_hash || "").trim();
+    if (pkh && liveByOwner.has(pkh)) return liveByOwner.get(pkh);
+    return null;
   }
 
   function itemKey(item) {
@@ -325,9 +392,19 @@
       item.username ? `Open @${item.username}` : "Open profile"
     );
     paintAvatar(avatarBtn, item.username);
+    const live = liveFor(item);
+    setLiveRing(avatarBtn, !!live);
+    if (live) {
+      avatarBtn.setAttribute(
+        "aria-label",
+        item.username ? `Watch @${item.username} live` : "Watch live"
+      );
+    }
     avatarBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      openProfile(item);
+      const stream = liveFor(item);
+      if (stream) openLive(stream);
+      else openProfile(item);
     });
     side.appendChild(avatarBtn);
     slide.appendChild(side);
@@ -727,11 +804,16 @@
     feed.querySelectorAll("video").forEach((v) => {
       v.muted = muted;
     });
+    playerVideo.muted = muted;
     const active = feed.querySelectorAll("video")[activeIndex];
-    if (active && !muted) active.play().catch(() => {});
+    if (active && !muted && playerEl.hidden) active.play().catch(() => {});
+    if (!playerEl.hidden && !muted) playerVideo.play().catch(() => {});
   });
 
-  refreshBtn.addEventListener("click", () => loadVideos(query));
+  refreshBtn.addEventListener("click", () => {
+    loadVideos(query);
+    loadLive();
+  });
 
   function fillReasonSelect() {
     reportReason.innerHTML = "";
@@ -1222,11 +1304,34 @@
     });
   }
 
+  function stopLiveHls() {
+    if (liveHls) {
+      try {
+        liveHls.destroy();
+      } catch (_) {}
+      liveHls = null;
+    }
+    if (liveWhep) {
+      const session = liveWhep;
+      liveWhep = "";
+      fetch(session, { method: "DELETE" }).catch(() => {});
+    }
+    if (livePc) {
+      try {
+        livePc.close();
+      } catch (_) {}
+      livePc = null;
+    }
+  }
+
   function closePlayer() {
+    stopLiveHls();
     try {
       playerVideo.pause();
     } catch (_) {}
+    playerVideo.loop = true;
     playerVideo.removeAttribute("src");
+    playerVideo.srcObject = null;
     try {
       playerVideo.load();
     } catch (_) {}
@@ -1234,7 +1339,10 @@
     appEl.classList.remove("player-open");
     playerSpinner.hidden = true;
     playerCaption.textContent = "";
+    playerLive.hidden = true;
+    railReport.hidden = false;
     playerItem = null;
+    renderLiveRow();
   }
 
   function hidePlayerSpinner() {
@@ -1247,8 +1355,12 @@
       showStatus("Playback isn't available for this file", 2500);
       return;
     }
+    stopLiveHls();
     pauseFeed();
     playerItem = item;
+    playerLive.hidden = true;
+    railReport.hidden = false;
+    playerVideo.loop = true;
     playerCaption.textContent = item.title || item.filename || "";
     playerSpinner.hidden = false;
     playerEl.hidden = false;
@@ -1256,6 +1368,216 @@
     playerVideo.muted = muted;
     playerVideo.src = url;
     playerVideo.play().catch(() => {});
+  }
+
+  function hlsCandidates(url) {
+    const clean = String(url || "").trim();
+    if (!clean) return [];
+    if (/\.m3u8(\?|#|$)/i.test(clean)) return [clean];
+    if (/\.[a-z0-9]{2,5}(\?|#|$)/i.test(clean)) return [];
+    const base = clean.replace(/\/$/, "");
+    return [`${base}/index.m3u8`, `${base}.m3u8`];
+  }
+
+  function loadHlsLib() {
+    if (window.Hls) return Promise.resolve(window.Hls);
+    if (loadHlsLib.pending) return loadHlsLib.pending;
+    loadHlsLib.pending = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = HLS_SRC;
+      script.onload = () => resolve(window.Hls);
+      script.onerror = () => reject(new Error("Could not load live player"));
+      document.head.appendChild(script);
+    });
+    return loadHlsLib.pending;
+  }
+
+  function playNative(video, url) {
+    video.src = url;
+    return video.play().catch(() => {});
+  }
+
+  function whepUrl(playbackUrl) {
+    try {
+      const u = new URL(playbackUrl, location.origin);
+      u.pathname = u.pathname.replace(/\/index\.m3u8$/i, "").replace(/\.m3u8$/i, "");
+      if (u.port !== "8888") return "";
+      u.port = "8889";
+      u.pathname = `${u.pathname.replace(/\/$/, "")}/whep`;
+      u.search = "";
+      u.hash = "";
+      return u.toString();
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function waitForIce(pc) {
+    if (pc.iceGatheringState === "complete") return Promise.resolve();
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, 800);
+      pc.addEventListener("icegatheringstatechange", () => {
+        if (pc.iceGatheringState === "complete") {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    });
+  }
+
+  async function playWhep(video, url) {
+    if (!url || typeof RTCPeerConnection !== "function") return false;
+    const pc = new RTCPeerConnection();
+    livePc = pc;
+    pc.addTransceiver("video", { direction: "recvonly" });
+    pc.addTransceiver("audio", { direction: "recvonly" });
+    pc.ontrack = (ev) => {
+      const stream = ev.streams && ev.streams[0];
+      if (!stream) return;
+      video.srcObject = stream;
+      video.play().catch(() => {});
+    };
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await waitForIce(pc);
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/sdp" },
+      body: pc.localDescription.sdp,
+    });
+    if (!res.ok) throw new Error(`WHEP ${res.status}`);
+    liveWhep = res.headers.get("Location") || "";
+    const answer = await res.text();
+    await pc.setRemoteDescription({ type: "answer", sdp: answer });
+    const audio = await new Promise((resolve) => {
+      const hasAudio = () =>
+        pc.getReceivers().some((receiver) => receiver.track && receiver.track.kind === "audio");
+      if (hasAudio()) return resolve(true);
+      const timer = setTimeout(() => resolve(hasAudio()), 600);
+      pc.addEventListener("track", () => {
+        if (hasAudio()) {
+          clearTimeout(timer);
+          resolve(true);
+        }
+      });
+    });
+    if (!audio) throw new Error("WebRTC dropped AAC audio");
+    return true;
+  }
+
+  async function playHls(video, url) {
+    const Hls = await loadHlsLib();
+    if (!Hls || !Hls.isSupported()) {
+      if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        playNative(video, url);
+        return true;
+      }
+      return false;
+    }
+    stopLiveHls();
+    const hls = new Hls({
+      lowLatencyMode: true,
+      liveSyncDurationCount: 1,
+      liveMaxLatencyDurationCount: 2,
+      maxLiveSyncPlaybackRate: 1.5,
+      backBufferLength: 0,
+      maxBufferLength: 2,
+      maxMaxBufferLength: 4,
+    });
+    liveHls = hls;
+    hls.loadSource(url);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      video.play().catch(() => {});
+    });
+    hls.on(Hls.Events.FRAG_BUFFERED, () => {
+      const edge = hls.liveSyncPosition;
+      if (Number.isFinite(edge) && edge - video.currentTime > 1.5) {
+        video.currentTime = edge;
+      }
+    });
+    return true;
+  }
+
+  async function playLive(video, url) {
+    stopLiveHls();
+    video.removeAttribute("src");
+    video.srcObject = null;
+    try {
+      video.load();
+    } catch (_) {}
+    const whep = whepUrl(url);
+    if (whep) {
+      try {
+        if (await playWhep(video, whep)) return;
+      } catch (_) {
+        stopLiveHls();
+      }
+    }
+    const candidates = hlsCandidates(url);
+    for (const candidate of candidates) {
+      try {
+        if (await playHls(video, candidate)) return;
+      } catch (_) {}
+    }
+    playNative(video, url);
+  }
+
+  async function resolvePlayback(stream) {
+    if (stream && stream.playback_url) return stream.playback_url;
+    if (!stream || !stream.channel_id) return "";
+    const res = await fetch(API_WATCH, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channel_id: stream.channel_id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.status === false) {
+      throw new Error(data.error || "Live playback requires a credential");
+    }
+    return (data.result && data.result.playback_url) || "";
+  }
+
+  async function openLive(stream) {
+    if (!stream) return;
+    pauseFeed();
+    const item = {
+      kind: "livestream",
+      username: stream.username || "",
+      public_key_hash: stream.public_key_hash || stream.owner || "",
+      owner: stream.owner || "",
+      title: stream.title || "Live",
+      description: stream.description || "",
+      transaction_id: stream.transaction_id || stream.announcement_txn_id || "",
+      channel_id: stream.channel_id || "",
+      playback_url: stream.playback_url || "",
+    };
+    playerItem = item;
+    railReport.hidden = true;
+    playerLive.hidden = false;
+    playerVideo.loop = false;
+    const who = item.username ? `@${item.username}` : "Live";
+    playerCaption.textContent =
+      item.title && item.title !== "Live" ? `${who} · ${item.title}` : who;
+    playerSpinner.hidden = false;
+    playerEl.hidden = false;
+    appEl.classList.add("player-open");
+    renderLiveRow();
+    playerVideo.muted = muted;
+    try {
+      const url = item.playback_url || (await resolvePlayback(item));
+      if (!url) {
+        playerSpinner.hidden = true;
+        showStatus("Live playback URL is not available", 3000);
+        return;
+      }
+      item.playback_url = url;
+      await playLive(playerVideo, url);
+    } catch (err) {
+      playerSpinner.hidden = true;
+      showStatus(err.message || "Could not open live stream", 3500);
+    }
   }
 
   playerVideo.addEventListener("playing", hidePlayerSpinner);
@@ -1274,12 +1596,22 @@
     return n.toLocaleString(undefined, { maximumFractionDigits: 8 });
   }
 
+  function applyProfileLive(profile) {
+    const live = liveFor(profile);
+    setLiveRing(profileAvatar, !!live);
+    profileAvatar.onclick = live ? () => openLive(live) : null;
+    if (live) profileAvatar.setAttribute("aria-label", "Watch live");
+    else profileAvatar.removeAttribute("aria-label");
+  }
+
   function renderProfile(profile) {
+    currentProfile = profile || null;
     profileVideos = (profile && profile.videos) || [];
     const name = displayName(profile);
     profileTopTitle.textContent = profile && profile.username ? profile.username : "Profile";
     profileName.textContent = name;
     paintAvatar(profileAvatar, profile && profile.username);
+    applyProfileLive(profile);
     if (profile && profile.username) {
       profileSub.hidden = true;
       profileSub.textContent = "";
@@ -1314,10 +1646,12 @@
   }
 
   function renderMissingProfile(message) {
+    currentProfile = null;
     profileVideos = [];
     profileTopTitle.textContent = "Profile";
     profileName.textContent = "Profile";
     paintAvatar(profileAvatar, "");
+    applyProfileLive(null);
     profileSub.hidden = false;
     profileSub.textContent = message;
     profileActions.hidden = true;
@@ -1368,6 +1702,7 @@
     const route = parseRoute();
     viewName = route.view;
     closePlayer();
+    renderLiveRow();
     const onFeed = viewName === "feed";
     const onProfile = viewName === "profile";
     appEl.classList.toggle("view-profile", !onFeed);
@@ -1471,6 +1806,65 @@
 
   setTimeout(() => hintEl.classList.add("fade"), 4500);
 
+  function remarkFeedLive() {
+    feed.querySelectorAll(".slide").forEach((slide) => {
+      const item = videos[Number(slide.dataset.index)];
+      const btn = slide.querySelector(".avatar-btn");
+      if (!btn || !item) return;
+      const live = liveFor(item);
+      setLiveRing(btn, !!live);
+      btn.setAttribute(
+        "aria-label",
+        live
+          ? item.username
+            ? `Watch @${item.username} live`
+            : "Watch live"
+          : item.username
+            ? `Open @${item.username}`
+            : "Open profile"
+      );
+    });
+  }
+
+  function renderLiveRow() {
+    if (!liveRow) return;
+    const show = viewName === "feed" && playerEl.hidden && liveStreams.length > 0;
+    liveRow.hidden = !show;
+    liveRow.innerHTML = "";
+    if (!show) return;
+    liveStreams.forEach((stream) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "live-chip";
+      const label = stream.username
+        ? `Watch @${stream.username} live`
+        : stream.title || "Watch live";
+      btn.title = stream.username ? `@${stream.username}` : stream.title || "Live";
+      btn.setAttribute("aria-label", label);
+      paintAvatar(btn, stream.username);
+      setLiveRing(btn, true);
+      btn.addEventListener("click", () => openLive(stream));
+      liveRow.appendChild(btn);
+    });
+  }
+
+  async function loadLive() {
+    try {
+      const res = await fetch(API_LIVE, { credentials: "same-origin" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.status) return;
+      indexLive(data.results || []);
+    } catch (_) {
+      return;
+    }
+    remarkFeedLive();
+    renderLiveRow();
+    if (viewName === "profile" && currentProfile) applyProfileLive(currentProfile);
+  }
+
   loadReasons();
+  loadLive();
+  setInterval(loadLive, 20000);
   syncRoute();
 })();
