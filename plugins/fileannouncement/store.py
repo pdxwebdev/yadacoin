@@ -753,6 +753,8 @@ async def list_history(
 
 VIDEO_EXT_RE = re.compile(r"\.(mp4|webm|mov|m4v|mkv|ogv)$", re.I)
 VIDEO_MIME_RE = re.compile(r"^video/", re.I)
+IMAGE_EXT_RE = re.compile(r"\.(jpe?g|png|gif|webp|avif|bmp|heic|heif)$", re.I)
+IMAGE_MIME_RE = re.compile(r"^image/", re.I)
 
 
 def _identity_username(txn: dict) -> str:
@@ -1115,6 +1117,17 @@ def is_video_file(file_doc: dict) -> bool:
     return False
 
 
+def is_image_file(file_doc: dict) -> bool:
+    """True when announcement metadata indicates a still image, not video."""
+    if not file_doc or is_video_file(file_doc):
+        return False
+    mime = (file_doc.get("mime_type") or "").strip()
+    if IMAGE_MIME_RE.match(mime):
+        return True
+    filename = file_doc.get("filename") or ""
+    return bool(IMAGE_EXT_RE.search(filename))
+
+
 def video_feed_keys(file_doc: dict, owner: str = "") -> list:
     """Identity keys so one user is not listed twice for the same upload.
 
@@ -1300,9 +1313,9 @@ async def search_chain(config, query: str, limit: int = 50) -> list:
     return results[:limit]
 
 
-def _video_hit(txn, source, block_index, query: str) -> Optional[dict]:
+def _media_hit(txn, source, block_index, query: str, match) -> Optional[dict]:
     rel = (txn.get("relationship") or {}).get("file") or {}
-    if not is_video_file(rel):
+    if not match(rel):
         return None
     if not _file_text_matches(rel, query, txn.get("id") or ""):
         return None
@@ -1316,10 +1329,14 @@ def _video_hit(txn, source, block_index, query: str) -> Optional[dict]:
     }
 
 
-async def search_videos(
-    config, query: str = "", limit: int = 50, skip: int = 0
+def _video_hit(txn, source, block_index, query: str) -> Optional[dict]:
+    return _media_hit(txn, source, block_index, query, is_video_file)
+
+
+async def search_announced(
+    config, match, query: str = "", limit: int = 50, skip: int = 0
 ) -> list:
-    """Discover video announcements that are still in the mempool or on chain."""
+    """Discover matching announcements still in the mempool or on chain."""
     limit = max(1, min(int(limit), 200))
     skip = max(0, int(skip))
     q = (query or "").strip()
@@ -1331,7 +1348,7 @@ async def search_videos(
         )
         async for block in cursor:
             for txn in block.get("transactions") or []:
-                hit = _video_hit(txn, "chain", block.get("index"), q)
+                hit = _media_hit(txn, "chain", block.get("index"), q, match)
                 if hit:
                     hits.append(hit)
     except Exception:
@@ -1342,7 +1359,7 @@ async def search_videos(
             {"relationship.file.file_id": {"$gt": ""}},
             {"_id": 0},
         ):
-            hit = _video_hit(txn, "mempool", None, q)
+            hit = _media_hit(txn, "mempool", None, q, match)
             if hit:
                 hits.append(hit)
     except Exception:
@@ -1375,3 +1392,17 @@ async def search_videos(
         item["owner"] = owner
         results.append(item)
     return results[skip : skip + limit]
+
+
+async def search_videos(
+    config, query: str = "", limit: int = 50, skip: int = 0
+) -> list:
+    """Discover video announcements that are still in the mempool or on chain."""
+    return await search_announced(config, is_video_file, query, limit, skip)
+
+
+async def search_photos(
+    config, query: str = "", limit: int = 50, skip: int = 0
+) -> list:
+    """Discover image announcements that are still in the mempool or on chain."""
+    return await search_announced(config, is_image_file, query, limit, skip)

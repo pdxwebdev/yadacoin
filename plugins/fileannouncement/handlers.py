@@ -674,48 +674,60 @@ class PublicTakedownHandler(BaseHandler):
         return self.render_as_json({"status": True, "result": result})
 
 
+async def _public_media_list(handler, match, search):
+    query = handler.get_query_argument("q", "")
+    transaction_id = (handler.get_query_argument("transaction_id", "") or "").strip()
+    try:
+        limit = min(int(handler.get_query_argument("limit", 30)), 100)
+        skip = max(int(handler.get_query_argument("skip", 0)), 0)
+    except ValueError:
+        handler.set_status(400)
+        return handler.render_as_json(
+            {"status": False, "error": "limit and skip must be integers"}
+        )
+    tornado.ioloop.IOLoop.current().spawn_callback(prune_stream_cache, handler.config)
+    if transaction_id:
+        live = await store.get_live_by_transaction_id(handler.config, transaction_id)
+        raw = [live] if live and match(live) else []
+        results = [
+            _public_file_item(row, keep_stream=not store.is_video_file(row))
+            for row in raw
+        ]
+    else:
+        raw = await search(handler.config, query=query, limit=limit, skip=skip)
+        results = [_video_public_item(item) for item in raw]
+    results = [r for r in results if r.get("file_id") and r.get("stream_url")]
+    try:
+        names = await store.identity_usernames(handler.config)
+    except Exception:
+        names = {}
+    for item in results:
+        item["username"] = names.get(item.get("owner") or "", "")
+    return handler.render_as_json(
+        {
+            "status": True,
+            "query": query,
+            "count": len(results),
+            "results": results,
+        }
+    )
+
+
 class PublicVideoListHandler(BaseHandler):
     """GET /file-announcements/api/v1/public/videos — no auth; video announcements only."""
 
     async def get(self):
-        query = self.get_query_argument("q", "")
-        transaction_id = (self.get_query_argument("transaction_id", "") or "").strip()
-        try:
-            limit = min(int(self.get_query_argument("limit", 30)), 100)
-            skip = max(int(self.get_query_argument("skip", 0)), 0)
-        except ValueError:
-            self.set_status(400)
-            return self.render_as_json(
-                {"status": False, "error": "limit and skip must be integers"}
-            )
-        tornado.ioloop.IOLoop.current().spawn_callback(prune_stream_cache, self.config)
-        if transaction_id:
-            live = await store.get_live_by_transaction_id(self.config, transaction_id)
-            raw = [live] if live and store.is_video_file(live) else []
-            results = [_public_file_item(row) for row in raw]
-        else:
-            raw = await store.search_videos(
-                self.config, query=query, limit=limit, skip=skip
-            )
-            results = [_video_public_item(item) for item in raw]
-        results = [r for r in results if r.get("file_id") and r.get("stream_url")]
-        try:
-            names = await store.identity_usernames(self.config)
-        except Exception:
-            names = {}
-        for item in results:
-            item["username"] = names.get(item.get("owner") or "", "")
-        return self.render_as_json(
-            {
-                "status": True,
-                "query": query,
-                "count": len(results),
-                "results": results,
-            }
-        )
+        return await _public_media_list(self, store.is_video_file, store.search_videos)
 
 
-def _public_file_item(row: dict, username: str = "") -> dict:
+class PublicPhotoListHandler(BaseHandler):
+    """GET /file-announcements/api/v1/public/photos — no auth; image announcements only."""
+
+    async def get(self):
+        return await _public_media_list(self, store.is_image_file, store.search_photos)
+
+
+def _public_file_item(row: dict, username: str = "", keep_stream: bool = False) -> dict:
     shaped = {
         "source": row.get("source") or "",
         "block_index": row.get("block_index"),
@@ -736,7 +748,7 @@ def _public_file_item(row: dict, username: str = "") -> dict:
         },
     }
     item = _video_public_item(shaped)
-    if not store.is_video_file(row):
+    if not keep_stream and not store.is_video_file(row):
         item["stream_url"] = ""
     return item
 
@@ -966,6 +978,13 @@ async def _profile_payload(config, inception: str, is_me: bool) -> dict:
     ident = await store.identity_for_inception(config, inception)
     username = ident.get("username") or ""
     rows = await store.files_for_inception(config, inception)
+    videos = []
+    photos = []
+    for row in rows:
+        if store.is_video_file(row):
+            videos.append(_public_file_item(row, username))
+        elif store.is_image_file(row):
+            photos.append(_public_file_item(row, username, keep_stream=True))
     gifts = await _kel_gift_balance(config, inception)
     following = await _following_count(config, inception)
     identity_txn_id = await _identity_announcement_txn_id(config, inception)
@@ -981,7 +1000,8 @@ async def _profile_payload(config, inception: str, is_me: bool) -> dict:
         "followers": followers,
         "badges": len(badges),
         "identity_announcement": identity_txn_id,
-        "videos": [_public_file_item(row, username) for row in rows],
+        "videos": videos,
+        "photos": photos,
     }
 
 
@@ -1074,8 +1094,12 @@ class PublicStreamHandler(BaseHandler):
         self.finish()
 
     def _media_headers(self, filename, mime_type, total, start, end, partial):
-        is_av = mime_type.startswith("video/") or mime_type.startswith("audio/")
-        safe_name = (filename or "video").replace('"', "")
+        inline = (
+            mime_type.startswith("video/")
+            or mime_type.startswith("audio/")
+            or mime_type.startswith("image/")
+        )
+        safe_name = (filename or "file").replace('"', "")
         self.set_header("Content-Type", mime_type)
         self.set_header("Accept-Ranges", "bytes")
         self.set_header("X-Content-Type-Options", "nosniff")
@@ -1087,7 +1111,7 @@ class PublicStreamHandler(BaseHandler):
         self.set_header(
             "Content-Disposition",
             f'inline; filename="{safe_name}"'
-            if is_av
+            if inline
             else f'attachment; filename="{safe_name}"',
         )
         length = end - start + 1
@@ -1317,6 +1341,7 @@ HANDLERS = [
     (r"/file-announcements/api/v1/stream-cache", StreamCacheHandler),
     (r"/file-announcements/api/v1/takedown-reasons", FileTakedownReasonsHandler),
     (r"/file-announcements/api/v1/public/videos", PublicVideoListHandler),
+    (r"/file-announcements/api/v1/public/photos", PublicPhotoListHandler),
     (r"/file-announcements/api/v1/public/profile", PublicProfileHandler),
     (r"/file-announcements/api/v1/public/badges", PublicBadgesHandler),
     (r"/file-announcements/api/v1/public/me", PublicMeHandler),

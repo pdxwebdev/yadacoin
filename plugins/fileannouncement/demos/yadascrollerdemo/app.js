@@ -1,5 +1,7 @@
 (() => {
   const API_VIDEOS = "/file-announcements/api/v1/public/videos";
+  const API_PHOTOS = "/file-announcements/api/v1/public/photos";
+  const API_FILES = "/file-announcements/api/v1/files";
   const API_PROFILE = "/file-announcements/api/v1/public/profile";
   const API_BADGES = "/file-announcements/api/v1/public/badges";
   const API_ME = "/file-announcements/api/v1/public/me";
@@ -23,6 +25,10 @@
   ];
 
   const feed = document.getElementById("feed");
+  const photoPane = document.getElementById("photo-pane");
+  const photoEmpty = document.getElementById("photo-empty");
+  const tabVideos = document.getElementById("tab-videos");
+  const tabPhotos = document.getElementById("tab-photos");
   const statusEl = document.getElementById("status");
   const emptyEl = document.getElementById("empty");
   const searchEl = document.getElementById("search");
@@ -46,6 +52,8 @@
   const profileActions = document.getElementById("profile-actions");
   const profileGrid = document.getElementById("profile-grid");
   const profileEmpty = document.getElementById("profile-empty");
+  const profileTabVideos = document.getElementById("profile-tab-videos");
+  const profileTabPhotos = document.getElementById("profile-tab-photos");
   const statGifts = document.getElementById("stat-gifts");
   const statFollowing = document.getElementById("stat-following");
   const statFollowers = document.getElementById("stat-followers");
@@ -65,6 +73,8 @@
   const playerEl = document.getElementById("player");
   const playerBack = document.getElementById("player-back");
   const playerVideo = document.getElementById("player-video");
+  const playerPhoto = document.getElementById("player-photo");
+  const uploadFile = document.getElementById("upload-file");
   const playerSpinner = document.getElementById("player-spinner");
   const playerCaption = document.getElementById("player-caption");
   const playerLive = document.getElementById("player-live");
@@ -89,7 +99,12 @@
 
   /** @type {Array<object>} */
   let videos = [];
+  let photos = [];
   let activeIndex = 0;
+  let photoIndex = 0;
+  let mediaMode = "videos";
+  let photosLoadedQuery = null;
+  let uploadBusy = false;
   let muted = true;
   let loading = false;
   let query = "";
@@ -103,11 +118,15 @@
   const prefetched = new Set();
   /** @type {IntersectionObserver | null} */
   let observer = null;
+  let photoObserver = null;
   let feedGen = 0;
+  let photoGen = 0;
   let probeAbort = new AbortController();
   let viewName = "feed";
   /** @type {Array<object>} */
   let profileVideos = [];
+  let profilePhotos = [];
+  let profileMedia = sessionStorage.getItem("yada-scroller-profile") === "photos" ? "photos" : "videos";
   /** @type {object | null} */
   let giftTarget = null;
   /** @type {object | null} */
@@ -130,7 +149,7 @@
   const probe = document.createElement("video");
 
   function showStatus(msg, ms = 2800) {
-    if (viewName !== "feed" && (ms === 0 || !msg)) return;
+    if (viewName !== "feed" && !uploadBusy && (ms === 0 || !msg)) return;
     if (!msg) {
       statusEl.hidden = true;
       return;
@@ -489,7 +508,7 @@
     video.muted = muted;
     pauseAllExcept(video);
     const play = () => {
-      if (!slide.isConnected || viewName !== "feed" || !playerEl.hidden) return;
+      if (!slide.isConnected || viewName !== "feed" || mediaMode === "photos" || !playerEl.hidden) return;
       video.play().catch((err) => {
         if (err && err.name === "NotAllowedError") return;
         if (video.error) dropVideo(slide.dataset.key);
@@ -698,6 +717,445 @@
 
   let loadedPin = null;
 
+  function imageStream(item) {
+    const mime = String((item && item.mime_type) || "").toLowerCase();
+    if (mime && !mime.startsWith("image/")) return "";
+    return streamUrl(item);
+  }
+
+  function photoSrc(item) {
+    if (item && item.thumbnail_url) return item.thumbnail_url;
+    return imageStream(item);
+  }
+
+  function buildPhotoSlide(item, index) {
+    const slide = document.createElement("section");
+    slide.className = "slide";
+    slide.dataset.index = String(index);
+    slide.dataset.key = itemKey(item);
+    const img = document.createElement("img");
+    img.className = "photo";
+    img.alt = item.title || item.filename || "";
+    const primary = item.thumbnail_url || "";
+    const full = imageStream(item);
+    img.addEventListener("load", () => slide.classList.add("ready"));
+    img.addEventListener("error", () => {
+      if (primary && full && img.dataset.fellback !== "1") {
+        img.dataset.fellback = "1";
+        img.src = full;
+        return;
+      }
+      dropPhoto(slide.dataset.key);
+    });
+    img.src = primary || full;
+    const tags = (item.keywords || [])
+      .slice(0, 6)
+      .map((k) => `<span class="tag">#${escapeHtml(k)}</span>`)
+      .join("");
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    if (item.username) {
+      const who = document.createElement("button");
+      who.type = "button";
+      who.className = "who";
+      who.textContent = `@${item.username}`;
+      who.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openProfile(item);
+      });
+      meta.appendChild(who);
+    }
+    const title = document.createElement("h2");
+    title.textContent = item.title || "Untitled";
+    const desc = document.createElement("p");
+    desc.textContent = item.description || "";
+    meta.appendChild(title);
+    meta.appendChild(desc);
+    if (tags) {
+      const tagWrap = document.createElement("div");
+      tagWrap.className = "tags";
+      tagWrap.innerHTML = tags;
+      meta.appendChild(tagWrap);
+    }
+    const side = document.createElement("div");
+    side.className = "side-actions";
+    const avatarBtn = document.createElement("button");
+    avatarBtn.type = "button";
+    avatarBtn.className = "avatar-btn";
+    avatarBtn.title = item.username ? `@${item.username}` : "Profile";
+    paintAvatar(avatarBtn, item.username);
+    const live = liveFor(item);
+    setLiveRing(avatarBtn, !!live);
+    avatarBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const stream = liveFor(item);
+      if (stream) openLive(stream);
+      else openProfile(item);
+    });
+    side.appendChild(avatarBtn);
+    slide.appendChild(img);
+    slide.appendChild(meta);
+    slide.appendChild(side);
+    return slide;
+  }
+
+  function dropPhoto(key) {
+    if (!key || dropped.has(key)) return;
+    const index = photos.findIndex((item) => itemKey(item) === key);
+    if (index < 0) return;
+    dropped.add(key);
+    photos.splice(index, 1);
+    const slide = photoPane.querySelector(`.slide[data-key="${CSS.escape(key)}"]`);
+    if (slide) {
+      if (photoObserver) photoObserver.unobserve(slide);
+      slide.remove();
+    }
+    photoPane.querySelectorAll(".slide").forEach((s, i) => {
+      s.dataset.index = String(i);
+    });
+    if (!photos.length) {
+      photoEmpty.hidden = mediaMode !== "photos";
+      photoIndex = 0;
+      return;
+    }
+    photoEmpty.hidden = true;
+    if (index < photoIndex) photoIndex -= 1;
+    if (index === photoIndex) photoIndex = Math.min(index, photos.length - 1);
+  }
+
+  function renderPhotos() {
+    photoPane.innerHTML = "";
+    if (photoObserver) {
+      photoObserver.disconnect();
+      photoObserver = null;
+    }
+    if (!photos.length) {
+      photoEmpty.hidden = mediaMode !== "photos";
+      photoIndex = 0;
+      return;
+    }
+    photoEmpty.hidden = true;
+    const frag = document.createDocumentFragment();
+    photos.forEach((item, i) => frag.appendChild(buildPhotoSlide(item, i)));
+    photoPane.appendChild(frag);
+    photoObserver = new IntersectionObserver(
+      (entries) => {
+        let best = null;
+        let bestRatio = 0;
+        for (const entry of entries) {
+          if (entry.isIntersecting && entry.intersectionRatio > bestRatio) {
+            best = entry;
+            bestRatio = entry.intersectionRatio;
+          }
+        }
+        if (!best || bestRatio < 0.55) return;
+        const idx = Number(best.target.dataset.index);
+        if (!Number.isNaN(idx)) photoIndex = idx;
+      },
+      { root: photoPane, threshold: [0.55, 0.75, 0.9] }
+    );
+    photoPane.querySelectorAll(".slide").forEach((slide) => photoObserver.observe(slide));
+    photoIndex = 0;
+    requestAnimationFrame(() => {
+      const slide = photoPane.querySelector(".slide");
+      if (slide) slide.scrollIntoView({ behavior: "auto", block: "start" });
+    });
+  }
+
+  async function loadPhotos(q) {
+    const gen = ++photoGen;
+    showStatus("Loading photos…", 0);
+    try {
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE), skip: "0" });
+      if (q) params.set("q", q);
+      const res = await fetch(`${API_PHOTOS}?${params}`, { credentials: "same-origin" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data.status) throw new Error(data.error || "search failed");
+      if (gen !== photoGen || mediaMode !== "photos") return;
+      const seen = new Set();
+      photos = [];
+      for (const item of data.results || []) {
+        if (!photoSrc(item)) continue;
+        const id = itemKey(item);
+        const content = contentKey(item);
+        if (seen.has(id) || (content && seen.has(content))) continue;
+        seen.add(id);
+        if (content) seen.add(content);
+        photos.push(item);
+      }
+      photosLoadedQuery = q || "";
+      renderPhotos();
+      showStatus("");
+    } catch (err) {
+      if (gen !== photoGen) return;
+      photos = [];
+      renderPhotos();
+      photoEmpty.hidden = false;
+      showStatus(`Failed to load: ${err.message || err}`, 5000);
+    }
+  }
+
+  function setMedia(mode) {
+    mediaMode = mode === "photos" ? "photos" : "videos";
+    const photosOn = mediaMode === "photos";
+    appEl.classList.toggle("media-photos", photosOn);
+    tabVideos.classList.toggle("active", !photosOn);
+    tabPhotos.classList.toggle("active", photosOn);
+    tabVideos.setAttribute("aria-selected", photosOn ? "false" : "true");
+    tabPhotos.setAttribute("aria-selected", photosOn ? "true" : "false");
+    feed.hidden = photosOn;
+    photoPane.hidden = !photosOn;
+    searchEl.placeholder = photosOn ? "Search photos…" : "Search videos…";
+    hintEl.textContent = photosOn
+      ? "Swipe or scroll · gift · report"
+      : "Swipe or scroll · gift · live · report · mute";
+    if (photosOn) {
+      emptyEl.hidden = true;
+      probeAbort.abort();
+      pauseFeed();
+      if (photosLoadedQuery !== query) loadPhotos(query);
+      else photoEmpty.hidden = photos.length > 0;
+    } else {
+      photoEmpty.hidden = true;
+      if (videos.length) activateIndex(activeIndex, false);
+      else if (!loading) loadVideos(query);
+    }
+    if (viewName === "feed") {
+      const next = mediaMode === "photos" ? "#/photos" : "#/";
+      const hash = location.hash || "#/";
+      if (hash !== next && (!hash || hash === "#" || hash === "#/" || hash === "#/photos")) {
+        location.hash = next;
+      }
+    }
+  }
+
+  function wantsPhotoUpload() {
+    if (viewName === "profile") return profileMedia === "photos";
+    return mediaMode === "photos";
+  }
+
+  function pickUpload() {
+    if (uploadBusy) return;
+    uploadFile.accept = wantsPhotoUpload() ? "image/*" : "video/*";
+    uploadFile.value = "";
+    uploadFile.click();
+  }
+
+  function titleFromName(name) {
+    const base = String(name || "").replace(/\.[^.]+$/, "").trim();
+    return base || "Upload";
+  }
+
+  function sourceSize(source) {
+    return {
+      w: source.naturalWidth || source.videoWidth || source.width || 0,
+      h: source.naturalHeight || source.videoHeight || source.height || 0,
+    };
+  }
+
+  function drawScaled(source, maxEdge) {
+    const size = sourceSize(source);
+    if (!size.w || !size.h) return null;
+    const scale = Math.min(1, maxEdge / Math.max(size.w, size.h));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(size.w * scale));
+    canvas.height = Math.max(1, Math.round(size.h * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
+  function canvasJpeg(canvas, quality) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (!blob || !blob.size) reject(new Error("could not encode image"));
+        else resolve(blob);
+      }, "image/jpeg", quality);
+    });
+  }
+
+  async function decodeImage(file) {
+    if (typeof createImageBitmap === "function") {
+      try {
+        return {
+          source: await createImageBitmap(file, { imageOrientation: "from-image" }),
+          url: "",
+        };
+      } catch (_) {}
+    }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("could not read image"));
+      img.src = url;
+    });
+    return { source: img, url };
+  }
+
+  async function jpegFile(source, maxEdge, quality, name, maxBytes) {
+    let edge = maxEdge;
+    let q = quality;
+    let blob = null;
+    while (edge >= 160) {
+      const canvas = drawScaled(source, edge);
+      if (!canvas) throw new Error("could not read image");
+      blob = await canvasJpeg(canvas, q);
+      if (!maxBytes || blob.size <= maxBytes) break;
+      if (q > 0.45) q = Math.round((q - 0.08) * 100) / 100;
+      else edge = Math.round(edge * 0.75);
+    }
+    return new File([blob], name, { type: "image/jpeg" });
+  }
+
+  async function compressPhoto(file) {
+    const decoded = await decodeImage(file);
+    const source = decoded.source;
+    try {
+      const size = sourceSize(source);
+      const long = Math.max(size.w, size.h);
+      const jpeg = /^image\/jpe?g$/i.test(file.type);
+      const thumb = await jpegFile(source, 480, 0.72, "thumbnail.jpg", 500 * 1024);
+      if (jpeg && long > 0 && long <= 1600 && file.size <= 1536 * 1024) {
+        return { file, thumb };
+      }
+      const base = titleFromName(file.name);
+      const compressed = await jpegFile(source, 1600, 0.82, `${base}.jpg`);
+      return { file: compressed, thumb };
+    } finally {
+      if (decoded.url) URL.revokeObjectURL(decoded.url);
+      if (source && typeof source.close === "function") source.close();
+    }
+  }
+
+  function waitMedia(el, event) {
+    return new Promise((resolve, reject) => {
+      const ok = () => {
+        cleanup();
+        resolve();
+      };
+      const bad = () => {
+        cleanup();
+        reject(new Error("thumbnail failed"));
+      };
+      const cleanup = () => {
+        el.removeEventListener(event, ok);
+        el.removeEventListener("error", bad);
+      };
+      el.addEventListener(event, ok, { once: true });
+      el.addEventListener("error", bad, { once: true });
+    });
+  }
+
+  async function captureVideoThumbnail(file) {
+    if (!file || !String(file.type || "").startsWith("video/")) return null;
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    video.src = url;
+    try {
+      const ready = waitMedia(video, "loadeddata");
+      video.load();
+      await ready;
+      const duration = Number(video.duration);
+      const at = Number.isFinite(duration) && duration > 0 ? Math.min(1, duration / 2) : 0;
+      if (at > 0) {
+        const seeked = waitMedia(video, "seeked");
+        video.currentTime = at;
+        await seeked;
+      }
+      const canvas = drawScaled(video, 480);
+      if (!canvas) return null;
+      const blob = await canvasJpeg(canvas, 0.72);
+      return new File([blob], "thumbnail.jpg", { type: "image/jpeg" });
+    } catch (_) {
+      return null;
+    } finally {
+      video.removeAttribute("src");
+      video.load();
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  function postForm(url, fd) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", url);
+      xhr.withCredentials = true;
+      xhr.upload.onprogress = (ev) => {
+        if (!ev.lengthComputable) return;
+        const pct = Math.round((ev.loaded / ev.total) * 100);
+        showStatus(`Uploading ${pct}%`, 0);
+      };
+      xhr.onload = () => {
+        let data = {};
+        try {
+          data = JSON.parse(xhr.responseText || "{}");
+        } catch (_) {}
+        if (xhr.status === 401) {
+          reject(new Error("Unlock File Announcements to upload"));
+          return;
+        }
+        if (xhr.status < 200 || xhr.status >= 300 || data.status === false) {
+          reject(new Error(data.error || "upload failed"));
+          return;
+        }
+        resolve(data);
+      };
+      xhr.onerror = () => reject(new Error("upload failed"));
+      xhr.send(fd);
+    });
+  }
+
+  async function uploadSelected(file) {
+    if (!file || uploadBusy) return;
+    const image = String(file.type || "").startsWith("image/") || /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(file.name);
+    const video = String(file.type || "").startsWith("video/");
+    if (!image && !video) {
+      showStatus("Choose a photo or video", 2500);
+      return;
+    }
+    uploadBusy = true;
+    showStatus(image ? "Resizing photo…" : "Capturing thumbnail…", 0);
+    try {
+      const fd = new FormData();
+      fd.set("title", titleFromName(file.name));
+      fd.set("upload_id", crypto.randomUUID ? crypto.randomUUID() : `up${Date.now()}`);
+      if (image) {
+        const packed = await compressPhoto(file);
+        fd.set("file", packed.file, packed.file.name);
+        fd.set("thumbnail", packed.thumb, "thumbnail.jpg");
+      } else {
+        fd.set("file", file, file.name);
+        const thumb = await captureVideoThumbnail(file);
+        if (thumb) fd.set("thumbnail", thumb, "thumbnail.jpg");
+      }
+      showStatus("Uploading 0%", 0);
+      await postForm(API_FILES, fd);
+      showStatus("Announced", 2200);
+      if (image) {
+        photosLoadedQuery = null;
+        profileMedia = "photos";
+        if (viewName === "feed") setMedia("photos");
+        else loadProfile(parseRoute());
+      } else if (viewName === "feed") {
+        setMedia("videos");
+        loadVideos(query);
+      } else {
+        profileMedia = "videos";
+        loadProfile(parseRoute());
+      }
+    } catch (err) {
+      showStatus(err.message || "upload failed", 4000);
+    } finally {
+      uploadBusy = false;
+    }
+  }
+
   async function loadVideos(q, pinId) {
     pinId = pinId || "";
     loadedPin = pinId;
@@ -770,17 +1228,17 @@
         await mapPool(candidates.slice(1), 1, accept);
         if (gen !== feedGen) return;
         if (!videos.length) {
-          emptyEl.hidden = false;
+          if (mediaMode !== "photos") emptyEl.hidden = false;
           showStatus(firstFailure || "", firstFailure ? 8000 : 0);
         } else {
           showStatus(`${videos.length} video${videos.length === 1 ? "" : "s"}`);
         }
       };
       if (!candidates[0]) {
-        emptyEl.hidden = false;
+        if (mediaMode !== "photos") emptyEl.hidden = false;
         showStatus("");
       } else if (!videos.length) {
-        emptyEl.hidden = false;
+        if (mediaMode !== "photos") emptyEl.hidden = false;
         showStatus(firstFailure || "playback failed", 8000);
         probeRest();
       } else {
@@ -790,7 +1248,7 @@
     } catch (err) {
       if (gen !== feedGen || signal.aborted) return;
       resetFeed();
-      emptyEl.hidden = false;
+      if (mediaMode !== "photos") emptyEl.hidden = false;
       showStatus(`Failed to load: ${err.message || err}`, 5000);
     } finally {
       if (gen === feedGen) loading = false;
@@ -811,7 +1269,10 @@
   });
 
   refreshBtn.addEventListener("click", () => {
-    loadVideos(query);
+    if (mediaMode === "photos") {
+      photosLoadedQuery = null;
+      loadPhotos(query);
+    } else loadVideos(query);
     loadLive();
   });
 
@@ -991,9 +1452,10 @@
       const tid = reportTarget.transaction_id;
       reportTarget = null;
       showStatus("Takedown announced on-chain", 4000);
-      // Remove reported item from local feed
       videos = videos.filter((v) => v.transaction_id !== tid);
-      renderFeed();
+      photos = photos.filter((item) => item.transaction_id !== tid);
+      if (mediaMode === "photos") renderPhotos();
+      else renderFeed();
     } catch (err) {
       reportErr.textContent = err.message || String(err);
       reportErr.hidden = false;
@@ -1006,29 +1468,35 @@
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
       query = searchEl.value.trim();
-      loadVideos(query);
+      if (mediaMode === "photos") {
+        photosLoadedQuery = null;
+        loadPhotos(query);
+      } else loadVideos(query);
     }, 350);
   });
 
   window.addEventListener("keydown", (e) => {
     if (reportDlg.open || viewName !== "feed") return;
     if (e.target === searchEl) return;
+    const pane = mediaMode === "photos" ? photoPane : feed;
+    const count = mediaMode === "photos" ? photos.length : videos.length;
+    const index = mediaMode === "photos" ? photoIndex : activeIndex;
     if (e.key === "ArrowDown" || e.key === "j") {
       e.preventDefault();
-      const next = Math.min(activeIndex + 1, videos.length - 1);
-      const slide = feed.querySelectorAll(".slide")[next];
+      const next = Math.min(index + 1, count - 1);
+      const slide = pane.querySelectorAll(".slide")[next];
       if (slide) slide.scrollIntoView({ behavior: "smooth", block: "start" });
     } else if (e.key === "ArrowUp" || e.key === "k") {
       e.preventDefault();
-      const prev = Math.max(activeIndex - 1, 0);
-      const slide = feed.querySelectorAll(".slide")[prev];
+      const prev = Math.max(index - 1, 0);
+      const slide = pane.querySelectorAll(".slide")[prev];
       if (slide) slide.scrollIntoView({ behavior: "smooth", block: "start" });
     } else if (e.key === "m") {
-      muteBtn.click();
+      if (mediaMode !== "photos") muteBtn.click();
     } else if (e.key === "r") {
-      const item = videos[activeIndex];
+      const item = activeItem();
       if (item) openReport(item);
-    } else if (e.key === " ") {
+    } else if (e.key === " " && mediaMode !== "photos") {
       e.preventDefault();
       const v = feed.querySelectorAll("video")[activeIndex];
       if (!v) return;
@@ -1095,13 +1563,20 @@
     if (path === "/profile" && username) {
       return { view: "profile", username, owner: "", transaction_id: "" };
     }
+    if (path === "/photos") {
+      return { view: "feed", media: "photos", transaction_id };
+    }
     if (path === "/profile" && transaction_id && !owner) {
-      return { view: "feed", transaction_id };
+      return { view: "feed", media: "videos", transaction_id };
     }
     if (path === "/profile") {
       return { view: "profile", owner, transaction_id, username: "" };
     }
-    return { view: "feed", transaction_id: path === "/" || path === "" ? transaction_id : "" };
+    return {
+      view: "feed",
+      media: "videos",
+      transaction_id: path === "/" || path === "" ? transaction_id : "",
+    };
   }
 
   function badgesHash(route, badgeId) {
@@ -1330,6 +1805,9 @@
       playerVideo.pause();
     } catch (_) {}
     playerVideo.loop = true;
+    playerVideo.hidden = false;
+    playerPhoto.hidden = true;
+    playerPhoto.removeAttribute("src");
     playerVideo.removeAttribute("src");
     playerVideo.srcObject = null;
     try {
@@ -1360,6 +1838,9 @@
     playerItem = item;
     playerLive.hidden = true;
     railReport.hidden = false;
+    playerPhoto.hidden = true;
+    playerPhoto.removeAttribute("src");
+    playerVideo.hidden = false;
     playerVideo.loop = true;
     playerCaption.textContent = item.title || item.filename || "";
     playerSpinner.hidden = false;
@@ -1368,6 +1849,31 @@
     playerVideo.muted = muted;
     playerVideo.src = url;
     playerVideo.play().catch(() => {});
+  }
+
+  function openPhoto(item) {
+    const src = photoSrc(item);
+    if (!src) {
+      showStatus("Photo isn't available", 2500);
+      return;
+    }
+    stopLiveHls();
+    pauseFeed();
+    playerItem = item;
+    playerLive.hidden = true;
+    railReport.hidden = false;
+    try {
+      playerVideo.pause();
+    } catch (_) {}
+    playerVideo.hidden = true;
+    playerPhoto.hidden = false;
+    playerPhoto.alt = item.title || item.filename || "";
+    playerPhoto.src = src;
+    playerCaption.textContent = item.title || item.filename || "";
+    playerSpinner.hidden = true;
+    playerEl.hidden = false;
+    appEl.classList.add("player-open");
+    renderLiveRow();
   }
 
   function hlsCandidates(url) {
@@ -1604,9 +2110,68 @@
     else profileAvatar.removeAttribute("aria-label");
   }
 
+  function splitProfileMedia(profile) {
+    const photosOut = [];
+    const videosOut = [];
+    const seen = new Set();
+    for (const item of (profile && profile.photos) || []) {
+      photosOut.push(item);
+      if (item.transaction_id) seen.add(item.transaction_id);
+    }
+    for (const item of (profile && profile.videos) || []) {
+      if (item.transaction_id && seen.has(item.transaction_id)) continue;
+      const mime = String(item.mime_type || "").toLowerCase();
+      const image =
+        mime.startsWith("image/") ||
+        (!item.stream_url && item.thumbnail_url && !mime.startsWith("video/"));
+      if (image) photosOut.push(item);
+      else videosOut.push(item);
+    }
+    return { videos: videosOut, photos: photosOut };
+  }
+
+  function paintProfileTabs() {
+    sessionStorage.setItem("yada-scroller-profile", profileMedia);
+    const photosOn = profileMedia === "photos";
+    profileTabVideos.classList.toggle("active", !photosOn);
+    profileTabPhotos.classList.toggle("active", photosOn);
+    profileTabVideos.setAttribute("aria-selected", photosOn ? "false" : "true");
+    profileTabPhotos.setAttribute("aria-selected", photosOn ? "true" : "false");
+  }
+
+  function renderProfileGrid() {
+    const items = profileMedia === "photos" ? profilePhotos : profileVideos;
+    profileGrid.innerHTML = "";
+    paintProfileTabs();
+    if (!items.length) {
+      profileEmpty.hidden = false;
+      profileEmpty.textContent = profileMedia === "photos" ? "No photos yet" : "No videos yet";
+      return;
+    }
+    profileEmpty.hidden = true;
+    items.forEach((item, index) => {
+      const tile = document.createElement("button");
+      tile.type = "button";
+      tile.className = "tile";
+      const label = item.title || item.filename || "Upload";
+      const src = profileMedia === "photos" ? photoSrc(item) : item.thumbnail_url;
+      const still = src
+        ? `<img alt="" src="${escapeHtml(src)}">`
+        : `<span class="ph">${item.stream_url ? "▶" : "▣"}</span>`;
+      tile.innerHTML = `${still}<span class="cap">${escapeHtml(label)}</span>`;
+      tile.addEventListener("click", () => {
+        if (profileMedia === "photos") openPhoto(items[index]);
+        else openPlayer(items[index]);
+      });
+      profileGrid.appendChild(tile);
+    });
+  }
+
   function renderProfile(profile) {
     currentProfile = profile || null;
-    profileVideos = (profile && profile.videos) || [];
+    const split = splitProfileMedia(profile);
+    profileVideos = split.videos;
+    profilePhotos = split.photos;
     const name = displayName(profile);
     profileTopTitle.textContent = profile && profile.username ? profile.username : "Profile";
     profileName.textContent = name;
@@ -1624,30 +2189,14 @@
     statFollowing.textContent = formatCount(profile && profile.following);
     statFollowers.textContent = formatCount(profile && profile.followers);
     statBadges.textContent = formatCount(profile && profile.badges);
-    profileGrid.innerHTML = "";
-    if (!profileVideos.length) {
-      profileEmpty.hidden = false;
-      profileEmpty.textContent = "No uploads yet";
-      return;
-    }
-    profileEmpty.hidden = true;
-    profileVideos.forEach((item, index) => {
-      const tile = document.createElement("button");
-      tile.type = "button";
-      tile.className = "tile";
-      const label = item.title || item.filename || "Upload";
-      const still = item.thumbnail_url
-        ? `<img alt="" src="${escapeHtml(item.thumbnail_url)}">`
-        : `<span class="ph">${item.stream_url ? "▶" : "▣"}</span>`;
-      tile.innerHTML = `${still}<span class="cap">${escapeHtml(label)}</span>`;
-      tile.addEventListener("click", () => openPlayer(profileVideos[index]));
-      profileGrid.appendChild(tile);
-    });
+    renderProfileGrid();
   }
 
   function renderMissingProfile(message) {
     currentProfile = null;
     profileVideos = [];
+    profilePhotos = [];
+    paintProfileTabs();
     profileTopTitle.textContent = "Profile";
     profileName.textContent = "Profile";
     paintAvatar(profileAvatar, "");
@@ -1713,6 +2262,18 @@
     navProfile.classList.toggle("active", viewName === "publish");
     if (onFeed) {
       const pin = route.transaction_id || "";
+      const want = route.media === "photos" && !pin ? "photos" : pin ? "videos" : mediaMode;
+      if (mediaMode !== want) {
+        setMedia(want);
+        return;
+      }
+      if (want === "photos") {
+        pauseFeed();
+        emptyEl.hidden = true;
+        photoEmpty.hidden = photos.length > 0;
+        if (photosLoadedQuery !== query) loadPhotos(query);
+        return;
+      }
       if (loadedPin !== pin) {
         loadVideos(searchEl.value.trim(), pin);
         return;
@@ -1765,6 +2326,7 @@
   publishBack.addEventListener("click", leaveOverlay);
   function activeItem() {
     if (!playerEl.hidden && playerItem) return playerItem;
+    if (mediaMode === "photos") return photos[photoIndex] || null;
     return videos[activeIndex] || null;
   }
 
@@ -1773,7 +2335,15 @@
   railReport.addEventListener("click", () => openReport(activeItem()));
   editAvatar.addEventListener("click", () => showStatus("Edit avatar is coming soon"));
   editUsername.addEventListener("click", () => showStatus("Edit username is coming soon"));
-  editUpload.addEventListener("click", () => showStatus("Upload is coming soon"));
+  editUpload.addEventListener("click", pickUpload);
+  profileTabVideos.addEventListener("click", () => {
+    profileMedia = "videos";
+    renderProfileGrid();
+  });
+  profileTabPhotos.addEventListener("click", () => {
+    profileMedia = "photos";
+    renderProfileGrid();
+  });
   function openPublish() {
     if ((location.hash || "") === "#/publish") {
       closePlayer();
@@ -1783,15 +2353,21 @@
     location.hash = "#/publish";
   }
 
-  navUpload.addEventListener("click", openPublish);
+  navUpload.addEventListener("click", pickUpload);
+  tabVideos.addEventListener("click", () => setMedia("videos"));
+  tabPhotos.addEventListener("click", () => setMedia("photos"));
+  uploadFile.addEventListener("change", () => {
+    const file = uploadFile.files && uploadFile.files[0];
+    if (file) uploadSelected(file);
+  });
   navFyp.addEventListener("click", () => {
     const hash = location.hash || "";
-    if (!hash || hash === "#" || hash === "#/") {
+    if (!hash || hash === "#" || hash === "#/" || hash === "#/photos") {
       closePlayer();
       syncRoute();
       return;
     }
-    location.hash = "#/";
+    location.hash = mediaMode === "photos" ? "#/photos" : "#/";
   });
   navProfile.addEventListener("click", openPublish);
   window.addEventListener("hashchange", () => {

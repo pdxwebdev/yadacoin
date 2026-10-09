@@ -54,11 +54,27 @@ body {
   pointer-events: auto;
 }
 
-.brand {
+.media-tabs {
+  display: flex;
+  gap: 16px;
+  flex: none;
+}
+
+.media-tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: rgba(255, 255, 255, 0.55);
   font-weight: 800;
-  letter-spacing: 0.02em;
   font-size: 16px;
+  padding: 6px 2px 4px;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  cursor: pointer;
+}
+
+.media-tab.active {
+  color: #fff;
+  border-bottom-color: #fff;
 }
 
 .top-actions {
@@ -67,7 +83,7 @@ body {
   align-items: center;
   flex: 1;
   justify-content: flex-end;
-  max-width: 70%;
+  max-width: 58%;
 }
 
 #search {
@@ -122,13 +138,18 @@ body {
   overflow: hidden;
 }
 
-.slide video {
+.slide video,
+.slide img.photo {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   background: #000;
+}
+
+.photo-pane[hidden] {
+  display: none !important;
 }
 
 .slide.ready .meta {
@@ -689,6 +710,17 @@ body {
   cursor: pointer;
 }
 
+.profile-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+
+.profile-tabs .pill.active {
+  background: #fff;
+  color: #000;
+}
+
 .profile-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -809,7 +841,8 @@ body {
   animation: spin 0.7s linear infinite;
 }
 
-.player video {
+.player video,
+.player img {
   position: absolute;
   top: 0;
   right: 0;
@@ -819,6 +852,11 @@ body {
   height: auto;
   object-fit: cover;
   background: #000;
+}
+
+.player video[hidden],
+.player img[hidden] {
+  display: none !important;
 }
 
 .overlay-back {
@@ -937,11 +975,16 @@ body {
 }
 
 #app.view-profile .top-bar,
+#app.view-profile .media-tabs,
 #app.view-profile .feed,
 #app.view-profile .hint,
 #app.view-profile .rail,
 #app.view-profile .empty,
 #app.view-profile .live-row {
+  display: none;
+}
+
+#app.media-photos #mute-btn {
   display: none;
 }
 

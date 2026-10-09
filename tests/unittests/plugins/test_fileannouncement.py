@@ -169,6 +169,17 @@ class TestFileAnnouncementStoreHelpers(AsyncTestCase):
         self.assertFalse(is_video_file({"mime_type": "image/png", "filename": "a.png"}))
         self.assertFalse(is_video_file({}))
 
+    async def test_is_image_file(self):
+        from plugins.fileannouncement.store import is_image_file
+
+        self.assertTrue(is_image_file({"mime_type": "image/jpeg"}))
+        self.assertTrue(is_image_file({"filename": "shot.PNG"}))
+        self.assertFalse(is_image_file({"mime_type": "video/mp4", "filename": "a.mp4"}))
+        self.assertFalse(
+            is_image_file({"mime_type": "image/jpeg", "filename": "clip.mp4"})
+        )
+        self.assertFalse(is_image_file({}))
+
     async def test_video_feed_keys_collapse_reupload(self):
         from plugins.fileannouncement.store import video_feed_keys
 
@@ -649,6 +660,59 @@ class TestLiveAnnouncement(AsyncTestCase):
         results = await search_videos(config, limit=40)
         ids = [item["transaction_id"] for item in results]
         self.assertEqual(ids, ["new"])
+
+    async def test_search_photos_skips_video_and_dead_hits(self):
+        from plugins.fileannouncement.store import search_photos
+
+        config = self._config()
+        config.mongo.async_db.blocks.rows = [
+            {
+                "index": 9,
+                "transactions": [
+                    {
+                        "id": "pic",
+                        "inception_public_key_hash": "owner",
+                        "relationship": {
+                            "file": {
+                                "file_id": "img",
+                                "filename": "a.png",
+                                "mime_type": "image/png",
+                                "size": 8,
+                            }
+                        },
+                    },
+                    {
+                        "id": "clip",
+                        "relationship": {
+                            "file": {
+                                "file_id": "vid",
+                                "filename": "clip.mp4",
+                                "mime_type": "video/mp4",
+                                "size": 10,
+                            }
+                        },
+                    },
+                    {
+                        "id": "gone-pic",
+                        "inception_public_key_hash": "owner",
+                        "relationship": {
+                            "file": {
+                                "file_id": "oldimg",
+                                "filename": "old.jpg",
+                                "mime_type": "image/jpeg",
+                                "size": 4,
+                            }
+                        },
+                    },
+                ],
+            }
+        ]
+        config.mongo.async_db.miner_transactions.rows = [
+            {"relationship": {"content_takedown": {"transaction_id": "gone-pic"}}},
+        ]
+        results = await search_photos(config, limit=40)
+        ids = [item["transaction_id"] for item in results]
+        self.assertEqual(ids, ["pic"])
 
     async def test_list_live_files_ignores_local_collection(self):
         from plugins.fileannouncement.store import list_live_files
