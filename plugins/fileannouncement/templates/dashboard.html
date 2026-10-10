@@ -293,6 +293,9 @@
           </div>
           <label>Description</label>
           <textarea name="description" placeholder="What this file is"></textarea>
+          <label>Type</label>
+          <input name="type" id="upload-type" maxlength="32" placeholder="Optional app token, such as avatar" />
+          <p class="muted">Stored as-is. Each app decides what a type means.</p>
           <div class="row">
             <div>
               <label>Existing Sia file identifier (optional)</label>
@@ -458,15 +461,23 @@ function fmtDuration(sec) {
   return s + "s";
 }
 
+function showTab(name) {
+  $$("nav.tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  $$("main > section").forEach(s => s.classList.add("hidden"));
+  const section = $("#tab-" + name);
+  if (section) section.classList.remove("hidden");
+  if (name === "cache") loadCache().catch(e => flash(e.message));
+}
 $$("nav.tabs button").forEach(btn => {
-  btn.addEventListener("click", () => {
-    $$("nav.tabs button").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    $$("main > section").forEach(s => s.classList.add("hidden"));
-    $("#tab-" + btn.dataset.tab).classList.remove("hidden");
-    if (btn.dataset.tab === "cache") loadCache().catch(e => flash(e.message));
-  });
+  btn.addEventListener("click", () => showTab(btn.dataset.tab));
 });
+function applyUploadIntent() {
+  const params = new URLSearchParams(location.search);
+  const tab = params.get("tab") || "";
+  const fileType = (params.get("type") || "").trim();
+  if (fileType || tab === "upload") showTab("upload");
+  if (fileType) $("#upload-type").value = fileType;
+}
 
 async function api(path, opts={}) {
   const res = await fetch(API + path, opts);
@@ -496,7 +507,7 @@ async function loadFiles() {
     <tbody>${rows.map(r => `
       <tr>
         <td>
-          <strong>${esc(r.title)}</strong><br>
+          <strong>${esc(r.title)}</strong>${r.type ? ` <span class="chip">${esc(r.type)}</span>` : ""}<br>
           <span class="muted">${esc(r.description || "")}</span><br>
           <span class="muted">${esc(r.filename || "")} · ${esc(r.backend || "")} · ${r.size != null ? r.size + " B" : ""}</span>
         </td>
@@ -808,6 +819,7 @@ $("#upload-form").addEventListener("submit", async (e) => {
     showUploadProgress(100, "Done");
     flash("File announced: " + (data.result.file_id || ""), true);
     e.target.reset();
+    applyUploadIntent();
   } catch (err) {
     flash(err.message);
   } finally {
@@ -917,6 +929,7 @@ async function delFile(id) {
   } catch (err) { flash(err.message); }
 }
 
+applyUploadIntent();
 (async () => {
   try {
     await loadBackends();

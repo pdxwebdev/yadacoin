@@ -215,6 +215,7 @@ def _video_public_item(item: dict) -> dict:
             else ""
         ),
         "thumbnail_url": _thumbnail_url(backend, f.get("thumbnail_file_id") or ""),
+        "type": str(f.get("type") or "").strip().lower(),
     }
 
 
@@ -326,6 +327,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
             file_id = self.get_body_argument("file_id", "")
             backend = self.get_body_argument("backend", "")
             upload_id = self.get_body_argument("upload_id", "")
+            file_type = self.get_body_argument("type", "")
             thumbnail = None
             if self.request.files.get("thumbnail"):
                 thumbnail = self.request.files["thumbnail"][0].get("body") or None
@@ -342,6 +344,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
             file_id = data.get("file_id") or ""
             backend = data.get("backend") or ""
             upload_id = data.get("upload_id") or ""
+            file_type = data.get("type") or ""
             thumbnail = None
             raw = data.get("content_b64") or ""
             if raw:
@@ -373,6 +376,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
                 file_id=file_id,
                 backend_name=backend,
                 thumbnail=thumbnail,
+                type=file_type,
                 on_progress=(
                     (lambda event, uid=upload_id: progress.apply(uid, event))
                     if tracked
@@ -745,6 +749,7 @@ def _public_file_item(row: dict, username: str = "", keep_stream: bool = False) 
             "backend": row.get("backend") or "sia",
             "file_id": row.get("file_id") or "",
             "thumbnail_file_id": row.get("thumbnail_file_id") or "",
+            "type": str(row.get("type") or "").strip().lower(),
         },
     }
     item = _video_public_item(shaped)

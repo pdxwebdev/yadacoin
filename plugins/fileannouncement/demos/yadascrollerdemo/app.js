@@ -66,7 +66,6 @@
   const badgeEmpty = document.getElementById("badge-empty");
   const badgeDetail = document.getElementById("badge-detail");
   const editAvatar = document.getElementById("edit-avatar");
-  const editUsername = document.getElementById("edit-username");
   const editUpload = document.getElementById("edit-upload");
   const publishEl = document.getElementById("publish");
   const publishBack = document.getElementById("publish-back");
@@ -218,7 +217,7 @@
     return `<span class="avatar-fallback">${escapeHtml(name.slice(0, 1).toUpperCase())}</span>`;
   }
 
-  function paintAvatar(el, username) {
+  function paintAvatar(el, username, imageUrl) {
     const name = String(username || "").trim();
     const color = avatarColor(name || "?");
     el.style.background = color;
@@ -232,7 +231,20 @@
       if (tag) el.appendChild(tag);
     }
     face.style.background = color;
-    face.innerHTML = avatarMarkup(name);
+    const src = String(imageUrl || "").trim();
+    if (!src) {
+      face.innerHTML = avatarMarkup(name);
+      return;
+    }
+    const img = document.createElement("img");
+    img.className = "avatar-photo";
+    img.alt = "";
+    img.addEventListener("error", () => {
+      face.innerHTML = avatarMarkup(name);
+    });
+    img.src = src;
+    face.innerHTML = "";
+    face.appendChild(img);
   }
 
   function setLiveRing(el, on) {
@@ -876,7 +888,7 @@
       const seen = new Set();
       photos = [];
       for (const item of data.results || []) {
-        if (!photoSrc(item)) continue;
+        if (isProfilePhoto(item) || !photoSrc(item)) continue;
         const id = itemKey(item);
         const content = contentKey(item);
         if (seen.has(id) || (content && seen.has(content))) continue;
@@ -2110,11 +2122,23 @@
     else profileAvatar.removeAttribute("aria-label");
   }
 
+  const PROFILE_PHOTO_TYPE = "avatar";
+
+  function itemType(item) {
+    return String((item && item.type) || "").trim().toLowerCase();
+  }
+
+  function isProfilePhoto(item) {
+    return itemType(item) === PROFILE_PHOTO_TYPE;
+  }
+
   function splitProfileMedia(profile) {
     const photosOut = [];
     const videosOut = [];
     const seen = new Set();
     for (const item of (profile && profile.photos) || []) {
+      if (isProfilePhoto(item)) continue;
+      if (item.transaction_id && seen.has(item.transaction_id)) continue;
       photosOut.push(item);
       if (item.transaction_id) seen.add(item.transaction_id);
     }
@@ -2175,7 +2199,10 @@
     const name = displayName(profile);
     profileTopTitle.textContent = profile && profile.username ? profile.username : "Profile";
     profileName.textContent = name;
-    paintAvatar(profileAvatar, profile && profile.username);
+    const circle = ((profile && profile.photos) || []).find(
+      (item) => isProfilePhoto(item) && photoSrc(item)
+    );
+    paintAvatar(profileAvatar, profile && profile.username, circle ? photoSrc(circle) : "");
     applyProfileLive(profile);
     if (profile && profile.username) {
       profileSub.hidden = true;
@@ -2333,9 +2360,14 @@
   playerBack.addEventListener("click", closePlayer);
   railGift.addEventListener("click", () => openGift(activeItem()));
   railReport.addEventListener("click", () => openReport(activeItem()));
-  editAvatar.addEventListener("click", () => showStatus("Edit avatar is coming soon"));
-  editUsername.addEventListener("click", () => showStatus("Edit username is coming soon"));
-  editUpload.addEventListener("click", pickUpload);
+  function openAnnouncements(fileType) {
+    const params = new URLSearchParams({ tab: "upload" });
+    if (fileType) params.set("type", fileType);
+    location.assign(`/file-announcements?${params}`);
+  }
+
+  editAvatar.addEventListener("click", () => openAnnouncements(PROFILE_PHOTO_TYPE));
+  editUpload.addEventListener("click", () => openAnnouncements(""));
   profileTabVideos.addEventListener("click", () => {
     profileMedia = "videos";
     renderProfileGrid();

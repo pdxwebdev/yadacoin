@@ -21,6 +21,7 @@ announcement publishes a searchable title, description, keywords, and the
 backend file identifier so peers can discover and retrieve the object.
 """
 
+import re
 from typing import List
 
 MAX_TITLE_LEN = 200
@@ -29,7 +30,21 @@ MAX_KEYWORDS = 32
 MAX_KEYWORD_LEN = 64
 MAX_FILE_ID_LEN = 128
 MAX_SHARE_URL_LEN = 8192
+MAX_TYPE_LEN = 32
 KNOWN_BACKENDS = frozenset({"sia", "memory"})
+_TYPE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def normalize_type(value) -> str:
+    """Optional app-defined token. Empty means no type. Meaning is not interpreted here."""
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    if len(text) > MAX_TYPE_LEN or not _TYPE_RE.match(text):
+        raise ValueError(
+            f"type must be 1-{MAX_TYPE_LEN} letters, digits, underscores, or hyphens"
+        )
+    return text
 
 
 def _normalize_keywords(keywords) -> List[str]:
@@ -80,6 +95,7 @@ class FileAnnouncement:
     supersedes   : transaction id of a previous FileAnnouncement (optional)
     thumbnail_file_id : backend id of a JPEG captured at upload (optional)
     thumbnail_share_url : public read credential for that JPEG (optional)
+    type         : optional app-defined token; this layer does not interpret it
     """
 
     RELATIONSHIP_KEY = "file"
@@ -98,6 +114,7 @@ class FileAnnouncement:
         share_url: str = "",
         thumbnail_file_id: str = "",
         thumbnail_share_url: str = "",
+        type: str = "",
         **kwargs,
     ):
         if not file_id or not isinstance(file_id, str):
@@ -155,6 +172,7 @@ class FileAnnouncement:
         self.share_url = share_url
         self.thumbnail_file_id = thumbnail_file_id
         self.thumbnail_share_url = thumbnail_share_url
+        self.type = normalize_type(type)
         self.extra_fields = {k: v for k, v in kwargs.items()}
 
     @staticmethod
@@ -202,6 +220,8 @@ class FileAnnouncement:
             result["thumbnail_file_id"] = self.thumbnail_file_id
         if self.thumbnail_share_url:
             result["thumbnail_share_url"] = self.thumbnail_share_url
+        if self.type:
+            result["type"] = self.type
         if self.extra_fields:
             result.update(self.extra_fields)
         return result
@@ -221,6 +241,7 @@ class FileAnnouncement:
             + self.get_string(self.share_url)
             + self.get_string(self.thumbnail_file_id)
             + self.get_string(self.thumbnail_share_url)
+            + self.get_string(self.type)
         )
 
     def matches_query(self, query: str) -> bool:

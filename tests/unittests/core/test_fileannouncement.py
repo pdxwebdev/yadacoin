@@ -135,6 +135,22 @@ class TestFileAnnouncement(AsyncTestCase):
         self.assertEqual(again.thumbnail_file_id, "b" * 64)
         self.assertEqual(again.thumbnail_share_url, with_thumb.thumbnail_share_url)
 
+    async def test_type_roundtrip_and_hash(self):
+        plain = self._ann()
+        flagged = self._ann(type="Avatar")
+        self.assertEqual(plain.type, "")
+        self.assertNotIn("type", plain.to_dict())
+        self.assertEqual(
+            plain.to_string(), flagged.to_string()[: len(plain.to_string())]
+        )
+        self.assertTrue(flagged.to_string().endswith("avatar"))
+        self.assertEqual(flagged.to_dict()["type"], "avatar")
+        again = FileAnnouncement.from_dict(flagged.to_dict())
+        self.assertEqual(again.type, "avatar")
+        self.assertEqual(again.to_string(), flagged.to_string())
+        with self.assertRaises(ValueError):
+            self._ann(type="not a type")
+
     async def test_thumbnail_fields_too_long_raise(self):
         with self.assertRaises(ValueError) as ctx:
             self._ann(thumbnail_file_id="b" * (MAX_FILE_ID_LEN + 1))

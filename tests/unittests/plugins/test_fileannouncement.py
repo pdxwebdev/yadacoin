@@ -332,6 +332,47 @@ class TestFileAnnouncementService(AsyncTestCase):
         self.assertNotEqual(ann.thumbnail_file_id, rec["file_id"])
         self.assertEqual(rec["thumbnail_file_id"], ann.thumbnail_file_id)
 
+    async def test_create_file_stores_type(self):
+        from plugins.fileannouncement import service
+
+        config = MagicMock()
+        config.mongo.async_db.miner_transactions.replace_one = AsyncMock()
+        config.peer = None
+        config.nodeShared = None
+        fake_txn = MagicMock()
+        fake_txn.transaction_signature = "txn-sig"
+        fake_txn.inception_public_key_hash = "user-a"
+        fake_txn.confirming_txn = None
+        fake_txn.to_dict.return_value = {"id": "txn-sig"}
+        with patch.object(
+            service.store, "get_settings", AsyncMock(return_value={"backend": "memory"})
+        ), patch.object(
+            service.store, "insert_file", AsyncMock(side_effect=lambda c, r: r)
+        ), patch.object(
+            service.store, "add_history", AsyncMock(return_value={})
+        ), patch.object(
+            service.store, "find_same_user_duplicate", AsyncMock(return_value=None)
+        ), patch.object(
+            service.store, "clear_retraction", AsyncMock()
+        ), patch.object(
+            service, "_operator_id", AsyncMock(return_value="user-a")
+        ), patch.object(
+            service, "_generate_txn", AsyncMock(return_value=fake_txn)
+        ) as generate:
+            rec = await service.create_file(
+                config,
+                title="Face",
+                content=b"png-bytes",
+                filename="face.png",
+                mime_type="image/png",
+                backend_name="memory",
+                type="avatar",
+            )
+        ann = generate.call_args[0][1]
+        self.assertEqual(ann.type, "avatar")
+        self.assertEqual(ann.to_dict()["type"], "avatar")
+        self.assertEqual(rec["type"], "avatar")
+
     async def test_create_file_rejects_same_user_duplicate(self):
         from plugins.fileannouncement import service
 
@@ -713,6 +754,45 @@ class TestLiveAnnouncement(AsyncTestCase):
         results = await search_photos(config, limit=40)
         ids = [item["transaction_id"] for item in results]
         self.assertEqual(ids, ["pic"])
+
+    async def test_search_photos_keeps_typed_images(self):
+        from plugins.fileannouncement.store import search_photos
+
+        config = self._config()
+        config.mongo.async_db.blocks.rows = [
+            {
+                "index": 4,
+                "transactions": [
+                    {
+                        "id": "face",
+                        "inception_public_key_hash": "owner",
+                        "relationship": {
+                            "file": {
+                                "file_id": "avatarimg",
+                                "filename": "me.png",
+                                "mime_type": "image/png",
+                                "type": "avatar",
+                            }
+                        },
+                    },
+                    {
+                        "id": "pic",
+                        "inception_public_key_hash": "owner",
+                        "relationship": {
+                            "file": {
+                                "file_id": "img",
+                                "filename": "a.png",
+                                "mime_type": "image/png",
+                            }
+                        },
+                    },
+                ],
+            }
+        ]
+        results = await search_photos(config, limit=40)
+        by_id = {item["transaction_id"]: item for item in results}
+        self.assertEqual(set(by_id), {"face", "pic"})
+        self.assertEqual((by_id["face"].get("file") or {}).get("type"), "avatar")
 
     async def test_list_live_files_ignores_local_collection(self):
         from plugins.fileannouncement.store import list_live_files

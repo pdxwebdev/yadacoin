@@ -532,6 +532,7 @@ async def create_file(
     backend_name: str = "",
     size=None,
     thumbnail: bytes = None,
+    type: str = "",
     on_progress=None,
 ):
     backend, name, _settings = await _backend_from_settings(config, backend_name)
@@ -606,6 +607,7 @@ async def create_file(
             share_url=share_url,
             thumbnail_file_id=thumbnail_file_id,
             thumbnail_share_url=thumbnail_share_url,
+            type=type,
         )
         txn = await _generate_txn(config, ann, fee=0.0)
         await _broadcast(config, txn)
@@ -699,6 +701,9 @@ async def update_file(
         size=existing.get("size"),
         supersedes=existing.get("transaction_id") or "",
         share_url=share_url,
+        thumbnail_file_id=existing.get("thumbnail_file_id") or "",
+        thumbnail_share_url=existing.get("thumbnail_share_url") or "",
+        type=existing.get("type") or "",
     )
     txn = await _generate_txn(config, ann, fee=0.0)
     await _broadcast(config, txn)
@@ -715,6 +720,7 @@ async def update_file(
         "backend": ann.backend,
         "share_url": ann.share_url,
         "supersedes": existing.get("transaction_id") or "",
+        "type": ann.type,
         "status": "mempool",
         "source": "mempool",
     }
