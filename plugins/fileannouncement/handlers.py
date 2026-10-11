@@ -248,19 +248,30 @@ class FileAnnouncementUnlockHandler(KelUnlockHandler):
         return super().render_as_json(data, indent)
 
 
+async def kel_session_unlocked(handler) -> bool:
+    cookie = handler.get_secure_cookie(KEL_SESSION_COOKIE)
+    if not cookie:
+        return False
+    try:
+        ts = float(cookie.decode())
+    except (ValueError, AttributeError, UnicodeDecodeError):
+        return False
+    return ts >= await handler.get_auth_cutoff()
+
+
+async def operator_session_unlocked(handler) -> bool:
+    """True when this request has a wallet or file-announcement KEL session."""
+    if await handler.wallet_is_unlocked():
+        return True
+    return await kel_session_unlocked(handler)
+
+
 class BaseFileAnnouncementHandler(BaseHandler):
     def get_template_path(self):
         return os.path.join(os.path.dirname(__file__), "templates")
 
     async def kel_is_unlocked(self):
-        cookie = self.get_secure_cookie(KEL_SESSION_COOKIE)
-        if not cookie:
-            return False
-        try:
-            ts = float(cookie.decode())
-        except (ValueError, AttributeError, UnicodeDecodeError):
-            return False
-        return ts >= await self.get_auth_cutoff()
+        return await kel_session_unlocked(self)
 
     async def prepare(self, exceptions=None):
         await super().prepare(exceptions=exceptions)
@@ -1077,18 +1088,39 @@ class PublicBadgesHandler(BaseHandler):
         )
 
 
+def _operator_username(config, profile=None) -> str:
+    name = ""
+    if isinstance(profile, dict):
+        name = (profile.get("username") or "").strip().lstrip("@")
+    if not name:
+        name = (getattr(config, "username", None) or "").strip().lstrip("@")
+    return name
+
+
 class PublicMeHandler(BaseHandler):
-    """GET /file-announcements/api/v1/public/me — this node's identity, if any."""
+    """GET /file-announcements/api/v1/public/me — operator identity when signed in."""
 
     async def get(self):
+        if not await operator_session_unlocked(self):
+            return self.render_as_json(
+                {"status": True, "authenticated": False, "profile": None}
+            )
         try:
             inception = await operator_inception_public_key_hash(self.config)
         except Exception:
             inception = ""
-        if not inception:
-            return self.render_as_json({"status": True, "profile": None})
-        profile = await _profile_payload(self.config, inception, True)
-        return self.render_as_json({"status": True, "profile": profile})
+        profile = None
+        if inception:
+            profile = await _profile_payload(self.config, inception, True)
+        username = _operator_username(self.config, profile)
+        return self.render_as_json(
+            {
+                "status": True,
+                "authenticated": True,
+                "username": username,
+                "profile": profile,
+            }
+        )
 
 
 class PublicStreamHandler(BaseHandler):

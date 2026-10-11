@@ -1123,3 +1123,38 @@ class TestProfileLookup(AsyncTestCase):
         self.assertEqual(rows[1]["source"], "mempool")
         self.assertFalse(rows[1]["proof_valid"])
         self.assertEqual(await received_credentials(config, ""), [])
+
+
+class TestPublicMeAuth(AsyncTestCase):
+    async def test_locked_session_is_not_authenticated(self):
+        from plugins.fileannouncement.handlers import PublicMeHandler
+
+        handler = PublicMeHandler.__new__(PublicMeHandler)
+        handler.wallet_is_unlocked = AsyncMock(return_value=False)
+        handler.get_secure_cookie = MagicMock(return_value=None)
+        handler.render_as_json = MagicMock()
+        await handler.get()
+        handler.render_as_json.assert_called_once_with(
+            {"status": True, "authenticated": False, "profile": None}
+        )
+
+    async def test_wallet_session_returns_node_username(self):
+        from plugins.fileannouncement.handlers import PublicMeHandler
+
+        handler = PublicMeHandler.__new__(PublicMeHandler)
+        handler.wallet_is_unlocked = AsyncMock(return_value=True)
+        handler.config = MagicMock(username="local_node_B")
+        handler.render_as_json = MagicMock()
+        with patch(
+            "plugins.fileannouncement.handlers.operator_inception_public_key_hash",
+            new=AsyncMock(return_value=""),
+        ):
+            await handler.get()
+        handler.render_as_json.assert_called_once_with(
+            {
+                "status": True,
+                "authenticated": True,
+                "username": "local_node_B",
+                "profile": None,
+            }
+        )

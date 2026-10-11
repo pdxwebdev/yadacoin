@@ -2,6 +2,8 @@
   const API_VIDEOS = "/file-announcements/api/v1/public/videos";
   const API_PHOTOS = "/file-announcements/api/v1/public/photos";
   const API_FILES = "/file-announcements/api/v1/files";
+  const API_BACKENDS = "/file-announcements/api/v1/backends";
+  const API_UPLOADS = "/file-announcements/api/v1/uploads";
   const API_PROFILE = "/file-announcements/api/v1/public/profile";
   const API_BADGES = "/file-announcements/api/v1/public/badges";
   const API_ME = "/file-announcements/api/v1/public/me";
@@ -69,11 +71,31 @@
   const editUpload = document.getElementById("edit-upload");
   const publishEl = document.getElementById("publish");
   const publishBack = document.getElementById("publish-back");
+  const extStatus = document.getElementById("ext-status");
+  const signinMsg = document.getElementById("signin-msg");
+  const signinTrack = document.getElementById("signin-track");
+  const registerBtn = document.getElementById("register-btn");
+  const resyncBtn = document.getElementById("resync-btn");
+  const signinBtn = document.getElementById("signin-btn");
   const playerEl = document.getElementById("player");
   const playerBack = document.getElementById("player-back");
   const playerVideo = document.getElementById("player-video");
   const playerPhoto = document.getElementById("player-photo");
-  const uploadFile = document.getElementById("upload-file");
+  const uploadEl = document.getElementById("upload");
+  const uploadBack = document.getElementById("upload-back");
+  const composeForm = document.getElementById("compose-form");
+  const composeFields = document.getElementById("compose-fields");
+  const composeFile = document.getElementById("compose-file");
+  const composeTitle = document.getElementById("compose-title");
+  const composeType = document.getElementById("compose-type");
+  const composeBackend = document.getElementById("compose-backend");
+  const composeProgress = document.getElementById("compose-progress");
+  const composeProgressLabel = document.getElementById("compose-progress-label");
+  const composeProgressTrack = document.getElementById("compose-progress-track");
+  const composeProgressBar = document.getElementById("compose-progress-bar");
+  const composeMsg = document.getElementById("compose-msg");
+  const composeSubmit = document.getElementById("compose-submit");
+  const composeSignin = document.getElementById("compose-signin");
   const playerSpinner = document.getElementById("player-spinner");
   const playerCaption = document.getElementById("player-caption");
   const playerLive = document.getElementById("player-live");
@@ -104,6 +126,12 @@
   let mediaMode = "videos";
   let photosLoadedQuery = null;
   let uploadBusy = false;
+  let composeBusy = false;
+  let composeLocked = false;
+  let composePoll = null;
+  let composeGen = 0;
+  let composeTypeApplied = null;
+  let composeAutoTitle = "";
   let muted = true;
   let loading = false;
   let query = "";
@@ -942,18 +970,6 @@
     }
   }
 
-  function wantsPhotoUpload() {
-    if (viewName === "profile") return profileMedia === "photos";
-    return mediaMode === "photos";
-  }
-
-  function pickUpload() {
-    if (uploadBusy) return;
-    uploadFile.accept = wantsPhotoUpload() ? "image/*" : "video/*";
-    uploadFile.value = "";
-    uploadFile.click();
-  }
-
   function titleFromName(name) {
     const base = String(name || "").replace(/\.[^.]+$/, "").trim();
     return base || "Upload";
@@ -1062,7 +1078,7 @@
   }
 
   async function captureVideoThumbnail(file) {
-    if (!file || !String(file.type || "").startsWith("video/")) return null;
+    if (!file || !isVideoFile(file)) return null;
     const url = URL.createObjectURL(file);
     const video = document.createElement("video");
     video.muted = true;
@@ -1093,15 +1109,18 @@
     }
   }
 
-  function postForm(url, fd) {
+  function postForm(url, fd, onProgress) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", url);
       xhr.withCredentials = true;
       xhr.upload.onprogress = (ev) => {
         if (!ev.lengthComputable) return;
-        const pct = Math.round((ev.loaded / ev.total) * 100);
-        showStatus(`Uploading ${pct}%`, 0);
+        if (onProgress) onProgress(ev.loaded, ev.total);
+        else showStatus(`Uploading ${Math.round((ev.loaded / ev.total) * 100)}%`, 0);
+      };
+      xhr.upload.onload = () => {
+        if (onProgress) onProgress(-1, -1);
       };
       xhr.onload = () => {
         let data = {};
@@ -1109,11 +1128,15 @@
           data = JSON.parse(xhr.responseText || "{}");
         } catch (_) {}
         if (xhr.status === 401) {
-          reject(new Error("Unlock File Announcements to upload"));
+          const err = new Error("Unlock File Announcements to upload");
+          err.status = 401;
+          reject(err);
           return;
         }
         if (xhr.status < 200 || xhr.status >= 300 || data.status === false) {
-          reject(new Error(data.error || "upload failed"));
+          const err = new Error(data.error || "upload failed");
+          err.status = xhr.status;
+          reject(err);
           return;
         }
         resolve(data);
@@ -1123,48 +1146,221 @@
     });
   }
 
-  async function uploadSelected(file) {
-    if (!file || uploadBusy) return;
-    const image = String(file.type || "").startsWith("image/") || /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(file.name);
-    const video = String(file.type || "").startsWith("video/");
-    if (!image && !video) {
-      showStatus("Choose a photo or video", 2500);
-      return;
+  function isImageFile(file) {
+    return (
+      String(file.type || "").startsWith("image/") ||
+      /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(file.name)
+    );
+  }
+
+  function isVideoFile(file) {
+    return (
+      String(file.type || "").startsWith("video/") ||
+      /\.(mp4|webm|mov|m4v|ogg|ogv|mkv)$/i.test(file.name || "")
+    );
+  }
+
+  function fmtBytes(n) {
+    n = Number(n) || 0;
+    if (n < 1024) return `${n} B`;
+    const units = ["KB", "MB", "GB", "TB"];
+    let i = -1;
+    do {
+      n /= 1024;
+      i++;
+    } while (n >= 1024 && i < units.length - 1);
+    return `${n.toFixed(n >= 10 ? 0 : 1)} ${units[i]}`;
+  }
+
+  function newUploadId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return `up${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+  }
+
+  function setComposeMsg(text, kind) {
+    composeMsg.textContent = text || "";
+    composeMsg.hidden = !text;
+    composeMsg.classList.toggle("err", kind === "err");
+    composeMsg.classList.toggle("ok", kind === "ok");
+  }
+
+  function setComposeLocked(on) {
+    composeLocked = on;
+    composeSignin.hidden = !on;
+    syncComposeControls();
+  }
+
+  function syncComposeControls() {
+    const off = composeBusy || composeLocked;
+    composeFields.querySelectorAll("input, textarea, select, button").forEach((el) => {
+      el.disabled = off;
+    });
+    composeSubmit.textContent = composeBusy ? "Uploading…" : "Upload & announce";
+    composeForm.setAttribute("aria-busy", composeBusy ? "true" : "false");
+  }
+
+  function showComposeProgress(pct, label) {
+    composeProgress.hidden = false;
+    composeProgressLabel.textContent = label;
+    if (pct == null) {
+      composeProgressBar.classList.add("indeterminate");
+      composeProgressBar.style.width = "";
+      composeProgressTrack.removeAttribute("aria-valuenow");
+      composeProgressTrack.setAttribute("aria-valuetext", label);
+    } else {
+      const n = Math.max(0, Math.min(100, pct));
+      composeProgressBar.classList.remove("indeterminate");
+      composeProgressBar.style.width = `${n}%`;
+      composeProgressTrack.setAttribute("aria-valuenow", String(n));
+      composeProgressTrack.setAttribute("aria-valuetext", label);
     }
-    uploadBusy = true;
-    showStatus(image ? "Resizing photo…" : "Capturing thumbnail…", 0);
+  }
+
+  function hideComposeProgress() {
+    composeProgress.hidden = true;
+    composeProgressBar.classList.remove("indeterminate");
+    composeProgressBar.style.width = "0";
+  }
+
+  function stopComposePoll() {
+    if (composePoll) {
+      clearInterval(composePoll);
+      composePoll = null;
+    }
+  }
+
+  function startComposePoll(id, hasFile) {
+    stopComposePoll();
+    const tick = async () => {
+      try {
+        const res = await fetch(`${API_UPLOADS}/${encodeURIComponent(id)}`, {
+          credentials: "same-origin",
+        });
+        const data = await res.json().catch(() => ({}));
+        const p = data.result || {};
+        if (p.phase === "sia" || (hasFile && p.phase === "receiving")) {
+          const shards = p.shards || 0;
+          const extra = shards
+            ? ` · ${shards} shard${shards === 1 ? "" : "s"} · ${fmtBytes(p.shard_bytes)}`
+            : "";
+          showComposeProgress(null, `Uploading to Sia${extra}`);
+        } else if (p.phase === "announcing" || p.phase === "receiving") {
+          showComposeProgress(null, "Announcing on-chain…");
+        } else if (p.phase === "done") {
+          showComposeProgress(100, "Done");
+        } else if (p.phase === "error") {
+          showComposeProgress(null, p.error || "Upload failed");
+        }
+      } catch (_) {}
+    };
+    tick();
+    composePoll = setInterval(tick, 400);
+  }
+
+  function applyComposeType(route, force) {
+    const next = String((route && route.type) || "");
+    if (!force && composeTypeApplied === next) return;
+    composeTypeApplied = next;
+    composeType.value = next;
+  }
+
+  async function loadComposeBackends() {
+    const res = await fetch(API_BACKENDS, { credentials: "same-origin" });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      const err = new Error("Unlock File Announcements to upload");
+      err.status = 401;
+      throw err;
+    }
+    if (!res.ok || data.status === false) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    const current = composeBackend.value;
+    const opts = (data.results || []).filter((b) => b.implemented);
+    composeBackend.innerHTML = opts
+      .map((b) => `<option value="${escapeHtml(b.name)}">${escapeHtml(b.label)}</option>`)
+      .join("");
+    if (current && opts.some((b) => b.name === current)) composeBackend.value = current;
+  }
+
+  async function openCompose() {
+    const gen = ++composeGen;
+    applyComposeType(parseRoute());
+    if (!composeBusy) setComposeMsg("");
     try {
-      const fd = new FormData();
-      fd.set("title", titleFromName(file.name));
-      fd.set("upload_id", crypto.randomUUID ? crypto.randomUUID() : `up${Date.now()}`);
+      const res = await fetch(API_ME, { credentials: "same-origin" });
+      const data = await res.json().catch(() => ({}));
+      if (gen !== composeGen || parseRoute().view !== "upload") return;
+      if (data.authenticated !== true) {
+        setComposeLocked(true);
+        setComposeMsg("Sign in to upload photos and videos.");
+        return;
+      }
+      setComposeLocked(false);
+      await loadComposeBackends();
+    } catch (err) {
+      if (gen !== composeGen || parseRoute().view !== "upload") return;
+      if (err.status === 401) setComposeLocked(true);
+      setComposeMsg(err.message || "Could not open upload", "err");
+    }
+  }
+
+  async function submitCompose(e) {
+    e.preventDefault();
+    if (composeBusy || composeLocked) return;
+    const fd = new FormData(composeForm);
+    const file = fd.get("file");
+    const hasFile = !!(file && file.name && file.size);
+    const image = hasFile && isImageFile(file);
+    const video = hasFile && isVideoFile(file);
+    const uploadId = newUploadId();
+    fd.set("upload_id", uploadId);
+    composeBusy = true;
+    syncComposeControls();
+    setComposeMsg("");
+    let announced = false;
+    try {
       if (image) {
+        showComposeProgress(0, "Resizing photo…");
         const packed = await compressPhoto(file);
         fd.set("file", packed.file, packed.file.name);
         fd.set("thumbnail", packed.thumb, "thumbnail.jpg");
-      } else {
-        fd.set("file", file, file.name);
+      } else if (video) {
+        showComposeProgress(0, "Capturing thumbnail…");
         const thumb = await captureVideoThumbnail(file);
         if (thumb) fd.set("thumbnail", thumb, "thumbnail.jpg");
       }
-      showStatus("Uploading 0%", 0);
-      await postForm(API_FILES, fd);
-      showStatus("Announced", 2200);
-      if (image) {
-        photosLoadedQuery = null;
-        profileMedia = "photos";
-        if (viewName === "feed") setMedia("photos");
-        else loadProfile(parseRoute());
-      } else if (viewName === "feed") {
-        setMedia("videos");
-        loadVideos(query);
-      } else {
-        profileMedia = "videos";
-        loadProfile(parseRoute());
+      showComposeProgress(hasFile ? 0 : null, hasFile ? "Sending to node 0%" : "Announcing…");
+      const data = await postForm(API_FILES, fd, (loaded, total) => {
+        if (loaded < 0) {
+          showComposeProgress(null, hasFile ? "Uploading to Sia…" : "Announcing…");
+          startComposePoll(uploadId, hasFile);
+          return;
+        }
+        const pct = total ? Math.round((loaded / total) * 100) : 0;
+        showComposeProgress(pct, `Sending to node ${pct}%`);
+      });
+      announced = true;
+      stopComposePoll();
+      showComposeProgress(100, "Done");
+      if (parseRoute().view === "upload") {
+        composeForm.reset();
+        composeAutoTitle = "";
+        applyComposeType(parseRoute(), true);
+        setComposeMsg(`Announced${data.result && data.result.file_id ? `: ${data.result.file_id}` : ""}`, "ok");
       }
+      photosLoadedQuery = null;
+      loadedPin = null;
     } catch (err) {
-      showStatus(err.message || "upload failed", 4000);
+      stopComposePoll();
+      hideComposeProgress();
+      if (err.status === 401) setComposeLocked(true);
+      setComposeMsg(err.message || "upload failed", "err");
     } finally {
-      uploadBusy = false;
+      stopComposePoll();
+      composeBusy = false;
+      syncComposeControls();
+      if (announced) hideComposeProgress();
     }
   }
 
@@ -1561,8 +1757,14 @@
         badge_id: profileBadges[1] ? decodeURIComponent(profileBadges[1]) : "",
       };
     }
-    if (path === "/me" || path === "me" || path === "/publish" || path === "publish") {
-      return { view: "publish", transaction_id: "" };
+    if (path === "/upload" || path === "upload") {
+      return { view: "upload", type: params.get("type") || "" };
+    }
+    if (path === "/publish" || path === "publish") {
+      return { view: "publish" };
+    }
+    if (path === "/me" || path === "me") {
+      return { view: "me" };
     }
     if (path.startsWith("/@") && path.length > 2) {
       return {
@@ -2212,6 +2414,9 @@
       profileSub.textContent = "No identity announcement";
     }
     profileActions.hidden = !(profile && profile.is_me);
+    if (profile && profile.is_me && parseRoute().view === "profile") {
+      navProfile.classList.add("active");
+    }
     statGifts.textContent = formatGifts(profile && profile.gifts);
     statFollowing.textContent = formatCount(profile && profile.following);
     statFollowers.textContent = formatCount(profile && profile.followers);
@@ -2285,8 +2490,10 @@
     profileEl.hidden = !onProfile;
     badgesEl.hidden = viewName !== "badges";
     publishEl.hidden = viewName !== "publish";
+    uploadEl.hidden = viewName !== "upload";
     navFyp.classList.toggle("active", onFeed);
-    navProfile.classList.toggle("active", viewName === "publish");
+    navUpload.classList.toggle("active", viewName === "upload");
+    navProfile.classList.toggle("active", viewName === "me" || viewName === "publish");
     if (onFeed) {
       const pin = route.transaction_id || "";
       const want = route.media === "photos" && !pin ? "photos" : pin ? "videos" : mediaMode;
@@ -2310,7 +2517,54 @@
     }
     pauseFeed();
     if (onProfile) loadProfile(route);
+    if (viewName === "me") loadOwnProfile();
     if (viewName === "badges") loadBadges(route);
+    if (viewName === "upload") openCompose();
+    else stopComposePoll();
+  }
+
+  let ownProfileGen = 0;
+
+  function showOwnGate() {
+    profileEl.hidden = true;
+    publishEl.hidden = false;
+  }
+
+  async function loadOwnProfile() {
+    const gen = ++ownProfileGen;
+    profileEl.hidden = true;
+    publishEl.hidden = true;
+    try {
+      const res = await fetch(API_ME, { credentials: "same-origin" });
+      const data = await res.json().catch(() => ({}));
+      if (gen !== ownProfileGen || parseRoute().view !== "me") return;
+      if (!res.ok || data.status === false) {
+        publishEl.hidden = true;
+        profileEl.hidden = false;
+        renderMissingProfile(data.error || `HTTP ${res.status}`);
+        return;
+      }
+      if (data.authenticated !== true) {
+        showOwnGate();
+        return;
+      }
+      publishEl.hidden = true;
+      profileEl.hidden = false;
+      profileGrid.innerHTML = "";
+      profileEmpty.hidden = true;
+      profileName.textContent = "Loading…";
+      profileActions.hidden = true;
+      if (!data.profile) {
+        renderMissingProfile("No identity announcement yet");
+        return;
+      }
+      renderProfile(data.profile);
+    } catch (err) {
+      if (gen !== ownProfileGen || parseRoute().view !== "me") return;
+      publishEl.hidden = true;
+      profileEl.hidden = false;
+      renderMissingProfile(err.message || "Could not load profile");
+    }
   }
 
   function leaveOverlay() {
@@ -2319,6 +2573,7 @@
       location.hash.startsWith("#/@") ||
       location.hash.startsWith("#/badges") ||
       location.hash.startsWith("#/publish") ||
+      location.hash.startsWith("#/upload") ||
       location.hash === "#/me"
     ) {
       history.back();
@@ -2360,14 +2615,21 @@
   playerBack.addEventListener("click", closePlayer);
   railGift.addEventListener("click", () => openGift(activeItem()));
   railReport.addEventListener("click", () => openReport(activeItem()));
-  function openAnnouncements(fileType) {
-    const params = new URLSearchParams({ tab: "upload" });
+  function openUpload(fileType) {
+    const params = new URLSearchParams();
     if (fileType) params.set("type", fileType);
-    location.assign(`/file-announcements?${params}`);
+    const query = params.toString();
+    const next = query ? `#/upload?${query}` : "#/upload";
+    if ((location.hash || "") === next) {
+      closePlayer();
+      syncRoute();
+      return;
+    }
+    location.hash = next;
   }
 
-  editAvatar.addEventListener("click", () => openAnnouncements(PROFILE_PHOTO_TYPE));
-  editUpload.addEventListener("click", () => openAnnouncements(""));
+  editAvatar.addEventListener("click", () => openUpload(PROFILE_PHOTO_TYPE));
+  editUpload.addEventListener("click", () => openUpload(""));
   profileTabVideos.addEventListener("click", () => {
     profileMedia = "videos";
     renderProfileGrid();
@@ -2376,22 +2638,245 @@
     profileMedia = "photos";
     renderProfileGrid();
   });
-  function openPublish() {
-    if ((location.hash || "") === "#/publish") {
-      closePlayer();
-      syncRoute();
-      return;
+  let ownNavBusy = false;
+
+  async function openOwnProfile() {
+    if (ownNavBusy) return;
+    ownNavBusy = true;
+    try {
+      const res = await fetch(API_ME, { credentials: "same-origin" });
+      const data = await res.json().catch(() => ({}));
+      const name = String(
+        (data && (data.username || (data.profile && data.profile.username))) || ""
+      )
+        .trim()
+        .replace(/^@/, "");
+      if (res.ok && data.authenticated === true && name) {
+        const hash = `#/@${encodeURIComponent(name)}`;
+        if ((location.hash || "") === hash) {
+          closePlayer();
+          syncRoute();
+          return;
+        }
+        location.hash = hash;
+        return;
+      }
+      if ((location.hash || "") === "#/me") {
+        closePlayer();
+        syncRoute();
+        return;
+      }
+      location.hash = "#/me";
+    } catch (_) {
+      if ((location.hash || "") === "#/me") {
+        closePlayer();
+        syncRoute();
+        return;
+      }
+      location.hash = "#/me";
+    } finally {
+      ownNavBusy = false;
     }
-    location.hash = "#/publish";
   }
 
-  navUpload.addEventListener("click", pickUpload);
+  const signinOrigin = window.location.origin.toLowerCase();
+  let extReady = false;
+  let signinReqSeq = 0;
+  let signinWorking = false;
+  let signinRequestId = "";
+  let signinTimer = null;
+  let signinStarted = 0;
+  let signinLabel = "";
+  const SIGNIN_LABEL = "Sign in";
+  const REGISTER_LABEL = "Register this origin";
+  const RESYNC_LABEL = "Resync";
+
+  function setSigninMsg(text, kind) {
+    signinMsg.textContent = text || "";
+    signinMsg.className = kind ? `signin-msg ${kind}` : "signin-msg";
+  }
+
+  function setSigninLocked(locked) {
+    const off = locked || !extReady;
+    registerBtn.disabled = off;
+    resyncBtn.disabled = off;
+    signinBtn.disabled = off;
+  }
+
+  function showSigninProgress(label) {
+    signinLabel = label;
+    const secs = signinStarted ? Math.floor((Date.now() - signinStarted) / 1000) : 0;
+    setSigninMsg(label + (secs > 0 ? ` · ${secs}s` : ""), "busy");
+    signinTrack.className = "signin-track on";
+  }
+
+  function stopSigninProgress() {
+    if (signinTimer) clearInterval(signinTimer);
+    signinTimer = null;
+    signinStarted = 0;
+    signinLabel = "";
+    signinWorking = false;
+    signinRequestId = "";
+    signinTrack.className = "signin-track";
+    setSigninLocked(false);
+  }
+
+  function startSigninProgress(label) {
+    stopSigninProgress();
+    signinWorking = true;
+    signinStarted = Date.now();
+    setSigninLocked(true);
+    showSigninProgress(label);
+    signinTimer = setInterval(() => showSigninProgress(signinLabel), 1000);
+  }
+
+  function extRequest(type, resultType, timeoutMs = 180000) {
+    const requestId = `r${++signinReqSeq}_${Date.now()}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        reject(new Error("extension did not respond"));
+      }, timeoutMs);
+      function onMsg(event) {
+        if (event.source !== window) return;
+        const data = event.data;
+        if (!data || data.type !== resultType || data.requestId !== requestId) return;
+        clearTimeout(timer);
+        window.removeEventListener("message", onMsg);
+        resolve(data);
+      }
+      window.addEventListener("message", onMsg);
+      signinRequestId = requestId;
+      window.postMessage({ type, requestId }, "*");
+    });
+  }
+
+  function stashOperatorToken(token) {
+    if (!token) return;
+    try {
+      sessionStorage.setItem("yadaOperatorToken", token);
+    } catch (_) {}
+  }
+
+  async function openOperatorSession(password, homeNode) {
+    const body = {
+      branch_peer: signinOrigin,
+      password: password || "",
+    };
+    if (homeNode) body.home_node = String(homeNode).replace(/\/+$/, "");
+    const res = await fetch("/password-rotation/admin-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      credentials: "include",
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.status) {
+      throw new Error(data.message || `admin session failed (${res.status})`);
+    }
+    return data;
+  }
+
+  window.addEventListener("message", (event) => {
+    if (event.source !== window) return;
+    if (event.data && event.data.type === "YADA_PASSWORD_READY") {
+      extReady = true;
+      extStatus.textContent = "Extension ready.";
+      extStatus.className = "signin-status ok";
+      setSigninLocked(signinWorking);
+    }
+    if (
+      event.data &&
+      event.data.type === "YADA_PASSWORD_PROGRESS" &&
+      event.data.requestId === signinRequestId &&
+      event.data.message
+    ) {
+      showSigninProgress(String(event.data.message));
+    }
+  });
+  setTimeout(() => {
+    if (!extReady) {
+      extStatus.textContent =
+        "Yada Password extension not on this page. Load it, set Node URL, save the vault with this node's seed + second factor, then hard-refresh.";
+      extStatus.className = "signin-status err";
+    }
+  }, 1500);
+
+  registerBtn.addEventListener("click", async () => {
+    startSigninProgress("Contacting the extension to register this origin…");
+    registerBtn.textContent = "Registering…";
+    try {
+      const data = await extRequest("YADA_PASSWORD_REGISTER", "YADA_PASSWORD_REGISTER_RESULT");
+      if (!data.ok) throw new Error(data.message || "register failed");
+      stopSigninProgress();
+      setSigninMsg("Registered this origin. Click Sign in.", "ok");
+    } catch (err) {
+      stopSigninProgress();
+      setSigninMsg(String(err.message || err), "err");
+    } finally {
+      registerBtn.textContent = REGISTER_LABEL;
+    }
+  });
+  resyncBtn.addEventListener("click", async () => {
+    startSigninProgress("Contacting the extension to resync…");
+    resyncBtn.textContent = "Resyncing…";
+    try {
+      const data = await extRequest("YADA_PASSWORD_RESYNC", "YADA_PASSWORD_RESYNC_RESULT");
+      if (!data.ok) throw new Error(data.message || "resync failed");
+      stopSigninProgress();
+      setSigninMsg(data.message || "Resynced to the node tip. Click Sign in.", "ok");
+    } catch (err) {
+      stopSigninProgress();
+      setSigninMsg(String(err.message || err), "err");
+    } finally {
+      resyncBtn.textContent = RESYNC_LABEL;
+    }
+  });
+  signinBtn.addEventListener("click", async () => {
+    startSigninProgress("Contacting the Yada Password extension…");
+    signinBtn.textContent = "Signing in…";
+    try {
+      const data = await extRequest("YADA_PASSWORD_SIGNIN", "YADA_PASSWORD_SIGNIN_RESULT");
+      if (!data.ok || data.authenticated === false) {
+        throw new Error(data.message || "sign-in failed");
+      }
+      if (!data.password) {
+        throw new Error("extension returned no password — resync then sign in again");
+      }
+      showSigninProgress("Extension signed in — opening operator session…");
+      const session = await openOperatorSession(
+        data.password,
+        data.homeNode || data.home_node || ""
+      );
+      stashOperatorToken(session && session.token);
+      stopSigninProgress();
+      setSigninMsg("Session opened — opening your profile…", "ok");
+      await openOwnProfile();
+    } catch (err) {
+      stopSigninProgress();
+      setSigninMsg(String(err.message || err), "err");
+    } finally {
+      signinBtn.textContent = SIGNIN_LABEL;
+    }
+  });
+
+  navUpload.addEventListener("click", () => openUpload(""));
+  uploadBack.addEventListener("click", leaveOverlay);
+  composeSignin.addEventListener("click", () => {
+    location.hash = "#/me";
+  });
+  composeFile.addEventListener("change", () => {
+    const file = composeFile.files && composeFile.files[0];
+    if (!file) return;
+    const next = titleFromName(file.name);
+    if (!composeTitle.value || composeTitle.value === composeAutoTitle) {
+      composeTitle.value = next;
+      composeAutoTitle = next;
+    }
+  });
+  composeForm.addEventListener("submit", submitCompose);
   tabVideos.addEventListener("click", () => setMedia("videos"));
   tabPhotos.addEventListener("click", () => setMedia("photos"));
-  uploadFile.addEventListener("change", () => {
-    const file = uploadFile.files && uploadFile.files[0];
-    if (file) uploadSelected(file);
-  });
   navFyp.addEventListener("click", () => {
     const hash = location.hash || "";
     if (!hash || hash === "#" || hash === "#/" || hash === "#/photos") {
@@ -2401,7 +2886,7 @@
     }
     location.hash = mediaMode === "photos" ? "#/photos" : "#/";
   });
-  navProfile.addEventListener("click", openPublish);
+  navProfile.addEventListener("click", openOwnProfile);
   window.addEventListener("hashchange", () => {
     if (armBadgeDetailBack) {
       badgeDetailFromList = true;
