@@ -264,6 +264,6 @@ class BaseHandler(RequestHandler):
         self.finish()
         return True
 
-    async def options(self):
+    async def options(self, *args, **kwargs):
         self.set_status(204)
         self.finish()
