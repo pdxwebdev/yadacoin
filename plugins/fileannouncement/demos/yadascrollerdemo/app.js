@@ -77,6 +77,7 @@
   const registerBtn = document.getElementById("register-btn");
   const resyncBtn = document.getElementById("resync-btn");
   const signinBtn = document.getElementById("signin-btn");
+  const signinUsername = document.getElementById("signin-username");
   const playerEl = document.getElementById("player");
   const playerBack = document.getElementById("player-back");
   const playerVideo = document.getElementById("player-video");
@@ -2680,6 +2681,7 @@
   }
 
   const signinOrigin = window.location.origin.toLowerCase();
+  const USERNAME_KEY = "yada-scroller-username";
   let extReady = false;
   let signinReqSeq = 0;
   let signinWorking = false;
@@ -2687,6 +2689,7 @@
   let signinTimer = null;
   let signinStarted = 0;
   let signinLabel = "";
+  let signinAbort = null;
   const SIGNIN_LABEL = "Sign in";
   const REGISTER_LABEL = "Register this origin";
   const RESYNC_LABEL = "Resync";
@@ -2697,10 +2700,11 @@
   }
 
   function setSigninLocked(locked) {
-    const off = locked || !extReady;
-    registerBtn.disabled = off;
-    resyncBtn.disabled = off;
-    signinBtn.disabled = off;
+    const extOff = locked || !extReady;
+    registerBtn.disabled = extOff;
+    resyncBtn.disabled = extOff;
+    signinBtn.disabled = locked;
+    if (signinUsername) signinUsername.disabled = locked;
   }
 
   function showSigninProgress(label) {
@@ -2797,10 +2801,145 @@
   setTimeout(() => {
     if (!extReady) {
       extStatus.textContent =
-        "Yada Password extension not on this page. Load it, set Node URL, save the vault with this node's seed + second factor, then hard-refresh.";
-      extStatus.className = "signin-status err";
+        "Sign in does not need the extension on this page. Approve the request in the Yada Password extension or the Android/iOS app. Register and Resync still use the extension.";
+      extStatus.className = "signin-status";
     }
   }, 1500);
+
+  function rememberUsername(name) {
+    try {
+      sessionStorage.setItem(USERNAME_KEY, name);
+    } catch (_) {}
+  }
+
+  function currentUsername() {
+    return ((signinUsername && signinUsername.value) || "")
+      .trim()
+      .replace(/^@/, "");
+  }
+
+  async function loadSigninUsername() {
+    if (!signinUsername) return;
+    try {
+      const saved = sessionStorage.getItem(USERNAME_KEY) || "";
+      if (saved && !signinUsername.value) signinUsername.value = saved;
+    } catch (_) {}
+    if (signinUsername.value) return;
+    try {
+      const res = await fetch("/yada-config", {
+        headers: { Accept: "application/json" },
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      const name = (
+        (data && data.identity && data.identity.username) ||
+        ""
+      )
+        .trim()
+        .replace(/^@/, "");
+      if (name && !signinUsername.value) signinUsername.value = name;
+    } catch (_) {}
+  }
+
+  function sleep(ms, signal) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, ms);
+      if (!signal) return;
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(new DOMException("cancelled", "AbortError"));
+      };
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  async function expectedSigninHash(signal) {
+    try {
+      const tipRes = await fetch(
+        "/password-rotation/offchain/tip?branch_peer=" +
+          encodeURIComponent(signinOrigin),
+        { headers: { Accept: "application/json" }, credentials: "include", signal }
+      );
+      const tipData = await tipRes.json();
+      const pre =
+        tipData &&
+        tipData.tip &&
+        tipData.tip.password &&
+        tipData.tip.password.prerotated_password_hash;
+      return pre || undefined;
+    } catch (_) {
+      return undefined;
+    }
+  }
+
+  function authPollBase(created) {
+    const home = String((created && created.home_node) || "").replace(/\/+$/, "");
+    if (created && created.proxied && home) return home;
+    return "";
+  }
+
+  async function fetchAuthView(sessionId, base, signal) {
+    const root = String(base || "").replace(/\/+$/, "");
+    const url =
+      root +
+      "/password-rotation/auth-session/" +
+      encodeURIComponent(sessionId);
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      credentials: root && root !== signinOrigin ? "omit" : "include",
+      signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok && res.status !== 404) {
+      throw new Error(data.message || "poll failed (" + res.status + ")");
+    }
+    return data;
+  }
+
+  async function waitForAuthApproval(sessionId, created, signal) {
+    const remote = authPollBase(created);
+    const started = Date.now();
+    while (!signal.aborted) {
+      if (Date.now() - started > 180000) {
+        throw new Error("timed out waiting for approval");
+      }
+      await sleep(1500, signal);
+      let view = null;
+      if (remote) {
+        try {
+          view = await fetchAuthView(sessionId, remote, signal);
+        } catch (err) {
+          if (err && err.name === "AbortError") throw err;
+          view = null;
+        }
+      }
+      if (!view || !view.session_status) {
+        view = await fetchAuthView(sessionId, "", signal);
+      }
+      const st = view && view.session_status;
+      if (st === "delivered" || st === "pending" || !st) {
+        const where = created && created.home_node ? " · " + created.home_node : "";
+        showSigninProgress(
+          (st === "delivered" ? "Delivered" : "Waiting") +
+            " — approve in the extension or the Android/iOS app" +
+            where +
+            " · " +
+            Math.round((Date.now() - started) / 1000) +
+            "s"
+        );
+        continue;
+      }
+      if (st === "denied" || st === "expired") {
+        throw new Error((view && view.message) || st);
+      }
+      if (st === "approved") return view;
+    }
+    throw new DOMException("cancelled", "AbortError");
+  }
 
   registerBtn.addEventListener("click", async () => {
     startSigninProgress("Contacting the extension to register this origin…");
@@ -2833,32 +2972,81 @@
     }
   });
   signinBtn.addEventListener("click", async () => {
-    startSigninProgress("Contacting the Yada Password extension…");
-    signinBtn.textContent = "Signing in…";
+    if (signinWorking && signinAbort) {
+      signinAbort.abort();
+      return;
+    }
+    const username = currentUsername();
+    if (!username) {
+      setSigninMsg("Enter your Yada username.", "err");
+      if (signinUsername) signinUsername.focus();
+      return;
+    }
+    rememberUsername(username);
+    signinAbort = new AbortController();
+    const signal = signinAbort.signal;
+    startSigninProgress("Creating sign-in request…");
+    signinBtn.textContent = "Cancel";
     try {
-      const data = await extRequest("YADA_PASSWORD_SIGNIN", "YADA_PASSWORD_SIGNIN_RESULT");
-      if (!data.ok || data.authenticated === false) {
-        throw new Error(data.message || "sign-in failed");
+      const expectedHash = await expectedSigninHash(signal);
+      const createRes = await fetch("/password-rotation/auth-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          username,
+          site: signinOrigin,
+          action: "signin",
+          expectedHash,
+        }),
+        signal,
+      });
+      const created = await createRes.json().catch(() => ({}));
+      if (!createRes.ok || !created.status || !created.session_id) {
+        throw new Error(created.message || "failed to create sign-in request");
       }
-      if (!data.password) {
-        throw new Error("extension returned no password — resync then sign in again");
-      }
-      showSigninProgress("Extension signed in — opening operator session…");
-      const session = await openOperatorSession(
-        data.password,
-        data.homeNode || data.home_node || ""
+      const home = created.home_node ? " · " + created.home_node : "";
+      showSigninProgress(
+        (created.delivered
+          ? "Delivered to Yada Password"
+          : "Open Yada Password (extension or Android/iOS app)") +
+          " and Approve" +
+          home
       );
-      stashOperatorToken(session && session.token);
+      const view = await waitForAuthApproval(created.session_id, created, signal);
+      if (!view.ok) throw new Error(view.message || "sign-in was not approved");
+      if (view.token) {
+        stashOperatorToken(view.token);
+      } else {
+        if (!view.password) {
+          throw new Error("password app returned no password — approve again");
+        }
+        showSigninProgress("Approved — opening operator session…");
+        const session = await openOperatorSession(
+          view.password,
+          view.home_node || created.home_node || ""
+        );
+        stashOperatorToken(session && session.token);
+      }
       stopSigninProgress();
       setSigninMsg("Session opened — opening your profile…", "ok");
       await openOwnProfile();
     } catch (err) {
+      const aborted =
+        (err && err.name === "AbortError") ||
+        String((err && err.message) || err) === "cancelled";
       stopSigninProgress();
-      setSigninMsg(String(err.message || err), "err");
+      if (!aborted) setSigninMsg(String(err.message || err), "err");
+      else setSigninMsg("Cancelled", "err");
     } finally {
+      signinAbort = null;
       signinBtn.textContent = SIGNIN_LABEL;
     }
   });
+  loadSigninUsername();
 
   navUpload.addEventListener("click", () => openUpload(""));
   uploadBack.addEventListener("click", leaveOverlay);

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#000000" />
   <title>Yada Scroller Demo</title>
   <base href="/file-announcements/demo/yadascroller/" />
-  <link rel="stylesheet" href="styles.css?v=20" />
+  <link rel="stylesheet" href="styles.css?v=21" />
 </head>
 <body>
   <div id="app">
@@ -108,11 +108,13 @@
             <code>/file-announcements/demo/yadascroller</code>
             from that node.
           </p>
-          <p id="ext-status" class="signin-status">Looking for the extension…</p>
+          <p id="ext-status" class="signin-status">Sign in sends a request. Approve it in the Yada Password extension or the Android/iOS app.</p>
+          <label class="signin-label" for="signin-username">Yada username</label>
+          <input id="signin-username" class="signin-input" type="text" autocomplete="username" placeholder="your-yada-username" />
           <div class="signin-actions">
+            <button type="button" id="signin-btn" class="pill">Sign in</button>
             <button type="button" id="register-btn" class="pill" disabled>Register this origin</button>
             <button type="button" id="resync-btn" class="pill" disabled>Resync</button>
-            <button type="button" id="signin-btn" class="pill" disabled>Sign in</button>
           </div>
           <p id="signin-msg" class="signin-msg" role="status" aria-live="polite"></p>
           <div id="signin-track" class="signin-track" aria-hidden="true"><span></span></div>
@@ -211,6 +213,6 @@
     </dialog>
   </div>
   <script src="/app/assets/qrcode.js"></script>
-  <script src="app.js?v=30"></script>
+  <script src="app.js?v=31"></script>
 </body>
 </html>

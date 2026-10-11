@@ -257,9 +257,14 @@ async function switchToVault(id: string) {
 }
 
 let pendingRemote: PasswordAuthRequestPayload | null = null;
+let pendingNodeUrl = "";
 
-function renderPendingRequest(p: PasswordAuthRequestPayload | null) {
+function renderPendingRequest(
+  p: PasswordAuthRequestPayload | null,
+  nodeUrl = ""
+) {
   pendingRemote = p;
+  pendingNodeUrl = p ? nodeUrl.replace(/\/+$/, "") : "";
   const summary = $("requestSummary");
   const approve = $("approveRequestBtn") as HTMLButtonElement;
   const deny = $("denyRequestBtn") as HTMLButtonElement;
@@ -282,6 +287,10 @@ function renderPendingRequest(p: PasswordAuthRequestPayload | null) {
   deny.disabled = false;
 }
 
+function sameNode(a: string, b: string): boolean {
+  return a.replace(/\/+$/, "").toLowerCase() === b.replace(/\/+$/, "").toLowerCase();
+}
+
 async function drainPendingRequests(): Promise<void> {
   const v = await loadVault();
   if (!v || !v.inceptionDone) {
@@ -289,19 +298,46 @@ async function drainPendingRequests(): Promise<void> {
     showAlert("Save vault and broadcast inception first.", "error");
     return;
   }
-  const nodeUrl = await getApiBase(v.username);
   const id = identityFromStored(v);
-  const rows = await fetchPendingAuthSessions(nodeUrl, {
+  const q = {
     username: id.username,
     username_signature: id.usernameSignature,
     public_key: id.k0.publicKeyHex,
     inception_pkh: id.k0.address,
-  });
-  const first = rows && rows.length ? rows[0]! : null;
-  renderPendingRequest(first);
+  };
+  const bases: string[] = [];
+  const page = await getActiveOrigin();
+  if (page) bases.push(page.replace(/\/+$/, ""));
+  try {
+    const home = await getApiBase(v.username);
+    if (home && !bases.some((b) => sameNode(b, home))) bases.push(home);
+  } catch {
+    /* page node may still hold the request (local sign-in) */
+  }
+  let first: PasswordAuthRequestPayload | null = null;
+  let from = "";
+  let lastErr = "";
+  let checked = 0;
+  for (const base of bases) {
+    try {
+      await ensureNodeAccess(base);
+      const rows = await fetchPendingAuthSessions(base, q);
+      checked++;
+      if (rows && rows.length) {
+        first = rows[0]!;
+        from = base.replace(/\/+$/, "");
+        break;
+      }
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : String(e);
+    }
+  }
+  renderPendingRequest(first, from);
   if (first) {
     showAlert(`Pending ${first.action} for ${first.site}`, "success");
     setTab("request");
+  } else if (!checked) {
+    showAlert(lastErr || "No node to check for auth requests.", "error");
   } else {
     showAlert("No pending auth requests on this node.", "success");
   }
@@ -312,7 +348,10 @@ async function approvePendingRequest(): Promise<void> {
   const p = pendingRemote;
   const v = await loadVault();
   if (!v) throw new Error("no vault");
-  const nodeUrl = await getApiBase(v.username);
+  const nodeUrl =
+    pendingNodeUrl ||
+    (p.home_node || "").replace(/\/+$/, "") ||
+    (await getApiBase(v.username));
   const identity = identityFromStored(v);
   let siteKey = p.site || "";
   if (siteKey.startsWith("http://") || siteKey.startsWith("https://")) {
@@ -394,7 +433,10 @@ async function denyPendingRequest(): Promise<void> {
   if (!pendingRemote) return;
   const p = pendingRemote;
   const v = await loadVault();
-  const nodeUrl = await getApiBase(v?.username);
+  const nodeUrl =
+    pendingNodeUrl ||
+    (p.home_node || "").replace(/\/+$/, "") ||
+    (await getApiBase(v?.username));
   await postAuthSessionResult(nodeUrl, p.session_id, {
     result_token: p.result_token,
     ok: false,
