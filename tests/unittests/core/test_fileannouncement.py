@@ -135,6 +135,29 @@ class TestFileAnnouncement(AsyncTestCase):
         self.assertEqual(again.thumbnail_file_id, "b" * 64)
         self.assertEqual(again.thumbnail_share_url, with_thumb.thumbnail_share_url)
 
+    async def test_price_absent_does_not_change_preimage(self):
+        plain = self._ann()
+        zero = self._ann(price=0)
+        blank = self._ann(price="")
+        self.assertEqual(plain.price, "")
+        self.assertEqual(zero.price, "")
+        self.assertEqual(blank.to_string(), plain.to_string())
+        self.assertNotIn("price", plain.to_dict())
+
+    async def test_price_roundtrip_and_hash(self):
+        plain = self._ann()
+        priced = self._ann(price="10")
+        self.assertEqual(priced.price, "10.00000000")
+        self.assertEqual(priced.to_dict()["price"], "10.00000000")
+        self.assertEqual(priced.to_string(), plain.to_string() + "10.00000000")
+        again = FileAnnouncement.from_dict(priced.to_dict())
+        self.assertEqual(again.price, priced.price)
+        self.assertEqual(again.to_string(), priced.to_string())
+        with self.assertRaises(ValueError):
+            self._ann(price="-1")
+        with self.assertRaises(ValueError):
+            self._ann(price="nope")
+
     async def test_type_roundtrip_and_hash(self):
         plain = self._ann()
         flagged = self._ann(type="Avatar")

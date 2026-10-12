@@ -24,12 +24,12 @@ from yadacoin.core.contenttakedown import (
     ContentTakedownAnnouncement,
     TakedownReasonCode,
 )
-from yadacoin.core.fileannouncement import FileAnnouncement
+from yadacoin.core.fileannouncement import FileAnnouncement, normalize_price
 from yadacoin.core.keyeventlog import KeyEventFlag, KeyEventLog, classify_key_event_flag
 from yadacoin.core.keyrotation import NodeKeyRotationManager, derive_secure_path
 from yadacoin.core.transaction import NotEnoughMoneyException, Transaction
 
-from . import store
+from . import paidstore, store
 from .backends import StorageBackendError, get_backend, is_sharing_credential
 
 app_log = getLogger("tornado.application")
@@ -38,6 +38,25 @@ _LIVE_UNTIL = {}
 _SHARE_UNTIL = {}
 _LIVE_TTL = 20
 _SHARE_TTL = 600
+
+
+def announcement_price(live) -> str:
+    if not isinstance(live, dict):
+        return ""
+    file_rel = live.get("file") if isinstance(live.get("file"), dict) else live
+    return str((file_rel or {}).get("price") or live.get("price") or "").strip()
+
+
+def is_priced_media(live, file_id: str) -> bool:
+    """True when file_id is the paid object, not its public thumbnail."""
+    if not announcement_price(live):
+        return False
+    file_rel = live.get("file") if isinstance(live.get("file"), dict) else live
+    media_id = ""
+    if isinstance(file_rel, dict):
+        media_id = str(file_rel.get("file_id") or "")
+    media_id = media_id or str(live.get("file_id") or "")
+    return media_id == (file_id or "").strip()
 
 
 def forget_live(backend: str, file_id: str):
@@ -533,8 +552,14 @@ async def create_file(
     size=None,
     thumbnail: bytes = None,
     type: str = "",
+    price=None,
     on_progress=None,
 ):
+    price = normalize_price(price)
+    if price and not content:
+        raise FileAnnouncementServiceError(
+            "priced announcements require file content on this node"
+        )
     backend, name, _settings = await _backend_from_settings(config, backend_name)
     record_id = store.new_record_id()
     uploaded = None
@@ -558,7 +583,20 @@ async def create_file(
                 or "this file"
             )
             raise DuplicateFileAnnouncementError(f"this user already announced {label}")
-        if content:
+        if price:
+            file_id = content_hash
+            size = len(content)
+            share_url = ""
+            paidstore.save(
+                config,
+                file_id,
+                content,
+                filename=filename,
+                mime_type=mime_type,
+            )
+            if not str(type or "").strip():
+                type = "ppv"
+        elif content:
             _emit_progress(on_progress, {"phase": "sia"})
             uploaded = await backend.upload(
                 content,
@@ -589,7 +627,7 @@ async def create_file(
             thumbnail_file_id = thumb["file_id"]
             thumbnail_share_url = thumb.get("share_url") or ""
         _emit_progress(on_progress, {"phase": "announcing"})
-        if not share_url and hasattr(backend, "share"):
+        if not price and not share_url and hasattr(backend, "share"):
             try:
                 share_url = await backend.share(file_id)
             except Exception:
@@ -608,6 +646,7 @@ async def create_file(
             thumbnail_file_id=thumbnail_file_id,
             thumbnail_share_url=thumbnail_share_url,
             type=type,
+            price=price,
         )
         txn = await _generate_txn(config, ann, fee=0.0)
         await _broadcast(config, txn)
@@ -957,7 +996,7 @@ async def download_by_backend_file_id(
     if not file_id:
         raise FileAnnouncementServiceError("file_id is required")
     live = await store.live_announcement(config, file_id, backend_name)
-    if not live:
+    if not live or is_priced_media(live, file_id):
         raise FileAnnouncementServiceError("file not found")
     backend, name, _s = await _backend_from_settings(config, backend_name)
     share_url = await store.share_url_for_file(config, file_id)
@@ -1002,6 +1041,8 @@ async def prepare_public_stream(
         _cached_share_url(config, file_id),
         _backend_from_settings(config, backend_name),
     )
+    if is_priced_media(live, file_id):
+        raise FileAnnouncementServiceError("file not found")
     backend, name, _settings = backend_tuple
     file_doc = (live or {}).get("file") or {}
     try:

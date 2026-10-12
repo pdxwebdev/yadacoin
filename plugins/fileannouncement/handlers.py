@@ -25,7 +25,7 @@ from plugins.yadapasswordsignin.handlers import redirect_to_signin
 from yadacoin.core.contenttakedown import TakedownReasonCode
 from yadacoin.http.base import BaseHandler
 
-from . import progress, store
+from . import paidstore, progress, purchase, store
 from .backends import available_backends
 from .service import (
     DuplicateFileAnnouncementError,
@@ -208,11 +208,16 @@ def _video_public_item(item: dict) -> dict:
         "owner": (item.get("owner") or "").strip(),
         "public_key_hash": (item.get("public_key_hash") or "").strip(),
         "username": (item.get("username") or "").strip(),
+        "price": str(f.get("price") or "").strip(),
         "stream_url": (
-            f"/file-announcements/api/v1/public/stream/{quote(backend, safe='')}/"
-            f"{quote(file_id, safe='')}"
-            if file_id
-            else ""
+            ""
+            if str(f.get("price") or "").strip()
+            else (
+                f"/file-announcements/api/v1/public/stream/{quote(backend, safe='')}/"
+                f"{quote(file_id, safe='')}"
+                if file_id
+                else ""
+            )
         ),
         "thumbnail_url": _thumbnail_url(backend, f.get("thumbnail_file_id") or ""),
         "type": str(f.get("type") or "").strip().lower(),
@@ -339,6 +344,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
             backend = self.get_body_argument("backend", "")
             upload_id = self.get_body_argument("upload_id", "")
             file_type = self.get_body_argument("type", "")
+            price = self.get_body_argument("price", "")
             thumbnail = None
             if self.request.files.get("thumbnail"):
                 thumbnail = self.request.files["thumbnail"][0].get("body") or None
@@ -356,6 +362,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
             backend = data.get("backend") or ""
             upload_id = data.get("upload_id") or ""
             file_type = data.get("type") or ""
+            price = data.get("price") or ""
             thumbnail = None
             raw = data.get("content_b64") or ""
             if raw:
@@ -388,6 +395,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
                 backend_name=backend,
                 thumbnail=thumbnail,
                 type=file_type,
+                price=price,
                 on_progress=(
                     (lambda event, uid=upload_id: progress.apply(uid, event))
                     if tracked
@@ -711,7 +719,12 @@ async def _public_media_list(handler, match, search):
     else:
         raw = await search(handler.config, query=query, limit=limit, skip=skip)
         results = [_video_public_item(item) for item in raw]
-    results = [r for r in results if r.get("file_id") and r.get("stream_url")]
+    results = [
+        r
+        for r in results
+        if r.get("file_id")
+        and (r.get("stream_url") or r.get("price") or r.get("thumbnail_url"))
+    ]
     try:
         names = await store.identity_usernames(handler.config)
     except Exception:
@@ -761,6 +774,7 @@ def _public_file_item(row: dict, username: str = "", keep_stream: bool = False) 
             "file_id": row.get("file_id") or "",
             "thumbnail_file_id": row.get("thumbnail_file_id") or "",
             "type": str(row.get("type") or "").strip().lower(),
+            "price": str(row.get("price") or "").strip(),
         },
     }
     item = _video_public_item(shaped)
@@ -1190,8 +1204,14 @@ class PublicStreamHandler(BaseHandler):
         entry = _STREAM_CACHE.get(cache_key)
         if entry:
             try:
-                await assert_live(self.config, backend, file_id)
+                live = await assert_live(self.config, backend, file_id)
             except FileAnnouncementServiceError:
+                _drop_stream_cache_entry(cache_key)
+                self.set_status(404)
+                return self.finish("file not found")
+            from .service import is_priced_media
+
+            if is_priced_media(live, file_id):
                 _drop_stream_cache_entry(cache_key)
                 self.set_status(404)
                 return self.finish("file not found")
@@ -1231,6 +1251,18 @@ class PublicStreamHandler(BaseHandler):
         range_header = self.request.headers.get("Range", "")
 
         if entry and os.path.isfile(entry[0]):
+            try:
+                live = await assert_live(self.config, backend, file_id)
+            except FileAnnouncementServiceError:
+                _drop_stream_cache_entry(cache_key)
+                self.set_status(404)
+                return self.finish("file not found")
+            from .service import is_priced_media
+
+            if is_priced_media(live, file_id):
+                _drop_stream_cache_entry(cache_key)
+                self.set_status(404)
+                return self.finish("file not found")
             try:
                 await assert_live(self.config, backend, file_id)
             except FileAnnouncementServiceError:
@@ -1363,6 +1395,428 @@ class YadaScrollerDemoHandler(BaseHandler):
         return guessed or "application/octet-stream"
 
 
+PPV_INVOICE_COOKIE = "yada_ppv_invoice"
+
+
+def _invoice_tokens(handler) -> list:
+    raw = handler.get_secure_cookie(PPV_INVOICE_COOKIE)
+    if not raw:
+        return []
+    try:
+        text = raw.decode()
+    except AttributeError:
+        text = str(raw)
+    return [part for part in text.split(",") if part][-8:]
+
+
+def _remember_invoice(handler, token: str) -> None:
+    tokens = [part for part in _invoice_tokens(handler) if part != token]
+    tokens.append(token)
+    handler.set_secure_cookie(PPV_INVOICE_COOKIE, ",".join(tokens[-8:]), expires_days=7)
+
+
+async def _creator_home(handler, live) -> str:
+    username = str((live or {}).get("username") or "").strip().lstrip("@")
+    if not username:
+        owner = str((live or {}).get("owner") or "").strip()
+        if owner:
+            try:
+                names = await store.identity_usernames(handler.config)
+            except Exception:
+                names = {}
+            username = str(names.get(owner) or "").strip().lstrip("@")
+    if not username:
+        return ""
+    try:
+        from plugins.passwordrotation.auth_session import resolve_password_home_sp_live
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        found = await IdentityAnnouncement.get_by_username(username)
+        sig = ((found or {}).get("identity") or {}).get("username_signature") or ""
+        if not sig:
+            return ""
+        home = await resolve_password_home_sp_live(sig, handler)
+    except Exception:
+        return ""
+    if not home or home.get("is_local"):
+        return ""
+    return str(home.get("node_http_base") or "").rstrip("/")
+
+
+async def _forward_json(home: str, path: str, body: dict) -> dict:
+    from tornado.httpclient import AsyncHTTPClient, HTTPClientError
+
+    try:
+        resp = await AsyncHTTPClient().fetch(
+            home.rstrip("/") + path,
+            method="POST",
+            body=json.dumps(body),
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-Yada-Ppv-Direct": "1",
+            },
+            request_timeout=30,
+        )
+    except HTTPClientError as exc:
+        try:
+            return json.loads(exc.response.body.decode())
+        except Exception:
+            return {"status": False, "error": str(exc)}
+    except Exception as exc:
+        return {"status": False, "error": str(exc)}
+    try:
+        data = json.loads(resp.body.decode())
+    except Exception:
+        return {"status": False, "error": "creator node returned invalid JSON"}
+    return (
+        data if isinstance(data, dict) else {"status": False, "error": "bad response"}
+    )
+
+
+async def _session_payer_ids(handler) -> set:
+    if not await operator_session_unlocked(handler):
+        return set()
+    ids = set()
+    addr = str(getattr(handler.config, "address", "") or "").strip()
+    if addr:
+        ids.add(addr)
+    try:
+        inception = await operator_inception_public_key_hash(handler.config)
+    except Exception:
+        inception = ""
+    if inception:
+        ids.add(inception)
+    return ids
+
+
+class PublicPurchaseInvoiceHandler(BaseHandler):
+    """POST /file-announcements/api/v1/public/purchase/invoice"""
+
+    async def post(self):
+        try:
+            data = _json_body(self)
+        except ValueError as exc:
+            self.set_status(400)
+            return self.render_as_json({"status": False, "error": str(exc)})
+        transaction_id = (data.get("transaction_id") or "").strip()
+        if not transaction_id:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "error": "transaction_id is required"}
+            )
+        live = await store.get_live_by_transaction_id(self.config, transaction_id)
+        if not live:
+            self.set_status(404)
+            return self.render_as_json({"status": False, "error": "file not found"})
+        price = str(live.get("price") or "").strip()
+        pay_to = str(live.get("public_key_hash") or "").strip()
+        if not price or not pay_to:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "error": "post is not for sale"}
+            )
+        direct = self.request.headers.get("X-Yada-Ppv-Direct") == "1"
+        home = "" if direct else await _creator_home(self, live)
+        if home:
+            forwarded = await _forward_json(
+                home,
+                "/file-announcements/api/v1/public/purchase/invoice",
+                {"transaction_id": transaction_id},
+            )
+            if not forwarded.get("status"):
+                self.set_status(502)
+                return self.render_as_json(forwarded)
+            token = forwarded.get("token") or ""
+            if token:
+                _remember_invoice(self, token)
+            forwarded.pop("token", None)
+            return self.render_as_json(forwarded)
+        try:
+            doc = await purchase.create_invoice(
+                self.config, transaction_id, pay_to, price
+            )
+        except ValueError as exc:
+            self.set_status(400)
+            return self.render_as_json({"status": False, "error": str(exc)})
+        if not direct:
+            _remember_invoice(self, doc["token"])
+        body = {
+            "status": True,
+            "amount": doc["amount"],
+            "pay_to": pay_to,
+            "price": price,
+            "expires_at": doc["expires_at"],
+        }
+        if direct:
+            body["token"] = doc["token"]
+        return self.render_as_json(body)
+
+
+class PublicPurchaseRedeemHandler(BaseHandler):
+    """POST /file-announcements/api/v1/public/purchase/redeem"""
+
+    async def post(self):
+        try:
+            data = _json_body(self)
+        except ValueError as exc:
+            self.set_status(400)
+            return self.render_as_json({"status": False, "error": str(exc)})
+        transaction_id = (data.get("transaction_id") or "").strip()
+        if not transaction_id:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "error": "transaction_id is required"}
+            )
+        live = await store.get_live_by_transaction_id(self.config, transaction_id)
+        if not live:
+            self.set_status(404)
+            return self.render_as_json({"status": False, "error": "file not found"})
+        direct = self.request.headers.get("X-Yada-Ppv-Direct") == "1"
+        home = "" if direct else await _creator_home(self, live)
+        tokens = [data.get("token") or ""] if direct else _invoice_tokens(self)
+        tokens = [token for token in tokens if token]
+        if home:
+            last = {
+                "status": False,
+                "paid": False,
+                "error": "no invoice for this browser",
+            }
+            for token in tokens:
+                last = await _forward_json(
+                    home,
+                    "/file-announcements/api/v1/public/purchase/redeem",
+                    {"transaction_id": transaction_id, "token": token},
+                )
+                if last.get("paid"):
+                    return self.render_as_json(last)
+            self.set_status(402 if last.get("status") else 400)
+            return self.render_as_json(last)
+        redeemed = None
+        for token in tokens:
+            redeemed = await purchase.redeem_invoice(self.config, token, transaction_id)
+            if redeemed:
+                break
+        if not redeemed:
+            return self.render_as_json(
+                {
+                    "status": True,
+                    "paid": False,
+                    "error": "no confirmed payment for this browser invoice yet",
+                }
+            )
+        return self.render_as_json(
+            {
+                "status": True,
+                "paid": True,
+                "access": redeemed.get("access") or "",
+                "payment_id": redeemed.get("payment_id") or "",
+                "holds_media": paidstore.has(self.config, live.get("file_id") or ""),
+            }
+        )
+
+
+class PublicPurchaseHandler(BaseHandler):
+    """GET /file-announcements/api/v1/public/purchase?transaction_id="""
+
+    async def get(self):
+        transaction_id = (self.get_query_argument("transaction_id", "") or "").strip()
+        if not transaction_id:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "error": "transaction_id is required"}
+            )
+        payers = await _session_payer_ids(self)
+        if not payers:
+            self.set_status(401)
+            return self.render_as_json(
+                {"status": False, "error": "not authorized", "paid": False}
+            )
+        live = await store.get_live_by_transaction_id(self.config, transaction_id)
+        if not live:
+            self.set_status(404)
+            return self.render_as_json(
+                {"status": False, "error": "file not found", "paid": False}
+            )
+        price = str(live.get("price") or "").strip()
+        pay_to = str(live.get("public_key_hash") or "").strip()
+        if not price:
+            return self.render_as_json(
+                {
+                    "status": True,
+                    "paid": True,
+                    "price": "",
+                    "pay_to": pay_to,
+                    "holds_media": True,
+                }
+            )
+        payment = await purchase.find_confirmed_payment(
+            self.config, pay_to, price, payers
+        )
+        return self.render_as_json(
+            {
+                "status": True,
+                "paid": bool(payment),
+                "payment_id": (payment or {}).get("id") or "",
+                "price": price,
+                "pay_to": pay_to,
+                "holds_media": paidstore.has(self.config, live.get("file_id") or ""),
+            }
+        )
+
+
+class PublicPurchaseStreamHandler(BaseHandler):
+    """GET /file-announcements/api/v1/public/purchase/stream/{transaction_id}"""
+
+    async def get(self, transaction_id):
+        transaction_id = (transaction_id or "").strip()
+        access = (self.get_query_argument("access", "") or "").strip()
+        live = await store.get_live_by_transaction_id(self.config, transaction_id)
+        if not live:
+            self.set_status(404)
+            return self.finish("file not found")
+        price = str(live.get("price") or "").strip()
+        pay_to = str(live.get("public_key_hash") or "").strip()
+        file_id = str(live.get("file_id") or "").strip()
+        if not price or not pay_to:
+            self.set_status(404)
+            return self.finish("file not found")
+        holds = paidstore.has(self.config, file_id)
+        local_access = purchase.access_token_ok(self.config, transaction_id, access)
+        payers = await _session_payer_ids(self)
+        payment = None
+        grant_pub = (self.get_query_argument("grant_pub", "") or "").strip()
+        if grant_pub:
+            payment = await purchase.find_payment_from_key(
+                self.config, pay_to, price, grant_pub
+            )
+            grant = {
+                "message": f"yada-ppv|{transaction_id}|{self.get_query_argument('grant_exp', '')}",
+                "signature": self.get_query_argument("grant_sig", "") or "",
+                "public_key": grant_pub,
+                "exp": self.get_query_argument("grant_exp", "") or "",
+            }
+            if payment and purchase.view_grant_ok(transaction_id, grant, payment):
+                local_access = True
+        if not local_access and payers:
+            payment = await purchase.find_confirmed_payment(
+                self.config, pay_to, price, payers
+            )
+            local_access = bool(payment)
+        if not holds:
+            home = await _creator_home(self, live)
+            if not home or not (access or payment):
+                self.set_status(402 if not access and not payment else 404)
+                return self.finish(
+                    "payment required"
+                    if not access and not payment
+                    else "file not found"
+                )
+            return await self._proxy_creator(home, transaction_id, access, payment)
+        if not local_access:
+            self.set_status(402)
+            return self.finish("payment required")
+        info = paidstore.meta(self.config, file_id)
+        total = int(info.get("size") or 0)
+        if total <= 0:
+            self.set_status(404)
+            return self.finish("empty")
+        try:
+            span = parse_byte_range(self.request.headers.get("Range", ""), total)
+        except ValueError:
+            span = None
+        if not span:
+            self.set_status(416)
+            self.set_header("Content-Range", f"bytes */{total}")
+            return self.finish()
+        start, end = span
+        mime = (
+            info.get("mime_type") or live.get("mime_type") or "application/octet-stream"
+        )
+        filename = info.get("filename") or live.get("filename") or "video"
+        length = end - start + 1
+        partial = not (start == 0 and end == total - 1)
+        self.set_header("Accept-Ranges", "bytes")
+        self.set_header("Content-Type", mime)
+        self.set_header("Content-Length", str(length))
+        self.set_header("Content-Disposition", f'inline; filename="{filename}"')
+        if partial:
+            self.set_status(206)
+            self.set_header("Content-Range", f"bytes {start}-{end}/{total}")
+        fh = paidstore.open_file(self.config, file_id)
+        if fh is None:
+            self.set_status(404)
+            return self.finish("file not found")
+        try:
+            fh.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = fh.read(min(256 * 1024, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                self.write(chunk)
+                await self.flush()
+        except StreamClosedError:
+            return
+        finally:
+            fh.close()
+        return self.finish()
+
+    async def _proxy_creator(self, home, transaction_id, access, payment):
+        from tornado.httpclient import AsyncHTTPClient, HTTPClientError
+
+        query = ""
+        if access:
+            query = "?access=" + quote(access, safe="")
+        elif payment:
+            exp = int(time.time()) + 300
+            grant = purchase.view_grant(self.config, transaction_id, exp)
+            if not purchase.view_grant_ok(transaction_id, grant, payment):
+                self.set_status(401)
+                return self.finish("not authorized")
+            query = (
+                "?grant_exp="
+                + quote(str(grant["exp"]), safe="")
+                + "&grant_sig="
+                + quote(grant["signature"], safe="")
+                + "&grant_pub="
+                + quote(grant["public_key"], safe="")
+            )
+        url = (
+            home.rstrip("/")
+            + "/file-announcements/api/v1/public/purchase/stream/"
+            + quote(transaction_id, safe="")
+            + query
+        )
+        headers = {}
+        range_header = self.request.headers.get("Range", "")
+        if range_header:
+            headers["Range"] = range_header
+        try:
+            resp = await AsyncHTTPClient().fetch(
+                url, headers=headers, request_timeout=120
+            )
+        except HTTPClientError as exc:
+            self.set_status(exc.code or 502)
+            return self.finish("creator node rejected playback")
+        except Exception:
+            self.set_status(502)
+            return self.finish("creator node unavailable")
+        self.set_status(resp.code)
+        for name in (
+            "Content-Type",
+            "Content-Length",
+            "Content-Range",
+            "Accept-Ranges",
+        ):
+            value = resp.headers.get(name)
+            if value:
+                self.set_header(name, value)
+        self.write(resp.body)
+        return self.finish()
+
+
 HANDLERS = [
     (r"/file-announcements", FileAnnouncementDashboardHandler),
     (r"/file-announcements/api/v1/unlock", FileAnnouncementUnlockHandler),
@@ -1377,6 +1831,19 @@ HANDLERS = [
     (r"/file-announcements/api/v1/backends", FileBackendsHandler),
     (r"/file-announcements/api/v1/stream-cache", StreamCacheHandler),
     (r"/file-announcements/api/v1/takedown-reasons", FileTakedownReasonsHandler),
+    (
+        r"/file-announcements/api/v1/public/purchase/invoice",
+        PublicPurchaseInvoiceHandler,
+    ),
+    (
+        r"/file-announcements/api/v1/public/purchase/redeem",
+        PublicPurchaseRedeemHandler,
+    ),
+    (r"/file-announcements/api/v1/public/purchase", PublicPurchaseHandler),
+    (
+        r"/file-announcements/api/v1/public/purchase/stream/([^/]+)",
+        PublicPurchaseStreamHandler,
+    ),
     (r"/file-announcements/api/v1/public/videos", PublicVideoListHandler),
     (r"/file-announcements/api/v1/public/photos", PublicPhotoListHandler),
     (r"/file-announcements/api/v1/public/profile", PublicProfileHandler),

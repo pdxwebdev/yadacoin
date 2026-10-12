@@ -45,6 +45,7 @@
     <div id="live-row" class="live-row" hidden></div>
     <div class="hint" id="hint">Swipe or scroll · gift · live · report · mute</div>
     <div class="rail" id="rail">
+      <button type="button" id="rail-buy" class="buy-btn" hidden aria-label="Buy" title="Buy">Buy</button>
       <button type="button" id="rail-gift" class="gift-btn" aria-label="Send a gift" title="Send a gift">🎁</button>
       <button type="button" id="rail-report" class="report-btn" aria-label="Report" title="Report">🚩</button>
       <button type="button" id="mute-btn" class="mute-btn" aria-label="Toggle mute">🔇</button>
@@ -148,6 +149,9 @@
             <input name="keywords" id="compose-keywords" placeholder="comma,separated,keywords" />
             <label for="compose-description">Description</label>
             <textarea name="description" id="compose-description" placeholder="What this file is"></textarea>
+            <label for="compose-price">Price (YDA, optional)</label>
+            <input name="price" id="compose-price" inputmode="decimal" placeholder="Leave blank to publish free" />
+            <p class="compose-note">A price is announced on-chain. The file stays on this node until that price is paid to the announcement address.</p>
             <label for="compose-type">Type</label>
             <input name="type" id="compose-type" maxlength="32" placeholder="Optional app token, such as avatar" />
             <p class="compose-note">Stored as-is. Each app decides what a type means.</p>
@@ -174,6 +178,23 @@
       <button type="button" id="nav-upload" class="tab tab-plus" aria-label="Upload"><span class="plus-mark">+</span></button>
       <button type="button" id="nav-profile" class="tab">Profile</button>
     </nav>
+
+    <dialog id="buy-dlg" class="gift-dlg">
+      <form method="dialog" id="buy-form">
+        <header class="gift-head">
+          <h2>Buy</h2>
+          <button type="button" class="btn ghost" id="buy-close">Close</button>
+        </header>
+        <p class="gift-to" id="buy-to"></p>
+        <p class="gift-picked" id="buy-price"></p>
+        <div id="buy-qr" class="gift-qr"></div>
+        <p class="gift-address" id="buy-address"></p>
+        <p class="gift-note" id="buy-note"></p>
+        <p class="gift-note" id="buy-warn">This purchase stays in this browser. To open it from other browsers, run your own node and sign in. The creator's node then allows playback when it sees a payment from that identity. A Sia account is only for publishing, not for buying.</p>
+        <button type="button" class="btn" id="buy-check">I've paid</button>
+        <button type="button" class="btn ghost" id="buy-node" hidden>Pay from this node</button>
+      </form>
+    </dialog>
 
     <dialog id="gift-dlg" class="gift-dlg">
       <form method="dialog" id="gift-form">

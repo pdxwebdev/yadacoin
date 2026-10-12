@@ -7,6 +7,7 @@
   const API_PROFILE = "/file-announcements/api/v1/public/profile";
   const API_BADGES = "/file-announcements/api/v1/public/badges";
   const API_ME = "/file-announcements/api/v1/public/me";
+  const API_PURCHASE = "/file-announcements/api/v1/public/purchase";
   const API_REASONS = "/file-announcements/api/v1/public/takedown-reasons";
   const API_TAKEDOWN = "/file-announcements/api/v1/public/takedown";
   const API_LIVE = "/livestream-announcements/api/v1/live";
@@ -102,6 +103,16 @@
   const playerLive = document.getElementById("player-live");
   const liveRow = document.getElementById("live-row");
   const railGift = document.getElementById("rail-gift");
+  const railBuy = document.getElementById("rail-buy");
+  const buyDlg = document.getElementById("buy-dlg");
+  const buyTo = document.getElementById("buy-to");
+  const buyPrice = document.getElementById("buy-price");
+  const buyQr = document.getElementById("buy-qr");
+  const buyAddress = document.getElementById("buy-address");
+  const buyNote = document.getElementById("buy-note");
+  const buyClose = document.getElementById("buy-close");
+  const buyCheck = document.getElementById("buy-check");
+  const buyNode = document.getElementById("buy-node");
   const railReport = document.getElementById("rail-report");
   const giftDlg = document.getElementById("gift-dlg");
   const giftTo = document.getElementById("gift-to");
@@ -200,7 +211,33 @@
       .replace(/"/g, "&quot;");
   }
 
+  function itemPrice(item) {
+    const raw = String((item && item.price) || "").trim();
+    const n = Number(raw);
+    if (!raw || !Number.isFinite(n) || n <= 0) return "";
+    return raw;
+  }
+
+  function formatPrice(raw) {
+    return String(raw).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  }
+
+  function priceChipHtml(item) {
+    const price = itemPrice(item);
+    if (!price || item.price_unlocked) return "";
+    return `<span class="price-chip">PPV ${escapeHtml(formatPrice(price))} YDA</span>`;
+  }
+
+  function paidStreamUrl(item) {
+    const id = String((item && item.transaction_id) || "").trim();
+    if (!id) return "";
+    const access = String((item && item.access) || "").trim();
+    const q = access ? `?access=${encodeURIComponent(access)}` : "";
+    return `${API_PURCHASE}/stream/${encodeURIComponent(id)}${q}`;
+  }
+
   function streamUrl(item) {
+    if (itemPrice(item) && !(item && item.price_unlocked)) return "";
     if (!item || !item.stream_url) return "";
     const params = new URLSearchParams();
     if (item.filename) params.set("filename", item.filename);
@@ -402,6 +439,11 @@
     video.setAttribute("data-src", streamUrl(item));
     if (item.thumbnail_url) video.poster = item.thumbnail_url;
     video.setAttribute("data-type", mimeFor(item));
+    const chip = priceChipHtml(item);
+    if (chip) {
+      slide.classList.add("locked");
+      slide.insertAdjacentHTML("beforeend", chip);
+    }
 
     const spinner = document.createElement("div");
     spinner.className = "spinner";
@@ -547,6 +589,7 @@
     const video = slide.querySelector("video");
     ensureSrc(video);
     video.muted = muted;
+    syncBuyRail();
     pauseAllExcept(video);
     const play = () => {
       if (!slide.isConnected || viewName !== "feed" || mediaMode === "photos" || !playerEl.hidden) return;
@@ -789,6 +832,11 @@
       dropPhoto(slide.dataset.key);
     });
     img.src = primary || full;
+    const chip = priceChipHtml(item);
+    if (chip) {
+      slide.classList.add("locked");
+      slide.insertAdjacentHTML("beforeend", chip);
+    }
     const tags = (item.keywords || [])
       .slice(0, 6)
       .map((k) => `<span class="tag">#${escapeHtml(k)}</span>`)
@@ -1511,6 +1559,166 @@
 
   function creatorAddress(item) {
     return String((item && item.public_key_hash) || "").trim();
+  }
+
+  function syncBuyRail() {
+    if (!railBuy) return;
+    const item = activeItem();
+    const show = !!(item && itemPrice(item) && !item.price_unlocked);
+    railBuy.hidden = !show;
+  }
+
+  function unlockPaid(item) {
+    if (!item) return;
+    item.price_unlocked = true;
+    const url = paidStreamUrl(item);
+    if (!url) return;
+    item.stream_url = url;
+    const key = itemKey(item);
+    const slide = feed.querySelector(`[data-key="${CSS.escape(key)}"]`);
+    if (slide) {
+      slide.classList.remove("locked");
+      const badge = slide.querySelector(".price-chip");
+      if (badge) badge.remove();
+      const video = slide.querySelector("video");
+      if (video) {
+        video.setAttribute("data-src", url);
+        ensureSrc(video);
+        video.play().catch(() => {});
+      }
+    }
+    syncBuyRail();
+  }
+
+  async function checkPurchase(item) {
+    const id = String((item && item.transaction_id) || "").trim();
+    if (!id) throw new Error("This post has no announcement id");
+    const res = await fetch(`${API_PURCHASE}?transaction_id=${encodeURIComponent(id)}`, {
+      credentials: "same-origin",
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      throw new Error("Sign in on your node to pay from that identity");
+    }
+    if (!res.ok || data.status === false) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  async function openBuy(item) {
+    const price = itemPrice(item);
+    const address = creatorAddress(item);
+    if (!price || !address) {
+      showStatus("This post has no sale address", 2500);
+      return;
+    }
+    const who = item.username ? `@${item.username}` : "creator";
+    buyTo.textContent = who;
+    buyPrice.textContent = `${price} YDA`;
+    buyAddress.textContent = address;
+    buyQr.innerHTML = "";
+    buyNote.textContent = "Scan with an external wallet and pay the exact amount shown. One confirmation, then I've paid.";
+    if (buyNode) buyNode.hidden = true;
+    if (typeof QRCode === "function") {
+      new QRCode(buyQr, {
+        text: address,
+        width: 220,
+        height: 220,
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+    }
+    if (typeof buyDlg.showModal === "function") buyDlg.showModal();
+    else buyDlg.setAttribute("open", "");
+    try {
+      const me = await fetch(API_ME, { credentials: "same-origin" });
+      const whoami = await me.json().catch(() => ({}));
+      if (buyNode && whoami.authenticated === true) buyNode.hidden = false;
+      const res = await fetch(`${API_PURCHASE}/invoice`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ transaction_id: item.transaction_id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.status) {
+        throw new Error(data.error || "could not start checkout");
+      }
+      buyPrice.textContent = `${data.amount} YDA`;
+      buyNote.textContent = `Pay exactly ${data.amount} YDA to the address above from any wallet. This checkout is saved in this browser only.`;
+    } catch (err) {
+      buyNote.textContent = err.message || "Could not start checkout";
+    }
+  }
+
+  async function payFromNode(item) {
+    const price = itemPrice(item);
+    const address = creatorAddress(item);
+    const res = await fetch("/send-transaction", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ address, value: Number(price) }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      throw new Error(data.error || "this node wallet could not pay");
+    }
+    buyNote.textContent = "Payment sent from this node. Waiting for a confirmation…";
+  }
+
+  railBuy.addEventListener("click", () => openBuy(activeItem()));
+  buyClose.addEventListener("click", () => {
+    if (typeof buyDlg.close === "function") buyDlg.close();
+    else buyDlg.removeAttribute("open");
+  });
+  buyCheck.addEventListener("click", async () => {
+    const item = activeItem();
+    buyCheck.disabled = true;
+    try {
+      const res = await fetch(`${API_PURCHASE}/redeem`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ transaction_id: item && item.transaction_id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!data.paid) {
+        buyNote.textContent = data.error || "No confirmed payment for this browser checkout yet.";
+        return;
+      }
+      if (data.access) item.access = data.access;
+      if (data.holds_media === false) {
+        buyNote.textContent = "Paid. The creator node does not have the file on this request.";
+        return;
+      }
+      unlockPaid(item);
+      if (typeof buyDlg.close === "function") buyDlg.close();
+    } catch (err) {
+      buyNote.textContent = err.message || "Could not check payment";
+    } finally {
+      buyCheck.disabled = false;
+    }
+  });
+  if (buyNode) {
+    buyNode.addEventListener("click", async () => {
+      const item = activeItem();
+      buyNode.disabled = true;
+      try {
+        await payFromNode(item);
+        const data = await checkPurchase(item);
+        if (!data.paid) {
+          buyNote.textContent = "Sent. Waiting for one confirmation from this identity.";
+          return;
+        }
+        unlockPaid(item);
+        if (typeof buyDlg.close === "function") buyDlg.close();
+      } catch (err) {
+        buyNote.textContent = err.message || "Could not pay from this node";
+      } finally {
+        buyNode.disabled = false;
+      }
+    });
   }
 
   function selectedChain() {
@@ -2385,7 +2593,7 @@
       const still = src
         ? `<img alt="" src="${escapeHtml(src)}">`
         : `<span class="ph">${item.stream_url ? "▶" : "▣"}</span>`;
-      tile.innerHTML = `${still}<span class="cap">${escapeHtml(label)}</span>`;
+      tile.innerHTML = `${still}${priceChipHtml(item)}<span class="cap">${escapeHtml(label)}</span>`;
       tile.addEventListener("click", () => {
         if (profileMedia === "photos") openPhoto(items[index]);
         else openPlayer(items[index]);

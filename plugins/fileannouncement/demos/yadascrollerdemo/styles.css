@@ -349,6 +349,11 @@ body {
   line-height: 1.1;
 }
 
+.rail .buy-btn {
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .rail .gift-btn,
 .rail .report-btn,
 .mute-btn {
@@ -385,6 +390,19 @@ body {
 
 .side-actions .gift-btn {
   font-size: 22px;
+}
+
+.lock-badge {
+  position: absolute;
+  left: 16px;
+  top: calc(72px + var(--safe-top));
+  z-index: 4;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .side-actions .avatar-btn {
@@ -760,6 +778,29 @@ body {
   place-items: center;
   color: rgba(255, 255, 255, 0.4);
   font-size: 28px;
+}
+
+.price-chip {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.slide > .price-chip {
+  top: calc(72px + var(--safe-top));
+  left: 16px;
+  z-index: 4;
+  font-size: 13px;
+  padding: 6px 10px;
 }
 
 .tile .cap {

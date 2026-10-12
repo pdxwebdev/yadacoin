@@ -22,6 +22,7 @@ backend file identifier so peers can discover and retrieve the object.
 """
 
 import re
+from decimal import Decimal, InvalidOperation
 from typing import List
 
 MAX_TITLE_LEN = 200
@@ -31,6 +32,29 @@ MAX_KEYWORD_LEN = 64
 MAX_FILE_ID_LEN = 128
 MAX_SHARE_URL_LEN = 8192
 MAX_TYPE_LEN = 32
+
+
+def normalize_price(value) -> str:
+    """Canonical 8-decimal YDA amount. Empty means unset and is omitted from the hash."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return ""
+    try:
+        if value == -0.0:
+            value = 0
+        quantized = Decimal(str(value)).quantize(Decimal("0.00000000"))
+    except (InvalidOperation, ValueError, TypeError):
+        raise ValueError("price must be a number")
+    if quantized < 0:
+        raise ValueError("price cannot be negative")
+    if quantized == 0:
+        return ""
+    return f"{quantized:.8f}"
+
+
 KNOWN_BACKENDS = frozenset({"sia", "memory"})
 _TYPE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
@@ -96,6 +120,9 @@ class FileAnnouncement:
     thumbnail_file_id : backend id of a JPEG captured at upload (optional)
     thumbnail_share_url : public read credential for that JPEG (optional)
     type         : optional app-defined token; this layer does not interpret it
+    price        : optional sale price in YDA. Canonical 8-decimal string. Omitted
+                   from the relationship hash when unset, so older announcements
+                   keep the same preimage.
     """
 
     RELATIONSHIP_KEY = "file"
@@ -115,6 +142,7 @@ class FileAnnouncement:
         thumbnail_file_id: str = "",
         thumbnail_share_url: str = "",
         type: str = "",
+        price=None,
         **kwargs,
     ):
         if not file_id or not isinstance(file_id, str):
@@ -173,7 +201,8 @@ class FileAnnouncement:
         self.thumbnail_file_id = thumbnail_file_id
         self.thumbnail_share_url = thumbnail_share_url
         self.type = normalize_type(type)
-        self.extra_fields = {k: v for k, v in kwargs.items()}
+        self.price = normalize_price(price)
+        self.extra_fields = {k: v for k, v in kwargs.items() if k != "price"}
 
     @staticmethod
     def from_dict(data: dict) -> "FileAnnouncement":
@@ -222,6 +251,8 @@ class FileAnnouncement:
             result["thumbnail_share_url"] = self.thumbnail_share_url
         if self.type:
             result["type"] = self.type
+        if self.price:
+            result["price"] = self.price
         if self.extra_fields:
             result.update(self.extra_fields)
         return result
@@ -242,6 +273,7 @@ class FileAnnouncement:
             + self.get_string(self.thumbnail_file_id)
             + self.get_string(self.thumbnail_share_url)
             + self.get_string(self.type)
+            + self.price
         )
 
     def matches_query(self, query: str) -> bool:
