@@ -12,6 +12,7 @@ Full license terms: see LICENSE.txt in this repository.
 """
 
 import hashlib
+from decimal import getcontext
 
 import yadacoin.core.config
 from yadacoin.core.config import Config
@@ -157,6 +158,17 @@ class TestFileAnnouncement(AsyncTestCase):
             self._ann(price="-1")
         with self.assertRaises(ValueError):
             self._ann(price="nope")
+
+    async def test_price_survives_leaked_decimal_precision(self):
+        previous = getcontext().prec
+        getcontext().prec = 8
+        try:
+            priced = self._ann(price="10")
+            self.assertEqual(priced.price, "10.00000000")
+            again = FileAnnouncement.from_dict(priced.to_dict())
+            self.assertEqual(again.price, priced.price)
+        finally:
+            getcontext().prec = previous
 
     async def test_type_roundtrip_and_hash(self):
         plain = self._ann()

@@ -16,7 +16,7 @@ import binascii
 import hashlib
 import json
 import time
-from decimal import Decimal, getcontext
+from decimal import Decimal, getcontext, localcontext
 from logging import getLogger
 
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
@@ -54,12 +54,13 @@ class XeggexAccountFrozenException(Exception):
 
 
 def quantize_eight(value):
-    getcontext().prec = len(str(value)) + 8
-    if value == -0.0:
-        value = 0.0
-    value = Decimal(value)
-    value = value.quantize(Decimal("0.00000000"))
-    return value
+    with localcontext() as ctx:
+        ctx.prec = len(str(value)) + 8
+        if value == -0.0:
+            value = 0.0
+        value = Decimal(value)
+        value = value.quantize(Decimal("0.00000000"))
+        return value
 
 
 class CoinbaseRule1(Exception):
@@ -1556,6 +1557,13 @@ class Block(object):
             )
 
     async def verify(self, extra_blocks=None):
+        previous = getcontext().prec
+        try:
+            return await self._verify(extra_blocks)
+        finally:
+            getcontext().prec = previous
+
+    async def _verify(self, extra_blocks=None):
         if extra_blocks is None:
             extra_blocks = []
         getcontext().prec = 8

@@ -22,7 +22,7 @@ backend file identifier so peers can discover and retrieve the object.
 """
 
 import re
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 from typing import List
 
 MAX_TITLE_LEN = 200
@@ -45,7 +45,10 @@ def normalize_price(value) -> str:
     try:
         if value == -0.0:
             value = 0
-        quantized = Decimal(str(value)).quantize(Decimal("0.00000000"))
+        text = str(value)
+        with localcontext() as ctx:
+            ctx.prec = max(28, len(text) + 8)
+            quantized = Decimal(text).quantize(Decimal("0.00000000"))
     except (InvalidOperation, ValueError, TypeError):
         raise ValueError("price must be a number")
     if quantized < 0:

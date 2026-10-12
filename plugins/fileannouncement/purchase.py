@@ -16,7 +16,7 @@ import hashlib
 import hmac
 import secrets
 import time
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 
 INVOICES = "ppv_invoices"
 INVOICE_TTL = 3600
@@ -25,9 +25,10 @@ ACCESS_TTL = 12 * 3600
 
 def _amount(value) -> Decimal:
     try:
-        return Decimal(str(value if value is not None else 0)).quantize(
-            Decimal("0.00000000")
-        )
+        text = str(value if value is not None else 0)
+        with localcontext() as ctx:
+            ctx.prec = max(28, len(text) + 8)
+            return Decimal(text).quantize(Decimal("0.00000000"))
     except (InvalidOperation, ValueError, TypeError):
         return Decimal("0")
 
@@ -62,8 +63,11 @@ def payer_matches(txn: dict, payer_ids) -> bool:
 
 def invoice_amount(price: str, jitter: int) -> str:
     base = _amount(price)
-    extra = Decimal(int(jitter)) / Decimal(100000000)
-    return f"{(base + extra):.8f}"
+    with localcontext() as ctx:
+        ctx.prec = 28
+        extra = Decimal(int(jitter)) / Decimal(100000000)
+        total = base + extra
+    return f"{total:.8f}"
 
 
 def new_invoice_amount(price: str) -> str:
@@ -325,7 +329,9 @@ async def claim_unique_invoice_payment(
     pay_to = (pay_to or "").strip()
     announcement_id = (announcement_id or "").strip()
     floor = _amount(price)
-    ceiling = floor + Decimal("0.00999999")
+    with localcontext() as ctx:
+        ctx.prec = 28
+        ceiling = floor + Decimal("0.00999999")
     if not pay_to or not announcement_id or floor <= 0:
         return None
     found = {}
