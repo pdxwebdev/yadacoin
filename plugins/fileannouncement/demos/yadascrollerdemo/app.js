@@ -113,6 +113,7 @@
   const buyClose = document.getElementById("buy-close");
   const buyCheck = document.getElementById("buy-check");
   const buyNode = document.getElementById("buy-node");
+  let buyItem = null;
   const railReport = document.getElementById("rail-report");
   const giftDlg = document.getElementById("gift-dlg");
   const giftTo = document.getElementById("gift-to");
@@ -1643,6 +1644,7 @@
   }
 
   async function openBuy(item) {
+    buyItem = item || null;
     const price = itemPrice(item);
     const address = creatorAddress(item);
     if (!price || !address) {
@@ -1709,7 +1711,7 @@
     else buyDlg.removeAttribute("open");
   });
   buyCheck.addEventListener("click", async () => {
-    const item = activeItem();
+    const item = buyItem || activeItem();
     buyCheck.disabled = true;
     try {
       const res = await fetch(`${API_PURCHASE}/redeem`, {
@@ -1738,7 +1740,7 @@
   });
   if (buyNode) {
     buyNode.addEventListener("click", async () => {
-      const item = activeItem();
+      const item = buyItem || activeItem();
       buyNode.disabled = true;
       try {
         await payFromNode(item);
