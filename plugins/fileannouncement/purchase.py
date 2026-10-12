@@ -109,26 +109,41 @@ def access_token_ok(config, announcement_id: str, token: str) -> bool:
     return hmac.compare_digest(expected, f"{exp}.{sig}")
 
 
-async def find_payment_from_key(config, pay_to: str, min_price: str, public_key: str):
-    public_key = (public_key or "").strip()
-    if not public_key:
-        return None
-    pay_to = (pay_to or "").strip()
+async def _payment_txns(config, pay_to: str):
+    """Yield mempool txns first, then confirmed ones. A broadcast spend can unlock playback."""
+    try:
+        cursor = config.mongo.async_db.miner_transactions.find(
+            {"outputs.to": pay_to},
+            {"_id": 0},
+        )
+        async for txn in cursor:
+            if isinstance(txn, dict):
+                yield txn
+    except Exception:
+        pass
     try:
         cursor = config.mongo.async_db.blocks.find(
             {"transactions.outputs.to": pay_to},
             {"transactions": 1, "index": 1},
         ).sort("index", -1)
+        async for block in cursor:
+            for txn in block.get("transactions") or []:
+                if isinstance(txn, dict):
+                    yield txn
     except Exception:
+        return
+
+
+async def find_payment_from_key(config, pay_to: str, min_price: str, public_key: str):
+    public_key = (public_key or "").strip()
+    if not public_key:
         return None
-    async for block in cursor:
-        for txn in block.get("transactions") or []:
-            if not isinstance(txn, dict):
-                continue
-            if str(txn.get("public_key") or "") != public_key:
-                continue
-            if output_pays(txn, pay_to, min_price):
-                return txn
+    pay_to = (pay_to or "").strip()
+    async for txn in _payment_txns(config, pay_to):
+        if str(txn.get("public_key") or "") != public_key:
+            continue
+        if output_pays(txn, pay_to, min_price):
+            return txn
     return None
 
 
@@ -137,17 +152,9 @@ async def find_exact_payment(config, pay_to: str, amount: str):
     amount = (amount or "").strip()
     if not pay_to or not amount:
         return None
-    try:
-        cursor = config.mongo.async_db.blocks.find(
-            {"transactions.outputs.to": pay_to},
-            {"transactions": 1, "index": 1},
-        ).sort("index", -1)
-    except Exception:
-        return None
-    async for block in cursor:
-        for txn in block.get("transactions") or []:
-            if isinstance(txn, dict) and output_equals(txn, pay_to, amount):
-                return txn
+    async for txn in _payment_txns(config, pay_to):
+        if output_equals(txn, pay_to, amount):
+            return txn
     return None
 
 
@@ -274,21 +281,11 @@ def view_grant_ok(announcement_id: str, grant: dict, payment: dict) -> bool:
 
 
 async def find_confirmed_payment(config, pay_to: str, min_price: str, payer_ids):
-    """Return the newest confirmed payment txn, or None. Mempool does not count."""
+    """Return a matching payment from the mempool or a block."""
     pay_to = (pay_to or "").strip()
     if not pay_to or not min_price:
         return None
-    try:
-        cursor = config.mongo.async_db.blocks.find(
-            {"transactions.outputs.to": pay_to},
-            {"transactions": 1, "index": 1},
-        ).sort("index", -1)
-    except Exception:
-        return None
-    async for block in cursor:
-        for txn in block.get("transactions") or []:
-            if not isinstance(txn, dict):
-                continue
-            if output_pays(txn, pay_to, min_price) and payer_matches(txn, payer_ids):
-                return txn
+    async for txn in _payment_txns(config, pay_to):
+        if output_pays(txn, pay_to, min_price) and payer_matches(txn, payer_ids):
+            return txn
     return None

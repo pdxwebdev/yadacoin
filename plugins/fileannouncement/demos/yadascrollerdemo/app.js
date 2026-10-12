@@ -1654,7 +1654,7 @@
     buyPrice.textContent = `${price} YDA`;
     buyAddress.textContent = address;
     buyQr.innerHTML = "";
-    buyNote.textContent = "Scan with an external wallet and pay the exact amount shown. One confirmation, then I've paid.";
+    buyNote.textContent = "Scan with an external wallet and pay the exact amount shown. Once it is broadcast, I've paid.";
     if (buyNode) buyNode.hidden = true;
     if (typeof QRCode === "function") {
       new QRCode(buyQr, {
@@ -1700,7 +1700,7 @@
     if (!res.ok || data.error) {
       throw new Error(data.error || "this node wallet could not pay");
     }
-    buyNote.textContent = "Payment sent from this node. Waiting for a confirmation…";
+    buyNote.textContent = "Payment sent from this node. Checking the mempool…";
   }
 
   railBuy.addEventListener("click", () => openBuy(activeItem()));
@@ -1744,7 +1744,7 @@
         await payFromNode(item);
         const data = await checkPurchase(item);
         if (!data.paid) {
-          buyNote.textContent = "Sent. Waiting for one confirmation from this identity.";
+          buyNote.textContent = "Sent. Not in the mempool yet.";
           return;
         }
         unlockPaid(item);
