@@ -599,6 +599,14 @@ async def create_file(
             )
             raise DuplicateFileAnnouncementError(f"this user already announced {label}")
         if price:
+            _emit_progress(on_progress, {"phase": "sia"})
+            uploaded = await backend.upload(
+                content,
+                filename=filename,
+                mime_type=mime_type,
+                metadata={"title": title, "description": description},
+                on_progress=on_progress,
+            )
             file_id = content_hash
             size = len(content)
             share_url = ""

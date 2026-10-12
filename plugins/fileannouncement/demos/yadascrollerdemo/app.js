@@ -534,6 +534,10 @@
     );
     video.addEventListener("click", () => {
       if (!slide.isConnected) return;
+      if (itemPrice(item) && !item.price_unlocked) {
+        openBuy(item);
+        return;
+      }
       if (video.paused) video.play().catch(() => {});
       else video.pause();
     });
@@ -2283,6 +2287,10 @@
   }
 
   function openPlayer(item) {
+    if (itemPrice(item) && !item.price_unlocked) {
+      openBuy(item);
+      return;
+    }
     const url = streamUrl(item);
     if (!url) {
       showStatus("Playback isn't available for this file", 2500);
@@ -2307,6 +2315,10 @@
   }
 
   function openPhoto(item) {
+    if (itemPrice(item) && !item.price_unlocked) {
+      openBuy(item);
+      return;
+    }
     const src = photoSrc(item);
     if (!src) {
       showStatus("Photo isn't available", 2500);
