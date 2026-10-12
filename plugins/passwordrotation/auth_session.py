@@ -8,6 +8,7 @@ The RP polls until approved/denied/expired.
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import re
 import secrets
@@ -33,6 +34,15 @@ RATE_MAX_PER_IP = 40
 
 _rate_user: dict[str, list[float]] = {}
 _rate_ip: dict[str, list[float]] = {}
+_PROBE_LIVE_TTL = 90.0
+_PROBE_DEAD_TTL = 30.0
+_HOME_RESOLVE_TTL = 120.0
+_HOME_MISS_TTL = 20.0
+_PROBE_TIMEOUT = 1.5
+_PROBE_BATCH = 6
+_TESTED_FAILOVER_CAP = 8
+_probe_cache: dict[str, tuple[float, bool]] = {}
+_home_resolve_cache: dict[str, tuple[float, dict]] = {}
 
 _SITE_RE = re.compile(
     r"^(https?://[a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;=%-]+|[a-zA-Z][a-zA-Z0-9+.-]*://[^\s]+)$"
@@ -459,29 +469,152 @@ def _sp_candidate_list(username_signature: str) -> list:
     return ordered
 
 
-async def probe_node_http_alive(base: str, timeout: float = 3.0) -> bool:
-    """True if base answers a cheap HTTP GET (get-status or password home)."""
+def _probe_cached(base: str):
+    hit = _probe_cache.get((base or "").lower())
+    if not hit:
+        return None
+    expires, ok = hit
+    if expires <= _now():
+        _probe_cache.pop((base or "").lower(), None)
+        return None
+    return ok
+
+
+def _probe_store(base: str, ok: bool) -> None:
+    ttl = _PROBE_LIVE_TTL if ok else _PROBE_DEAD_TTL
+    _probe_cache[(base or "").lower()] = (_now() + ttl, ok)
+
+
+def forget_password_home(username_signature: str = "", base: str = "") -> None:
+    """Drop a cached home pick so the next sign-in re-probes."""
+    sig = (username_signature or "").strip()
+    if not sig:
+        _home_resolve_cache.clear()
+    else:
+        for key in list(_home_resolve_cache):
+            if key[0] == sig:
+                _home_resolve_cache.pop(key, None)
+    dead = normalize_http_base(base or "")
+    if dead:
+        _probe_store(dead, False)
+
+
+def cached_password_home_base(username_signature: str, handler=None) -> str:
+    """Last live home for this identity, if the cache is still fresh. No probe."""
+    sig = (username_signature or "").strip()
+    if not sig:
+        return ""
+    this = this_node_http_base(handler)
+    hit = _home_resolve_cache.get((sig, (this or "").lower()))
+    if not hit or hit[0] <= _now():
+        return ""
+    home = hit[1] or {}
+    if home.get("is_local"):
+        return ""
+    return str(home.get("node_http_base") or "")
+
+
+async def _http_probe(base: str, path: str, timeout: float) -> str:
+    """ok = answers, down = connect failure, miss = HTTP error."""
     from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 
-    b = normalize_http_base(base or "")
-    if not b:
-        return False
-    client = AsyncHTTPClient()
-    for path in ("/get-status", "/password-rotation/theme.json", "/"):
-        try:
-            req = HTTPRequest(
-                url=b + path,
+    try:
+        resp = await AsyncHTTPClient().fetch(
+            HTTPRequest(
+                url=base + path,
                 method="GET",
                 connect_timeout=timeout,
                 request_timeout=timeout,
                 validate_cert=False,
+            ),
+            raise_error=False,
+        )
+        code = int(resp.code)
+    except Exception:
+        return "down"
+    if 200 <= code < 500:
+        return "ok"
+    return "miss"
+
+
+async def probe_node_http_alive(base: str, timeout: float = _PROBE_TIMEOUT) -> bool:
+    """True if base answers a cheap HTTP GET. Dead hosts fail in one timeout."""
+    b = normalize_http_base(base or "")
+    if not b:
+        return False
+    cached = _probe_cached(b)
+    if cached is not None:
+        return cached
+    status = await _http_probe(b, "/get-status", timeout)
+    if status == "miss":
+        status = await _http_probe(b, "/password-rotation/theme.json", timeout)
+    ok = status == "ok"
+    _probe_store(b, ok)
+    return ok
+
+
+async def _already_live() -> bool:
+    return True
+
+
+def _abandon(tasks) -> None:
+    async def _run():
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    try:
+        asyncio.get_running_loop().create_task(_run())
+    except RuntimeError:
+        pass
+
+
+async def _first_live(ordered: list) -> int:
+    """Index of the highest-priority live target, probing a batch at a time.
+
+    Within a batch, return as soon as every higher-priority probe has failed
+    and one has succeeded. Later batches are not started.
+    """
+    for start in range(0, len(ordered), _PROBE_BATCH):
+        batch = ordered[start : start + _PROBE_BATCH]
+        tasks = [
+            asyncio.create_task(
+                probe_node_http_alive(item["target"])
+                if not item.get("is_local")
+                else _already_live()
             )
-            resp = await client.fetch(req, raise_error=False)
-            if 200 <= int(resp.code) < 500:
-                return True
-        except Exception:
-            continue
-    return False
+            for item in batch
+        ]
+        results = [None] * len(tasks)
+        pending = set(tasks)
+        found = None
+        try:
+            while pending:
+                done, pending = await asyncio.wait(
+                    pending, return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in done:
+                    results[tasks.index(task)] = bool(task.result())
+                for i, ok in enumerate(results):
+                    if ok is None:
+                        break
+                    if ok:
+                        found = start + i
+                        break
+                if found is not None or all(ok is not None for ok in results):
+                    break
+        finally:
+            if found is not None:
+                _abandon(tasks)
+            else:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+        if found is not None:
+            return found
+    return -1
 
 
 def resolve_password_home_sp(username_signature: str, handler=None) -> dict:
@@ -554,13 +687,44 @@ async def _tested_node_http_bases() -> list:
     return [b for _, b in out]
 
 
-async def resolve_password_home_sp_live(username_signature: str, handler=None) -> dict:
-    """Deterministic SP ring + tested_nodes with HTTP liveness failover.
+def _home_cache_key(username_signature: str, handler) -> tuple:
+    this = this_node_http_base(handler) or ""
+    return ((username_signature or "").strip(), this.lower())
 
-    Walks config SP directory from the stable modular index, then live nodes
-    from tested_nodes. Skips pools and hosts that do not answer. Falls back to
-    this node when every remote candidate is dead.
+
+def _home_from_cache(username_signature: str, handler):
+    hit = _home_resolve_cache.get(_home_cache_key(username_signature, handler))
+    if not hit or hit[0] <= _now():
+        return None
+    return _copy_home(hit[1])
+
+
+def _copy_home(home: dict) -> dict:
+    stored = dict(home)
+    stored["tried"] = list(home.get("tried") or [])
+    return stored
+
+
+def _store_home(username_signature: str, handler, home: dict, ttl: float) -> dict:
+    stored = _copy_home(home)
+    _home_resolve_cache[_home_cache_key(username_signature, handler)] = (
+        _now() + ttl,
+        stored,
+    )
+    return _copy_home(stored)
+
+
+async def resolve_password_home_sp_live(username_signature: str, handler=None) -> dict:
+    """Deterministic SP ring + tested_nodes with parallel HTTP liveness failover.
+
+    Probes a small batch at a time and returns the highest-priority live host
+    without waiting on lower-priority nodes. Cached for a couple of minutes.
+    Falls back to this node when every remote candidate is dead.
     """
+    cached = _home_from_cache(username_signature, handler)
+    if cached:
+        return cached
+
     this = this_node_http_base(handler)
     local = {
         "node_http_base": this,
@@ -571,64 +735,82 @@ async def resolve_password_home_sp_live(username_signature: str, handler=None) -
         "message": "no live service provider — using this node",
         "tried": [],
     }
-    candidates = _sp_candidate_list(username_signature)
-    tried = []
-    seen_bases = set()
+    ordered = []
+    seen = set()
 
-    async def _try_base(target: str, *, host=None, sp=None, source_tag: str):
-        nonlocal tried
+    def _push(target: str, *, host=None, sp=None, source_tag: str) -> None:
         t = normalize_http_base(target or "")
-        if not t or t.lower() in seen_bases:
-            return None
-        seen_bases.add(t.lower())
-        is_local = bool(this) and is_same_home(t, this)
-        if is_local or await probe_node_http_alive(t):
-            sp_id = getattr(sp, "identity", None) if sp is not None else None
-            return {
-                "node_http_base": this if is_local else t,
-                "source": source_tag if not tried else f"{source_tag}_failover",
-                "is_local": is_local,
-                "sp_username_signature": (
-                    sp_id.username_signature if sp_id is not None else None
-                ),
-                "sp_host": host or None,
-                "message": (
-                    None
-                    if not tried
-                    else f"primary SP unreachable; using failover after {len(tried)} dead"
-                ),
-                "tried": list(tried),
+        if not t or t.lower() in seen:
+            return
+        seen.add(t.lower())
+        ordered.append(
+            {
+                "target": t,
+                "host": host,
+                "sp": sp,
+                "source_tag": source_tag,
+                "is_local": bool(this) and is_same_home(t, this),
             }
-        tried.append(t)
-        return None
+        )
 
-    for sp in candidates:
+    for sp in _sp_candidate_list(username_signature):
         host = getattr(sp, "host", None) or getattr(sp, "http_host", None) or ""
         base = peer_http_base(sp)
         if not base:
             continue
         is_local = this_node_matches_sp(sp, handler)
-        target = this if is_local else base
-        hit = await _try_base(
-            target,
+        _push(
+            this if is_local else base,
             host=host,
             sp=sp,
             source_tag="deterministic",
         )
-        if hit:
-            return hit
 
-    # Live NodesTester snapshot (often fresher than static config directory)
+    tested = 0
     for base in await _tested_node_http_bases():
-        hit = await _try_base(base, host=base, source_tag="tested_nodes")
-        if hit:
-            return hit
+        before = len(ordered)
+        _push(base, host=base, source_tag="tested_nodes")
+        if len(ordered) > before:
+            tested += 1
+            if tested >= _TESTED_FAILOVER_CAP:
+                break
 
-    local["tried"] = tried
-    local[
-        "message"
-    ] = f"all {len(tried)} candidate SP(s) unreachable — using this node as home"
-    return local
+    if not ordered:
+        return _store_home(username_signature, handler, local, _HOME_MISS_TTL)
+
+    idx = await _first_live(ordered)
+    if idx < 0:
+        tried = [item["target"] for item in ordered if not item["is_local"]]
+        local["tried"] = tried
+        local[
+            "message"
+        ] = f"all {len(tried)} candidate SP(s) unreachable — using this node as home"
+        return _store_home(username_signature, handler, local, _HOME_MISS_TTL)
+
+    pick = ordered[idx]
+    tried = [
+        item["target"]
+        for item in ordered[:idx]
+        if not item["is_local"] and item["target"] != pick["target"]
+    ]
+    sp = pick["sp"]
+    sp_id = getattr(sp, "identity", None) if sp is not None else None
+    home = {
+        "node_http_base": this if pick["is_local"] else pick["target"],
+        "source": pick["source_tag"] if not tried else f"{pick['source_tag']}_failover",
+        "is_local": pick["is_local"],
+        "sp_username_signature": (
+            sp_id.username_signature if sp_id is not None else None
+        ),
+        "sp_host": pick["host"] or None,
+        "message": (
+            None
+            if not tried
+            else f"primary SP unreachable; using failover after {len(tried)} dead"
+        ),
+        "tried": tried,
+    }
+    return _store_home(username_signature, handler, home, _HOME_RESOLVE_TTL)
 
 
 async def resolve_password_route(username: str, handler=None) -> dict:
@@ -747,30 +929,41 @@ def is_same_home(home_url: str, this_base: str) -> bool:
     return a.lower() == b.lower()
 
 
-async def password_home_bases(username_signature: str, handler=None) -> list:
+async def password_home_bases(
+    username_signature: str, handler=None, tested_limit: int = _TESTED_FAILOVER_CAP
+) -> list:
     """HTTP bases that may hold a password-home record for this identity.
 
     The live pick can move when an SP drops. Checkout tokens already issued
     stay on the SP that was live at the time, so callers retry the ring.
+    Tested-node failover is capped; a full topology walk is not required.
     """
     this = this_node_http_base(handler)
     seen = set()
     out = []
 
-    def add(base: str) -> None:
+    def add(base: str) -> bool:
         normalized = normalize_http_base(base or "")
         if not normalized:
-            return
+            return False
         if this and is_same_home(normalized, this):
-            return
+            return False
         key = normalized.lower()
         if key in seen:
-            return
+            return False
         seen.add(key)
         out.append(normalized)
+        return True
 
+    cached = cached_password_home_base(username_signature, handler)
+    if cached:
+        add(cached)
     for sp in _sp_candidate_list(username_signature or ""):
         add(peer_http_base(sp))
+    tested = 0
     for base in await _tested_node_http_bases():
-        add(base)
+        if add(base):
+            tested += 1
+            if tested_limit and tested >= tested_limit:
+                break
     return out

@@ -28,6 +28,9 @@ from yadacoin.core.keyeventlog import KeyEventLog
 from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.http.base import BaseHandler
 
+_TOPOLOGY_CACHE = {"at": 0.0, "payload": None}
+_TOPOLOGY_CACHE_TTL = 60.0
+
 
 class GetLatestBlockHandler(BaseHandler):
     async def get(self):
@@ -516,6 +519,15 @@ class GetNetworkTopologyHandler(BaseHandler):
             if light:
                 await self._json_data_light()
             else:
+                refresh = (self.get_query_argument("refresh", "") or "").lower() in (
+                    "1",
+                    "true",
+                    "yes",
+                )
+                cached = _TOPOLOGY_CACHE.get("payload")
+                age = time.time() - float(_TOPOLOGY_CACHE.get("at") or 0)
+                if cached and not refresh and age < _TOPOLOGY_CACHE_TTL:
+                    return self.render_as_json(cached)
                 await self._json_data()
         else:
             self.render("network_topology.html")
@@ -688,7 +700,8 @@ class GetNetworkTopologyHandler(BaseHandler):
 
         # ── 4. Fetch /get-status from each remote masternode-tier node ────────
         MASTERNODE_TYPES = {"seed", "seed_gateway", "service_provider"}
-        timeout = aiohttp.ClientTimeout(total=5)
+        timeout = aiohttp.ClientTimeout(total=2.5)
+        session = aiohttp.ClientSession(timeout=timeout)
 
         async def fetch_status(nid, n):
             proto = n["http_protocol"]
@@ -696,24 +709,23 @@ class GetNetworkTopologyHandler(BaseHandler):
             port = n["port"]
             url = f"{proto}://{host}:{port}/get-status"
             try:
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(url, ssl=False) as resp:
-                        if resp.status == 200:
-                            data = await resp.json(content_type=None)
-                            n["status"] = "online"
-                            n["height"] = data.get("height")
-                            n["uptime"] = data.get("uptime")
-                            n["network"] = data.get("network")
-                            n["inbound_peers"] = data.get("inbound_peers")
-                            n["outbound_peers"] = data.get("outbound_peers")
-                            if data.get("version"):
-                                n["node_version"] = data.get("version")
-                            if data.get("username"):
-                                n["username"] = data.get("username")
-                            if data.get("peer_type"):
-                                n["peer_type"] = data.get("peer_type")
-                        else:
-                            n["status"] = "degraded"
+                async with session.get(url, ssl=False) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        n["status"] = "online"
+                        n["height"] = data.get("height")
+                        n["uptime"] = data.get("uptime")
+                        n["network"] = data.get("network")
+                        n["inbound_peers"] = data.get("inbound_peers")
+                        n["outbound_peers"] = data.get("outbound_peers")
+                        if data.get("version"):
+                            n["node_version"] = data.get("version")
+                        if data.get("username"):
+                            n["username"] = data.get("username")
+                        if data.get("peer_type"):
+                            n["peer_type"] = data.get("peer_type")
+                    else:
+                        n["status"] = "degraded"
             except Exception:
                 n["status"] = "unreachable"
 
@@ -723,13 +735,12 @@ class GetNetworkTopologyHandler(BaseHandler):
             port = n["port"]
             url = f"{proto}://{host}:{port}/get-peers"
             try:
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(url, ssl=False) as resp:
-                        if resp.status == 200:
-                            data = await resp.json(content_type=None)
-                            inbound = data.get("inbound_peers", [])
-                            outbound = data.get("outbound_peers", [])
-                            return nid, inbound + outbound
+                async with session.get(url, ssl=False) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        inbound = data.get("inbound_peers", [])
+                        outbound = data.get("outbound_peers", [])
+                        return nid, inbound + outbound
             except Exception:
                 pass
             return nid, []
@@ -773,33 +784,33 @@ class GetNetworkTopologyHandler(BaseHandler):
         # returns the live value, so don't filter by peer_type here.
         frontier = {nid: n for nid, n in nodes_map.items() if not n.get("is_self")}
 
-        while frontier:
-            # Fetch /get-status and /get-peers for all nodes in the current frontier
-            await asyncio.gather(*[fetch_status(nid, n) for nid, n in frontier.items()])
-            peer_results = await asyncio.gather(
-                *[fetch_peers(nid, n) for nid, n in frontier.items()]
-            )
-            crawled.update(frontier.keys())
+        try:
+            while frontier:
+                # Status and peers share one session and run in the same wave.
+                status_tasks = [fetch_status(nid, n) for nid, n in frontier.items()]
+                peer_tasks = [fetch_peers(nid, n) for nid, n in frontier.items()]
+                gathered = await asyncio.gather(*status_tasks, *peer_tasks)
+                peer_results = gathered[len(status_tasks) :]
+                crawled.update(frontier.keys())
 
-            next_frontier = {}
-            for source_nid, peers in peer_results:
-                for p in peers:
-                    pid, ph, entry = make_node_entry(p)
-                    if not ph:
-                        continue
-                    # Add to nodes_map if not seen before
-                    if pid not in nodes_map:
-                        nodes_map[pid] = entry
-                    # If it's a masternode-tier node we haven't crawled yet, add to next frontier
-                    if (
-                        entry["peer_type"] in MASTERNODE_TYPES
-                        and pid not in crawled
-                        and pid not in next_frontier
-                    ):
-                        next_frontier[pid] = nodes_map[pid]
-                    edges.append({"source": source_nid, "target": pid})
-
-            frontier = next_frontier
+                next_frontier = {}
+                for source_nid, peers in peer_results:
+                    for p in peers:
+                        pid, ph, entry = make_node_entry(p)
+                        if not ph:
+                            continue
+                        if pid not in nodes_map:
+                            nodes_map[pid] = entry
+                        if (
+                            entry["peer_type"] in MASTERNODE_TYPES
+                            and pid not in crawled
+                            and pid not in next_frontier
+                        ):
+                            next_frontier[pid] = nodes_map[pid]
+                        edges.append({"source": source_nid, "target": pid})
+                frontier = next_frontier
+        finally:
+            await session.close()
 
         # ── 5. Add self edges from local /get-peers ───────────────────────────
         if hasattr(self.config, "peer"):
@@ -950,15 +961,16 @@ class GetNetworkTopologyHandler(BaseHandler):
             if e["source"] in known_ids and e["target"] in known_ids
         ]
 
-        return self.render_as_json(
-            {
-                "nodes": list(nodes_map.values()),
-                "edges": unique_edges,
-                "ontology": ontology,
-                "self_id": self_id,
-                "generated_at": time.time(),
-            }
-        )
+        payload = {
+            "nodes": list(nodes_map.values()),
+            "edges": unique_edges,
+            "ontology": ontology,
+            "self_id": self_id,
+            "generated_at": time.time(),
+        }
+        _TOPOLOGY_CACHE["at"] = payload["generated_at"]
+        _TOPOLOGY_CACHE["payload"] = payload
+        return self.render_as_json(payload)
 
 
 NODE_HANDLERS = [

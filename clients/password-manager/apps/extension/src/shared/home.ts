@@ -13,7 +13,9 @@ import {
 import { requestOriginAccess, toOriginPattern } from "./permissions.js";
 
 const homeCache = new Map<string, { base: string; at: number }>();
-const HOME_CACHE_MS = 60 * 1000;
+const HOME_CACHE_MS = 5 * 60 * 1000;
+/** Do not walk the full topology. One entry node resolves the home SP. */
+const TOPOLOGY_FAILOVER_CAP = 4;
 
 const chromeTopologyStore: TopologyCacheStore = {
   async get(key) {
@@ -50,43 +52,46 @@ async function hasAccess(baseUrl: string): Promise<boolean> {
 
 export async function probeNodeAlive(
   baseUrl: string,
-  timeoutMs = 3500
+  timeoutMs = 2000
 ): Promise<boolean> {
   const base = normalizeNodeBaseUrl(baseUrl);
   if (!base || isLoopback(base)) return false;
-  const paths = ["/get-status", "/password-rotation/theme.json"];
-  for (const path of paths) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    try {
-      const res = await fetch(base + path, {
-        method: "GET",
-        credentials: "omit",
-        signal: ctrl.signal,
-        headers: { Accept: "application/json" },
-      });
-      clearTimeout(timer);
-      if (res.status > 0 && res.status < 500) return true;
-    } catch {
-      clearTimeout(timer);
-    }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(base + "/get-status", {
+      method: "GET",
+      credentials: "omit",
+      signal: ctrl.signal,
+      headers: { Accept: "application/json" },
+    });
+    if (res.status > 0 && res.status < 500) return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
   }
   return false;
 }
 
+function pushUnique(out: string[], raw: string): void {
+  const n = normalizeNodeBaseUrl(raw);
+  if (!n || isLoopback(n) || out.includes(n)) return;
+  out.push(n);
+}
+
 /**
- * Entry hosts for home discovery: page origin, topology SPs, then well-known.
+ * Entry hosts only. The home SP is resolved by that node — do not walk
+ * every topology peer from the browser.
  */
 export async function entryCandidates(pageOrigin?: string): Promise<string[]> {
   const out: string[] = [];
-  const add = (u: string) => {
-    const n = normalizeNodeBaseUrl(u);
-    if (!n || isLoopback(n) || out.includes(n)) return;
-    out.push(n);
-  };
+  pushUnique(out, pageOrigin || "");
+  for (const e of TOPOLOGY_ENTRY_NODES) pushUnique(out, e);
+  return out;
+}
 
-  add(pageOrigin || "");
-
+async function topologyFailover(pageOrigin?: string): Promise<string[]> {
   try {
     const topo = await getNetworkTopologyCached(chromeTopologyStore, {
       entryNodes: [
@@ -94,13 +99,10 @@ export async function entryCandidates(pageOrigin?: string): Promise<string[]> {
         normalizeNodeBaseUrl(pageOrigin || ""),
       ].filter(Boolean),
     });
-    for (const b of topologyHttpBases(topo)) add(b);
+    return topologyHttpBases(topo).slice(0, TOPOLOGY_FAILOVER_CAP);
   } catch {
-    /* topology optional */
+    return [];
   }
-
-  for (const e of TOPOLOGY_ENTRY_NODES) add(e);
-  return out;
 }
 
 async function ensureAccess(
@@ -159,37 +161,58 @@ export async function resolveHomeApiBase(opts: {
   const entries = await entryCandidates(opts.pageOrigin);
   const cachedHome = normalizeNodeBaseUrl(opts.cachedHome || "");
 
+  const useEntry = async (entry: string): Promise<string | null> => {
+    if (!username) return entry;
+    const route = await resolvePasswordHome(entry, username);
+    if (!route.status) return accept(entry);
+    const primary = await accept(route.node_http_base);
+    if (primary) return primary;
+    for (const t of route.tried || []) {
+      dead.add(normalizeNodeBaseUrl(t).toLowerCase());
+    }
+    return (
+      (await accept(route.deterministic_node_http_base)) || (await accept(entry))
+    );
+  };
+
+  const permitted: string[] = [];
+  const needsPerm: string[] = [];
   for (const entry of entries) {
+    if (await hasAccess(entry)) permitted.push(entry);
+    else needsPerm.push(entry);
+  }
+  const livePermitted = (
+    await Promise.all(
+      permitted.map(async (entry) => ((await probeNodeAlive(entry)) ? entry : ""))
+    )
+  ).filter(Boolean);
+  for (const entry of livePermitted) {
     try {
-      if (!(await ensureAccess(entry, wantPerm))) continue;
-      if (!(await probeNodeAlive(entry))) {
-        dead.add(entry.toLowerCase());
-        continue;
+      const home = await useEntry(entry);
+      if (home) return home;
+    } catch {
+      /* next */
+    }
+  }
+  if (wantPerm) {
+    for (const entry of needsPerm) {
+      try {
+        if (!(await ensureAccess(entry, true))) continue;
+        if (!(await probeNodeAlive(entry))) continue;
+        const home = await useEntry(entry);
+        if (home) return home;
+      } catch {
+        /* next */
       }
+    }
+  }
 
-      if (!username) {
-        return entry;
-      }
-
-      const route = await resolvePasswordHome(entry, username);
-      if (!route.status) {
-        const asEntry = await accept(entry);
-        if (asEntry) return asEntry;
-        continue;
-      }
-
-      const primary = await accept(route.node_http_base);
-      if (primary) return primary;
-
-      for (const t of route.tried || []) {
-        dead.add(normalizeNodeBaseUrl(t).toLowerCase());
-      }
-
-      const det = await accept(route.deterministic_node_http_base);
-      if (det) return det;
-
-      const asEntry = await accept(entry);
-      if (asEntry) return asEntry;
+  for (const entry of await topologyFailover(opts.pageOrigin)) {
+    try {
+      if (!(await hasAccess(entry))) continue;
+      if (!(await probeNodeAlive(entry))) continue;
+      const home = await useEntry(entry);
+      if (home) return home;
     } catch {
       /* next */
     }

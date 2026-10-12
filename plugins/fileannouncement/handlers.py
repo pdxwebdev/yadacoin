@@ -1183,9 +1183,11 @@ class PublicStreamHandler(BaseHandler):
         )
         self.set_header(
             "Content-Disposition",
-            f'inline; filename="{safe_name}"'
-            if inline
-            else f'attachment; filename="{safe_name}"',
+            (
+                f'inline; filename="{safe_name}"'
+                if inline
+                else f'attachment; filename="{safe_name}"'
+            ),
         )
         length = end - start + 1
         if partial:
@@ -1437,34 +1439,6 @@ def _remember_invoice(handler, token: str) -> None:
     handler.set_secure_cookie(PPV_INVOICE_COOKIE, ",".join(tokens[-8:]), expires_days=7)
 
 
-async def _creator_home(handler, live) -> str:
-    username = str((live or {}).get("username") or "").strip().lstrip("@")
-    if not username:
-        owner = str((live or {}).get("owner") or "").strip()
-        if owner:
-            try:
-                names = await store.identity_usernames(handler.config)
-            except Exception:
-                names = {}
-            username = str(names.get(owner) or "").strip().lstrip("@")
-    if not username:
-        return ""
-    try:
-        from plugins.passwordrotation.auth_session import resolve_password_home_sp_live
-        from yadacoin.core.identityannouncement import IdentityAnnouncement
-
-        found = await IdentityAnnouncement.get_by_username(username)
-        sig = ((found or {}).get("identity") or {}).get("username_signature") or ""
-        if not sig:
-            return ""
-        home = await resolve_password_home_sp_live(sig, handler)
-    except Exception:
-        return ""
-    if not home or home.get("is_local"):
-        return ""
-    return str(home.get("node_http_base") or "").rstrip("/")
-
-
 async def _creator_username_signature(handler, live) -> str:
     username = str((live or {}).get("username") or "").strip().lstrip("@")
     if not username:
@@ -1486,6 +1460,28 @@ async def _creator_username_signature(handler, live) -> str:
     return str(((found or {}).get("identity") or {}).get("username_signature") or "")
 
 
+_STREAM_HOME = {}
+_STREAM_HOME_TTL = 600.0
+
+
+def _stream_home_get(transaction_id: str) -> str:
+    hit = _STREAM_HOME.get(transaction_id or "")
+    if not hit or hit[1] <= time.time():
+        _STREAM_HOME.pop(transaction_id or "", None)
+        return ""
+    return hit[0]
+
+
+def _stream_home_put(transaction_id: str, base: str) -> None:
+    base = (base or "").rstrip("/")
+    if transaction_id and base:
+        _STREAM_HOME[transaction_id] = (base, time.time() + _STREAM_HOME_TTL)
+
+
+def _stream_home_drop(transaction_id: str) -> None:
+    _STREAM_HOME.pop(transaction_id or "", None)
+
+
 async def _purchase_homes(handler, live) -> list:
     homes = []
     seen = set()
@@ -1500,12 +1496,11 @@ async def _purchase_homes(handler, live) -> list:
         seen.add(key)
         homes.append(base)
 
-    add(await _creator_home(handler, live))
     try:
         from plugins.passwordrotation.auth_session import password_home_bases
 
         sig = await _creator_username_signature(handler, live)
-        for base in await password_home_bases(sig, handler):
+        for base in await password_home_bases(sig, handler, tested_limit=6):
             add(base)
     except Exception:
         pass
@@ -1958,50 +1953,117 @@ class PublicPurchaseStreamHandler(BaseHandler):
         self.finish()
         return True
 
-    async def _proxy_homes(self, transaction_id, payment_id):
-        from tornado.httpclient import AsyncHTTPClient, HTTPClientError
+    def _write_proxied(self, resp):
+        self.set_status(resp.code)
+        for name in (
+            "Content-Type",
+            "Content-Length",
+            "Content-Range",
+            "Accept-Ranges",
+        ):
+            value = resp.headers.get(name)
+            if value:
+                self.set_header(name, value)
+        self.write(resp.body)
+        self.finish()
 
-        live = await store.get_live_by_transaction_id(self.config, transaction_id)
-        homes = await _purchase_homes(self, live)
+    async def _fetch_purchase_stream(
+        self, home, transaction_id, payment_id, probe=False
+    ):
+        from tornado.httpclient import AsyncHTTPClient, HTTPClientError, HTTPRequest
 
-        async def fetch(home):
-            url = (
-                home.rstrip("/")
-                + "/file-announcements/api/v1/public/purchase/stream/"
-                + quote(transaction_id, safe="")
-                + "?payment_id="
-                + quote(payment_id, safe="")
-            )
-            headers = {"X-Yada-Ppv-Direct": "1"}
+        url = (
+            home.rstrip("/")
+            + "/file-announcements/api/v1/public/purchase/stream/"
+            + quote(transaction_id, safe="")
+            + "?payment_id="
+            + quote(payment_id, safe="")
+        )
+        headers = {"X-Yada-Ppv-Direct": "1"}
+        if probe:
+            headers["Range"] = "bytes=0-0"
+            request_timeout = 4
+        else:
             range_header = self.request.headers.get("Range", "")
             if range_header:
                 headers["Range"] = range_header
-            try:
-                return await AsyncHTTPClient().fetch(
-                    url, headers=headers, request_timeout=25
+            request_timeout = 25
+        try:
+            return await AsyncHTTPClient().fetch(
+                HTTPRequest(
+                    url,
+                    headers=headers,
+                    connect_timeout=2,
+                    request_timeout=request_timeout,
                 )
-            except (HTTPClientError, Exception):
-                return None
+            )
+        except (HTTPClientError, Exception):
+            return None
 
-        results = await asyncio.gather(*[fetch(home) for home in homes])
-        for resp in results:
-            if resp is None or resp.code >= 400:
-                continue
-            self.set_status(resp.code)
-            for name in (
-                "Content-Type",
-                "Content-Length",
-                "Content-Range",
-                "Accept-Ranges",
-            ):
-                value = resp.headers.get(name)
-                if value:
-                    self.set_header(name, value)
-            self.write(resp.body)
-            self.finish()
-            return
-        self.set_status(404)
-        self.finish("file not found")
+    async def _first_stream_home(self, homes, transaction_id, payment_id):
+        tasks = [
+            asyncio.create_task(
+                self._fetch_purchase_stream(
+                    home, transaction_id, payment_id, probe=True
+                )
+            )
+            for home in homes
+        ]
+        pending = set(tasks)
+        found = ""
+        try:
+            while pending and not found:
+                done, pending = await asyncio.wait(
+                    pending, return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in done:
+                    resp = task.result()
+                    if resp is None or resp.code >= 400:
+                        continue
+                    found = homes[tasks.index(task)]
+                    break
+        finally:
+            if found:
+
+                async def _drop():
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+
+                asyncio.get_running_loop().create_task(_drop())
+            else:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+        return found
+
+    async def _proxy_homes(self, transaction_id, payment_id):
+        cached = _stream_home_get(transaction_id)
+        if cached:
+            resp = await self._fetch_purchase_stream(cached, transaction_id, payment_id)
+            if resp is not None and resp.code < 400:
+                _stream_home_put(transaction_id, cached)
+                return self._write_proxied(resp)
+            _stream_home_drop(transaction_id)
+
+        live = await store.get_live_by_transaction_id(self.config, transaction_id)
+        homes = [
+            home
+            for home in await _purchase_homes(self, live)
+            if home.rstrip("/") != (cached or "").rstrip("/")
+        ][:8]
+        home = await self._first_stream_home(homes, transaction_id, payment_id)
+        if not home:
+            self.set_status(404)
+            return self.finish("file not found")
+        resp = await self._fetch_purchase_stream(home, transaction_id, payment_id)
+        if resp is None or resp.code >= 400:
+            self.set_status(404)
+            return self.finish("file not found")
+        _stream_home_put(transaction_id, home)
+        return self._write_proxied(resp)
 
     async def _proxy_creator(
         self, home, transaction_id, access, payment, payment_id=""

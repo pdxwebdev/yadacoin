@@ -765,6 +765,7 @@ class PasswordAuthSessionCreateHandler(BaseHandler):
                 # else fall through to local
             except Exception:
                 pass
+            asess.forget_password_home(username_signature, home_url)
             home_url = this_base
             is_local = True
 
