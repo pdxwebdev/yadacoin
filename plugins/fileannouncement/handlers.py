@@ -310,6 +310,26 @@ class FileAnnouncementDashboardHandler(BaseFileAnnouncementHandler):
 
 
 class FileListHandler(BaseFileAnnouncementHandler):
+    def initialize(self):
+        super().initialize()
+        self._upload_aborted = False
+
+    def on_connection_close(self):
+        self._upload_aborted = True
+        super().on_connection_close()
+
+    def _upload_cancelled(self):
+        if self._upload_aborted:
+            return True
+        try:
+            stream = self.request.connection.stream
+            closed = stream is not None and stream.closed()
+        except Exception:
+            return False
+        if closed:
+            self._upload_aborted = True
+        return bool(closed)
+
     async def get(self):
         query = self.get_query_argument("q", "")
         status = self.get_query_argument("status", "")
@@ -401,6 +421,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
                     if tracked
                     else None
                 ),
+                cancelled=self._upload_cancelled,
             )
         except DuplicateFileAnnouncementError as exc:
             if tracked:

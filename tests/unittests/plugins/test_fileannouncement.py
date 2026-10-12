@@ -402,6 +402,71 @@ class TestFileAnnouncementService(AsyncTestCase):
         self.assertIn("already announced", str(ctx.exception))
         generate.assert_not_called()
 
+    async def test_create_file_does_not_announce_when_upload_aborted(self):
+        from plugins.fileannouncement import service
+
+        config = MagicMock()
+        gate = {"abort": False}
+
+        class Backend:
+            async def upload(
+                self,
+                content,
+                filename=None,
+                mime_type=None,
+                metadata=None,
+                on_progress=None,
+            ):
+                gate["abort"] = True
+                return {
+                    "file_id": "fid",
+                    "size": len(content),
+                    "share_url": "share",
+                }
+
+        with patch.object(
+            service.store, "get_settings", AsyncMock(return_value={"backend": "memory"})
+        ), patch.object(service, "get_backend", return_value=Backend()), patch.object(
+            service.store, "add_history", AsyncMock(return_value={})
+        ), patch.object(
+            service.store, "find_same_user_duplicate", AsyncMock(return_value=None)
+        ), patch.object(
+            service, "_operator_id", AsyncMock(return_value="user-a")
+        ), patch.object(
+            service, "_generate_txn", AsyncMock()
+        ) as generate, patch.object(
+            service, "_broadcast", AsyncMock()
+        ) as broadcast:
+            with self.assertRaises(service.FileAnnouncementServiceError) as ctx:
+                await service.create_file(
+                    config,
+                    title="Clip",
+                    content=b"video",
+                    filename="clip.mp4",
+                    mime_type="video/mp4",
+                    backend_name="memory",
+                    cancelled=lambda: gate["abort"],
+                )
+        self.assertIn("aborted", str(ctx.exception))
+        generate.assert_not_called()
+        broadcast.assert_not_called()
+
+    def test_connection_close_cancels_upload(self):
+        from plugins.fileannouncement.handlers import FileListHandler
+
+        handler = FileListHandler.__new__(FileListHandler)
+        handler._upload_aborted = False
+        stream = MagicMock()
+        stream.closed.return_value = False
+        handler.request = MagicMock()
+        handler.request.connection.stream = stream
+        self.assertFalse(handler._upload_cancelled())
+        handler.on_connection_close()
+        self.assertTrue(handler._upload_cancelled())
+        stream.closed.return_value = True
+        handler._upload_aborted = False
+        self.assertTrue(handler._upload_cancelled())
+
 
 class TestFileAnnouncementKEL(AsyncTestCase):
     async def test_generate_txn_requires_kel(self):

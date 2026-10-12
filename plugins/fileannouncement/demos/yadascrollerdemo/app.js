@@ -142,6 +142,8 @@
   let composeLocked = false;
   let composePoll = null;
   let composeGen = 0;
+  let composeReq = 0;
+  let composeXhr = null;
   let composeTypeApplied = null;
   let composeAutoTitle = "";
   let muted = true;
@@ -1158,9 +1160,25 @@
     }
   }
 
+  function abortError() {
+    const err = new Error("upload aborted");
+    err.aborted = true;
+    return err;
+  }
+
+  function abortComposeUpload() {
+    if (!composeBusy && !composeXhr) return;
+    composeReq += 1;
+    const xhr = composeXhr;
+    composeXhr = null;
+    if (xhr && xhr.readyState !== 4) xhr.abort();
+    stopComposePoll();
+  }
+
   function postForm(url, fd, onProgress) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
+      composeXhr = xhr;
       xhr.open("POST", url);
       xhr.withCredentials = true;
       xhr.upload.onprogress = (ev) => {
@@ -1171,7 +1189,11 @@
       xhr.upload.onload = () => {
         if (onProgress) onProgress(-1, -1);
       };
+      const finish = () => {
+        if (composeXhr === xhr) composeXhr = null;
+      };
       xhr.onload = () => {
+        finish();
         let data = {};
         try {
           data = JSON.parse(xhr.responseText || "{}");
@@ -1190,7 +1212,14 @@
         }
         resolve(data);
       };
-      xhr.onerror = () => reject(new Error("upload failed"));
+      xhr.onerror = () => {
+        finish();
+        reject(new Error("upload failed"));
+      };
+      xhr.onabort = () => {
+        finish();
+        reject(abortError());
+      };
       xhr.send(fd);
     });
   }
@@ -1364,6 +1393,7 @@
     const video = hasFile && isVideoFile(file);
     const uploadId = newUploadId();
     fd.set("upload_id", uploadId);
+    const req = ++composeReq;
     composeBusy = true;
     syncComposeControls();
     setComposeMsg("");
@@ -1379,6 +1409,7 @@
         const thumb = await captureVideoThumbnail(file);
         if (thumb) fd.set("thumbnail", thumb, "thumbnail.jpg");
       }
+      if (req !== composeReq) throw abortError();
       showComposeProgress(hasFile ? 0 : null, hasFile ? "Sending to node 0%" : "Announcing…");
       const data = await postForm(API_FILES, fd, (loaded, total) => {
         if (loaded < 0) {
@@ -1389,6 +1420,7 @@
         const pct = total ? Math.round((loaded / total) * 100) : 0;
         showComposeProgress(pct, `Sending to node ${pct}%`);
       });
+      if (req !== composeReq) throw abortError();
       announced = true;
       stopComposePoll();
       showComposeProgress(100, "Done");
@@ -2729,7 +2761,10 @@
     if (viewName === "me") loadOwnProfile();
     if (viewName === "badges") loadBadges(route);
     if (viewName === "upload") openCompose();
-    else stopComposePoll();
+    else {
+      if (composeBusy) abortComposeUpload();
+      stopComposePoll();
+    }
   }
 
   let ownProfileGen = 0;
@@ -2777,6 +2812,7 @@
   }
 
   function leaveOverlay() {
+    if (parseRoute().view === "upload") abortComposeUpload();
     if (
       location.hash.startsWith("#/profile") ||
       location.hash.startsWith("#/@") ||
@@ -3283,6 +3319,7 @@
     location.hash = mediaMode === "photos" ? "#/photos" : "#/";
   });
   navProfile.addEventListener("click", openOwnProfile);
+  window.addEventListener("pagehide", abortComposeUpload);
   window.addEventListener("hashchange", () => {
     if (armBadgeDetailBack) {
       badgeDetailFromList = true;

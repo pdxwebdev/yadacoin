@@ -539,6 +539,19 @@ def _emit_progress(on_progress, event):
         pass
 
 
+def _upload_aborted(cancelled) -> bool:
+    if cancelled is None:
+        return False
+    return bool(cancelled())
+
+
+async def _raise_if_upload_aborted(cancelled):
+    """Let a queued client-disconnect callback run, then refuse to announce."""
+    await asyncio.sleep(0)
+    if _upload_aborted(cancelled):
+        raise FileAnnouncementServiceError("upload aborted")
+
+
 async def create_file(
     config,
     title: str,
@@ -554,6 +567,7 @@ async def create_file(
     type: str = "",
     price=None,
     on_progress=None,
+    cancelled=None,
 ):
     price = normalize_price(price)
     if price and not content:
@@ -566,6 +580,7 @@ async def create_file(
     content_hash = hashlib.sha256(content).hexdigest() if content else ""
     known_size = len(content) if content else size
     try:
+        await _raise_if_upload_aborted(cancelled)
         owner = await _operator_id(config)
         existing = await store.find_same_user_duplicate(
             config,
@@ -614,6 +629,7 @@ async def create_file(
             )
         else:
             share_url = ""
+        await _raise_if_upload_aborted(cancelled)
         thumbnail_file_id = ""
         thumbnail_share_url = ""
         if thumbnail:
@@ -626,6 +642,7 @@ async def create_file(
             )
             thumbnail_file_id = thumb["file_id"]
             thumbnail_share_url = thumb.get("share_url") or ""
+        await _raise_if_upload_aborted(cancelled)
         _emit_progress(on_progress, {"phase": "announcing"})
         if not price and not share_url and hasattr(backend, "share"):
             try:
@@ -633,6 +650,7 @@ async def create_file(
             except Exception:
                 share_url = ""
 
+        await _raise_if_upload_aborted(cancelled)
         ann = FileAnnouncement(
             file_id=file_id,
             title=title,
@@ -649,6 +667,7 @@ async def create_file(
             price=price,
         )
         txn = await _generate_txn(config, ann, fee=0.0)
+        await _raise_if_upload_aborted(cancelled)
         await _broadcast(config, txn)
         record = store.record_from_announcement(
             ann,
