@@ -234,9 +234,13 @@
   function paidStreamUrl(item) {
     const id = String((item && item.transaction_id) || "").trim();
     if (!id) return "";
+    const params = new URLSearchParams();
     const access = String((item && item.access) || "").trim();
-    const q = access ? `?access=${encodeURIComponent(access)}` : "";
-    return `${API_PURCHASE}/stream/${encodeURIComponent(id)}${q}`;
+    const paymentId = String((item && item.payment_id) || "").trim();
+    if (access) params.set("access", access);
+    if (paymentId) params.set("payment_id", paymentId);
+    const q = params.toString();
+    return `${API_PURCHASE}/stream/${encodeURIComponent(id)}${q ? `?${q}` : ""}`;
   }
 
   function streamUrl(item) {
@@ -246,7 +250,9 @@
     if (item.filename) params.set("filename", item.filename);
     if (item.mime_type) params.set("mime_type", item.mime_type);
     const q = params.toString();
-    return q ? `${item.stream_url}?${q}` : item.stream_url;
+    if (!q) return item.stream_url;
+    const join = item.stream_url.includes("?") ? "&" : "?";
+    return `${item.stream_url}${join}${q}`;
   }
 
   function mimeFor(item) {
@@ -1726,10 +1732,7 @@
         return;
       }
       if (data.access) item.access = data.access;
-      if (data.holds_media === false) {
-        buyNote.textContent = "Paid. The creator node does not have the file on this request.";
-        return;
-      }
+      if (data.payment_id) item.payment_id = data.payment_id;
       unlockPaid(item);
       if (typeof buyDlg.close === "function") buyDlg.close();
     } catch (err) {

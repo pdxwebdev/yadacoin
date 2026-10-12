@@ -147,6 +147,30 @@ async def find_payment_from_key(config, pay_to: str, min_price: str, public_key:
     return None
 
 
+async def payment_by_id(config, payment_id: str):
+    payment_id = (payment_id or "").strip()
+    if not payment_id:
+        return None
+    try:
+        txn = await config.mongo.async_db.miner_transactions.find_one(
+            {"id": payment_id}, {"_id": 0}
+        )
+    except Exception:
+        txn = None
+    if isinstance(txn, dict):
+        return txn
+    try:
+        block = await config.mongo.async_db.blocks.find_one(
+            {"transactions.id": payment_id}, {"transactions": 1}
+        )
+    except Exception:
+        return None
+    for txn in (block or {}).get("transactions") or []:
+        if isinstance(txn, dict) and str(txn.get("id") or "") == payment_id:
+            return txn
+    return None
+
+
 async def find_exact_payment(config, pay_to: str, amount: str):
     pay_to = (pay_to or "").strip()
     amount = (amount or "").strip()
@@ -203,6 +227,16 @@ async def invoice_for_token(config, token: str):
     return await config.mongo.async_db[INVOICES].find_one({"token": token}, {"_id": 0})
 
 
+def issue_access(config, announcement_id: str, payment_id: str) -> dict:
+    now = int(time.time())
+    exp = now + ACCESS_TTL
+    return {
+        "access": access_token(config, announcement_id, exp),
+        "payment_id": payment_id or "",
+        "access_exp": exp,
+    }
+
+
 async def redeem_invoice(config, token: str, announcement_id: str):
     doc = await invoice_for_token(config, token)
     if not doc or doc.get("announcement_id") != announcement_id:
@@ -221,23 +255,22 @@ async def redeem_invoice(config, token: str, announcement_id: str):
     )
     if not payment:
         return None
-    exp = now + ACCESS_TTL
-    access = access_token(config, announcement_id, exp)
+    issued = issue_access(config, announcement_id, payment.get("id") or "")
     await config.mongo.async_db[INVOICES].update_one(
         {"token": token, "redeemed_at": 0},
         {
             "$set": {
                 "redeemed_at": now,
-                "payment_id": payment.get("id") or "",
-                "access": access,
-                "access_exp": exp,
+                "payment_id": issued["payment_id"],
+                "access": issued["access"],
+                "access_exp": issued["access_exp"],
             }
         },
     )
     doc["redeemed_at"] = now
-    doc["payment_id"] = payment.get("id") or ""
-    doc["access"] = access
-    doc["access_exp"] = exp
+    doc["payment_id"] = issued["payment_id"]
+    doc["access"] = issued["access"]
+    doc["access_exp"] = issued["access_exp"]
     return doc
 
 
@@ -278,6 +311,66 @@ def view_grant_ok(announcement_id: str, grant: dict, payment: dict) -> bool:
         return bool(verify_signature(sig, message.encode(), bytes.fromhex(pubkey)))
     except Exception:
         return False
+
+
+async def claim_unique_invoice_payment(
+    config, announcement_id: str, pay_to: str, price: str
+):
+    """Unlock the only outstanding invoice-band payment to this post.
+
+    Used when the checkout token was issued on another node, so this node
+    cannot see that invoice amount, but the spend is already in the mempool.
+    Refuses when more than one such payment exists.
+    """
+    pay_to = (pay_to or "").strip()
+    announcement_id = (announcement_id or "").strip()
+    floor = _amount(price)
+    ceiling = floor + Decimal("0.00999999")
+    if not pay_to or not announcement_id or floor <= 0:
+        return None
+    found = {}
+    async for txn in _payment_txns(config, pay_to):
+        txn_id = str(txn.get("id") or "")
+        if not txn_id or txn_id in found:
+            continue
+        for out in txn.get("outputs") or []:
+            if not isinstance(out, dict) or str(out.get("to") or "") != pay_to:
+                continue
+            value = _amount(out.get("value"))
+            if floor < value <= ceiling:
+                found[txn_id] = (txn, f"{value:.8f}")
+                break
+    if len(found) != 1:
+        return None
+    payment, amount = next(iter(found.values()))
+    payment_id = payment.get("id") or ""
+    used = await config.mongo.async_db[INVOICES].find_one({"payment_id": payment_id})
+    if used:
+        if int(used.get("access_exp") or 0) > int(time.time()) and used.get("access"):
+            return {
+                "access": used.get("access"),
+                "payment_id": payment_id,
+                "access_exp": used.get("access_exp"),
+            }
+        return None
+    now = int(time.time())
+    issued = issue_access(config, announcement_id, payment_id)
+    await config.mongo.async_db[INVOICES].insert_one(
+        {
+            "token": secrets.token_hex(32),
+            "announcement_id": announcement_id,
+            "pay_to": pay_to,
+            "amount": amount,
+            "price": str(price),
+            "created_at": now,
+            "expires_at": now + INVOICE_TTL,
+            "redeemed_at": now,
+            "payment_id": payment_id,
+            "access": issued["access"],
+            "access_exp": issued["access_exp"],
+        }
+    )
+    return issued
 
 
 async def find_confirmed_payment(config, pay_to: str, min_price: str, payer_ids):

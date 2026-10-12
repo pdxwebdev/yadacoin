@@ -109,6 +109,8 @@ POST_AUTH_METHODS = frozenset(
         "keepalive",
         "newblock",
         "newtxn",
+        "paid_media",
+        "paid_media_result",
         "blockresponse",
         "blocksresponse",
         "blockresponse_confirmed",

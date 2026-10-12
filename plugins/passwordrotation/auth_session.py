@@ -745,3 +745,32 @@ def is_same_home(home_url: str, this_base: str) -> bool:
     if not a or not b:
         return False
     return a.lower() == b.lower()
+
+
+async def password_home_bases(username_signature: str, handler=None) -> list:
+    """HTTP bases that may hold a password-home record for this identity.
+
+    The live pick can move when an SP drops. Checkout tokens already issued
+    stay on the SP that was live at the time, so callers retry the ring.
+    """
+    this = this_node_http_base(handler)
+    seen = set()
+    out = []
+
+    def add(base: str) -> None:
+        normalized = normalize_http_base(base or "")
+        if not normalized:
+            return
+        if this and is_same_home(normalized, this):
+            return
+        key = normalized.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(normalized)
+
+    for sp in _sp_candidate_list(username_signature or ""):
+        add(peer_http_base(sp))
+    for base in await _tested_node_http_bases():
+        add(base)
+    return out

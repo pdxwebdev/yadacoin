@@ -11,6 +11,7 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import asyncio
 import json
 import os
 import tempfile
@@ -1464,7 +1465,73 @@ async def _creator_home(handler, live) -> str:
     return str(home.get("node_http_base") or "").rstrip("/")
 
 
-async def _forward_json(home: str, path: str, body: dict) -> dict:
+async def _creator_username_signature(handler, live) -> str:
+    username = str((live or {}).get("username") or "").strip().lstrip("@")
+    if not username:
+        owner = str((live or {}).get("owner") or "").strip()
+        if owner:
+            try:
+                names = await store.identity_usernames(handler.config)
+            except Exception:
+                names = {}
+            username = str(names.get(owner) or "").strip().lstrip("@")
+    if not username:
+        return ""
+    try:
+        from yadacoin.core.identityannouncement import IdentityAnnouncement
+
+        found = await IdentityAnnouncement.get_by_username(username)
+    except Exception:
+        return ""
+    return str(((found or {}).get("identity") or {}).get("username_signature") or "")
+
+
+async def _purchase_homes(handler, live) -> list:
+    homes = []
+    seen = set()
+
+    def add(base: str) -> None:
+        base = (base or "").rstrip("/")
+        if not base:
+            return
+        key = base.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        homes.append(base)
+
+    add(await _creator_home(handler, live))
+    try:
+        from plugins.passwordrotation.auth_session import password_home_bases
+
+        sig = await _creator_username_signature(handler, live)
+        for base in await password_home_bases(sig, handler):
+            add(base)
+    except Exception:
+        pass
+    return homes
+
+
+def _paid_body(handler, live, redeemed) -> dict:
+    return {
+        "status": True,
+        "paid": True,
+        "access": (redeemed or {}).get("access") or "",
+        "payment_id": (redeemed or {}).get("payment_id") or "",
+        "holds_media": True,
+    }
+
+
+async def _access_for_amount(handler, announcement_id: str, pay_to: str, amount: str):
+    payment = await purchase.find_exact_payment(handler.config, pay_to, amount)
+    if not payment:
+        return None
+    return purchase.issue_access(
+        handler.config, announcement_id, payment.get("id") or ""
+    )
+
+
+async def _forward_json(home: str, path: str, body: dict, timeout: float = 30) -> dict:
     from tornado.httpclient import AsyncHTTPClient, HTTPClientError
 
     try:
@@ -1477,7 +1544,7 @@ async def _forward_json(home: str, path: str, body: dict) -> dict:
                 "Accept": "application/json",
                 "X-Yada-Ppv-Direct": "1",
             },
-            request_timeout=30,
+            request_timeout=timeout,
         )
     except HTTPClientError as exc:
         try:
@@ -1538,21 +1605,6 @@ class PublicPurchaseInvoiceHandler(BaseHandler):
                 {"status": False, "error": "post is not for sale"}
             )
         direct = self.request.headers.get("X-Yada-Ppv-Direct") == "1"
-        home = "" if direct else await _creator_home(self, live)
-        if home:
-            forwarded = await _forward_json(
-                home,
-                "/file-announcements/api/v1/public/purchase/invoice",
-                {"transaction_id": transaction_id},
-            )
-            if not forwarded.get("status"):
-                self.set_status(502)
-                return self.render_as_json(forwarded)
-            token = forwarded.get("token") or ""
-            if token:
-                _remember_invoice(self, token)
-            forwarded.pop("token", None)
-            return self.render_as_json(forwarded)
         try:
             doc = await purchase.create_invoice(
                 self.config, transaction_id, pay_to, price
@@ -1594,47 +1646,76 @@ class PublicPurchaseRedeemHandler(BaseHandler):
             self.set_status(404)
             return self.render_as_json({"status": False, "error": "file not found"})
         direct = self.request.headers.get("X-Yada-Ppv-Direct") == "1"
-        home = "" if direct else await _creator_home(self, live)
         tokens = [data.get("token") or ""] if direct else _invoice_tokens(self)
         tokens = [token for token in tokens if token]
-        if home:
-            last = {
-                "status": False,
-                "paid": False,
-                "error": "no invoice for this browser",
-            }
-            for token in tokens:
-                last = await _forward_json(
-                    home,
-                    "/file-announcements/api/v1/public/purchase/redeem",
-                    {"transaction_id": transaction_id, "token": token},
-                )
-                if last.get("paid"):
-                    return self.render_as_json(last)
-            self.set_status(402 if last.get("status") else 400)
-            return self.render_as_json(last)
+        pay_to = str(live.get("public_key_hash") or "").strip()
         redeemed = None
+        echoed = ""
         for token in tokens:
             redeemed = await purchase.redeem_invoice(self.config, token, transaction_id)
             if redeemed:
                 break
-        if not redeemed:
-            return self.render_as_json(
-                {
-                    "status": True,
-                    "paid": False,
-                    "error": "no confirmed payment for this browser invoice yet",
-                }
+            doc = await purchase.invoice_for_token(self.config, token)
+            if (
+                doc
+                and doc.get("announcement_id") == transaction_id
+                and not doc.get("redeemed_at")
+            ):
+                echoed = doc.get("amount") or echoed
+        if redeemed:
+            return self.render_as_json(_paid_body(self, live, redeemed))
+        if not direct:
+            homes = await _purchase_homes(self, live)
+
+            async def _ask(home, token):
+                return await _forward_json(
+                    home,
+                    "/file-announcements/api/v1/public/purchase/redeem",
+                    {"transaction_id": transaction_id, "token": token},
+                    timeout=8,
+                )
+
+            calls = [_ask(home, token) for home in homes for token in tokens]
+            if calls:
+                results = await asyncio.gather(*calls, return_exceptions=True)
+                for last in results:
+                    if isinstance(last, Exception) or not isinstance(last, dict):
+                        continue
+                    if last.get("paid"):
+                        return self.render_as_json(last)
+                    amount = str(last.get("amount") or "").strip()
+                    if not amount:
+                        continue
+                    issued = await _access_for_amount(
+                        self,
+                        transaction_id,
+                        str(last.get("pay_to") or pay_to),
+                        amount,
+                    )
+                    if issued:
+                        return self.render_as_json(_paid_body(self, live, issued))
+        if not redeemed and echoed:
+            issued = await _access_for_amount(self, transaction_id, pay_to, echoed)
+            if issued:
+                return self.render_as_json(_paid_body(self, live, issued))
+        if tokens and not direct:
+            claimed = await purchase.claim_unique_invoice_payment(
+                self.config,
+                transaction_id,
+                pay_to,
+                str(live.get("price") or ""),
             )
-        return self.render_as_json(
-            {
-                "status": True,
-                "paid": True,
-                "access": redeemed.get("access") or "",
-                "payment_id": redeemed.get("payment_id") or "",
-                "holds_media": paidstore.has(self.config, live.get("file_id") or ""),
-            }
-        )
+            if claimed:
+                return self.render_as_json(_paid_body(self, live, claimed))
+        body = {
+            "status": True,
+            "paid": False,
+            "error": "no confirmed payment for this browser invoice yet",
+        }
+        if echoed:
+            body["amount"] = echoed
+            body["pay_to"] = pay_to
+        return self.render_as_json(body)
 
 
 class PublicPurchaseHandler(BaseHandler):
@@ -1703,9 +1784,27 @@ class PublicPurchaseStreamHandler(BaseHandler):
             self.set_status(404)
             return self.finish("file not found")
         holds = paidstore.has(self.config, file_id)
-        local_access = purchase.access_token_ok(self.config, transaction_id, access)
-        payers = await _session_payer_ids(self)
+        payment_id = (
+            (self.get_query_argument("payment_id", "") or "").split("?")[0].strip()
+        )
         payment = None
+        local_access = purchase.access_token_ok(self.config, transaction_id, access)
+        if access:
+            try:
+                saved = await self.config.mongo.async_db[purchase.INVOICES].find_one(
+                    {"access": access, "announcement_id": transaction_id},
+                    {"payment_id": 1},
+                )
+            except Exception:
+                saved = None
+            if saved and saved.get("payment_id"):
+                payment_id = str(saved.get("payment_id") or "")
+        if payment_id:
+            named = await purchase.payment_by_id(self.config, payment_id)
+            if named and purchase.output_pays(named, pay_to, price):
+                local_access = True
+                payment = named
+        payers = await _session_payer_ids(self)
         grant_pub = (self.get_query_argument("grant_pub", "") or "").strip()
         if grant_pub:
             payment = await purchase.find_payment_from_key(
@@ -1725,15 +1824,16 @@ class PublicPurchaseStreamHandler(BaseHandler):
             )
             local_access = bool(payment)
         if not holds:
-            home = await _creator_home(self, live)
-            if not home or not (access or payment):
-                self.set_status(402 if not access and not payment else 404)
-                return self.finish(
-                    "payment required"
-                    if not access and not payment
-                    else "file not found"
-                )
-            return await self._proxy_creator(home, transaction_id, access, payment)
+            if not local_access:
+                self.set_status(402)
+                return self.finish("payment required")
+            if await self._serve_connected(live, transaction_id, payment_id):
+                return
+            direct = self.request.headers.get("X-Yada-Ppv-Direct") == "1"
+            if direct or not payment_id:
+                self.set_status(404)
+                return self.finish("file not found")
+            return await self._proxy_homes(transaction_id, payment_id)
         if not local_access:
             self.set_status(402)
             return self.finish("payment required")
@@ -1784,11 +1884,134 @@ class PublicPurchaseStreamHandler(BaseHandler):
             fh.close()
         return self.finish()
 
-    async def _proxy_creator(self, home, transaction_id, access, payment):
+    async def _serve_connected(self, live, transaction_id, payment_id):
+        from .relay import CHUNK, pull_chunk
+
+        if not payment_id:
+            return False
+        sig = await _creator_username_signature(self, live)
+        username = str((live or {}).get("username") or "").strip().lstrip("@")
+        if not username:
+            owner = str((live or {}).get("owner") or "").strip()
+            if owner:
+                try:
+                    names = await store.identity_usernames(self.config)
+                except Exception:
+                    names = {}
+                username = str(names.get(owner) or "").strip().lstrip("@")
+        total = int((live or {}).get("size") or 0)
+        probe = await pull_chunk(
+            self.config, username, sig, transaction_id, payment_id, 0, 1
+        )
+        if probe is None:
+            return False
+        if total <= 0:
+            info_size = await pull_chunk(
+                self.config, username, sig, transaction_id, payment_id, 0, 1
+            )
+            total = 0
+        str((live or {}).get("file_id") or "")
+        try:
+            span = parse_byte_range(self.request.headers.get("Range", ""), total or 1)
+        except ValueError:
+            span = None
+        if total <= 0:
+            self.set_status(404)
+            self.finish("empty")
+            return True
+        if not span:
+            self.set_status(416)
+            self.set_header("Content-Range", f"bytes */{total}")
+            self.finish()
+            return True
+        start, end = span
+        mime = (live or {}).get("mime_type") or "application/octet-stream"
+        filename = (live or {}).get("filename") or "video"
+        length = end - start + 1
+        partial = not (start == 0 and end == total - 1)
+        self.set_header("Accept-Ranges", "bytes")
+        self.set_header("Content-Type", mime)
+        self.set_header("Content-Length", str(length))
+        self.set_header("Content-Disposition", f'inline; filename="{filename}"')
+        if partial:
+            self.set_status(206)
+            self.set_header("Content-Range", f"bytes {start}-{end}/{total}")
+        pos = start
+        try:
+            while pos <= end:
+                raw = await pull_chunk(
+                    self.config,
+                    username,
+                    sig,
+                    transaction_id,
+                    payment_id,
+                    pos,
+                    min(CHUNK, end - pos + 1),
+                )
+                if not raw:
+                    break
+                self.write(raw)
+                await self.flush()
+                pos += len(raw)
+        except StreamClosedError:
+            return True
+        self.finish()
+        return True
+
+    async def _proxy_homes(self, transaction_id, payment_id):
+        from tornado.httpclient import AsyncHTTPClient, HTTPClientError
+
+        live = await store.get_live_by_transaction_id(self.config, transaction_id)
+        homes = await _purchase_homes(self, live)
+
+        async def fetch(home):
+            url = (
+                home.rstrip("/")
+                + "/file-announcements/api/v1/public/purchase/stream/"
+                + quote(transaction_id, safe="")
+                + "?payment_id="
+                + quote(payment_id, safe="")
+            )
+            headers = {"X-Yada-Ppv-Direct": "1"}
+            range_header = self.request.headers.get("Range", "")
+            if range_header:
+                headers["Range"] = range_header
+            try:
+                return await AsyncHTTPClient().fetch(
+                    url, headers=headers, request_timeout=25
+                )
+            except (HTTPClientError, Exception):
+                return None
+
+        results = await asyncio.gather(*[fetch(home) for home in homes])
+        for resp in results:
+            if resp is None or resp.code >= 400:
+                continue
+            self.set_status(resp.code)
+            for name in (
+                "Content-Type",
+                "Content-Length",
+                "Content-Range",
+                "Accept-Ranges",
+            ):
+                value = resp.headers.get(name)
+                if value:
+                    self.set_header(name, value)
+            self.write(resp.body)
+            self.finish()
+            return
+        self.set_status(404)
+        self.finish("file not found")
+
+    async def _proxy_creator(
+        self, home, transaction_id, access, payment, payment_id=""
+    ):
         from tornado.httpclient import AsyncHTTPClient, HTTPClientError
 
         query = ""
-        if access:
+        if payment_id:
+            query = "?payment_id=" + quote(payment_id, safe="")
+        elif access:
             query = "?access=" + quote(access, safe="")
         elif payment:
             exp = int(time.time()) + 300
@@ -1810,7 +2033,7 @@ class PublicPurchaseStreamHandler(BaseHandler):
             + quote(transaction_id, safe="")
             + query
         )
-        headers = {}
+        headers = {"X-Yada-Ppv-Direct": "1"}
         range_header = self.request.headers.get("Range", "")
         if range_header:
             headers["Range"] = range_header
@@ -1818,12 +2041,10 @@ class PublicPurchaseStreamHandler(BaseHandler):
             resp = await AsyncHTTPClient().fetch(
                 url, headers=headers, request_timeout=120
             )
-        except HTTPClientError as exc:
-            self.set_status(exc.code or 502)
-            return self.finish("creator node rejected playback")
+        except HTTPClientError:
+            return False
         except Exception:
-            self.set_status(502)
-            return self.finish("creator node unavailable")
+            return False
         self.set_status(resp.code)
         for name in (
             "Content-Type",
@@ -1835,7 +2056,8 @@ class PublicPurchaseStreamHandler(BaseHandler):
             if value:
                 self.set_header(name, value)
         self.write(resp.body)
-        return self.finish()
+        self.finish()
+        return True
 
 
 HANDLERS = [

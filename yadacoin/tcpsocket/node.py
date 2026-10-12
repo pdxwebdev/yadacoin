@@ -93,6 +93,16 @@ class NodeClientNewTxnTracker:
 class NodeRPC(BaseRPC):
     retry_messages = {}
 
+    async def paid_media(self, body, stream):
+        from plugins.fileannouncement.relay import handle_paid_media
+
+        await handle_paid_media(self, body, stream)
+
+    async def paid_media_result(self, body, stream):
+        from plugins.fileannouncement.relay import handle_paid_media_result
+
+        handle_paid_media_result(body)
+
     # In-flight "please resend your KEL from scratch" requests, keyed by a
     # per-request uuid.  Shared across server/client instances — request ids
     # are globally unique so there's no cross-talk risk.  See
