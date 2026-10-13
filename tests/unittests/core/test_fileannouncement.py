@@ -17,6 +17,7 @@ from decimal import getcontext
 import yadacoin.core.config
 from yadacoin.core.config import Config
 from yadacoin.core.fileannouncement import (
+    MAX_CLAIM_LEN,
     MAX_DESCRIPTION_LEN,
     MAX_FILE_ID_LEN,
     MAX_KEYWORD_LEN,
@@ -183,6 +184,9 @@ class TestFileAnnouncement(AsyncTestCase):
         self.assertEqual(again.required_claim, gated.required_claim)
         self.assertEqual(again.required_issuer, gated.required_issuer)
         self.assertEqual(again.to_string(), gated.to_string())
+        with self.assertRaises(ValueError) as ctx:
+            self._ann(required_claim="c" * (MAX_CLAIM_LEN + 1))
+        self.assertIn("exceeds", str(ctx.exception))
 
     async def test_price_survives_leaked_decimal_precision(self):
         previous = getcontext().prec
