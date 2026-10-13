@@ -77,7 +77,7 @@ async def resolve_subject_username(username: str):
     """Map a unique on-chain username to its identity announcement."""
     from yadacoin.core.identityannouncement import IdentityAnnouncement
 
-    username = (username or "").strip().lower()
+    username = (username or "").strip()
     if not username:
         raise CredentialIssuerError("username is required")
     found = await IdentityAnnouncement.get_by_username(username)
