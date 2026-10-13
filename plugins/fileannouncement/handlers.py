@@ -212,6 +212,7 @@ def _video_public_item(item: dict) -> dict:
         "price": str(f.get("price") or "").strip(),
         "required_claim": str(f.get("required_claim") or "").strip(),
         "required_issuer": str(f.get("required_issuer") or "").strip(),
+        "required_credentials": list(f.get("required_credentials") or []),
         "stream_url": (
             ""
             if str(f.get("price") or "").strip()
@@ -240,7 +241,7 @@ async def _credential_blocked(handler, live, file_id: str = "") -> bool:
     """Deny a download when the announcement requires a W3C presentation."""
     from .credentials import (
         PresentationError,
-        credential_requirement,
+        credential_requirements,
         presentation_from_parts,
         requirement_applies,
         verify_presentation,
@@ -248,13 +249,12 @@ async def _credential_blocked(handler, live, file_id: str = "") -> bool:
 
     if not requirement_applies(live, file_id):
         return False
-    claim, issuer = credential_requirement(live)
     try:
         vp = presentation_from_parts(
             handler.request.headers.get("X-Yada-VP", ""),
             handler.get_query_argument("vp", "") or "",
         )
-        verify_presentation(vp, claim, issuer)
+        verify_presentation(vp, gates=credential_requirements(live))
     except PresentationError:
         handler.set_status(403)
         handler.finish("credential required")
@@ -404,6 +404,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
             price = self.get_body_argument("price", "")
             required_claim = self.get_body_argument("required_claim", "")
             required_issuer = self.get_body_argument("required_issuer", "")
+            required_credentials = self.get_body_argument("required_credentials", "")
             thumbnail = None
             if self.request.files.get("thumbnail"):
                 thumbnail = self.request.files["thumbnail"][0].get("body") or None
@@ -424,6 +425,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
             price = data.get("price") or ""
             required_claim = data.get("required_claim") or ""
             required_issuer = data.get("required_issuer") or ""
+            required_credentials = data.get("required_credentials")
             thumbnail = None
             raw = data.get("content_b64") or ""
             if raw:
@@ -437,11 +439,27 @@ class FileListHandler(BaseFileAnnouncementHandler):
             return self._error(400, "thumbnail exceeds 512KB")
         if not title:
             return self._error(400, "title is required")
+        from yadacoin.core.fileannouncement import normalize_required_credentials
+
         from .credentials import canonical_issuer
 
         try:
-            required_issuer = await canonical_issuer(required_issuer)
-        except ValueError as exc:
+            if isinstance(
+                required_credentials, str
+            ) and required_credentials.strip().startswith("["):
+                required_credentials = json.loads(required_credentials)
+            gates = normalize_required_credentials(
+                required_credentials, required_claim, required_issuer
+            )
+            resolved_gates = []
+            for gate in gates:
+                resolved_gates.append(
+                    {
+                        "claim": gate["claim"],
+                        "issuer": await canonical_issuer(gate["issuer"]),
+                    }
+                )
+        except (ValueError, json.JSONDecodeError) as exc:
             return self._error(400, str(exc))
         upload_id = str(upload_id or "").strip()
         tracked = progress.begin(
@@ -463,8 +481,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
                 thumbnail=thumbnail,
                 type=file_type,
                 price=price,
-                required_claim=required_claim,
-                required_issuer=required_issuer,
+                required_credentials=resolved_gates,
                 on_progress=(
                     (lambda event, uid=upload_id: progress.apply(uid, event))
                     if tracked
@@ -847,6 +864,7 @@ def _public_file_item(row: dict, username: str = "", keep_stream: bool = False) 
             "price": str(row.get("price") or "").strip(),
             "required_claim": str(row.get("required_claim") or "").strip(),
             "required_issuer": str(row.get("required_issuer") or "").strip(),
+            "required_credentials": list(row.get("required_credentials") or []),
         },
     }
     item = _video_public_item(shaped)

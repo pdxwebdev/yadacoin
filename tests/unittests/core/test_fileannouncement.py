@@ -22,6 +22,7 @@ from yadacoin.core.fileannouncement import (
     MAX_FILE_ID_LEN,
     MAX_KEYWORD_LEN,
     MAX_KEYWORDS,
+    MAX_REQUIRED_CREDENTIALS,
     MAX_SHARE_URL_LEN,
     MAX_TITLE_LEN,
     FileAnnouncement,
@@ -187,6 +188,53 @@ class TestFileAnnouncement(AsyncTestCase):
         with self.assertRaises(ValueError) as ctx:
             self._ann(required_claim="c" * (MAX_CLAIM_LEN + 1))
         self.assertIn("exceeds", str(ctx.exception))
+
+    async def test_multiple_credential_gates_roundtrip_and_hash(self):
+        plain = self._ann()
+        one = self._ann(required_credentials="ageOver18")
+        self.assertEqual(one.to_string(), plain.to_string() + "ageOver18")
+        gated = self._ann(
+            required_credentials=[
+                {"claim": "ageOver18", "issuer": ""},
+                "member|did:yadacoin:clubSig",
+                {"required_claim": "staff", "required_issuer": "desk"},
+            ]
+        )
+        self.assertEqual(
+            gated.required_credentials,
+            [
+                {"claim": "ageOver18", "issuer": ""},
+                {"claim": "member", "issuer": "clubSig"},
+                {"claim": "staff", "issuer": "desk"},
+            ],
+        )
+        self.assertEqual(gated.required_claim, "ageOver18")
+        self.assertNotEqual(gated.to_string(), one.to_string())
+        self.assertTrue(gated.to_string().startswith(one.to_string()))
+        again = FileAnnouncement.from_dict(gated.to_dict())
+        self.assertEqual(again.required_credentials, gated.required_credentials)
+        self.assertEqual(again.to_string(), gated.to_string())
+        merged = self._ann(
+            required_claim="ageOver18",
+            required_credentials=[{"claim": "member", "issuer": ""}],
+        )
+        self.assertEqual(merged.required_credentials[0]["claim"], "ageOver18")
+        self.assertEqual(len(merged.required_credentials), 2)
+        with self.assertRaises(ValueError):
+            self._ann(required_credentials=[{"claim": "", "issuer": ""}])
+        with self.assertRaises(ValueError):
+            self._ann(required_credentials=123)
+        with self.assertRaises(ValueError):
+            self._ann(required_credentials=[1])
+        self.assertEqual(
+            self._ann(required_credentials={"claim": "solo"}).required_claim, "solo"
+        )
+        with self.assertRaises(ValueError):
+            self._ann(required_credentials=["x"] * (MAX_REQUIRED_CREDENTIALS + 1))
+        self.assertEqual(
+            self._ann(required_credentials=["", "ageOver18"]).required_claim,
+            "ageOver18",
+        )
 
     async def test_price_survives_leaked_decimal_precision(self):
         previous = getcontext().prec

@@ -21,6 +21,7 @@ announcement publishes a searchable title, description, keywords, and the
 backend file identifier so peers can discover and retrieve the object.
 """
 
+import json
 import re
 from decimal import Decimal, InvalidOperation, localcontext
 from typing import List
@@ -34,6 +35,7 @@ MAX_SHARE_URL_LEN = 8192
 MAX_TYPE_LEN = 32
 MAX_CLAIM_LEN = 128
 MAX_ISSUER_LEN = 512
+MAX_REQUIRED_CREDENTIALS = 8
 
 
 def normalize_price(value) -> str:
@@ -72,6 +74,77 @@ def normalize_required_text(value, limit: int, name: str) -> str:
     if len(text) > limit:
         raise ValueError(f"{name} exceeds {limit} characters")
     return text
+
+
+def _gate_from_mapping(item) -> dict:
+    if not isinstance(item, dict):
+        raise ValueError("credential gate must be an object")
+    claim = normalize_required_text(
+        item.get("claim") or item.get("required_claim") or "",
+        MAX_CLAIM_LEN,
+        "required_claim",
+    )
+    issuer = normalize_required_text(
+        item.get("issuer") or item.get("required_issuer") or "",
+        MAX_ISSUER_LEN,
+        "required_issuer",
+    )
+    if not claim and not issuer:
+        raise ValueError("credential gate is empty")
+    return {"claim": claim, "issuer": issuer}
+
+
+def _gate_from_text(text) -> dict:
+    raw = str(text or "").strip()
+    if "|" in raw:
+        claim, issuer = raw.split("|", 1)
+    else:
+        claim, issuer = raw, ""
+    return _gate_from_mapping({"claim": claim, "issuer": issuer})
+
+
+def normalize_required_credentials(
+    value, required_claim="", required_issuer=""
+) -> list:
+    """Every gate is required. The first gate stays in the legacy hash slot."""
+    if value is None or value == "":
+        parsed = []
+    elif isinstance(value, str):
+        parsed = [_gate_from_text(line) for line in value.splitlines() if line.strip()]
+    elif isinstance(value, dict):
+        parsed = [_gate_from_mapping(value)]
+    elif isinstance(value, (list, tuple)):
+        parsed = []
+        for item in value:
+            if isinstance(item, str):
+                if not item.strip():
+                    continue
+                parsed.append(_gate_from_text(item))
+            else:
+                parsed.append(_gate_from_mapping(item))
+    else:
+        raise ValueError("required_credentials must be a list")
+    legacy_claim = normalize_required_text(
+        required_claim, MAX_CLAIM_LEN, "required_claim"
+    )
+    legacy_issuer = normalize_required_text(
+        required_issuer, MAX_ISSUER_LEN, "required_issuer"
+    )
+    if legacy_claim or legacy_issuer:
+        legacy = {"claim": legacy_claim, "issuer": legacy_issuer}
+        if legacy not in parsed:
+            parsed.insert(0, legacy)
+    if len(parsed) > MAX_REQUIRED_CREDENTIALS:
+        raise ValueError(f"at most {MAX_REQUIRED_CREDENTIALS} credential gates")
+    return parsed
+
+
+def required_credentials_suffix(gates) -> str:
+    """Extra gates only. One gate keeps the preimage used by older nodes."""
+    if not gates or len(gates) <= 1:
+        return ""
+    extra = [{"claim": gate["claim"], "issuer": gate["issuer"]} for gate in gates[1:]]
+    return json.dumps(extra, separators=(",", ":"), sort_keys=True)
 
 
 def normalize_type(value) -> str:
@@ -138,8 +211,10 @@ class FileAnnouncement:
     price        : optional sale price in YDA. Canonical 8-decimal string. Omitted
                    from the relationship hash when unset, so older announcements
                    keep the same preimage.
-    required_claim  : optional W3C credential claim a downloader must present.
-    required_issuer : optional issuer username signature or DID. Empty means any issuer.
+    required_claim  : first credential gate claim. Kept so a single gate hashes
+                      the same as announcements that only had this field.
+    required_issuer : first credential gate issuer. Empty means any issuer.
+    required_credentials : every gate the downloader must present. All are required.
     """
 
     RELATIONSHIP_KEY = "file"
@@ -162,6 +237,7 @@ class FileAnnouncement:
         price=None,
         required_claim: str = "",
         required_issuer: str = "",
+        required_credentials=None,
         **kwargs,
     ):
         if not file_id or not isinstance(file_id, str):
@@ -221,16 +297,22 @@ class FileAnnouncement:
         self.thumbnail_share_url = thumbnail_share_url
         self.type = normalize_type(type)
         self.price = normalize_price(price)
-        self.required_claim = normalize_required_text(
-            required_claim, MAX_CLAIM_LEN, "required_claim"
+        self.required_credentials = normalize_required_credentials(
+            required_credentials, required_claim, required_issuer
         )
-        self.required_issuer = normalize_required_text(
-            required_issuer, MAX_ISSUER_LEN, "required_issuer"
-        )
+        first = self.required_credentials[0] if self.required_credentials else {}
+        self.required_claim = first.get("claim") or ""
+        self.required_issuer = first.get("issuer") or ""
         self.extra_fields = {
             k: v
             for k, v in kwargs.items()
-            if k not in ("price", "required_claim", "required_issuer")
+            if k
+            not in (
+                "price",
+                "required_claim",
+                "required_issuer",
+                "required_credentials",
+            )
         }
 
     @staticmethod
@@ -286,6 +368,11 @@ class FileAnnouncement:
             result["required_claim"] = self.required_claim
         if self.required_issuer:
             result["required_issuer"] = self.required_issuer
+        if self.required_credentials:
+            result["required_credentials"] = [
+                {"claim": gate["claim"], "issuer": gate["issuer"]}
+                for gate in self.required_credentials
+            ]
         if self.extra_fields:
             result.update(self.extra_fields)
         return result
@@ -309,6 +396,7 @@ class FileAnnouncement:
             + self.price
             + self.get_string(self.required_claim)
             + self.get_string(self.required_issuer)
+            + required_credentials_suffix(self.required_credentials)
         )
 
     def matches_query(self, query: str) -> bool:

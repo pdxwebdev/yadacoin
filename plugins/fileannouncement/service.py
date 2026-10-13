@@ -568,6 +568,7 @@ async def create_file(
     price=None,
     required_claim: str = "",
     required_issuer: str = "",
+    required_credentials=None,
     on_progress=None,
     cancelled=None,
 ):
@@ -677,6 +678,7 @@ async def create_file(
             price=price,
             required_claim=required_claim,
             required_issuer=required_issuer,
+            required_credentials=required_credentials,
         )
         txn = await _generate_txn(config, ann, fee=0.0)
         await _raise_if_upload_aborted(cancelled)
@@ -777,6 +779,7 @@ async def update_file(
         price=existing.get("price") or "",
         required_claim=existing.get("required_claim") or "",
         required_issuer=existing.get("required_issuer") or "",
+        required_credentials=existing.get("required_credentials") or None,
     )
     txn = await _generate_txn(config, ann, fee=0.0)
     await _broadcast(config, txn)
@@ -797,6 +800,7 @@ async def update_file(
         "price": ann.price,
         "required_claim": ann.required_claim,
         "required_issuer": ann.required_issuer,
+        "required_credentials": list(ann.required_credentials),
         "status": "mempool",
         "source": "mempool",
     }

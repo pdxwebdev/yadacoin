@@ -19,6 +19,7 @@ from plugins.credentialissuer.zkp import generate_proof
 from plugins.fileannouncement.credentials import (
     PresentationError,
     badge_satisfies,
+    credential_requirements,
     presentation_from_parts,
     requirement_applies,
     verify_presentation,
@@ -55,6 +56,15 @@ class TestCredentialGate(unittest.TestCase):
         self.assertTrue(requirement_applies(live, "media"))
         self.assertFalse(requirement_applies(live, "thumb"))
         self.assertFalse(requirement_applies({"file_id": "media"}, "media"))
+        listed = {
+            "file_id": "media",
+            "required_credentials": [
+                {"claim": "ageOver18", "issuer": ""},
+                {"claim": "member", "issuer": _ISSUER},
+            ],
+        }
+        self.assertEqual(len(credential_requirements(listed)), 2)
+        self.assertTrue(requirement_applies(listed, "media"))
 
     def test_badge_list_blocks_missing_claim_and_issuer(self):
         now = int(time.time())
@@ -88,6 +98,20 @@ class TestCredentialGate(unittest.TestCase):
         expired = _vc(expires=int(time.time()) - 10)
         with self.assertRaises(PresentationError):
             verify_presentation(_vp(expired), "ageOver18", "")
+
+    def test_presentation_requires_every_gate(self):
+        age = _vc("ageOver18")
+        member = _vc("member", issuer=_OTHER)
+        both = _vp(age)
+        both["verifiableCredential"].append(member)
+        gates = [
+            {"claim": "ageOver18", "issuer": ""},
+            {"claim": "member", "issuer": _OTHER},
+        ]
+        verified = verify_presentation(both, gates=gates)
+        self.assertEqual(verified["subject"], _SUBJECT)
+        with self.assertRaises(PresentationError):
+            verify_presentation(_vp(age), gates=gates)
 
     def test_presentation_query_roundtrip(self):
         import base64

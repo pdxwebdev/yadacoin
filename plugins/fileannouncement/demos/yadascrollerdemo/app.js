@@ -216,11 +216,27 @@
 
   let myBadges = [];
 
+  function credentialGates(item) {
+    const raw = item && item.required_credentials;
+    const gates = [];
+    if (Array.isArray(raw)) {
+      raw.forEach((gate) => {
+        const claim = String((gate && gate.claim) || "").trim();
+        const issuer = String((gate && gate.issuer) || "").trim();
+        if (claim || issuer) gates.push({ claim, issuer });
+      });
+    }
+    if (!gates.length) {
+      const claim = String((item && item.required_claim) || "").trim();
+      const issuer = String((item && item.required_issuer) || "").trim();
+      if (claim || issuer) gates.push({ claim, issuer });
+    }
+    return gates;
+  }
+
   function credentialNeed(item) {
-    return {
-      claim: String((item && item.required_claim) || "").trim(),
-      issuer: String((item && item.required_issuer) || "").trim(),
-    };
+    const gates = credentialGates(item);
+    return gates[0] || { claim: "", issuer: "" };
   }
 
   function issuerId(value) {
@@ -259,21 +275,41 @@
     );
   }
 
-  function matchingBadge(item) {
-    const need = credentialNeed(item);
-    if (!need.claim && !need.issuer) return null;
-    return myBadges.find((badge) => badgeMatches(badge, need)) || null;
+  function matchingBadges(item) {
+    const gates = credentialGates(item);
+    if (!gates.length) return [];
+    const found = [];
+    for (const gate of gates) {
+      const badge = myBadges.find((row) => badgeMatches(row, gate));
+      if (!badge) return null;
+      found.push(badge);
+    }
+    return found;
   }
 
-  function presentationQuery(badge) {
-    const vc = badge && badge.vc;
-    const holder = vc && vc.credentialSubject && vc.credentialSubject.id;
-    if (!vc || !holder) return "";
+  function matchingBadge(item) {
+    const found = matchingBadges(item);
+    return found && found.length ? found[0] : null;
+  }
+
+  function presentationQuery(badges) {
+    const list = Array.isArray(badges) ? badges : badges ? [badges] : [];
+    const vcs = [];
+    let holder = "";
+    for (const badge of list) {
+      const vc = badge && badge.vc;
+      const id = vc && vc.credentialSubject && vc.credentialSubject.id;
+      if (!vc || !id) return "";
+      if (holder && holder !== id) return "";
+      holder = id;
+      vcs.push(vc);
+    }
+    if (!vcs.length) return "";
     const vp = {
       "@context": ["https://www.w3.org/ns/credentials/v2"],
       type: ["VerifiablePresentation"],
       holder,
-      verifiableCredential: [vc],
+      verifiableCredential: vcs,
     };
     try {
       const json = JSON.stringify(vp);
@@ -287,10 +323,12 @@
   }
 
   function credentialMessage(item) {
-    const need = credentialNeed(item);
-    const claim = need.claim ? claimLabel(need.claim) : "a credential";
-    const issuer = need.issuer ? ` from ${shortId(need.issuer)}` : "";
-    return `This download requires ${claim}${issuer}. It is not in your badges.`;
+    const missing = credentialGates(item).filter((gate) => !myBadges.some((badge) => badgeMatches(badge, gate)));
+    const labels = (missing.length ? missing : credentialGates(item)).map((gate) =>
+      gate.claim ? claimLabel(gate.claim) : "a credential"
+    );
+    const text = labels.join(" and ") || "a credential";
+    return `This download requires ${text}. ${labels.length === 1 ? "It is" : "They are"} not in your badges.`;
   }
 
   async function loadMyBadges() {
@@ -315,10 +353,9 @@
   }
 
   async function downloadAllowed(item) {
-    const need = credentialNeed(item);
-    if (!need.claim && !need.issuer) return true;
+    if (!credentialGates(item).length) return true;
     await loadMyBadges();
-    if (matchingBadge(item)) return true;
+    if (matchingBadges(item)) return true;
     showStatus(credentialMessage(item), 3500);
     return false;
   }
@@ -341,10 +378,11 @@
   }
 
   function credentialChipHtml(item) {
-    const need = credentialNeed(item);
-    if (!need.claim && !need.issuer) return "";
-    if (matchingBadge(item)) return "";
-    const label = need.claim ? claimLabel(need.claim) : "credential";
+    const missing = credentialGates(item).filter(
+      (gate) => !myBadges.some((badge) => badgeMatches(badge, gate))
+    );
+    if (!missing.length) return "";
+    const label = missing.map((gate) => (gate.claim ? claimLabel(gate.claim) : "credential")).join(" · ");
     return `<span class="price-chip cred-chip">Needs ${escapeHtml(label)}</span>`;
   }
 
@@ -364,7 +402,7 @@
     const paymentId = String((item && item.payment_id) || "").trim();
     if (access) params.set("access", access);
     if (paymentId) params.set("payment_id", paymentId);
-    const vp = presentationQuery(matchingBadge(item));
+    const vp = presentationQuery(matchingBadges(item) || []);
     if (vp) params.set("vp", vp);
     const q = params.toString();
     return `${API_PURCHASE}/stream/${encodeURIComponent(id)}${q ? `?${q}` : ""}`;
@@ -372,13 +410,12 @@
 
   function streamUrl(item) {
     if (itemPrice(item) && !(item && item.price_unlocked)) return "";
-    const need = credentialNeed(item);
-    if ((need.claim || need.issuer) && !matchingBadge(item)) return "";
+    if (credentialGates(item).length && !matchingBadges(item)) return "";
     if (!item || !item.stream_url) return "";
     const params = new URLSearchParams();
     if (item.filename) params.set("filename", item.filename);
     if (item.mime_type) params.set("mime_type", item.mime_type);
-    const vp = presentationQuery(matchingBadge(item));
+    const vp = presentationQuery(matchingBadges(item) || []);
     if (vp) params.set("vp", vp);
     const q = params.toString();
     if (!q) return item.stream_url;
@@ -693,8 +730,7 @@
         openBuy(item);
         return;
       }
-      const need = credentialNeed(item);
-      if (need.claim || need.issuer) {
+      if (credentialGates(item).length) {
         downloadAllowed(item).then((ok) => {
           if (!ok || !slide.isConnected) return;
           const url = streamUrl(item);
@@ -1768,9 +1804,8 @@
     if (!railBuy) return;
     const item = activeItem();
     const priced = !!(item && itemPrice(item) && !item.price_unlocked);
-    const need = credentialNeed(item);
-    const missing = !!(need.claim || need.issuer) && !matchingBadge(item);
-    railBuy.hidden = !priced;
+    const missing = credentialGates(item).length && !matchingBadges(item);
+    railBuy.hidden = !priced && !missing;
     railBuy.textContent = missing ? "Locked" : "Buy";
     railBuy.title = missing ? credentialMessage(item) : "Buy";
     railBuy.setAttribute("aria-label", railBuy.title);
@@ -2462,8 +2497,7 @@
       openBuy(item);
       return;
     }
-    const need = credentialNeed(item);
-    if (!credentialChecked && (need.claim || need.issuer)) {
+    if (!credentialChecked && credentialGates(item).length) {
       downloadAllowed(item).then((ok) => {
         if (ok) openPlayer(item, true);
       });
@@ -2497,8 +2531,7 @@
       openBuy(item);
       return;
     }
-    const need = credentialNeed(item);
-    if (!credentialChecked && (need.claim || need.issuer)) {
+    if (!credentialChecked && credentialGates(item).length) {
       downloadAllowed(item).then((ok) => {
         if (ok) openPhoto(item, true);
       });

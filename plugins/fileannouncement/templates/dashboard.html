@@ -296,17 +296,9 @@
           <label>Type</label>
           <input name="type" id="upload-type" maxlength="32" placeholder="Optional app token, such as avatar" />
           <p class="muted">Stored as-is. Each app decides what a type means.</p>
-          <div class="row">
-            <div>
-              <label>Required claim (optional)</label>
-              <input name="required_claim" maxlength="128" placeholder="ageOver18" />
-            </div>
-            <div>
-              <label>Required issuer (optional)</label>
-              <input name="required_issuer" maxlength="512" placeholder="@username, DID, or username signature" />
-            </div>
-          </div>
-          <p class="muted">Leave both blank to allow any downloader. A purchase is blocked in the app when the claim is missing from the buyer's badges. The download is denied here unless a W3C verifiable presentation proves the claim and issuer.</p>
+          <label>Required credentials (optional)</label>
+          <textarea name="required_credentials" placeholder="ageOver18&#10;member|@club"></textarea>
+          <p class="muted">One gate per line: claim or claim|issuer. Every line is required, so 18+ and membership can replace a price. Leave blank to allow any downloader. The download is denied unless a W3C verifiable presentation matches every gate.</p>
           <div class="row">
             <div>
               <label>Existing Sia file identifier (optional)</label>
@@ -521,7 +513,7 @@ async function loadFiles() {
           <strong>${esc(r.title)}</strong>${r.type ? ` <span class="chip">${esc(r.type)}</span>` : ""}<br>
           <span class="muted">${esc(r.description || "")}</span><br>
           <span class="muted">${esc(r.filename || "")} · ${esc(r.backend || "")} · ${r.size != null ? r.size + " B" : ""}</span>
-          ${r.required_claim || r.required_issuer ? `<br><span class="muted">Requires ${esc(r.required_claim || "credential")}${r.required_issuer ? " from " + esc(r.required_issuer) : ""}</span>` : ""}
+          ${(r.required_credentials && r.required_credentials.length) || r.required_claim || r.required_issuer ? `<br><span class="muted">Requires ${esc((r.required_credentials || []).map(g => g.claim || "credential").join(", ") || r.required_claim || "credential")}</span>` : ""}
         </td>
         <td class="mono">${esc(r.file_id)}</td>
         <td>${chips(r.keywords)}</td>

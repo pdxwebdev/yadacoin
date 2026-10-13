@@ -73,19 +73,17 @@ async def handle_paid_media(rpc, body, stream):
     credential_ok = True
     from .credentials import (
         PresentationError,
-        credential_requirement,
+        credential_requirements,
         presentation_from_parts,
         requirement_applies,
         verify_presentation,
     )
 
     if requirement_applies(live, file_id):
-        claim, issuer = credential_requirement(live)
         try:
             verify_presentation(
                 presentation_from_parts(str(params.get("vp") or ""), ""),
-                claim,
-                issuer,
+                gates=credential_requirements(live),
             )
         except PresentationError:
             credential_ok = False

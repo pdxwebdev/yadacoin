@@ -27,24 +27,52 @@ class PresentationError(Exception):
     pass
 
 
-def credential_requirement(live) -> tuple:
-    """Return (claim, issuer) from a live announcement or its file relationship."""
+def _source(live) -> dict:
     if not isinstance(live, dict):
-        return "", ""
+        return {}
     file_rel = live.get("file") if isinstance(live.get("file"), dict) else {}
-    claim = str(
-        file_rel.get("required_claim") or live.get("required_claim") or ""
-    ).strip()
-    issuer = str(
-        file_rel.get("required_issuer") or live.get("required_issuer") or ""
-    ).strip()
-    return claim, issuer
+    return file_rel or live
+
+
+def credential_requirements(live) -> list:
+    """Every gate on the announcement. All of them are required."""
+    src = _source(live)
+    raw = src.get("required_credentials")
+    if raw is None:
+        raw = live.get("required_credentials") if isinstance(live, dict) else None
+    gates = []
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            claim = str(item.get("claim") or "").strip()
+            issuer = str(item.get("issuer") or "").strip()
+            if claim or issuer:
+                gates.append({"claim": claim, "issuer": issuer})
+    if gates:
+        return gates
+    claim = str(src.get("required_claim") or "").strip()
+    issuer = str(src.get("required_issuer") or "").strip()
+    if not claim and isinstance(live, dict):
+        claim = str(live.get("required_claim") or "").strip()
+    if not issuer and isinstance(live, dict):
+        issuer = str(live.get("required_issuer") or "").strip()
+    if claim or issuer:
+        return [{"claim": claim, "issuer": issuer}]
+    return []
+
+
+def credential_requirement(live) -> tuple:
+    """Return the first gate, for callers that still expect one pair."""
+    gates = credential_requirements(live)
+    if not gates:
+        return "", ""
+    return gates[0]["claim"], gates[0]["issuer"]
 
 
 def requirement_applies(live, file_id: str = "") -> bool:
     """True when this object, not its public thumbnail, requires a credential."""
-    claim, issuer = credential_requirement(live)
-    if not claim and not issuer:
+    if not credential_requirements(live):
         return False
     file_id = (file_id or "").strip()
     if not file_id:
@@ -228,15 +256,53 @@ def _proof_ok(vc, subject: str) -> bool:
     )
 
 
-def verify_presentation(vp, required_claim="", required_issuer="", now=None) -> dict:
-    """Verify a W3C Verifiable Presentation against an optional claim and issuer.
-
-    The embedded VC must be a VerifiableCredential whose Schnorr proof binds the
-    credential subject, and whose holder matches that subject.
-    """
+def _gate_list(required_claim="", required_issuer="", gates=None) -> list:
+    if gates is not None:
+        out = []
+        for gate in gates:
+            if not isinstance(gate, dict):
+                continue
+            claim = str(gate.get("claim") or "").strip()
+            issuer = str(gate.get("issuer") or "").strip()
+            if claim or issuer:
+                out.append({"claim": claim, "issuer": issuer})
+        return out
     required_claim = (required_claim or "").strip()
     required_issuer = (required_issuer or "").strip()
     if not required_claim and not required_issuer:
+        return []
+    return [{"claim": required_claim, "issuer": required_issuer}]
+
+
+def _vc_matches_gate(vc, gate, holder, now) -> str:
+    if not isinstance(vc, dict):
+        return ""
+    if "VerifiableCredential" not in _types(vc.get("type")):
+        return ""
+    if _expired(vc, now):
+        return ""
+    if not claim_matches(vc, gate.get("claim") or "") or not issuer_matches(
+        vc, gate.get("issuer") or ""
+    ):
+        return ""
+    subject = _subject_id(vc)
+    if not holder or not subject or holder != subject:
+        return ""
+    if not _proof_ok(vc, subject):
+        return ""
+    return subject
+
+
+def verify_presentation(
+    vp, required_claim="", required_issuer="", now=None, gates=None
+) -> dict:
+    """Verify a W3C Verifiable Presentation against every required gate.
+
+    Each gate needs its own VerifiableCredential. The holder must match every
+    credential subject, and each Schnorr proof must bind that subject.
+    """
+    needed = _gate_list(required_claim, required_issuer, gates)
+    if not needed:
         return {"ok": True, "subject": ""}
     if not isinstance(vp, dict):
         raise PresentationError("verifiable presentation is required")
@@ -249,24 +315,17 @@ def verify_presentation(vp, required_claim="", required_issuer="", now=None) -> 
         raise PresentationError("presentation has no credentials")
     holder = issuer_id(vp.get("holder"))
     now = int(time.time() if now is None else now)
-    for vc in creds:
-        if not isinstance(vc, dict):
-            continue
-        if "VerifiableCredential" not in _types(vc.get("type")):
-            continue
-        if _expired(vc, now):
-            continue
-        if not claim_matches(vc, required_claim) or not issuer_matches(
-            vc, required_issuer
-        ):
-            continue
-        subject = _subject_id(vc)
-        if not holder or not subject or holder != subject:
-            continue
-        if not _proof_ok(vc, subject):
-            continue
-        return {"ok": True, "subject": subject}
-    raise PresentationError("credential required")
+    subject = ""
+    for gate in needed:
+        matched = ""
+        for vc in creds:
+            matched = _vc_matches_gate(vc, gate, holder, now)
+            if matched:
+                break
+        if not matched:
+            raise PresentationError("credential required")
+        subject = matched
+    return {"ok": True, "subject": subject}
 
 
 def _decode_presentation(raw: str):
