@@ -11,6 +11,7 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import os
 import unittest
 from unittest.mock import MagicMock
 
@@ -58,6 +59,19 @@ class TestYadaPasswordSignin(unittest.TestCase):
             self.assertTrue(
                 signin_location(purpose).startswith("/yada-password/signin?")
             )
+
+    def test_signin_template_uses_auth_session(self):
+        root = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "..")
+        )
+        path = os.path.join(
+            root, "plugins", "yadapasswordsignin", "templates", "signin.html"
+        )
+        with open(path, encoding="utf-8") as fh:
+            html = fh.read()
+        self.assertIn("/password-rotation/auth-session", html)
+        self.assertIn('id="signinUsername"', html)
+        self.assertNotIn("YADA_PASSWORD_SIGNIN", html)
 
     def test_redirect_uses_request_uri(self):
         handler = MagicMock()

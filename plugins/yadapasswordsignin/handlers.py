@@ -27,10 +27,11 @@ PURPOSES = {
         "header": "Operator",
         "title": "YadaCoin - Sign in with Yada Password",
         "blurb": (
-            "Operator actions use this node's key event log. Paste this node's "
-            "seed and second factor into the browser extension or mobile app. "
-            "Rotations sync through the chain and mempool. This page never "
-            "asks for those secrets."
+            "Operator actions use this node's key event log. Enter this node's "
+            "Yada username and approve the request in the Yada Password "
+            "extension or the Android/iOS app. Rotations sync through the "
+            "chain and mempool. This page never asks for the seed or second "
+            "factor."
         ),
         "next": "/",
     },
@@ -38,10 +39,11 @@ PURPOSES = {
         "header": "File Announcements",
         "title": "YadaCoin - File Announcements",
         "blurb": (
-            "File announcements rotate this node's key event log. Paste this "
-            "node's seed and second factor into the browser extension or "
-            "mobile app. Rotations sync through the chain and mempool. This "
-            "page never asks for those secrets."
+            "File announcements rotate this node's key event log. Enter this "
+            "node's Yada username and approve the request in the Yada Password "
+            "extension or the Android/iOS app. Rotations sync through the "
+            "chain and mempool. This page never asks for the seed or second "
+            "factor."
         ),
         "next": "/file-announcements",
     },
@@ -50,9 +52,10 @@ PURPOSES = {
         "title": "YadaCoin - Credential Issuer",
         "blurb": (
             "Issuing credentials broadcasts a KEL-backed CredentialAnnouncement. "
-            "Paste this node's seed and second factor into the browser "
-            "extension or mobile app. Rotations sync through the chain and "
-            "mempool. This page never asks for those secrets."
+            "Enter this node's Yada username and approve the request in the "
+            "Yada Password extension or the Android/iOS app. Rotations sync "
+            "through the chain and mempool. This page never asks for the seed "
+            "or second factor."
         ),
         "next": "/credential-issuer",
     },
@@ -61,9 +64,10 @@ PURPOSES = {
         "title": "YadaCoin - Livestream",
         "blurb": (
             "Livestream channel create, Go Live, Stop, and whitelist sign with "
-            "this node's KEL. Paste this node's seed and second factor into "
-            "the browser extension or mobile app. Rotations sync through the "
-            "chain and mempool. This page never asks for those secrets."
+            "this node's KEL. Enter this node's Yada username and approve the "
+            "request in the Yada Password extension or the Android/iOS app. "
+            "Rotations sync through the chain and mempool. This page never "
+            "asks for the seed or second factor."
         ),
         "next": "/livestream-announcements",
     },
@@ -72,9 +76,10 @@ PURPOSES = {
         "title": "YadaCoin - Operator sign-in",
         "blurb": (
             "Control this node's treasury without importing the node seed. "
-            "Paste this node's seed and second factor into the browser "
-            "extension or mobile app. Rotations sync through the chain and "
-            "mempool. This page never asks for those secrets."
+            "Enter this node's Yada username and approve the request in the "
+            "Yada Password extension or the Android/iOS app. Rotations sync "
+            "through the chain and mempool. This page never asks for the seed "
+            "or second factor."
         ),
         "next": "/app",
     },
