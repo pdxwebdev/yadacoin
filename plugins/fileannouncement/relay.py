@@ -70,12 +70,33 @@ async def handle_paid_media(rpc, body, stream):
     price = str((live or {}).get("price") or "")
     pay_to = str((live or {}).get("public_key_hash") or "")
     file_id = str((live or {}).get("file_id") or "")
+    credential_ok = True
+    from .credentials import (
+        PresentationError,
+        credential_requirement,
+        presentation_from_parts,
+        requirement_applies,
+        verify_presentation,
+    )
+
+    if requirement_applies(live, file_id):
+        claim, issuer = credential_requirement(live)
+        try:
+            verify_presentation(
+                presentation_from_parts(str(params.get("vp") or ""), ""),
+                claim,
+                issuer,
+            )
+        except PresentationError:
+            credential_ok = False
+            result = {"ok": False, "error": "credential required"}
     if (
         live
         and payment
         and file_id
         and purchase.output_pays(payment, pay_to, price)
         and paidstore.has(rpc.config, file_id)
+        and credential_ok
         and start >= 0
         and 0 < length <= CHUNK
     ):
@@ -103,7 +124,7 @@ def handle_paid_media_result(body):
 
 
 async def pull_chunk(
-    config, username, signature, transaction_id, payment_id, start, length
+    config, username, signature, transaction_id, payment_id, start, length, vp=""
 ):
     streams = connected_creator_streams(config, username, signature)
     if not streams:
@@ -120,6 +141,7 @@ async def pull_chunk(
                 "payment_id": payment_id,
                 "start": int(start),
                 "length": int(length),
+                "vp": vp or "",
             },
             "params",
             req_id,

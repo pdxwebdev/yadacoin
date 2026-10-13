@@ -214,6 +214,115 @@
       .replace(/"/g, "&quot;");
   }
 
+  let myBadges = [];
+
+  function credentialNeed(item) {
+    return {
+      claim: String((item && item.required_claim) || "").trim(),
+      issuer: String((item && item.required_issuer) || "").trim(),
+    };
+  }
+
+  function issuerId(value) {
+    let text = String(value || "").trim();
+    const prefix = "did:yadacoin:";
+    if (text.toLowerCase().startsWith(prefix)) text = text.slice(prefix.length).trim();
+    if (text.startsWith("@")) text = text.slice(1).trim();
+    return text;
+  }
+
+  function sameIssuer(wanted, candidate) {
+    const want = issuerId(wanted);
+    const got = issuerId(candidate);
+    if (!want || !got) return false;
+    if (want === got) return true;
+    if (want.length <= 32 && got.length <= 32 && !/[+/=]/.test(want + got)) {
+      return want.toLowerCase() === got.toLowerCase();
+    }
+    return false;
+  }
+
+  function badgeMatches(badge, need) {
+    if (!badge || !need || (!need.claim && !need.issuer)) return false;
+    const expires = Number(badge.expires);
+    if (Number.isFinite(expires) && expires > 0 && expires * 1000 < Date.now()) return false;
+    if (badge.proof_valid === false) return false;
+    const vc = badge.vc || {};
+    const subject = vc.credentialSubject || {};
+    const claimOk = !need.claim || badge.claim === need.claim || !!subject[need.claim];
+    if (!claimOk) return false;
+    if (!need.issuer) return true;
+    return (
+      sameIssuer(need.issuer, badge.issuer_username_signature) ||
+      sameIssuer(need.issuer, badge.issuer_username) ||
+      sameIssuer(need.issuer, vc.issuer)
+    );
+  }
+
+  function matchingBadge(item) {
+    const need = credentialNeed(item);
+    if (!need.claim && !need.issuer) return null;
+    return myBadges.find((badge) => badgeMatches(badge, need)) || null;
+  }
+
+  function presentationQuery(badge) {
+    const vc = badge && badge.vc;
+    const holder = vc && vc.credentialSubject && vc.credentialSubject.id;
+    if (!vc || !holder) return "";
+    const vp = {
+      "@context": ["https://www.w3.org/ns/credentials/v2"],
+      type: ["VerifiablePresentation"],
+      holder,
+      verifiableCredential: [vc],
+    };
+    try {
+      const json = JSON.stringify(vp);
+      return btoa(unescape(encodeURIComponent(json)))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function credentialMessage(item) {
+    const need = credentialNeed(item);
+    const claim = need.claim ? claimLabel(need.claim) : "a credential";
+    const issuer = need.issuer ? ` from ${shortId(need.issuer)}` : "";
+    return `This download requires ${claim}${issuer}. It is not in your badges.`;
+  }
+
+  async function loadMyBadges() {
+    try {
+      const me = await fetch(API_ME, { credentials: "same-origin" });
+      const who = await me.json().catch(() => ({}));
+      if (!who.authenticated || !who.username) {
+        myBadges = [];
+        return myBadges;
+      }
+      const res = await fetch(
+        `${API_BADGES}?username=${encodeURIComponent(who.username)}`,
+        { credentials: "same-origin" }
+      );
+      const data = await res.json().catch(() => ({}));
+      myBadges = data.badges || [];
+    } catch (_) {
+      myBadges = [];
+    }
+    refreshCredentialSources();
+    return myBadges;
+  }
+
+  async function downloadAllowed(item) {
+    const need = credentialNeed(item);
+    if (!need.claim && !need.issuer) return true;
+    await loadMyBadges();
+    if (matchingBadge(item)) return true;
+    showStatus(credentialMessage(item), 3500);
+    return false;
+  }
+
   function itemPrice(item) {
     const raw = String((item && item.price) || "").trim();
     const n = Number(raw);
@@ -231,6 +340,22 @@
     return `<span class="price-chip">PPV ${escapeHtml(formatPrice(price))} YDA</span>`;
   }
 
+  function credentialChipHtml(item) {
+    const need = credentialNeed(item);
+    if (!need.claim && !need.issuer) return "";
+    if (matchingBadge(item)) return "";
+    const label = need.claim ? claimLabel(need.claim) : "credential";
+    return `<span class="price-chip cred-chip">Needs ${escapeHtml(label)}</span>`;
+  }
+
+  function paintCredentialChip(root, item) {
+    if (!root) return;
+    const existing = root.querySelector(".cred-chip");
+    if (existing) existing.remove();
+    const html = credentialChipHtml(item);
+    if (html) root.insertAdjacentHTML("beforeend", html);
+  }
+
   function paidStreamUrl(item) {
     const id = String((item && item.transaction_id) || "").trim();
     if (!id) return "";
@@ -239,20 +364,42 @@
     const paymentId = String((item && item.payment_id) || "").trim();
     if (access) params.set("access", access);
     if (paymentId) params.set("payment_id", paymentId);
+    const vp = presentationQuery(matchingBadge(item));
+    if (vp) params.set("vp", vp);
     const q = params.toString();
     return `${API_PURCHASE}/stream/${encodeURIComponent(id)}${q ? `?${q}` : ""}`;
   }
 
   function streamUrl(item) {
     if (itemPrice(item) && !(item && item.price_unlocked)) return "";
+    const need = credentialNeed(item);
+    if ((need.claim || need.issuer) && !matchingBadge(item)) return "";
     if (!item || !item.stream_url) return "";
     const params = new URLSearchParams();
     if (item.filename) params.set("filename", item.filename);
     if (item.mime_type) params.set("mime_type", item.mime_type);
+    const vp = presentationQuery(matchingBadge(item));
+    if (vp) params.set("vp", vp);
     const q = params.toString();
     if (!q) return item.stream_url;
     const join = item.stream_url.includes("?") ? "&" : "?";
     return `${item.stream_url}${join}${q}`;
+  }
+
+  function refreshCredentialSources() {
+    if (!feed) return;
+    feed.querySelectorAll(".slide").forEach((slide) => {
+      const item = videos.find((row) => itemKey(row) === slide.dataset.key);
+      if (!item) return;
+      paintCredentialChip(slide, item);
+      const video = slide.querySelector("video");
+      if (!video || video.getAttribute("src")) return;
+      const url = streamUrl(item);
+      if (!url) return;
+      video.setAttribute("data-src", url);
+      if (Number(slide.dataset.index) === activeIndex) ensureSrc(video);
+    });
+    syncBuyRail();
   }
 
   function mimeFor(item) {
@@ -453,6 +600,7 @@
       slide.classList.add("locked");
       slide.insertAdjacentHTML("beforeend", chip);
     }
+    paintCredentialChip(slide, item);
 
     const spinner = document.createElement("div");
     spinner.className = "spinner";
@@ -543,6 +691,17 @@
       if (!slide.isConnected) return;
       if (itemPrice(item) && !item.price_unlocked) {
         openBuy(item);
+        return;
+      }
+      const need = credentialNeed(item);
+      if (need.claim || need.issuer) {
+        downloadAllowed(item).then((ok) => {
+          if (!ok || !slide.isConnected) return;
+          const url = streamUrl(item);
+          if (url) video.setAttribute("data-src", url);
+          if (video.paused) video.play().catch(() => {});
+          else video.pause();
+        });
         return;
       }
       if (video.paused) video.play().catch(() => {});
@@ -850,6 +1009,7 @@
       slide.classList.add("locked");
       slide.insertAdjacentHTML("beforeend", chip);
     }
+    paintCredentialChip(slide, item);
     const tags = (item.keywords || [])
       .slice(0, 6)
       .map((k) => `<span class="tag">#${escapeHtml(k)}</span>`)
@@ -1607,8 +1767,13 @@
   function syncBuyRail() {
     if (!railBuy) return;
     const item = activeItem();
-    const show = !!(item && itemPrice(item) && !item.price_unlocked);
-    railBuy.hidden = !show;
+    const priced = !!(item && itemPrice(item) && !item.price_unlocked);
+    const need = credentialNeed(item);
+    const missing = !!(need.claim || need.issuer) && !matchingBadge(item);
+    railBuy.hidden = !priced;
+    railBuy.textContent = missing ? "Locked" : "Buy";
+    railBuy.title = missing ? credentialMessage(item) : "Buy";
+    railBuy.setAttribute("aria-label", railBuy.title);
   }
 
   function unlockPaid(item) {
@@ -1650,6 +1815,7 @@
   }
 
   async function openBuy(item) {
+    if (!(await downloadAllowed(item))) return;
     buyItem = item || null;
     const price = itemPrice(item);
     const address = creatorAddress(item);
@@ -2291,9 +2457,16 @@
     playerSpinner.hidden = true;
   }
 
-  function openPlayer(item) {
+  function openPlayer(item, credentialChecked) {
     if (itemPrice(item) && !item.price_unlocked) {
       openBuy(item);
+      return;
+    }
+    const need = credentialNeed(item);
+    if (!credentialChecked && (need.claim || need.issuer)) {
+      downloadAllowed(item).then((ok) => {
+        if (ok) openPlayer(item, true);
+      });
       return;
     }
     const url = streamUrl(item);
@@ -2319,9 +2492,16 @@
     playerVideo.play().catch(() => {});
   }
 
-  function openPhoto(item) {
+  function openPhoto(item, credentialChecked) {
     if (itemPrice(item) && !item.price_unlocked) {
       openBuy(item);
+      return;
+    }
+    const need = credentialNeed(item);
+    if (!credentialChecked && (need.claim || need.issuer)) {
+      downloadAllowed(item).then((ok) => {
+        if (ok) openPhoto(item, true);
+      });
       return;
     }
     const src = photoSrc(item);
@@ -2642,7 +2822,7 @@
       const still = src
         ? `<img alt="" src="${escapeHtml(src)}">`
         : `<span class="ph">${item.stream_url ? "▶" : "▣"}</span>`;
-      tile.innerHTML = `${still}${priceChipHtml(item)}<span class="cap">${escapeHtml(label)}</span>`;
+      tile.innerHTML = `${still}${priceChipHtml(item)}${credentialChipHtml(item)}<span class="cap">${escapeHtml(label)}</span>`;
       tile.addEventListener("click", () => {
         if (profileMedia === "photos") openPhoto(items[index]);
         else openPlayer(items[index]);
@@ -3406,6 +3586,7 @@
     if (viewName === "profile" && currentProfile) applyProfileLive(currentProfile);
   }
 
+  loadMyBadges();
   loadReasons();
   loadLive();
   setInterval(loadLive, 20000);

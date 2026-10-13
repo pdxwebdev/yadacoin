@@ -803,6 +803,15 @@ body {
   padding: 6px 10px;
 }
 
+.cred-chip {
+  top: 28px;
+}
+
+.slide > .cred-chip {
+  top: calc(112px + var(--safe-top));
+  left: 16px;
+}
+
 .tile .cap {
   position: absolute;
   left: 0;

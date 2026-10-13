@@ -159,6 +159,31 @@ class TestFileAnnouncement(AsyncTestCase):
         with self.assertRaises(ValueError):
             self._ann(price="nope")
 
+    async def test_required_credential_absent_does_not_change_preimage(self):
+        plain = self._ann()
+        blank = self._ann(required_claim="", required_issuer="")
+        self.assertEqual(blank.to_string(), plain.to_string())
+        self.assertNotIn("required_claim", plain.to_dict())
+        self.assertNotIn("required_issuer", plain.to_dict())
+
+    async def test_required_credential_roundtrip_and_hash(self):
+        plain = self._ann()
+        gated = self._ann(
+            required_claim="ageOver18",
+            required_issuer="did:yadacoin:issuerSig",
+        )
+        self.assertEqual(gated.required_claim, "ageOver18")
+        self.assertEqual(gated.required_issuer, "issuerSig")
+        self.assertEqual(gated.to_dict()["required_claim"], "ageOver18")
+        self.assertEqual(gated.to_dict()["required_issuer"], "issuerSig")
+        self.assertEqual(
+            gated.to_string(), plain.to_string() + "ageOver18" + "issuerSig"
+        )
+        again = FileAnnouncement.from_dict(gated.to_dict())
+        self.assertEqual(again.required_claim, gated.required_claim)
+        self.assertEqual(again.required_issuer, gated.required_issuer)
+        self.assertEqual(again.to_string(), gated.to_string())
+
     async def test_price_survives_leaked_decimal_precision(self):
         previous = getcontext().prec
         getcontext().prec = 8

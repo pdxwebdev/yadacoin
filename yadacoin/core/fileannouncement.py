@@ -32,6 +32,8 @@ MAX_KEYWORD_LEN = 64
 MAX_FILE_ID_LEN = 128
 MAX_SHARE_URL_LEN = 8192
 MAX_TYPE_LEN = 32
+MAX_CLAIM_LEN = 128
+MAX_ISSUER_LEN = 512
 
 
 def normalize_price(value) -> str:
@@ -60,6 +62,16 @@ def normalize_price(value) -> str:
 
 KNOWN_BACKENDS = frozenset({"sia", "memory"})
 _TYPE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def normalize_required_text(value, limit: int, name: str) -> str:
+    """Optional credential gate field. Empty means unset and is omitted from the hash."""
+    text = str(value or "").strip()
+    if text.lower().startswith("did:yadacoin:"):
+        text = text[len("did:yadacoin:") :].strip()
+    if len(text) > limit:
+        raise ValueError(f"{name} exceeds {limit} characters")
+    return text
 
 
 def normalize_type(value) -> str:
@@ -126,6 +138,8 @@ class FileAnnouncement:
     price        : optional sale price in YDA. Canonical 8-decimal string. Omitted
                    from the relationship hash when unset, so older announcements
                    keep the same preimage.
+    required_claim  : optional W3C credential claim a downloader must present.
+    required_issuer : optional issuer username signature or DID. Empty means any issuer.
     """
 
     RELATIONSHIP_KEY = "file"
@@ -146,6 +160,8 @@ class FileAnnouncement:
         thumbnail_share_url: str = "",
         type: str = "",
         price=None,
+        required_claim: str = "",
+        required_issuer: str = "",
         **kwargs,
     ):
         if not file_id or not isinstance(file_id, str):
@@ -205,7 +221,17 @@ class FileAnnouncement:
         self.thumbnail_share_url = thumbnail_share_url
         self.type = normalize_type(type)
         self.price = normalize_price(price)
-        self.extra_fields = {k: v for k, v in kwargs.items() if k != "price"}
+        self.required_claim = normalize_required_text(
+            required_claim, MAX_CLAIM_LEN, "required_claim"
+        )
+        self.required_issuer = normalize_required_text(
+            required_issuer, MAX_ISSUER_LEN, "required_issuer"
+        )
+        self.extra_fields = {
+            k: v
+            for k, v in kwargs.items()
+            if k not in ("price", "required_claim", "required_issuer")
+        }
 
     @staticmethod
     def from_dict(data: dict) -> "FileAnnouncement":
@@ -256,6 +282,10 @@ class FileAnnouncement:
             result["type"] = self.type
         if self.price:
             result["price"] = self.price
+        if self.required_claim:
+            result["required_claim"] = self.required_claim
+        if self.required_issuer:
+            result["required_issuer"] = self.required_issuer
         if self.extra_fields:
             result.update(self.extra_fields)
         return result
@@ -277,6 +307,8 @@ class FileAnnouncement:
             + self.get_string(self.thumbnail_share_url)
             + self.get_string(self.type)
             + self.price
+            + self.get_string(self.required_claim)
+            + self.get_string(self.required_issuer)
         )
 
     def matches_query(self, query: str) -> bool:

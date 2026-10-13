@@ -155,6 +155,11 @@
             <label for="compose-type">Type</label>
             <input name="type" id="compose-type" maxlength="32" placeholder="Optional app token, such as avatar" />
             <p class="compose-note">Stored as-is. Each app decides what a type means.</p>
+            <label for="compose-claim">Required claim (optional)</label>
+            <input name="required_claim" id="compose-claim" maxlength="128" placeholder="ageOver18" />
+            <label for="compose-issuer">Required issuer (optional)</label>
+            <input name="required_issuer" id="compose-issuer" maxlength="512" placeholder="@username, DID, or username signature" />
+            <p class="compose-note">Leave both blank to allow any downloader. Buyers without the claim in their badges cannot purchase. This node still denies the download unless a W3C verifiable presentation matches.</p>
             <label for="compose-file-id">Existing Sia file identifier (optional)</label>
             <input name="file_id" id="compose-file-id" placeholder="Skip upload and announce an existing object id" />
             <label for="compose-backend">Backend</label>

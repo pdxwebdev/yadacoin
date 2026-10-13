@@ -566,6 +566,8 @@ async def create_file(
     thumbnail: bytes = None,
     type: str = "",
     price=None,
+    required_claim: str = "",
+    required_issuer: str = "",
     on_progress=None,
     cancelled=None,
 ):
@@ -673,6 +675,8 @@ async def create_file(
             thumbnail_share_url=thumbnail_share_url,
             type=type,
             price=price,
+            required_claim=required_claim,
+            required_issuer=required_issuer,
         )
         txn = await _generate_txn(config, ann, fee=0.0)
         await _raise_if_upload_aborted(cancelled)
@@ -770,6 +774,9 @@ async def update_file(
         thumbnail_file_id=existing.get("thumbnail_file_id") or "",
         thumbnail_share_url=existing.get("thumbnail_share_url") or "",
         type=existing.get("type") or "",
+        price=existing.get("price") or "",
+        required_claim=existing.get("required_claim") or "",
+        required_issuer=existing.get("required_issuer") or "",
     )
     txn = await _generate_txn(config, ann, fee=0.0)
     await _broadcast(config, txn)
@@ -787,6 +794,9 @@ async def update_file(
         "share_url": ann.share_url,
         "supersedes": existing.get("transaction_id") or "",
         "type": ann.type,
+        "price": ann.price,
+        "required_claim": ann.required_claim,
+        "required_issuer": ann.required_issuer,
         "status": "mempool",
         "source": "mempool",
     }

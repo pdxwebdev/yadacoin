@@ -210,6 +210,8 @@ def _video_public_item(item: dict) -> dict:
         "public_key_hash": (item.get("public_key_hash") or "").strip(),
         "username": (item.get("username") or "").strip(),
         "price": str(f.get("price") or "").strip(),
+        "required_claim": str(f.get("required_claim") or "").strip(),
+        "required_issuer": str(f.get("required_issuer") or "").strip(),
         "stream_url": (
             ""
             if str(f.get("price") or "").strip()
@@ -232,6 +234,40 @@ def _json_body(handler):
         return json.loads(handler.request.body.decode("utf-8"))
     except Exception:
         raise ValueError("Invalid JSON body")
+
+
+async def _credential_blocked(handler, live, file_id: str = "") -> bool:
+    """Deny a download when the announcement requires a W3C presentation."""
+    from .credentials import (
+        PresentationError,
+        credential_requirement,
+        presentation_from_parts,
+        requirement_applies,
+        verify_presentation,
+    )
+
+    if not requirement_applies(live, file_id):
+        return False
+    claim, issuer = credential_requirement(live)
+    try:
+        vp = presentation_from_parts(
+            handler.request.headers.get("X-Yada-VP", ""),
+            handler.get_query_argument("vp", "") or "",
+        )
+        verify_presentation(vp, claim, issuer)
+    except PresentationError:
+        handler.set_status(403)
+        handler.finish("credential required")
+        return True
+    return False
+
+
+def _presented_vp(handler) -> str:
+    return (
+        handler.request.headers.get("X-Yada-VP", "")
+        or handler.get_query_argument("vp", "")
+        or ""
+    ).strip()
 
 
 def _keywords(value):
@@ -366,6 +402,8 @@ class FileListHandler(BaseFileAnnouncementHandler):
             upload_id = self.get_body_argument("upload_id", "")
             file_type = self.get_body_argument("type", "")
             price = self.get_body_argument("price", "")
+            required_claim = self.get_body_argument("required_claim", "")
+            required_issuer = self.get_body_argument("required_issuer", "")
             thumbnail = None
             if self.request.files.get("thumbnail"):
                 thumbnail = self.request.files["thumbnail"][0].get("body") or None
@@ -384,6 +422,8 @@ class FileListHandler(BaseFileAnnouncementHandler):
             upload_id = data.get("upload_id") or ""
             file_type = data.get("type") or ""
             price = data.get("price") or ""
+            required_claim = data.get("required_claim") or ""
+            required_issuer = data.get("required_issuer") or ""
             thumbnail = None
             raw = data.get("content_b64") or ""
             if raw:
@@ -397,6 +437,12 @@ class FileListHandler(BaseFileAnnouncementHandler):
             return self._error(400, "thumbnail exceeds 512KB")
         if not title:
             return self._error(400, "title is required")
+        from .credentials import canonical_issuer
+
+        try:
+            required_issuer = await canonical_issuer(required_issuer)
+        except ValueError as exc:
+            return self._error(400, str(exc))
         upload_id = str(upload_id or "").strip()
         tracked = progress.begin(
             upload_id,
@@ -417,6 +463,8 @@ class FileListHandler(BaseFileAnnouncementHandler):
                 thumbnail=thumbnail,
                 type=file_type,
                 price=price,
+                required_claim=required_claim,
+                required_issuer=required_issuer,
                 on_progress=(
                     (lambda event, uid=upload_id: progress.apply(uid, event))
                     if tracked
@@ -797,6 +845,8 @@ def _public_file_item(row: dict, username: str = "", keep_stream: bool = False) 
             "thumbnail_file_id": row.get("thumbnail_file_id") or "",
             "type": str(row.get("type") or "").strip().lower(),
             "price": str(row.get("price") or "").strip(),
+            "required_claim": str(row.get("required_claim") or "").strip(),
+            "required_issuer": str(row.get("required_issuer") or "").strip(),
         },
     }
     item = _video_public_item(shaped)
@@ -1223,6 +1273,12 @@ class PublicStreamHandler(BaseHandler):
         """Browsers / media stacks sometimes probe with HEAD before Range GET."""
         backend = (backend or "").strip().lower()
         file_id = (file_id or "").strip()
+        try:
+            live = await assert_live(self.config, backend, file_id)
+        except FileAnnouncementServiceError:
+            live = None
+        if live and await _credential_blocked(self, live, file_id):
+            return
         cache_key = f"{backend}:{file_id}"
         _evict_stream_cache()
         entry = _STREAM_CACHE.get(cache_key)
@@ -1266,6 +1322,12 @@ class PublicStreamHandler(BaseHandler):
         if not backend or not file_id:
             self.set_status(400)
             self.finish("backend and file_id are required")
+            return
+        try:
+            gated = await assert_live(self.config, backend, file_id)
+        except FileAnnouncementServiceError:
+            gated = None
+        if gated and await _credential_blocked(self, gated, file_id):
             return
         cache_key = f"{backend}:{file_id}"
         _evict_stream_cache()
@@ -1822,6 +1884,8 @@ class PublicPurchaseStreamHandler(BaseHandler):
             if not local_access:
                 self.set_status(402)
                 return self.finish("payment required")
+            if await _credential_blocked(self, live, file_id):
+                return
             if await self._serve_connected(live, transaction_id, payment_id):
                 return
             direct = self.request.headers.get("X-Yada-Ppv-Direct") == "1"
@@ -1832,6 +1896,8 @@ class PublicPurchaseStreamHandler(BaseHandler):
         if not local_access:
             self.set_status(402)
             return self.finish("payment required")
+        if await _credential_blocked(self, live, file_id):
+            return
         info = paidstore.meta(self.config, file_id)
         total = int(info.get("size") or 0)
         if total <= 0:
@@ -1895,14 +1961,15 @@ class PublicPurchaseStreamHandler(BaseHandler):
                     names = {}
                 username = str(names.get(owner) or "").strip().lstrip("@")
         total = int((live or {}).get("size") or 0)
+        vp = _presented_vp(self)
         probe = await pull_chunk(
-            self.config, username, sig, transaction_id, payment_id, 0, 1
+            self.config, username, sig, transaction_id, payment_id, 0, 1, vp=vp
         )
         if probe is None:
             return False
         if total <= 0:
             info_size = await pull_chunk(
-                self.config, username, sig, transaction_id, payment_id, 0, 1
+                self.config, username, sig, transaction_id, payment_id, 0, 1, vp=vp
             )
             total = 0
         str((live or {}).get("file_id") or "")
@@ -1942,6 +2009,7 @@ class PublicPurchaseStreamHandler(BaseHandler):
                     payment_id,
                     pos,
                     min(CHUNK, end - pos + 1),
+                    vp=vp,
                 )
                 if not raw:
                     break
@@ -1980,6 +2048,9 @@ class PublicPurchaseStreamHandler(BaseHandler):
             + quote(payment_id, safe="")
         )
         headers = {"X-Yada-Ppv-Direct": "1"}
+        vp = _presented_vp(self)
+        if vp:
+            headers["X-Yada-VP"] = vp
         if probe:
             headers["Range"] = "bytes=0-0"
             request_timeout = 4
@@ -1997,7 +2068,12 @@ class PublicPurchaseStreamHandler(BaseHandler):
                     request_timeout=request_timeout,
                 )
             )
-        except (HTTPClientError, Exception):
+        except HTTPClientError as exc:
+            response = getattr(exc, "response", None)
+            if getattr(exc, "code", 0) == 403 and response is not None:
+                return response
+            return None
+        except Exception:
             return None
 
     async def _first_stream_home(self, homes, transaction_id, payment_id):
@@ -2018,7 +2094,7 @@ class PublicPurchaseStreamHandler(BaseHandler):
                 )
                 for task in done:
                     resp = task.result()
-                    if resp is None or resp.code >= 400:
+                    if resp is None or (resp.code >= 400 and resp.code != 403):
                         continue
                     found = homes[tasks.index(task)]
                     break
@@ -2043,6 +2119,9 @@ class PublicPurchaseStreamHandler(BaseHandler):
         cached = _stream_home_get(transaction_id)
         if cached:
             resp = await self._fetch_purchase_stream(cached, transaction_id, payment_id)
+            if resp is not None and resp.code == 403:
+                self.set_status(403)
+                return self.finish("credential required")
             if resp is not None and resp.code < 400:
                 _stream_home_put(transaction_id, cached)
                 return self._write_proxied(resp)
@@ -2059,6 +2138,9 @@ class PublicPurchaseStreamHandler(BaseHandler):
             self.set_status(404)
             return self.finish("file not found")
         resp = await self._fetch_purchase_stream(home, transaction_id, payment_id)
+        if resp is not None and resp.code == 403:
+            self.set_status(403)
+            return self.finish("credential required")
         if resp is None or resp.code >= 400:
             self.set_status(404)
             return self.finish("file not found")
@@ -2096,6 +2178,9 @@ class PublicPurchaseStreamHandler(BaseHandler):
             + query
         )
         headers = {"X-Yada-Ppv-Direct": "1"}
+        vp = _presented_vp(self)
+        if vp:
+            headers["X-Yada-VP"] = vp
         range_header = self.request.headers.get("Range", "")
         if range_header:
             headers["Range"] = range_header
