@@ -101,6 +101,12 @@
   const playerSpinner = document.getElementById("player-spinner");
   const playerCaption = document.getElementById("player-caption");
   const playerLive = document.getElementById("player-live");
+  const playerGate = document.getElementById("player-gate");
+  const playerGateBg = document.getElementById("player-gate-bg");
+  const playerGateKicker = document.getElementById("player-gate-kicker");
+  const playerGateTitle = document.getElementById("player-gate-title");
+  const playerGateMsg = document.getElementById("player-gate-msg");
+  const playerGateChips = document.getElementById("player-gate-chips");
   const liveRow = document.getElementById("live-row");
   const railGift = document.getElementById("rail-gift");
   const railBuy = document.getElementById("rail-buy");
@@ -215,6 +221,7 @@
   }
 
   let myBadges = [];
+  let signedIn = false;
 
   function credentialGates(item) {
     const raw = item && item.required_credentials;
@@ -322,13 +329,124 @@
     }
   }
 
-  function credentialMessage(item) {
-    const missing = credentialGates(item).filter((gate) => !myBadges.some((badge) => badgeMatches(badge, gate)));
+  function missingGates(item) {
+    return credentialGates(item).filter((gate) => !myBadges.some((badge) => badgeMatches(badge, gate)));
+  }
+
+  function chipHue(text) {
+    let n = 0;
+    const s = String(text || "badge");
+    for (let i = 0; i < s.length; i++) n = (n * 33 + s.charCodeAt(i)) >>> 0;
+    return n % 360;
+  }
+
+  function gateIssuerLabel(issuer) {
+    const id = issuerId(issuer);
+    if (!id) return "";
+    if (id.length <= 32 && !/[+/=]/.test(id)) return `@${id.replace(/^@/, "")}`;
+    return shortId(id);
+  }
+
+  function itemWatchVerb(item, kind) {
+    if (kind === "photo") return "view";
+    if (kind === "video") return "watch";
+    const mime = String((item && item.mime_type) || "").toLowerCase();
+    return mime.startsWith("image/") ? "view" : "watch";
+  }
+
+  function accessGateMessage(item, kind) {
+    const missing = missingGates(item);
     const labels = (missing.length ? missing : credentialGates(item)).map((gate) =>
       gate.claim ? claimLabel(gate.claim) : "a credential"
     );
     const text = labels.join(" and ") || "a credential";
-    return `This download requires ${text}. ${labels.length === 1 ? "It is" : "They are"} not in your badges.`;
+    const which = labels.length === 1 ? "that badge is" : "those badges are";
+    let msg = `You can't ${itemWatchVerb(item, kind)} this yet. It requires ${text}, and ${which} not in your wallet.`;
+    if (!signedIn) {
+      msg = `Sign in on this node so your badges can be checked. ${msg}`;
+    }
+    const price = itemPrice(item);
+    if (price && !(item && item.price_unlocked)) {
+      msg += ` It also costs ${formatPrice(price)} YDA. Payment stays closed until every required badge is in your wallet.`;
+    }
+    return msg;
+  }
+
+  function credentialMessage(item) {
+    return accessGateMessage(item);
+  }
+
+  function gateChipHtml(gate) {
+    const claim = gate.claim ? claimLabel(gate.claim) : "Credential";
+    const issuer = gate.issuer ? gateIssuerLabel(gate.issuer) : "";
+    const hue = chipHue(`${gate.claim}|${gate.issuer}`);
+    return `<span class="gate-chip" style="--chip:${hue}"><span class="gate-mark">${escapeHtml(
+      claimMark(gate.claim)
+    )}</span><span class="gate-chip-text"><strong>${escapeHtml(claim)}</strong><small>${
+      issuer ? `from ${escapeHtml(issuer)}` : "Missing"
+    }</small></span></span>`;
+  }
+
+  function priceGateChipHtml(item) {
+    const price = itemPrice(item);
+    if (!price || (item && item.price_unlocked)) return "";
+    return `<span class="gate-chip gate-chip-price"><span class="gate-mark">YDA</span><span class="gate-chip-text"><strong>${escapeHtml(
+      formatPrice(price)
+    )} YDA</strong><small>Pay after badges</small></span></span>`;
+  }
+
+  function hideAccessGate() {
+    if (!playerGate) return;
+    playerGate.hidden = true;
+    playerEl.classList.remove("gated");
+    if (playerGateBg) {
+      playerGateBg.hidden = true;
+      playerGateBg.removeAttribute("src");
+    }
+    if (playerGateChips) playerGateChips.innerHTML = "";
+  }
+
+  function openAccessGate(item, kind) {
+    if (!item) return Promise.resolve();
+    return loadMyBadges().then(() => {
+      stopLiveHls();
+      pauseFeed();
+      playerItem = item;
+      playerLive.hidden = true;
+      railReport.hidden = false;
+      playerSpinner.hidden = true;
+      try {
+        playerVideo.pause();
+      } catch (_) {}
+      playerVideo.hidden = true;
+      playerVideo.removeAttribute("src");
+      playerVideo.srcObject = null;
+      try {
+        playerVideo.load();
+      } catch (_) {}
+      playerPhoto.hidden = true;
+      playerPhoto.removeAttribute("src");
+      playerCaption.textContent = "";
+      const missing = missingGates(item);
+      const gates = missing.length ? missing : credentialGates(item);
+      playerGateKicker.textContent = "Locked";
+      playerGateTitle.textContent = item.title || item.filename || "This post";
+      playerGateMsg.textContent = accessGateMessage(item, kind);
+      playerGateChips.innerHTML = gates.map(gateChipHtml).join("") + priceGateChipHtml(item);
+      const poster = String((item && item.thumbnail_url) || "").trim();
+      if (poster) {
+        playerGateBg.hidden = false;
+        playerGateBg.src = poster;
+      } else {
+        playerGateBg.hidden = true;
+        playerGateBg.removeAttribute("src");
+      }
+      playerGate.hidden = false;
+      playerEl.classList.add("gated");
+      playerEl.hidden = false;
+      appEl.classList.add("player-open");
+      renderLiveRow();
+    });
   }
 
   async function loadMyBadges() {
@@ -336,9 +454,11 @@
       const me = await fetch(API_ME, { credentials: "same-origin" });
       const who = await me.json().catch(() => ({}));
       if (!who.authenticated || !who.username) {
+        signedIn = false;
         myBadges = [];
         return myBadges;
       }
+      signedIn = true;
       const res = await fetch(
         `${API_BADGES}?username=${encodeURIComponent(who.username)}`,
         { credentials: "same-origin" }
@@ -346,6 +466,7 @@
       const data = await res.json().catch(() => ({}));
       myBadges = data.badges || [];
     } catch (_) {
+      signedIn = false;
       myBadges = [];
     }
     refreshCredentialSources();
@@ -355,9 +476,7 @@
   async function downloadAllowed(item) {
     if (!credentialGates(item).length) return true;
     await loadMyBadges();
-    if (matchingBadges(item)) return true;
-    showStatus(credentialMessage(item), 3500);
-    return false;
+    return !!matchingBadges(item);
   }
 
   function grantNote(item) {
@@ -753,7 +872,11 @@
       }
       if (credentialGates(item).length) {
         downloadAllowed(item).then((ok) => {
-          if (!ok || !slide.isConnected) return;
+          if (!slide.isConnected) return;
+          if (!ok) {
+            openAccessGate(item, "video");
+            return;
+          }
           const url = streamUrl(item);
           if (url) video.setAttribute("data-src", url);
           if (video.paused) video.play().catch(() => {});
@@ -1871,7 +1994,10 @@
   }
 
   async function openBuy(item) {
-    if (!(await downloadAllowed(item))) return;
+    if (!(await downloadAllowed(item))) {
+      openAccessGate(item);
+      return;
+    }
     buyItem = item || null;
     const price = itemPrice(item);
     const address = creatorAddress(item);
@@ -2503,6 +2629,7 @@
     try {
       playerVideo.load();
     } catch (_) {}
+    hideAccessGate();
     playerEl.hidden = true;
     appEl.classList.remove("player-open");
     playerSpinner.hidden = true;
@@ -2525,9 +2652,11 @@
     if (!credentialChecked && credentialGates(item).length) {
       downloadAllowed(item).then((ok) => {
         if (ok) openPlayer(item, true);
+        else openAccessGate(item, "video");
       });
       return;
     }
+    hideAccessGate();
     const url = streamUrl(item);
     if (!url) {
       showStatus("Playback isn't available for this file", 2500);
@@ -2559,9 +2688,11 @@
     if (!credentialChecked && credentialGates(item).length) {
       downloadAllowed(item).then((ok) => {
         if (ok) openPhoto(item, true);
+        else openAccessGate(item, "photo");
       });
       return;
     }
+    hideAccessGate();
     const src = photoSrc(item);
     if (!src) {
       showStatus("Photo isn't available", 2500);
@@ -2757,6 +2888,7 @@
 
   async function openLive(stream) {
     if (!stream) return;
+    hideAccessGate();
     pauseFeed();
     const item = {
       kind: "livestream",
@@ -2772,6 +2904,9 @@
     playerItem = item;
     railReport.hidden = true;
     playerLive.hidden = false;
+    playerPhoto.hidden = true;
+    playerPhoto.removeAttribute("src");
+    playerVideo.hidden = false;
     playerVideo.loop = false;
     const who = item.username ? `@${item.username}` : "Live";
     playerCaption.textContent =

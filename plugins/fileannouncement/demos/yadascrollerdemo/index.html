@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#000000" />
   <title>Yada Scroller Demo</title>
   <base href="/file-announcements/demo/yadascroller/" />
-  <link rel="stylesheet" href="styles.css?v=21" />
+  <link rel="stylesheet" href="styles.css?v=22" />
 </head>
 <body>
   <div id="app">
@@ -130,6 +130,15 @@
       <img id="player-photo" alt="" hidden />
       <div class="spinner" id="player-spinner" hidden></div>
       <div class="player-caption" id="player-caption"></div>
+      <div id="player-gate" class="player-gate" hidden>
+        <img id="player-gate-bg" class="player-gate-bg" alt="" hidden />
+        <div class="player-gate-card">
+          <p class="player-gate-kicker" id="player-gate-kicker">Locked</p>
+          <h2 id="player-gate-title"></h2>
+          <p id="player-gate-msg"></p>
+          <div id="player-gate-chips" class="player-gate-chips"></div>
+        </div>
+      </div>
     </div>
 
     <section id="upload" class="profile" hidden>
@@ -240,6 +249,6 @@
     </dialog>
   </div>
   <script src="/app/assets/qrcode.js"></script>
-  <script src="app.js?v=31"></script>
+  <script src="app.js?v=32"></script>
 </body>
 </html>
