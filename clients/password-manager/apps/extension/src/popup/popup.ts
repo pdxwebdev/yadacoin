@@ -306,14 +306,23 @@ async function drainPendingRequests(): Promise<void> {
     public_key: id.k0.publicKeyHex,
     inception_pkh: id.k0.address,
   };
+  const stored = await chrome.storage.local.get(["yadaPendingAuth", "yadaPendingHome"]);
+  if (stored.yadaPendingAuth?.session_id) {
+    renderPendingRequest(stored.yadaPendingAuth, stored.yadaPendingHome || "");
+    showAlert(`Pending ${stored.yadaPendingAuth.action} for ${stored.yadaPendingAuth.site}`, "success");
+    setTab("request");
+    return;
+  }
   const bases: string[] = [];
-  const page = await getActiveOrigin();
-  if (page) bases.push(page.replace(/\/+$/, ""));
   try {
     const home = await getApiBase(v.username);
-    if (home && !bases.some((b) => sameNode(b, home))) bases.push(home);
+    if (home) bases.push(home);
   } catch {
-    /* page node may still hold the request (local sign-in) */
+    /* fall through to the page node */
+  }
+  const page = await getActiveOrigin();
+  if (page && !bases.some((b) => sameNode(b, page))) {
+    bases.push(page.replace(/\/+$/, ""));
   }
   let first: PasswordAuthRequestPayload | null = null;
   let from = "";
@@ -358,8 +367,10 @@ async function approvePendingRequest(): Promise<void> {
   if (siteKey.startsWith("http://") || siteKey.startsWith("https://")) {
     siteKey = normalizeSiteId(siteKey);
   }
-  const rotateBase = siteKey.startsWith("http") ? siteKey : nodeUrl;
   const action = (p.action || "signin").toLowerCase();
+  // Sign-in KEL lives on the password home. Operator unlock stays on the node origin.
+  const rotateBase =
+    action === "operator" && siteKey.startsWith("http") ? siteKey : nodeUrl;
   let password = "";
   let counter: number | null = null;
 
@@ -382,7 +393,11 @@ async function approvePendingRequest(): Promise<void> {
   await ensureNodeAccess(rotateBase);
   try {
     siteReg = await resyncSiteFromNode({ baseUrl: rotateBase }, identity, siteKey);
-  } catch {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/expected counter/i.test(msg) || /already has a branch/i.test(msg)) {
+      throw e instanceof Error ? e : new Error(msg);
+    }
     const reg = await registerSite({ baseUrl: rotateBase }, identity, siteKey);
     v.mainDepth = reg.identity.mainDepth;
     v.tipPrevPkh = reg.identity.tipPrevPkh;

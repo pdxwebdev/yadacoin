@@ -8,6 +8,7 @@ import {
   hexToBytes,
   LEGACY_KEYS,
   materialFromPrivCc,
+  nodeUrlToWebSocketUrl,
   normalizeNodeBaseUrl,
   registerSite,
   resyncSiteFromNode,
@@ -16,7 +17,9 @@ import {
   syncInceptionFromNode,
   unlockIdentity,
   vaultIdFromData,
+  websocketPeerIdentity,
   VaultStore,
+  type PasswordAuthRequestPayload,
   type SiteRegistration,
   type StoredSite,
   type StoredVault,
@@ -83,7 +86,9 @@ async function apiBase(pageOrigin?: string): Promise<string> {
   return resolveHomeApiBase({
     username: v?.username || "",
     pageOrigin,
-    cachedHome: v?.nodeUrl,
+    cachedHome: v?.nodeUrl && pageOrigin && v.nodeUrl.replace(/\/+$/, "").toLowerCase() === pageOrigin.replace(/\/+$/, "").toLowerCase()
+      ? undefined
+      : v?.nodeUrl,
     requestPermission: false,
   });
 }
@@ -153,11 +158,100 @@ function reportProgress(
   );
 }
 
+let authWs: WebSocket | null = null;
+let authWsKey = "";
+
+async function connectAuthHome(): Promise<void> {
+  const v = await loadVault();
+  if (!v?.inceptionDone || !v.username) return;
+  const base = await resolveHomeApiBase({
+    username: v.username,
+    cachedHome: v.nodeUrl,
+    requestPermission: false,
+  });
+  if (!base) return;
+  const identity = unlockIdentity(v.mnemonic, v.secondFactor, v.username, {
+    identityType: v.identityType,
+    mainDepth: v.mainDepth,
+    tipPrevPkh: v.tipPrevPkh,
+  });
+  const peer = websocketPeerIdentity(identity);
+  const key = `${base}|${peer.public_key}`;
+  if (
+    authWs &&
+    authWsKey === key &&
+    (authWs.readyState === WebSocket.OPEN ||
+      authWs.readyState === WebSocket.CONNECTING)
+  ) {
+    return;
+  }
+  if (authWs) {
+    try {
+      authWs.onclose = null;
+      authWs.close();
+    } catch {
+      /* ignore */
+    }
+    authWs = null;
+  }
+  const wsUrl = nodeUrlToWebSocketUrl(base);
+  if (!wsUrl) return;
+  authWsKey = key;
+  const ws = new WebSocket(wsUrl);
+  authWs = ws;
+  let rpcId = 1;
+  const send = (method: string, params: Record<string, unknown> = {}) => {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ id: rpcId++, jsonrpc: "2.0", method, params }));
+  };
+  ws.onopen = () => {
+    send("connect", { identity: peer });
+  };
+  ws.onmessage = (ev) => {
+    let msg: { method?: string; params?: PasswordAuthRequestPayload; result?: { pending?: PasswordAuthRequestPayload[] } };
+    try {
+      msg = JSON.parse(String(ev.data || ""));
+    } catch {
+      return;
+    }
+    if (msg.method === "connect_confirm") {
+      send("join_password_auth", {});
+      return;
+    }
+    const payload = (msg.params || msg.result) as
+      | PasswordAuthRequestPayload
+      | { pending?: PasswordAuthRequestPayload[] }
+      | undefined;
+    if (msg.method === "join_password_auth_confirm") {
+      const row = (payload as { pending?: PasswordAuthRequestPayload[] } | undefined)?.pending?.[0];
+      if (row) void chrome.storage.local.set({ yadaPendingAuth: row, yadaPendingHome: base });
+      return;
+    }
+    if (msg.method === "password_auth_request" && payload && "session_id" in payload) {
+      void chrome.storage.local.set({ yadaPendingAuth: payload, yadaPendingHome: base });
+    }
+  };
+  ws.onclose = () => {
+    if (authWs === ws) authWs = null;
+  };
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   console.info("Yada Password extension installed", EXT_VERSION);
   void ensureMigrated();
-  // Warm topology cache from yadacoin.com / light snapshot
   void import("../shared/home.js").then((m) => m.refreshTopologyCache()).catch(() => {});
+  chrome.alarms.create("yada-auth-home", { periodInMinutes: 1 });
+  void connectAuthHome().catch(() => {});
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  chrome.alarms.create("yada-auth-home", { periodInMinutes: 1 });
+  void connectAuthHome().catch(() => {});
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== "yada-auth-home") return;
+  void connectAuthHome().catch(() => {});
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

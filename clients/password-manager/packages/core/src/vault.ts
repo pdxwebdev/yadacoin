@@ -92,6 +92,7 @@ async function httpJson(
   try {
     res = await fetchImpl(url, {
       ...init,
+      cache: init?.cache ?? "no-store",
       // Public node JSON APIs do not need cookies; omit avoids credentialed CORS
       // failures and accidental session coupling when the site shares the node host.
       credentials: init?.credentials ?? "omit",
@@ -590,6 +591,13 @@ export function findPasswordMatchingHash(
   return null;
 }
 
+function expectedCounterFromMessage(message: string): number | null {
+  const m = /expected counter (\d+)/i.exec(message || "");
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 export async function rotateSitePassword(
   api: NodeApi,
   identity: VaultIdentity,
@@ -605,12 +613,15 @@ export async function rotateSitePassword(
 }> {
   const keys = siteKeysForOrigin(identity, site.branchPeer || site.siteId);
   const tipRes = await fetchSiteTip(api, keys.branchPeer);
-  const tip = tipRes.body?.tip;
+  let tip = tipRes.body?.tip;
   if (!tipRes.ok || !tip) {
     throw new Error("site not registered on node");
   }
-  const tipCounter = Number(tip.counter ?? site.counter ?? 0);
-  const live = siteAtCounter(
+  let tipCounter = Number(tip.counter ?? site.counter ?? 0);
+  if (!Number.isFinite(tipCounter) || tipCounter < 0) {
+    throw new Error("invalid tip counter on node");
+  }
+  let live = siteAtCounter(
     identity,
     {
       siteId: keys.branchPeer,
@@ -710,7 +721,7 @@ export async function rotateSitePassword(
     relationship: JSON.parse(rotateRelJson),
   });
 
-  const nextCounter = tipCounter + 1;
+  let nextCounter = tipCounter + 1;
   const pubRes = await httpJson(
     api,
     "/password-rotation/ratchet-pub?username_signature=" +
@@ -728,7 +739,7 @@ export async function rotateSitePassword(
     JSON.stringify({ p: consumedPassword }),
     ratchetPub
   );
-  const res = await httpJson(api, "/password-rotation/verify", {
+  let res = await httpJson(api, "/password-rotation/verify", {
     method: "POST",
     body: JSON.stringify({
       branch_peer: site.branchPeer,
@@ -740,6 +751,73 @@ export async function rotateSitePassword(
       txn,
     }),
   });
+  const expected = expectedCounterFromMessage(String(res.body?.message || ""));
+  if ((!res.ok || res.body?.status === false) && expected != null && expected !== nextCounter && expected > 0) {
+    tipCounter = expected - 1;
+    live = siteAtCounter(
+      identity,
+      {
+        siteId: keys.branchPeer,
+        branchPeer: keys.branchPeer,
+        kp0: keys.kp0,
+      },
+      tipCounter
+    );
+    const retrySigner = live.tip;
+    const retryNext = deriveMaterial(retrySigner, peerFactor);
+    const retryTwice = deriveMaterial(retryNext, peerFactor);
+    const retryTwicePassword = generateSitePassword(retryNext, site.branchPeer, tipCounter + 2);
+    const retryPrePassword = live.nextPassword;
+    const retryRelJson = buildPasswordRelationshipJson({
+      prerotated_password_hash: hashPassword(retryPrePassword),
+      twice_prerotated_password_hash: hashPassword(retryTwicePassword),
+    });
+    const retryTxn = buildAndSignTxn(retrySigner, {
+      time,
+      outputs: [{ to: retryNext.address, value: 0 }],
+      prerotatedKeyHash: retryNext.address,
+      twicePrerotatedKeyHash: retryTwice.address,
+      prevPublicKeyHash: live.tipPrevPkh,
+      relationshipHash: sha256Hex(retryRelJson),
+      relationship: JSON.parse(retryRelJson),
+    });
+    const retryEnc = await sealToRatchetPub(
+      JSON.stringify({ p: live.currentPassword }),
+      ratchetPub
+    );
+    nextCounter = expected;
+    password = live.currentPassword;
+    nextReveal = live.nextPassword;
+    res = await httpJson(api, "/password-rotation/verify", {
+      method: "POST",
+      body: JSON.stringify({
+        branch_peer: site.branchPeer,
+        counter: nextCounter,
+        password_enc: retryEnc,
+        username_signature: identity.usernameSignature,
+        branch_inception_public_key_hash: site.branchInceptionPkh,
+        inception_public_key_hash: identity.inceptionPublicKeyHash,
+        txn: retryTxn,
+      }),
+    });
+    if (res.ok && res.body?.status !== false) {
+      const updatedRetry: SiteRegistration = {
+        ...live,
+        tip: retryNext,
+        counter: nextCounter,
+        tipPrevPkh: retrySigner.address,
+        currentPassword: retryPrePassword,
+        nextPassword: retryTwicePassword,
+      };
+      return {
+        site: updatedRetry,
+        txn: retryTxn,
+        password: live.currentPassword,
+        nextPassword: retryPrePassword,
+        authenticated: true as const,
+      };
+    }
+  }
   if (!res.ok || res.body?.status === false) {
     throw new Error(res.body?.message || `sign-in/rotate failed (${res.status})`);
   }

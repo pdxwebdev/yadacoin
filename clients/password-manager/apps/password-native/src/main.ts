@@ -1113,11 +1113,16 @@ async function approvePending() {
 
     if (req.action === "signin" || req.action === "operator") {
       // operator = unlock node treasury via approve/reject; site is node origin.
-      const rotateBase = siteKey.startsWith("http") ? siteKey : nodeUrl;
+      const rotateBase =
+        req.action === "operator" && siteKey.startsWith("http") ? siteKey : nodeUrl;
       let site: SiteRegistration;
       try {
         site = await resyncSiteFromNode({ baseUrl: rotateBase }, identity, siteKey);
-      } catch {
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (/expected counter/i.test(msg) || /already has a branch/i.test(msg)) {
+          throw e instanceof Error ? e : new Error(msg);
+        }
         const reg = await registerSite({ baseUrl: rotateBase }, identity, siteKey);
         v.mainDepth = reg.identity.mainDepth;
         v.tipPrevPkh = reg.identity.tipPrevPkh;

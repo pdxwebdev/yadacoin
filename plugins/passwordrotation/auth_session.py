@@ -107,6 +107,16 @@ def normalize_http_base(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
 
 
+def https_twin(url: str) -> str:
+    """https://host for an http default-port base. Empty if already https or a custom port."""
+    parsed = urlparse(normalize_http_base(url))
+    if parsed.scheme != "http" or not parsed.hostname:
+        return ""
+    if parsed.port not in (None, 80):
+        return ""
+    return f"https://{parsed.hostname}"
+
+
 def _trim_rate(bucket: dict[str, list[float]], key: str, now: float) -> list[float]:
     cut = now - RATE_WINDOW_SEC
     arr = [t for t in bucket.get(key, []) if t >= cut]
@@ -761,6 +771,32 @@ def _store_home(username_signature: str, handler, home: dict, ttl: float) -> dic
     return _copy_home(stored)
 
 
+def _https_first(items: list, this: str) -> list:
+    """Probe HTTPS homes before HTTP. An http:80 host is also tried as https://host."""
+    https = []
+    http = []
+    seen = set()
+
+    def add(item, bucket):
+        key = (item.get("target") or "").lower()
+        if not key or key in seen:
+            return
+        seen.add(key)
+        bucket.append(item)
+
+    for item in items:
+        twin = https_twin(item.get("target") or "")
+        if twin:
+            copy = dict(item)
+            copy["target"] = twin
+            copy["is_local"] = bool(this) and is_same_home(twin, this)
+            copy["source_tag"] = f"{item.get('source_tag') or 'home'}_https"
+            add(copy, https)
+        target = item.get("target") or ""
+        add(item, https if target.lower().startswith("https://") else http)
+    return https + http
+
+
 async def resolve_password_home_sp_live(username_signature: str, handler=None) -> dict:
     """Deterministic SP ring + tested_nodes with parallel HTTP liveness failover.
 
@@ -825,6 +861,7 @@ async def resolve_password_home_sp_live(username_signature: str, handler=None) -
     if not ordered:
         return _store_home(username_signature, handler, local, _HOME_MISS_TTL)
 
+    ordered = _https_first(ordered, this)
     idx = await _first_live(ordered)
     if idx < 0:
         tried = [item["target"] for item in ordered if not item["is_local"]]

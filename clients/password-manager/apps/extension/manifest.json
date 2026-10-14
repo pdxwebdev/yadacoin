@@ -5,9 +5,17 @@
   "description": "YadaCoin KEL password rotation manager with customizable theming",
   "permissions": [
     "activeTab",
+    "alarms",
     "storage",
     "tabs",
     "scripting"
+  ],
+  "host_permissions": [
+    "https://centeridentity.com/*",
+    "https://yadacoin.io/*",
+    "https://yadacoin.com/*",
+    "http://centeridentity.com/*",
+    "http://yadacoin.io/*"
   ],
   "background": {
     "service_worker": "background.js",

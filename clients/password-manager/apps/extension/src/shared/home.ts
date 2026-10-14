@@ -65,7 +65,9 @@ export async function probeNodeAlive(
       signal: ctrl.signal,
       headers: { Accept: "application/json" },
     });
-    if (res.status > 0 && res.status < 500) return true;
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => null);
+    if (data && (data.peer_type || data.version || data.network)) return true;
   } catch {
     return false;
   } finally {
@@ -133,10 +135,18 @@ export async function resolveHomeApiBase(opts: {
   const dead = new Set<string>();
 
   const accept = async (raw: string | undefined): Promise<string | null> => {
-    const home = normalizeNodeBaseUrl(raw || "");
+    let home = normalizeNodeBaseUrl(raw || "");
+    if (home.startsWith("http://")) {
+      try {
+        const host = new URL(home).hostname;
+        const secure = normalizeNodeBaseUrl(`https://${host}`);
+        if (secure && (await probeNodeAlive(secure))) home = secure;
+      } catch {
+        /* keep http */
+      }
+    }
     if (!home || isLoopback(home) || dead.has(home.toLowerCase())) return null;
     if (!(await ensureAccess(home, wantPerm))) {
-      dead.add(home.toLowerCase());
       return null;
     }
     if (!(await probeNodeAlive(home))) {
@@ -151,9 +161,14 @@ export async function resolveHomeApiBase(opts: {
 
   if (username) {
     const hit = homeCache.get(username.toLowerCase());
-    if (hit && Date.now() - hit.at < HOME_CACHE_MS) {
+    const page = normalizeNodeBaseUrl(opts.pageOrigin || "");
+    const cachedIsPage =
+      !!hit && !!page && hit.base.toLowerCase() === page.toLowerCase();
+    if (hit && !cachedIsPage && Date.now() - hit.at < HOME_CACHE_MS) {
       const ok = await accept(hit.base);
       if (ok) return ok;
+      homeCache.delete(username.toLowerCase());
+    } else if (cachedIsPage) {
       homeCache.delete(username.toLowerCase());
     }
   }
@@ -167,12 +182,14 @@ export async function resolveHomeApiBase(opts: {
     if (!route.status) return accept(entry);
     const primary = await accept(route.node_http_base);
     if (primary) return primary;
+    const resolved = normalizeNodeBaseUrl(route.node_http_base || "");
+    if (resolved && !isLoopback(resolved) && !(await hasAccess(resolved))) {
+      return resolved;
+    }
     for (const t of route.tried || []) {
       dead.add(normalizeNodeBaseUrl(t).toLowerCase());
     }
-    return (
-      (await accept(route.deterministic_node_http_base)) || (await accept(entry))
-    );
+    return (await accept(route.deterministic_node_http_base)) || null;
   };
 
   const permitted: string[] = [];
