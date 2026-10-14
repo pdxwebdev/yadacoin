@@ -22,3 +22,4 @@ config/pqr_llm_secrets.json
 # Local node configs (keys/seeds)
 config/local_node_*.json
 data/fileannouncement-paid/
+.node-dashboard-work/

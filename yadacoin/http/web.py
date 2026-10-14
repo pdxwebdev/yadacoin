@@ -17,6 +17,7 @@ Handlers required by the web operations
 
 from plugins.yadapasswordsignin.handlers import redirect_to_signin
 from yadacoin.http.base import BaseHandler
+from yadacoin.http.operator import OPERATOR_HANDLERS
 
 
 class HomeHandler(BaseHandler):
@@ -49,4 +50,4 @@ WEB_HANDLERS = [
     (r"/", HomeHandler),
     (r"/node-dashboard", HomeHandler),
     (r"/app", AppHandler),
-]
+] + OPERATOR_HANDLERS

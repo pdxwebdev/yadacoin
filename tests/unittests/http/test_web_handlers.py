@@ -73,3 +73,18 @@ class TestHomeHandlerGet(WebHttpTestCase):
         """HomeHandler is also served at /node-dashboard"""
         response = self.fetch("/node-dashboard")
         self.assertIn(response.code, [200, 500])
+
+    def test_operator_page_requires_yada_password(self):
+        response = self.fetch("/operator", follow_redirects=False)
+        self.assertEqual(response.code, 302)
+        location = response.headers["Location"]
+        self.assertIn("/yada-password/signin", location)
+        self.assertIn("purpose=operator", location)
+        self.assertIn("next=%2Foperator", location)
+        denied = self.fetch(
+            "/operator/api/reload",
+            method="POST",
+            body=b'{"confirm":"reload"}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(denied.code, 401)
