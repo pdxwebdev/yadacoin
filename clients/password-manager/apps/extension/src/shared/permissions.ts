@@ -18,15 +18,8 @@ function scriptIdFor(origin: string): string {
   return "yada_bridge_" + (h >>> 0).toString(16);
 }
 
-export async function requestOriginAccess(...urls: string[]): Promise<boolean> {
-  if (typeof chrome === "undefined" || !chrome.permissions?.request) return true;
-  const origins = [
-    ...new Set(urls.map(toOriginPattern).filter((x): x is string => !!x)),
-  ];
-  if (!origins.length) return true;
-  const have = await chrome.permissions.contains({ origins });
-  if (have) return true;
-  return chrome.permissions.request({ origins });
+export async function requestOriginAccess(..._urls: string[]): Promise<boolean> {
+  return true;
 }
 
 export async function enableBridgeOnOrigin(origin: string): Promise<void> {

@@ -10,7 +10,7 @@ import {
   TOPOLOGY_ENTRY_NODES,
   type TopologyCacheStore,
 } from "@yadacoin/password-core";
-import { requestOriginAccess, toOriginPattern } from "./permissions.js";
+import { requestOriginAccess } from "./permissions.js";
 
 const homeCache = new Map<string, { base: string; at: number }>();
 const HOME_CACHE_MS = 5 * 60 * 1000;
@@ -39,15 +39,8 @@ function isLoopback(url: string): boolean {
   }
 }
 
-async function hasAccess(baseUrl: string): Promise<boolean> {
-  if (typeof chrome === "undefined" || !chrome.permissions?.contains) return true;
-  const origin = toOriginPattern(baseUrl);
-  if (!origin) return true;
-  try {
-    return await chrome.permissions.contains({ origins: [origin] });
-  } catch {
-    return true;
-  }
+async function hasAccess(_baseUrl: string): Promise<boolean> {
+  return true;
 }
 
 export async function probeNodeAlive(

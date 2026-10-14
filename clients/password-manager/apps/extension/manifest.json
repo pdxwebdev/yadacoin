@@ -10,13 +10,6 @@
     "tabs",
     "scripting"
   ],
-  "host_permissions": [
-    "https://centeridentity.com/*",
-    "https://yadacoin.io/*",
-    "https://yadacoin.com/*",
-    "http://centeridentity.com/*",
-    "http://yadacoin.io/*"
-  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
@@ -38,9 +31,5 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  },
-  "optional_host_permissions": [
-    "http://*/*",
-    "https://*/*"
-  ]
+  }
 }
