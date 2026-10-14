@@ -23,6 +23,7 @@ import {
   normalizeSiteId,
   parseBridgeRequest,
   postAuthSessionResult,
+  sealToRatchetPub,
   publishPasswordHome,
   registerSite,
   resyncSiteFromNode,
@@ -475,18 +476,54 @@ async function respond(result: BridgeResult, callback: string) {
     const v = await loadVault();
     const nodeUrl = resolveNodeUrl(v?.nodeUrl || "");
     if (!nodeUrl) throw new Error("node URL not configured");
-    await postAuthSessionResult(nodeUrl, req.sessionId, {
+    let password = result.password;
+    let passwordEnc = result.password_enc;
+    if (!passwordEnc && password && req.bindId && req.site.startsWith("http")) {
+      if (!v) throw new Error("vault locked");
+      const id = identityFromVault(v);
+      const pubRes = await fetch(
+        req.site.replace(/\/+$/, "") +
+          "/password-rotation/ratchet-pub?username_signature=" +
+          encodeURIComponent(id.usernameSignature),
+        { headers: { Accept: "application/json" } }
+      );
+      const pubData = await pubRes.json().catch(() => ({}));
+      if (!pubRes.ok || !pubData.public_key) {
+        throw new Error(pubData.message || "node has no ratchet public key for this peer");
+      }
+      passwordEnc = await sealToRatchetPub(
+        JSON.stringify({ p: password, b: req.bindId }),
+        pubData.public_key
+      );
+      password = undefined;
+    }
+    const resultBody = {
       result_token: req.resultToken,
       ok: result.ok,
       deny: !result.ok,
       action: result.action,
       nonce: result.nonce,
       message: result.message,
-      password: result.password,
+      ...(passwordEnc ? { password_enc: passwordEnc } : { password }),
       nextPasswordHash: result.nextPasswordHash,
       counter: result.counter,
       registered: result.registered,
-    });
+    };
+    const targets = [nodeUrl];
+    if (req.site.startsWith("http") && req.site.replace(/\/+$/, "") !== nodeUrl.replace(/\/+$/, "")) {
+      targets.push(req.site.replace(/\/+$/, ""));
+    }
+    let posted = false;
+    let lastErr = "";
+    for (const base of targets) {
+      try {
+        await postAuthSessionResult(base, req.sessionId, resultBody);
+        posted = true;
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : String(e);
+      }
+    }
+    if (!posted) throw new Error(lastErr || "could not deliver approval to the sign-in node");
     await persistPending(null);
     showPending(null);
     alertMsg(
@@ -528,6 +565,7 @@ function remotePayloadToRequest(p: PasswordAuthRequestPayload): BridgeRequest {
     expectedHash: p.expectedHash || undefined,
     sessionId: p.session_id,
     resultToken: p.result_token,
+    bindId: p.bind_id || undefined,
     source: "remote",
   };
 }
@@ -1075,28 +1113,18 @@ async function approvePending() {
 
     if (req.action === "signin" || req.action === "operator") {
       // operator = unlock node treasury via approve/reject; site is node origin.
-      const local = lookupStoredSite(v.sites, siteKey);
-      // Always rebuild from node tip so a restored vault needs no re-register.
+      const rotateBase = siteKey.startsWith("http") ? siteKey : nodeUrl;
       let site: SiteRegistration;
       try {
-        site = await resyncSiteFromNode({ baseUrl: nodeUrl }, identity, siteKey);
-      } catch (e) {
-        if (local) {
-          site = siteFromStored(local.site);
-        } else if (req.action === "operator") {
-          // First operator unlock: register the node-origin branch then rotate.
-          const reg = await registerSite({ baseUrl: nodeUrl }, identity, siteKey);
-          v.mainDepth = reg.identity.mainDepth;
-          v.tipPrevPkh = reg.identity.tipPrevPkh;
-          site = reg.site;
-        } else {
-          throw e instanceof Error
-            ? e
-            : new Error(String(e) || "site not registered on node");
-        }
+        site = await resyncSiteFromNode({ baseUrl: rotateBase }, identity, siteKey);
+      } catch {
+        const reg = await registerSite({ baseUrl: rotateBase }, identity, siteKey);
+        v.mainDepth = reg.identity.mainDepth;
+        v.tipPrevPkh = reg.identity.tipPrevPkh;
+        site = reg.site;
       }
       const result = await rotateSitePassword(
-        { baseUrl: nodeUrl },
+        { baseUrl: rotateBase },
         identity,
         site,
         undefined,
@@ -1116,8 +1144,7 @@ async function approvePending() {
           action: req.action === "operator" ? "operator" : "signin",
           registered: true,
           counter: result.site.counter,
-          password: result.password,
-          // Hash of the password that will unlock the *next* sign-in (new tip pre).
+          password: result.site.currentPassword,
           nextPasswordHash: hashPassword(result.site.currentPassword),
           message:
             req.action === "operator"

@@ -45,6 +45,7 @@ export interface PasswordAuthRequestPayload {
   result_token: string;
   expires_at?: number;
   home_node?: string | null;
+  bind_id?: string | null;
 }
 
 export interface AuthSessionResultBody {
@@ -55,6 +56,7 @@ export interface AuthSessionResultBody {
   nonce?: string;
   message?: string;
   password?: string;
+  password_enc?: string;
   nextPasswordHash?: string;
   counter?: number | null;
   registered?: boolean;

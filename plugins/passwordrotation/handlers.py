@@ -425,6 +425,25 @@ class PasswordSigninVerifyHandler(BaseHandler):
             )
 
         password = body.get("password") or ""
+        password_enc = body.get("password_enc") or ""
+        if password_enc:
+            keys = await _peer_ratchet_keys(self, body.get("username_signature") or "")
+            if not keys:
+                self.set_status(503)
+                return self.render_as_json(
+                    {
+                        "status": False,
+                        "message": "ratchet public key unavailable",
+                    }
+                )
+            try:
+                from plugins.passwordrotation.box import open_box
+
+                raw = open_box(password_enc, keys[0])
+                payload = json.loads(raw.decode("utf-8"))
+                password = (payload.get("p") or "") if isinstance(payload, dict) else ""
+            except Exception:
+                password = ""
         if not password:
             self.set_status(400)
             return self.render_as_json(
@@ -704,6 +723,9 @@ class PasswordAuthSessionCreateHandler(BaseHandler):
             inception_pkh = ""
 
         this_base = asess.this_node_http_base(self)
+        bind_id = (body.get("bind_id") or "").strip()
+        if not forward:
+            bind_id = await asess.issue_signin_bind(self, username_signature)
         # Operator unlock binds to *this* node's treasury — never proxy away.
         if action == "operator":
             site = asess.normalize_site(this_base) or this_base
@@ -731,6 +753,7 @@ class PasswordAuthSessionCreateHandler(BaseHandler):
                     "action": action,
                     "expectedHash": expected_hash or None,
                     "nonce": nonce,
+                    "bind_id": bind_id,
                     "_forwarded": True,
                 }
                 req = HTTPRequest(
@@ -789,6 +812,7 @@ class PasswordAuthSessionCreateHandler(BaseHandler):
             "expires_at": expires_at,
             "expires_date": asess.expires_date_from_ts(expires_at),
             "home_node": home_url or this_base,
+            "bind_id": bind_id,
             "result": None,
             "delivered_at": None,
         }
@@ -890,7 +914,10 @@ class PasswordAuthSessionResultHandler(BaseHandler):
             "registered": body.get("registered"),
         }
         if ok:
-            result["password"] = body.get("password")
+            if body.get("password_enc"):
+                result["password_enc"] = body.get("password_enc")
+            elif body.get("password") is not None:
+                result["password"] = body.get("password")
             result["nextPasswordHash"] = body.get("nextPasswordHash") or body.get(
                 "next_password_hash"
             )
@@ -914,23 +941,7 @@ class PasswordAuthSessionResultHandler(BaseHandler):
                     sort=[("counter", -1)],
                 )
                 if tip and password:
-                    hashes = []
-                    current_pre = (tip.get("password") or {}).get(
-                        "prerotated_password_hash"
-                    )
-                    if current_pre:
-                        hashes.append(current_pre)
-                    prev = await self.config.mongo.async_db.key_event_log.find_one(
-                        {
-                            "branch_peer": branch_peer,
-                            "counter": int(tip.get("counter") or 0) - 1,
-                        }
-                    )
-                    prev_pre = ((prev or {}).get("password") or {}).get(
-                        "prerotated_password_hash"
-                    )
-                    if prev_pre:
-                        hashes.append(prev_pre)
+                    hashes = _password_hashes_from_tip(tip)
                     matched = False
                     for stored in hashes:
                         try:
@@ -1294,6 +1305,69 @@ def _password_hashes_from_tip(tip: dict) -> list:
     return hashes
 
 
+async def _peer_ratchet_keys(handler, username_signature: str):
+    """(priv_hex, pub_hex) for this node's ratchet toward that peer. No rotate."""
+    sig = (username_signature or "").strip()
+    mgr = getattr(getattr(handler, "config", None), "kel_manager", None)
+    if not sig or mgr is None:
+        return None
+    try:
+        keys = await mgr.peer_password_box_keys(sig)
+    except Exception:
+        return None
+    if not keys or not keys[0] or not keys[1]:
+        return None
+    return keys[0], keys[1]
+
+
+async def _open_signin_password(handler, password_enc: str) -> str:
+    from plugins.passwordrotation import auth_session as asess
+    from plugins.passwordrotation.box import open_box
+
+    bind = await asess.peek_signin_bind(handler)
+    if not bind:
+        return ""
+    keys = await _peer_ratchet_keys(handler, bind.get("username_signature") or "")
+    if not keys:
+        return ""
+    try:
+        raw = open_box(password_enc, keys[0])
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    if (payload.get("b") or "") != (bind.get("bind_id") or ""):
+        return ""
+    password = payload.get("p") or ""
+    if password:
+        await asess.consume_signin_bind(handler)
+    return password
+
+
+class PasswordRatchetPubHandler(BaseHandler):
+    """GET /password-rotation/ratchet-pub?username_signature=
+
+    Current peer-branch ratchet public key. The extension seals the site
+    password to this key so a home SP cannot read it.
+    """
+
+    async def get(self):
+        sig = (self.get_argument("username_signature", "") or "").strip()
+        if not sig:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "message": "username_signature is required"}
+            )
+        keys = await _peer_ratchet_keys(self, sig)
+        if not keys:
+            self.set_status(503)
+            return self.render_as_json(
+                {"status": False, "message": "ratchet public key unavailable"}
+            )
+        return self.render_as_json({"status": True, "public_key": keys[1]})
+
+
 class PasswordAdminSessionHandler(BaseHandler):
     """POST /password-rotation/admin-session
 
@@ -1329,6 +1403,18 @@ class PasswordAdminSessionHandler(BaseHandler):
                 }
             )
         password = body.get("password") or ""
+        password_enc = body.get("password_enc") or ""
+        if password_enc:
+            opened = await _open_signin_password(self, password_enc)
+            if not opened:
+                self.set_status(401)
+                return self.render_as_json(
+                    {
+                        "status": False,
+                        "message": "could not open sealed password for this sign-in",
+                    }
+                )
+            password = opened
         if not password:
             self.set_status(401)
             return self.render_as_json(
@@ -1370,24 +1456,6 @@ class PasswordAdminSessionHandler(BaseHandler):
                     continue
             if matched:
                 break
-            # Also try previous counter on local only
-            if source == "local":
-                try:
-                    prev = await self.config.mongo.async_db.key_event_log.find_one(
-                        {
-                            "branch_peer": tip.get("branch_peer") or branch_peer,
-                            "counter": int(tip.get("counter") or 0) - 1,
-                        }
-                    )
-                    prev_pre = ((prev or {}).get("password") or {}).get(
-                        "prerotated_password_hash"
-                    )
-                    if prev_pre and _verify_password(password, prev_pre):
-                        matched = True
-                        matched_source = "local-prev"
-                        break
-                except Exception:
-                    pass
 
         if not matched:
             if last_mismatch and len(candidates) == 1:
@@ -1462,6 +1530,7 @@ HANDLERS = PASSWORD_ROTATION_HANDLERS = [
     (r"/password-rotation/offchain-chain", PasswordOffchainChainHandler),
     (r"/password-rotation/verify", PasswordSigninVerifyHandler),
     (r"/password-rotation/admin-session", PasswordAdminSessionHandler),
+    (r"/password-rotation/ratchet-pub", PasswordRatchetPubHandler),
     (r"/password-rotation/auth-session/pending", PasswordAuthSessionPendingHandler),
     (
         r"/password-rotation/auth-session/([^/]+)/result",

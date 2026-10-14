@@ -325,6 +325,7 @@ class NodeKeyRotationManager:
         #                             "inception_public_key_hash", "epoch_len",
         #                             "branch_generation"}}
         self._peer_branches: dict = {}
+        self._password_box_keys: dict = {}
         # Spam / growth monitor: recent advance timestamps per peer + last alert.
         # {peer_id: [unix_ts, ...]}  (trimmed to PEER_BRANCH_ADVANCE_WINDOW_S)
         self._peer_branch_advance_times: dict = {}
@@ -1903,6 +1904,125 @@ class NodeKeyRotationManager:
             self._peer_branch_key_addr(two_ahead),
             False,
         )
+
+    async def peer_password_box_keys(self, username_signature: str):
+        """(priv_hex, pub_hex) for sealing a site password to this peer.
+
+        Never mints a KEL branch and never exits the process. Uses an existing
+        peer-branch tip when one is already on disk; otherwise Kp0 derived from
+        K0, which is stable and needs no announcement.
+        """
+        sig = (username_signature or "").strip()
+        if not sig:
+            return None
+        cached = self._password_box_keys.get(sig)
+        if cached:
+            return cached
+        if self._is_own_identity(sig):
+            pair = self._own_password_box_keys()
+            if pair:
+                self._password_box_keys[sig] = pair
+            return pair
+        if self._k0 is None:
+            return None
+        second_factor = self._second_factor or _read_second_factor()
+        if not second_factor:
+            return None
+        try:
+            peer_factor = self.peer_branch_factor(sig)
+            bridge = await self._active_peer_branch_bridge(sig)
+            root_depth = int((bridge or {}).get("root_depth", 0) or 0)
+            cur = self._k0
+            for _ in range(root_depth):
+                cur = derive_secure_path(
+                    cur["private_key"], cur["chain_code"], second_factor
+                )
+            sign_key = derive_secure_path(
+                cur["private_key"], cur["chain_code"], peer_factor
+            )
+            if bridge:
+                inception = (
+                    bridge.get("branch_inception_public_key_hash")
+                    or bridge.get("public_key_hash")
+                    or ""
+                )
+                tip = (
+                    await self._peer_branch_tip_by_hash_link(inception)
+                    if inception
+                    else None
+                )
+                tip_pkh = (tip or {}).get("public_key_hash") or ""
+                try:
+                    tip_counter = int((tip or {}).get("counter") or 0)
+                except (TypeError, ValueError):
+                    tip_counter = 0
+                if tip_pkh and tip_counter > 0:
+                    walked = sign_key
+                    matched = False
+                    for _ in range(10000):
+                        if self._peer_branch_key_addr(walked) == tip_pkh:
+                            matched = True
+                            break
+                        walked = derive_secure_path(
+                            walked["private_key"], walked["chain_code"], peer_factor
+                        )
+                    if matched:
+                        sign_key = walked
+            pair = (
+                sign_key["private_key"].hex(),
+                self._peer_branch_key_pub_hex(sign_key),
+            )
+            self._password_box_keys[sig] = pair
+            return pair
+        except Exception as exc:
+            self.config.app_log.warning(
+                "NodeKeyRotationManager: peer password box key failed: %s", exc
+            )
+            return None
+
+    def _is_own_identity(self, username_signature: str) -> bool:
+        sig = (username_signature or "").strip()
+        own = (getattr(self.config, "username_signature", None) or "").strip()
+        if own and sig == own:
+            return True
+        uname = (getattr(self.config, "username", None) or "").strip()
+        pub = (getattr(self.config, "public_key", None) or "").strip()
+        if not sig or not uname or not pub:
+            return False
+        try:
+            import base64
+
+            from coincurve import verify_signature
+
+            return bool(
+                verify_signature(
+                    base64.b64decode(sig),
+                    uname.encode("utf-8"),
+                    bytes.fromhex(pub),
+                )
+            )
+        except Exception:
+            return False
+
+    def _own_password_box_keys(self):
+        """Node's own ratchet. Operator unlock is this identity, not a peer branch."""
+        if self._auth_ratchet_key and self._auth_ratchet_pub:
+            priv = self._auth_ratchet_key.get("private_key")
+            priv_hex = priv.hex() if isinstance(priv, bytes) else priv
+            if priv_hex and self._auth_ratchet_pub:
+                return priv_hex, self._auth_ratchet_pub
+        if not self._k0 or not self._k0.get("private_key"):
+            return None
+        priv = self._k0["private_key"]
+        priv_hex = priv.hex() if isinstance(priv, bytes) else priv
+        pub = (
+            _CoincurvePrivateKey(
+                priv if isinstance(priv, bytes) else bytes.fromhex(priv)
+            )
+            .public_key.format(compressed=True)
+            .hex()
+        )
+        return priv_hex, pub
 
     async def advance_peer_auth_ratchet(
         self, identity_announcement: str, branch_type: str = ""

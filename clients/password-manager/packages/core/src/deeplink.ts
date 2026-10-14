@@ -18,6 +18,8 @@ export interface BridgeRequest {
   sessionId?: string;
   /** Token required to POST the session result (from WS push). */
   resultToken?: string;
+  /** Public sign-in bind. Password is sealed to the site ratchet key with this id. */
+  bindId?: string;
   /** Source of the request for UI. */
   source?: "deeplink" | "remote";
 }
@@ -31,6 +33,8 @@ export interface BridgeResult {
   message?: string;
   /** Current site password for the relying app to verify. */
   password?: string;
+  /** Sealed password. When set, password is omitted from the remote result. */
+  password_enc?: string;
   /** PHC of the next password. */
   nextPasswordHash?: string;
 }

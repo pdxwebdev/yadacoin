@@ -26,6 +26,8 @@ from yadacoin.core.peer import User
 
 COLLECTION = "password_auth_sessions"
 HOME_COLLECTION = "password_auth_homes"
+BIND_COLLECTION = "password_signin_binds"
+SIGNIN_BIND_COOKIE = "yada_signin_bind"
 SESSION_TTL_SEC = 300
 HOME_TTL_SEC = 86400 * 30
 RATE_WINDOW_SEC = 60
@@ -163,6 +165,47 @@ def new_nonce() -> str:
     return f"n_{int(_now() * 1000)}_{secrets.token_hex(4)}"
 
 
+async def issue_signin_bind(handler, username_signature: str) -> str:
+    """HttpOnly cookie the home SP never sees. bind_id is public."""
+    bind_id = secrets.token_urlsafe(12)
+    secret = secrets.token_urlsafe(24)
+    now = _now()
+    await _db()[BIND_COLLECTION].insert_one(
+        {
+            "bind_secret": secret,
+            "bind_id": bind_id,
+            "username_signature": username_signature or "",
+            "expires_at": now + SESSION_TTL_SEC,
+        }
+    )
+    handler.set_cookie(
+        SIGNIN_BIND_COOKIE,
+        secret,
+        path="/",
+        httponly=True,
+        samesite="Lax",
+        expires_days=1,
+    )
+    return bind_id
+
+
+async def peek_signin_bind(handler) -> Optional[dict]:
+    secret = handler.get_cookie(SIGNIN_BIND_COOKIE) or ""
+    if not secret:
+        return None
+    doc = await _db()[BIND_COLLECTION].find_one({"bind_secret": secret}, {"_id": 0})
+    if not doc or float(doc.get("expires_at") or 0) < _now():
+        return None
+    return doc
+
+
+async def consume_signin_bind(handler) -> None:
+    secret = handler.get_cookie(SIGNIN_BIND_COOKIE) or ""
+    if secret:
+        await _db()[BIND_COLLECTION].delete_one({"bind_secret": secret})
+    handler.clear_cookie(SIGNIN_BIND_COOKIE, path="/")
+
+
 def public_session_view(doc: dict, *, include_secrets: bool = False) -> dict:
     out = {
         "status": True,
@@ -176,6 +219,7 @@ def public_session_view(doc: dict, *, include_secrets: bool = False) -> dict:
         "expires_at": doc.get("expires_at"),
         "created_at": doc.get("created_at"),
         "home_node": doc.get("home_node") or None,
+        "bind_id": doc.get("bind_id") or None,
         "delivered": bool(doc.get("delivered_at")),
     }
     st = doc.get("status")
@@ -192,7 +236,9 @@ def public_session_view(doc: dict, *, include_secrets: bool = False) -> dict:
             out["registered"] = result.get("registered")
         # One-time secrets for RP after approve
         if st == "approved" and result.get("ok"):
-            if result.get("password") is not None:
+            if result.get("password_enc"):
+                out["password_enc"] = result.get("password_enc")
+            elif result.get("password") is not None:
                 out["password"] = result.get("password")
             if result.get("nextPasswordHash"):
                 out["nextPasswordHash"] = result.get("nextPasswordHash")
@@ -253,6 +299,7 @@ def push_payload_from_session(doc: dict) -> dict:
         "result_token": doc.get("result_token"),
         "expires_at": doc.get("expires_at"),
         "home_node": doc.get("home_node") or None,
+        "bind_id": doc.get("bind_id") or None,
     }
 
 

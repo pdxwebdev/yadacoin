@@ -6,6 +6,7 @@ import {
   fetchPendingAuthSessions,
   hashPassword,
   hexToBytes,
+  sealToRatchetPub,
   identityAfterInception,
   isAlreadyInceptedError,
   LEGACY_KEYS,
@@ -357,6 +358,7 @@ async function approvePendingRequest(): Promise<void> {
   if (siteKey.startsWith("http://") || siteKey.startsWith("https://")) {
     siteKey = normalizeSiteId(siteKey);
   }
+  const rotateBase = siteKey.startsWith("http") ? siteKey : nodeUrl;
   const action = (p.action || "signin").toLowerCase();
   let password = "";
   let counter: number | null = null;
@@ -377,21 +379,17 @@ async function approvePendingRequest(): Promise<void> {
   }
 
   let siteReg: SiteRegistration;
-  const local = v.sites?.[siteKey];
+  await ensureNodeAccess(rotateBase);
   try {
-    siteReg = await resyncSiteFromNode({ baseUrl: nodeUrl }, identity, siteKey);
+    siteReg = await resyncSiteFromNode({ baseUrl: rotateBase }, identity, siteKey);
   } catch {
-    if (local) {
-      siteReg = siteFromStored(local);
-    } else {
-      const reg = await registerSite({ baseUrl: nodeUrl }, identity, siteKey);
-      v.mainDepth = reg.identity.mainDepth;
-      v.tipPrevPkh = reg.identity.tipPrevPkh;
-      siteReg = reg.site;
-    }
+    const reg = await registerSite({ baseUrl: rotateBase }, identity, siteKey);
+    v.mainDepth = reg.identity.mainDepth;
+    v.tipPrevPkh = reg.identity.tipPrevPkh;
+    siteReg = reg.site;
   }
   const rotated = await rotateSitePassword(
-    { baseUrl: nodeUrl },
+    { baseUrl: rotateBase },
     identity,
     siteReg,
     undefined,
@@ -399,18 +397,34 @@ async function approvePendingRequest(): Promise<void> {
   );
   v.sites[siteKey] = storeSite(rotated.site);
   await saveActiveVault(v);
-  password = rotated.password;
+  password = rotated.site.currentPassword;
   counter = rotated.site.counter;
-  const nextHash = hashPassword(
-    rotated.nextPassword || rotated.site.currentPassword || password
-  );
+  const nextHash = hashPassword(rotated.site.nextPassword);
+  let passwordEnc = "";
+  if (p.bind_id && siteKey.startsWith("http")) {
+    await ensureNodeAccess(siteKey);
+    const pubRes = await fetch(
+      siteKey.replace(/\/+$/, "") +
+        "/password-rotation/ratchet-pub?username_signature=" +
+        encodeURIComponent(identity.usernameSignature),
+      { headers: { Accept: "application/json" } }
+    );
+    const pubData = await pubRes.json().catch(() => ({}));
+    if (!pubRes.ok || !pubData.public_key) {
+      throw new Error(pubData.message || "node has no ratchet public key for this peer");
+    }
+    passwordEnc = await sealToRatchetPub(
+      JSON.stringify({ p: password, b: p.bind_id }),
+      pubData.public_key
+    );
+  }
 
-  await postAuthSessionResult(nodeUrl, p.session_id, {
+  const resultBody = {
     result_token: p.result_token,
     ok: true,
     action: action === "operator" ? "operator" : action === "register" ? "register" : "signin",
     nonce: p.nonce,
-    password,
+    ...(passwordEnc ? { password_enc: passwordEnc } : { password }),
     nextPasswordHash: nextHash,
     counter,
     registered: true,
@@ -418,7 +432,23 @@ async function approvePendingRequest(): Promise<void> {
       action === "operator"
         ? `operator approved · counter ${counter}`
         : `approved · counter ${counter}`,
-  });
+  };
+  const targets = [nodeUrl];
+  if (siteKey.startsWith("http") && !sameNode(siteKey, nodeUrl)) targets.push(siteKey);
+  const home = (p.home_node || "").replace(/\/+$/, "");
+  if (home && !targets.some((t) => sameNode(t, home))) targets.push(home);
+  let posted = false;
+  let lastErr = "";
+  for (const base of targets) {
+    try {
+      await ensureNodeAccess(base);
+      await postAuthSessionResult(base, p.session_id, resultBody);
+      posted = true;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : String(e);
+    }
+  }
+  if (!posted) throw new Error(lastErr || "could not deliver approval to the sign-in node");
   renderPendingRequest(null);
   await fillSiteFromOrigin(siteKey, v);
   showAlert(

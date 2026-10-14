@@ -9245,15 +9245,57 @@ function buildAndSignTxn(signer, fields) {
   };
 }
 
+// ../../packages/core/dist/box.js
+var DOMAIN = new TextEncoder().encode("yada-pw-box-v1");
+function copyBuffer(bytes) {
+  const out = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(out).set(bytes);
+  return out;
+}
+async function sealToRatchetPub(plaintext, recipientPubHex) {
+  const ephPriv = secp256k1.utils.randomPrivateKey();
+  const ephPub = secp256k1.getPublicKey(ephPriv, true);
+  const shared = secp256k1.getSharedSecret(ephPriv, hexToBytes2(recipientPubHex), true);
+  const x = sha256(shared);
+  const material = new Uint8Array(x.length + DOMAIN.length);
+  material.set(x, 0);
+  material.set(DOMAIN, x.length);
+  const key = await crypto.subtle.importKey("raw", copyBuffer(sha256(material)), "AES-GCM", false, ["encrypt"]);
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: copyBuffer(nonce) }, key, copyBuffer(new TextEncoder().encode(plaintext))));
+  const blob = new Uint8Array(ephPub.length + nonce.length + ct.length);
+  blob.set(ephPub, 0);
+  blob.set(nonce, ephPub.length);
+  blob.set(ct, ephPub.length + nonce.length);
+  return bytesToBase64(blob);
+}
+
 // ../../packages/core/dist/vault.js
+function normalizeNodeBaseUrl(url) {
+  const raw = (url || "").trim();
+  if (!raw)
+    return "";
+  try {
+    const withScheme = raw.includes("://") ? raw : `https://${raw}`;
+    const u = new URL(withScheme);
+    if (u.protocol !== "http:" && u.protocol !== "https:")
+      return raw.replace(/\/+$/, "");
+    return u.origin;
+  } catch {
+    return raw.replace(/\/+$/, "");
+  }
+}
 async function httpJson(api, path, init) {
   const fetchImpl = api.fetch ?? globalThis.fetch.bind(globalThis);
-  const url = api.baseUrl.replace(/\/+$/, "") + path;
+  const base2 = normalizeNodeBaseUrl(api.baseUrl) || api.baseUrl.replace(/\/+$/, "");
+  const url = base2 + path;
   let res;
   try {
     res = await fetchImpl(url, {
       ...init,
-      credentials: init?.credentials ?? "include",
+      // Public node JSON APIs do not need cookies; omit avoids credentialed CORS
+      // failures and accidental session coupling when the site shares the node host.
+      credentials: init?.credentials ?? "omit",
       headers: {
         Accept: "application/json",
         ...init?.body ? { "Content-Type": "application/json" } : {},
@@ -9262,7 +9304,7 @@ async function httpJson(api, path, init) {
     });
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
-    throw new Error(`Failed to reach node ${api.baseUrl} (${path}): ${why}. On a phone use the computer's LAN IP (not 127.0.0.1). On an emulator use 10.0.2.2.`);
+    throw new Error(`Failed to reach node ${base2} (${path}): ${why}. Grant the extension host access to this node (popup/options), use the node origin (e.g. https://yadacoin.io not /password-rotation), and on a phone use the LAN IP not 127.0.0.1.`);
   }
   const text = await res.text();
   let body;
@@ -9365,29 +9407,47 @@ async function fetchInceptionStatus(api, publicKeyHex, username) {
   const q = new URLSearchParams({ public_key: publicKeyHex });
   if (username?.trim())
     q.set("username", username.trim());
+  let statusProbe = null;
   try {
     const res = await httpJson(api, `/identity-inception-status?${q.toString()}`);
     if (res.ok && res.body?.status !== false) {
       const kelDepth = Number(res.body?.kel_depth ?? 0);
       const incepted = Boolean(res.body?.incepted) || kelDepth >= 1;
       const match = res.body?.identity?.matches_public_key;
-      return {
+      statusProbe = {
         incepted,
         kelDepth: Number.isFinite(kelDepth) ? Math.max(0, kelDepth) : incepted ? 1 : 0,
         hasKel: Boolean(res.body?.has_kel) || kelDepth >= 1,
         usernameMatches: typeof match === "boolean" ? match : username?.trim() ? null : null,
         source: "identity-inception-status"
       };
+      if (statusProbe.incepted)
+        return statusProbe;
     }
   } catch {
   }
-  const depth = await fetchKelDepth(api, publicKeyHex);
-  return {
-    incepted: depth >= 1,
-    kelDepth: depth,
-    hasKel: depth >= 1,
+  try {
+    const depth = await fetchKelDepth(api, publicKeyHex);
+    if (depth >= 1) {
+      return {
+        incepted: true,
+        kelDepth: depth,
+        hasKel: true,
+        usernameMatches: statusProbe?.usernameMatches ?? null,
+        source: "key-event-log"
+      };
+    }
+  } catch {
+    if (statusProbe)
+      return statusProbe;
+    throw new Error(`Could not verify vault inception on node ${normalizeNodeBaseUrl(api.baseUrl) || api.baseUrl}`);
+  }
+  return statusProbe || {
+    incepted: false,
+    kelDepth: 0,
+    hasKel: false,
     usernameMatches: null,
-    source: depth >= 1 ? "key-event-log" : "none"
+    source: "none"
   };
 }
 async function fetchKelDepth(api, publicKeyHex) {
@@ -9603,11 +9663,11 @@ async function rotateSitePassword(api, identity, site, time = Math.floor(Date.no
       password = found.password;
       nextReveal = found.nextPassword;
     } else {
-      const tipPre = tip.password && tip.password.prerotated_password_hash || tip.prerotated_password_hash || "";
-      const fromTip = tipPre ? findPasswordMatchingHash(identity, keys.branchPeer, tipPre) : null;
-      if (fromTip) {
-        password = fromTip.password;
-        nextReveal = fromTip.nextPassword;
+      const tipPre2 = tip.password && tip.password.prerotated_password_hash || tip.prerotated_password_hash || "";
+      const fromTip2 = tipPre2 ? findPasswordMatchingHash(identity, keys.branchPeer, tipPre2) : null;
+      if (fromTip2) {
+        password = fromTip2.password;
+        nextReveal = fromTip2.nextPassword;
       } else if (!password) {
         throw new Error("stored next hash is not in this vault's password chain \u2014 clear the RP next-hash or Register again with this vault");
       }
@@ -9621,8 +9681,10 @@ async function rotateSitePassword(api, identity, site, time = Math.floor(Date.no
   const next = deriveMaterial(signer, peerFactor);
   const twice = deriveMaterial(next, peerFactor);
   const newTwicePassword = generateSitePassword(next, site.branchPeer, tipCounter + 2);
-  const consumedPassword = live.currentPassword || password;
-  const newPrePassword = live.nextPassword || newTwicePassword;
+  const tipPre = tip.password && tip.password.prerotated_password_hash || tip.prerotated_password_hash || opts?.expectedHash || "";
+  const fromTip = tipPre ? findPasswordMatchingHash(identity, keys.branchPeer, tipPre) : null;
+  const consumedPassword = fromTip?.password || live.currentPassword || password;
+  const newPrePassword = fromTip?.nextPassword || live.nextPassword || newTwicePassword;
   const rotateRelJson = buildPasswordRelationshipJson({
     prerotated_password_hash: hashPassword(newPrePassword),
     twice_prerotated_password_hash: hashPassword(newTwicePassword)
@@ -9637,12 +9699,19 @@ async function rotateSitePassword(api, identity, site, time = Math.floor(Date.no
     relationship: JSON.parse(rotateRelJson)
   });
   const nextCounter = tipCounter + 1;
+  const pubRes = await httpJson(api, "/password-rotation/ratchet-pub?username_signature=" + encodeURIComponent(identity.usernameSignature));
+  const ratchetPub = pubRes.body?.public_key;
+  if (!pubRes.ok || !ratchetPub) {
+    throw new Error(pubRes.body?.message || "node has no ratchet public key for this peer");
+  }
+  const passwordEnc = await sealToRatchetPub(JSON.stringify({ p: consumedPassword }), ratchetPub);
   const res = await httpJson(api, "/password-rotation/verify", {
     method: "POST",
     body: JSON.stringify({
       branch_peer: site.branchPeer,
       counter: nextCounter,
-      password: consumedPassword,
+      password_enc: passwordEnc,
+      username_signature: identity.usernameSignature,
       branch_inception_public_key_hash: site.branchInceptionPkh,
       inception_public_key_hash: identity.inceptionPublicKeyHash,
       txn
@@ -9657,7 +9726,7 @@ async function rotateSitePassword(api, identity, site, time = Math.floor(Date.no
     tip: next,
     counter: nextCounter,
     tipPrevPkh: signer.address,
-    currentPassword: live.nextPassword,
+    currentPassword: newPrePassword,
     nextPassword: newTwicePassword
   };
   return {
@@ -10308,6 +10377,10 @@ function nodeUrlToWebSocketUrl(nodeUrl) {
   return "ws://" + u + "/websocket";
 }
 
+// ../../packages/core/dist/network-topology.js
+var TOPOLOGY_CACHE_TTL_MS = 6 * 60 * 60 * 1e3;
+var TOPOLOGY_STALE_MAX_MS = 7 * 24 * 60 * 60 * 1e3;
+
 // ../../packages/shared-ui/dist/theme/presets.js
 var baseTypography = {
   fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -10881,18 +10954,52 @@ async function respond(result, callback) {
     const v = await loadVault();
     const nodeUrl = resolveNodeUrl(v?.nodeUrl || "");
     if (!nodeUrl) throw new Error("node URL not configured");
-    await postAuthSessionResult(nodeUrl, req.sessionId, {
+    let password = result.password;
+    let passwordEnc = result.password_enc;
+    if (!passwordEnc && password && req.bindId && req.site.startsWith("http")) {
+      if (!v) throw new Error("vault locked");
+      const id = identityFromVault(v);
+      const pubRes = await fetch(
+        req.site.replace(/\/+$/, "") + "/password-rotation/ratchet-pub?username_signature=" + encodeURIComponent(id.usernameSignature),
+        { headers: { Accept: "application/json" } }
+      );
+      const pubData = await pubRes.json().catch(() => ({}));
+      if (!pubRes.ok || !pubData.public_key) {
+        throw new Error(pubData.message || "node has no ratchet public key for this peer");
+      }
+      passwordEnc = await sealToRatchetPub(
+        JSON.stringify({ p: password, b: req.bindId }),
+        pubData.public_key
+      );
+      password = void 0;
+    }
+    const resultBody = {
       result_token: req.resultToken,
       ok: result.ok,
       deny: !result.ok,
       action: result.action,
       nonce: result.nonce,
       message: result.message,
-      password: result.password,
+      ...passwordEnc ? { password_enc: passwordEnc } : { password },
       nextPasswordHash: result.nextPasswordHash,
       counter: result.counter,
       registered: result.registered
-    });
+    };
+    const targets = [nodeUrl];
+    if (req.site.startsWith("http") && req.site.replace(/\/+$/, "") !== nodeUrl.replace(/\/+$/, "")) {
+      targets.push(req.site.replace(/\/+$/, ""));
+    }
+    let posted = false;
+    let lastErr = "";
+    for (const base2 of targets) {
+      try {
+        await postAuthSessionResult(base2, req.sessionId, resultBody);
+        posted = true;
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : String(e);
+      }
+    }
+    if (!posted) throw new Error(lastErr || "could not deliver approval to the sign-in node");
     await persistPending(null);
     showPending(null);
     alertMsg(
@@ -10928,6 +11035,7 @@ function remotePayloadToRequest(p) {
     expectedHash: p.expectedHash || void 0,
     sessionId: p.session_id,
     resultToken: p.result_token,
+    bindId: p.bind_id || void 0,
     source: "remote"
   };
 }
@@ -11361,15 +11469,15 @@ async function approvePending() {
     }
     if (req.action === "register") {
       const keys = siteKeysForOrigin(identity, siteKey);
-      const local = lookupStoredSite(v.sites, siteKey);
+      const local2 = lookupStoredSite(v.sites, siteKey);
       const tipRes = await fetchSiteTip({ baseUrl: nodeUrl }, keys.branchPeer);
       const tipOnNode = !!(tipRes.ok && tipRes.body?.tip);
-      if (local || tipOnNode) {
+      if (local2 || tipOnNode) {
         let live;
         if (tipOnNode) {
           live = await resyncSiteFromNode({ baseUrl: nodeUrl }, identity, siteKey);
         } else {
-          const counter = Number(local.site.counter ?? 0);
+          const counter = Number(local2.site.counter ?? 0);
           live = siteAtCounter(
             identity,
             {
@@ -11381,8 +11489,8 @@ async function approvePending() {
           );
         }
         const sk2 = storeKeyForSite(live, siteKey);
-        if (local && local.key !== sk2) delete v.sites[local.key];
-        v.sites[sk2] = applyPin(storeSite(live), pinFromStored(local?.site) || pin);
+        if (local2 && local2.key !== sk2) delete v.sites[local2.key];
+        v.sites[sk2] = applyPin(storeSite(live), pinFromStored(local2?.site) || pin);
         await saveVault(v);
         await respond(
           {
@@ -11424,24 +11532,18 @@ async function approvePending() {
       return;
     }
     if (req.action === "signin" || req.action === "operator") {
-      const local = lookupStoredSite(v.sites, siteKey);
+      const rotateBase = siteKey.startsWith("http") ? siteKey : nodeUrl;
       let site;
       try {
-        site = await resyncSiteFromNode({ baseUrl: nodeUrl }, identity, siteKey);
-      } catch (e) {
-        if (local) {
-          site = siteFromStored(local.site);
-        } else if (req.action === "operator") {
-          const reg = await registerSite({ baseUrl: nodeUrl }, identity, siteKey);
-          v.mainDepth = reg.identity.mainDepth;
-          v.tipPrevPkh = reg.identity.tipPrevPkh;
-          site = reg.site;
-        } else {
-          throw e instanceof Error ? e : new Error(String(e) || "site not registered on node");
-        }
+        site = await resyncSiteFromNode({ baseUrl: rotateBase }, identity, siteKey);
+      } catch {
+        const reg = await registerSite({ baseUrl: rotateBase }, identity, siteKey);
+        v.mainDepth = reg.identity.mainDepth;
+        v.tipPrevPkh = reg.identity.tipPrevPkh;
+        site = reg.site;
       }
       const result = await rotateSitePassword(
-        { baseUrl: nodeUrl },
+        { baseUrl: rotateBase },
         identity,
         site,
         void 0,
@@ -11461,8 +11563,7 @@ async function approvePending() {
           action: req.action === "operator" ? "operator" : "signin",
           registered: true,
           counter: result.site.counter,
-          password: result.password,
-          // Hash of the password that will unlock the *next* sign-in (new tip pre).
+          password: result.site.currentPassword,
           nextPasswordHash: hashPassword(result.site.currentPassword),
           message: req.action === "operator" ? `operator approved \xB7 counter ${result.site.counter}` : `signed in & rotated \xB7 counter ${result.site.counter}`
         },

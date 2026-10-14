@@ -292,8 +292,20 @@
             view = null;
           }
         }
-        if (!view || !view.session_status) {
-          view = await fetchAuthView(sessionId, "", signal);
+        let localView = null;
+        try {
+          localView = await fetchAuthView(sessionId, "", signal);
+        } catch (err) {
+          if (err && err.name === "AbortError") throw err;
+        }
+        if (
+          localView &&
+          (localView.session_status === "approved" ||
+            localView.session_status === "denied" ||
+            !view ||
+            !view.session_status)
+        ) {
+          view = localView;
         }
         const st = view && view.session_status;
         if (st === "delivered" || st === "pending" || !st) {
@@ -315,11 +327,10 @@
       }
       throw new DOMException("cancelled", "AbortError");
     }
-    async function openSession(password, homeNode) {
-      const body = {
-        branch_peer: origin,
-        password: password || "",
-      };
+    async function openSession(password, homeNode, passwordEnc) {
+      const body = { branch_peer: origin };
+      if (passwordEnc) body.password_enc = passwordEnc;
+      else body.password = password || "";
       if (homeNode) {
         body.home_node = String(homeNode).replace(/\/+$/, "");
       }
@@ -432,13 +443,14 @@
         if (view.token) {
           stashOperatorToken(view.token);
         } else {
-          if (!view.password) {
+          if (!view.password_enc && !view.password) {
             throw new Error("password app returned no password — approve again");
           }
           showProgress("Approved — opening operator session…");
           const session = await openSession(
             view.password,
-            view.home_node || created.home_node || ""
+            view.home_node || created.home_node || "",
+            view.password_enc || ""
           );
           stashOperatorToken(session && session.token);
         }

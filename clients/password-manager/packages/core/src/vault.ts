@@ -23,6 +23,7 @@ import {
   identityRelationshipHash,
 } from "./relationship.js";
 import { buildAndSignTxn, signUsername, type SignedTxn } from "./transaction.js";
+import { sealToRatchetPub } from "./box.js";
 import {
   hashPassword,
   parsePhc,
@@ -683,8 +684,18 @@ export async function rotateSitePassword(
     site.branchPeer,
     tipCounter + 2
   );
-  const consumedPassword = live.currentPassword || password;
-  const newPrePassword = live.nextPassword || newTwicePassword;
+  const tipPre =
+    (tip.password && tip.password.prerotated_password_hash) ||
+    tip.prerotated_password_hash ||
+    opts?.expectedHash ||
+    "";
+  const fromTip = tipPre
+    ? findPasswordMatchingHash(identity, keys.branchPeer, tipPre)
+    : null;
+  const consumedPassword =
+    fromTip?.password || live.currentPassword || password;
+  const newPrePassword =
+    fromTip?.nextPassword || live.nextPassword || newTwicePassword;
   const rotateRelJson = buildPasswordRelationshipJson({
     prerotated_password_hash: hashPassword(newPrePassword),
     twice_prerotated_password_hash: hashPassword(newTwicePassword),
@@ -700,12 +711,30 @@ export async function rotateSitePassword(
   });
 
   const nextCounter = tipCounter + 1;
+  const pubRes = await httpJson(
+    api,
+    "/password-rotation/ratchet-pub?username_signature=" +
+      encodeURIComponent(identity.usernameSignature)
+  );
+  const ratchetPub = pubRes.body?.public_key;
+  if (!pubRes.ok || !ratchetPub) {
+    const base = normalizeNodeBaseUrl(api.baseUrl) || api.baseUrl;
+    throw new Error(
+      pubRes.body?.message ||
+        `node has no ratchet public key for this peer (${pubRes.status} ${base})`
+    );
+  }
+  const passwordEnc = await sealToRatchetPub(
+    JSON.stringify({ p: consumedPassword }),
+    ratchetPub
+  );
   const res = await httpJson(api, "/password-rotation/verify", {
     method: "POST",
     body: JSON.stringify({
       branch_peer: site.branchPeer,
       counter: nextCounter,
-      password: consumedPassword,
+      password_enc: passwordEnc,
+      username_signature: identity.usernameSignature,
       branch_inception_public_key_hash: site.branchInceptionPkh,
       inception_public_key_hash: identity.inceptionPublicKeyHash,
       txn,
@@ -721,7 +750,7 @@ export async function rotateSitePassword(
     tip: next,
     counter: nextCounter,
     tipPrevPkh: signer.address,
-    currentPassword: live.nextPassword,
+    currentPassword: newPrePassword,
     nextPassword: newTwicePassword,
   };
 

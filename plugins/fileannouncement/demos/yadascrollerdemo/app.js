@@ -3236,11 +3236,10 @@
     } catch (_) {}
   }
 
-  async function openOperatorSession(password, homeNode) {
-    const body = {
-      branch_peer: signinOrigin,
-      password: password || "",
-    };
+  async function openOperatorSession(password, homeNode, passwordEnc) {
+    const body = { branch_peer: signinOrigin };
+    if (passwordEnc) body.password_enc = passwordEnc;
+    else body.password = password || "";
     if (homeNode) body.home_node = String(homeNode).replace(/\/+$/, "");
     const res = await fetch("/password-rotation/admin-session", {
       method: "POST",
@@ -3391,8 +3390,20 @@
           view = null;
         }
       }
-      if (!view || !view.session_status) {
-        view = await fetchAuthView(sessionId, "", signal);
+      let localView = null;
+      try {
+        localView = await fetchAuthView(sessionId, "", signal);
+      } catch (err) {
+        if (err && err.name === "AbortError") throw err;
+      }
+      if (
+        localView &&
+        (localView.session_status === "approved" ||
+          localView.session_status === "denied" ||
+          !view ||
+          !view.session_status)
+      ) {
+        view = localView;
       }
       const st = view && view.session_status;
       if (st === "delivered" || st === "pending" || !st) {
@@ -3495,13 +3506,14 @@
       if (view.token) {
         stashOperatorToken(view.token);
       } else {
-        if (!view.password) {
+        if (!view.password_enc && !view.password) {
           throw new Error("password app returned no password — approve again");
         }
         showSigninProgress("Approved — opening operator session…");
         const session = await openOperatorSession(
           view.password,
-          view.home_node || created.home_node || ""
+          view.home_node || created.home_node || "",
+          view.password_enc || ""
         );
         stashOperatorToken(session && session.token);
       }
