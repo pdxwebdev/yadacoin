@@ -3550,9 +3550,9 @@
     }
   }
 
-  function authPollBase(created) {
-    const home = String((created && created.home_node) || "").replace(/\/+$/, "");
-    if (created && created.proxied && home) return home;
+  function authPollBase(_created) {
+    // Poll this node. It proxies to home_node. A browser fetch to the home
+    // is often blocked by CORS, which leaves the page stuck on Waiting.
     return "";
   }
 

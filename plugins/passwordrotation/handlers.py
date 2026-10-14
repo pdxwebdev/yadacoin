@@ -784,6 +784,24 @@ class PasswordAuthSessionCreateHandler(BaseHandler):
                     data.setdefault(
                         "sp_username_signature", route.get("sp_username_signature")
                     )
+                    # Remember the remote session so same-origin polls can proxy it.
+                    # The browser often cannot read the home directly (CORS).
+                    try:
+                        await asess.insert_session(
+                            {
+                                "session_id": data.get("session_id"),
+                                "username": username,
+                                "site": site,
+                                "action": action,
+                                "status": "proxied",
+                                "proxied": True,
+                                "home_node": home_url,
+                                "expires_at": asess._now() + asess.SESSION_TTL_SEC,
+                                "result": None,
+                            }
+                        )
+                    except Exception:
+                        pass
                     return self.render_as_json(data)
                 # else fall through to local
             except Exception:
@@ -844,6 +862,14 @@ class PasswordAuthSessionGetHandler(BaseHandler):
         from plugins.passwordrotation import auth_session as asess
 
         doc = await asess.get_session(session_id)
+        if doc and doc.get("proxied") and doc.get("home_node"):
+            remote = await asess.fetch_remote_session_view(
+                doc.get("home_node") or "", session_id
+            )
+            if remote:
+                remote["proxied"] = True
+                remote["home_node"] = doc.get("home_node")
+                return self.render_as_json(remote)
         if not doc:
             self.set_status(404)
             return self.render_as_json(
@@ -913,11 +939,14 @@ class PasswordAuthSessionResultHandler(BaseHandler):
             "counter": body.get("counter"),
             "registered": body.get("registered"),
         }
+        if ok and body.get("password") and not body.get("password_enc"):
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "message": "plaintext password refused"}
+            )
         if ok:
             if body.get("password_enc"):
                 result["password_enc"] = body.get("password_enc")
-            elif body.get("password") is not None:
-                result["password"] = body.get("password")
             result["nextPasswordHash"] = body.get("nextPasswordHash") or body.get(
                 "next_password_hash"
             )
@@ -935,6 +964,20 @@ class PasswordAuthSessionResultHandler(BaseHandler):
                 }
             else:
                 password = body.get("password") or ""
+                if body.get("password_enc"):
+                    keys = await _peer_ratchet_keys(
+                        self, doc.get("username_signature") or ""
+                    )
+                    if keys:
+                        try:
+                            from plugins.passwordrotation.box import open_box
+
+                            raw = open_box(body.get("password_enc"), keys[0])
+                            payload = json.loads(raw.decode("utf-8"))
+                            if isinstance(payload, dict) and payload.get("p"):
+                                password = payload.get("p")
+                        except Exception:
+                            password = ""
                 branch_peer = (doc.get("site") or request_origin(self)).strip().lower()
                 tip = await self.config.mongo.async_db.key_event_log.find_one(
                     {"branch_peer": branch_peer},
@@ -1402,8 +1445,13 @@ class PasswordAdminSessionHandler(BaseHandler):
                     ),
                 }
             )
-        password = body.get("password") or ""
+        password = ""
         password_enc = body.get("password_enc") or ""
+        if body.get("password") and not password_enc:
+            self.set_status(400)
+            return self.render_as_json(
+                {"status": False, "message": "plaintext password refused"}
+            )
         if password_enc:
             opened = await _open_signin_password(self, password_enc)
             if not opened:

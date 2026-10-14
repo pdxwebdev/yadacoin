@@ -29,6 +29,7 @@ import {
   resyncSiteFromNode,
   resyncVaultFromNode,
   rotateSitePassword,
+  siteForSignIn,
   signPasswordHomeClaim,
   siteAtCounter,
   siteKeysForOrigin,
@@ -476,26 +477,27 @@ async function respond(result: BridgeResult, callback: string) {
     const v = await loadVault();
     const nodeUrl = resolveNodeUrl(v?.nodeUrl || "");
     if (!nodeUrl) throw new Error("node URL not configured");
-    let password = result.password;
     let passwordEnc = result.password_enc;
-    if (!passwordEnc && password && req.bindId && req.site.startsWith("http")) {
+    if (!passwordEnc && result.password && result.ok) {
       if (!v) throw new Error("vault locked");
       const id = identityFromVault(v);
+      const sealTo = req.site.startsWith("http") ? req.site : nodeUrl;
       const pubRes = await fetch(
-        req.site.replace(/\/+$/, "") +
+        sealTo.replace(/\/+$/, "") +
           "/password-rotation/ratchet-pub?username_signature=" +
           encodeURIComponent(id.usernameSignature),
         { headers: { Accept: "application/json" } }
       );
       const pubData = await pubRes.json().catch(() => ({}));
       if (!pubRes.ok || !pubData.public_key) {
-        throw new Error(pubData.message || "node has no ratchet public key for this peer");
+        throw new Error(
+          pubData.message || "refusing to send a plaintext password — no ratchet public key"
+        );
       }
       passwordEnc = await sealToRatchetPub(
-        JSON.stringify({ p: password, b: req.bindId }),
+        JSON.stringify({ p: result.password, b: req.bindId || "" }),
         pubData.public_key
       );
-      password = undefined;
     }
     const resultBody = {
       result_token: req.resultToken,
@@ -504,7 +506,7 @@ async function respond(result: BridgeResult, callback: string) {
       action: result.action,
       nonce: result.nonce,
       message: result.message,
-      ...(passwordEnc ? { password_enc: passwordEnc } : { password }),
+      ...(passwordEnc ? { password_enc: passwordEnc } : {}),
       nextPasswordHash: result.nextPasswordHash,
       counter: result.counter,
       registered: result.registered,
@@ -1115,19 +1117,7 @@ async function approvePending() {
       // operator = unlock node treasury via approve/reject; site is node origin.
       const rotateBase =
         req.action === "operator" && siteKey.startsWith("http") ? siteKey : nodeUrl;
-      let site: SiteRegistration;
-      try {
-        site = await resyncSiteFromNode({ baseUrl: rotateBase }, identity, siteKey);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (/expected counter/i.test(msg) || /already has a branch/i.test(msg)) {
-          throw e instanceof Error ? e : new Error(msg);
-        }
-        const reg = await registerSite({ baseUrl: rotateBase }, identity, siteKey);
-        v.mainDepth = reg.identity.mainDepth;
-        v.tipPrevPkh = reg.identity.tipPrevPkh;
-        site = reg.site;
-      }
+      const site = await siteForSignIn({ baseUrl: rotateBase }, identity, siteKey);
       const result = await rotateSitePassword(
         { baseUrl: rotateBase },
         identity,

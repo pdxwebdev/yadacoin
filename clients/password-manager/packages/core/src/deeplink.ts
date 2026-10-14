@@ -80,7 +80,6 @@ export function buildDemoCallbackUrl(
     q.set("registered", result.registered ? "1" : "0");
   }
   if (result.message) q.set("message", result.message);
-  if (result.password) q.set("password", result.password);
   if (result.nextPasswordHash) q.set("nextPasswordHash", result.nextPasswordHash);
 
   const join = base.includes("?") ? "&" : "?";

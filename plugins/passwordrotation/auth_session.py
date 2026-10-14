@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import re
 import secrets
 import time
@@ -248,8 +249,6 @@ def public_session_view(doc: dict, *, include_secrets: bool = False) -> dict:
         if st == "approved" and result.get("ok"):
             if result.get("password_enc"):
                 out["password_enc"] = result.get("password_enc")
-            elif result.get("password") is not None:
-                out["password"] = result.get("password")
             if result.get("nextPasswordHash"):
                 out["nextPasswordHash"] = result.get("nextPasswordHash")
             if result.get("token"):
@@ -259,6 +258,33 @@ def public_session_view(doc: dict, *, include_secrets: bool = False) -> dict:
     if include_secrets:
         out["result_token"] = doc.get("result_token")
     return out
+
+
+async def fetch_remote_session_view(home_base: str, session_id: str) -> Optional[dict]:
+    """GET a public auth-session view from the home that actually stores it."""
+    from tornado.httpclient import AsyncHTTPClient, HTTPRequest
+
+    base = normalize_http_base(home_base or "")
+    if not base or not session_id:
+        return None
+    try:
+        from urllib.parse import quote
+
+        client = AsyncHTTPClient()
+        req = HTTPRequest(
+            url=f"{base}/password-rotation/auth-session/{quote(session_id, safe='')}",
+            method="GET",
+            headers={"Accept": "application/json"},
+            connect_timeout=8,
+            request_timeout=20,
+        )
+        resp = await client.fetch(req, raise_error=False)
+        if resp.code != 200:
+            return None
+        data = json.loads(resp.body or b"{}")
+        return data if isinstance(data, dict) and data.get("status") else None
+    except Exception:
+        return None
 
 
 async def get_session(session_id: str) -> Optional[dict]:

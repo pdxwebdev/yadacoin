@@ -16,6 +16,7 @@ import {
   postAuthSessionResult,
   registerSite,
   rotateSitePassword,
+  siteForSignIn,
   resyncSiteFromNode,
   resyncVaultFromNode,
   siteAtCounter,
@@ -306,12 +307,21 @@ async function drainPendingRequests(): Promise<void> {
     public_key: id.k0.publicKeyHex,
     inception_pkh: id.k0.address,
   };
+  const pageOrigin = await getActiveOrigin();
   const stored = await chrome.storage.local.get(["yadaPendingAuth", "yadaPendingHome"]);
-  if (stored.yadaPendingAuth?.session_id) {
+  const storedSite = String(stored.yadaPendingAuth?.site || "");
+  const storedMatchesPage =
+    !pageOrigin ||
+    !storedSite.startsWith("http") ||
+    sameNode(storedSite, pageOrigin);
+  if (stored.yadaPendingAuth?.session_id && storedMatchesPage) {
     renderPendingRequest(stored.yadaPendingAuth, stored.yadaPendingHome || "");
     showAlert(`Pending ${stored.yadaPendingAuth.action} for ${stored.yadaPendingAuth.site}`, "success");
     setTab("request");
     return;
+  }
+  if (stored.yadaPendingAuth?.session_id && !storedMatchesPage) {
+    await chrome.storage.local.remove(["yadaPendingAuth", "yadaPendingHome"]);
   }
   const bases: string[] = [];
   try {
@@ -389,20 +399,8 @@ async function approvePendingRequest(): Promise<void> {
     return;
   }
 
-  let siteReg: SiteRegistration;
   await ensureNodeAccess(rotateBase);
-  try {
-    siteReg = await resyncSiteFromNode({ baseUrl: rotateBase }, identity, siteKey);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (/expected counter/i.test(msg) || /already has a branch/i.test(msg)) {
-      throw e instanceof Error ? e : new Error(msg);
-    }
-    const reg = await registerSite({ baseUrl: rotateBase }, identity, siteKey);
-    v.mainDepth = reg.identity.mainDepth;
-    v.tipPrevPkh = reg.identity.tipPrevPkh;
-    siteReg = reg.site;
-  }
+  const siteReg = await siteForSignIn({ baseUrl: rotateBase }, identity, siteKey);
   const rotated = await rotateSitePassword(
     { baseUrl: rotateBase },
     identity,
@@ -415,31 +413,31 @@ async function approvePendingRequest(): Promise<void> {
   password = rotated.site.currentPassword;
   counter = rotated.site.counter;
   const nextHash = hashPassword(rotated.site.nextPassword);
-  let passwordEnc = "";
-  if (p.bind_id && siteKey.startsWith("http")) {
-    await ensureNodeAccess(siteKey);
-    const pubRes = await fetch(
-      siteKey.replace(/\/+$/, "") +
-        "/password-rotation/ratchet-pub?username_signature=" +
-        encodeURIComponent(identity.usernameSignature),
-      { headers: { Accept: "application/json" } }
-    );
-    const pubData = await pubRes.json().catch(() => ({}));
-    if (!pubRes.ok || !pubData.public_key) {
-      throw new Error(pubData.message || "node has no ratchet public key for this peer");
-    }
-    passwordEnc = await sealToRatchetPub(
-      JSON.stringify({ p: password, b: p.bind_id }),
-      pubData.public_key
+  const sealTo = siteKey.startsWith("http") ? siteKey : nodeUrl;
+  await ensureNodeAccess(sealTo);
+  const pubRes = await fetch(
+    sealTo.replace(/\/+$/, "") +
+      "/password-rotation/ratchet-pub?username_signature=" +
+      encodeURIComponent(identity.usernameSignature),
+    { headers: { Accept: "application/json" } }
+  );
+  const pubData = await pubRes.json().catch(() => ({}));
+  if (!pubRes.ok || !pubData.public_key) {
+    throw new Error(
+      pubData.message || "refusing to send a plaintext password — no ratchet public key"
     );
   }
+  const passwordEnc = await sealToRatchetPub(
+    JSON.stringify({ p: password, b: p.bind_id || "" }),
+    pubData.public_key
+  );
 
   const resultBody = {
     result_token: p.result_token,
     ok: true,
     action: action === "operator" ? "operator" : action === "register" ? "register" : "signin",
     nonce: p.nonce,
-    ...(passwordEnc ? { password_enc: passwordEnc } : { password }),
+    password_enc: passwordEnc,
     nextPasswordHash: nextHash,
     counter,
     registered: true,
@@ -448,22 +446,30 @@ async function approvePendingRequest(): Promise<void> {
         ? `operator approved · counter ${counter}`
         : `approved · counter ${counter}`,
   };
-  const targets = [nodeUrl];
-  if (siteKey.startsWith("http") && !sameNode(siteKey, nodeUrl)) targets.push(siteKey);
+  const pageOrigin = await getActiveOrigin();
   const home = (p.home_node || "").replace(/\/+$/, "");
-  if (home && !targets.some((t) => sameNode(t, home))) targets.push(home);
-  let posted = false;
-  let lastErr = "";
+  const required = [pendingNodeUrl, home, pageOrigin || ""].filter(Boolean);
+  const targets = [...required];
+  if (siteKey.startsWith("http") && !targets.some((t) => sameNode(t, siteKey))) {
+    targets.push(siteKey);
+  }
+  if (nodeUrl && !targets.some((t) => sameNode(t, nodeUrl))) targets.push(nodeUrl);
+  const errors: string[] = [];
+  const okBases: string[] = [];
   for (const base of targets) {
     try {
       await ensureNodeAccess(base);
       await postAuthSessionResult(base, p.session_id, resultBody);
-      posted = true;
+      okBases.push(base);
     } catch (e) {
-      lastErr = e instanceof Error ? e.message : String(e);
+      errors.push(`${base}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
-  if (!posted) throw new Error(lastErr || "could not deliver approval to the sign-in node");
+  const requiredOk = required.some((r) => okBases.some((b) => sameNode(b, r)));
+  if (!requiredOk) {
+    throw new Error(errors.join(" · ") || "could not deliver approval to the sign-in node");
+  }
+  await chrome.storage.local.remove(["yadaPendingAuth", "yadaPendingHome"]);
   renderPendingRequest(null);
   await fillSiteFromOrigin(siteKey, v);
   showAlert(
@@ -490,6 +496,7 @@ async function denyPendingRequest(): Promise<void> {
     nonce: p.nonce,
     message: "denied by user",
   });
+  await chrome.storage.local.remove(["yadaPendingAuth", "yadaPendingHome"]);
   renderPendingRequest(null);
   showAlert("Request denied", "success");
 }

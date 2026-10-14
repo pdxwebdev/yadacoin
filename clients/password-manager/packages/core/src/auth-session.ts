@@ -128,7 +128,7 @@ export async function postAuthSessionResult(
   sessionId: string,
   result: AuthSessionResultBody
 ): Promise<AuthSessionView> {
-  const { body } = await jsonFetch(
+  const { ok, status, body } = await jsonFetch(
     base(nodeUrl) +
       "/password-rotation/auth-session/" +
       encodeURIComponent(sessionId) +
@@ -138,6 +138,9 @@ export async function postAuthSessionResult(
       body: JSON.stringify(result),
     }
   );
+  if (!ok || body?.status === false) {
+    throw new Error(body?.message || `result post failed (${status}) ${base(nodeUrl)}`);
+  }
   return body as AuthSessionView;
 }
 

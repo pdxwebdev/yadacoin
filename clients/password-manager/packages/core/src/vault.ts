@@ -843,6 +843,27 @@ export async function rotateSitePassword(
 }
 
 
+/** Use the existing branch tip, or register when the node has none. */
+export async function siteForSignIn(
+  api: NodeApi,
+  identity: VaultIdentity,
+  siteId: string
+): Promise<SiteRegistration> {
+  const keys = siteKeysForOrigin(identity, siteId);
+  const tipRes = await fetchSiteTip(api, keys.branchPeer);
+  const tip = tipRes.body?.tip;
+  if (tipRes.ok && tip) {
+    const counter = Number(tip.counter ?? 0);
+    return siteAtCounter(
+      identity,
+      { siteId: keys.branchPeer, branchPeer: keys.branchPeer, kp0: keys.kp0 },
+      Number.isFinite(counter) && counter >= 0 ? counter : 0
+    );
+  }
+  const reg = await registerSite(api, identity, siteId);
+  return reg.site;
+}
+
 /** Rebuild one site from the node's off-chain tip (counter + password hashes). */
 export async function resyncSiteFromNode(
   api: NodeApi,
