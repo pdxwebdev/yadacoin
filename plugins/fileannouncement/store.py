@@ -871,6 +871,73 @@ async def inception_for_username(config, username: str) -> str:
     return found.get("inception") or ""
 
 
+async def username_for_signature(config, username_signature: str) -> str:
+    sig = (username_signature or "").strip()
+    if not sig:
+        return ""
+    pipeline = [
+        {"$match": {"transactions.relationship.identity.username_signature": sig}},
+        {"$unwind": "$transactions"},
+        {"$match": {"transactions.relationship.identity.username_signature": sig}},
+        {"$limit": 1},
+        {"$project": {"username": "$transactions.relationship.identity.username"}},
+    ]
+    try:
+        async for doc in _db(config).blocks.aggregate(pipeline):
+            return str(doc.get("username") or "").strip()
+    except Exception:
+        return ""
+    return ""
+
+
+async def username_for_inception(config, inception_public_key_hash: str) -> str:
+    """Username for one inception hash. Does not scan every identity."""
+    pkh = (inception_public_key_hash or "").strip()
+    if not pkh:
+        return ""
+    pipeline = [
+        {"$match": {"transactions.inception_public_key_hash": pkh}},
+        {"$unwind": "$transactions"},
+        {
+            "$match": {
+                "transactions.inception_public_key_hash": pkh,
+                "transactions.relationship.identity.username": {"$gt": ""},
+            }
+        },
+        {"$limit": 1},
+        {"$project": {"username": "$transactions.relationship.identity.username"}},
+    ]
+    try:
+        async for doc in _db(config).blocks.aggregate(pipeline):
+            return str(doc.get("username") or "").strip()
+    except Exception:
+        return ""
+    return ""
+
+
+async def signatures_for_username(config, username: str, limit: int = 20) -> list:
+    """Username signatures that have announced this username."""
+    wanted = (username or "").strip().lstrip("@")
+    if not wanted:
+        return []
+    pipeline = [
+        {"$match": {"transactions.relationship.identity.username": wanted}},
+        {"$unwind": "$transactions"},
+        {"$match": {"transactions.relationship.identity.username": wanted}},
+        {"$limit": int(limit)},
+        {"$project": {"sig": "$transactions.relationship.identity.username_signature"}},
+    ]
+    found = []
+    try:
+        async for doc in _db(config).blocks.aggregate(pipeline):
+            sig = str(doc.get("sig") or "").strip()
+            if sig and sig not in found:
+                found.append(sig)
+    except Exception:
+        return found
+    return found
+
+
 async def identity_for_inception(config, inception_public_key_hash: str) -> dict:
     """Username from the identity announcement behind an inception hash."""
     pkh = (inception_public_key_hash or "").strip()
@@ -1057,11 +1124,10 @@ async def received_credentials(config, subject_username_signature: str) -> list:
     subject = (subject_username_signature or "").strip()
     if not subject:
         return []
-    names = await usernames_by_signature(config)
     found = {}
 
     def _absorb(txn, source, block_time):
-        item = _public_credential(txn, source, block_time, names)
+        item = _public_credential(txn, source, block_time, {})
         if not item or item["subject_username_signature"] != subject:
             return
         found[item["transaction_id"]] = item
@@ -1077,6 +1143,13 @@ async def received_credentials(config, subject_username_signature: str) -> list:
         key=lambda row: (int(row.get("time") or 0), row.get("transaction_id") or ""),
         reverse=True,
     )
+    named = {}
+    for row in rows:
+        sig = str(row.get("issuer_username_signature") or "").strip()
+        if sig and sig not in named:
+            named[sig] = await username_for_signature(config, sig)
+        if sig:
+            row["issuer_username"] = named.get(sig) or row.get("issuer_username") or ""
     return rows
 
 

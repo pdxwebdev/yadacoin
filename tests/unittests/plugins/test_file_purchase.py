@@ -11,8 +11,12 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import json
+import os
+import tempfile
 import unittest
 
+from plugins.fileannouncement.handlers import config_http_bases
 from plugins.fileannouncement.purchase import (
     access_token,
     access_token_ok,
@@ -21,6 +25,7 @@ from plugins.fileannouncement.purchase import (
     output_pays,
     payer_matches,
 )
+from plugins.fileannouncement.service import is_announcer_identity
 
 
 class TestPurchaseMatch(unittest.TestCase):
@@ -54,3 +59,41 @@ class TestPurchaseMatch(unittest.TestCase):
         token = access_token(config, "ann", 9999999999)
         self.assertTrue(access_token_ok(config, "ann", token))
         self.assertFalse(access_token_ok(config, "other", token))
+
+    def test_only_the_announcer_identity_serves_paid_bytes(self):
+        self.assertTrue(
+            is_announcer_identity(
+                "local_node_B", "owner", announced_name="local_node_B"
+            )
+        )
+        self.assertFalse(
+            is_announcer_identity(
+                "local_node_A",
+                "owner",
+                announced_name="local_node_B",
+                inception="viewer",
+                operator_id="viewer",
+                address="viewer-addr",
+                pay_to="creator-addr",
+            )
+        )
+
+    def test_config_http_bases_use_the_announcer_web_port(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with open(
+                os.path.join(directory, "node.json"), "w", encoding="utf-8"
+            ) as handle:
+                json.dump(
+                    {
+                        "username": "local_node_B",
+                        "web_server_port": 8110,
+                        "peer_host": "127.0.0.1",
+                        "private_key": "secret",
+                    },
+                    handle,
+                )
+            self.assertEqual(
+                config_http_bases("local_node_B", directory),
+                ["http://127.0.0.1:8110"],
+            )
+            self.assertEqual(config_http_bases("local_node_A", directory), [])

@@ -20,6 +20,7 @@ from plugins.fileannouncement.credentials import (
     PresentationError,
     badge_satisfies,
     credential_requirements,
+    credentials_satisfy,
     presentation_from_parts,
     requirement_applies,
     verify_presentation,
@@ -112,6 +113,28 @@ class TestCredentialGate(unittest.TestCase):
         self.assertEqual(verified["subject"], _SUBJECT)
         with self.assertRaises(PresentationError):
             verify_presentation(_vp(age), gates=gates)
+
+    def test_username_issuer_matches_identity_signature(self):
+        names = {_ISSUER: "local_node_B"}
+        badge = {
+            "claim": "ageOver18",
+            "expires": int(time.time()) + 100,
+            "issuer_username_signature": _ISSUER,
+            "issuer_username": "local_node_B",
+            "proof_valid": True,
+        }
+        member = dict(badge, claim="member")
+        gates = [
+            {"claim": "ageOver18", "issuer": "local_node_B"},
+            {"claim": "member", "issuer": "local_node_B"},
+        ]
+        self.assertTrue(badge_satisfies(badge, "ageOver18", "local_node_B"))
+        self.assertTrue(credentials_satisfy([badge, member], gates, issuer_names=names))
+        self.assertFalse(credentials_satisfy([badge], gates, issuer_names=names))
+        verified = verify_presentation(
+            _vp(_vc()), "ageOver18", "local_node_B", issuer_names=names
+        )
+        self.assertEqual(verified["subject"], _SUBJECT)
 
     def test_presentation_query_roundtrip(self):
         import base64

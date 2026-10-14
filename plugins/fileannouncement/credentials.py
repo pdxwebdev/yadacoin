@@ -184,15 +184,21 @@ def claim_matches(vc, required_claim: str) -> bool:
     return f"{required_claim}Credential" in _types(vc.get("type"))
 
 
-def issuer_matches(vc, required_issuer: str) -> bool:
+def issuer_matches(vc, required_issuer: str, issuer_names=None) -> bool:
     required_issuer = (required_issuer or "").strip()
     if not required_issuer:
         return True
     if not isinstance(vc, dict):
         return False
-    return same_issuer(required_issuer, vc.get("issuer")) or same_issuer(
+    if same_issuer(required_issuer, vc.get("issuer")) or same_issuer(
         required_issuer, vc.get("issuer_username_signature")
-    )
+    ):
+        return True
+    if not issuer_names or not looks_like_username(required_issuer):
+        return False
+    sig = issuer_id(vc.get("issuer"))
+    named = issuer_names.get(sig) or issuer_names.get(vc.get("issuer")) or ""
+    return same_issuer(required_issuer, named)
 
 
 def badge_satisfies(badge, required_claim="", required_issuer="", now=None) -> bool:
@@ -274,7 +280,33 @@ def _gate_list(required_claim="", required_issuer="", gates=None) -> list:
     return [{"claim": required_claim, "issuer": required_issuer}]
 
 
-def _vc_matches_gate(vc, gate, holder, now) -> str:
+def credentials_satisfy(badges, gates, now=None, issuer_names=None) -> bool:
+    """True when every gate is met by a received credential of one identity."""
+    needed = _gate_list(gates=gates)
+    if not needed:
+        return True
+    now = int(time.time() if now is None else now)
+    by_name = {}
+    for sig, name in (issuer_names or {}).items():
+        if looks_like_username(name):
+            by_name.setdefault(str(name).strip().lower(), sig)
+    rows = badges if isinstance(badges, list) else []
+    for gate in needed:
+        claim = gate.get("claim") or ""
+        issuer = gate.get("issuer") or ""
+        alts = [issuer]
+        if looks_like_username(issuer):
+            sig = by_name.get(issuer.lower())
+            if sig and sig not in alts:
+                alts.append(sig)
+        if not any(
+            badge_satisfies(badge, claim, alt, now) for badge in rows for alt in alts
+        ):
+            return False
+    return True
+
+
+def _vc_matches_gate(vc, gate, holder, now, issuer_names=None) -> str:
     if not isinstance(vc, dict):
         return ""
     if "VerifiableCredential" not in _types(vc.get("type")):
@@ -282,7 +314,7 @@ def _vc_matches_gate(vc, gate, holder, now) -> str:
     if _expired(vc, now):
         return ""
     if not claim_matches(vc, gate.get("claim") or "") or not issuer_matches(
-        vc, gate.get("issuer") or ""
+        vc, gate.get("issuer") or "", issuer_names
     ):
         return ""
     subject = _subject_id(vc)
@@ -294,7 +326,7 @@ def _vc_matches_gate(vc, gate, holder, now) -> str:
 
 
 def verify_presentation(
-    vp, required_claim="", required_issuer="", now=None, gates=None
+    vp, required_claim="", required_issuer="", now=None, gates=None, issuer_names=None
 ) -> dict:
     """Verify a W3C Verifiable Presentation against every required gate.
 
@@ -319,7 +351,7 @@ def verify_presentation(
     for gate in needed:
         matched = ""
         for vc in creds:
-            matched = _vc_matches_gate(vc, gate, holder, now)
+            matched = _vc_matches_gate(vc, gate, holder, now, issuer_names)
             if matched:
                 break
         if not matched:

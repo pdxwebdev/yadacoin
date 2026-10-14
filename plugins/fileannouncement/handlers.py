@@ -237,11 +237,48 @@ def _json_body(handler):
         raise ValueError("Invalid JSON body")
 
 
+async def _issuer_names(handler, gates=None) -> dict:
+    """Map issuer signatures for these gates only. Does not scan every identity."""
+    from .credentials import looks_like_username
+
+    names = {}
+    seen = set()
+    for gate in gates or []:
+        issuer = str((gate or {}).get("issuer") or "").strip().lstrip("@")
+        key = issuer.lower()
+        if not issuer or key in seen or not looks_like_username(issuer):
+            continue
+        seen.add(key)
+        try:
+            sigs = await store.signatures_for_username(handler.config, issuer)
+        except Exception:
+            sigs = []
+        for sig in sigs:
+            names[sig] = issuer
+    return names
+
+
+async def _operator_credential_badges(handler) -> list:
+    if not await operator_session_unlocked(handler):
+        return []
+    username = _operator_username(handler.config)
+    if not username:
+        return []
+    try:
+        badges = []
+        for signature in await store.signatures_for_username(handler.config, username):
+            badges.extend(await store.received_credentials(handler.config, signature))
+        return badges
+    except Exception:
+        return []
+
+
 async def _credential_blocked(handler, live, file_id: str = "") -> bool:
     """Deny a download when the announcement requires a W3C presentation."""
     from .credentials import (
         PresentationError,
         credential_requirements,
+        credentials_satisfy,
         presentation_from_parts,
         requirement_applies,
         verify_presentation,
@@ -249,17 +286,26 @@ async def _credential_blocked(handler, live, file_id: str = "") -> bool:
 
     if not requirement_applies(live, file_id):
         return False
-    try:
-        vp = presentation_from_parts(
-            handler.request.headers.get("X-Yada-VP", ""),
-            handler.get_query_argument("vp", "") or "",
-        )
-        verify_presentation(vp, gates=credential_requirements(live))
-    except PresentationError:
-        handler.set_status(403)
-        handler.finish("credential required")
-        return True
-    return False
+    gates = credential_requirements(live)
+    names = await _issuer_names(handler, gates)
+    presented = _presented_vp(handler)
+    if presented:
+        try:
+            verify_presentation(
+                presentation_from_parts(presented, ""),
+                gates=gates,
+                issuer_names=names,
+            )
+            return False
+        except PresentationError:
+            pass
+    if credentials_satisfy(
+        await _operator_credential_badges(handler), gates, issuer_names=names
+    ):
+        return False
+    handler.set_status(403)
+    handler.finish("credential required")
+    return True
 
 
 def _presented_vp(handler) -> str:
@@ -1562,13 +1608,77 @@ def _stream_home_drop(transaction_id: str) -> None:
     _STREAM_HOME.pop(transaction_id or "", None)
 
 
+def config_http_bases(username: str, config_dir: str) -> list:
+    """Loopback web ports of local configs whose username is the announcer."""
+    wanted = str(username or "").strip().lstrip("@").lower()
+    if not wanted or not config_dir:
+        return []
+    found = []
+    try:
+        names = os.listdir(config_dir)
+    except OSError:
+        return []
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        path = os.path.join(config_dir, name)
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        got = str(data.get("username") or "").strip().lstrip("@").lower()
+        if got != wanted:
+            continue
+        try:
+            port = int(data.get("web_server_port") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not 1 <= port <= 65535:
+            continue
+        host = str(data.get("peer_host") or "127.0.0.1").strip()
+        if host in ("", "0.0.0.0", "::"):
+            host = "127.0.0.1"
+        found.append(f"http://{host}:{port}")
+    return found
+
+
+async def _creator_username(handler, live) -> str:
+    username = str((live or {}).get("username") or "").strip().lstrip("@")
+    if username:
+        return username
+    owner = str((live or {}).get("owner") or "").strip()
+    if not owner:
+        return ""
+    try:
+        names = await store.identity_usernames(handler.config)
+    except Exception:
+        return ""
+    return str((names or {}).get(owner) or "").strip().lstrip("@")
+
+
 async def _purchase_homes(handler, live) -> list:
     homes = []
     seen = set()
+    this = ""
+    try:
+        this = (
+            (
+                (handler.request.protocol or "http")
+                + "://"
+                + (handler.request.host or "")
+            )
+            .rstrip("/")
+            .lower()
+        )
+    except Exception:
+        this = ""
 
     def add(base: str) -> None:
         base = (base or "").rstrip("/")
-        if not base:
+        if not base or base.lower() == this:
             return
         key = base.lower()
         if key in seen:
@@ -1576,12 +1686,21 @@ async def _purchase_homes(handler, live) -> list:
         seen.add(key)
         homes.append(base)
 
+    username = await _creator_username(handler, live)
     try:
         from plugins.passwordrotation.auth_session import password_home_bases
 
         sig = await _creator_username_signature(handler, live)
         for base in await password_home_bases(sig, handler, tested_limit=6):
             add(base)
+        from .relay import connected_creator_streams
+
+        for stream in connected_creator_streams(handler.config, username, sig):
+            peer = getattr(stream, "peer", None)
+            host = getattr(peer, "http_host", None) or getattr(peer, "host", None)
+            port = getattr(peer, "http_port", None)
+            if host and port:
+                add(f"http://{host}:{port}")
     except Exception:
         pass
     return homes
@@ -1635,6 +1754,20 @@ async def _forward_json(home: str, path: str, body: dict, timeout: float = 30) -
     return (
         data if isinstance(data, dict) else {"status": False, "error": "bad response"}
     )
+
+
+async def _paid_invoice(handler, transaction_id: str):
+    """A browser invoice is paid when its exact amount is on chain, any wallet."""
+    for token in _invoice_tokens(handler):
+        try:
+            redeemed = await purchase.redeem_invoice(
+                handler.config, token, transaction_id
+            )
+        except Exception:
+            redeemed = None
+        if redeemed:
+            return redeemed
+    return None
 
 
 async def _session_payer_ids(handler) -> set:
@@ -1803,12 +1936,6 @@ class PublicPurchaseHandler(BaseHandler):
             return self.render_as_json(
                 {"status": False, "error": "transaction_id is required"}
             )
-        payers = await _session_payer_ids(self)
-        if not payers:
-            self.set_status(401)
-            return self.render_as_json(
-                {"status": False, "error": "not authorized", "paid": False}
-            )
         live = await store.get_live_by_transaction_id(self.config, transaction_id)
         if not live:
             self.set_status(404)
@@ -1817,6 +1944,27 @@ class PublicPurchaseHandler(BaseHandler):
             )
         price = str(live.get("price") or "").strip()
         pay_to = str(live.get("public_key_hash") or "").strip()
+        redeemed = await _paid_invoice(self, transaction_id)
+        if redeemed:
+            return self.render_as_json(
+                {
+                    "status": True,
+                    "paid": True,
+                    "payment_id": redeemed.get("payment_id") or "",
+                    "access": redeemed.get("access") or "",
+                    "price": price,
+                    "pay_to": pay_to,
+                    "holds_media": paidstore.has(
+                        self.config, live.get("file_id") or ""
+                    ),
+                }
+            )
+        payers = await _session_payer_ids(self)
+        if not payers:
+            self.set_status(401)
+            return self.render_as_json(
+                {"status": False, "error": "not authorized", "paid": False}
+            )
         if not price:
             return self.render_as_json(
                 {
@@ -1898,6 +2046,14 @@ class PublicPurchaseStreamHandler(BaseHandler):
                 self.config, pay_to, price, payers
             )
             local_access = bool(payment)
+        if not local_access:
+            redeemed = await _paid_invoice(self, transaction_id)
+            if redeemed:
+                local_access = True
+                if not payment_id:
+                    payment_id = str(redeemed.get("payment_id") or "")
+                if payment_id and not payment:
+                    payment = await purchase.payment_by_id(self.config, payment_id)
         if not holds:
             if not local_access:
                 self.set_status(402)
@@ -1937,6 +2093,7 @@ class PublicPurchaseStreamHandler(BaseHandler):
         length = end - start + 1
         partial = not (start == 0 and end == total - 1)
         self.set_header("Accept-Ranges", "bytes")
+        self.set_header("Cache-Control", "private, no-store")
         self.set_header("Content-Type", mime)
         self.set_header("Content-Length", str(length))
         self.set_header("Content-Disposition", f'inline; filename="{filename}"')
@@ -2010,6 +2167,7 @@ class PublicPurchaseStreamHandler(BaseHandler):
         length = end - start + 1
         partial = not (start == 0 and end == total - 1)
         self.set_header("Accept-Ranges", "bytes")
+        self.set_header("Cache-Control", "private, no-store")
         self.set_header("Content-Type", mime)
         self.set_header("Content-Length", str(length))
         self.set_header("Content-Disposition", f'inline; filename="{filename}"')
@@ -2041,6 +2199,7 @@ class PublicPurchaseStreamHandler(BaseHandler):
 
     def _write_proxied(self, resp):
         self.set_status(resp.code)
+        self.set_header("Cache-Control", "private, no-store")
         for name in (
             "Content-Type",
             "Content-Length",
@@ -2054,7 +2213,7 @@ class PublicPurchaseStreamHandler(BaseHandler):
         self.finish()
 
     async def _fetch_purchase_stream(
-        self, home, transaction_id, payment_id, probe=False
+        self, home, transaction_id, payment_id, probe=False, vp=""
     ):
         from tornado.httpclient import AsyncHTTPClient, HTTPClientError, HTTPRequest
 
@@ -2066,7 +2225,6 @@ class PublicPurchaseStreamHandler(BaseHandler):
             + quote(payment_id, safe="")
         )
         headers = {"X-Yada-Ppv-Direct": "1"}
-        vp = _presented_vp(self)
         if vp:
             headers["X-Yada-VP"] = vp
         if probe:
@@ -2094,11 +2252,11 @@ class PublicPurchaseStreamHandler(BaseHandler):
         except Exception:
             return None
 
-    async def _first_stream_home(self, homes, transaction_id, payment_id):
+    async def _first_stream_home(self, homes, transaction_id, payment_id, vp=""):
         tasks = [
             asyncio.create_task(
                 self._fetch_purchase_stream(
-                    home, transaction_id, payment_id, probe=True
+                    home, transaction_id, payment_id, probe=True, vp=vp
                 )
             )
             for home in homes
@@ -2134,9 +2292,13 @@ class PublicPurchaseStreamHandler(BaseHandler):
         return found
 
     async def _proxy_homes(self, transaction_id, payment_id):
+        live = await store.get_live_by_transaction_id(self.config, transaction_id)
+        vp = _presented_vp(self)
         cached = _stream_home_get(transaction_id)
         if cached:
-            resp = await self._fetch_purchase_stream(cached, transaction_id, payment_id)
+            resp = await self._fetch_purchase_stream(
+                cached, transaction_id, payment_id, vp=vp
+            )
             if resp is not None and resp.code == 403:
                 self.set_status(403)
                 return self.finish("credential required")
@@ -2145,17 +2307,18 @@ class PublicPurchaseStreamHandler(BaseHandler):
                 return self._write_proxied(resp)
             _stream_home_drop(transaction_id)
 
-        live = await store.get_live_by_transaction_id(self.config, transaction_id)
         homes = [
             home
             for home in await _purchase_homes(self, live)
             if home.rstrip("/") != (cached or "").rstrip("/")
         ][:8]
-        home = await self._first_stream_home(homes, transaction_id, payment_id)
+        home = await self._first_stream_home(homes, transaction_id, payment_id, vp)
         if not home:
             self.set_status(404)
             return self.finish("file not found")
-        resp = await self._fetch_purchase_stream(home, transaction_id, payment_id)
+        resp = await self._fetch_purchase_stream(
+            home, transaction_id, payment_id, vp=vp
+        )
         if resp is not None and resp.code == 403:
             self.set_status(403)
             return self.finish("credential required")
@@ -2211,6 +2374,7 @@ class PublicPurchaseStreamHandler(BaseHandler):
         except Exception:
             return False
         self.set_status(resp.code)
+        self.set_header("Cache-Control", "private, no-store")
         for name in (
             "Content-Type",
             "Content-Length",

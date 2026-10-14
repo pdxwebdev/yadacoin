@@ -112,6 +112,51 @@ async def operator_inception_public_key_hash(config) -> str:
     return await _operator_id(config)
 
 
+def is_announcer_identity(
+    username,
+    owner,
+    announced_name="",
+    inception="",
+    operator_id="",
+    address="",
+    pay_to="",
+) -> bool:
+    """True when this node is the identity that announced the file."""
+    username = str(username or "").strip().lstrip("@")
+    owner = str(owner or "").strip()
+    announced_name = str(announced_name or "").strip().lstrip("@")
+    inception = str(inception or "").strip()
+    operator_id = str(operator_id or "").strip()
+    address = str(address or "").strip()
+    pay_to = str(pay_to or "").strip()
+    if address and pay_to and address == pay_to:
+        return True
+    if username and announced_name and username.lower() == announced_name.lower():
+        return True
+    if inception and owner and inception == owner:
+        return True
+    return bool(operator_id and owner and operator_id == owner)
+
+
+async def node_is_announcer(config, live) -> bool:
+    """True when this process is the identity that announced the file."""
+    if not isinstance(live, dict):
+        return False
+    owner = str(live.get("owner") or "").strip()
+    username = str(getattr(config, "username", "") or "").strip().lstrip("@")
+    try:
+        announced = await store.username_for_inception(config, owner)
+    except Exception:
+        announced = ""
+    return is_announcer_identity(
+        username,
+        owner,
+        announced,
+        address=getattr(config, "address", ""),
+        pay_to=live.get("public_key_hash"),
+    )
+
+
 async def _backend_from_settings(config, backend_name=None):
     settings = await store.get_settings(config)
     name = backend_name or settings.get("backend") or "sia"

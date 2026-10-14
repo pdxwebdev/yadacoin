@@ -80,10 +80,23 @@ async def handle_paid_media(rpc, body, stream):
     )
 
     if requirement_applies(live, file_id):
+        names = {}
+        try:
+            from .credentials import looks_like_username
+
+            for gate in credential_requirements(live):
+                issuer = str((gate or {}).get("issuer") or "").strip().lstrip("@")
+                if not issuer or not looks_like_username(issuer):
+                    continue
+                for sig in await store.signatures_for_username(rpc.config, issuer):
+                    names[sig] = issuer
+        except Exception:
+            names = {}
         try:
             verify_presentation(
                 presentation_from_parts(str(params.get("vp") or ""), ""),
                 gates=credential_requirements(live),
+                issuer_names=names if isinstance(names, dict) else {},
             )
         except PresentationError:
             credential_ok = False
