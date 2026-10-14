@@ -1752,39 +1752,8 @@ async def _access_for_amount(
     )
 
 
-async def _forward_json(home: str, path: str, body: dict, timeout: float = 30) -> dict:
-    from tornado.httpclient import AsyncHTTPClient, HTTPClientError
-
-    try:
-        resp = await AsyncHTTPClient().fetch(
-            home.rstrip("/") + path,
-            method="POST",
-            body=json.dumps(body),
-            headers={
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "X-Yada-Ppv-Direct": "1",
-            },
-            request_timeout=timeout,
-        )
-    except HTTPClientError as exc:
-        try:
-            return json.loads(exc.response.body.decode())
-        except Exception:
-            return {"status": False, "error": str(exc)}
-    except Exception as exc:
-        return {"status": False, "error": str(exc)}
-    try:
-        data = json.loads(resp.body.decode())
-    except Exception:
-        return {"status": False, "error": "creator node returned invalid JSON"}
-    return (
-        data if isinstance(data, dict) else {"status": False, "error": "bad response"}
-    )
-
-
 async def _paid_invoice(handler, transaction_id: str, grant_seconds=""):
-    """A browser invoice is paid when its exact amount is on chain, any wallet."""
+    """A browser invoice is paid when its exact amount is in the mempool or on chain."""
     for token in _invoice_tokens(handler):
         try:
             redeemed = await purchase.redeem_invoice(
@@ -1910,39 +1879,6 @@ class PublicPurchaseRedeemHandler(BaseHandler):
                 echoed = doc.get("amount") or echoed
         if redeemed:
             return self.render_as_json(_paid_body(self, live, redeemed))
-        if not direct:
-            homes = await _purchase_homes(self, live)
-
-            async def _ask(home, token):
-                return await _forward_json(
-                    home,
-                    "/file-announcements/api/v1/public/purchase/redeem",
-                    {"transaction_id": transaction_id, "token": token},
-                    timeout=8,
-                )
-
-            calls = [_ask(home, token) for home in homes for token in tokens]
-            if calls:
-                results = await asyncio.gather(*calls, return_exceptions=True)
-                for last in results:
-                    if isinstance(last, Exception) or not isinstance(last, dict):
-                        continue
-                    if last.get("expired"):
-                        expired = True
-                    if last.get("paid"):
-                        return self.render_as_json(last)
-                    amount = str(last.get("amount") or "").strip()
-                    if not amount:
-                        continue
-                    issued = await _access_for_amount(
-                        self,
-                        transaction_id,
-                        str(last.get("pay_to") or pay_to),
-                        amount,
-                        grant_seconds,
-                    )
-                    if issued:
-                        return self.render_as_json(_paid_body(self, live, issued))
         if not redeemed and echoed:
             issued = await _access_for_amount(
                 self, transaction_id, pay_to, echoed, grant_seconds
@@ -1968,7 +1904,7 @@ class PublicPurchaseRedeemHandler(BaseHandler):
         body = {
             "status": True,
             "paid": False,
-            "error": "no confirmed payment for this browser invoice yet",
+            "error": "no payment in the mempool or on chain for this checkout yet",
         }
         if echoed:
             body["amount"] = echoed

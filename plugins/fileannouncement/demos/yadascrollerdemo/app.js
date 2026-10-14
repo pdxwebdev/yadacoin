@@ -1955,7 +1955,7 @@
     railBuy.setAttribute("aria-label", railBuy.title);
   }
 
-  function unlockPaid(item) {
+  function unlockPaid(item, playFeed) {
     if (!item) return;
     item.price_unlocked = true;
     const url = paidStreamUrl(item);
@@ -1965,16 +1965,55 @@
     const slide = feed.querySelector(`[data-key="${CSS.escape(key)}"]`);
     if (slide) {
       slide.classList.remove("locked");
-      const badge = slide.querySelector(".price-chip");
+      const badge = slide.querySelector(".price-chip:not(.cred-chip)");
       if (badge) badge.remove();
       const video = slide.querySelector("video");
       if (video) {
         video.setAttribute("data-src", url);
         ensureSrc(video);
-        video.play().catch(() => {});
+        if (playFeed !== false) video.play().catch(() => {});
+      }
+    }
+    if (photoPane) {
+      const photoSlide = photoPane.querySelector(`[data-key="${CSS.escape(key)}"]`);
+      if (photoSlide) {
+        photoSlide.classList.remove("locked");
+        const badge = photoSlide.querySelector(".price-chip:not(.cred-chip)");
+        if (badge) badge.remove();
       }
     }
     syncBuyRail();
+  }
+
+  function closeBuy() {
+    if (typeof buyDlg.close === "function") buyDlg.close();
+    else buyDlg.removeAttribute("open");
+  }
+
+  function isPhotoItem(item) {
+    if (!item) return false;
+    const mime = String(item.mime_type || "").toLowerCase();
+    if (mime.startsWith("image/")) return true;
+    if (mime.startsWith("video/")) return false;
+    return photos.includes(item) || profilePhotos.includes(item);
+  }
+
+  function revealPaid(item) {
+    unlockPaid(item, false);
+    closeBuy();
+    if (!item) return;
+    if (viewName === "profile") renderProfileGrid();
+    if (isPhotoItem(item)) openPhoto(item, true);
+    else openPlayer(item, true);
+    const key = itemKey(item);
+    const videoIndex = videos.findIndex((row) => itemKey(row) === key);
+    if (videoIndex >= 0) activateIndex(videoIndex, true);
+    const photoIdx = photos.findIndex((row) => itemKey(row) === key);
+    if (photoIdx >= 0 && photoPane) {
+      photoIndex = photoIdx;
+      const slide = photoPane.querySelector(`[data-key="${CSS.escape(key)}"]`);
+      if (slide) slide.scrollIntoView({ behavior: "auto", block: "start" });
+    }
   }
 
   async function checkPurchase(item) {
@@ -2066,7 +2105,10 @@
   });
   buyCheck.addEventListener("click", async () => {
     const item = buyItem || activeItem();
+    const label = buyCheck.textContent;
     buyCheck.disabled = true;
+    buyCheck.textContent = "Checking…";
+    buyNote.textContent = "Checking the mempool and chain…";
     try {
       const res = await fetch(`${API_PURCHASE}/redeem`, {
         method: "POST",
@@ -2078,17 +2120,17 @@
       if (!data.paid) {
         buyNote.textContent = data.expired
           ? data.error || "Access for this payment has expired. Pay again to keep watching."
-          : data.error || "No confirmed payment for this browser checkout yet.";
+          : data.error || "No payment in the mempool or on chain for this checkout yet.";
         return;
       }
       if (data.access) item.access = data.access;
       if (data.payment_id) item.payment_id = data.payment_id;
-      unlockPaid(item);
-      if (typeof buyDlg.close === "function") buyDlg.close();
+      revealPaid(item);
     } catch (err) {
       buyNote.textContent = err.message || "Could not check payment";
     } finally {
       buyCheck.disabled = false;
+      buyCheck.textContent = label;
     }
   });
   if (buyNode) {
@@ -2104,8 +2146,7 @@
             : "Sent. Not in the mempool yet.";
           return;
         }
-        unlockPaid(item);
-        if (typeof buyDlg.close === "function") buyDlg.close();
+        revealPaid(item);
       } catch (err) {
         buyNote.textContent = err.message || "Could not pay from this node";
       } finally {
