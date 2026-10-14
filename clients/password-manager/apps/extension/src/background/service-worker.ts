@@ -140,7 +140,7 @@ async function refreshInception(
   return next;
 }
 
-const EXT_VERSION = "0.1.7";
+const EXT_VERSION = "0.1.8";
 
 function reportProgress(
   sender: chrome.runtime.MessageSender,
