@@ -4666,3 +4666,219 @@ class TestQueueReanchorDerivationGuard(AsyncTestCase):
             with self.assertRaises(KelMiningRatchetNotReady) as ctx:
                 await mgr._queue_reanchor(block=block)
         self.assertIn("cannot derive coinbase signer", str(ctx.exception))
+
+
+_BOX_PRIV = bytes.fromhex(
+    "511d55726e3e3bf1c10b2a7202136eeaa1a17746c91a82305d6da89c8257f694"
+)
+_BOX_CC = bytes.fromhex(
+    "aabbccdd11223344556677889900aabbccddeeff00112233445566778899aabb"
+)
+
+
+def _box_manager(
+    username_signature="",
+    username="",
+    public_key="",
+):
+    from yadacoin.core.keyrotation import NodeKeyRotationManager
+
+    cfg = _make_config(username=username, public_key=public_key)
+    cfg.username_signature = username_signature
+    return NodeKeyRotationManager(cfg)
+
+
+class TestPeerPasswordBoxKeys(AsyncTestCase):
+    async def test_empty_signature_returns_none(self):
+        mgr = _box_manager()
+        self.assertIsNone(await mgr.peer_password_box_keys(""))
+        self.assertIsNone(await mgr.peer_password_box_keys(None))
+        self.assertIsNone(await mgr.peer_password_box_keys("   "))
+
+    async def test_cached_pair_returned_without_rederive(self):
+        mgr = _box_manager()
+        mgr._password_box_keys["peer-sig"] = ("aa", "bb")
+        mgr._is_own_identity = MagicMock(side_effect=AssertionError("cache miss"))
+        self.assertEqual(await mgr.peer_password_box_keys("peer-sig"), ("aa", "bb"))
+        mgr._is_own_identity.assert_not_called()
+
+    async def test_own_identity_caches_ratchet_pair(self):
+        mgr = _box_manager(username_signature="me")
+        mgr._auth_ratchet_key = {"private_key": _BOX_PRIV}
+        mgr._auth_ratchet_pub = "02aa"
+        pair = await mgr.peer_password_box_keys("me")
+        self.assertEqual(pair, (_BOX_PRIV.hex(), "02aa"))
+        self.assertEqual(mgr._password_box_keys["me"], pair)
+        mgr._own_password_box_keys = MagicMock(side_effect=AssertionError("uncached"))
+        self.assertEqual(await mgr.peer_password_box_keys("me"), pair)
+
+    async def test_own_identity_without_keys_does_not_cache(self):
+        mgr = _box_manager(username_signature="me")
+        self.assertIsNone(await mgr.peer_password_box_keys("me"))
+        self.assertNotIn("me", mgr._password_box_keys)
+
+    async def test_missing_k0_returns_none(self):
+        mgr = _box_manager()
+        self.assertIsNone(mgr._k0)
+        self.assertIsNone(await mgr.peer_password_box_keys("peer"))
+
+    async def test_missing_second_factor_returns_none(self):
+        mgr = _box_manager()
+        mgr._k0 = {"private_key": _BOX_PRIV, "chain_code": _BOX_CC}
+        mgr._second_factor = ""
+        with patch("yadacoin.core.keyrotation._read_second_factor", return_value=""):
+            self.assertIsNone(await mgr.peer_password_box_keys("peer"))
+
+    async def test_derives_kp0_when_no_bridge(self):
+        from yadacoin.core.keyrotation import derive_secure_path
+
+        mgr = _box_manager()
+        mgr._k0 = {"private_key": _BOX_PRIV, "chain_code": _BOX_CC}
+        mgr._second_factor = "sf"
+        mgr._active_peer_branch_bridge = AsyncMock(return_value=None)
+        sign_key = derive_secure_path(_BOX_PRIV, _BOX_CC, "sfpeer")
+        pair = await mgr.peer_password_box_keys("peer")
+        self.assertEqual(pair[0], sign_key["private_key"].hex())
+        self.assertEqual(len(pair[1]), 66)
+        self.assertEqual(mgr._password_box_keys["peer"], pair)
+
+    async def test_bridge_without_inception_skips_tip_walk(self):
+        mgr = _box_manager()
+        mgr._k0 = {"private_key": _BOX_PRIV, "chain_code": _BOX_CC}
+        mgr._second_factor = "sf"
+        mgr._active_peer_branch_bridge = AsyncMock(return_value={"root_depth": 0})
+        mgr._peer_branch_tip_by_hash_link = AsyncMock(
+            side_effect=AssertionError("no inception")
+        )
+        pair = await mgr.peer_password_box_keys("peer")
+        self.assertEqual(len(pair), 2)
+        mgr._peer_branch_tip_by_hash_link.assert_not_awaited()
+
+    async def test_bad_tip_counter_does_not_walk(self):
+        mgr = _box_manager()
+        mgr._k0 = {"private_key": _BOX_PRIV, "chain_code": _BOX_CC}
+        mgr._second_factor = "sf"
+        mgr._active_peer_branch_bridge = AsyncMock(
+            return_value={"public_key_hash": "1Bridge", "root_depth": "0"}
+        )
+        mgr._peer_branch_tip_by_hash_link = AsyncMock(
+            return_value={"public_key_hash": "1Tip", "counter": "nope"}
+        )
+        pair = await mgr.peer_password_box_keys("peer")
+        self.assertEqual(len(pair), 2)
+        mgr._peer_branch_tip_by_hash_link.assert_awaited_once_with("1Bridge")
+
+    async def test_walks_root_depth_and_matches_tip_after_one_step(self):
+        from bitcoin.wallet import P2PKHBitcoinAddress
+        from coincurve import PrivateKey as CK
+
+        from yadacoin.core.keyrotation import derive_secure_path
+
+        mgr = _box_manager()
+        mgr._k0 = {"private_key": _BOX_PRIV, "chain_code": _BOX_CC}
+        mgr._second_factor = "sf"
+        rooted = derive_secure_path(_BOX_PRIV, _BOX_CC, "sf")
+        sign_key = derive_secure_path(
+            rooted["private_key"], rooted["chain_code"], "sfpeer"
+        )
+        one_ahead = derive_secure_path(
+            sign_key["private_key"], sign_key["chain_code"], "sfpeer"
+        )
+        tip_addr = str(
+            P2PKHBitcoinAddress.from_pubkey(
+                CK(one_ahead["private_key"]).public_key.format(compressed=True)
+            )
+        )
+        mgr._active_peer_branch_bridge = AsyncMock(
+            return_value={
+                "root_depth": 1,
+                "branch_inception_public_key_hash": "inc1",
+                "public_key_hash": "ignored",
+            }
+        )
+        mgr._peer_branch_tip_by_hash_link = AsyncMock(
+            return_value={"public_key_hash": tip_addr, "counter": 2}
+        )
+        pair = await mgr.peer_password_box_keys("peer")
+        self.assertEqual(pair[0], one_ahead["private_key"].hex())
+        mgr._peer_branch_tip_by_hash_link.assert_awaited_once_with("inc1")
+
+    async def test_derive_failure_logs_and_returns_none(self):
+        mgr = _box_manager()
+        mgr._k0 = {"private_key": _BOX_PRIV, "chain_code": _BOX_CC}
+        mgr._second_factor = "sf"
+        mgr._active_peer_branch_bridge = AsyncMock(side_effect=RuntimeError("db down"))
+        self.assertIsNone(await mgr.peer_password_box_keys("peer"))
+        mgr.config.app_log.warning.assert_called()
+        self.assertIn(
+            "peer password box key failed",
+            mgr.config.app_log.warning.call_args[0][0],
+        )
+
+
+class TestOwnIdentityPasswordBox(unittest.TestCase):
+    def test_username_signature_match(self):
+        mgr = _box_manager(username_signature="  me  ")
+        self.assertTrue(mgr._is_own_identity("me"))
+        self.assertFalse(mgr._is_own_identity("other"))
+
+    def test_missing_identity_fields_returns_false(self):
+        mgr = _box_manager()
+        self.assertFalse(mgr._is_own_identity("sig"))
+        self.assertFalse(mgr._is_own_identity("   "))
+
+    def test_verifies_username_signature(self):
+        import base64
+
+        from coincurve import PrivateKey
+
+        pk = PrivateKey()
+        pub = pk.public_key.format(compressed=True).hex()
+        username = "alice"
+        sig = base64.b64encode(pk.sign(username.encode())).decode()
+        mgr = _box_manager(
+            username_signature="not-the-sig",
+            username=username,
+            public_key=pub,
+        )
+        self.assertTrue(mgr._is_own_identity(sig))
+        self.assertFalse(mgr._is_own_identity(base64.b64encode(b"nope").decode()))
+
+    def test_verify_exception_returns_false(self):
+        mgr = _box_manager(
+            username_signature="",
+            username="alice",
+            public_key="zz",
+        )
+        self.assertFalse(mgr._is_own_identity("c2ln"))
+
+    def test_auth_ratchet_bytes_and_hex(self):
+        mgr = _box_manager()
+        mgr._auth_ratchet_key = {"private_key": _BOX_PRIV}
+        mgr._auth_ratchet_pub = "02aa"
+        self.assertEqual(mgr._own_password_box_keys(), (_BOX_PRIV.hex(), "02aa"))
+        mgr._auth_ratchet_key = {"private_key": _BOX_PRIV.hex()}
+        self.assertEqual(mgr._own_password_box_keys(), (_BOX_PRIV.hex(), "02aa"))
+
+    def test_empty_ratchet_priv_falls_through(self):
+        mgr = _box_manager()
+        mgr._auth_ratchet_key = {"private_key": ""}
+        mgr._auth_ratchet_pub = "02aa"
+        mgr._k0 = None
+        self.assertIsNone(mgr._own_password_box_keys())
+        mgr._k0 = {}
+        self.assertIsNone(mgr._own_password_box_keys())
+        mgr._k0 = {"chain_code": _BOX_CC}
+        self.assertIsNone(mgr._own_password_box_keys())
+
+    def test_k0_bytes_and_hex(self):
+        from coincurve import PrivateKey as CK
+
+        mgr = _box_manager()
+        mgr._k0 = {"private_key": _BOX_PRIV, "chain_code": _BOX_CC}
+        priv_hex, pub = mgr._own_password_box_keys()
+        self.assertEqual(priv_hex, _BOX_PRIV.hex())
+        self.assertEqual(pub, CK(_BOX_PRIV).public_key.format(compressed=True).hex())
+        mgr._k0 = {"private_key": _BOX_PRIV.hex(), "chain_code": _BOX_CC}
+        priv_hex2, pub2 = mgr._own_password_box_keys()
+        self.assertEqual((priv_hex2, pub2), (priv_hex, pub))
