@@ -360,6 +360,27 @@
     return false;
   }
 
+  function grantNote(item) {
+    const seconds = Number(item && item.grant_seconds);
+    if (!Number.isFinite(seconds) || seconds <= 0) return "Access does not expire.";
+    const day = 86400;
+    const hour = 3600;
+    const minute = 60;
+    if (seconds % day === 0) {
+      const days = seconds / day;
+      return `Access lasts ${days} day${days === 1 ? "" : "s"} after the first confirmed purchase.`;
+    }
+    if (seconds % hour === 0) {
+      const hours = seconds / hour;
+      return `Access lasts ${hours} hour${hours === 1 ? "" : "s"} after the first confirmed purchase.`;
+    }
+    if (seconds % minute === 0) {
+      const minutes = seconds / minute;
+      return `Access lasts ${minutes} minute${minutes === 1 ? "" : "s"} after the first confirmed purchase.`;
+    }
+    return `Access lasts ${seconds} second${seconds === 1 ? "" : "s"} after the first confirmed purchase.`;
+  }
+
   function itemPrice(item) {
     const raw = String((item && item.price) || "").trim();
     const n = Number(raw);
@@ -1863,7 +1884,7 @@
     buyPrice.textContent = `${price} YDA`;
     buyAddress.textContent = address;
     buyQr.innerHTML = "";
-    buyNote.textContent = "Scan with an external wallet and pay the exact amount shown. Once it is broadcast, I've paid.";
+    buyNote.textContent = `Scan with an external wallet and pay the exact amount shown. Once it is broadcast, I've paid. ${grantNote(item)}`;
     if (buyNode) buyNode.hidden = true;
     if (typeof QRCode === "function") {
       new QRCode(buyQr, {
@@ -1890,7 +1911,7 @@
         throw new Error(data.error || "could not start checkout");
       }
       buyPrice.textContent = `${data.amount} YDA`;
-      buyNote.textContent = `Pay exactly ${data.amount} YDA to the address above from any wallet. This checkout is saved in this browser only.`;
+      buyNote.textContent = `Pay exactly ${data.amount} YDA to the address above from any wallet. This checkout is saved in this browser only. ${grantNote(item)}`;
     } catch (err) {
       buyNote.textContent = err.message || "Could not start checkout";
     }
@@ -1906,8 +1927,8 @@
       body: JSON.stringify({ address, value: Number(price) }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || data.error) {
-      throw new Error(data.error || "this node wallet could not pay");
+    if (!res.ok || data.error || data.status === "error") {
+      throw new Error(data.error || data.message || "this node wallet could not pay");
     }
     buyNote.textContent = "Payment sent from this node. Checking the mempool…";
   }
@@ -1929,7 +1950,9 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!data.paid) {
-        buyNote.textContent = data.error || "No confirmed payment for this browser checkout yet.";
+        buyNote.textContent = data.expired
+          ? data.error || "Access for this payment has expired. Pay again to keep watching."
+          : data.error || "No confirmed payment for this browser checkout yet.";
         return;
       }
       if (data.access) item.access = data.access;
@@ -1950,7 +1973,9 @@
         await payFromNode(item);
         const data = await checkPurchase(item);
         if (!data.paid) {
-          buyNote.textContent = "Sent. Not in the mempool yet.";
+          buyNote.textContent = data.expired
+            ? data.error || "Access for this payment has expired. Pay again to keep watching."
+            : "Sent. Not in the mempool yet.";
           return;
         }
         unlockPaid(item);

@@ -24,7 +24,11 @@ from yadacoin.core.contenttakedown import (
     ContentTakedownAnnouncement,
     TakedownReasonCode,
 )
-from yadacoin.core.fileannouncement import FileAnnouncement, normalize_price
+from yadacoin.core.fileannouncement import (
+    FileAnnouncement,
+    normalize_grant_seconds,
+    normalize_price,
+)
 from yadacoin.core.keyeventlog import KeyEventFlag, KeyEventLog, classify_key_event_flag
 from yadacoin.core.keyrotation import NodeKeyRotationManager, derive_secure_path
 from yadacoin.core.transaction import NotEnoughMoneyException, Transaction
@@ -611,6 +615,7 @@ async def create_file(
     thumbnail: bytes = None,
     type: str = "",
     price=None,
+    grant_seconds=None,
     required_claim: str = "",
     required_issuer: str = "",
     required_credentials=None,
@@ -618,6 +623,7 @@ async def create_file(
     cancelled=None,
 ):
     price = normalize_price(price)
+    grant_seconds = normalize_grant_seconds(grant_seconds)
     if price and not content:
         raise FileAnnouncementServiceError(
             "priced announcements require file content on this node"
@@ -721,6 +727,7 @@ async def create_file(
             thumbnail_share_url=thumbnail_share_url,
             type=type,
             price=price,
+            grant_seconds=grant_seconds,
             required_claim=required_claim,
             required_issuer=required_issuer,
             required_credentials=required_credentials,

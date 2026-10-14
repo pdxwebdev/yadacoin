@@ -18,7 +18,10 @@ import unittest
 
 from plugins.fileannouncement.handlers import config_http_bases
 from plugins.fileannouncement.purchase import (
+    access_expiry,
+    access_open,
     access_token,
+    access_token_expired,
     access_token_ok,
     invoice_amount,
     output_equals,
@@ -59,6 +62,17 @@ class TestPurchaseMatch(unittest.TestCase):
         token = access_token(config, "ann", 9999999999)
         self.assertTrue(access_token_ok(config, "ann", token))
         self.assertFalse(access_token_ok(config, "other", token))
+        forever = access_token(config, "ann", 0)
+        self.assertTrue(access_token_ok(config, "ann", forever))
+        self.assertFalse(access_token_ok(config, "ann", access_token(config, "ann", 1)))
+        self.assertTrue(access_token_expired(access_token(config, "ann", 1)))
+        self.assertFalse(access_token_expired(forever))
+
+    def test_blank_grant_does_not_expire(self):
+        self.assertEqual(access_expiry(100, ""), 0)
+        self.assertEqual(access_expiry(100, "43200"), 43300)
+        self.assertTrue(access_open(0, 10**12))
+        self.assertFalse(access_open(50, 100))
 
     def test_only_the_announcer_identity_serves_paid_bytes(self):
         self.assertTrue(

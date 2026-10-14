@@ -147,6 +147,32 @@ class TestFileAnnouncement(AsyncTestCase):
         self.assertEqual(blank.to_string(), plain.to_string())
         self.assertNotIn("price", plain.to_dict())
 
+    async def test_grant_absent_does_not_change_preimage(self):
+        plain = self._ann()
+        blank = self._ann(grant_seconds="")
+        forever = self._ann(grant_duration="forever")
+        self.assertEqual(plain.grant_seconds, "")
+        self.assertEqual(blank.to_string(), plain.to_string())
+        self.assertEqual(forever.to_string(), plain.to_string())
+        self.assertNotIn("grant_seconds", plain.to_dict())
+
+    async def test_grant_roundtrip_and_hash(self):
+        plain = self._ann()
+        limited = self._ann(grant_duration="12h")
+        self.assertEqual(limited.grant_seconds, "43200")
+        self.assertEqual(limited.to_dict()["grant_seconds"], "43200")
+        self.assertEqual(limited.to_string(), plain.to_string() + "43200")
+        again = FileAnnouncement.from_dict(limited.to_dict())
+        self.assertEqual(again.grant_seconds, "43200")
+        self.assertEqual(again.to_string(), limited.to_string())
+        self.assertEqual(self._ann(grant_seconds="7d").grant_seconds, "604800")
+        self.assertEqual(self._ann(grant_duration="2s").grant_seconds, "2")
+        self.assertEqual(self._ann(grant_duration="2m").grant_seconds, "120")
+        with self.assertRaises(ValueError):
+            self._ann(grant_duration="later")
+        with self.assertRaises(ValueError):
+            self._ann(grant_seconds=-1)
+
     async def test_price_roundtrip_and_hash(self):
         plain = self._ann()
         priced = self._ann(price="10")

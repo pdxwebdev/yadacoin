@@ -152,6 +152,9 @@
             <label for="compose-price">Price (YDA, optional)</label>
             <input name="price" id="compose-price" inputmode="decimal" placeholder="Leave blank to publish free" />
             <p class="compose-note">A price is announced on-chain. The file stays on this node until that price is paid to the announcement address.</p>
+            <label for="compose-grant">Access duration (optional)</label>
+            <input name="grant_duration" id="compose-grant" placeholder="Leave blank for no expiry. Examples: 2s, 2m, 12h, 7d" />
+            <p class="compose-note">Blank means a confirmed payment never expires. 2s, 2m, 12h, or 7d limits playback after the first confirmed purchase.</p>
             <label for="compose-type">Type</label>
             <input name="type" id="compose-type" maxlength="32" placeholder="Optional app token, such as avatar" />
             <p class="compose-note">Stored as-is. Each app decides what a type means.</p>

@@ -20,7 +20,11 @@ from decimal import Decimal, InvalidOperation, localcontext
 
 INVOICES = "ppv_invoices"
 INVOICE_TTL = 3600
-ACCESS_TTL = 12 * 3600
+EXPIRED_ERROR = "Access for this payment has expired. Pay again to keep watching."
+
+
+class AccessExpired(Exception):
+    pass
 
 
 def _amount(value) -> Decimal:
@@ -90,6 +94,45 @@ def output_equals(txn: dict, pay_to: str, amount: str) -> bool:
     return False
 
 
+def grant_limit(value) -> int:
+    text = str(value or "").strip()
+    if not text:
+        return 0
+    try:
+        seconds = int(text)
+    except (TypeError, ValueError):
+        return 0
+    return seconds if seconds > 0 else 0
+
+
+def access_expiry(anchor: int, grant_seconds) -> int:
+    """0 means the confirmed payment does not expire."""
+    limit = grant_limit(grant_seconds)
+    if limit <= 0:
+        return 0
+    return int(anchor) + limit
+
+
+def access_open(exp, now=None) -> bool:
+    now = int(time.time() if now is None else now)
+    try:
+        exp = int(exp or 0)
+    except (TypeError, ValueError):
+        return False
+    return exp == 0 or exp >= now
+
+
+def access_token_expired(token: str) -> bool:
+    token = (token or "").strip()
+    if "." not in token:
+        return False
+    try:
+        exp = int(token.split(".", 1)[0])
+    except ValueError:
+        return False
+    return exp != 0 and exp < int(time.time())
+
+
 def access_token(config, announcement_id: str, exp: int) -> str:
     payload = f"{announcement_id}|{int(exp)}"
     secret = str(getattr(config, "private_key", "") or "").encode()
@@ -107,7 +150,7 @@ def access_token_ok(config, announcement_id: str, token: str) -> bool:
         exp = int(exp_s)
     except ValueError:
         return False
-    if exp < int(time.time()):
+    if exp != 0 and exp < int(time.time()):
         return False
     expected = access_token(config, announcement_id, exp)
     return hmac.compare_digest(expected, f"{exp}.{sig}")
@@ -231,9 +274,12 @@ async def invoice_for_token(config, token: str):
     return await config.mongo.async_db[INVOICES].find_one({"token": token}, {"_id": 0})
 
 
-def issue_access(config, announcement_id: str, payment_id: str) -> dict:
+def issue_access(
+    config, announcement_id: str, payment_id: str, grant_seconds="", anchor=None
+) -> dict:
     now = int(time.time())
-    exp = now + ACCESS_TTL
+    anchor = now if anchor is None else int(anchor)
+    exp = access_expiry(anchor, grant_seconds)
     return {
         "access": access_token(config, announcement_id, exp),
         "payment_id": payment_id or "",
@@ -241,25 +287,72 @@ def issue_access(config, announcement_id: str, payment_id: str) -> dict:
     }
 
 
-async def redeem_invoice(config, token: str, announcement_id: str):
+async def _confirmed_payment(config, doc):
+    payment_id = str((doc or {}).get("payment_id") or "")
+    if payment_id:
+        payment = await payment_by_id(config, payment_id)
+        if payment:
+            return payment
+    return await find_exact_payment(
+        config, (doc or {}).get("pay_to") or "", (doc or {}).get("amount") or ""
+    )
+
+
+async def _store_access(config, query, issued, redeemed_at):
+    await config.mongo.async_db[INVOICES].update_one(
+        query,
+        {
+            "$set": {
+                "redeemed_at": redeemed_at,
+                "payment_id": issued["payment_id"],
+                "access": issued["access"],
+                "access_exp": issued["access_exp"],
+            }
+        },
+    )
+
+
+async def redeem_invoice(config, token: str, announcement_id: str, grant_seconds=""):
     doc = await invoice_for_token(config, token)
     if not doc or doc.get("announcement_id") != announcement_id:
         return None
     now = int(time.time())
-    if int(doc.get("expires_at") or 0) < now:
-        return None
     if doc.get("redeemed_at"):
-        exp = int(doc.get("access_exp") or 0)
-        access = doc.get("access") or ""
-        if access and exp >= now:
+        anchor = int(doc.get("redeemed_at") or now)
+        exp = access_expiry(anchor, grant_seconds)
+        if not access_open(exp, now):
+            raise AccessExpired(EXPIRED_ERROR)
+        if (
+            doc.get("access")
+            and int(doc.get("access_exp") or 0) == exp
+            and access_open(doc.get("access_exp"), now)
+        ):
             return doc
+        payment = await _confirmed_payment(config, doc)
+        if not payment:
+            return None
+        issued = issue_access(
+            config,
+            announcement_id,
+            payment.get("id") or doc.get("payment_id") or "",
+            grant_seconds,
+            anchor,
+        )
+        await _store_access(config, {"token": token}, issued, anchor)
+        doc["payment_id"] = issued["payment_id"]
+        doc["access"] = issued["access"]
+        doc["access_exp"] = issued["access_exp"]
+        return doc
+    if int(doc.get("expires_at") or 0) < now:
         return None
     payment = await find_exact_payment(
         config, doc.get("pay_to") or "", doc.get("amount") or ""
     )
     if not payment:
         return None
-    issued = issue_access(config, announcement_id, payment.get("id") or "")
+    issued = issue_access(
+        config, announcement_id, payment.get("id") or "", grant_seconds
+    )
     await config.mongo.async_db[INVOICES].update_one(
         {"token": token, "redeemed_at": 0},
         {
@@ -318,7 +411,7 @@ def view_grant_ok(announcement_id: str, grant: dict, payment: dict) -> bool:
 
 
 async def claim_unique_invoice_payment(
-    config, announcement_id: str, pay_to: str, price: str
+    config, announcement_id: str, pay_to: str, price: str, grant_seconds=""
 ):
     """Unlock the only outstanding invoice-band payment to this post.
 
@@ -352,15 +445,30 @@ async def claim_unique_invoice_payment(
     payment_id = payment.get("id") or ""
     used = await config.mongo.async_db[INVOICES].find_one({"payment_id": payment_id})
     if used:
-        if int(used.get("access_exp") or 0) > int(time.time()) and used.get("access"):
+        if str(used.get("announcement_id") or "") not in ("", announcement_id):
+            return None
+        now = int(time.time())
+        anchor = int(used.get("redeemed_at") or now)
+        exp = access_expiry(anchor, grant_seconds)
+        if not access_open(exp, now):
+            raise AccessExpired(EXPIRED_ERROR)
+        if (
+            used.get("access")
+            and int(used.get("access_exp") or 0) == exp
+            and access_open(used.get("access_exp"), now)
+        ):
             return {
                 "access": used.get("access"),
                 "payment_id": payment_id,
                 "access_exp": used.get("access_exp"),
             }
-        return None
+        issued = issue_access(
+            config, announcement_id, payment_id, grant_seconds, anchor
+        )
+        await _store_access(config, {"payment_id": payment_id}, issued, anchor)
+        return issued
     now = int(time.time())
-    issued = issue_access(config, announcement_id, payment_id)
+    issued = issue_access(config, announcement_id, payment_id, grant_seconds)
     await config.mongo.async_db[INVOICES].insert_one(
         {
             "token": secrets.token_hex(32),
@@ -377,6 +485,23 @@ async def claim_unique_invoice_payment(
         }
     )
     return issued
+
+
+async def payment_grant_elapsed(
+    config, announcement_id: str, payment_id: str, grant_seconds
+) -> bool:
+    if grant_limit(grant_seconds) <= 0 or not payment_id:
+        return False
+    try:
+        doc = await config.mongo.async_db[INVOICES].find_one(
+            {"payment_id": payment_id, "announcement_id": announcement_id},
+            {"redeemed_at": 1},
+        )
+    except Exception:
+        return False
+    if not doc or not doc.get("redeemed_at"):
+        return False
+    return not access_open(access_expiry(int(doc["redeemed_at"]), grant_seconds))
 
 
 async def find_confirmed_payment(config, pay_to: str, min_price: str, payer_ids):

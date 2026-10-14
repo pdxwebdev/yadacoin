@@ -36,6 +36,8 @@ MAX_TYPE_LEN = 32
 MAX_CLAIM_LEN = 128
 MAX_ISSUER_LEN = 512
 MAX_REQUIRED_CREDENTIALS = 8
+_DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+_DURATION_RE = re.compile(r"^(\d+)\s*([smhdw])$")
 
 
 def normalize_price(value) -> str:
@@ -147,6 +149,37 @@ def required_credentials_suffix(gates) -> str:
     return json.dumps(extra, separators=(",", ":"), sort_keys=True)
 
 
+def normalize_grant_seconds(value) -> str:
+    """Canonical access duration in seconds. Empty means the payment does not expire."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if not text or text in ("0", "forever", "none", "never"):
+            return ""
+        match = _DURATION_RE.match(text)
+        if match:
+            seconds = int(match.group(1)) * _DURATION_UNITS[match.group(2)]
+            if seconds <= 0:
+                return ""
+            return str(seconds)
+        if text.isdigit():
+            seconds = int(text)
+            return "" if seconds <= 0 else str(seconds)
+        raise ValueError(
+            "grant duration must be blank or a value like 2s, 2m, 12h, or 7d"
+        )
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(
+            "grant duration must be blank or a value like 2s, 2m, 12h, or 7d"
+        )
+    if seconds < 0:
+        raise ValueError("grant duration cannot be negative")
+    return "" if seconds == 0 else str(seconds)
+
+
 def normalize_type(value) -> str:
     """Optional app-defined token. Empty means no type. Meaning is not interpreted here."""
     text = str(value or "").strip().lower()
@@ -211,6 +244,9 @@ class FileAnnouncement:
     price        : optional sale price in YDA. Canonical 8-decimal string. Omitted
                    from the relationship hash when unset, so older announcements
                    keep the same preimage.
+    grant_seconds : optional playback duration after the first confirmed payment.
+                    Empty means the payment does not expire. Omitted from the
+                    relationship hash when unset.
     required_claim  : first credential gate claim. Kept so a single gate hashes
                       the same as announcements that only had this field.
     required_issuer : first credential gate issuer. Empty means any issuer.
@@ -235,6 +271,7 @@ class FileAnnouncement:
         thumbnail_share_url: str = "",
         type: str = "",
         price=None,
+        grant_seconds=None,
         required_claim: str = "",
         required_issuer: str = "",
         required_credentials=None,
@@ -296,7 +333,11 @@ class FileAnnouncement:
         self.thumbnail_file_id = thumbnail_file_id
         self.thumbnail_share_url = thumbnail_share_url
         self.type = normalize_type(type)
+        duration = kwargs.pop("grant_duration", None)
+        if grant_seconds in (None, "") and duration not in (None, ""):
+            grant_seconds = duration
         self.price = normalize_price(price)
+        self.grant_seconds = normalize_grant_seconds(grant_seconds)
         self.required_credentials = normalize_required_credentials(
             required_credentials, required_claim, required_issuer
         )
@@ -309,6 +350,8 @@ class FileAnnouncement:
             if k
             not in (
                 "price",
+                "grant_seconds",
+                "grant_duration",
                 "required_claim",
                 "required_issuer",
                 "required_credentials",
@@ -364,6 +407,8 @@ class FileAnnouncement:
             result["type"] = self.type
         if self.price:
             result["price"] = self.price
+        if self.grant_seconds:
+            result["grant_seconds"] = self.grant_seconds
         if self.required_claim:
             result["required_claim"] = self.required_claim
         if self.required_issuer:
@@ -397,6 +442,7 @@ class FileAnnouncement:
             + self.get_string(self.required_claim)
             + self.get_string(self.required_issuer)
             + required_credentials_suffix(self.required_credentials)
+            + self.grant_seconds
         )
 
     def matches_query(self, query: str) -> bool:

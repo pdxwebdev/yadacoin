@@ -210,6 +210,7 @@ def _video_public_item(item: dict) -> dict:
         "public_key_hash": (item.get("public_key_hash") or "").strip(),
         "username": (item.get("username") or "").strip(),
         "price": str(f.get("price") or "").strip(),
+        "grant_seconds": str(f.get("grant_seconds") or "").strip(),
         "required_claim": str(f.get("required_claim") or "").strip(),
         "required_issuer": str(f.get("required_issuer") or "").strip(),
         "required_credentials": list(f.get("required_credentials") or []),
@@ -448,6 +449,9 @@ class FileListHandler(BaseFileAnnouncementHandler):
             upload_id = self.get_body_argument("upload_id", "")
             file_type = self.get_body_argument("type", "")
             price = self.get_body_argument("price", "")
+            grant_seconds = self.get_body_argument(
+                "grant_duration", ""
+            ) or self.get_body_argument("grant_seconds", "")
             required_claim = self.get_body_argument("required_claim", "")
             required_issuer = self.get_body_argument("required_issuer", "")
             required_credentials = self.get_body_argument("required_credentials", "")
@@ -469,6 +473,9 @@ class FileListHandler(BaseFileAnnouncementHandler):
             upload_id = data.get("upload_id") or ""
             file_type = data.get("type") or ""
             price = data.get("price") or ""
+            grant_seconds = (
+                data.get("grant_duration") or data.get("grant_seconds") or ""
+            )
             required_claim = data.get("required_claim") or ""
             required_issuer = data.get("required_issuer") or ""
             required_credentials = data.get("required_credentials")
@@ -527,6 +534,7 @@ class FileListHandler(BaseFileAnnouncementHandler):
                 thumbnail=thumbnail,
                 type=file_type,
                 price=price,
+                grant_seconds=grant_seconds,
                 required_credentials=resolved_gates,
                 on_progress=(
                     (lambda event, uid=upload_id: progress.apply(uid, event))
@@ -908,6 +916,7 @@ def _public_file_item(row: dict, username: str = "", keep_stream: bool = False) 
             "thumbnail_file_id": row.get("thumbnail_file_id") or "",
             "type": str(row.get("type") or "").strip().lower(),
             "price": str(row.get("price") or "").strip(),
+            "grant_seconds": str(row.get("grant_seconds") or "").strip(),
             "required_claim": str(row.get("required_claim") or "").strip(),
             "required_issuer": str(row.get("required_issuer") or "").strip(),
             "required_credentials": list(row.get("required_credentials") or []),
@@ -1716,12 +1725,30 @@ def _paid_body(handler, live, redeemed) -> dict:
     }
 
 
-async def _access_for_amount(handler, announcement_id: str, pay_to: str, amount: str):
+def _grant_seconds(live) -> str:
+    return str((live or {}).get("grant_seconds") or "").strip()
+
+
+def _expired_body() -> dict:
+    return {
+        "status": True,
+        "paid": False,
+        "expired": True,
+        "error": purchase.EXPIRED_ERROR,
+    }
+
+
+async def _access_for_amount(
+    handler, announcement_id: str, pay_to: str, amount: str, grant_seconds=""
+):
     payment = await purchase.find_exact_payment(handler.config, pay_to, amount)
     if not payment:
         return None
     return purchase.issue_access(
-        handler.config, announcement_id, payment.get("id") or ""
+        handler.config,
+        announcement_id,
+        payment.get("id") or "",
+        grant_seconds,
     )
 
 
@@ -1756,13 +1783,15 @@ async def _forward_json(home: str, path: str, body: dict, timeout: float = 30) -
     )
 
 
-async def _paid_invoice(handler, transaction_id: str):
+async def _paid_invoice(handler, transaction_id: str, grant_seconds=""):
     """A browser invoice is paid when its exact amount is on chain, any wallet."""
     for token in _invoice_tokens(handler):
         try:
             redeemed = await purchase.redeem_invoice(
-                handler.config, token, transaction_id
+                handler.config, token, transaction_id, grant_seconds
             )
+        except purchase.AccessExpired:
+            raise
         except Exception:
             redeemed = None
         if redeemed:
@@ -1857,10 +1886,19 @@ class PublicPurchaseRedeemHandler(BaseHandler):
         tokens = [data.get("token") or ""] if direct else _invoice_tokens(self)
         tokens = [token for token in tokens if token]
         pay_to = str(live.get("public_key_hash") or "").strip()
+        grant_seconds = _grant_seconds(live)
         redeemed = None
         echoed = ""
+        expired = False
         for token in tokens:
-            redeemed = await purchase.redeem_invoice(self.config, token, transaction_id)
+            try:
+                redeemed = await purchase.redeem_invoice(
+                    self.config, token, transaction_id, grant_seconds
+                )
+            except purchase.AccessExpired:
+                expired = True
+                redeemed = None
+                continue
             if redeemed:
                 break
             doc = await purchase.invoice_for_token(self.config, token)
@@ -1889,6 +1927,8 @@ class PublicPurchaseRedeemHandler(BaseHandler):
                 for last in results:
                     if isinstance(last, Exception) or not isinstance(last, dict):
                         continue
+                    if last.get("expired"):
+                        expired = True
                     if last.get("paid"):
                         return self.render_as_json(last)
                     amount = str(last.get("amount") or "").strip()
@@ -1899,22 +1939,32 @@ class PublicPurchaseRedeemHandler(BaseHandler):
                         transaction_id,
                         str(last.get("pay_to") or pay_to),
                         amount,
+                        grant_seconds,
                     )
                     if issued:
                         return self.render_as_json(_paid_body(self, live, issued))
         if not redeemed and echoed:
-            issued = await _access_for_amount(self, transaction_id, pay_to, echoed)
+            issued = await _access_for_amount(
+                self, transaction_id, pay_to, echoed, grant_seconds
+            )
             if issued:
                 return self.render_as_json(_paid_body(self, live, issued))
         if tokens and not direct:
-            claimed = await purchase.claim_unique_invoice_payment(
-                self.config,
-                transaction_id,
-                pay_to,
-                str(live.get("price") or ""),
-            )
+            try:
+                claimed = await purchase.claim_unique_invoice_payment(
+                    self.config,
+                    transaction_id,
+                    pay_to,
+                    str(live.get("price") or ""),
+                    grant_seconds,
+                )
+            except purchase.AccessExpired:
+                expired = True
+                claimed = None
             if claimed:
                 return self.render_as_json(_paid_body(self, live, claimed))
+        if expired:
+            return self.render_as_json(_expired_body())
         body = {
             "status": True,
             "paid": False,
@@ -1944,7 +1994,10 @@ class PublicPurchaseHandler(BaseHandler):
             )
         price = str(live.get("price") or "").strip()
         pay_to = str(live.get("public_key_hash") or "").strip()
-        redeemed = await _paid_invoice(self, transaction_id)
+        try:
+            redeemed = await _paid_invoice(self, transaction_id, _grant_seconds(live))
+        except purchase.AccessExpired:
+            return self.render_as_json(_expired_body())
         if redeemed:
             return self.render_as_json(
                 {
@@ -2024,7 +2077,13 @@ class PublicPurchaseStreamHandler(BaseHandler):
                 payment_id = str(saved.get("payment_id") or "")
         if payment_id:
             named = await purchase.payment_by_id(self.config, payment_id)
-            if named and purchase.output_pays(named, pay_to, price):
+            if (
+                named
+                and purchase.output_pays(named, pay_to, price)
+                and not await purchase.payment_grant_elapsed(
+                    self.config, transaction_id, payment_id, _grant_seconds(live)
+                )
+            ):
                 local_access = True
                 payment = named
         payers = await _session_payer_ids(self)
@@ -2047,7 +2106,13 @@ class PublicPurchaseStreamHandler(BaseHandler):
             )
             local_access = bool(payment)
         if not local_access:
-            redeemed = await _paid_invoice(self, transaction_id)
+            try:
+                redeemed = await _paid_invoice(
+                    self, transaction_id, _grant_seconds(live)
+                )
+            except purchase.AccessExpired:
+                self.set_status(402)
+                return self.finish(purchase.EXPIRED_ERROR)
             if redeemed:
                 local_access = True
                 if not payment_id:
@@ -2057,6 +2122,12 @@ class PublicPurchaseStreamHandler(BaseHandler):
         if not holds:
             if not local_access:
                 self.set_status(402)
+                if purchase.access_token_expired(
+                    access
+                ) or await purchase.payment_grant_elapsed(
+                    self.config, transaction_id, payment_id, _grant_seconds(live)
+                ):
+                    return self.finish(purchase.EXPIRED_ERROR)
                 return self.finish("payment required")
             if await _credential_blocked(self, live, file_id):
                 return
@@ -2069,6 +2140,12 @@ class PublicPurchaseStreamHandler(BaseHandler):
             return await self._proxy_homes(transaction_id, payment_id)
         if not local_access:
             self.set_status(402)
+            if purchase.access_token_expired(
+                access
+            ) or await purchase.payment_grant_elapsed(
+                self.config, transaction_id, payment_id, _grant_seconds(live)
+            ):
+                return self.finish(purchase.EXPIRED_ERROR)
             return self.finish("payment required")
         if await _credential_blocked(self, live, file_id):
             return
