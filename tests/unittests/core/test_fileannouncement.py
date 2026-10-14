@@ -168,10 +168,14 @@ class TestFileAnnouncement(AsyncTestCase):
         self.assertEqual(self._ann(grant_seconds="7d").grant_seconds, "604800")
         self.assertEqual(self._ann(grant_duration="2s").grant_seconds, "2")
         self.assertEqual(self._ann(grant_duration="2m").grant_seconds, "120")
+        self.assertEqual(self._ann(grant_duration="0s").grant_seconds, "")
+        self.assertEqual(self._ann(grant_seconds=0).grant_seconds, "")
         with self.assertRaises(ValueError):
             self._ann(grant_duration="later")
         with self.assertRaises(ValueError):
             self._ann(grant_seconds=-1)
+        with self.assertRaises(ValueError):
+            self._ann(grant_seconds=[])
 
     async def test_price_roundtrip_and_hash(self):
         plain = self._ann()
