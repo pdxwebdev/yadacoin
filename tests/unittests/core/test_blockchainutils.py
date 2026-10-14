@@ -1618,6 +1618,131 @@ class TestBlockchainUtilsCoverage(AsyncTestCase):
         result = await bu.get_transaction_by_id("missing", inc_mempool=True)
         self.assertIsNone(result)
 
+    async def test_conflicting_spent_ids_empty(self):
+        """Empty spender key or input ids returns no conflicts."""
+        bu, _ = _make_bu()
+        self.assertEqual(await bu.conflicting_spent_ids("", ["a"]), set())
+        self.assertEqual(await bu.conflicting_spent_ids("pk", []), set())
+        self.assertEqual(await bu.conflicting_spent_ids(None, None), set())
+
+    async def test_conflicting_spent_ids_chain_and_mempool(self):
+        """Chain and mempool scans keep only ids spent by a conflicting key."""
+        bu, config = _make_bu()
+
+        async def kel_conflict(public_key_a, public_key_b, **kwargs):
+            return public_key_b == "spender"
+
+        chain_rows = [
+            {},
+            {
+                "transactions": {
+                    "public_key": "other",
+                    "inception_public_key_hash": "other-inc",
+                    "inputs": [{"id": "chain-spent"}],
+                }
+            },
+            {
+                "transactions": {
+                    "public_key": "spender",
+                    "inception_public_key_hash": "inc",
+                    "inputs": None,
+                }
+            },
+            {
+                "transactions": {
+                    "public_key": "spender",
+                    "inputs": [
+                        {"id": "chain-spent"},
+                        "not-a-dict",
+                        {"id": "ignored"},
+                        {},
+                    ],
+                }
+            },
+        ]
+        config.mongo.async_db.blocks.aggregate = mock.MagicMock(
+            side_effect=lambda *a, **k: _AsyncCursor(chain_rows)
+        )
+        config.mongo.async_db.miner_transactions.find = mock.MagicMock(
+            return_value=_AsyncCursor(
+                [
+                    {"public_key": "other", "inputs": [{"id": "mp-spent"}]},
+                    {
+                        "public_key": "spender",
+                        "inception_public_key_hash": "inc",
+                        "inputs": None,
+                    },
+                    {
+                        "public_key": "spender",
+                        "inputs": [
+                            {"id": "mp-spent"},
+                            "not-a-dict",
+                            {"id": "ignored"},
+                        ],
+                    },
+                ]
+            )
+        )
+        with mock.patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.kel_spend_conflict",
+            new=kel_conflict,
+        ):
+            spent = await bu.conflicting_spent_ids(
+                "spender",
+                ["chain-spent", "mp-spent"],
+                spender_inception="inc",
+                inc_mempool=True,
+            )
+            skipped = await bu.conflicting_spent_ids(
+                "spender", ["chain-spent"], inc_mempool=False
+            )
+        self.assertEqual(spent, {"chain-spent", "mp-spent"})
+        self.assertEqual(skipped, {"chain-spent"})
+
+    async def test_drop_spent_utxos_lookup_and_scan_failures(self):
+        """Inception lookup and spend-scan failures leave the UTXO list unchanged."""
+        bu, config = _make_bu()
+        utxos = [{"id": "a", "outputs": [{"value": 1}]}]
+        with mock.patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.inception_for_address",
+            new=mock.AsyncMock(side_effect=RuntimeError("lookup failed")),
+        ):
+            bu.conflicting_spent_ids = mock.AsyncMock(
+                side_effect=RuntimeError("scan failed")
+            )
+            result = await bu.drop_spent_utxos(utxos, "pk", address="addr")
+        self.assertEqual(result, utxos)
+        config.app_log.warning.assert_called_once()
+
+        config.app_log = None
+        bu.conflicting_spent_ids = mock.AsyncMock(side_effect=RuntimeError("scan"))
+        self.assertEqual(await bu.drop_spent_utxos(utxos, "pk"), utxos)
+
+    async def test_drop_spent_utxos_filters_spent(self):
+        """Spent ids are removed and the drop is logged."""
+        bu, config = _make_bu()
+        utxos = [
+            {"id": "keep", "outputs": [{"value": 2}]},
+            {"id": "gone", "outputs": [{"value": 3}]},
+            {"outputs": [{"value": 1}]},
+        ]
+        with mock.patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.inception_for_address",
+            new=mock.AsyncMock(return_value="inc"),
+        ):
+            bu.conflicting_spent_ids = mock.AsyncMock(return_value={"gone"})
+            result = await bu.drop_spent_utxos(
+                utxos, "pk", address="addr", inc_mempool=False
+            )
+        self.assertEqual([u.get("id") for u in result], ["keep", None])
+        config.app_log.info.assert_called_once()
+        bu.conflicting_spent_ids.assert_awaited_once_with(
+            "pk",
+            ["keep", "gone"],
+            spender_inception="inc",
+            inc_mempool=False,
+        )
+
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
