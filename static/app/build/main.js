@@ -1155,6 +1155,7 @@ var SendReceive = /** @class */ (function () {
                     }
                     return _this.transactionService.generateTransaction({
                         outputs: clonedRecipients,
+                        unspent_transactions: _this.walletService.wallet.unspent_transactions,
                         fee: _this.fee,
                         masternode_fee: _this.masternode_fee,
                         masternode_fee_delegate: _this.selected_masernode_fee_delegate
@@ -4671,29 +4672,37 @@ var TransactionService = /** @class */ (function () {
                     }
                     else {
                         _this.info.relationship = _this.info.relationship || {};
-                        unspent_transactions =
-                            _this.walletService.wallet.unspent_transactions;
+                        unspent_transactions = (_this.info.unspent_transactions ||
+                            _this.walletService.wallet.unspent_transactions ||
+                            []).slice();
+                        var spendAddress = _this.key.getAddress();
+                        var ownedValue = function (txn) {
+                            return (txn.outputs || []).reduce(function (sum, output) {
+                                return output && output.to === spendAddress
+                                    ? sum + parseFloat(output.value)
+                                    : sum;
+                            }, 0);
+                        };
                         unspent_transactions.sort(function (a, b) {
-                            if (a.height < b.height)
-                                return -1;
-                            if (a.height > b.height)
-                                return 1;
-                            return 0;
+                            return ownedValue(b) - ownedValue(a);
                         });
                     }
                     var already_added = [];
+                    var spendAddress = _this.key.getAddress();
                     for (var i = 0; i < unspent_transactions.length; i++) {
+                        if (inputs.length && input_sum >= transaction_total) {
+                            break;
+                        }
                         var unspent_transaction = unspent_transactions[i];
                         for (var j = 0; j < unspent_transaction.outputs.length; j++) {
                             var unspent_output = unspent_transaction.outputs[j];
-                            if (unspent_output.to === _this.key.getAddress()) {
-                                if (j === 0 &&
+                            if (unspent_output.to === spendAddress) {
+                                if (unspent_transaction.id &&
                                     already_added.indexOf(unspent_transaction.id) === -1) {
                                     already_added.push(unspent_transaction.id);
                                     inputs.push({ id: unspent_transaction.id });
                                 }
                                 input_sum += parseFloat(unspent_output.value);
-                                console.log(parseFloat(unspent_output.value));
                             }
                         }
                     }

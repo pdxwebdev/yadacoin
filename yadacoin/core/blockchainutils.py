@@ -1788,6 +1788,108 @@ class BlockChainUtils(object):
                 return doc
         return None
 
+    async def conflicting_spent_ids(
+        self,
+        public_key,
+        input_ids,
+        spender_inception=None,
+        inc_mempool=True,
+    ):
+        """Ids verify() would reject as already spent for this spender.
+
+        Same rule as is_input_spent: a same public key, or another key in the
+        same KEL, has already used the id. Other recipients of a multi-output
+        parent do not count.
+        """
+        if not public_key or not input_ids:
+            return set()
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        wanted = set(input_ids)
+
+        async def conflicts(other_public_key, other_inception=None):
+            return await KeyEventLog.kel_spend_conflict(
+                public_key,
+                other_public_key,
+                inception_a=spender_inception,
+                inception_b=other_inception,
+                onchain_only=True,
+            )
+
+        spent = set()
+        query = [
+            {
+                "$match": {
+                    "transactions": {"$elemMatch": {"inputs.id": {"$in": list(wanted)}}}
+                }
+            },
+            {"$unwind": "$transactions"},
+            {"$match": {"transactions.inputs.id": {"$in": list(wanted)}}},
+        ]
+        async for row in self.mongo.async_db.blocks.aggregate(query, allowDiskUse=True):
+            other = row.get("transactions") or {}
+            if not await conflicts(
+                other.get("public_key"), other.get("inception_public_key_hash")
+            ):
+                continue
+            for inp in other.get("inputs") or []:
+                iid = inp.get("id") if isinstance(inp, dict) else None
+                if iid in wanted:
+                    spent.add(iid)
+        if inc_mempool:
+            async for doc in self.mongo.async_db.miner_transactions.find(
+                {"inputs.id": {"$in": list(wanted)}},
+                {"inputs.id": 1, "public_key": 1, "inception_public_key_hash": 1},
+            ):
+                if not await conflicts(
+                    doc.get("public_key"), doc.get("inception_public_key_hash")
+                ):
+                    continue
+                for inp in doc.get("inputs") or []:
+                    iid = inp.get("id") if isinstance(inp, dict) else None
+                    if iid in wanted:
+                        spent.add(iid)
+        return spent
+
+    async def drop_spent_utxos(self, utxos, public_key, address=None, inc_mempool=True):
+        """Remove UTXOs verify() would reject for this address's key."""
+        if not utxos or not public_key:
+            return utxos or []
+        inception = None
+        if address:
+            try:
+                from yadacoin.core.keyeventlog import KeyEventLog
+
+                inception = await KeyEventLog.inception_for_address(address)
+                if not inception:
+                    log = await KeyEventLog.get_inception(
+                        address=address, onchain_only=True
+                    )
+                    inception = (
+                        getattr(log, "inception_public_key_hash", None) if log else None
+                    )
+            except Exception:
+                inception = None
+        ids = [u.get("id") for u in utxos if isinstance(u, dict) and u.get("id")]
+        try:
+            spent = await self.conflicting_spent_ids(
+                public_key,
+                ids,
+                spender_inception=inception,
+                inc_mempool=inc_mempool,
+            )
+        except Exception:
+            log = getattr(self.config, "app_log", None)
+            if log:
+                log.warning("drop_spent_utxos failed for %s", address, exc_info=True)
+            return utxos
+        if not spent:
+            return utxos
+        log = getattr(self.config, "app_log", None)
+        if log:
+            log.info("Dropping %s spent UTXO(s) for %s", len(spent), address)
+        return [u for u in utxos if u.get("id") not in spent]
+
     async def _fetch_received_outputs(
         self,
         address,
@@ -2380,6 +2482,9 @@ class BlockChainUtils(object):
             selectable or [],
             key=lambda x: (-self._utxo_value(x), x.get("time") or 0),
         )[:max_utxos]
+        # Cache and same-key spend scans miss cross-key KEL spends. verify()
+        # rejects those, so never hand them to the wallet.
+        top = await self.drop_spent_utxos(top, public_key, address, inc_mempool=True)
         max_transferable_value = self.floor_to_two_decimal_places(
             sum(self._utxo_value(u) for u in top)
         )

@@ -144,6 +144,9 @@ class GraphRIDWalletHandler(BaseGraphHandler):
                     tagged = None
             if isinstance(tagged, dict):
                 elapsed = time.perf_counter() - started
+                spendable = await self._spendable_utxos(
+                    address, tagged.get("unspent_utxos") or []
+                )
                 wallet = {
                     "pending_balance": "0.00000000",
                     "chain_balance": "{0:.8f}".format(tagged["balance"]),
@@ -152,7 +155,7 @@ class GraphRIDWalletHandler(BaseGraphHandler):
                         tagged["max_transferable_value"]
                     ),
                     "processing_time_seconds": "{0:.2f}".format(elapsed),
-                    "unspent_transactions": tagged["unspent_utxos"],
+                    "unspent_transactions": spendable,
                     "unspent_mempool_txns": [],
                 }
                 return self.render_as_json(wallet, indent=4)
@@ -281,6 +284,10 @@ class GraphRIDWalletHandler(BaseGraphHandler):
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
 
+        unspent_txns = await self._spendable_utxos(address, unspent_txns)
+        unspent_mempool_txns = await self._spendable_utxos(
+            address, unspent_mempool_txns
+        )
         wallet = {
             "pending_balance": "{0:.8f}".format(pending_balance),
             "chain_balance": "{0:.8f}".format(balance),
@@ -291,6 +298,19 @@ class GraphRIDWalletHandler(BaseGraphHandler):
             "unspent_mempool_txns": unspent_mempool_txns,
         }
         self.render_as_json(wallet, indent=4)
+
+    async def _spendable_utxos(self, address, utxos):
+        if not utxos:
+            return []
+        try:
+            public_key = await self.config.BU.get_reverse_public_key(address)
+        except Exception:
+            public_key = None
+        if not public_key:
+            return utxos
+        return await self.config.BU.drop_spent_utxos(
+            utxos, public_key, address, inc_mempool=True
+        )
 
 
 class RegistrationHandler(BaseHandler):
@@ -479,8 +499,35 @@ class GraphTransactionHandler(BaseGraphHandler):
 
             except MissingInputTransactionException:
                 pass
-            except:
+            except Exception as e:
                 exception_raised = True
+                if str(e) == "Input already spent":
+                    spent_ids = [
+                        getattr(inp, "id", None) for inp in (transaction.inputs or [])
+                    ]
+                    self.config.app_log.error(
+                        "Input already spent public_key=%s inputs=%s",
+                        transaction.public_key,
+                        spent_ids,
+                    )
+                    try:
+                        await self.config.mongo.async_db.failed_transactions.insert_one(
+                            {
+                                "exception": "Input already spent",
+                                "txn": transaction.to_dict(),
+                                "message": str(e),
+                            }
+                        )
+                    except Exception:
+                        pass
+                    self.set_status(400)
+                    return self.render_as_json(
+                        {
+                            "status": False,
+                            "message": "Input already spent",
+                            "inputs": spent_ids,
+                        }
+                    )
                 raise
                 print("uknown error")
                 self.set_status(400)
