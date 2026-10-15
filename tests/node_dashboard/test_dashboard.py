@@ -23,6 +23,7 @@ if ROOT not in sys.path:
 
 from node_dashboard.job import STEPS  # noqa: E402
 from node_dashboard.node_control import command_kind, matching_processes  # noqa: E402
+from node_dashboard.offline_restore import wait_until_down  # noqa: E402
 from node_dashboard.restore import (  # noqa: E402
     choose_source_db,
     download_file,
@@ -239,11 +240,36 @@ def test_download_reports_byte_progress():
         server.shutdown()
 
 
-def test_reload_keeps_the_node_up_until_restart():
+def test_maintenance_allows_health_not_status():
+    from yadacoin.http.base import maintenance_allows
+
+    assert maintenance_allows("/operator/api/health")
+    assert not maintenance_allows("/operator/api/status")
+    assert not maintenance_allows("/get-status")
+
+
+def test_reload_pauses_writers_before_restore():
     ids = [step_id for step_id, _label in STEPS]
     assert "pause" not in ids
     assert "resume" not in ids
     assert ids[-1] == "restart"
+    page = os.path.join(ROOT, "node_dashboard", "static", "index.html")
+    html = open(page, encoding="utf-8").read()
+    assert "stops responding" not in html
+    assert "pauses writers" in html
+
+
+def test_wait_until_down_requires_three_misses():
+    calls = {"n": 0}
+
+    def probe(host, port, timeout=0.5):
+        calls["n"] += 1
+        return calls["n"] < 3
+
+    assert wait_until_down(
+        "127.0.0.1", 9, probe=probe, sleep=lambda _s: None, timeout=5
+    )
+    assert calls["n"] == 5
 
 
 def test_operator_page_warns_not_to_refresh():

@@ -1041,64 +1041,63 @@ class NodeApplication(Application):
             with open(api_whitelist_filename) as f:
                 self.config.api_whitelist = [x["host"] for x in json.loads(f.read())]
 
+    def _track(self, callback, interval_ms):
+        async def guarded():
+            if getattr(self.config, "maintenance", False):
+                return
+            await callback()
+
+        periodic = PeriodicCallback(guarded, interval_ms)
+        self._periodics.append(periodic)
+        periodic.start()
+        return periodic
+
     def init_ioloop(self):
+        self._periodics = []
+        self._node_test_call = None
         tornado.ioloop.IOLoop.current().set_default_executor(
             ThreadPoolExecutor(max_workers=1)
         )
 
         if MODES.NODE.value in self.config.modes:
-            PeriodicCallback(
-                self.background_status, self.config.status_wait * 1000
-            ).start()
-
-            PeriodicCallback(
+            self._track(self.background_status, self.config.status_wait * 1000)
+            self._track(
                 self.background_kel_checker,
                 NodeKeyRotationManager.POLL_INTERVAL_SECONDS * 1000,
-            ).start()
-
-            PeriodicCallback(
+            )
+            self._track(
                 self.background_block_checker, self.config.block_checker_wait * 1000
-            ).start()
-
-            PeriodicCallback(
-                self.background_cache_validator, self.config.cache_validator_wait * 1000
-            ).start()
-
-            PeriodicCallback(
+            )
+            self._track(
+                self.background_cache_validator,
+                self.config.cache_validator_wait * 1000,
+            )
+            self._track(
                 self.background_mempool_cleaner, self.config.mempool_cleaner_wait * 1000
-            ).start()
-
-            PeriodicCallback(
+            )
+            self._track(
                 self.background_mempool_sender, self.config.mempool_sender_wait * 1000
-            ).start()
-
-            PeriodicCallback(
+            )
+            self._track(
                 self.background_txn_queue_processor,
                 self.config.txn_queue_processor_wait * 1000,
-            ).start()
-
-            PeriodicCallback(
+            )
+            self._track(
                 self.background_block_queue_processor,
                 self.config.block_queue_processor_wait * 1000,
-            ).start()
-
-            PeriodicCallback(
-                self.background_peers, self.config.peers_wait * 1000
-            ).start()
-
-            PeriodicCallback(
+            )
+            self._track(self.background_peers, self.config.peers_wait * 1000)
+            self._track(
                 self.background_message_sender, self.config.message_sender_wait * 1000
-            ).start()
-
-            PeriodicCallback(
-                self.background_node_testing,
-                60 * 60 * 1000,
-            ).start()
+            )
+            self._track(self.background_node_testing, 60 * 60 * 1000)
             # Populate eligible_nodes_by_address immediately on startup so coinbase
             # validation works before the first hourly background_node_testing fires.
             # Delay slightly so the HTTP server is fully listening before the node
             # tests begin (which can take several seconds and block the IOLoop).
-            tornado.ioloop.IOLoop.current().call_later(5, self.background_node_testing)
+            self._node_test_call = tornado.ioloop.IOLoop.current().call_later(
+                5, self.background_node_testing
+            )
 
             if self.config.peer_type in [
                 PEER_TYPES.SERVICE_PROVIDER.value,
@@ -1106,36 +1105,33 @@ class NodeApplication(Application):
                 PEER_TYPES.SEED.value,
                 PEER_TYPES.USER.value,
             ] and self.config.peer_type not in [PEER_TYPES.POOL.value]:
-                PeriodicCallback(
+                self._track(
                     self.background_transactions_combining,
                     self.config.transactions_combining_wait * 1000,
-                ).start()
+                )
 
             if MODES.POOL.value in self.config.modes:
-                PeriodicCallback(
+                self._track(
                     self.background_nonce_processor,
                     self.config.nonce_processor_wait * 1000,
-                ).start()
+                )
 
         if self.config.pool_payout:
             self.config.app_log.info("PoolPayout activated")
             self.config.pp = PoolPayer()
-
-            PeriodicCallback(
-                self.background_pool_payer, self.config.pool_payer_wait * 1000
-            ).start()
+            self._track(self.background_pool_payer, self.config.pool_payer_wait * 1000)
 
         if (
             hasattr(self.config, "stress_test_newtxn")
             and self.config.stress_test_newtxn
         ):
-            PeriodicCallback(self.background_newtxn_stress_test, 3000).start()
+            self._track(self.background_newtxn_stress_test, 3000)
 
         if (
             hasattr(self.config, "stress_test_newblock")
             and self.config.stress_test_newblock
         ):
-            PeriodicCallback(self.background_newblock_stress_test, 3000).start()
+            self._track(self.background_newblock_stress_test, 3000)
 
         while True:
             tornado.ioloop.IOLoop.current().start()
@@ -1300,6 +1296,7 @@ class NodeApplication(Application):
             )
 
         StratumServer.inbound_streams[Miner.__name__] = {}
+        self._pool_ssl_ctx = pool_ssl_ctx
         self.config.pool_server = StratumServer(ssl_options=pool_ssl_ctx)
         StratumServer.config = self.config
         # Schedule pool initialization as a proper async task on the running
@@ -1392,7 +1389,10 @@ class NodeApplication(Application):
             self.config.udpServer.inbound_streams = {User.__name__: {}}
             # server = tornado.ioloop.IOLoop.current().run_sync(lambda s=UDPServer, ip='127.0.0.1', port=53: tornado.ioloop.IOLoop.current().asyncio_loop.create_server(s, ip, port))
             # tornado.ioloop.IOLoop.current().run_sync(server.serve_forever)
-            tornado.ioloop.IOLoop.current().run_sync(
+            (
+                self.config.udp_transport,
+                _protocol,
+            ) = tornado.ioloop.IOLoop.current().run_sync(
                 lambda s=UDPServer, local_addr=(
                     "0.0.0.0",
                     53,
@@ -1400,6 +1400,156 @@ class NodeApplication(Application):
                     s, local_addr=local_addr
                 )
             )
+
+    async def _listen_udp(self):
+        from yadacoin.udp.base import UDPServer
+
+        (
+            self.config.udp_transport,
+            _protocol,
+        ) = await tornado.ioloop.IOLoop.current().asyncio_loop.create_datagram_endpoint(
+            UDPServer, local_addr=("0.0.0.0", 53)
+        )
+
+    def enter_maintenance(self):
+        if getattr(self.config, "maintenance", False):
+            return
+        self.config.maintenance = True
+        loop = tornado.ioloop.IOLoop.current()
+        if self._node_test_call is not None:
+            loop.remove_timeout(self._node_test_call)
+            self._node_test_call = None
+        for periodic in getattr(self, "_periodics", []):
+            periodic.stop()
+        server = getattr(self.config, "node_server_instance", None)
+        if server is not None:
+            server.stop()
+        self._clear_node_peers()
+        pool = getattr(self.config, "pool_server", None)
+        if pool is not None:
+            pool.stop()
+        transport = getattr(self.config, "udp_transport", None)
+        if transport is not None:
+            transport.close()
+            self.config.udp_transport = None
+        if getattr(self.config, "mongo", None) is not None:
+            self.config.mongo.suspend()
+        self.config.app_log.info("maintenance on")
+
+    async def refresh_chain_state(self):
+        config = self.config
+        if getattr(config, "BU", None) is not None:
+            config.BU.invalidate_latest_block()
+        queues = getattr(config, "processing_queues", None)
+        if queues is not None:
+            for queue in queues.queues:
+                if hasattr(queue, "queue"):
+                    queue.queue = {}
+        if getattr(config, "LatestBlock", None) is not None:
+            config.LatestBlock.block = None
+            await config.LatestBlock.block_checker()
+        config.consensus = await Consensus.init_async(prevent_genesis=True)
+        if (
+            getattr(config, "pool_server", None) is not None
+            or getattr(config, "mp", None) is not None
+        ):
+            try:
+                config.mp = await MiningPool.init_async()
+                StratumServer.config.mp = config.mp
+            except Exception:
+                from traceback import format_exc
+
+                config.mp = None
+                StratumServer.config.mp = None
+                config.app_log.warning(
+                    "Pool rebuild after restore failed: {}".format(format_exc())
+                )
+        block = getattr(config.LatestBlock, "block", None)
+        height = block.index if block is not None else None
+        config.app_log.info("chain state refreshed height={}".format(height))
+
+    async def leave_maintenance(self):
+        if not getattr(self.config, "maintenance", False):
+            return
+        self.config.mongo.reconnect()
+        await self.refresh_chain_state()
+        if MODES.NODE.value in self.config.modes and getattr(
+            self.config, "nodeServer", None
+        ):
+            self._init_node_peers()
+            self.config.node_server_instance = self.config.nodeServer()
+            self.config.node_server_instance.bind(self.config.peer_port)
+            self.config.node_server_instance.start(1)
+        if getattr(self.config, "pool_server", None) is not None:
+            self.config.pool_server = StratumServer(
+                ssl_options=getattr(self, "_pool_ssl_ctx", None)
+            )
+            StratumServer.config = self.config
+            self.config.pool_server.listen(self.config.stratum_pool_port)
+        if MODES.DNS.value in self.config.modes:
+            tornado.ioloop.IOLoop.current().add_callback(self._listen_udp)
+        for periodic in getattr(self, "_periodics", []):
+            periodic.start()
+        if getattr(self.config, "consensus", None) is not None:
+            self.config.consensus.syncing = False
+        peers = getattr(self.config, "background_peers", None)
+        if peers is not None:
+            peers.busy = False
+        self.config.maintenance = False
+        if (
+            getattr(self.config, "peer", None) is not None
+            and getattr(self.config, "nodeClient", None) is not None
+        ):
+            tornado.ioloop.IOLoop.current().add_callback(
+                self.config.peer.ensure_peers_connected
+            )
+        self.config.app_log.info("maintenance off")
+
+    def _close_stream_map(self, mapping):
+        if not isinstance(mapping, dict):
+            return
+        for bucket in list(mapping.values()):
+            if not isinstance(bucket, dict):
+                continue
+            for stream in list(bucket.values()):
+                close = getattr(stream, "close", None)
+                if close is None:
+                    continue
+                try:
+                    close()
+                except Exception:
+                    pass
+            bucket.clear()
+
+    def _clear_node_peers(self):
+        server = getattr(self.config, "nodeServer", None)
+        client = getattr(self.config, "nodeClient", None)
+        if server is not None:
+            self._close_stream_map(getattr(server, "inbound_streams", None))
+            self._close_stream_map(getattr(server, "inbound_pending", None))
+            server.inbound_streams = {}
+            server.inbound_pending = {}
+            server.retry_messages = {}
+        if client is not None:
+            self._close_stream_map(getattr(client, "outbound_streams", None))
+            self._close_stream_map(getattr(client, "outbound_pending", None))
+            client.outbound_streams = {}
+            client.outbound_pending = {}
+            client.outbound_ignore = {}
+            client.retry_messages = {}
+        self.config.nodeClient = None
+
+    def _init_node_peers(self):
+        self.config.nodeServer = NodeSocketServer
+        self.config.nodeShared = NodeRPC()
+        self.config.nodeClient = NodeSocketClient()
+        for peer_type in [Seed, SeedGateway, ServiceProvider, User, Miner, Pool]:
+            name = peer_type.__name__
+            self.config.nodeClient.outbound_ignore[name] = {}
+            self.config.nodeClient.outbound_pending[name] = {}
+            self.config.nodeClient.outbound_streams[name] = {}
+            self.config.nodeServer.inbound_pending[name] = {}
+            self.config.nodeServer.inbound_streams[name] = {}
 
     async def init_peer(self):
         pass

@@ -32,7 +32,7 @@
     <main class="main">
       <div class="page-head">
         <h1>Database</h1>
-        <p>Reload the database while this node keeps running. It restarts when the restore finishes. Do not refresh this page.</p>
+        <p>Reload the database. This page stays open. Writers pause, then mongorestore runs. Do not refresh this page.</p>
       </div>
       <div id="flash" class="flash" hidden></div>
       <section class="Box" aria-labelledby="status-title">
@@ -53,7 +53,7 @@
         <div class="danger-row">
           <div>
             <h3>Reload database from bootstrap</h3>
-            <p>Downloads the archive, runs <code>mongorestore --drop</code> while this node stays up, truncates <code>consensus</code>, then restarts the node. Do not refresh.</p>
+            <p>Downloads the archive, pauses writers, then runs <code>mongorestore --drop</code>. Do not refresh.</p>
           </div>
           <button class="btn btn-danger" id="reload-btn" type="button">Reload database</button>
         </div>
@@ -102,7 +102,7 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-header">Reload database?</div>
       <div class="modal-body">
-        <p>This runs <code>mongorestore --drop</code> while the node stays up, truncates <code>consensus</code>, then restarts the node. Do not refresh this page.</p>
+        <p>This pauses writers, then runs <code>mongorestore --drop</code>. Do not refresh this page.</p>
         <p id="modal-target" class="modal-target"></p>
         <label for="confirm-input">Type <code>reload</code> to confirm</label>
         <input id="confirm-input" autocomplete="off" spellcheck="false">

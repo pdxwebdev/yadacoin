@@ -526,35 +526,29 @@ class TestMongoInitPaths(AsyncTestCase):
                 with self.assertRaises(Exception):
                     Mongo()
 
-    def test_init_create_indexes_except_pass_all_collections(self):
-        """Lines 256-257, 264-265, 282-283, 308-309, 318-319, 325-326, 363-364, 407-408, 423-424."""
+    def test_init_create_indexes_failure_raises(self):
         mock_db = self._make_default_mock_db()
-        for coll_name in [
-            "blocks",
-            "reversed_public_keys",
-            "unspent_cache",
-            "wallet_balance_cache",
-            "wallet_unspent_cache",
-            "consensus",
-            "shares",
-            "share_payout",
-            "transactions_by_rid_cache",
-            "miner_transactions",
-            "failed_transactions",
-            "user_collection_last_activity",
-            "messages_cache",
-        ]:
-            getattr(mock_db, coll_name).create_indexes.side_effect = Exception(
-                "dup index"
-            )
+        mock_db.reversed_public_keys.create_indexes.side_effect = Exception("dup index")
         mock_client = MagicMock()
         mock_client.__getitem__.return_value = mock_db
         with mock.patch("yadacoin.core.mongo.MongoClient", return_value=mock_client):
             with mock.patch(
                 "yadacoin.core.mongo.MotorClient", return_value=MagicMock()
             ):
-                m = Mongo()
-        self.assertIsNotNone(m)
+                with self.assertRaises(Exception):
+                    Mongo()
+
+    def test_init_blocks_index_failure_raises(self):
+        mock_db = self._make_default_mock_db()
+        mock_db.blocks.create_indexes.side_effect = Exception("blocks index error")
+        mock_client = MagicMock()
+        mock_client.__getitem__.return_value = mock_db
+        with mock.patch("yadacoin.core.mongo.MongoClient", return_value=mock_client):
+            with mock.patch(
+                "yadacoin.core.mongo.MotorClient", return_value=MagicMock()
+            ):
+                with self.assertRaises(Exception):
+                    Mongo()
 
     def test_init_node_status_index_failure_raises(self):
         """Lines 436-437: node_status create_indexes failure re-raises."""
@@ -701,11 +695,8 @@ class TestMongoInitPaths(AsyncTestCase):
             {"block.index": {"$gte": 591762}}
         )
 
-    def test_key_event_log_create_indexes_exception_suppressed(self):
-        """Lines 460-461: if create_indexes raises for key_event_log, the exception
-        is silently suppressed and Mongo() initialisation continues."""
+    def test_key_event_log_create_indexes_failure_raises(self):
         mock_db = self._make_default_mock_db()
-        # Make key_event_log.create_indexes raise
         mock_db.key_event_log = MagicMock()
         mock_db.key_event_log.create_indexes.side_effect = Exception(
             "index creation failed"
@@ -716,9 +707,8 @@ class TestMongoInitPaths(AsyncTestCase):
             with mock.patch(
                 "yadacoin.core.mongo.MotorClient", return_value=MagicMock()
             ):
-                # Should not raise
-                m = Mongo()
-        self.assertIsNotNone(m)
+                with self.assertRaises(Exception):
+                    Mongo()
 
     def test_key_event_log_unique_pkh_index_probe_exception_suppressed(self):
         """index_information/drop of legacy unique __kel_pkh errors are ignored."""

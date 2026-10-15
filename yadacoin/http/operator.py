@@ -11,6 +11,8 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import asyncio
+import inspect
 import json
 import os
 import shutil
@@ -19,7 +21,7 @@ import threading
 
 from tornado.ioloop import IOLoop
 
-from node_dashboard.job import ReloadJob
+from node_dashboard.job import ReloadJob, job_state_path, read_job_state
 from node_dashboard.restore import connect_client, restore_tool
 from node_dashboard.settings import (
     BOOTSTRAP_URL,
@@ -46,12 +48,44 @@ ASSETS = {
 }
 
 
+class SavedJob(object):
+    def __init__(self, payload):
+        self.status = payload.get("status")
+        self._payload = payload
+
+    def public(self):
+        return self._payload
+
+
+def client_job(payload):
+    if not payload:
+        return None
+    result = dict(payload.get("result") or {})
+    handoff = result.get("handoff")
+    if isinstance(handoff, dict):
+        handoff = dict(handoff)
+        target = handoff.get("target")
+        if isinstance(target, dict):
+            target = dict(target)
+            target.pop("password", None)
+            handoff["target"] = target
+        result["handoff"] = handoff
+        payload = dict(payload)
+        payload["result"] = result
+    return payload
+
+
 class OperatorState(object):
     def __init__(self):
         self.lock = threading.Lock()
         self.job = None
+        saved = read_job_state(job_state_path(REPO_ROOT))
+        if saved and saved.get("status") in ("failed", "succeeded"):
+            self.job = SavedJob(saved)
 
-    def start(self, target, on_restart):
+    def start(
+        self, target, on_stop, node_host, node_port, on_quiesce=None, on_resume=None
+    ):
         with self.lock:
             if self.job is not None and self.job.status == "running":
                 return None
@@ -60,7 +94,11 @@ class OperatorState(object):
                 "",
                 lambda event: None,
                 target=target,
-                on_restart=on_restart,
+                on_stop=on_stop,
+                on_quiesce=on_quiesce,
+                on_resume=on_resume,
+                node_host=node_host,
+                node_port=node_port,
             )
             self.job = job
         threading.Thread(target=job.run, name="bootstrap-reload", daemon=True).start()
@@ -135,11 +173,52 @@ def restart_process():
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
-def schedule_restart():
-    def later():
-        IOLoop.instance().call_later(1.5, restart_process)
+def schedule_restart(loop=None):
+    loop = loop or IOLoop.current()
 
-    IOLoop.instance().add_callback(later)
+    def later():
+        loop.call_later(1.5, restart_process)
+
+    loop.add_callback(later)
+
+
+def call_on_loop(loop, fn):
+    done = threading.Event()
+    box = {}
+
+    def finish(fut):
+        try:
+            box["result"] = fut.result()
+        except Exception as exc:
+            box["error"] = exc
+        done.set()
+
+    def run():
+        try:
+            result = fn()
+            if inspect.iscoroutine(result):
+                asyncio.ensure_future(result).add_done_callback(finish)
+                return
+            box["result"] = result
+        except Exception as exc:
+            box["error"] = exc
+        done.set()
+
+    loop.add_callback(run)
+    done.wait()
+    if "error" in box:
+        raise box["error"]
+    return box.get("result")
+
+
+def maintenance_callbacks(loop, app):
+    def quiesce():
+        call_on_loop(loop, app.enter_maintenance)
+
+    def resume():
+        call_on_loop(loop, app.leave_maintenance)
+
+    return quiesce, resume
 
 
 def send_asset(handler, name):
@@ -206,7 +285,7 @@ class OperatorJobHandler(OperatorHandler):
     async def get(self):
         job = STATE.job.public() if STATE.job is not None else None
         self.set_header("Cache-Control", "no-store")
-        self.write({"job": job})
+        self.write({"job": client_job(job)})
 
 
 class OperatorReloadHandler(OperatorHandler):
@@ -231,13 +310,23 @@ class OperatorReloadHandler(OperatorHandler):
             self.set_status(400)
             self.write({"error": str(exc)})
             return
-        job = STATE.start(target, schedule_restart)
+        config = Config()
+        loop = IOLoop.current()
+        quiesce, resume = maintenance_callbacks(loop, config.application)
+        job = STATE.start(
+            target,
+            None,
+            getattr(config, "serve_host", None) or "127.0.0.1",
+            getattr(config, "serve_port", None),
+            on_quiesce=quiesce,
+            on_resume=resume,
+        )
         if job is None:
             self.set_status(409)
             self.write({"error": "A reload is already running"})
             return
         self.set_status(202)
-        self.write({"job": job.public()})
+        self.write({"job": client_job(job.public())})
 
 
 OPERATOR_HANDLERS = [

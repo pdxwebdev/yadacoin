@@ -11,8 +11,10 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import json
 import os
-import shutil
+import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -43,13 +45,54 @@ class JobError(Exception):
         self.step = step
 
 
+def job_state_path(repo_root):
+    return os.path.join(repo_root, ".node-dashboard-work", "reload-job.json")
+
+
+def write_job_state(path, payload):
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+    os.replace(tmp, path)
+
+
+def read_job_state(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict) or not payload.get("id"):
+        return None
+    return payload
+
+
 class ReloadJob(object):
-    def __init__(self, repo_root, config_path, publish, target=None, on_restart=None):
+    def __init__(
+        self,
+        repo_root,
+        config_path,
+        publish,
+        target=None,
+        on_restart=None,
+        on_stop=None,
+        on_quiesce=None,
+        on_resume=None,
+        node_host="127.0.0.1",
+        node_port=None,
+    ):
         self.repo_root = repo_root
         self.config_path = config_path
         self.publish = publish
         self._target = target
         self.on_restart = on_restart
+        self.on_stop = on_stop
+        self.on_quiesce = on_quiesce
+        self.on_resume = on_resume
+        self.node_host = node_host or "127.0.0.1"
+        self.node_port = node_port
         self.id = time.strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:8]
         self.status = "running"
         self.error = None
@@ -322,123 +365,122 @@ class ReloadJob(object):
             ),
         )
 
-        self.log("restore", "Node stays up during mongorestore")
+        self._restore_quiet(target, info, source_db, work)
+        return
+
+    def _restore_quiet(self, target, info, source_db, work):
+        if not self.on_quiesce or not self.on_resume:
+            raise JobError("restore", "Maintenance mode is not available")
         dump_dir = info["path"] if info["kind"] == "dump" else info["path"]
         if info["kind"] != "dump":
             source_db = None
+        self.set_step(
+            "restore",
+            "running",
+            "Pausing writers. Do not refresh this page.",
+        )
+        self.log("restore", "Entering maintenance. Database writes are stopped.")
+        self.on_quiesce()
         try:
             plan = restore.mongorestore_plan(dump_dir, target, source_db)
-        except Exception as exc:
-            raise JobError("restore", str(exc))
-        self.result["restore_mode"] = plan["mode"]
-        self.result["command"] = " ".join(plan["display"])
-        bson_size = restore.bson_bytes(info, source_db)
-        self.result["bson_bytes"] = bson_size
-        self.log("restore", self.result["command"])
-        if source_db and source_db != target.database:
-            self.log(
-                "restore",
-                "Renaming {}.{} into {}".format(source_db, "*", target.database),
+            self.log("restore", " ".join(plan["display"]))
+            code = restore.run_command(
+                plan["argv"], lambda line: self.log("restore", line)
             )
-        others = [name for name in info["databases"] if name != source_db]
-        if others:
-            self.log(
-                "restore",
-                "Ignoring other databases in the archive: {}".format(", ".join(others)),
-            )
-        self.set_step("restore", "running", "Starting mongorestore --drop")
-        stop_poll = threading.Event()
-
-        def poll():
-            client = None
-            try:
-                client = restore.connect_client(target, timeout_ms=2000)
-                db = client[target.database]
-                while not stop_poll.wait(1):
-                    snap = restore.collection_progress(db, bson_size)
-                    count = snap.get("documents")
-                    size = snap.get("size")
-                    parts = ["mongorestore --drop"]
-                    if count is not None:
-                        parts.append("{:,} blocks".format(count))
-                    if size:
-                        parts.append(restore.format_bytes(size))
-                    progress = {
-                        "percent": snap.get("percent"),
-                        "documents": count,
-                        "size": size,
-                        "total": bson_size or None,
-                    }
-                    self.set_step(
-                        "restore", message=" · ".join(parts), progress=progress
-                    )
-            except Exception as exc:
-                self.log("restore", "status poll failed: {}".format(exc))
-            finally:
-                if client is not None:
-                    client.close()
-
-        poller = threading.Thread(target=poll, name="restore-poll", daemon=True)
-        poller.start()
-        last_line = {"value": None}
-
-        def on_line(line):
-            text = restore.clean_line(line)
-            if not text or text == last_line["value"]:
-                return
-            last_line["value"] = text
-            self.log("restore", text)
-
-        try:
-            code = restore.run_command(plan["argv"], on_line)
-        finally:
-            stop_poll.set()
-            poller.join(timeout=2)
-        if code != 0:
-            raise JobError("restore", "mongorestore exited {}".format(code))
-        self.set_step("restore", "succeeded", "mongorestore finished")
-        self.log("restore", "mongorestore exited 0")
-
-        self.set_step("truncate", "running", "Deleting consensus documents")
-        client = None
-        try:
+            if code != 0:
+                raise JobError("restore", "mongorestore exited {}".format(code))
+            self.set_step("restore", "succeeded", "mongorestore finished")
+            self.set_step("truncate", "running", "Deleting consensus documents")
             client = restore.connect_client(target, timeout_ms=10000)
-            stats = restore.truncate_consensus(client[target.database])
-        except Exception as exc:
-            raise JobError("truncate", str(exc))
-        finally:
-            if client is not None:
+            try:
+                stats = restore.truncate_consensus(client[target.database])
+            finally:
                 client.close()
-        self.result["consensus_before"] = stats["before"]
-        self.result["consensus_deleted"] = stats["deleted"]
-        self.result["consensus_after"] = stats["after"]
-        message = "Removed {:,} consensus documents · remaining {:,}".format(
-            stats["deleted"], stats["after"]
-        )
-        self.log("truncate", message)
-        self.set_step("truncate", "succeeded", message)
-        self.result["reloaded"] = True
-
-        self.set_step("cleanup", "running", "Removing temporary files")
-        try:
-            shutil.rmtree(work)
-        except Exception as exc:
-            self.warning = (self.warning + "; " if self.warning else "") + (
-                "Could not remove {}: {}".format(work, exc)
+            self.result["consensus_before"] = stats["before"]
+            self.result["consensus_deleted"] = stats["deleted"]
+            self.result["consensus_after"] = stats["after"]
+            message = "Removed {:,} consensus documents · remaining {:,}".format(
+                stats["deleted"], stats["after"]
             )
-            self.set_step("cleanup", "failed", self.warning)
-            self.log("cleanup", self.warning)
-        else:
-            self.result.pop("work_dir", None)
-            self.set_step("cleanup", "succeeded", "Removed temporary files")
-            self.log("cleanup", "Removed {}".format(work))
-        self.result["restarting"] = True
-        self.set_step(
-            "restart",
-            "running",
-            "Restarting the node. Do not refresh this page.",
-        )
-        self.log("restart", "Restarting the node. Do not refresh this page.")
+            self.log("truncate", message)
+            self.set_step("truncate", "succeeded", message)
+            self.set_step("cleanup", "running", "Removing temporary files")
+            try:
+                import shutil
+
+                shutil.rmtree(work)
+                self.set_step("cleanup", "succeeded", "Removed temporary files")
+            except Exception as exc:
+                warning = "Could not remove {}: {}".format(work, exc)
+                self.warning = warning
+                self.set_step("cleanup", "failed", warning)
+                self.log("cleanup", warning)
+        finally:
+            self.on_resume()
+        self.set_step("restart", "succeeded", "Node resumed")
+        self.log("restart", "Maintenance off. Node is serving again.")
         self.succeed()
-        if self.on_restart:
-            self.on_restart()
+
+    def _hand_off_restore(self, target, info, source_db, work):
+        dump_dir = info["path"] if info["kind"] == "dump" else info["path"]
+        if info["kind"] != "dump":
+            source_db = None
+        probe_host = self.node_host
+        if probe_host in ("0.0.0.0", "::", ""):
+            probe_host = "127.0.0.1"
+        if not self.node_port:
+            raise JobError("restore", "Node listen port is not set")
+        self.result["stopping"] = True
+        self.result["handoff"] = {
+            "dump_dir": dump_dir,
+            "source_db": source_db,
+            "work": work,
+            "node_host": probe_host,
+            "node_port": int(self.node_port),
+            "target": {
+                "configured_host": target.configured_host,
+                "connect_host": target.connect_host,
+                "port": target.port,
+                "database": target.database,
+                "username": target.username,
+                "password": target.password,
+                "auth_source": target.auth_source,
+                "note": target.note,
+            },
+            "restart": {
+                "executable": sys.executable,
+                "argv": [sys.executable] + sys.argv,
+                "cwd": os.getcwd(),
+            },
+        }
+        self.log(
+            "restore",
+            "Stopping the node. Do not refresh. mongorestore starts after the node stops responding.",
+        )
+        self.set_step(
+            "restore",
+            "running",
+            "Stopping the node. Do not refresh this page.",
+        )
+        write_job_state(job_state_path(self.repo_root), self.public())
+        log_path = os.path.join(work, "offline-restore.log")
+        try:
+            log_handle = open(log_path, "a", encoding="utf-8")
+            subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "node_dashboard.offline_restore",
+                    job_state_path(self.repo_root),
+                ],
+                cwd=self.repo_root,
+                start_new_session=True,
+                stdin=subprocess.DEVNULL,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+            )
+        except Exception as exc:
+            self.result["stopping"] = False
+            raise JobError("restore", "Could not start restore worker: {}".format(exc))
+        if self.on_stop:
+            self.on_stop()

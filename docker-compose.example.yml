@@ -50,11 +50,12 @@ services:
 
   restore:
     image: mongo:latest
-    command: sh -c 'mongorestore --drop --host mongodb /dump > /dev/null 2>&1'
+    command: sh -c 'sh /strip-block-indexes.sh /dump/yadacoin/blocks.metadata.json && mongorestore --drop --host mongodb /dump'
     depends_on:
       - mongodb
     volumes:
-      - /etc/yadacoin/dump:/mongodump
+      - /etc/yadacoin/dump:/dump
+      - /etc/yadacoin/strip-block-indexes.sh:/strip-block-indexes.sh:ro
 
   backup:
     image: mongo:latest
@@ -62,7 +63,7 @@ services:
       - mongodb
     volumes:
       - /etc/yadacoin:/etc/yadacoin
-    command: sh -c 'mongodump --host mongodb --db=yadacoin --collection=blocks && tar -czvf /etc/yadacoin/bootstrap.tar.gz dump && mv /etc/yadacoin/bootstrap.tar.gz /etc/yadacoin/static/bootstrap.tar.gz'
+    command: sh -c 'mongodump --host mongodb --db=yadacoin --collection=blocks && sh /etc/yadacoin/strip-block-indexes.sh dump/yadacoin/blocks.metadata.json && tar -czvf /etc/yadacoin/bootstrap.tar.gz dump && mv /etc/yadacoin/bootstrap.tar.gz /etc/yadacoin/static/bootstrap.tar.gz'
 
 volumes:
   mongodb_data:

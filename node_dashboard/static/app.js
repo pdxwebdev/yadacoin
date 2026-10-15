@@ -5,6 +5,7 @@
     startedAt: null,
     bootId: null,
     restarting: false,
+    stopping: false,
     holdNotice: false
   };
   var seenLogs = {};
@@ -283,6 +284,7 @@
       if (data && data.boot_id != null) state.bootId = data.boot_id;
       setPill("ok", "Node is back");
       loadStatus();
+      schedulePoll(0);
     }
     function sameProcess(data) {
       if (previousBoot != null && data.boot_id != null) return data.boot_id === previousBoot;
@@ -315,6 +317,95 @@
     setTimeout(tick, 1000);
   }
 
+  function watchStop() {
+    if (state.stopping) return;
+    state.stopping = true;
+    state.holdNotice = true;
+    clearTimeout(pollTimer);
+    showFlash("warn", "Stopping the node. Do not refresh this page.");
+    setPill("warn", "Stopping node");
+    var sawDown = false;
+    function tick() {
+      fetch("/operator/api/health", { cache: "no-store" })
+        .then(function (res) {
+          if (!res.ok) throw new Error("down");
+          return res.json();
+        })
+        .then(function (data) {
+          if (!data || !data.ok) throw new Error("down");
+          if (sawDown) {
+            if (state.bootId != null && data.boot_id === state.bootId) {
+              sawDown = false;
+              setTimeout(tick, 1000);
+              return;
+            }
+            state.stopping = false;
+            state.restarting = false;
+            state.holdNotice = false;
+            state.cameBack = true;
+            if (data.boot_id != null) state.bootId = data.boot_id;
+            if (data.started_at != null) state.startedAt = data.started_at;
+            setPill("ok", "Node is back");
+            pollJob();
+            return;
+          }
+          setTimeout(tick, 1000);
+        })
+        .catch(function () {
+          sawDown = true;
+          fetch("http://127.0.0.1:8102/job", { cache: "no-store" })
+            .then(function (res) { return res.ok ? res.json() : null; })
+            .then(function (data) {
+              if (data && data.job) applySnapshot(data);
+            })
+            .catch(function () {
+              var job = state.job;
+              (job && job.steps || []).forEach(function (step) {
+                if (step.id === "restore" && step.status === "running") {
+                  step.message = "Node is down. mongorestore is running.";
+                }
+              });
+              renderJob();
+            });
+          showFlash("warn", "Node is down. mongorestore is running. Do not refresh this page.");
+          setPill("warn", "Restoring");
+          setTimeout(tick, 1000);
+        });
+    }
+    setTimeout(tick, 1000);
+  }
+
+  function plannedRestart(job) {
+    return !!(job && job.result && (job.result.restarting || job.result.reloaded));
+  }
+
+  function failDisconnected() {
+    var job = state.job;
+    if (!job || job.status !== "running") {
+      schedulePoll(2000);
+      return;
+    }
+    var step = null;
+    (job.steps || []).forEach(function (item) {
+      if (item.status === "running") step = item;
+    });
+    var label = step ? step.label : "reload";
+    var message = "Lost the node during " + label + ". This was not a restart.";
+    job.status = "failed";
+    job.error = message;
+    job.finished_at = Date.now() / 1000;
+    if (step) {
+      step.status = "failed";
+      step.message = message;
+    }
+    state.holdNotice = false;
+    state.restarting = false;
+    showFlash("error", message);
+    renderJob();
+    renderStatus();
+    schedulePoll(3000);
+  }
+
   function pollJob() {
     if (state.restarting) return;
     fetch("/operator/api/job", { cache: "no-store" })
@@ -334,6 +425,10 @@
         if (!data) return;
         if (data.job && data.job.status === "failed") state.holdNotice = false;
         applySnapshot(data);
+        if (data.job && data.job.result && data.job.result.stopping) {
+          watchStop();
+          return;
+        }
         if (data.job && data.job.result && data.job.result.restarting) {
           watchRestart();
           return;
@@ -341,8 +436,16 @@
         schedulePoll(data.job && data.job.status === "running" ? 1000 : 3000);
       })
       .catch(function () {
-        if (state.job && (state.job.status === "running" || (state.job.result && state.job.result.reloaded))) {
+        if (state.stopping) {
+          watchStop();
+          return;
+        }
+        if (plannedRestart(state.job)) {
           watchRestart();
+          return;
+        }
+        if (state.job && state.job.status === "running") {
+          failDisconnected();
           return;
         }
         schedulePoll(2000);
@@ -400,7 +503,7 @@
         seenLogs = {};
         logEl.innerHTML = "";
         state.holdNotice = true;
-        showFlash("warn", "Do not refresh this page. The node stays up during the restore, then restarts. This page will detect when it is back.");
+        showFlash("warn", "Do not refresh this page. Writers will pause, then mongorestore starts.");
         applySnapshot(data);
         schedulePoll(1000);
       });

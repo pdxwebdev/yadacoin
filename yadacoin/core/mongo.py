@@ -49,6 +49,50 @@ class Mongo(object):
             )
         return MongoClient(self.config.mongodb_host, **extra)
 
+    def suspend(self):
+        for attr in ("client", "async_client", "balance_client"):
+            client = getattr(self, attr, None)
+            if client is None:
+                continue
+            try:
+                client.close()
+            except Exception:
+                pass
+            setattr(self, attr, None)
+        self.db = None
+        self.site_db = None
+        self.async_db = None
+        self.async_site_db = None
+        self.balance_db = None
+
+    def reconnect(self):
+        timeout_kwargs = self._query_timeout_kwargs()
+        self.client = self._open_sync_client(**timeout_kwargs)
+        self.db = self.client[self.config.database]
+        self.site_db = self.client[self.config.site_database]
+        if (
+            hasattr(self.config, "mongodb_username")
+            and hasattr(self.config, "mongodb_password")
+            and self.config.mongodb_username
+            and self.config.mongodb_password
+        ):
+            self.async_client = MotorClient(
+                self.config.mongodb_host,
+                username=self.config.mongodb_username,
+                password=self.config.mongodb_password,
+                event_listeners=[listener],
+                **timeout_kwargs,
+            )
+        else:
+            self.async_client = MotorClient(
+                self.config.mongodb_host,
+                event_listeners=[listener],
+                **timeout_kwargs,
+            )
+        self.async_db = self.async_client[self.config.database]
+        self.async_site_db = self.async_client[self.config.site_database]
+        self.async_db.slow_queries = []
+
     def get_balance_db(self):
         db = getattr(self, "balance_db", None)
         if db is not None:
@@ -338,82 +382,71 @@ class Mongo(object):
             name="__txn_public_key_outputs_to",
         )
 
-        try:
-            self.db.blocks.create_indexes(
-                [
-                    __hash,
-                    __time,
-                    __index,
-                    __id,
-                    __to,
-                    __value,
-                    __txn_id,
-                    __txn_hash,
-                    __txn_inputs_id,
-                    __txn_id_inputs_id,
-                    __txn_id_public_key,
-                    __txn_public_key,
-                    __txn_inputs_public_key,
-                    __txn_inputs_address,
-                    __txn_public_key_inputs_public_key_address,
-                    __public_key_index,
-                    __public_key_time,
-                    __public_key,
-                    __prev_hash,
-                    __txn_public_key_inputs_id,
-                    __txn_rid,
-                    __txn_requested_rid,
-                    __txn_requester_rid,
-                    __txn_index_rid,
-                    __txn_index_requested_rid,
-                    __txn_index_requester_rid,
-                    __txn_time,
-                    __txn_contract_rid,
-                    __txn_rel_contract_identity_public_key,
-                    __txn_rel_contract_expiry,
-                    __updated_at,
-                    __txn_outputs_to_index,
-                    __txn_inputs_0,
-                    __txn_rel_smart_contract_expiry_txn_time,
-                    __txn_prerotated_key_hash,
-                    __txn_twice_prerotated_key_hash,
-                    __txn_public_key_hash,
-                    __txn_prev_public_key_hash,
-                    __txn_inception_public_key_hash,
-                    __txn_inception_public_key_hash_counter,
-                    __txn_outputs_inception,
-                    __txn_rel_agent,
-                    _txn_rel_identity_username,
-                    _txn_rel_identity_username_signature,
-                    __txn_rel_file_id,
-                    __txn_rel_file_thumbnail_id,
-                    __txn_rel_content_takedown_id,
-                    __public_key_outputs_to,
-                    __txn_public_key_outputs_to,
-                ]
-                + __txn_profile_indexes
-            )
-        except:
-            pass
+        self.db.blocks.create_indexes(
+            [
+                __hash,
+                __time,
+                __index,
+                __id,
+                __to,
+                __value,
+                __txn_id,
+                __txn_hash,
+                __txn_inputs_id,
+                __txn_id_inputs_id,
+                __txn_id_public_key,
+                __txn_public_key,
+                __txn_inputs_public_key,
+                __txn_inputs_address,
+                __txn_public_key_inputs_public_key_address,
+                __public_key_index,
+                __public_key_time,
+                __public_key,
+                __prev_hash,
+                __txn_public_key_inputs_id,
+                __txn_rid,
+                __txn_requested_rid,
+                __txn_requester_rid,
+                __txn_index_rid,
+                __txn_index_requested_rid,
+                __txn_index_requester_rid,
+                __txn_time,
+                __txn_contract_rid,
+                __txn_rel_contract_identity_public_key,
+                __txn_rel_contract_expiry,
+                __updated_at,
+                __txn_outputs_to_index,
+                __txn_inputs_0,
+                __txn_rel_smart_contract_expiry_txn_time,
+                __txn_prerotated_key_hash,
+                __txn_twice_prerotated_key_hash,
+                __txn_public_key_hash,
+                __txn_prev_public_key_hash,
+                __txn_inception_public_key_hash,
+                __txn_inception_public_key_hash_counter,
+                __txn_outputs_inception,
+                __txn_rel_agent,
+                _txn_rel_identity_username,
+                _txn_rel_identity_username_signature,
+                __txn_rel_file_id,
+                __txn_rel_file_thumbnail_id,
+                __txn_rel_content_takedown_id,
+                __public_key_outputs_to,
+                __txn_public_key_outputs_to,
+            ]
+            + __txn_profile_indexes
+        )
 
         __rpk_address = IndexModel(
             [("address", ASCENDING)], name="__address", unique=True
         )
         __rpk_public_key = IndexModel([("public_key", ASCENDING)], name="__public_key")
-        try:
-            self.db.reversed_public_keys.create_indexes(
-                [__rpk_address, __rpk_public_key]
-            )
-        except:
-            pass
+        self.db.reversed_public_keys.create_indexes([__rpk_address, __rpk_public_key])
 
         __id = IndexModel([("id", ASCENDING)], name="__id")
         __height = IndexModel([("height", ASCENDING)], name="__height")
         __cache_time = IndexModel([("cache_time", ASCENDING)], name="__cache_time")
-        try:
-            self.db.unspent_cache.create_indexes([__id, __height, __cache_time])
-        except:
-            pass
+        self.db.unspent_cache.create_indexes([__id, __height, __cache_time])
 
         __wb_address = IndexModel(
             [("address", ASCENDING)], name="__address", unique=True
@@ -423,17 +456,14 @@ class Mongo(object):
             [("last_block_hash", ASCENDING)], name="__last_block_hash"
         )
         __wb_cache_time = IndexModel([("cache_time", ASCENDING)], name="__cache_time")
-        try:
-            self.db.wallet_balance_cache.create_indexes(
-                [
-                    __wb_address,
-                    __wb_public_key,
-                    __wb_last_block_hash,
-                    __wb_cache_time,
-                ]
-            )
-        except:
-            pass
+        self.db.wallet_balance_cache.create_indexes(
+            [
+                __wb_address,
+                __wb_public_key,
+                __wb_last_block_hash,
+                __wb_cache_time,
+            ]
+        )
 
         __wu_address = IndexModel(
             [("address", ASCENDING)], name="__address", unique=True
@@ -443,17 +473,14 @@ class Mongo(object):
             [("last_block_hash", ASCENDING)], name="__last_block_hash"
         )
         __wu_cache_time = IndexModel([("cache_time", ASCENDING)], name="__cache_time")
-        try:
-            self.db.wallet_unspent_cache.create_indexes(
-                [
-                    __wu_address,
-                    __wu_public_key,
-                    __wu_last_block_hash,
-                    __wu_cache_time,
-                ]
-            )
-        except:
-            pass
+        self.db.wallet_unspent_cache.create_indexes(
+            [
+                __wu_address,
+                __wu_public_key,
+                __wu_last_block_hash,
+                __wu_cache_time,
+            ]
+        )
 
         __id = IndexModel([("id", ASCENDING)], name="__id")
         __index = IndexModel([("index", ASCENDING)], name="__index")
@@ -466,12 +493,9 @@ class Mongo(object):
             ],
             name="__block_prevHash_index_version",
         )
-        try:
-            self.db.consensus.create_indexes(
-                [__id, __index, __block_hash, __block_prevHash_index_version]
-            )
-        except:
-            pass
+        self.db.consensus.create_indexes(
+            [__id, __index, __block_hash, __block_prevHash_index_version]
+        )
 
         __address = IndexModel([("address", ASCENDING)], name="__address")
         __address_desc = IndexModel([("address", DESCENDING)], name="__address_desc")
@@ -484,37 +508,28 @@ class Mongo(object):
         __index = IndexModel([("index", ASCENDING)], name="__index")
         __hash = IndexModel([("hash", ASCENDING)], name="__hash")
         __time = IndexModel([("time", DESCENDING)], name="__time")
-        try:
-            self.db.shares.create_indexes(
-                [
-                    __address,
-                    __address_desc,
-                    __address_only,
-                    __address_only_desc,
-                    __index,
-                    __hash,
-                    __time,
-                ]
-            )
-        except:
-            pass
+        self.db.shares.create_indexes(
+            [
+                __address,
+                __address_desc,
+                __address_only,
+                __address_only_desc,
+                __index,
+                __hash,
+                __time,
+            ]
+        )
 
         __index = IndexModel([("index", DESCENDING)], name="__index")
-        try:
-            self.db.share_payout.create_indexes(
-                [
-                    __index,
-                ]
-            )
-        except:
-            pass
+        self.db.share_payout.create_indexes(
+            [
+                __index,
+            ]
+        )
 
         __txn_id = IndexModel([("txn.id", ASCENDING)], name="__txn_id")
         __cache_time = IndexModel([("cache_time", ASCENDING)], name="__cache_time")
-        try:
-            self.db.transactions_by_rid_cache.create_indexes([__txn_id, __cache_time])
-        except:
-            pass
+        self.db.transactions_by_rid_cache.create_indexes([__txn_id, __cache_time])
 
         __id = IndexModel([("id", ASCENDING)], name="__id")
         __hash = IndexModel([("hash", ASCENDING)], name="__hash")
@@ -589,33 +604,30 @@ class Mongo(object):
             )
             for field in __mempool_profile_fields
         ]
-        try:
-            self.db.miner_transactions.create_indexes(
-                [
-                    __id,
-                    __hash,
-                    __outputs_to,
-                    __public_key,
-                    __rid,
-                    __requested_rid,
-                    __requester_rid,
-                    __time,
-                    __inputs_id,
-                    __fee_time,
-                    __rel_smart_contract,
-                    __public_key_hash,
-                    __prerotated_key_hash,
-                    __twice_prerotated_key_hash,
-                    __prev_public_key_hash,
-                    __inception_public_key_hash,
-                    __rel_file_id,
-                    __rel_file_thumbnail_id,
-                    __rel_content_takedown_id,
-                ]
-                + __mempool_profile_indexes
-            )
-        except:
-            pass
+        self.db.miner_transactions.create_indexes(
+            [
+                __id,
+                __hash,
+                __outputs_to,
+                __public_key,
+                __rid,
+                __requested_rid,
+                __requester_rid,
+                __time,
+                __inputs_id,
+                __fee_time,
+                __rel_smart_contract,
+                __public_key_hash,
+                __prerotated_key_hash,
+                __twice_prerotated_key_hash,
+                __prev_public_key_hash,
+                __inception_public_key_hash,
+                __rel_file_id,
+                __rel_file_thumbnail_id,
+                __rel_content_takedown_id,
+            ]
+            + __mempool_profile_indexes
+        )
 
         __id = IndexModel([("txn.id", ASCENDING)], name="__id")
         __hash = IndexModel([("txn.hash", ASCENDING)], name="__hash")
@@ -650,26 +662,23 @@ class Mongo(object):
             )
             for field in __failed_profile_fields
         ]
-        try:
-            self.db.failed_transactions.create_indexes(
-                [
-                    __id,
-                    __hash,
-                    __index,
-                    __outputs_to,
-                    __outputs_to_index,
-                    __public_key,
-                    __rid,
-                    __requested_rid,
-                    __requester_rid,
-                    __time,
-                    __inputs_id,
-                    __fee_time,
-                ]
-                + __failed_profile_indexes
-            )
-        except:
-            pass
+        self.db.failed_transactions.create_indexes(
+            [
+                __id,
+                __hash,
+                __index,
+                __outputs_to,
+                __outputs_to_index,
+                __public_key,
+                __rid,
+                __requested_rid,
+                __requester_rid,
+                __time,
+                __inputs_id,
+                __fee_time,
+            ]
+            + __failed_profile_indexes
+        )
 
         # key_event_log indexes
         # Global (non-branch) auth ratchet: anchor_public_key = K0 full public key
@@ -726,21 +735,18 @@ class Mongo(object):
             [("branch_peer", ASCENDING), ("counter", ASCENDING)],
             name="__kel_branch_peer",
         )
-        try:
-            self.db.key_event_log.create_indexes(
-                [
-                    __kel_anchor_counter,
-                    __kel_anchor_pkh,
-                    __kel_anchor_prerotated,
-                    __kel_branch_inception_counter,
-                    __kel_branch_inception_pkh,
-                    __kel_main_inception_counter,
-                    __kel_pkh,
-                    __kel_branch_peer,
-                ]
-            )
-        except:
-            pass
+        self.db.key_event_log.create_indexes(
+            [
+                __kel_anchor_counter,
+                __kel_anchor_pkh,
+                __kel_anchor_prerotated,
+                __kel_branch_inception_counter,
+                __kel_branch_inception_pkh,
+                __kel_main_inception_counter,
+                __kel_pkh,
+                __kel_branch_peer,
+            ]
+        )
 
         __time = IndexModel([("time", ASCENDING)], name="__time")
         __rid = IndexModel([("rid", ASCENDING)], name="__rid")
@@ -751,12 +757,9 @@ class Mongo(object):
             [("rid", ASCENDING), ("username_signature", ASCENDING)],
             name="__rid_username_signature",
         )
-        try:
-            self.db.user_collection_last_activity.create_indexes(
-                [__time, __rid, __username_signature, __rid_username_signature]
-            )
-        except:
-            pass
+        self.db.user_collection_last_activity.create_indexes(
+            [__time, __rid, __username_signature, __rid_username_signature]
+        )
 
         __mc_rid_height = IndexModel(
             [("rid", ASCENDING), ("height", DESCENDING)],
@@ -774,17 +777,14 @@ class Mongo(object):
             [("id", ASCENDING), ("height", ASCENDING)],
             name="__mc_id_height",
         )
-        try:
-            self.db.messages_cache.create_indexes(
-                [
-                    __mc_rid_height,
-                    __mc_requester_rid_height,
-                    __mc_requested_rid_height,
-                    __mc_id_height,
-                ]
-            )
-        except:
-            pass
+        self.db.messages_cache.create_indexes(
+            [
+                __mc_rid_height,
+                __mc_requester_rid_height,
+                __mc_requested_rid_height,
+                __mc_id_height,
+            ]
+        )
 
         __timestamp = IndexModel([("timestamp", DESCENDING)], name="__timestamp")
         __archived = IndexModel([("archived", ASCENDING)], name="__archived")
@@ -792,19 +792,13 @@ class Mongo(object):
             [("timestamp", DESCENDING), ("archived", ASCENDING)],
             name="__timestamp_archived",
         )
-        try:
-            self.db.node_status.create_indexes(
-                [__timestamp, __archived, __timestamp_archived]
-            )
-        except:
-            raise
+        self.db.node_status.create_indexes(
+            [__timestamp, __archived, __timestamp_archived]
+        )
 
         __time = IndexModel([("time", ASCENDING)], name="__time")
         __stat = IndexModel([("stat", ASCENDING)], name="__stat")
-        try:
-            self.db.pool_stats.create_indexes([__time, __stat])
-        except:
-            raise
+        self.db.pool_stats.create_indexes([__time, __stat])
 
         # TODO: add indexes for peers
 

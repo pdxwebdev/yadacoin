@@ -30,6 +30,19 @@ from yadacoin.decorators.jwtauth import AUTH_REVOCATION_CUTOFF
 from yadacoin.enums.modes import MODES
 
 
+def maintenance_allows(path):
+    path = (path or "").rstrip("/") or "/"
+    if path == "/operator":
+        return True
+    return path in (
+        "/operator/app.js",
+        "/operator/app.css",
+        "/operator/api/health",
+        "/operator/api/job",
+        "/operator/api/reload",
+    )
+
+
 class BaseHandler(RequestHandler):
     """Common ancestor for all route handlers"""
 
@@ -150,6 +163,12 @@ class BaseHandler(RequestHandler):
         return token
 
     async def prepare(self, exceptions=None):
+        if getattr(self.config, "maintenance", False) and not maintenance_allows(
+            self.request.path
+        ):
+            self.set_status(503)
+            self.finish({"error": "maintenance"})
+            return
         if (
             self.config.api_whitelist
             and self.request.remote_ip not in self.config.api_whitelist
@@ -207,7 +226,8 @@ class BaseHandler(RequestHandler):
     def finish(self, *args, **kwargs):
         if self.timed_out:
             return super().finish()
-        IOLoop.current().remove_timeout(self.timeout_handle)
+        if getattr(self, "timeout_handle", None) is not None:
+            IOLoop.current().remove_timeout(self.timeout_handle)
         super().finish(*args, **kwargs)
 
     # This could be static, but its easier to let it there so the template have direct access.
