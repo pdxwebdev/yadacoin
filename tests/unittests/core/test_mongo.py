@@ -526,6 +526,87 @@ class TestMongoInitPaths(AsyncTestCase):
                 with self.assertRaises(Exception):
                     Mongo()
 
+    def _bare_mongo(self):
+        mongo = Mongo.__new__(Mongo)
+        mongo.config = Config()
+        mongo.config.database = "testdb"
+        mongo.config.site_database = "sitedb"
+        mongo.config.mongodb_host = "localhost"
+        return mongo
+
+    def test_suspend_closes_clients_and_clears_dbs(self):
+        mongo = self._bare_mongo()
+        client = MagicMock()
+        async_client = MagicMock()
+        async_client.close.side_effect = Exception("already closed")
+        mongo.client = client
+        mongo.async_client = async_client
+        mongo.balance_client = None
+        mongo.db = object()
+        mongo.site_db = object()
+        mongo.async_db = object()
+        mongo.async_site_db = object()
+        mongo.balance_db = object()
+        mongo.suspend()
+        client.close.assert_called_once()
+        async_client.close.assert_called_once()
+        self.assertIsNone(mongo.client)
+        self.assertIsNone(mongo.async_client)
+        self.assertIsNone(mongo.db)
+        self.assertIsNone(mongo.site_db)
+        self.assertIsNone(mongo.async_db)
+        self.assertIsNone(mongo.async_site_db)
+        self.assertIsNone(mongo.balance_db)
+
+    def test_reconnect_without_auth(self):
+        mongo = self._bare_mongo()
+        if hasattr(mongo.config, "mongodb_username"):
+            del mongo.config.mongodb_username
+        if hasattr(mongo.config, "mongodb_password"):
+            del mongo.config.mongodb_password
+        sync_client = MagicMock()
+        async_client = MagicMock()
+        with mock.patch(
+            "yadacoin.core.mongo.MongoClient", return_value=sync_client
+        ) as sync_ctor:
+            with mock.patch(
+                "yadacoin.core.mongo.MotorClient", return_value=async_client
+            ) as async_ctor:
+                mongo.reconnect()
+        sync_ctor.assert_called_once_with("localhost")
+        async_ctor.assert_called_once()
+        self.assertNotIn("username", async_ctor.call_args.kwargs)
+        self.assertIs(mongo.client, sync_client)
+        self.assertIs(mongo.async_client, async_client)
+        self.assertEqual(mongo.async_db.slow_queries, [])
+
+    def test_reconnect_with_auth_and_timeout(self):
+        mongo = self._bare_mongo()
+        mongo.config.mongodb_username = "user"
+        mongo.config.mongodb_password = "pass"
+        mongo.config.mongo_query_timeout = 500
+        sync_client = MagicMock()
+        async_client = MagicMock()
+        try:
+            with mock.patch(
+                "yadacoin.core.mongo.MongoClient", return_value=sync_client
+            ) as sync_ctor:
+                with mock.patch(
+                    "yadacoin.core.mongo.MotorClient", return_value=async_client
+                ) as async_ctor:
+                    mongo.reconnect()
+            self.assertEqual(sync_ctor.call_args.kwargs["username"], "user")
+            self.assertEqual(sync_ctor.call_args.kwargs["timeoutMS"], 500)
+            self.assertEqual(async_ctor.call_args.kwargs["username"], "user")
+            self.assertEqual(async_ctor.call_args.kwargs["password"], "pass")
+            self.assertEqual(async_ctor.call_args.kwargs["timeoutMS"], 500)
+            self.assertIs(mongo.db, sync_client["testdb"])
+            self.assertIs(mongo.site_db, sync_client["sitedb"])
+        finally:
+            del mongo.config.mongodb_username
+            del mongo.config.mongodb_password
+            del mongo.config.mongo_query_timeout
+
     def test_init_create_indexes_failure_raises(self):
         mock_db = self._make_default_mock_db()
         mock_db.reversed_public_keys.create_indexes.side_effect = Exception("dup index")
