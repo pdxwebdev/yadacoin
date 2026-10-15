@@ -1115,6 +1115,7 @@ async function approvePending() {
 
     if (req.action === "signin" || req.action === "operator") {
       // operator = unlock node treasury via approve/reject; site is node origin.
+      const local = lookupStoredSite(v.sites, siteKey);
       const rotateBase =
         req.action === "operator" && siteKey.startsWith("http") ? siteKey : nodeUrl;
       const site = await siteForSignIn({ baseUrl: rotateBase }, identity, siteKey);

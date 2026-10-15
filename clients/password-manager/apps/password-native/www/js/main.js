@@ -11532,6 +11532,7 @@ async function approvePending() {
       return;
     }
     if (req.action === "signin" || req.action === "operator") {
+      const local = lookupStoredSite(v.sites, siteKey);
       const rotateBase = siteKey.startsWith("http") ? siteKey : nodeUrl;
       let site;
       try {

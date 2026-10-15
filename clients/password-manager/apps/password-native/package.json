@@ -1,6 +1,6 @@
 {
   "name": "@yadacoin/password-native",
-  "version": "0.1.0",
+  "version": "0.1.18",
   "private": true,
   "description": "Native Yada Password manager (Capacitor) \u2014 vault + deep-link auth provider",
   "scripts": {
