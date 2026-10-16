@@ -9293,6 +9293,7 @@ async function httpJson(api, path, init) {
   try {
     res = await fetchImpl(url, {
       ...init,
+      cache: init?.cache ?? "no-store",
       // Public node JSON APIs do not need cookies; omit avoids credentialed CORS
       // failures and accidental session coupling when the site shares the node host.
       credentials: init?.credentials ?? "omit",
@@ -9632,15 +9633,25 @@ function findPasswordMatchingHash(identity, siteId, expectedHash, max = 64) {
   }
   return null;
 }
+function expectedCounterFromMessage(message) {
+  const m = /expected counter (\d+)/i.exec(message || "");
+  if (!m)
+    return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
 async function rotateSitePassword(api, identity, site, time = Math.floor(Date.now() / 1e3), opts) {
   const keys = siteKeysForOrigin(identity, site.branchPeer || site.siteId);
   const tipRes = await fetchSiteTip(api, keys.branchPeer);
-  const tip = tipRes.body?.tip;
+  let tip = tipRes.body?.tip;
   if (!tipRes.ok || !tip) {
     throw new Error("site not registered on node");
   }
-  const tipCounter = Number(tip.counter ?? site.counter ?? 0);
-  const live = siteAtCounter(identity, {
+  let tipCounter = Number(tip.counter ?? site.counter ?? 0);
+  if (!Number.isFinite(tipCounter) || tipCounter < 0) {
+    throw new Error("invalid tip counter on node");
+  }
+  let live = siteAtCounter(identity, {
     siteId: keys.branchPeer,
     branchPeer: keys.branchPeer,
     kp0: keys.kp0
@@ -9698,14 +9709,15 @@ async function rotateSitePassword(api, identity, site, time = Math.floor(Date.no
     relationshipHash: sha256Hex(rotateRelJson),
     relationship: JSON.parse(rotateRelJson)
   });
-  const nextCounter = tipCounter + 1;
+  let nextCounter = tipCounter + 1;
   const pubRes = await httpJson(api, "/password-rotation/ratchet-pub?username_signature=" + encodeURIComponent(identity.usernameSignature));
   const ratchetPub = pubRes.body?.public_key;
   if (!pubRes.ok || !ratchetPub) {
-    throw new Error(pubRes.body?.message || "node has no ratchet public key for this peer");
+    const base2 = normalizeNodeBaseUrl(api.baseUrl) || api.baseUrl;
+    throw new Error(pubRes.body?.message || `node has no ratchet public key for this peer (${pubRes.status} ${base2})`);
   }
   const passwordEnc = await sealToRatchetPub(JSON.stringify({ p: consumedPassword }), ratchetPub);
-  const res = await httpJson(api, "/password-rotation/verify", {
+  let res = await httpJson(api, "/password-rotation/verify", {
     method: "POST",
     body: JSON.stringify({
       branch_peer: site.branchPeer,
@@ -9717,6 +9729,66 @@ async function rotateSitePassword(api, identity, site, time = Math.floor(Date.no
       txn
     })
   });
+  const expected = expectedCounterFromMessage(String(res.body?.message || ""));
+  if ((!res.ok || res.body?.status === false) && expected != null && expected !== nextCounter && expected > 0) {
+    tipCounter = expected - 1;
+    live = siteAtCounter(identity, {
+      siteId: keys.branchPeer,
+      branchPeer: keys.branchPeer,
+      kp0: keys.kp0
+    }, tipCounter);
+    const retrySigner = live.tip;
+    const retryNext = deriveMaterial(retrySigner, peerFactor);
+    const retryTwice = deriveMaterial(retryNext, peerFactor);
+    const retryTwicePassword = generateSitePassword(retryNext, site.branchPeer, tipCounter + 2);
+    const retryPrePassword = live.nextPassword;
+    const retryRelJson = buildPasswordRelationshipJson({
+      prerotated_password_hash: hashPassword(retryPrePassword),
+      twice_prerotated_password_hash: hashPassword(retryTwicePassword)
+    });
+    const retryTxn = buildAndSignTxn(retrySigner, {
+      time,
+      outputs: [{ to: retryNext.address, value: 0 }],
+      prerotatedKeyHash: retryNext.address,
+      twicePrerotatedKeyHash: retryTwice.address,
+      prevPublicKeyHash: live.tipPrevPkh,
+      relationshipHash: sha256Hex(retryRelJson),
+      relationship: JSON.parse(retryRelJson)
+    });
+    const retryEnc = await sealToRatchetPub(JSON.stringify({ p: live.currentPassword }), ratchetPub);
+    nextCounter = expected;
+    password = live.currentPassword;
+    nextReveal = live.nextPassword;
+    res = await httpJson(api, "/password-rotation/verify", {
+      method: "POST",
+      body: JSON.stringify({
+        branch_peer: site.branchPeer,
+        counter: nextCounter,
+        password_enc: retryEnc,
+        username_signature: identity.usernameSignature,
+        branch_inception_public_key_hash: site.branchInceptionPkh,
+        inception_public_key_hash: identity.inceptionPublicKeyHash,
+        txn: retryTxn
+      })
+    });
+    if (res.ok && res.body?.status !== false) {
+      const updatedRetry = {
+        ...live,
+        tip: retryNext,
+        counter: nextCounter,
+        tipPrevPkh: retrySigner.address,
+        currentPassword: retryPrePassword,
+        nextPassword: retryTwicePassword
+      };
+      return {
+        site: updatedRetry,
+        txn: retryTxn,
+        password: live.currentPassword,
+        nextPassword: retryPrePassword,
+        authenticated: true
+      };
+    }
+  }
   if (!res.ok || res.body?.status === false) {
     throw new Error(res.body?.message || `sign-in/rotate failed (${res.status})`);
   }
@@ -9736,6 +9808,17 @@ async function rotateSitePassword(api, identity, site, time = Math.floor(Date.no
     nextPassword: nextReveal || newTwicePassword,
     authenticated: true
   };
+}
+async function siteForSignIn(api, identity, siteId) {
+  const keys = siteKeysForOrigin(identity, siteId);
+  const tipRes = await fetchSiteTip(api, keys.branchPeer);
+  const tip = tipRes.body?.tip;
+  if (tipRes.ok && tip) {
+    const counter = Number(tip.counter ?? 0);
+    return siteAtCounter(identity, { siteId: keys.branchPeer, branchPeer: keys.branchPeer, kp0: keys.kp0 }, Number.isFinite(counter) && counter >= 0 ? counter : 0);
+  }
+  const reg = await registerSite(api, identity, siteId);
+  return reg.site;
 }
 async function resyncSiteFromNode(api, identity, siteId) {
   const keys = siteKeysForOrigin(identity, siteId);
@@ -10002,77 +10085,9 @@ var LEGACY_KEYS = {
 };
 
 // ../../packages/core/dist/deeplink.js
-var PASSWORD_MANAGER_SCHEME = "yadapass";
-var DEMO_HARNESS_SCHEME = "yadademo";
-var ACTIONS = /* @__PURE__ */ new Set(["signin", "register", "status", "operator"]);
-function isAction(v) {
-  return !!v && ACTIONS.has(v);
-}
-function buildDemoCallbackUrl(callbackBase, result) {
-  const base2 = callbackBase.includes("://") ? callbackBase : `${DEMO_HARNESS_SCHEME}://${callbackBase}`;
-  const q = new URLSearchParams();
-  q.set("nonce", result.nonce);
-  q.set("ok", result.ok ? "1" : "0");
-  if (result.action)
-    q.set("action", result.action);
-  if (result.counter != null && !Number.isNaN(result.counter)) {
-    q.set("counter", String(result.counter));
-  }
-  if (result.registered != null) {
-    q.set("registered", result.registered ? "1" : "0");
-  }
-  if (result.message)
-    q.set("message", result.message);
-  if (result.password)
-    q.set("password", result.password);
-  if (result.nextPasswordHash)
-    q.set("nextPasswordHash", result.nextPasswordHash);
-  const join2 = base2.includes("?") ? "&" : "?";
-  return `${base2}${join2}${q.toString()}`;
-}
-function parseQueryFromUrl(url) {
-  const qIndex = url.indexOf("?");
-  if (qIndex < 0)
-    return new URLSearchParams();
-  let qs = url.slice(qIndex + 1);
-  const h = qs.indexOf("#");
-  if (h >= 0)
-    qs = qs.slice(0, h);
-  return new URLSearchParams(qs);
-}
 function schemeOf(url) {
   const m = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(url);
   return m ? m[1].toLowerCase() : "";
-}
-function pathActionOf(url) {
-  const withoutScheme = url.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, "");
-  const beforeQuery = withoutScheme.split("?")[0] || "";
-  const parts = beforeQuery.split("/").filter(Boolean);
-  return (parts[0] || "").toLowerCase();
-}
-function parseBridgeRequest(url) {
-  if (!url || typeof url !== "string")
-    return null;
-  const scheme = schemeOf(url);
-  if (scheme !== PASSWORD_MANAGER_SCHEME)
-    return null;
-  const params = parseQueryFromUrl(url);
-  const pathAct = pathActionOf(url);
-  const actionRaw = params.get("action") || pathAct;
-  if (!isAction(actionRaw))
-    return null;
-  const site = (params.get("site") || "").trim();
-  const callback = (params.get("callback") || "").trim();
-  const nonce = (params.get("nonce") || "").trim();
-  if (!site || !callback || !nonce)
-    return null;
-  return {
-    action: actionRaw,
-    site,
-    callback,
-    nonce,
-    expectedHash: params.get("expectedHash") || void 0
-  };
 }
 
 // ../../packages/core/dist/caller-identity.js
@@ -10337,10 +10352,13 @@ async function jsonFetch(url, init) {
   return { ok: res.ok, status: res.status, body };
 }
 async function postAuthSessionResult(nodeUrl, sessionId, result) {
-  const { body } = await jsonFetch(base(nodeUrl) + "/password-rotation/auth-session/" + encodeURIComponent(sessionId) + "/result", {
+  const { ok, status, body } = await jsonFetch(base(nodeUrl) + "/password-rotation/auth-session/" + encodeURIComponent(sessionId) + "/result", {
     method: "POST",
     body: JSON.stringify(result)
   });
+  if (!ok || body?.status === false) {
+    throw new Error(body?.message || `result post failed (${status}) ${base(nodeUrl)}`);
+  }
   return body;
 }
 async function fetchPendingAuthSessions(nodeUrl, q) {
@@ -10926,52 +10944,31 @@ async function refreshHome() {
     $("homeStatus").textContent = e instanceof Error ? e.message : String(e);
   }
 }
-async function capacitorOpenUrl(url) {
-  const opener = App;
-  await opener.openUrl({ url });
-}
-async function openCallback(url, packageName) {
-  const pkg = packageName || pendingCaller?.packageName || pendingVerify?.pin?.packageName;
-  try {
-    if (nativePlatform() && pkg) {
-      await CallerIdentity.openUrlInPackage({ url, packageName: pkg });
-      return;
-    }
-  } catch {
-  }
-  try {
-    if (Capacitor.isNativePlatform()) {
-      await capacitorOpenUrl(url);
-      return;
-    }
-  } catch {
-  }
-  window.location.href = url;
-}
-async function respond(result, callback) {
+async function respond(result, _callback) {
   const req = pending;
   if (req?.source === "remote" && req.sessionId && req.resultToken) {
     const v = await loadVault();
     const nodeUrl = resolveNodeUrl(v?.nodeUrl || "");
     if (!nodeUrl) throw new Error("node URL not configured");
-    let password = result.password;
     let passwordEnc = result.password_enc;
-    if (!passwordEnc && password && req.bindId && req.site.startsWith("http")) {
+    if (!passwordEnc && result.password && result.ok) {
       if (!v) throw new Error("vault locked");
       const id = identityFromVault(v);
+      const sealTo = req.site.startsWith("http") ? req.site : nodeUrl;
       const pubRes = await fetch(
-        req.site.replace(/\/+$/, "") + "/password-rotation/ratchet-pub?username_signature=" + encodeURIComponent(id.usernameSignature),
+        sealTo.replace(/\/+$/, "") + "/password-rotation/ratchet-pub?username_signature=" + encodeURIComponent(id.usernameSignature),
         { headers: { Accept: "application/json" } }
       );
       const pubData = await pubRes.json().catch(() => ({}));
       if (!pubRes.ok || !pubData.public_key) {
-        throw new Error(pubData.message || "node has no ratchet public key for this peer");
+        throw new Error(
+          pubData.message || "refusing to send a plaintext password \u2014 no ratchet public key"
+        );
       }
       passwordEnc = await sealToRatchetPub(
-        JSON.stringify({ p: password, b: req.bindId }),
+        JSON.stringify({ p: result.password, b: req.bindId || "" }),
         pubData.public_key
       );
-      password = void 0;
     }
     const resultBody = {
       result_token: req.resultToken,
@@ -10980,7 +10977,7 @@ async function respond(result, callback) {
       action: result.action,
       nonce: result.nonce,
       message: result.message,
-      ...passwordEnc ? { password_enc: passwordEnc } : { password },
+      ...passwordEnc ? { password_enc: passwordEnc } : {},
       nextPasswordHash: result.nextPasswordHash,
       counter: result.counter,
       registered: result.registered
@@ -11012,12 +11009,12 @@ async function respond(result, callback) {
     }
     return;
   }
-  const url = buildDemoCallbackUrl(callback, result);
-  const pkg = pendingCaller?.packageName || pendingVerify?.pin?.packageName;
   await persistPending(null);
   showPending(null);
-  console.info("[yadapass] callback:", url);
-  await openCallback(url, pkg);
+  alertMsg(
+    "Local callback sign-in is removed. Approve the remote session from the demo app.",
+    "error"
+  );
 }
 function remotePayloadToRequest(p) {
   let site = (p.site || "").trim();
@@ -11362,26 +11359,11 @@ async function verifyRequest(req, caller, pin) {
   });
 }
 async function handleDeepLink(url) {
-  console.info("[yadapass] deep link:", url);
-  const req = parseBridgeRequest(url);
-  if (!req) {
-    alertMsg(`Unrecognized link (not a bridge request): ${url.slice(0, 120)}`, "error");
-    return;
-  }
-  if (req.site.startsWith("http://") || req.site.startsWith("https://")) {
-    req.site = normalizeSiteId(req.site);
-  }
-  const vault = await loadVault();
-  const pin = pinFromStored(vault?.sites?.[req.site]);
-  pendingCaller = await snapshotCaller();
-  pendingVerify = await verifyRequest(req, pendingCaller, pin);
-  await persistPending(req);
-  showPending(req);
-  if (pendingVerify.ok) {
-    alertMsg(`Request: ${req.action} \xB7 ${req.site} \xB7 ${pendingVerify.displayName}`, "success");
-  } else {
-    alertMsg(`Caller not verified: ${pendingVerify.reason}`, "error");
-  }
+  console.info("[yadapass] ignored local deep link:", url.slice(0, 120));
+  alertMsg(
+    "Local callback sign-in is removed. Start sign-in in the demo app, then Approve the remote session.",
+    "error"
+  );
 }
 async function approvePending() {
   if (!pending) return;
@@ -11469,15 +11451,15 @@ async function approvePending() {
     }
     if (req.action === "register") {
       const keys = siteKeysForOrigin(identity, siteKey);
-      const local2 = lookupStoredSite(v.sites, siteKey);
+      const local = lookupStoredSite(v.sites, siteKey);
       const tipRes = await fetchSiteTip({ baseUrl: nodeUrl }, keys.branchPeer);
       const tipOnNode = !!(tipRes.ok && tipRes.body?.tip);
-      if (local2 || tipOnNode) {
+      if (local || tipOnNode) {
         let live;
         if (tipOnNode) {
           live = await resyncSiteFromNode({ baseUrl: nodeUrl }, identity, siteKey);
         } else {
-          const counter = Number(local2.site.counter ?? 0);
+          const counter = Number(local.site.counter ?? 0);
           live = siteAtCounter(
             identity,
             {
@@ -11489,8 +11471,8 @@ async function approvePending() {
           );
         }
         const sk2 = storeKeyForSite(live, siteKey);
-        if (local2 && local2.key !== sk2) delete v.sites[local2.key];
-        v.sites[sk2] = applyPin(storeSite(live), pinFromStored(local2?.site) || pin);
+        if (local && local.key !== sk2) delete v.sites[local.key];
+        v.sites[sk2] = applyPin(storeSite(live), pinFromStored(local?.site) || pin);
         await saveVault(v);
         await respond(
           {
@@ -11533,16 +11515,8 @@ async function approvePending() {
     }
     if (req.action === "signin" || req.action === "operator") {
       const local = lookupStoredSite(v.sites, siteKey);
-      const rotateBase = siteKey.startsWith("http") ? siteKey : nodeUrl;
-      let site;
-      try {
-        site = await resyncSiteFromNode({ baseUrl: rotateBase }, identity, siteKey);
-      } catch {
-        const reg = await registerSite({ baseUrl: rotateBase }, identity, siteKey);
-        v.mainDepth = reg.identity.mainDepth;
-        v.tipPrevPkh = reg.identity.tipPrevPkh;
-        site = reg.site;
-      }
+      const rotateBase = req.action === "operator" && siteKey.startsWith("http") ? siteKey : nodeUrl;
+      const site = await siteForSignIn({ baseUrl: rotateBase }, identity, siteKey);
       const result = await rotateSitePassword(
         { baseUrl: rotateBase },
         identity,

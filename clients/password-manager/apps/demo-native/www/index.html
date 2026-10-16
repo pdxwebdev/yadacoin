@@ -19,9 +19,9 @@
       <section class="pm-card">
         <h1 class="pm-title">Demo app sign-in</h1>
         <p class="pm-muted">
-          Mirrors the web harness: this app never holds the vault. It opens
-          <strong>Yada Password</strong> via deep link; the manager signs the
-          rotation and calls the node. Result returns here.
+          This app never holds the vault. It creates a node auth session.
+          Approve in <strong>Yada Password</strong>. Sign-in succeeds only after
+          the node opens the sealed password and matches the tip.
         </p>
 
         <div class="pm-field">
@@ -30,7 +30,12 @@
         </div>
 
         <div class="pm-field">
-          <label for="nodeUrl">Node URL (tip display only)</label>
+          <label for="username">Yada username</label>
+          <input class="pm-input" id="username" type="text" autocomplete="username" placeholder="username" />
+        </div>
+
+        <div class="pm-field">
+          <label for="nodeUrl">Node URL</label>
           <input class="pm-input" id="nodeUrl" type="url" placeholder="http://192.168.1.10:8101" />
         </div>
 
@@ -55,12 +60,13 @@
           <button type="button" class="pm-btn" id="registerBtn">Register via Password app</button>
           <button type="button" class="pm-btn" id="signinBtn">Sign in &amp; rotate via Password app</button>
           <button type="button" class="pm-btn pm-btn--ghost" id="statusBtn">Ask registration status</button>
+          <button type="button" class="pm-btn pm-btn--ghost" id="cancelBtn" disabled>Cancel</button>
         </div>
 
         <ol class="steps">
           <li>Install &amp; set up <strong>Yada Password</strong> (seed, inception, node URL).</li>
-          <li>Here: set Node URL for tip polling → <strong>Register via Password app</strong>.</li>
-          <li>Approve in Password app → returns here with counter.</li>
+          <li>Set username and node URL, then <strong>Register</strong>.</li>
+          <li>Approve the remote session in Yada Password. This app polls the node.</li>
           <li><strong>Sign in &amp; rotate</strong> each time — backend enforces rotation.</li>
         </ol>
       </section>

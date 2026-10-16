@@ -1,6 +1,6 @@
 {
   "name": "@yadacoin/demo-native",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "private": true,
   "description": "Native demo harness \u2014 authenticates via Yada Password app deep links",
   "scripts": {

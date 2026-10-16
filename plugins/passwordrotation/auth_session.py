@@ -247,8 +247,8 @@ def public_session_view(doc: dict, *, include_secrets: bool = False) -> dict:
             out["registered"] = result.get("registered")
         # One-time secrets for RP after approve
         if st == "approved" and result.get("ok"):
-            if result.get("password_enc"):
-                out["password_enc"] = result.get("password_enc")
+            if result.get("authenticated"):
+                out["authenticated"] = True
             if result.get("nextPasswordHash"):
                 out["nextPasswordHash"] = result.get("nextPasswordHash")
             if result.get("token"):

@@ -3,7 +3,7 @@ import { Capacitor } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
 import {
   broadcastTxns,
-  buildDemoCallbackUrl,
+
   buildInceptionTxn,
   bytesToHex,
   createVaultSeed,
@@ -21,7 +21,6 @@ import {
   materialFromPrivCc,
   nodeUrlToWebSocketUrl,
   normalizeSiteId,
-  parseBridgeRequest,
   postAuthSessionResult,
   sealToRatchetPub,
   publishPasswordHome,
@@ -442,36 +441,7 @@ async function refreshHome() {
   }
 }
 
-async function capacitorOpenUrl(url: string) {
-  const opener = App as unknown as { openUrl: (o: { url: string }) => Promise<void> };
-  await opener.openUrl({ url });
-}
-
-async function openCallback(url: string, packageName?: string | null) {
-  const pkg =
-    packageName ||
-    pendingCaller?.packageName ||
-    pendingVerify?.pin?.packageName;
-  try {
-    if (nativePlatform() && pkg) {
-      await CallerIdentity.openUrlInPackage({ url, packageName: pkg });
-      return;
-    }
-  } catch {
-    /* fall through */
-  }
-  try {
-    if (Capacitor.isNativePlatform()) {
-      await capacitorOpenUrl(url);
-      return;
-    }
-  } catch {
-    /* fall through */
-  }
-  window.location.href = url;
-}
-
-async function respond(result: BridgeResult, callback: string) {
+async function respond(result: BridgeResult, _callback: string) {
   const req = pending;
   if (req?.source === "remote" && req.sessionId && req.resultToken) {
     const v = await loadVault();
@@ -541,12 +511,12 @@ async function respond(result: BridgeResult, callback: string) {
     }
     return;
   }
-  const url = buildDemoCallbackUrl(callback, result);
-  const pkg = pendingCaller?.packageName || pendingVerify?.pin?.packageName;
   await persistPending(null);
   showPending(null);
-  console.info("[yadapass] callback:", url);
-  await openCallback(url, pkg);
+  alertMsg(
+    "Local callback sign-in is removed. Approve the remote session from the demo app.",
+    "error"
+  );
 }
 
 function remotePayloadToRequest(p: PasswordAuthRequestPayload): BridgeRequest {
@@ -933,27 +903,11 @@ async function verifyRequest(
 }
 
 async function handleDeepLink(url: string) {
-  console.info("[yadapass] deep link:", url);
-  const req = parseBridgeRequest(url);
-  if (!req) {
-    alertMsg(`Unrecognized link (not a bridge request): ${url.slice(0, 120)}`, "error");
-    return;
-  }
-  // Keep custom site ids like yadademo://app; only normalize http(s) origins
-  if (req.site.startsWith("http://") || req.site.startsWith("https://")) {
-    req.site = normalizeSiteId(req.site);
-  }
-  const vault = await loadVault();
-  const pin = pinFromStored(vault?.sites?.[req.site]);
-  pendingCaller = await snapshotCaller();
-  pendingVerify = await verifyRequest(req, pendingCaller, pin);
-  await persistPending(req);
-  showPending(req);
-  if (pendingVerify.ok) {
-    alertMsg(`Request: ${req.action} · ${req.site} · ${pendingVerify.displayName}`, "success");
-  } else {
-    alertMsg(`Caller not verified: ${pendingVerify.reason}`, "error");
-  }
+  console.info("[yadapass] ignored local deep link:", url.slice(0, 120));
+  alertMsg(
+    "Local callback sign-in is removed. Start sign-in in the demo app, then Approve the remote session.",
+    "error"
+  );
 }
 
 async function approvePending() {

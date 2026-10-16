@@ -25,7 +25,8 @@ export interface AuthSessionView {
   home_node?: string | null;
   delivered?: boolean;
   ok?: boolean;
-  password?: string;
+  /** Node opened the seal and matched the site tip. Poll never includes the password. */
+  authenticated?: boolean;
   nextPasswordHash?: string;
   counter?: number | null;
   registered?: boolean;

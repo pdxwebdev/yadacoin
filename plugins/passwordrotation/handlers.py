@@ -945,11 +945,25 @@ class PasswordAuthSessionResultHandler(BaseHandler):
                 {"status": False, "message": "plaintext password refused"}
             )
         if ok:
-            if body.get("password_enc"):
-                result["password_enc"] = body.get("password_enc")
             result["nextPasswordHash"] = body.get("nextPasswordHash") or body.get(
                 "next_password_hash"
             )
+        if ok and action == "signin":
+            verified, why = await _verify_sealed_signin(
+                self, doc, body.get("password_enc") or ""
+            )
+            if not verified:
+                status = "denied"
+                result = {
+                    "ok": False,
+                    "action": "signin",
+                    "nonce": doc.get("nonce"),
+                    "message": why,
+                    "authenticated": False,
+                }
+            else:
+                result["authenticated"] = True
+                result["message"] = result.get("message") or "signed in"
 
         # Operator unlock: issue node JWT when vault matches this node's KEL.
         if ok and action == "operator":
@@ -1361,6 +1375,44 @@ async def _peer_ratchet_keys(handler, username_signature: str):
     if not keys or not keys[0] or not keys[1]:
         return None
     return keys[0], keys[1]
+
+
+async def _verify_sealed_signin(handler, doc: dict, password_enc: str):
+    """Open a sign-in seal and check it against the site tip. Never returns the password."""
+    if not password_enc:
+        return False, "sealed password required"
+    keys = await _peer_ratchet_keys(handler, doc.get("username_signature") or "")
+    if not keys:
+        return False, "ratchet public key unavailable"
+    try:
+        from plugins.passwordrotation.box import open_box
+
+        raw = open_box(password_enc, keys[0])
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception:
+        return False, "could not open sealed password for this sign-in"
+    if not isinstance(payload, dict):
+        return False, "could not open sealed password for this sign-in"
+    bind_id = doc.get("bind_id") or ""
+    if bind_id and (payload.get("b") or "") != bind_id:
+        return False, "sealed password is not bound to this sign-in"
+    password = payload.get("p") or ""
+    if not password:
+        return False, "sealed password is empty"
+    branch_peer = (doc.get("site") or "").strip().lower()
+    tip = await handler.config.mongo.async_db.key_event_log.find_one(
+        {"branch_peer": branch_peer},
+        sort=[("counter", -1)],
+    )
+    if not tip:
+        return False, "no password branch for this site"
+    for stored in _password_hashes_from_tip(tip):
+        try:
+            if _verify_password(password, stored):
+                return True, ""
+        except Exception:
+            continue
+    return False, "invalid password"
 
 
 async def _open_signin_password(handler, password_enc: str) -> str:

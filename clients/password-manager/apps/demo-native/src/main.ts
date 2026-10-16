@@ -1,20 +1,14 @@
-import { App } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import {
-  buildPasswordManagerUrl,
+  createAuthSession,
   DEMO_APP_SITE_ID,
-  DEMO_HARNESS_SCHEME,
-  newNonce,
   normalizeSiteId,
-  parseBridgeResult,
-  verifyPassword,
-  type BridgeResult,
+  pollAuthSession,
+  type AuthSessionView,
 } from "@yadacoin/password-core";
 import { applyTheme, resolveTheme } from "@yadacoin/password-shared-ui";
-import { OpenPasswordManager } from "./open-password-manager";
 
-const PENDING_KEY = "yadaDemoPendingNonce";
-const VERIFY_HASH_KEY = "yadaDemoVerifyHash";
+const USER_KEY = "yadaDemoUsername";
 const NODE_KEY = "yadaDemoNodeUrl";
 const AUTH_KEY = "yadaDemoAuth";
 
@@ -58,33 +52,6 @@ function pushLog(ok: boolean, note: string, counter?: number | null) {
   box.insertBefore(row, box.firstChild);
 }
 
-async function openManager(url: string) {
-  console.info("[yadademo] open manager:", url);
-  try {
-    if (Capacitor.isNativePlatform()) {
-      await OpenPasswordManager.open({ url });
-      return;
-    }
-  } catch (e) {
-    console.warn("OpenPasswordManager failed, falling back", e);
-  }
-  try {
-    if (Capacitor.isNativePlatform()) {
-      const opener = App as unknown as { openUrl: (o: { url: string }) => Promise<void> };
-      await opener.openUrl({ url });
-      return;
-    }
-  } catch (e) {
-    console.warn("App.openUrl failed, falling back", e);
-  }
-  try {
-    window.open(url, "_system");
-  } catch {
-    /* ignore */
-  }
-  window.location.href = url;
-}
-
 interface DemoAuth {
   /** Hash of the password expected on the next sign-in (tip prerotated). */
   nextPasswordHash: string;
@@ -124,105 +91,102 @@ async function fetchTipPasswordHashes(
   };
 }
 
-async function startBridge(action: "signin" | "register" | "status") {
-  const nonce = newNonce();
-  sessionStorage.setItem(PENDING_KEY, nonce);
-  sessionStorage.removeItem(VERIFY_HASH_KEY);
+let pollAbort: AbortController | null = null;
 
-  const nodeUrl = resolveNodeUrl(($("nodeUrl") as HTMLInputElement).value);
-  localStorage.setItem(NODE_KEY, nodeUrl);
-
-  let expectedHash: string | undefined;
-  if (action === "signin") {
-    // Prefer node tip prerotated hash so a fresh device never needs local register state.
-    try {
-      if (nodeUrl) {
-        const tip = await fetchTipPasswordHashes(nodeUrl);
-        if (tip?.pre) {
-          expectedHash = tip.pre;
-          sessionStorage.setItem(VERIFY_HASH_KEY, tip.pre);
-        }
-      }
-    } catch {
-      /* fall through to local cache */
-    }
-    if (!expectedHash) {
-      expectedHash = loadAuth()?.nextPasswordHash;
-      if (expectedHash) sessionStorage.setItem(VERIFY_HASH_KEY, expectedHash);
-    }
+function setBusy(busy: boolean) {
+  for (const id of ["registerBtn", "signinBtn", "statusBtn"]) {
+    ($(id) as HTMLButtonElement).disabled = busy;
   }
+  const cancel = $("cancelBtn") as HTMLButtonElement;
+  if (cancel) cancel.disabled = !busy;
+}
 
-  const url = buildPasswordManagerUrl({
-    action,
-    site: siteId(),
-    callback: `${DEMO_HARNESS_SCHEME}://result`,
-    nonce,
-    expectedHash: action === "signin" ? expectedHash : undefined,
-  });
-  alertMsg(`Opening Yada Password… (${action})`, "");
-  void openManager(url).catch((e) =>
-    alertMsg(e instanceof Error ? e.message : String(e), "error")
+function applySession(action: string, view: AuthSessionView) {
+  if (view.session_status === "denied" || view.session_status === "expired" || !view.ok) {
+    pushLog(false, view.message || view.session_status || "failed", view.counter);
+    alertMsg(view.message || view.session_status || "Failed", "error");
+    return;
+  }
+  if (action === "signin" && !view.authenticated) {
+    pushLog(false, "node did not verify the sealed password", view.counter);
+    alertMsg("Auth failed: node did not verify the sealed password.", "error");
+    return;
+  }
+  if (view.nextPasswordHash) saveAuth({ nextPasswordHash: view.nextPasswordHash });
+  pushLog(true, view.message || action, view.counter);
+  alertMsg(
+    action === "signin"
+      ? "Signed in. Node verified the sealed password against the tip."
+      : view.message || "Approved",
+    "success"
   );
 }
 
-function handleResult(result: BridgeResult) {
-  const expected = sessionStorage.getItem(PENDING_KEY);
-  if (expected && result.nonce !== expected) {
-    pushLog(false, `ignored result (nonce mismatch)`, result.counter);
+async function startBridge(action: "signin" | "register" | "status") {
+  if (pollAbort) pollAbort.abort();
+  const username = (($("username") as HTMLInputElement).value || "").trim();
+  const nodeUrl = resolveNodeUrl(($("nodeUrl") as HTMLInputElement).value);
+  localStorage.setItem(NODE_KEY, nodeUrl);
+  localStorage.setItem(USER_KEY, username);
+  if (!nodeUrl) {
+    alertMsg("Set the node URL first.", "error");
     return;
   }
-  sessionStorage.removeItem(PENDING_KEY);
-  if (!result.ok) {
-    pushLog(false, result.message || "failed", result.counter);
-    alertMsg(result.message || "Failed", "error");
-    void refreshTip();
-    return;
-  }
-
-  const nextHash = result.nextPasswordHash || "";
-  const password = result.password || "";
-  const verifyHash = sessionStorage.getItem(VERIFY_HASH_KEY) || "";
-  sessionStorage.removeItem(VERIFY_HASH_KEY);
-
-  if (result.action === "register" && password && nextHash) {
-    // After register, tip.pre is current; next sign-in consumes current then advances.
-    // nextPasswordHash from vault is hash(new tip current) after register = hash(next at register).
-    // For first sign-in, node tip.pre is authoritative — cache nextHash only as a hint.
-    saveAuth({ nextPasswordHash: nextHash });
-    pushLog(true, "registered · vault restored/created", result.counter);
-    alertMsg("Registered / restored. Sign-in uses the node tip (no local-only gate).", "success");
-    void refreshTip();
+  if (!username) {
+    alertMsg("Enter your Yada username.", "error");
     return;
   }
 
-  if (result.action === "signin" && password) {
-    // Verify against tip.pre captured before rotate (multi-device safe). Local cache is optional.
-    if (verifyHash && !verifyPassword(password, verifyHash)) {
-      pushLog(false, "password does not match tip prerotated hash", result.counter);
-      alertMsg(
-        "Auth failed: password does not match node tip. Check vault seed/2FA or re-save vault.",
-        "error"
-      );
+  let expectedHash: string | undefined;
+  if (action === "signin") {
+    try {
+      const tip = await fetchTipPasswordHashes(nodeUrl);
+      expectedHash = tip?.pre || loadAuth()?.nextPasswordHash;
+    } catch {
+      expectedHash = loadAuth()?.nextPasswordHash;
+    }
+  }
+
+  pollAbort = new AbortController();
+  const signal = pollAbort.signal;
+  setBusy(true);
+  alertMsg("Creating session…", "");
+  try {
+    const created = await createAuthSession(nodeUrl, {
+      username,
+      site: siteId(),
+      action,
+      expectedHash,
+    });
+    if (!created.status || !created.session_id) {
+      throw new Error(created.message || "failed to create auth session");
+    }
+    alertMsg(
+      created.delivered
+        ? "Delivered. Approve in Yada Password."
+        : "Open Yada Password so it can connect, then Approve.",
+      ""
+    );
+    const started = Date.now();
+    while (!signal.aborted) {
+      if (Date.now() - started > 180000) throw new Error("timed out waiting for approval");
+      await new Promise((r) => setTimeout(r, 1500));
+      if (signal.aborted) throw new Error("cancelled");
+      const view = await pollAuthSession(nodeUrl, created.session_id);
+      const st = view.session_status;
+      if (st === "pending" || st === "delivered" || st === "proxied") continue;
+      applySession(action, view);
       void refreshTip();
       return;
     }
-    if (nextHash) saveAuth({ nextPasswordHash: nextHash });
-    pushLog(true, "signed in · tip verified", result.counter);
-    alertMsg("Signed in. Password matched node tip; local cache updated.", "success");
-    if (nextHash) $("tipTwice").textContent = nextHash;
-    void refreshTip();
-    return;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    if (message !== "cancelled") alertMsg(message, "error");
+    else alertMsg("Cancelled", "error");
+  } finally {
+    setBusy(false);
+    pollAbort = null;
   }
-
-  pushLog(true, result.message || "ok", result.counter);
-  alertMsg(result.message || "Success", "success");
-  void refreshTip();
-}
-
-async function handleDeepLink(url: string) {
-  const result = parseBridgeResult(url);
-  if (!result) return;
-  handleResult(result);
 }
 
 async function refreshTip() {
@@ -267,26 +231,16 @@ async function main() {
   applyTheme(resolveTheme({ preset: "dark", user: { mode: "dark" } }));
   $("siteId").textContent = siteId();
   ($("nodeUrl") as HTMLInputElement).value = localStorage.getItem(NODE_KEY) || "";
+  ($("username") as HTMLInputElement).value = localStorage.getItem(USER_KEY) || "";
 
   $("registerBtn").addEventListener("click", () => void startBridge("register"));
   $("signinBtn").addEventListener("click", () => void startBridge("signin"));
   $("statusBtn").addEventListener("click", () => void startBridge("status"));
+  $("cancelBtn").addEventListener("click", () => pollAbort?.abort());
   $("refreshBtn").addEventListener("click", () => {
     alertMsg("");
     void refreshTip();
   });
-
-  if (Capacitor.isNativePlatform()) {
-    App.addListener("appUrlOpen", ({ url }) => {
-      void handleDeepLink(url);
-    });
-    const launch = await App.getLaunchUrl();
-    if (launch?.url) void handleDeepLink(launch.url);
-  } else {
-    const params = new URLSearchParams(location.search);
-    const dl = params.get("dl");
-    if (dl) void handleDeepLink(dl);
-  }
 
   await refreshTip();
 }
