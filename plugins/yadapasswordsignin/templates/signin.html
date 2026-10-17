@@ -330,7 +330,7 @@
     async function openSession(password, homeNode, passwordEnc) {
       const body = { branch_peer: origin };
       if (passwordEnc) body.password_enc = passwordEnc;
-      else body.password = password || "";
+      else if (password) body.password = password;
       if (homeNode) {
         body.home_node = String(homeNode).replace(/\/+$/, "");
       }
@@ -421,7 +421,7 @@
           body: JSON.stringify({
             username: username,
             site: origin,
-            action: "signin",
+            action: "operator",
             expectedHash: expectedHash,
           }),
           signal: signal,
@@ -439,21 +439,16 @@
             home
         );
         const view = await waitForAuthApproval(created.session_id, created, signal);
-        if (!view.ok) throw new Error(view.message || "sign-in was not approved");
-        if (view.token) {
-          stashOperatorToken(view.token);
-        } else {
-          if (!view.password_enc && !view.password) {
-            throw new Error("password app returned no password — approve again");
-          }
-          showProgress("Approved — opening operator session…");
-          const session = await openSession(
-            view.password,
-            view.home_node || created.home_node || "",
-            view.password_enc || ""
-          );
-          stashOperatorToken(session && session.token);
+        if (!view.ok && !view.operator_session) {
+          throw new Error(view.message || "sign-in was not approved");
         }
+        showProgress("Approved — opening operator session…");
+        const session = await openSession(
+          "",
+          view.home_node || created.home_node || "",
+          ""
+        );
+        stashOperatorToken((session && session.token) || view.token);
         stopProgress();
         setMsg("Session opened — continuing…", "ok");
         goNext();

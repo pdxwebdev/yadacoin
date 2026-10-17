@@ -139,7 +139,7 @@ export async function postAuthSessionResult(
       body: JSON.stringify(result),
     }
   );
-  if (!ok || body?.status === false) {
+  if (!ok || body?.status === false || body?.ok === false) {
     throw new Error(body?.message || `result post failed (${status}) ${base(nodeUrl)}`);
   }
   return body as AuthSessionView;

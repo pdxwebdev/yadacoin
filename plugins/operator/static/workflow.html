@@ -167,23 +167,29 @@
         method: "POST",
         headers: {"Content-Type": "application/json", "Accept": "application/json"},
         credentials: "include",
-        body: JSON.stringify({username: username, site: origin, action: "signin"})
+        body: JSON.stringify({username: username, site: origin, action: "operator"})
       }).then(function (r) { return r.json().then(function (body) { return {ok: r.ok, body: body}; }); })
         .then(function (created) {
           if (!created.ok || !created.body.session_id) throw new Error(created.body.message || "could not start sign-in");
           return waitApproval(created.body);
         }).then(function (view) {
-          if (view.token) return view;
+          if (!view.ok && !view.operator_session) {
+            throw new Error(view.message || "sign-in was not approved");
+          }
           return fetch("/password-rotation/admin-session", {
             method: "POST",
             headers: {"Content-Type": "application/json", "Accept": "application/json"},
             credentials: "include",
             body: JSON.stringify({
               branch_peer: origin,
-              password_enc: view.password_enc || "",
               home_node: view.home_node || ""
             })
-          }).then(function (r) { return r.json(); });
+          }).then(function (r) {
+            return r.json().then(function (body) {
+              if (!r.ok || !body.status) throw new Error(body.message || "operator session failed");
+              return body;
+            });
+          });
         }).then(function () {
           return postStep("done");
         }).then(function (result) {

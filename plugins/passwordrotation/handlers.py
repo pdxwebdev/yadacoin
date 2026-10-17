@@ -977,21 +977,21 @@ class PasswordAuthSessionResultHandler(BaseHandler):
                     "message": mismatch[1],
                 }
             else:
-                password = body.get("password") or ""
-                if body.get("password_enc"):
-                    keys = await _peer_ratchet_keys(
-                        self, doc.get("username_signature") or ""
+                password, why = await _open_bound_seal(
+                    self, doc, body.get("password_enc") or ""
+                )
+                if not password:
+                    status = "denied"
+                    result = {
+                        "ok": False,
+                        "action": "operator",
+                        "nonce": doc.get("nonce"),
+                        "message": why,
+                    }
+                    updated = await asess.mark_result(session_id, result, status)
+                    return self.render_as_json(
+                        asess.public_session_view(updated or doc)
                     )
-                    if keys:
-                        try:
-                            from plugins.passwordrotation.box import open_box
-
-                            raw = open_box(body.get("password_enc"), keys[0])
-                            payload = json.loads(raw.decode("utf-8"))
-                            if isinstance(payload, dict) and payload.get("p"):
-                                password = payload.get("p")
-                        except Exception:
-                            password = ""
                 branch_peer = (doc.get("site") or request_origin(self)).strip().lower()
                 tip = await self.config.mongo.async_db.key_event_log.find_one(
                     {"branch_peer": branch_peer},
@@ -1016,6 +1016,9 @@ class PasswordAuthSessionResultHandler(BaseHandler):
                             "message": "invalid password for node branch",
                         }
                     else:
+                        await asess.mark_bind_operator_verified(
+                            doc.get("bind_id") or ""
+                        )
                         op_token = await self.issue_operator_session()
                         result["token"] = op_token
                         result["operator_session"] = True
@@ -1026,6 +1029,7 @@ class PasswordAuthSessionResultHandler(BaseHandler):
                     # No password branch yet — still issue if vault matches
                     # (first-time operator after register is handled by client
                     # posting password after register+rotate).
+                    await asess.mark_bind_operator_verified(doc.get("bind_id") or "")
                     op_token = await self.issue_operator_session()
                     result["token"] = op_token
                     result["operator_session"] = True
@@ -1415,6 +1419,31 @@ async def _verify_sealed_signin(handler, doc: dict, password_enc: str):
     return False, "invalid password"
 
 
+async def _open_bound_seal(handler, doc: dict, password_enc: str):
+    """Open a seal bound to this sign-in. Returns (password, error)."""
+    if not password_enc:
+        return "", "sealed password required"
+    keys = await _peer_ratchet_keys(handler, doc.get("username_signature") or "")
+    if not keys:
+        return "", "ratchet public key unavailable"
+    try:
+        from plugins.passwordrotation.box import open_box
+
+        raw = open_box(password_enc, keys[0])
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception:
+        return "", "could not open sealed password for this sign-in"
+    if not isinstance(payload, dict):
+        return "", "could not open sealed password for this sign-in"
+    bind_id = doc.get("bind_id") or ""
+    if bind_id and (payload.get("b") or "") != bind_id:
+        return "", "sealed password is not bound to this sign-in"
+    password = payload.get("p") or ""
+    if not password:
+        return "", "sealed password is empty"
+    return password, ""
+
+
 async def _open_signin_password(handler, password_enc: str) -> str:
     from plugins.passwordrotation import auth_session as asess
     from plugins.passwordrotation.box import open_box
@@ -1480,6 +1509,8 @@ class PasswordAdminSessionHandler(BaseHandler):
     """
 
     async def post(self):
+        from plugins.passwordrotation import auth_session as asess
+
         try:
             body = json.loads(self.request.body or b"{}")
         except Exception:
@@ -1515,6 +1546,20 @@ class PasswordAdminSessionHandler(BaseHandler):
                     }
                 )
             password = opened
+        if not password:
+            bind = await asess.peek_signin_bind(self)
+            if bind and bind.get("operator_verified"):
+                await asess.consume_signin_bind(self)
+                token = await self.issue_operator_session()
+                return self.render_as_json(
+                    {
+                        "status": True,
+                        "token": token,
+                        "operator_session": True,
+                        "branch_peer": branch_peer,
+                        "authenticated": True,
+                    }
+                )
         if not password:
             self.set_status(401)
             return self.render_as_json(

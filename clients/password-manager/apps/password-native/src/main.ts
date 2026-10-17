@@ -451,7 +451,10 @@ async function respond(result: BridgeResult, _callback: string) {
     if (!passwordEnc && result.password && result.ok) {
       if (!v) throw new Error("vault locked");
       const id = identityFromVault(v);
-      const sealTo = req.site.startsWith("http") ? req.site : nodeUrl;
+      const sealTo =
+        result.action === "operator" && req.site.startsWith("http")
+          ? req.site
+          : nodeUrl;
       const pubRes = await fetch(
         sealTo.replace(/\/+$/, "") +
           "/password-rotation/ratchet-pub?username_signature=" +

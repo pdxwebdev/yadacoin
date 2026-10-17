@@ -413,7 +413,10 @@ async function approvePendingRequest(): Promise<void> {
   password = rotated.site.currentPassword;
   counter = rotated.site.counter;
   const nextHash = hashPassword(rotated.site.nextPassword);
-  const sealTo = siteKey.startsWith("http") ? siteKey : nodeUrl;
+  const sealTo =
+    action === "operator"
+      ? pendingNodeUrl || (siteKey.startsWith("http") ? siteKey : nodeUrl)
+      : nodeUrl;
   await ensureNodeAccess(sealTo);
   const pubRes = await fetch(
     sealTo.replace(/\/+$/, "") +

@@ -210,6 +210,16 @@ async def peek_signin_bind(handler) -> Optional[dict]:
     return doc
 
 
+async def mark_bind_operator_verified(bind_id: str) -> None:
+    bid = (bind_id or "").strip()
+    if not bid:
+        return
+    await _db()[BIND_COLLECTION].update_one(
+        {"bind_id": bid},
+        {"$set": {"operator_verified": True}},
+    )
+
+
 async def consume_signin_bind(handler) -> None:
     secret = handler.get_cookie(SIGNIN_BIND_COOKIE) or ""
     if secret:
