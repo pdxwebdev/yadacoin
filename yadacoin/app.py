@@ -1199,16 +1199,58 @@ class NodeApplication(Application):
         ):
             self.default_handlers.extend(PEERJS_HANDLERS)
 
+    def _plugin_names(self):
+        search_dirs = [path.join(path.dirname(__file__), "..", "plugins")]
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            search_dirs.insert(0, path.join(meipass, "plugins"))
+        names = []
+        seen = set()
+        for plugin_dir in search_dirs:
+            if not path.isdir(plugin_dir):
+                continue
+            for finder, name, ispkg in pkgutil.iter_modules([plugin_dir]):
+                if name in seen or name.startswith("."):
+                    continue
+                seen.add(name)
+                names.append(name)
+            for name in os.listdir(plugin_dir):
+                if name in seen or name.startswith("."):
+                    continue
+                pkg = path.join(plugin_dir, name)
+                if path.isdir(pkg) and (
+                    path.isfile(path.join(pkg, "handlers.py"))
+                    or path.isfile(path.join(pkg, "__init__.py"))
+                ):
+                    seen.add(name)
+                    names.append(name)
+        return names
+
     def init_plugins(self):
-        for finder, name, ispkg in pkgutil.iter_modules(
-            [path.join(path.dirname(__file__), "..", "plugins")]
-        ):
-            if os.path.exists(
-                path.join(path.dirname(__file__), "..", "plugins", name, "postboot.py")
-            ):
-                post_boot = importlib.import_module("plugins." + name + ".postboot")
-                tornado.ioloop.IOLoop.current().run_sync(lambda: post_boot.go(self))
-            handlers = importlib.import_module("plugins." + name + ".handlers")
+        for name in self._plugin_names():
+            try:
+                try:
+                    post_boot = importlib.import_module("plugins." + name + ".postboot")
+                except ModuleNotFoundError:
+                    post_boot = None
+                if post_boot is not None and hasattr(post_boot, "go"):
+                    tornado.ioloop.IOLoop.current().run_sync(
+                        lambda post_boot=post_boot: post_boot.go(self)
+                    )
+                handlers = importlib.import_module("plugins." + name + ".handlers")
+            except Exception:
+                self.config.app_log.warning(
+                    "plugin %s failed to load\n%s", name, format_exc()
+                )
+                continue
+            if name == self.config.root_app:
+                [
+                    self.default_handlers.insert(0, handler)
+                    for handler in handlers.HANDLERS
+                ]
+            else:
+                self.default_handlers.extend(handlers.HANDLERS)
+
             if name == self.config.root_app:
                 [
                     self.default_handlers.insert(0, handler)

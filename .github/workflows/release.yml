@@ -178,7 +178,7 @@ jobs:
             choco install cmake -y
           fi
           cmake --version
-          grep -vE "pyrx|yadacoin-agent-auth|sendgrid|mixpanel|ua_parser|twilio|centeridentity|python-jose|openai|resend|discord\.py|PyGithub|web3|eth_account|eth_abi|stripe" requirements.txt > filtered_requirements.txt
+          grep -vE "pyrx" requirements.txt > filtered_requirements.txt
           python -m pip install --upgrade pip
           python -m pip install -r filtered_requirements.txt
           python -m pip install pybind11 "pyinstaller==5.13.2" pytest==7.4.4
