@@ -341,6 +341,7 @@ code {
 }
 
 .form { display: grid; gap: 12px; max-width: 520px; }
+.form-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .form label { font-weight: 600; }
 .form input:not([type="checkbox"]), .form textarea {
   width: 100%;

@@ -34,6 +34,7 @@ from node_dashboard.settings import (
 from plugins.operator.setup import (
     EDITABLE_CONFIG,
     apply_setup_gate,
+    available_plugins,
     onboarding_pending,
     publish_second_factor_file,
     read_onboarding,
@@ -542,6 +543,19 @@ class OperatorConfigPageHandler(OperatorHandler):
         send_asset(self, "config.html")
 
 
+def json_safe(value):
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    enum_value = getattr(value, "value", None)
+    if isinstance(enum_value, str):
+        return enum_value
+    return str(value)
+
+
 class OperatorConfigHandler(OperatorHandler):
     async def get(self):
         config = Config()
@@ -550,26 +564,38 @@ class OperatorConfigHandler(OperatorHandler):
             if key == "ssl":
                 continue
             value = getattr(config, key, None)
-            if (
-                isinstance(value, (str, int, float, bool))
-                or value is None
-                or isinstance(value, list)
-            ):
-                values[key] = value
-            else:
-                values[key] = str(value)
+            if key == "modes" and not isinstance(value, list):
+                value = []
+            if key == "disabled_plugins" and not isinstance(value, list):
+                value = []
+            values[key] = json_safe(value)
+        ssl = {}
+        try:
+            if getattr(config, "ssl", None):
+                ssl = json_safe(config.ssl.to_dict())
+        except Exception:
+            ssl = {}
+        try:
+            second_factor_set = bool(read_second_factor())
+        except OSError:
+            second_factor_set = False
         self.set_header("Cache-Control", "no-store")
+        self.set_header("Content-Type", "application/json")
         self.write(
-            {
-                "values": values,
-                "mode_options": [
-                    mode.value
-                    for mode in MODES
-                    if mode.value not in ("dns", "proxy", "ssl")
-                ],
-                "ssl": config.ssl.to_dict() if getattr(config, "ssl", None) else {},
-                "second_factor_set": bool(read_second_factor()),
-            }
+            json.dumps(
+                {
+                    "values": values,
+                    "mode_options": [
+                        mode.value
+                        for mode in MODES
+                        if mode.value not in ("dns", "proxy", "ssl")
+                    ],
+                    "available_plugins": available_plugins(),
+                    "ssl": ssl,
+                    "second_factor_set": second_factor_set,
+                },
+                default=str,
+            )
         )
 
     async def post(self):
@@ -599,25 +625,53 @@ class OperatorConfigHandler(OperatorHandler):
             self.set_status(400)
             self.write({"error": str(exc)})
             return
-        for key, value in saved.items():
-            if key == "ssl":
-                self.config.ssl = SSLConfig.from_dict(value)
-                continue
-            setattr(self.config, key, value)
-        message = "Saved. Restart the node to apply these values."
-        ssl_value = saved.get("ssl") or {}
-        if ssl_value.get("common_name"):
-            from plugins.operator.letsencrypt import issue_certificate, start_renew_loop
+        message = "Saved."
+        if payload.get("restart"):
+            previous_http = (
+                getattr(self.config, "serve_host", None),
+                getattr(self.config, "serve_port", None),
+                getattr(getattr(self.config, "ssl", None), "port", None),
+                "ssl" in (getattr(self.config, "modes", None) or []),
+            )
+            for key, value in saved.items():
+                if key == "ssl":
+                    self.config.ssl = SSLConfig.from_dict(value)
+                    continue
+                setattr(self.config, key, value)
+            ssl_value = saved.get("ssl") or {}
+            if ssl_value.get("common_name"):
+                from plugins.operator.letsencrypt import (
+                    issue_certificate,
+                    start_renew_loop,
+                )
 
-            ok, detail = issue_certificate(
-                ssl_value["common_name"], ssl_value.get("email")
-            )
-            start_renew_loop(self.config)
-            message = (
-                detail if ok else "Saved. Certificate was not issued: {}".format(detail)
-            )
+                ok, detail = issue_certificate(
+                    ssl_value["common_name"], ssl_value.get("email")
+                )
+                start_renew_loop(self.config)
+                if not ok:
+                    message = "Saved. Certificate was not issued: {}".format(detail)
+            application = getattr(self.config, "application", None)
+            if application is None or not hasattr(application, "apply_saved_config"):
+                self.set_status(500)
+                self.write({"error": "Saved, but maintenance mode is not available."})
+                return
+            try:
+                await application.apply_saved_config(previous_http)
+            except Exception as exc:
+                self.set_status(500)
+                self.write(
+                    {
+                        "error": "Saved, but the node could not apply the values: {}".format(
+                            exc
+                        )
+                    }
+                )
+                return
+            if message == "Saved.":
+                message = "Saved. Services were restarted with these values."
         self.write(
-            {"ok": True, "restart_required": True, "values": saved, "message": message}
+            {"ok": True, "restart_required": False, "values": saved, "message": message}
         )
 
 

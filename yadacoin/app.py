@@ -1205,7 +1205,8 @@ class NodeApplication(Application):
         self.default_handlers.extend(NODE_HANDLERS)
         self.default_handlers.extend(NODE_ANNOUNCE_HANDLERS)
         self.default_handlers.extend(GRAPH_HANDLERS)
-        self.default_handlers.extend(EXPLORER_HANDLERS)
+        if self._plugin_enabled("explorer"):
+            self.default_handlers.extend(EXPLORER_HANDLERS)
         self.default_handlers.extend(WALLET_HANDLERS)
         self.default_handlers.extend(PRODUCT_HANDLERS)
         self.default_handlers.extend(WEB_HANDLERS)
@@ -1246,41 +1247,122 @@ class NodeApplication(Application):
                     names.append(name)
         return names
 
-    def init_plugins(self):
+    def _plugin_enabled(self, name):
+        if name == "operator":
+            return True
+        disabled = getattr(self.config, "disabled_plugins", None) or []
+        return name not in disabled
+
+    def _load_plugin_handlers(self, run_postboot=False):
         for name in self._plugin_names():
+            if not self._plugin_enabled(name):
+                continue
             try:
-                try:
-                    post_boot = importlib.import_module("plugins." + name + ".postboot")
-                except ModuleNotFoundError:
-                    post_boot = None
-                if post_boot is not None and hasattr(post_boot, "go"):
-                    tornado.ioloop.IOLoop.current().run_sync(
-                        lambda post_boot=post_boot: post_boot.go(self)
-                    )
-                handlers = importlib.import_module("plugins." + name + ".handlers")
+                if run_postboot:
+                    try:
+                        post_boot = importlib.import_module(
+                            "plugins." + name + ".postboot"
+                        )
+                    except ModuleNotFoundError:
+                        post_boot = None
+                    if post_boot is not None and hasattr(post_boot, "go"):
+                        tornado.ioloop.IOLoop.current().run_sync(
+                            lambda post_boot=post_boot: post_boot.go(self)
+                        )
+                module_name = "plugins." + name + ".handlers"
+                if module_name in sys.modules:
+                    plugin_handlers = importlib.reload(sys.modules[module_name])
+                else:
+                    plugin_handlers = importlib.import_module(module_name)
             except Exception:
                 self.config.app_log.warning(
                     "plugin %s failed to load\n%s", name, format_exc()
                 )
                 continue
+            if not hasattr(plugin_handlers, "HANDLERS"):
+                continue
             if name == self.config.root_app:
-                [
+                for handler in reversed(list(plugin_handlers.HANDLERS)):
                     self.default_handlers.insert(0, handler)
-                    for handler in handlers.HANDLERS
-                ]
             else:
-                self.default_handlers.extend(handlers.HANDLERS)
+                self.default_handlers.extend(plugin_handlers.HANDLERS)
+
+    def init_plugins(self):
+        self._load_plugin_handlers(run_postboot=True)
+
+    def reload_http_routes(self):
+        from tornado.routing import AnyMatches, Rule
+        from tornado.web import _ApplicationRouter
+
+        static_handlers = [
+            handler
+            for handler in getattr(self, "default_handlers", [])
+            if isinstance(handler, tuple)
+            and handler
+            and handler[0]
+            in (
+                r"/app/(.*)",
+                r"/wallet/([\w\-0-9\/]+\.[\w]+)",
+                r"/unwrap/([\w\-0-9\/]+\.[\w]+)",
+                r"/yadacoinstatic/(.*)",
+            )
+        ]
+        self.default_handlers = list(static_handlers)
+        self.default_handlers.extend(handlers.HANDLERS)
+        self.init_websocket()
+        self.init_webui()
+        self._load_plugin_handlers(run_postboot=False)
+        self.wildcard_router = _ApplicationRouter(self, self.default_handlers.copy())
+        self.default_router = _ApplicationRouter(
+            self, [Rule(AnyMatches(), self.wildcard_router)]
+        )
+
+    def print_startup_banner(self):
+        host = self.config.serve_host
+        if host in ("0.0.0.0", "::", ""):
+            host = "127.0.0.1"
+        url = "http://{}:{}/operator/setup".format(host, self.config.serve_port)
+        reset = "\033[0m"
+        bold = "\033[1m"
+        lines = (
+            "██╗   ██╗ █████╗ ██████╗  █████╗  ██████╗ ██████╗ ██╗███╗   ██╗",
+            "╚██╗ ██╔╝██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔═══██╗██║████╗  ██║",
+            " ╚████╔╝ ███████║██║  ██║███████║██║     ██║   ██║██║██╔██╗ ██║",
+            "  ╚██╔╝  ██╔══██║██║  ██║██╔══██║██║     ██║   ██║██║██║╚██╗██║",
+            "   ██║   ██║  ██║██████╔╝██║  ██║╚██████╗╚██████╔╝██║██║ ╚████║",
+            "   ╚═╝   ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝",
+        )
+        colors = (
+            "\033[38;5;39m",
+            "\033[38;5;45m",
+            "\033[38;5;51m",
+            "\033[38;5;50m",
+            "\033[38;5;48m",
+            "\033[38;5;46m",
+        )
+        out = ["", ""]
+        for color, line in zip(colors, lines):
+            out.append("{}{}{}{}".format(bold, color, line, reset))
+        out.append("")
+        out.append(
+            "{}{}  VISIT {}{}{} TO CONFIGURE YOUR NODE{}".format(
+                bold,
+                "\033[38;5;226m",
+                "\033[1;97m",
+                url,
+                "\033[38;5;226m",
+                reset,
+            )
+        )
+        out.append("")
+        sys.stderr.write("\n".join(out) + "\n")
+        sys.stderr.flush()
 
     def init_http(self):
         self.config.app_log.info(
             "API: http://{}:{}".format(self.config.serve_host, self.config.serve_port)
         )
-        if MODES.WEB.value in self.config.modes:
-            self.config.app_log.info(
-                "Wallet: http://{}:{}/app".format(
-                    self.config.serve_host, self.config.serve_port
-                )
-            )
+        self.print_startup_banner()
         if os.path.exists(path.join(path.dirname(__file__), "..", "templates")):
             template_path = path.join(path.dirname(__file__), "..", "templates")
         else:
@@ -1464,6 +1546,88 @@ class NodeApplication(Application):
         ) = await tornado.ioloop.IOLoop.current().asyncio_loop.create_datagram_endpoint(
             UDPServer, local_addr=("0.0.0.0", 53)
         )
+
+    def _close_http_server(self, server):
+        if server is None:
+            return
+        sockets = list(getattr(server, "_sockets", {}).values())
+        try:
+            if not getattr(server, "_stopped", False):
+                server.stop()
+        except Exception:
+            self.config.app_log.warning("http server stop failed\n%s", format_exc())
+        for sock in sockets:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+    def _rebind_http(self):
+        self._close_http_server(getattr(self.config, "http_server", None))
+        self.config.http_server = None
+        self._close_http_server(getattr(self.config, "https_server", None))
+        self.config.https_server = None
+        if MODES.WEB.value not in (self.config.modes or []):
+            return
+        if hasattr(self, "wildcard_router"):
+            self.reload_http_routes()
+        self.config.http_server = HTTPServer(self)
+        self.config.http_server.listen(self.config.serve_port, self.config.serve_host)
+        if (
+            MODES.SSL.value in self.config.modes
+            and hasattr(self.config, "ssl")
+            and self.config.ssl.is_valid()
+        ):
+            ssl_ctx = ssl.create_default_context(
+                ssl.Purpose.CLIENT_AUTH, cafile=self.config.ssl.ca_file
+            )
+            ssl_ctx.load_cert_chain(
+                self.config.ssl.cert_file, keyfile=self.config.ssl.key_file
+            )
+            self.config.https_server = HTTPServer(self, ssl_options=ssl_ctx)
+            self.config.https_server.listen(self.config.ssl.port)
+
+    async def apply_saved_config(self, previous_http=None):
+        """Pause services so saved config values are the ones that come back up."""
+        self.enter_maintenance()
+        try:
+            modes = list(self.config.modes or [])
+            self.config.configured_modes = modes
+            if MODES.POOL.value not in modes:
+                self.config.pool_server = None
+                self._pool_started = False
+            if MODES.NODE.value in modes and not getattr(
+                self, "_node_services_started", False
+            ):
+                self.init_seeds()
+                self.init_seed_gateways()
+                self.init_service_providers()
+                self.init_groups()
+                self._init_node_peers()
+                self._node_services_started = True
+            if getattr(self.config, "kel_manager", None) is not None:
+                self.config.username_signature = (
+                    NodeKeyRotationManager.generate_deterministic_signature(
+                        self.config.username
+                    )
+                )
+            await self.leave_maintenance()
+            if MODES.NODE.value in modes and not getattr(
+                self, "_node_periodics_started", False
+            ):
+                self._start_node_periodics()
+            if MODES.POOL.value in modes and not getattr(self, "_pool_started", False):
+                self.init_pool()
+                self._pool_started = True
+            tornado.ioloop.IOLoop.current().add_callback(self._rebind_http)
+        except Exception:
+            self.config.maintenance = False
+            if getattr(self.config, "mongo", None) is not None:
+                try:
+                    self.config.mongo.reconnect()
+                except Exception:
+                    pass
+            raise
 
     async def rebind_after_setup(self):
         """Pause services, re-derive seed keys, then resume without a restart."""

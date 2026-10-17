@@ -31,7 +31,22 @@ EDITABLE_CONFIG = (
     "websocket_host_port",
     "origin",
     "ssl",
+    "disabled_plugins",
 )
+
+
+def available_plugins():
+    root = os.path.join(REPO_ROOT, "plugins")
+    if not os.path.isdir(root):
+        return []
+    names = []
+    for name in sorted(os.listdir(root)):
+        if name.startswith(".") or name.startswith("__"):
+            continue
+        if os.path.isdir(os.path.join(root, name)):
+            names.append(name)
+    return names
+
 
 HIDDEN_MODES = ("dns", "proxy", "ssl")
 
@@ -313,6 +328,16 @@ def write_config_values(config, values, internal=False):
             saved["modes"] = modes
         if key == "pool_payout":
             value = value in (True, "true", "True", "1", 1, "on")
+        if key == "disabled_plugins":
+            if isinstance(value, str):
+                value = [part.strip() for part in value.split(",") if part.strip()]
+            if not isinstance(value, list):
+                raise ValueError("disabled_plugins must be a list")
+            known = available_plugins()
+            unknown = [name for name in value if name not in known]
+            if unknown:
+                raise ValueError("unknown plugins: {}".format(", ".join(unknown)))
+            value = [name for name in value if name != "operator"]
         if key == "username":
             value = str(value or "").strip()
             if not value:

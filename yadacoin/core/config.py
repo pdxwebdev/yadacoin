@@ -55,6 +55,7 @@ class Config:
             ],
         )
         self.root_app = config.get("root_app", "")
+        self.disabled_plugins = config.get("disabled_plugins", []) or []
         self.seed = config.get("seed", "")
         self.xprv = config.get("xprv", "")
         self.username = config.get("username", "")

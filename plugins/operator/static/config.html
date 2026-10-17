@@ -29,13 +29,77 @@
     <main class="main">
       <div class="page-head">
         <h1>Config</h1>
-        <p>Update non-secret config values. Secrets stay out of this form. Restart the node after saving.</p>
+        <p>Update non-secret config values. Secrets stay out of this form. Save writes the file. Save and restart pauses services and brings them back with these values.</p>
       </div>
       <div id="flash" class="flash" hidden></div>
       <section class="Box">
         <div class="Box-header"><h2>Values</h2></div>
         <div class="Box-body">
-          <form class="form" id="config-form"></form>
+          <p class="hint" id="config-status">Loading values…</p>
+          <form class="form" id="config-form">
+            <label for="cfg-username">username</label>
+            <input id="cfg-username" name="username">
+            <fieldset class="checks">
+              <legend>modes</legend>
+              <label><input type="checkbox" name="modes" value="node">node</label>
+              <label><input type="checkbox" name="modes" value="pool">pool</label>
+              <label><input type="checkbox" name="modes" value="web">web</label>
+            </fieldset>
+            <label for="cfg-serve_host">serve_host</label>
+            <input id="cfg-serve_host" name="serve_host">
+            <label for="cfg-serve_port">serve_port</label>
+            <input id="cfg-serve_port" name="serve_port">
+            <label for="cfg-peer_host">peer_host</label>
+            <input id="cfg-peer_host" name="peer_host">
+            <label for="cfg-peer_port">peer_port</label>
+            <input id="cfg-peer_port" name="peer_port">
+            <label for="cfg-peer_type">peer_type</label>
+            <input id="cfg-peer_type" name="peer_type">
+            <label for="cfg-mongodb_host">mongodb_host</label>
+            <input id="cfg-mongodb_host" name="mongodb_host">
+            <label for="cfg-database">database</label>
+            <input id="cfg-database" name="database">
+            <label for="cfg-site_database">site_database</label>
+            <input id="cfg-site_database" name="site_database">
+            <label for="cfg-network">network</label>
+            <input id="cfg-network" name="network">
+            <label for="cfg-log_level">log_level</label>
+            <input id="cfg-log_level" name="log_level">
+            <label for="cfg-max_peers">max_peers</label>
+            <input id="cfg-max_peers" name="max_peers">
+            <label for="cfg-max_miners">max_miners</label>
+            <input id="cfg-max_miners" name="max_miners">
+            <label class="check" for="cfg-pool_payout"><input type="checkbox" id="cfg-pool_payout" name="pool_payout">pool_payout</label>
+            <label for="cfg-payout_frequency" id="payout-frequency-label" hidden>payout_frequency</label>
+            <input id="cfg-payout_frequency" name="payout_frequency" type="number" min="1" value="6" hidden>
+            <label for="cfg-pool_take" id="pool-take-label" hidden>pool_take</label>
+            <input id="cfg-pool_take" name="pool_take" type="number" min="0" max="1" step="0.01" value="0.01" hidden>
+            <label for="cfg-callbackurl">callbackurl</label>
+            <input id="cfg-callbackurl" name="callbackurl">
+            <label for="cfg-wallet_host_port">wallet_host_port</label>
+            <input id="cfg-wallet_host_port" name="wallet_host_port">
+            <label for="cfg-websocket_host_port">websocket_host_port</label>
+            <input id="cfg-websocket_host_port" name="websocket_host_port">
+            <label for="cfg-origin">origin</label>
+            <input id="cfg-origin" name="origin">
+            <fieldset class="checks" id="plugin-checks">
+              <legend>plugins</legend>
+            </fieldset>
+            <fieldset class="checks">
+              <legend>ssl</legend>
+              <label for="ssl-common_name">common_name</label>
+              <input id="ssl-common_name" name="ssl_common_name">
+              <label for="ssl-email">email</label>
+              <input id="ssl-email" name="ssl_email">
+              <label for="ssl-port">port</label>
+              <input id="ssl-port" name="ssl_port" value="443">
+              <p class="hint">Let's Encrypt paths are filled from the hostname and renewed automatically.</p>
+            </fieldset>
+            <div class="form-actions">
+              <button class="btn btn-primary" type="submit" value="save">Save</button>
+              <button class="btn" type="submit" value="restart">Save and restart</button>
+            </div>
+          </form>
         </div>
       </section>
     </main>
@@ -43,12 +107,31 @@
   <script>
     var form = document.getElementById("config-form");
     var flash = document.getElementById("flash");
+    var status = document.getElementById("config-status");
+    var payout = form.elements.pool_payout;
+    var frequency = document.getElementById("payout-frequency-label");
+    var frequencyInput = form.elements.payout_frequency;
+    var take = document.getElementById("pool-take-label");
+    var takeInput = form.elements.pool_take;
     function show(text, ok) {
       flash.hidden = false;
       flash.textContent = text;
       flash.className = ok ? "flash ok" : "flash error";
     }
-    fetch("/operator/api/config").then(function (r) {
+    function syncPayout() {
+      var on = payout.checked;
+      frequency.hidden = !on;
+      take.hidden = !on;
+      frequencyInput.hidden = !on;
+      takeInput.hidden = !on;
+      frequencyInput.disabled = !on;
+      takeInput.disabled = !on;
+    }
+    payout.addEventListener("change", syncPayout);
+    function textValue(value) {
+      return Array.isArray(value) ? value.join(",") : (value == null ? "" : String(value));
+    }
+    fetch("/operator/api/config", {credentials: "same-origin"}).then(function (r) {
       return r.text().then(function (text) {
         var body;
         try { body = JSON.parse(text); }
@@ -58,127 +141,45 @@
       });
     }).then(function (body) {
       var values = body.values || {};
-      Object.keys(values).forEach(function (key) {
-        var value = values[key];
-        if (key === "ssl") return;
-        if (key === "modes") {
-          var group = document.createElement("fieldset");
-          group.className = "checks";
-          var legend = document.createElement("legend");
-          legend.textContent = "modes";
-          group.appendChild(legend);
-          var selected = Array.isArray(value) ? value : [];
-          (body.mode_options || []).forEach(function (mode) {
-            var label = document.createElement("label");
-            var input = document.createElement("input");
-            input.type = "checkbox";
-            input.name = "modes";
-            input.value = mode;
-            input.checked = selected.indexOf(mode) !== -1;
-            label.appendChild(input);
-            label.appendChild(document.createTextNode(mode));
-            group.appendChild(label);
-          });
-          form.appendChild(group);
-          return;
-        }
-        if (key === "pool_payout") {
-          var payout = document.createElement("label");
-          payout.className = "check";
-          var box = document.createElement("input");
-          box.type = "checkbox";
-          box.id = "cfg-pool_payout";
-          box.name = "pool_payout";
-          box.checked = value === true || value === "true";
-          payout.appendChild(box);
-          payout.appendChild(document.createTextNode("pool_payout"));
-          form.appendChild(payout);
-          var frequency = document.createElement("label");
-          frequency.textContent = "payout_frequency";
-          frequency.setAttribute("for", "cfg-payout_frequency");
-          frequency.id = "payout-frequency-label";
-          var frequencyInput = document.createElement("input");
-          frequencyInput.id = "cfg-payout_frequency";
-          frequencyInput.name = "payout_frequency";
-          frequencyInput.type = "number";
-          frequencyInput.min = "1";
-          frequencyInput.value = values.payout_frequency == null ? 6 : values.payout_frequency;
-          frequencyInput.disabled = !box.checked;
-          var take = document.createElement("label");
-          take.textContent = "pool_take";
-          take.setAttribute("for", "cfg-pool_take");
-          take.id = "pool-take-label";
-          var takeInput = document.createElement("input");
-          takeInput.id = "cfg-pool_take";
-          takeInput.name = "pool_take";
-          takeInput.type = "number";
-          takeInput.min = "0";
-          takeInput.max = "1";
-          takeInput.step = "0.01";
-          takeInput.value = values.pool_take == null ? 0.01 : values.pool_take;
-          takeInput.disabled = !box.checked;
-          box.addEventListener("change", function () {
-            frequencyInput.disabled = !box.checked;
-            takeInput.disabled = !box.checked;
-            frequency.hidden = !box.checked;
-            take.hidden = !box.checked;
-            frequencyInput.hidden = !box.checked;
-            takeInput.hidden = !box.checked;
-          });
-          frequency.hidden = !box.checked;
-          take.hidden = !box.checked;
-          frequencyInput.hidden = !box.checked;
-          takeInput.hidden = !box.checked;
-          form.appendChild(frequency);
-          form.appendChild(frequencyInput);
-          form.appendChild(take);
-          form.appendChild(takeInput);
-          return;
-        }
-        if (key === "payout_frequency" || key === "pool_take") return;
-        var label = document.createElement("label");
-        label.textContent = key;
-        label.setAttribute("for", "cfg-" + key);
-        var input = document.createElement("input");
-        input.id = "cfg-" + key;
-        input.name = key;
-        input.value = Array.isArray(value) ? value.join(",") : (value == null ? "" : String(value));
-        form.appendChild(label);
-        form.appendChild(input);
+      ["username", "serve_host", "serve_port", "peer_host", "peer_port", "peer_type", "mongodb_host", "database", "site_database", "network", "log_level", "max_peers", "max_miners", "callbackurl", "wallet_host_port", "websocket_host_port", "origin"].forEach(function (key) {
+        if (form.elements[key]) form.elements[key].value = textValue(values[key]);
       });
+      var selected = Array.isArray(values.modes) ? values.modes.map(String) : [];
+      Array.prototype.forEach.call(form.querySelectorAll('input[name="modes"]'), function (el) {
+        el.checked = selected.indexOf(el.value) !== -1;
+      });
+      payout.checked = values.pool_payout === true || values.pool_payout === "true";
+      frequencyInput.value = values.payout_frequency == null ? 6 : values.payout_frequency;
+      takeInput.value = values.pool_take == null ? 0.01 : values.pool_take;
+      syncPayout();
       var ssl = body.ssl || {};
-      var sslBox = document.createElement("fieldset");
-      sslBox.className = "checks";
-      var sslLegend = document.createElement("legend");
-      sslLegend.textContent = "ssl";
-      sslBox.appendChild(sslLegend);
-      [["common_name", "common_name", ssl.common_name || ""], ["email", "email", ssl.email || ""], ["port", "port", ssl.port || 443]].forEach(function (field) {
+      form.elements.ssl_common_name.value = ssl.common_name || "";
+      form.elements.ssl_email.value = ssl.email || "";
+      form.elements.ssl_port.value = ssl.port || 443;
+      var pluginBox = document.getElementById("plugin-checks");
+      var disabled = Array.isArray(values.disabled_plugins) ? values.disabled_plugins.map(String) : [];
+      (body.available_plugins || []).forEach(function (name) {
         var label = document.createElement("label");
-        label.textContent = field[1];
-        label.setAttribute("for", "ssl-" + field[0]);
         var input = document.createElement("input");
-        input.id = "ssl-" + field[0];
-        input.name = "ssl_" + field[0];
-        input.value = field[2];
-        sslBox.appendChild(label);
-        sslBox.appendChild(input);
+        input.type = "checkbox";
+        input.name = "plugins";
+        input.value = name;
+        input.checked = disabled.indexOf(name) === -1 || name === "operator";
+        if (name === "operator") input.disabled = true;
+        label.appendChild(input);
+        label.appendChild(document.createTextNode(name));
+        pluginBox.appendChild(label);
       });
-      var paths = document.createElement("p");
-      paths.className = "hint";
-      paths.textContent = "Let's Encrypt paths are filled from the hostname and renewed automatically.";
-      sslBox.appendChild(paths);
-      form.appendChild(sslBox);
-      var button = document.createElement("button");
-      button.className = "btn btn-primary";
-      button.type = "submit";
-      button.textContent = "Save config";
-      form.appendChild(button);
-    }).catch(function (err) { show(err.message, false); });
+      status.hidden = true;
+    }).catch(function (err) {
+      status.textContent = err.message;
+      show(err.message, false);
+    });
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       var values = {};
       Array.prototype.forEach.call(form.elements, function (el) {
-        if (!el.name || el.name === "modes" || el.name === "pool_payout" || el.name === "payout_frequency" || el.name === "pool_take" || el.name.indexOf("ssl_") === 0) return;
+        if (!el.name || el.name === "modes" || el.name === "plugins" || el.name === "pool_payout" || el.name === "payout_frequency" || el.name === "pool_take" || el.name.indexOf("ssl_") === 0) return;
         values[el.name] = el.value;
       });
       var payout = form.elements.pool_payout;
@@ -193,18 +194,22 @@
       values.modes = Array.prototype.filter.call(form.elements, function (el) {
         return el.name === "modes" && el.checked;
       }).map(function (el) { return el.value; });
+      values.disabled_plugins = Array.prototype.filter.call(form.elements, function (el) {
+        return el.name === "plugins" && !el.checked && el.value !== "operator";
+      }).map(function (el) { return el.value; });
+      var restart = event.submitter && event.submitter.value === "restart";
       fetch("/operator/api/config", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({values: values})
+        body: JSON.stringify({values: values, restart: restart})
       }).then(function (r) {
         return r.text().then(function (text) {
           try { return {ok: r.ok, body: JSON.parse(text)}; }
-          catch (err) { return {ok: false, body: {error: text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180) || "Save failed"}; }
+          catch (err) { return {ok: false, body: {error: text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180) || "Save failed"}}; }
         });
       }).then(function (result) {
           if (!result.ok) { show(result.body.error || "Save failed", false); return; }
-          var message = result.body.message || "Saved. Restart the node to apply these values.";
+          var message = result.body.message || (restart ? "Saved. Services were restarted with these values." : "Saved.");
           show(message, message.indexOf("was not issued") === -1);
         });
     });

@@ -210,6 +210,10 @@ export SECOND_FACTOR=your_strong_secret
   - type: string
   - default: 8000
   - description: The port bound by the node when initializing the server.
+- disabled_plugins
+  - type: array of strings
+  - default: []
+  - description: Plugin directory names under `plugins/` to leave unloaded. Every other plugin is enabled. `operator` is always loaded and is ignored if listed. On the operator Config page, unchecking a plugin adds its directory name here. Save writes the file only. Save and restart enters maintenance, rebinds HTTP, and reloads routes so the disabled plugin's handlers are gone. Core explorer routes (`/explorer` and related) follow the `explorer` plugin.
 - ssl
   - type: object
   - default: undefined
