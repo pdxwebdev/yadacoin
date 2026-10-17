@@ -58,6 +58,7 @@ class Config:
         self.seed = config.get("seed", "")
         self.xprv = config.get("xprv", "")
         self.username = config.get("username", "")
+        self.second_factor_file = config.get("second_factor_file", "") or ""
         self.username_signature = config.get("username_signature", "")
         self.network = config.get("network", "mainnet")
         self.ssl = SSLConfig.from_dict(config.get("ssl"))
@@ -522,6 +523,7 @@ class Config:
         cls.seed = config.get("seed", "")
         cls.xprv = config.get("xprv", "")
         cls.username = config.get("username", "")
+        cls.second_factor_file = config.get("second_factor_file", "") or ""
         cls.ssl = SSLConfig.from_dict(config.get("ssl"))
         cls.origin = config.get("origin", True)
         cls.network = config.get("network", "mainnet")
@@ -716,6 +718,7 @@ class Config:
             "mongodb_host": self.mongodb_host,
             "api_whitelist": self.api_whitelist,
             "username": self.username,
+            "second_factor_file": getattr(self, "second_factor_file", "") or "",
             "network": self.network,
             "database": self.database,
             "site_database": self.site_database,
@@ -819,6 +822,7 @@ class SSLConfig:
         inst.key_file = ssl_config.get("keyfile")
         inst.port = ssl_config.get("port")
         inst.common_name = ssl_config.get("common_name")
+        inst.email = ssl_config.get("email") or ""
         return inst
 
     def to_dict(self):
@@ -827,6 +831,8 @@ class SSLConfig:
             "certfile": self.cert_file,
             "keyfile": self.key_file,
             "port": self.port,
+            "common_name": self.common_name,
+            "email": getattr(self, "email", "") or "",
         }
 
 

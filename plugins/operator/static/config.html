@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Config · yadacoin</title>
+  <link rel="stylesheet" href="/operator/app.css">
+</head>
+<body>
+  <header class="Header">
+    <div class="Header-item">
+      <span class="Mark" aria-hidden="true">Y</span>
+      <a class="Header-title" href="/operator">
+        <strong>yadacoin</strong>
+        <span class="slash">/</span>
+        operator
+      </a>
+    </div>
+  </header>
+  <div class="UnderlineNav-wrap">
+    <nav class="UnderlineNav" aria-label="Operator">
+      <a class="UnderlineNav-item" href="/node-dashboard">Node dashboard</a>
+      <a class="UnderlineNav-item" href="/operator">Database</a>
+      <a class="UnderlineNav-item selected" href="/operator/config" aria-current="page">Config</a>
+    </nav>
+  </div>
+  <div class="page">
+    <main class="main">
+      <div class="page-head">
+        <h1>Config</h1>
+        <p>Update non-secret config values. Secrets stay out of this form. Restart the node after saving.</p>
+      </div>
+      <div id="flash" class="flash" hidden></div>
+      <section class="Box">
+        <div class="Box-header"><h2>Values</h2></div>
+        <div class="Box-body">
+          <form class="form" id="config-form"></form>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    var form = document.getElementById("config-form");
+    var flash = document.getElementById("flash");
+    function show(text, ok) {
+      flash.hidden = false;
+      flash.textContent = text;
+      flash.className = ok ? "flash ok" : "flash error";
+    }
+    fetch("/operator/api/config").then(function (r) {
+      return r.text().then(function (text) {
+        var body;
+        try { body = JSON.parse(text); }
+        catch (err) { throw new Error("Config could not be loaded. Restart the node and reload this page."); }
+        if (!r.ok) throw new Error(body.error || "Config could not be loaded");
+        return body;
+      });
+    }).then(function (body) {
+      var values = body.values || {};
+      Object.keys(values).forEach(function (key) {
+        var value = values[key];
+        if (key === "ssl") return;
+        if (key === "modes") {
+          var group = document.createElement("fieldset");
+          group.className = "checks";
+          var legend = document.createElement("legend");
+          legend.textContent = "modes";
+          group.appendChild(legend);
+          var selected = Array.isArray(value) ? value : [];
+          (body.mode_options || []).forEach(function (mode) {
+            var label = document.createElement("label");
+            var input = document.createElement("input");
+            input.type = "checkbox";
+            input.name = "modes";
+            input.value = mode;
+            input.checked = selected.indexOf(mode) !== -1;
+            label.appendChild(input);
+            label.appendChild(document.createTextNode(mode));
+            group.appendChild(label);
+          });
+          form.appendChild(group);
+          return;
+        }
+        if (key === "pool_payout") {
+          var payout = document.createElement("label");
+          payout.className = "check";
+          var box = document.createElement("input");
+          box.type = "checkbox";
+          box.id = "cfg-pool_payout";
+          box.name = "pool_payout";
+          box.checked = value === true || value === "true";
+          payout.appendChild(box);
+          payout.appendChild(document.createTextNode("pool_payout"));
+          form.appendChild(payout);
+          var frequency = document.createElement("label");
+          frequency.textContent = "payout_frequency";
+          frequency.setAttribute("for", "cfg-payout_frequency");
+          frequency.id = "payout-frequency-label";
+          var frequencyInput = document.createElement("input");
+          frequencyInput.id = "cfg-payout_frequency";
+          frequencyInput.name = "payout_frequency";
+          frequencyInput.type = "number";
+          frequencyInput.min = "1";
+          frequencyInput.value = values.payout_frequency == null ? 6 : values.payout_frequency;
+          frequencyInput.disabled = !box.checked;
+          var take = document.createElement("label");
+          take.textContent = "pool_take";
+          take.setAttribute("for", "cfg-pool_take");
+          take.id = "pool-take-label";
+          var takeInput = document.createElement("input");
+          takeInput.id = "cfg-pool_take";
+          takeInput.name = "pool_take";
+          takeInput.type = "number";
+          takeInput.min = "0";
+          takeInput.max = "1";
+          takeInput.step = "0.01";
+          takeInput.value = values.pool_take == null ? 0.01 : values.pool_take;
+          takeInput.disabled = !box.checked;
+          box.addEventListener("change", function () {
+            frequencyInput.disabled = !box.checked;
+            takeInput.disabled = !box.checked;
+            frequency.hidden = !box.checked;
+            take.hidden = !box.checked;
+            frequencyInput.hidden = !box.checked;
+            takeInput.hidden = !box.checked;
+          });
+          frequency.hidden = !box.checked;
+          take.hidden = !box.checked;
+          frequencyInput.hidden = !box.checked;
+          takeInput.hidden = !box.checked;
+          form.appendChild(frequency);
+          form.appendChild(frequencyInput);
+          form.appendChild(take);
+          form.appendChild(takeInput);
+          return;
+        }
+        if (key === "payout_frequency" || key === "pool_take") return;
+        var label = document.createElement("label");
+        label.textContent = key;
+        label.setAttribute("for", "cfg-" + key);
+        var input = document.createElement("input");
+        input.id = "cfg-" + key;
+        input.name = key;
+        input.value = Array.isArray(value) ? value.join(",") : (value == null ? "" : String(value));
+        form.appendChild(label);
+        form.appendChild(input);
+      });
+      var ssl = body.ssl || {};
+      var sslBox = document.createElement("fieldset");
+      sslBox.className = "checks";
+      var sslLegend = document.createElement("legend");
+      sslLegend.textContent = "ssl";
+      sslBox.appendChild(sslLegend);
+      [["common_name", "common_name", ssl.common_name || ""], ["email", "email", ssl.email || ""], ["port", "port", ssl.port || 443]].forEach(function (field) {
+        var label = document.createElement("label");
+        label.textContent = field[1];
+        label.setAttribute("for", "ssl-" + field[0]);
+        var input = document.createElement("input");
+        input.id = "ssl-" + field[0];
+        input.name = "ssl_" + field[0];
+        input.value = field[2];
+        sslBox.appendChild(label);
+        sslBox.appendChild(input);
+      });
+      var paths = document.createElement("p");
+      paths.className = "hint";
+      paths.textContent = "Let's Encrypt paths are filled from the hostname and renewed automatically.";
+      sslBox.appendChild(paths);
+      form.appendChild(sslBox);
+      var button = document.createElement("button");
+      button.className = "btn btn-primary";
+      button.type = "submit";
+      button.textContent = "Save config";
+      form.appendChild(button);
+    }).catch(function (err) { show(err.message, false); });
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var values = {};
+      Array.prototype.forEach.call(form.elements, function (el) {
+        if (!el.name || el.name === "modes" || el.name === "pool_payout" || el.name === "payout_frequency" || el.name === "pool_take" || el.name.indexOf("ssl_") === 0) return;
+        values[el.name] = el.value;
+      });
+      var payout = form.elements.pool_payout;
+      if (payout) values.pool_payout = !!payout.checked;
+      if (form.elements.payout_frequency) values.payout_frequency = form.elements.payout_frequency.value;
+      if (form.elements.pool_take) values.pool_take = form.elements.pool_take.value;
+      values.ssl = {
+        common_name: (form.elements.ssl_common_name.value || "").trim(),
+        email: (form.elements.ssl_email.value || "").trim(),
+        port: form.elements.ssl_port.value
+      };
+      values.modes = Array.prototype.filter.call(form.elements, function (el) {
+        return el.name === "modes" && el.checked;
+      }).map(function (el) { return el.value; });
+      fetch("/operator/api/config", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({values: values})
+      }).then(function (r) {
+        return r.text().then(function (text) {
+          try { return {ok: r.ok, body: JSON.parse(text)}; }
+          catch (err) { return {ok: false, body: {error: text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180) || "Save failed"}; }
+        });
+      }).then(function (result) {
+          if (!result.ok) { show(result.body.error || "Save failed", false); return; }
+          var message = result.body.message || "Saved. Restart the node to apply these values.";
+          show(message, message.indexOf("was not issued") === -1);
+        });
+    });
+  </script>
+</body>
+</html>

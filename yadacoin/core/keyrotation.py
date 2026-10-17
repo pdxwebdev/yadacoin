@@ -217,6 +217,13 @@ def _read_second_factor() -> str:
     Priority: SECOND_FACTOR_FILE > SECOND_FACTOR env var.
     Returns an empty string if neither is set (caller decides how to handle it).
     """
+    try:
+        from plugins.operator.setup import bind_second_factor_file
+        from yadacoin.core.config import Config
+
+        bind_second_factor_file(Config())
+    except Exception:
+        pass
     sf_file = os.environ.get("SECOND_FACTOR_FILE", "")
     if sf_file:
         try:
@@ -378,19 +385,14 @@ class NodeKeyRotationManager:
                 )
             )
 
-        # 1b. Require non-empty username
+        # 1b. Username is completed in the web setup flow, not at process start.
         username = getattr(config, "username", "") or ""
         if not username.strip():
-            _fatal(
-                "\n"
-                "═══════════════════════════════════════════════════════════════\n"
-                "  FATAL: config.json is missing a 'username'.\n"
-                "\n"
-                "  Every node must have a unique username so that its identity\n"
-                "  can be announced on-chain via the KEL inception transaction.\n"
-                "  Add a non-blank 'username' to config.json and restart.\n"
-                "═══════════════════════════════════════════════════════════════\n"
+            config.app_log.warning(
+                "NodeKeyRotationManager: username is not set. "
+                "Staying on the web setup flow."
             )
+            return
 
         # 2. Require SECOND_FACTOR — via env var or file path
         #
@@ -400,6 +402,9 @@ class NodeKeyRotationManager:
         #   2. SECOND_FACTOR       — plain environment variable
         #
         second_factor = ""
+        from plugins.operator.setup import bind_second_factor_file
+
+        bind_second_factor_file(config)
         sf_file = os.environ.get("SECOND_FACTOR_FILE", "")
         if sf_file:
             try:
@@ -419,21 +424,11 @@ class NodeKeyRotationManager:
             second_factor = os.environ.get("SECOND_FACTOR", "")
 
         if not second_factor:
-            _fatal(
-                "\n"
-                "═══════════════════════════════════════════════════════════════\n"
-                "  FATAL: no second factor provided.\n"
-                "\n"
-                "  Set one of the following before starting the node:\n"
-                "\n"
-                "    SECOND_FACTOR_FILE=/path/to/secret/file  (recommended)\n"
-                "    SECOND_FACTOR=your_secret                 (env var fallback)\n"
-                "\n"
-                "  SECOND_FACTOR_FILE is preferred — it keeps the secret out of\n"
-                "  the process environment, docker inspect, and shell history.\n"
-                "  Use a file with mode 400 owned by the node's service account.\n"
-                "═══════════════════════════════════════════════════════════════\n"
+            config.app_log.warning(
+                "NodeKeyRotationManager: second factor is not set. "
+                "Staying on the web setup flow."
             )
+            return
 
         # 3. Derive K0 — inception signing key
         try:

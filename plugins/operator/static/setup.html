@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Node setup · yadacoin</title>
+  <link rel="stylesheet" href="/operator/app.css">
+</head>
+<body>
+  <header class="Header">
+    <div class="Header-item">
+      <span class="Mark" aria-hidden="true">Y</span>
+      <a class="Header-title" href="/operator/setup">
+        <strong>yadacoin</strong>
+        <span class="slash">/</span>
+        node-setup
+      </a>
+    </div>
+  </header>
+  <div class="UnderlineNav-wrap">
+    <nav class="UnderlineNav" aria-label="Setup">
+      <a class="UnderlineNav-item selected" href="/operator/setup" aria-current="page">Setup</a>
+    </nav>
+  </div>
+  <div class="page">
+    <main class="main">
+      <div class="page-head">
+        <h1>Node setup</h1>
+        <p>Set the username and second factor over HTTP. The node stays web-only until both are saved, then services resume in maintenance mode. No restart.</p>
+      </div>
+      <div id="flash" class="flash" hidden></div>
+      <section class="Box">
+        <div class="Box-header"><h2>Identity</h2></div>
+        <div class="Box-body">
+          <form class="form" id="setup-form">
+            <div id="username-field">
+              <label for="username">Username</label>
+              <input id="username" name="username" autocomplete="username" spellcheck="false">
+            </div>
+            <div id="factor-field">
+              <label for="second-factor">Second factor</label>
+              <input id="second-factor" name="second_factor" type="password" autocomplete="new-password">
+              <p class="hint">Stored in a <code>second_factor</code> file next to config.json and loaded as <code>SECOND_FACTOR_FILE</code>.</p>
+            </div>
+            <button class="btn btn-primary" type="submit">Save and continue</button>
+          </form>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    var form = document.getElementById("setup-form");
+    var flash = document.getElementById("flash");
+    function show(text, ok) {
+      flash.hidden = false;
+      flash.textContent = text;
+      flash.className = ok ? "flash ok" : "flash error";
+    }
+    fetch("/operator/api/setup").then(function (r) { return r.json(); }).then(function (body) {
+      var missing = body.missing || [];
+      if (missing.indexOf("username") === -1) document.getElementById("username-field").hidden = true;
+      if (missing.indexOf("second_factor") === -1) document.getElementById("factor-field").hidden = true;
+      if (body.username) document.getElementById("username").value = body.username;
+    });
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var payload = {};
+      if (!document.getElementById("username-field").hidden) payload.username = document.getElementById("username").value;
+      if (!document.getElementById("factor-field").hidden) payload.second_factor = document.getElementById("second-factor").value;
+      fetch("/operator/api/setup", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload)
+      }).then(function (r) { return r.json().then(function (body) { return {ok: r.ok, body: body}; }); })
+        .then(function (result) {
+          if (!result.ok) { show(result.body.error || "Save failed", false); return; }
+          show("Saved. Services are coming back with the new identity.", true);
+          if (!result.body.setup_required) window.location = "/operator/setup/workflow";
+        });
+    });
+  </script>
+</body>
+</html>

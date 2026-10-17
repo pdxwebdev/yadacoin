@@ -181,6 +181,25 @@
         background: rgba(255, 121, 198, 0.15);
       }
 
+      .welcome {
+        margin-bottom: 28px;
+        padding: 18px 20px;
+        border: 1px solid rgba(63, 185, 80, 0.45);
+        border-radius: var(--radius);
+        background: rgba(63, 185, 80, 0.12);
+      }
+
+      .welcome h2 {
+        color: var(--accent2);
+        font-size: 1.15rem;
+        margin-bottom: 6px;
+      }
+
+      .welcome p {
+        color: var(--text);
+        font-size: 0.95rem;
+      }
+
       footer {
         text-align: center;
         font-size: 0.75rem;
@@ -227,6 +246,10 @@
     </header>
 
     <main>
+      <section class="welcome" id="welcome" hidden>
+        <h2>You're in.</h2>
+        <p>This node is set up, the vault is saved, and Yada Password is signed in.</p>
+      </section>
       <!-- ── Operator ── -->
       <div class="section-label">Operator</div>
       <div class="grid">
@@ -733,5 +756,15 @@
         >yadacoin.io</a
       >
     </footer>
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        if (params.get("welcome") !== "1") return;
+        document.getElementById("welcome").hidden = false;
+        params.delete("welcome");
+        var next = window.location.pathname + (params.toString() ? "?" + params.toString() : "") + window.location.hash;
+        history.replaceState(null, "", next);
+      })();
+    </script>
   </body>
 </html>

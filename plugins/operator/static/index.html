@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Node dashboard · yadacoin</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23238636'/%3E%3Ctext x='8' y='12' text-anchor='middle' font-size='11' font-family='sans-serif' fill='white'%3EY%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/operator/app.css">
+</head>
+<body>
+  <header class="Header">
+    <div class="Header-item">
+      <span class="Mark" aria-hidden="true">Y</span>
+      <a class="Header-title" href="/node-dashboard">
+        <strong>yadacoin</strong>
+        <span class="slash">/</span>
+        node-dashboard
+      </a>
+    </div>
+    <div class="Header-item Header-item--right">
+      <span class="Label" id="header-pill">Checking MongoDB</span>
+    </div>
+  </header>
+  <div class="UnderlineNav-wrap">
+    <nav class="UnderlineNav" aria-label="Dashboard">
+      <a class="UnderlineNav-item" href="/node-dashboard">Node dashboard</a>
+      <a class="UnderlineNav-item selected" href="/operator" aria-current="page">Database</a>
+      <a class="UnderlineNav-item" href="/operator/config">Config</a>
+    </nav>
+  </div>
+  <div class="page">
+    <main class="main">
+      <div class="page-head">
+        <h1>Database</h1>
+        <p>Reload the database. This page stays open. Writers pause, then mongorestore runs. Do not refresh this page.</p>
+      </div>
+      <div id="flash" class="flash" hidden></div>
+      <section class="Box" aria-labelledby="status-title">
+        <div class="Box-header">
+          <h2 id="status-title">Status</h2>
+        </div>
+        <div class="Box-body">
+          <ul class="stats">
+            <li><strong id="stat-blocks">—</strong> <span>blocks</span></li>
+            <li><strong id="stat-consensus">—</strong> <span>consensus</span></li>
+            <li><strong id="stat-height">—</strong> <span>height</span></li>
+          </ul>
+          <p class="meta" id="status-meta">Checking the database…</p>
+        </div>
+      </section>
+      <h2 class="danger-heading">Danger zone</h2>
+      <section class="Box Box--danger">
+        <div class="danger-row">
+          <div>
+            <h3>Reload database from bootstrap</h3>
+            <p>Downloads the archive, pauses writers, then runs <code>mongorestore --drop</code>. Do not refresh.</p>
+          </div>
+          <button class="btn btn-danger" id="reload-btn" type="button">Reload database</button>
+        </div>
+      </section>
+      <section class="Box job-box" aria-labelledby="job-title">
+        <div class="Box-header">
+          <h2 id="job-title">Reload progress</h2>
+          <span class="elapsed" id="elapsed"></span>
+        </div>
+        <div class="Box-body">
+          <p class="empty" id="job-empty">No reload has been run in this session.</p>
+          <ol class="steps" id="steps" hidden></ol>
+          <pre class="command" id="command" hidden></pre>
+        </div>
+        <div class="log-wrap" id="log-wrap" hidden>
+          <div class="log-head">Log</div>
+          <div class="log" id="log" role="log" aria-live="polite"></div>
+        </div>
+      </section>
+    </main>
+    <aside class="side">
+      <section class="Box">
+        <div class="Box-header"><h2>Operator access</h2></div>
+        <div class="Box-body">
+          <p class="hint">Sign in with Yada Password to use this panel.</p>
+          <ul class="app-links">
+            <li><a href="https://chromewebstore.google.com/detail/yada-password/laknjldnoangdimihmpbekjlpklcpgkf" rel="noreferrer">Yada Password for Chrome</a></li>
+            <li><span class="is-placeholder">Google Play — placeholder</span></li>
+            <li><span class="is-placeholder">App Store — placeholder</span></li>
+          </ul>
+        </div>
+      </section>
+      <section class="Box">
+        <div class="Box-header"><h2>About this action</h2></div>
+        <div class="Box-body about">
+          <div>
+            <span class="k">Bootstrap</span>
+            <a id="bootstrap-url" href="https://yadacoin.io/yadacoinstatic/bootstrap.tar.gz" rel="noreferrer">yadacoin.io/yadacoinstatic/bootstrap.tar.gz</a>
+          </div>
+          <div>
+            <span class="k">Tool</span>
+            <span id="about-tool">Checking…</span>
+          </div>
+          <div>
+            <span class="k">Target</span>
+            <span id="about-target">—</span>
+          </div>
+          <div>
+            <span class="k">Consensus</span>
+            <span>Truncated after restore. The node then restarts. Do not refresh.</span>
+          </div>
+        </div>
+      </section>
+    </aside>
+  </div>
+  <div class="modal-backdrop" id="modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-header">Reload database?</div>
+      <div class="modal-body">
+        <p>This pauses writers, then runs <code>mongorestore --drop</code>. Do not refresh this page.</p>
+        <p id="modal-target" class="modal-target"></p>
+        <label for="confirm-input">Type <code>reload</code> to confirm</label>
+        <input id="confirm-input" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="cancel-btn" type="button">Cancel</button>
+        <button class="btn btn-danger" id="confirm-btn" type="button" disabled>Reload database</button>
+      </div>
+    </div>
+  </div>
+  <script src="/operator/app.js"></script>
+</body>
+</html>

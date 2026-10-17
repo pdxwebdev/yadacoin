@@ -1017,6 +1017,9 @@ class NodeApplication(Application):
             self.config.mongodb_host = options.mongohost
         if options.modes:
             self.config.modes = options.modes
+        from plugins.operator.setup import apply_setup_gate
+
+        apply_setup_gate(self.config)
 
     def init_consensus(self):
         self.config.consensus = tornado.ioloop.IOLoop.current().run_sync(
@@ -1059,6 +1062,19 @@ class NodeApplication(Application):
             ThreadPoolExecutor(max_workers=1)
         )
 
+        self._node_services_started = False
+        self._pool_started = False
+        if MODES.NODE.value in self.config.modes:
+            self._start_node_periodics()
+            self._node_services_started = True
+        if MODES.POOL.value in self.config.modes:
+            self._pool_started = True
+        self.init_ioloop_tail()
+
+    def _start_node_periodics(self):
+        if getattr(self, "_node_periodics_started", False):
+            return
+        self._node_periodics_started = True
         if MODES.NODE.value in self.config.modes:
             self._track(self.background_status, self.config.status_wait * 1000)
             self._track(
@@ -1116,6 +1132,10 @@ class NodeApplication(Application):
                     self.config.nonce_processor_wait * 1000,
                 )
 
+    def init_ioloop_tail(self):
+        from plugins.operator.letsencrypt import start_renew_loop
+
+        start_renew_loop(self.config)
         if self.config.pool_payout:
             self.config.app_log.info("PoolPayout activated")
             self.config.pp = PoolPayer()
@@ -1243,14 +1263,6 @@ class NodeApplication(Application):
                     "plugin %s failed to load\n%s", name, format_exc()
                 )
                 continue
-            if name == self.config.root_app:
-                [
-                    self.default_handlers.insert(0, handler)
-                    for handler in handlers.HANDLERS
-                ]
-            else:
-                self.default_handlers.extend(handlers.HANDLERS)
-
             if name == self.config.root_app:
                 [
                     self.default_handlers.insert(0, handler)
@@ -1452,6 +1464,51 @@ class NodeApplication(Application):
         ) = await tornado.ioloop.IOLoop.current().asyncio_loop.create_datagram_endpoint(
             UDPServer, local_addr=("0.0.0.0", 53)
         )
+
+    async def rebind_after_setup(self):
+        """Pause services, re-derive seed keys, then resume without a restart."""
+        from plugins.operator.setup import apply_setup_gate
+
+        self.enter_maintenance()
+        try:
+            if getattr(self.config, "mongo", None) is not None:
+                self.config.mongo.reconnect()
+            apply_setup_gate(self.config)
+            self.config.cipher = Crypt(self.config.wif)
+            self.init_jwt()
+            if MODES.NODE.value in self.config.modes:
+                self.config.kel_manager = NodeKeyRotationManager(self.config)
+                await self.config.kel_manager.startup_check()
+                self.config.username_signature = (
+                    NodeKeyRotationManager.generate_deterministic_signature(
+                        self.config.username
+                    )
+                )
+                if not getattr(self, "_node_services_started", False):
+                    self.init_seeds()
+                    self.init_seed_gateways()
+                    self.init_service_providers()
+                    self.init_groups()
+                    self._init_node_peers()
+                    self._node_services_started = True
+            await self.leave_maintenance()
+            if MODES.NODE.value in self.config.modes and not getattr(
+                self, "_node_periodics_started", False
+            ):
+                self._start_node_periodics()
+            if MODES.POOL.value in self.config.modes and not getattr(
+                self, "_pool_started", False
+            ):
+                self.init_pool()
+                self._pool_started = True
+        except Exception:
+            self.config.maintenance = False
+            if getattr(self.config, "mongo", None) is not None:
+                try:
+                    self.config.mongo.reconnect()
+                except Exception:
+                    pass
+            raise
 
     def enter_maintenance(self):
         if getattr(self.config, "maintenance", False):

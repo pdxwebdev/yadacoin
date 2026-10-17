@@ -360,6 +360,10 @@ class GraphTransactionHandler(BaseGraphHandler):
         ]
         mempool_txns = [Transaction.from_dict(txn) for txn in mempool_items]
         item_txns = [Transaction.from_dict(txn) for txn in items]
+        from plugins.operator.setup import note_password_inception
+
+        for txn in item_txns:
+            note_password_inception(self.config, txn)
         # Reject coinbase-flagged transactions submitted via the HTTP API.
         # Coinbase transactions are generated exclusively by the block builder and
         # must never enter the mempool (Transaction.verify() skips all balance

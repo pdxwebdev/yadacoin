@@ -17,6 +17,7 @@ import tornado
 from tornado import testing
 from tornado.web import Application
 
+from plugins.operator.handlers import HANDLERS as OPERATOR_HANDLERS
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo
@@ -39,7 +40,7 @@ class WebHttpTestCase(testing.AsyncHTTPTestCase):
         c.LatestBlock = LatestBlock
         self.config = c
         return Application(
-            WEB_HANDLERS,
+            WEB_HANDLERS + OPERATOR_HANDLERS,
             app_title="YadaCoin Test",
             yadacoin_vars={},
             cookie_secret="test_secret_key_for_testing_only",

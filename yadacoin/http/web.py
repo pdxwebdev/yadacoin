@@ -17,7 +17,6 @@ Handlers required by the web operations
 
 from plugins.yadapasswordsignin.handlers import redirect_to_signin
 from yadacoin.http.base import BaseHandler
-from yadacoin.http.operator import OPERATOR_HANDLERS
 
 
 class HomeHandler(BaseHandler):
@@ -26,6 +25,13 @@ class HomeHandler(BaseHandler):
         Serve the main node dashboard, or redirect to the pool dashboard
         when peer_type is 'pool'.
         """
+        from plugins.operator.setup import onboarding_pending
+
+        if onboarding_pending(self.config):
+            self.redirect("/operator/setup/workflow")
+            return
+        if getattr(self.config, "setup_required", False):
+            return self.redirect("/operator/setup")
         if getattr(self.config, "peer_type", None) == "pool":
             return self.redirect("/pool")
         self.render("dashboard.html")
@@ -50,4 +56,4 @@ WEB_HANDLERS = [
     (r"/", HomeHandler),
     (r"/node-dashboard", HomeHandler),
     (r"/app", AppHandler),
-] + OPERATOR_HANDLERS
+]

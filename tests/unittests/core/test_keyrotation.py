@@ -205,36 +205,30 @@ class TestStartupCheckFailures(AsyncTestCase):
         mock_fatal.assert_called_once()
         self.assertIn("seed", mock_fatal.call_args[0][0])
 
-    async def test_missing_username_calls_fatal(self):
+    async def test_missing_username_returns(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
         cfg = _make_config(
             seed="able able able able able able able able able able able able"
         )
         cfg.username = ""
+        cfg.app_log = MagicMock()
         mgr = NodeKeyRotationManager(cfg)
         with patch.dict(os.environ, {"SECOND_FACTOR": "mysecret"}):
-            with patch("yadacoin.core.keyrotation._fatal") as mock_fatal:
-                mock_fatal.side_effect = SystemExit(1)
-                with self.assertRaises(SystemExit):
-                    await mgr.startup_check()
-        mock_fatal.assert_called_once()
-        self.assertIn("username", mock_fatal.call_args[0][0])
+            await mgr.startup_check()
+        cfg.app_log.warning.assert_called()
 
-    async def test_missing_second_factor_calls_fatal(self):
+    async def test_missing_second_factor_returns(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
 
         cfg = _make_config(seed="word " * 24, username="testnode")
+        cfg.app_log = MagicMock()
         mgr = NodeKeyRotationManager(cfg)
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("SECOND_FACTOR", None)
             os.environ.pop("SECOND_FACTOR_FILE", None)
-            with patch("yadacoin.core.keyrotation._fatal") as mock_fatal:
-                mock_fatal.side_effect = SystemExit(1)
-                with self.assertRaises(SystemExit):
-                    await mgr.startup_check()
-        mock_fatal.assert_called_once()
-        self.assertIn("SECOND_FACTOR", mock_fatal.call_args[0][0])
+            await mgr.startup_check()
+        cfg.app_log.warning.assert_called()
 
     async def test_second_factor_file_read_success(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager

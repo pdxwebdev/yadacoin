@@ -145,6 +145,7 @@ class YadaPasswordSigninHandler(BaseHandler):
             blurb=spec["blurb"],
             next_json=json.dumps(nxt),
             keyname_json=json.dumps(keyname),
+            username=(getattr(self.config, "username", "") or "").strip(),
         )
 
 

@@ -253,7 +253,7 @@ def test_reload_pauses_writers_before_restore():
     assert "pause" not in ids
     assert "resume" not in ids
     assert ids[-1] == "restart"
-    page = os.path.join(ROOT, "node_dashboard", "static", "index.html")
+    page = os.path.join(ROOT, "plugins", "operator", "static", "index.html")
     html = open(page, encoding="utf-8").read()
     assert "stops responding" not in html
     assert "pauses writers" in html
@@ -273,8 +273,8 @@ def test_wait_until_down_requires_three_misses():
 
 
 def test_operator_page_warns_not_to_refresh():
-    page = os.path.join(ROOT, "node_dashboard", "static", "index.html")
-    script = os.path.join(ROOT, "node_dashboard", "static", "app.js")
+    page = os.path.join(ROOT, "plugins", "operator", "static", "index.html")
+    script = os.path.join(ROOT, "plugins", "operator", "static", "app.js")
     html = open(page, encoding="utf-8").read()
     js = open(script, encoding="utf-8").read()
     assert "Do not refresh" in html

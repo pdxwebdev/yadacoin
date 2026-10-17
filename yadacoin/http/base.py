@@ -32,7 +32,11 @@ from yadacoin.enums.modes import MODES
 
 def maintenance_allows(path):
     path = (path or "").rstrip("/") or "/"
-    if path == "/operator":
+    if (
+        path == "/operator"
+        or path.startswith("/operator/setup")
+        or path.startswith("/operator/api/setup")
+    ):
         return True
     return path in (
         "/operator/app.js",
@@ -40,6 +44,12 @@ def maintenance_allows(path):
         "/operator/api/health",
         "/operator/api/job",
         "/operator/api/reload",
+        "/operator/api/setup",
+        "/operator/api/config",
+        "/operator/setup",
+        "/operator/config",
+        "/operator/app.css",
+        "/operator/app.js",
     )
 
 

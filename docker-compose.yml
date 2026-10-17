@@ -15,6 +15,7 @@ services:
     depends_on:
       - mongodb
     environment:
+      - SECOND_FACTOR_FILE=/app/config/second_factor
       - MONGODB_URI=mongodb://mongodb:27017/yadacoin
       - PYTHONUNBUFFERED=0
       - MOTOR_MAX_WORKERS=1
