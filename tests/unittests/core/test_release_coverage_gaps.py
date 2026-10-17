@@ -1196,6 +1196,7 @@ class TestKeyRotationCoverageExtras(AsyncTestCase):
         cfg = MagicMock()
         cfg.seed = "able able able able able able able able able able able able"
         cfg.username = "mynode"
+        cfg.second_factor_file = ""
         cfg.modes = []
         cfg.app_log = MagicMock()
         cfg.mongo = MagicMock()

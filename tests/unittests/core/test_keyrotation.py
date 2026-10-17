@@ -47,6 +47,7 @@ def _make_config(
     cfg.config_path = config_path
     cfg.modes = modes or []
     cfg.username = username
+    cfg.second_factor_file = ""
     cfg.app_log = MagicMock()
     cfg.mongo = MagicMock()
     cfg.kel_manager = None
@@ -65,6 +66,17 @@ _VALID_PRIV = bytes.fromhex(
 
 class TestDerivePureFunctions(unittest.TestCase):
     """Tests for _bip32_hardened_child, _derive_index, derive_secure_path."""
+
+    def test_read_second_factor_bind_error_is_ignored(self):
+        from yadacoin.core.keyrotation import _read_second_factor
+
+        with patch.dict(os.environ, {"SECOND_FACTOR": "envsecret"}, clear=False):
+            os.environ.pop("SECOND_FACTOR_FILE", None)
+            with patch(
+                "plugins.operator.setup.bind_second_factor_file",
+                side_effect=RuntimeError("bind failed"),
+            ):
+                self.assertEqual(_read_second_factor(), "envsecret")
 
     def test_read_second_factor_from_env(self):
         from yadacoin.core.keyrotation import _read_second_factor
@@ -343,6 +355,45 @@ class TestStartupCheckSuccess(AsyncTestCase):
                         ) as mock_create:
                             await mgr.startup_check()
         mock_create.assert_awaited_once()
+
+    async def test_valid_username_signature_is_kept(self):
+        import base64
+
+        from coincurve import PrivateKey as CK
+
+        from yadacoin.core.keyrotation import NodeKeyRotationManager, derive_secure_path
+
+        cfg = _make_config(
+            seed="able able able able able able able able able able able able",
+            username="mynode",
+        )
+        mgr = NodeKeyRotationManager(cfg)
+        k0 = derive_secure_path(bytes(32), bytes(32), "mysecret")
+        usig = base64.b64encode(CK(k0["private_key"]).sign(b"mynode")).decode("utf-8")
+        mock_entry = MagicMock()
+        mock_entry.transaction_signature = "TXNID"
+        mock_entry.mempool = True
+        mock_entry.counter = 0
+        mock_entry.relationship.username = "mynode"
+        mock_entry.relationship.username_signature = usig
+
+        with patch.dict(os.environ, {"SECOND_FACTOR": "mysecret"}, clear=True):
+            with patch("bip32utils.BIP32Key", self._make_bip32_mock()):
+                with patch("mnemonic.Mnemonic") as mock_mn_cls:
+                    mock_mn = MagicMock()
+                    mock_mn.to_entropy.return_value = b"\x00" * 16
+                    mock_mn_cls.return_value = mock_mn
+                    with patch(
+                        "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+                        new=AsyncMock(return_value=mock_entry),
+                    ):
+                        with patch(
+                            "yadacoin.core.keyeventlog.KeyEventLog.get_latest",
+                            new=AsyncMock(return_value=mock_entry),
+                        ):
+                            with patch.object(mgr, "_update_active_kel_key"):
+                                await mgr.startup_check()
+        self.assertEqual(cfg.username_signature, usig)
 
     async def test_mempool_only_kel_calls_update_active(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
