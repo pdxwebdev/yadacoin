@@ -54,6 +54,84 @@ body {
   pointer-events: auto;
 }
 
+.site-menu-btn {
+  display: none;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+html.landing .site-menu-btn {
+  display: grid;
+  place-items: center;
+}
+
+.site-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.site-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 81;
+  width: min(320px, 86vw);
+  overflow: auto;
+  background: #111;
+  color: #fff;
+  padding: calc(12px + var(--safe-top, 0px)) 16px 24px;
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.45);
+}
+
+.site-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 18px;
+}
+
+.site-drawer-head button {
+  border: 0;
+  background: none;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.site-drawer nav {
+  display: flex;
+  flex-direction: column;
+}
+
+.site-drawer a {
+  color: #fff;
+  text-decoration: none;
+  padding: 11px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 15px;
+}
+
+.site-drawer p {
+  margin: 16px 0 4px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .media-tabs {
   display: flex;
   gap: 16px;

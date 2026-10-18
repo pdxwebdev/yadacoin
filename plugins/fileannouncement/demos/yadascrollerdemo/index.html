@@ -17,6 +17,7 @@
 <body>
   <div id="app">
     <header class="top-bar">
+      <button type="button" class="site-menu-btn" id="site-menu-btn" aria-label="Site menu" aria-expanded="false" aria-controls="site-drawer">☰</button>
       <div class="media-tabs" role="tablist" aria-label="Media">
         <button type="button" class="media-tab active" id="tab-videos" role="tab" aria-selected="true">Videos</button>
         <button type="button" class="media-tab" id="tab-photos" role="tab" aria-selected="false">Photos</button>
@@ -252,6 +253,65 @@
       </form>
     </dialog>
   </div>
+  <div id="site-drawer-backdrop" class="site-drawer-backdrop" hidden></div>
+  <aside id="site-drawer" class="site-drawer" hidden aria-label="YadaCoin">
+    <div class="site-drawer-head">
+      <strong>YadaCoin</strong>
+      <button type="button" id="site-drawer-close" aria-label="Close menu">✕</button>
+    </div>
+    <nav>
+      <a href="/hardware-wallet">Hardware wallet</a>
+      <a href="/exchanges">Exchanges</a>
+      <a href="/app">Wallet</a>
+      <a href="/download">Download</a>
+      <a href="/explorer">Explorer</a>
+      <a href="http://pool.yadacoin.io/">Pool</a>
+      <a href="/about">About</a>
+      <p>Docs</p>
+      <a href="/setup-masternodes">Setup masternodes</a>
+      <a href="/wallet-guide">Create a wallet</a>
+      <a href="/pool-guide">Join a pool</a>
+      <a href="/guide">Solo mine</a>
+      <a href="/guide-create-pool">Setup a pool</a>
+      <a href="/guide-setup-hiveos">Setup Hive OS</a>
+      <a href="/guide-create-identity">Create an identity</a>
+      <a href="/guide-add-contact">Add a contact</a>
+      <p>More</p>
+      <a href="/games/key-rotation-scroller/">Key rotation game</a>
+      <a href="/network-status">Network status</a>
+      <a href="/roadmap">Roadmap</a>
+      <a href="/enterprise">Enterprise</a>
+      <a href="/hashrate">Hashrate</a>
+      <a href="/socialapp">Social app</a>
+    </nav>
+  </aside>
+  <script>
+    (function () {
+      var btn = document.getElementById("site-menu-btn");
+      var drawer = document.getElementById("site-drawer");
+      var backdrop = document.getElementById("site-drawer-backdrop");
+      var closeBtn = document.getElementById("site-drawer-close");
+      if (!btn || !drawer || !backdrop) return;
+      function setOpen(open) {
+        drawer.hidden = !open;
+        backdrop.hidden = !open;
+        drawer.classList.toggle("open", open);
+        backdrop.classList.toggle("open", open);
+        btn.setAttribute("aria-expanded", open ? "true" : "false");
+      }
+      btn.addEventListener("click", function () {
+        setOpen(drawer.hidden);
+      });
+      backdrop.addEventListener("click", function () { setOpen(false); });
+      if (closeBtn) closeBtn.addEventListener("click", function () { setOpen(false); });
+      drawer.querySelectorAll("a").forEach(function (a) {
+        a.addEventListener("click", function () { setOpen(false); });
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") setOpen(false);
+      });
+    })();
+  </script>
   <script src="/app/assets/qrcode.js"></script>
   <script src="/file-announcements/demo/yadascroller/app.js"></script>
 </body>
