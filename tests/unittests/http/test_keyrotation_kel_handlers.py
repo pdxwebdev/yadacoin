@@ -19,11 +19,11 @@ import tornado
 from tornado import testing
 from tornado.web import Application
 
+from plugins.kel.keyeventlog import KEY_EVENT_LOG_HANDLERS
 from plugins.keyrotation.handlers import KEY_ROTATION_HANDLERS
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo
-from yadacoin.http.keyeventlog import KEY_EVENT_LOG_HANDLERS
 
 
 def make_async_iter_cursor(rows=None):
@@ -236,10 +236,10 @@ class TestIdentityInceptionStatusHandler(ExtrasHttpTestCase):
     def test_not_incepted_empty_kel(self):
         pubkey = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
         with patch(
-            "yadacoin.http.keyeventlog.KeyEventLog.build_from_public_key",
+            "plugins.kel.keyeventlog.KeyEventLog.build_from_public_key",
             new=AsyncMock(return_value=[]),
         ), patch(
-            "yadacoin.http.keyeventlog.IdentityAnnouncement.get_by_username",
+            "plugins.kel.keyeventlog.IdentityAnnouncement.get_by_username",
             new=AsyncMock(return_value=None),
         ):
             response = self.fetch(
@@ -260,7 +260,7 @@ class TestIdentityInceptionStatusHandler(ExtrasHttpTestCase):
             return_value={"prev_public_key_hash": "", "public_key": pubkey}
         )
         with patch(
-            "yadacoin.http.keyeventlog.KeyEventLog.build_from_public_key",
+            "plugins.kel.keyeventlog.KeyEventLog.build_from_public_key",
             new=AsyncMock(return_value=[mock_item]),
         ):
             response = self.fetch(f"/identity-inception-status?public_key={pubkey}")
@@ -273,10 +273,10 @@ class TestIdentityInceptionStatusHandler(ExtrasHttpTestCase):
     def test_incepted_via_username_match(self):
         pubkey = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
         with patch(
-            "yadacoin.http.keyeventlog.KeyEventLog.build_from_public_key",
+            "plugins.kel.keyeventlog.KeyEventLog.build_from_public_key",
             new=AsyncMock(return_value=[]),
         ), patch(
-            "yadacoin.http.keyeventlog.IdentityAnnouncement.get_by_username",
+            "plugins.kel.keyeventlog.IdentityAnnouncement.get_by_username",
             new=AsyncMock(
                 return_value={
                     "public_key": pubkey,
@@ -324,7 +324,7 @@ class TestKELHandler(ExtrasHttpTestCase):
         )  # spec=[] prevents hasattr from auto-creating mempool
         mock_kel_item.to_dict = MagicMock(return_value={"public_key": pubkey})
         with patch(
-            "yadacoin.http.keyeventlog.KeyEventLog.build_from_public_key",
+            "plugins.kel.keyeventlog.KeyEventLog.build_from_public_key",
             new=AsyncMock(return_value=[mock_kel_item]),
         ):
             response = self.fetch(f"/key-event-log?public_key={pubkey}")
@@ -338,7 +338,7 @@ class TestKELHandler(ExtrasHttpTestCase):
         mock_kel_item.to_dict = MagicMock(return_value={"public_key": pubkey})
         mock_kel_item.mempool = True
         with patch(
-            "yadacoin.http.keyeventlog.KeyEventLog.build_from_public_key",
+            "plugins.kel.keyeventlog.KeyEventLog.build_from_public_key",
             new=AsyncMock(return_value=[mock_kel_item]),
         ):
             response = self.fetch(f"/key-event-log?public_key={pubkey}")

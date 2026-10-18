@@ -314,10 +314,10 @@ import tornado
 from tornado import testing
 from tornado.web import Application
 
+from plugins.nodeapi.node_announce import NODE_ANNOUNCE_HANDLERS
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo
-from yadacoin.http.node_announce import NODE_ANNOUNCE_HANDLERS
 
 
 class NodeAnnounceHttpTestCase(testing.AsyncHTTPTestCase):
@@ -733,11 +733,11 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
         mock_block.index = 999999
         LatestBlock.block = mock_block
         self.config.address = "1DifferentAddr"
-        with patch("yadacoin.http.node_announce.Transaction") as MockTxn:
+        with patch("plugins.nodeapi.node_announce.Transaction") as MockTxn:
             mock_txn = MagicMock()
             mock_txn.do_money = AsyncMock(side_effect=Exception("No funds"))
             MockTxn.return_value = mock_txn
-            with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
+            with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                 MockNA.from_dict.return_value.to_string.return_value = (
                     "test_announcement"
                 )
@@ -756,12 +756,12 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
         mock_block.index = 999999
         LatestBlock.block = mock_block
         self.config.address = "1DifferentAddr"
-        with patch("yadacoin.http.node_announce.Transaction") as MockTxn:
+        with patch("plugins.nodeapi.node_announce.Transaction") as MockTxn:
             mock_txn = MagicMock()
             mock_txn.do_money = AsyncMock(return_value=None)
             mock_txn.generate_hash = AsyncMock(side_effect=Exception("Sign error"))
             MockTxn.return_value = mock_txn
-            with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
+            with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                 MockNA.from_dict.return_value.to_string.return_value = (
                     "test_announcement"
                 )
@@ -782,7 +782,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
         mock_block.index = 999999
         LatestBlock.block = mock_block
         self.config.address = "1DifferentAddr"
-        with patch("yadacoin.http.node_announce.Transaction") as MockTxn:
+        with patch("plugins.nodeapi.node_announce.Transaction") as MockTxn:
             mock_txn = MagicMock()
             mock_txn.do_money = AsyncMock(return_value=None)
             mock_txn.generate_hash = AsyncMock(return_value="fakehash")
@@ -791,8 +791,8 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
                 side_effect=InvalidTransactionException("bad txn")
             )
             MockTxn.return_value = mock_txn
-            with patch("yadacoin.http.node_announce.TU"):
-                with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
+            with patch("plugins.nodeapi.node_announce.TU"):
+                with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
                         "test_announcement"
                     )
@@ -813,7 +813,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
         mock_block.index = 999999
         LatestBlock.block = mock_block
         self.config.address = "1DifferentAddr"
-        with patch("yadacoin.http.node_announce.Transaction") as MockTxn:
+        with patch("plugins.nodeapi.node_announce.Transaction") as MockTxn:
             mock_txn = MagicMock()
             mock_txn.do_money = AsyncMock(return_value=None)
             mock_txn.generate_hash = AsyncMock(return_value="fakehash")
@@ -822,8 +822,8 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
                 side_effect=InvalidTransactionSignatureException("bad sig")
             )
             MockTxn.return_value = mock_txn
-            with patch("yadacoin.http.node_announce.TU"):
-                with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
+            with patch("plugins.nodeapi.node_announce.TU"):
+                with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
                         "test_announcement"
                     )
@@ -844,15 +844,15 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
         mock_block.index = 999999
         LatestBlock.block = mock_block
         self.config.address = "1DifferentAddr"
-        with patch("yadacoin.http.node_announce.Transaction") as MockTxn:
+        with patch("plugins.nodeapi.node_announce.Transaction") as MockTxn:
             mock_txn = MagicMock()
             mock_txn.do_money = AsyncMock(return_value=None)
             mock_txn.generate_hash = AsyncMock(return_value="fakehash")
             mock_txn.transaction_signature = "fakesig"
             mock_txn.verify = AsyncMock(side_effect=KELException("kel error"))
             MockTxn.return_value = mock_txn
-            with patch("yadacoin.http.node_announce.TU"):
-                with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
+            with patch("plugins.nodeapi.node_announce.TU"):
+                with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
                         "test_announcement"
                     )
@@ -877,7 +877,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
         mock_async_db = MagicMock()
         mock_async_db.miner_transactions.replace_one = AsyncMock(return_value=None)
         self.config.mongo.async_db = mock_async_db
-        with patch("yadacoin.http.node_announce.Transaction") as MockTxn:
+        with patch("plugins.nodeapi.node_announce.Transaction") as MockTxn:
             mock_txn = MagicMock()
             mock_txn.do_money = AsyncMock(return_value=None)
             mock_txn.generate_hash = AsyncMock(return_value="fakehash")
@@ -892,7 +892,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
                 "generate_signature",
                 new=AsyncMock(return_value="fakesig"),
             ):
-                with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
+                with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
                         "test_announcement"
                     )
@@ -918,7 +918,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
             side_effect=Exception("DB error")
         )
         self.config.mongo.async_db = mock_async_db
-        with patch("yadacoin.http.node_announce.Transaction") as MockTxn:
+        with patch("plugins.nodeapi.node_announce.Transaction") as MockTxn:
             mock_txn = MagicMock()
             mock_txn.do_money = AsyncMock(return_value=None)
             mock_txn.generate_hash = AsyncMock(return_value="fakehash")
@@ -933,7 +933,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
                 "generate_signature",
                 new=AsyncMock(return_value="fakesig"),
             ):
-                with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
+                with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
                         "test_announcement"
                     )
@@ -970,7 +970,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
 
         self.config.peer.get_sync_peers = empty_sync_peers
 
-        with patch("yadacoin.http.node_announce.Transaction") as MockTxn:
+        with patch("plugins.nodeapi.node_announce.Transaction") as MockTxn:
             mock_txn = MagicMock()
             mock_txn.do_money = AsyncMock(return_value=None)
             mock_txn.generate_hash = AsyncMock(return_value="fakehash")
@@ -985,7 +985,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
                 "generate_signature",
                 new=AsyncMock(return_value="fakesig"),
             ):
-                with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
+                with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
                         "test_announcement"
                     )
@@ -1005,7 +1005,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
         mock_block.index = 999999
         LatestBlock.block = mock_block
         self.config.address = "1DifferentAddr"
-        with patch("yadacoin.http.node_announce.Transaction") as MockTxn:
+        with patch("plugins.nodeapi.node_announce.Transaction") as MockTxn:
             mock_txn = MagicMock()
             mock_txn.do_money = AsyncMock(return_value=None)
             mock_txn.generate_hash = AsyncMock(return_value="fakehash")
@@ -1017,7 +1017,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
                 "generate_signature",
                 new=AsyncMock(return_value="fakesig"),
             ):
-                with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
+                with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
                         "test_announcement"
                     )
@@ -1057,7 +1057,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
 
         self.config.peer.get_sync_peers = sync_peers_with_one
 
-        with patch("yadacoin.http.node_announce.Transaction") as MockTxn:
+        with patch("plugins.nodeapi.node_announce.Transaction") as MockTxn:
             mock_txn = MagicMock()
             mock_txn.do_money = AsyncMock(return_value=None)
             mock_txn.generate_hash = AsyncMock(return_value="fakehash")
@@ -1072,7 +1072,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
                 "generate_signature",
                 new=AsyncMock(return_value="fakesig"),
             ):
-                with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
+                with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
                         "test_announcement"
                     )
@@ -1111,7 +1111,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
 
         self.config.peer.get_sync_peers = sync_peers_raises
 
-        with patch("yadacoin.http.node_announce.Transaction") as MockTxn:
+        with patch("plugins.nodeapi.node_announce.Transaction") as MockTxn:
             mock_txn = MagicMock()
             mock_txn.do_money = AsyncMock(return_value=None)
             mock_txn.generate_hash = AsyncMock(return_value="fakehash")
@@ -1126,7 +1126,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
                 "generate_signature",
                 new=AsyncMock(return_value="fakesig"),
             ):
-                with patch("yadacoin.http.node_announce.NodeAnnouncement") as MockNA:
+                with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
                         "test_announcement"
                     )

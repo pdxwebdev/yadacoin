@@ -72,7 +72,6 @@ from tornado.web import Application, StaticFileHandler
 import yadacoin.core.blockchainutils
 import yadacoin.core.config
 import yadacoin.core.transactionutils
-from plugins.yadacoinpool import handlers
 from yadacoin import version
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
@@ -103,17 +102,6 @@ from yadacoin.core.smtp import Email
 from yadacoin.core.transaction import Transaction
 from yadacoin.enums.modes import MODES
 from yadacoin.enums.peertypes import PEER_TYPES
-from yadacoin.http.api_docs import API_DOCS_HANDLERS
-from yadacoin.http.explorer import EXPLORER_HANDLERS
-from yadacoin.http.graph import GRAPH_HANDLERS
-from yadacoin.http.kel_offchain import KEL_OFFCHAIN_HANDLERS
-from yadacoin.http.keyeventlog import KEY_EVENT_LOG_HANDLERS
-from yadacoin.http.node import NODE_HANDLERS
-from yadacoin.http.node_announce import NODE_ANNOUNCE_HANDLERS
-from yadacoin.http.pool import POOL_HANDLERS
-from yadacoin.http.product import PRODUCT_HANDLERS
-from yadacoin.http.wallet import WALLET_HANDLERS
-from yadacoin.http.web import WEB_HANDLERS
 from yadacoin.managers.docker import Docker
 from yadacoin.tcpsocket.base import PeerContextFilter, PeerLogFormatter
 from yadacoin.tcpsocket.node import NodeRPC, NodeSocketClient, NodeSocketServer
@@ -243,7 +231,6 @@ class NodeApplication(Application):
                 ),
                 (r"/yadacoinstatic/(.*)", StaticFileHandler, {"path": static_path}),
             ]
-            self.default_handlers.extend(handlers.HANDLERS)
             self.init_websocket()
             self.init_webui()
             self.init_plugins()
@@ -1202,29 +1189,38 @@ class NodeApplication(Application):
         self.default_handlers.extend(WEBSOCKET_HANDLERS)
 
     def init_webui(self):
-        self.default_handlers.extend(NODE_HANDLERS)
-        self.default_handlers.extend(NODE_ANNOUNCE_HANDLERS)
-        self.default_handlers.extend(GRAPH_HANDLERS)
-        if self._plugin_enabled("explorer"):
-            self.default_handlers.extend(EXPLORER_HANDLERS)
-        self.default_handlers.extend(WALLET_HANDLERS)
-        self.default_handlers.extend(PRODUCT_HANDLERS)
-        self.default_handlers.extend(WEB_HANDLERS)
-        self.default_handlers.extend(POOL_HANDLERS)
-        self.default_handlers.extend(KEY_EVENT_LOG_HANDLERS)
-        self.default_handlers.extend(KEL_OFFCHAIN_HANDLERS)
-        self.default_handlers.extend(API_DOCS_HANDLERS)
         if self.config.peer_type == PEER_TYPES.SERVICE_PROVIDER.value or (
             hasattr(self.config, "activate_peerjs")
             and self.config.activate_peerjs == True
         ):
             self.default_handlers.extend(PEERJS_HANDLERS)
 
-    def _plugin_names(self):
-        search_dirs = [path.join(path.dirname(__file__), "..", "plugins")]
+    def _plugin_search_dirs(self):
+        search_dirs = []
+        env_dir = os.environ.get("YADA_PLUGINS_DIR")
+        if env_dir:
+            search_dirs.append(env_dir)
+        elif path.isdir("/plugins"):
+            search_dirs.append("/plugins")
+        repo_dir = path.join(path.dirname(__file__), "..", "plugins")
+        if path.isdir(repo_dir):
+            search_dirs.append(repo_dir)
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
             search_dirs.insert(0, path.join(meipass, "plugins"))
+        resolved = []
+        for plugin_dir in search_dirs:
+            plugin_dir = path.abspath(plugin_dir)
+            if not path.isdir(plugin_dir):
+                continue
+            parent = path.dirname(plugin_dir)
+            if path.basename(plugin_dir) == "plugins" and parent not in sys.path:
+                sys.path.insert(0, parent)
+            resolved.append(plugin_dir)
+        return resolved
+
+    def _plugin_names(self):
+        search_dirs = self._plugin_search_dirs()
         names = []
         seen = set()
         for plugin_dir in search_dirs:
@@ -1308,7 +1304,6 @@ class NodeApplication(Application):
             )
         ]
         self.default_handlers = list(static_handlers)
-        self.default_handlers.extend(handlers.HANDLERS)
         self.init_websocket()
         self.init_webui()
         self._load_plugin_handlers(run_postboot=False)

@@ -19,12 +19,12 @@ import tornado
 from tornado import testing
 from tornado.web import Application
 
+from plugins.product.product import PRODUCT_HANDLERS
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo
 from yadacoin.enums.modes import MODES
 from yadacoin.http.base import BaseHandler
-from yadacoin.http.product import PRODUCT_HANDLERS
 
 
 class JsonEchoHandler(BaseHandler):

@@ -16,10 +16,8 @@ COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.txt --src /usr/local/src
 
-# The image is the release. Host mounts supply config and data, not source.
+# The image is the node. Plugins are mounted at /plugins (or YADA_PLUGINS_DIR).
 COPY . .
-RUN --mount=type=cache,target=/root/.cache/pip \
-    find plugins -name "requirements.txt" -exec pip install -r {} \;
 
 # Command to run the application
 CMD ["python", "yadacoin/app.py", "--config=config/config.json", "--mongohost=mongodb"]

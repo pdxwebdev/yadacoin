@@ -19,10 +19,10 @@ import tornado
 from tornado import testing
 from tornado.web import Application
 
+from plugins.explorerapi.explorer import EXPLORER_HANDLERS
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo
-from yadacoin.http.explorer import EXPLORER_HANDLERS
 
 
 def make_mock_cursor(rows=None):
@@ -1203,7 +1203,8 @@ class TestHashrateAPIHandler(ExplorerHttpTestCase):
             new=AsyncMock(return_value=self.mock_block),
         ):
             with patch(
-                "yadacoin.http.explorer.CHAIN.get_circulating_supply", return_value=1000
+                "plugins.explorerapi.explorer.CHAIN.get_circulating_supply",
+                return_value=1000,
             ):
                 response = self.fetch("/api-stats")
         self.assertEqual(response.code, 200)
@@ -1227,7 +1228,8 @@ class TestHashrateAPIHandler(ExplorerHttpTestCase):
             new=AsyncMock(return_value=self.mock_block),
         ):
             with patch(
-                "yadacoin.http.explorer.CHAIN.get_circulating_supply", return_value=1000
+                "plugins.explorerapi.explorer.CHAIN.get_circulating_supply",
+                return_value=1000,
             ):
                 response = self.fetch("/api-stats")
         self.assertEqual(response.code, 200)

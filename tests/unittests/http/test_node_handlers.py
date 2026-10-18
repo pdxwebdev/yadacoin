@@ -18,10 +18,10 @@ import tornado
 from tornado import testing
 from tornado.web import Application
 
+from plugins.nodeapi.node import NODE_HANDLERS
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo
-from yadacoin.http.node import NODE_HANDLERS
 
 
 def make_mock_cursor(rows=None):
@@ -624,7 +624,7 @@ class TestMineBlockHandler(HttpTestCase):
         # When cookie is set (auth passes) but network != "regnet" → line 497-500
         self.config.network = "mainnet"
         with patch(
-            "yadacoin.http.node.MineBlockHandler.get_secure_cookie",
+            "plugins.nodeapi.node.MineBlockHandler.get_secure_cookie",
             return_value=b"9999999999",
         ):
             response = self.fetch("/mine-block")
@@ -638,7 +638,7 @@ class TestMineBlockHandler(HttpTestCase):
         self.config.network = "regnet"
         self.config.mp = None
         with patch(
-            "yadacoin.http.node.MineBlockHandler.get_secure_cookie",
+            "plugins.nodeapi.node.MineBlockHandler.get_secure_cookie",
             return_value=b"9999999999",
         ):
             response = self.fetch("/mine-block")
@@ -654,7 +654,7 @@ class TestMineBlockHandler(HttpTestCase):
         mock_mp.block_factory = None
         self.config.mp = mock_mp
         with patch(
-            "yadacoin.http.node.MineBlockHandler.get_secure_cookie",
+            "plugins.nodeapi.node.MineBlockHandler.get_secure_cookie",
             return_value=b"9999999999",
         ):
             response = self.fetch("/mine-block")
@@ -687,7 +687,7 @@ class TestMineBlockHandler(HttpTestCase):
         self.config.BU = MagicMock()
         self.config.BU.generate_signature = MagicMock(return_value="sig1")
         with patch(
-            "yadacoin.http.node.MineBlockHandler.get_secure_cookie",
+            "plugins.nodeapi.node.MineBlockHandler.get_secure_cookie",
             return_value=b"9999999999",
         ):
             response = self.fetch("/mine-block")
@@ -801,14 +801,14 @@ class TestNewBlockHandler(HttpTestCase):
         # as a class-level attribute that all instances will inherit
         self.mock_peers_obj = MagicMock()
         self.mock_peers_obj.syncing = False
-        from yadacoin.http.node import NewBlockHandler
+        from plugins.nodeapi.node import NewBlockHandler
 
         NewBlockHandler.peers = self.mock_peers_obj
 
     def tearDown(self):
         import sys
 
-        from yadacoin.http.node import NewBlockHandler
+        from plugins.nodeapi.node import NewBlockHandler
 
         # Remove the temporary class attribute
         if hasattr(NewBlockHandler, "peers"):

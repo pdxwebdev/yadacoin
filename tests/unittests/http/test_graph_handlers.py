@@ -11,10 +11,10 @@ import tornado.httputil
 from tornado import testing
 from tornado.web import Application
 
+from plugins.graphapi.graph import GRAPH_HANDLERS
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo
-from yadacoin.http.graph import GRAPH_HANDLERS
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -222,7 +222,7 @@ class GraphHandlerTestBase(testing.AsyncHTTPTestCase):
     def _graph_ctx(self):
         """Context manager that patches Graph with a mock instance."""
         mock_graph = make_mock_graph()
-        ctx = patch("yadacoin.http.graph.Graph")
+        ctx = patch("plugins.graphapi.graph.Graph")
         mock_graph_cls = ctx.__enter__()
         mock_instance = MagicMock()
         mock_instance.async_init = AsyncMock(return_value=mock_graph)
@@ -232,7 +232,7 @@ class GraphHandlerTestBase(testing.AsyncHTTPTestCase):
 
     def _fetch_with_graph(self, path, method="GET", body=None):
         mock_graph = make_mock_graph()
-        with patch("yadacoin.http.graph.Graph") as MockGraph:
+        with patch("plugins.graphapi.graph.Graph") as MockGraph:
             mock_instance = MagicMock()
             mock_instance.async_init = AsyncMock(return_value=mock_graph)
             MockGraph.return_value = mock_instance
@@ -288,7 +288,7 @@ class TestGraphInfoHandler(GraphHandlerTestBase):
             {"ids": ["id1"], "rids": "single_rid", "update_last_collection_time": 999}
         )
         mock_graph = make_mock_graph()
-        with patch("yadacoin.http.graph.Graph") as MockGraph:
+        with patch("plugins.graphapi.graph.Graph") as MockGraph:
             mock_instance = MagicMock()
             mock_instance.async_init = AsyncMock(return_value=mock_graph)
             MockGraph.return_value = mock_instance
@@ -358,7 +358,7 @@ class TestGraphRIDWalletHandler(GraphHandlerTestBase):
             make_async_iter([mempool_txn])
         )
         with patch(
-            "yadacoin.http.graph.P2PKHBitcoinAddress.from_pubkey",
+            "plugins.graphapi.graph.P2PKHBitcoinAddress.from_pubkey",
             return_value="1BpEi6DfDAUFd153wiGrvkiKW1LghFxLZb",
         ):
             response, _ = self._fetch_with_graph(
@@ -379,7 +379,7 @@ class TestGraphRIDWalletHandler(GraphHandlerTestBase):
             make_async_iter([mempool_txn, mempool_txn])
         )
         with patch(
-            "yadacoin.http.graph.P2PKHBitcoinAddress.from_pubkey",
+            "plugins.graphapi.graph.P2PKHBitcoinAddress.from_pubkey",
             return_value="1OtherAddr",
         ):
             response, _ = self._fetch_with_graph(
@@ -412,7 +412,7 @@ class TestGraphTransactionGet(GraphHandlerTestBase):
 
     def test_get_no_rid_returns_empty_list(self):
         """Lines 254-266: no rid → returns empty list."""
-        with patch("yadacoin.http.graph.GU", create=True) as MockGU:
+        with patch("plugins.graphapi.graph.GU", create=True) as MockGU:
             MockGU.return_value.get_transactions_by_rid.return_value = []
             response, _ = self._fetch_with_graph(
                 "/transaction?username_signature=testsig"
@@ -426,7 +426,7 @@ class TestGraphTransactionGet(GraphHandlerTestBase):
         import tornado.httputil
 
         tornado.httputil.HTTPServerRequest.args = {"rid": "test_rid"}
-        with patch("yadacoin.http.graph.GU", create=True) as MockGU:
+        with patch("plugins.graphapi.graph.GU", create=True) as MockGU:
             MockGU.return_value.get_transactions_by_rid.return_value = []
             response, _ = self._fetch_with_graph(
                 "/transaction?username_signature=testsig"
@@ -453,7 +453,7 @@ class TestGraphTransactionPost(GraphHandlerTestBase):
 
         body = json.dumps(txns)
         try:
-            with patch("yadacoin.http.graph.Transaction") as MockTxn:
+            with patch("plugins.graphapi.graph.Transaction") as MockTxn:
                 MockTxn.from_dict.return_value = mock_txn
                 response, _ = self._fetch_with_graph(
                     "/transaction?username_signature=testsig",
@@ -471,7 +471,7 @@ class TestGraphTransactionPost(GraphHandlerTestBase):
         LatestBlock.block = mock_lb
         body = json.dumps([])
         try:
-            with patch("yadacoin.http.graph.Transaction") as MockTxn:
+            with patch("plugins.graphapi.graph.Transaction") as MockTxn:
                 MockTxn.from_dict.return_value = make_mock_txn()
                 response, _ = self._fetch_with_graph(
                     "/transaction?username_signature=testsig",
@@ -497,7 +497,7 @@ class TestGraphTransactionPost(GraphHandlerTestBase):
         LatestBlock.block = mock_lb
         body = json.dumps({"id": "t1"})  # dict not list
         try:
-            with patch("yadacoin.http.graph.Transaction") as MockTxn:
+            with patch("plugins.graphapi.graph.Transaction") as MockTxn:
                 MockTxn.from_dict.return_value = make_mock_txn()
                 response, _ = self._fetch_with_graph(
                     "/transaction?username_signature=testsig",
@@ -536,7 +536,7 @@ class TestGraphTransactionPost(GraphHandlerTestBase):
 
         body = json.dumps([{"id": "txn_a"}, {"id": "txn_b"}])
         try:
-            with patch("yadacoin.http.graph.Transaction") as MockTxn:
+            with patch("plugins.graphapi.graph.Transaction") as MockTxn:
                 MockTxn.from_dict.side_effect = from_dict_side_effect
                 response, _ = self._fetch_with_graph(
                     "/transaction?username_signature=testsig",
@@ -720,7 +720,7 @@ class TestGraphTransactionPost(GraphHandlerTestBase):
         # The handler checks if requester_rid matches specific collection-based
         # group rids of self.peer.identity. Since self.peer is not set easily,
         # the condition will be False and write_params will be called.
-        with patch("yadacoin.http.graph.Transaction") as MockTxn:
+        with patch("plugins.graphapi.graph.Transaction") as MockTxn:
             MockTxn.from_dict.return_value = mock_txn
             mock_lb = MagicMock()
             mock_lb.index = 0
@@ -771,7 +771,7 @@ class TestGraphTransactionPost(GraphHandlerTestBase):
         self.config.nodeClient.retry_messages = {}
 
         try:
-            with patch("yadacoin.http.graph.Transaction") as MockTxn:
+            with patch("plugins.graphapi.graph.Transaction") as MockTxn:
                 MockTxn.from_dict.return_value = mock_txn
                 response, _ = self._fetch_with_graph(
                     "/transaction?username_signature=testsig",
@@ -803,7 +803,7 @@ class TestCreateRelationshipDirect(testing.AsyncTestCase):
         import tornado.httputil
         import tornado.web
 
-        from yadacoin.http.graph import GraphTransactionHandler
+        from plugins.graphapi.graph import GraphTransactionHandler
 
         app = Application(
             [],
@@ -882,15 +882,16 @@ class TestCreateRelationshipDirect(testing.AsyncTestCase):
         mock_txn = MagicMock()
         mock_txn.to_dict = MagicMock(return_value={"id": "new_txn"})
 
-        with patch("yadacoin.http.graph.TU") as MockTU:
+        with patch("plugins.graphapi.graph.TU") as MockTU:
             MockTU.generate_rid.return_value = "test_rid"
-            with patch("yadacoin.http.graph.Transaction") as MockTxn:
+            with patch("plugins.graphapi.graph.Transaction") as MockTxn:
                 MockTxn.generate = AsyncMock(return_value=mock_txn)
                 with patch(
-                    "yadacoin.http.graph.scalarmult_base", return_value="pubkey_bytes"
+                    "plugins.graphapi.graph.scalarmult_base",
+                    return_value="pubkey_bytes",
                 ):
                     with patch(
-                        "yadacoin.http.graph.os.urandom", return_value=b"\x00" * 32
+                        "plugins.graphapi.graph.os.urandom", return_value=b"\x00" * 32
                     ):
                         result = await handler.create_relationship(
                             "usig", "user", "toaddr"
@@ -917,15 +918,16 @@ class TestCreateRelationshipDirect(testing.AsyncTestCase):
         mock_txn = MagicMock()
         mock_txn.to_dict = MagicMock(return_value={"id": "new_txn"})
 
-        with patch("yadacoin.http.graph.TU") as MockTU:
+        with patch("plugins.graphapi.graph.TU") as MockTU:
             MockTU.generate_rid.return_value = "test_rid_2"
-            with patch("yadacoin.http.graph.Transaction") as MockTxn:
+            with patch("plugins.graphapi.graph.Transaction") as MockTxn:
                 MockTxn.generate = AsyncMock(return_value=mock_txn)
                 with patch(
-                    "yadacoin.http.graph.scalarmult_base", return_value="pubkey_bytes"
+                    "plugins.graphapi.graph.scalarmult_base",
+                    return_value="pubkey_bytes",
                 ):
                     with patch(
-                        "yadacoin.http.graph.os.urandom", return_value=b"\x00" * 32
+                        "plugins.graphapi.graph.os.urandom", return_value=b"\x00" * 32
                     ):
                         result = await handler.create_relationship(
                             "usig", "user", "toaddr"
@@ -956,13 +958,13 @@ class TestCreateRelationshipDirect(testing.AsyncTestCase):
 
         handler.config.mongo.db.blocks.find = MagicMock(side_effect=find_side_effect)
 
-        with patch("yadacoin.http.graph.TU") as MockTU:
+        with patch("plugins.graphapi.graph.TU") as MockTU:
             MockTU.generate_rid.return_value = "test_rid"
-            with patch("yadacoin.http.graph.Transaction") as MockTxn:
+            with patch("plugins.graphapi.graph.Transaction") as MockTxn:
                 MockTxn.generate = AsyncMock(return_value=MagicMock())
-                with patch("yadacoin.http.graph.scalarmult_base", return_value="pb"):
+                with patch("plugins.graphapi.graph.scalarmult_base", return_value="pb"):
                     with patch(
-                        "yadacoin.http.graph.os.urandom", return_value=b"\x00" * 32
+                        "plugins.graphapi.graph.os.urandom", return_value=b"\x00" * 32
                     ):
                         result = await handler.create_relationship(
                             "usig", "user", "toaddr"
@@ -1051,7 +1053,7 @@ class TestSimpleGraphHandlers(GraphHandlerTestBase):
 
 class TestGraphGroupMessagesHandler(GraphHandlerTestBase):
     def get_app(self):
-        from yadacoin.http.graph import GraphGroupMessagesHandler
+        from plugins.graphapi.graph import GraphGroupMessagesHandler
 
         app = super().get_app()
         # Add GraphGroupMessagesHandler at a test URL
@@ -1236,7 +1238,7 @@ class TestNSHandlerGet(GraphHandlerTestBase):
             return_value=ns_record
         )
         with patch(
-            "yadacoin.http.graph.P2PKHBitcoinAddress.from_pubkey",
+            "plugins.graphapi.graph.P2PKHBitcoinAddress.from_pubkey",
             return_value="1BpEi6DfDAUFd153wiGrvkiKW1LghFxLZb",
         ):
             response, _ = self._fetch_with_graph(
@@ -1261,7 +1263,7 @@ class TestNSHandlerGet(GraphHandlerTestBase):
             return_value=ns_record
         )
         with patch(
-            "yadacoin.http.graph.P2PKHBitcoinAddress.from_pubkey",
+            "plugins.graphapi.graph.P2PKHBitcoinAddress.from_pubkey",
             return_value="1BpEi6DfDAUFd153wiGrvkiKW1LghFxLZb",
         ):
             response, _ = self._fetch_with_graph(
@@ -1314,7 +1316,7 @@ class TestNSHandlerGet(GraphHandlerTestBase):
         self.config.mongo.async_db.name_server.find.return_value = MagicMock(
             to_list=AsyncMock(return_value=[])
         )
-        with patch("yadacoin.http.graph.GU", create=True) as MockGU:
+        with patch("plugins.graphapi.graph.GU", create=True) as MockGU:
             MockGU.return_value.search_username.return_value = make_async_iter()
             response, _ = self._fetch_with_graph(
                 "/ns?username_signature=testsig&searchTerm=alice"
@@ -1338,7 +1340,7 @@ class TestNSHandlerPost(GraphHandlerTestBase):
     def test_post_invalid_transaction(self):
         """Lines 863-866: valid JSON but invalid transaction → 200 with error."""
         body = json.dumps({"txn": "not_a_txn_dict"})
-        with patch("yadacoin.http.graph.Transaction") as MockTxn:
+        with patch("plugins.graphapi.graph.Transaction") as MockTxn:
             MockTxn.from_dict.side_effect = Exception("bad txn")
             response, _ = self._fetch_with_graph(
                 "/ns?username_signature=testsig",
@@ -1352,10 +1354,10 @@ class TestNSHandlerPost(GraphHandlerTestBase):
     def test_post_invalid_peer(self):
         """Lines 867-870: valid txn but invalid peer → 200 with error."""
         body = json.dumps({"txn": {"id": "txn1"}, "peer": "bad_peer"})
-        with patch("yadacoin.http.graph.Transaction") as MockTxn:
+        with patch("plugins.graphapi.graph.Transaction") as MockTxn:
             MockTxn.from_dict.return_value = MagicMock()
             with patch(
-                "yadacoin.http.graph.Peer",
+                "plugins.graphapi.graph.Peer",
                 create=True,
                 side_effect=Exception("bad peer"),
             ):
@@ -1391,11 +1393,13 @@ class TestNSHandlerPost(GraphHandlerTestBase):
         mock_broadcaster = MagicMock()
         mock_broadcaster.ns_broadcast_job = AsyncMock(return_value=None)
 
-        with patch("yadacoin.http.graph.Transaction") as MockTxn:
+        with patch("plugins.graphapi.graph.Transaction") as MockTxn:
             MockTxn.from_dict.return_value = mock_nstxn
-            with patch("yadacoin.http.graph.Peer", create=True, return_value=mock_peer):
+            with patch(
+                "plugins.graphapi.graph.Peer", create=True, return_value=mock_peer
+            ):
                 with patch(
-                    "yadacoin.http.graph.NSBroadcaster",
+                    "plugins.graphapi.graph.NSBroadcaster",
                     create=True,
                     return_value=mock_broadcaster,
                 ):
@@ -1434,11 +1438,13 @@ class TestNSHandlerPost(GraphHandlerTestBase):
         mock_broadcaster = MagicMock()
         mock_broadcaster.ns_broadcast_job = AsyncMock(return_value=None)
 
-        with patch("yadacoin.http.graph.Transaction") as MockTxn:
+        with patch("plugins.graphapi.graph.Transaction") as MockTxn:
             MockTxn.from_dict.return_value = mock_nstxn
-            with patch("yadacoin.http.graph.Peer", create=True, return_value=mock_peer):
+            with patch(
+                "plugins.graphapi.graph.Peer", create=True, return_value=mock_peer
+            ):
                 with patch(
-                    "yadacoin.http.graph.NSBroadcaster",
+                    "plugins.graphapi.graph.NSBroadcaster",
                     create=True,
                     return_value=mock_broadcaster,
                 ):
@@ -1462,7 +1468,7 @@ class TestSiaFileHandler(GraphHandlerTestBase):
         mock_response.content = json.dumps(
             {"files": [{"siapath": "test/file.mp4", "available": True}]}
         ).encode()
-        with patch("yadacoin.http.graph.requests.get", return_value=mock_response):
+        with patch("plugins.graphapi.graph.requests.get", return_value=mock_response):
             response, _ = self._fetch_with_graph(
                 "/sia-files?username_signature=testsig"
             )
@@ -1475,7 +1481,7 @@ class TestSiaFileHandler(GraphHandlerTestBase):
         """Lines 902-930: sia responds but no 'files' key."""
         mock_response = MagicMock()
         mock_response.content = json.dumps({}).encode()
-        with patch("yadacoin.http.graph.requests.get", return_value=mock_response):
+        with patch("plugins.graphapi.graph.requests.get", return_value=mock_response):
             response, _ = self._fetch_with_graph(
                 "/sia-files?username_signature=testsig"
             )
@@ -1487,7 +1493,7 @@ class TestSiaFileHandler(GraphHandlerTestBase):
     def test_get_sia_error(self):
         """Lines 927-930: sia node not responding → 400."""
         with patch(
-            "yadacoin.http.graph.requests.get",
+            "plugins.graphapi.graph.requests.get",
             side_effect=Exception("connection refused"),
         ):
             response, _ = self._fetch_with_graph(
@@ -1509,7 +1515,9 @@ class TestSiaStreamFileHandler(GraphHandlerTestBase):
         # The test just checks we get some response; prepare() runs before get()
         mock_sia_response = MagicMock()
         mock_sia_response.content = json.dumps({"file": {"available": False}}).encode()
-        with patch("yadacoin.http.graph.requests.get", return_value=mock_sia_response):
+        with patch(
+            "plugins.graphapi.graph.requests.get", return_value=mock_sia_response
+        ):
             response, _ = self._fetch_with_graph(
                 "/sia-files-stream?username_signature=testsig&siapath=test%2Ffile.mp4&mimetype=video%2Fmp4"
             )
@@ -1520,8 +1528,10 @@ class TestSiaStreamFileHandler(GraphHandlerTestBase):
         """Lines 965-970: file not available in sia, no local file → 400."""
         mock_sia_response = MagicMock()
         mock_sia_response.content = json.dumps({"file": {"available": False}}).encode()
-        with patch("yadacoin.http.graph.requests.get", return_value=mock_sia_response):
-            with patch("yadacoin.http.graph.os.path.isfile", return_value=False):
+        with patch(
+            "plugins.graphapi.graph.requests.get", return_value=mock_sia_response
+        ):
+            with patch("plugins.graphapi.graph.os.path.isfile", return_value=False):
                 response, _ = self._fetch_with_graph(
                     "/sia-files-stream?username_signature=testsig&siapath=test%2Ffile.mp4&mimetype=video%2Fmp4"
                 )
@@ -1531,8 +1541,10 @@ class TestSiaStreamFileHandler(GraphHandlerTestBase):
         """Lines 961-965: file not available in sia, local file exists → serves it."""
         mock_sia_response = MagicMock()
         mock_sia_response.content = json.dumps({"file": {"available": False}}).encode()
-        with patch("yadacoin.http.graph.requests.get", return_value=mock_sia_response):
-            with patch("yadacoin.http.graph.os.path.isfile", return_value=True):
+        with patch(
+            "plugins.graphapi.graph.requests.get", return_value=mock_sia_response
+        ):
+            with patch("plugins.graphapi.graph.os.path.isfile", return_value=True):
                 with patch(
                     "builtins.open",
                     unittest_mock_open(read_data=b"file_data"),
@@ -1545,7 +1557,7 @@ class TestSiaStreamFileHandler(GraphHandlerTestBase):
     def test_get_sia_request_error(self):
         """Lines 947-952: requests.get raises → 400."""
         with patch(
-            "yadacoin.http.graph.requests.get",
+            "plugins.graphapi.graph.requests.get",
             side_effect=Exception("connection refused"),
         ):
             response, _ = self._fetch_with_graph(
@@ -1727,7 +1739,7 @@ class TestChallengeHandler(GraphHandlerTestBase):
         self.config.mongo.async_db.challenges.find_one = AsyncMock(
             return_value=existing
         )
-        with patch("yadacoin.http.graph.verify_signature", return_value=True):
+        with patch("plugins.graphapi.graph.verify_signature", return_value=True):
             body = {
                 "identity": {"username_signature": "user_sig"},
                 "challenge": {
@@ -1769,7 +1781,7 @@ class TestPrerotatedKeyHandler(GraphHandlerTestBase):
             return_value=make_async_iter([])
         )
         with patch(
-            "yadacoin.http.graph.P2PKHBitcoinAddress.from_pubkey",
+            "plugins.graphapi.graph.P2PKHBitcoinAddress.from_pubkey",
             return_value="1TestAddr",
         ):
             response, _ = self._fetch_with_graph(
@@ -1798,7 +1810,7 @@ class TestPrerotatedKeyHandler(GraphHandlerTestBase):
             side_effect=aggregate_side_effect
         )
         with patch(
-            "yadacoin.http.graph.P2PKHBitcoinAddress.from_pubkey",
+            "plugins.graphapi.graph.P2PKHBitcoinAddress.from_pubkey",
             return_value="1TestAddr",
         ):
             response, _ = self._fetch_with_graph(
@@ -1819,7 +1831,7 @@ class TestGetBaseGraphJwtFallback(GraphHandlerTestBase):
     def test_get_base_graph_without_jwt_attribute(self):
         """Lines 96-97: no Authorization header → self.jwt not set → AttributeError → key_or_wif=None."""
         mock_graph = make_mock_graph()
-        with patch("yadacoin.http.graph.Graph") as MockGraph:
+        with patch("plugins.graphapi.graph.Graph") as MockGraph:
             mock_instance = MagicMock()
             mock_instance.async_init = AsyncMock(return_value=mock_graph)
             MockGraph.return_value = mock_instance
@@ -1856,7 +1868,7 @@ class TestGraphRIDWalletMissingLines(GraphHandlerTestBase):
             make_async_iter([txn_a, txn_b])
         )
         with patch(
-            "yadacoin.http.graph.P2PKHBitcoinAddress.from_pubkey",
+            "plugins.graphapi.graph.P2PKHBitcoinAddress.from_pubkey",
             return_value="1BpEi6DfDAUFd153wiGrvkiKW1LghFxLZb",
         ):
             response, _ = self._fetch_with_graph(
@@ -1883,7 +1895,7 @@ class TestGraphRIDWalletMissingLines(GraphHandlerTestBase):
             make_async_iter([txn_first, txn_second])
         )
         with patch(
-            "yadacoin.http.graph.P2PKHBitcoinAddress.from_pubkey",
+            "plugins.graphapi.graph.P2PKHBitcoinAddress.from_pubkey",
             return_value="1BpEi6DfDAUFd153wiGrvkiKW1LghFxLZb",
         ):
             response, _ = self._fetch_with_graph(
@@ -1903,7 +1915,7 @@ class TestGraphTransactionPostMissingLines(GraphHandlerTestBase):
         self.config.modes = modes or []
         body = json.dumps([{"id": "t1"}])
         try:
-            with patch("yadacoin.http.graph.Transaction") as MockTxn:
+            with patch("plugins.graphapi.graph.Transaction") as MockTxn:
                 MockTxn.from_dict.return_value = mock_txn
                 response, _ = self._fetch_with_graph(
                     "/transaction?username_signature=testsig",
@@ -1946,7 +1958,7 @@ class TestGraphTransactionPostMissingLines(GraphHandlerTestBase):
         # Two items so from_dict is called twice
         body = json.dumps([{"id": "t1"}, {"id": "t2"}])
         try:
-            with patch("yadacoin.http.graph.Transaction") as MockTxn:
+            with patch("plugins.graphapi.graph.Transaction") as MockTxn:
                 MockTxn.from_dict.side_effect = from_dict_side_effect
                 response, _ = self._fetch_with_graph(
                     "/transaction?username_signature=testsig",
@@ -2024,7 +2036,7 @@ class TestGraphTransactionPostMissingLines(GraphHandlerTestBase):
 
     def test_group_streams_requester_rid_not_group_rid(self):
         """Lines 490-492: Group stream for requester_rid, not a group rid → write_params called."""
-        from yadacoin.http.graph import BaseGraphHandler
+        from plugins.graphapi.graph import BaseGraphHandler
 
         mock_stream = MagicMock()
         mock_stream.write_params = AsyncMock(return_value=None)
@@ -2048,7 +2060,7 @@ class TestGraphTransactionPostMissingLines(GraphHandlerTestBase):
         mock_lb.index = 0
         LatestBlock.block = mock_lb
         try:
-            with patch("yadacoin.http.graph.Transaction") as MockTxn:
+            with patch("plugins.graphapi.graph.Transaction") as MockTxn:
                 MockTxn.from_dict.return_value = mock_txn
                 # Inject peer onto the handler class so self.peer works
                 BaseGraphHandler.peer = mock_peer
@@ -2085,7 +2097,7 @@ class TestGraphTransactionPostMissingLines(GraphHandlerTestBase):
         mock_lb.index = 0
         LatestBlock.block = mock_lb
         try:
-            with patch("yadacoin.http.graph.Transaction") as MockTxn:
+            with patch("plugins.graphapi.graph.Transaction") as MockTxn:
                 MockTxn.from_dict.return_value = mock_txn
                 response, _ = self._fetch_with_graph(
                     "/transaction?username_signature=testsig",
@@ -2201,7 +2213,7 @@ class TestNSHandlerMissingLines(GraphHandlerTestBase):
             return_value={"txn": ns_record}
         )
         with patch(
-            "yadacoin.http.graph.P2PKHBitcoinAddress.from_pubkey",
+            "plugins.graphapi.graph.P2PKHBitcoinAddress.from_pubkey",
             return_value="1testaddr",
         ):
             response, _ = self._fetch_with_graph(
@@ -2225,7 +2237,7 @@ class TestNSHandlerMissingLines(GraphHandlerTestBase):
             return_value={"txn": ns_record}
         )
         with patch(
-            "yadacoin.http.graph.P2PKHBitcoinAddress.from_pubkey",
+            "plugins.graphapi.graph.P2PKHBitcoinAddress.from_pubkey",
             return_value="1testaddr",
         ):
             response, _ = self._fetch_with_graph(
@@ -2245,7 +2257,7 @@ class TestSiaStreamFileMissingLines(GraphHandlerTestBase):
         self.config.http_client = MagicMock()
         self.config.http_client.fetch = AsyncMock(return_value=None)
 
-        with patch("yadacoin.http.graph.requests.get", return_value=mock_resp):
+        with patch("plugins.graphapi.graph.requests.get", return_value=mock_resp):
             response, _ = self._fetch_with_graph(
                 "/sia-files-stream?username_signature=testsig&siapath=testfile&mimetype=application/octet-stream"
             )
@@ -2255,7 +2267,7 @@ class TestSiaStreamFileMissingLines(GraphHandlerTestBase):
         """Lines 977-978: on_chunk writes and flushes chunk data."""
         import tornado.httputil
 
-        from yadacoin.http.graph import SiaStreamFileHandler
+        from plugins.graphapi.graph import SiaStreamFileHandler
 
         app = Application(
             [],
@@ -2295,7 +2307,7 @@ class TestChallengeHandlerMissingLines(GraphHandlerTestBase):
             return_value=challenge_doc
         )
         self.config.mongo.async_db.challenges.insert_one = AsyncMock(return_value=None)
-        with patch("yadacoin.http.graph.verify_signature", return_value=False):
+        with patch("plugins.graphapi.graph.verify_signature", return_value=False):
             response = self._post_challenge(
                 {
                     "identity": {"username_signature": "testsig"},
@@ -2331,7 +2343,7 @@ class TestChallengeHandlerMissingLines(GraphHandlerTestBase):
             return call_count[0] == 1  # first True, second False
 
         with patch(
-            "yadacoin.http.graph.verify_signature", side_effect=verify_side_effect
+            "plugins.graphapi.graph.verify_signature", side_effect=verify_side_effect
         ):
             response = self._post_challenge(
                 {
@@ -2363,7 +2375,7 @@ class TestChallengeHandlerMissingLines(GraphHandlerTestBase):
         self.config.mongo.async_db.challenges.update_one = AsyncMock(
             side_effect=Exception("db error")
         )
-        with patch("yadacoin.http.graph.verify_signature", return_value=True):
+        with patch("plugins.graphapi.graph.verify_signature", return_value=True):
             response = self._post_challenge(
                 {
                     "identity": {"username_signature": "testsig"},

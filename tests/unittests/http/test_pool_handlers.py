@@ -19,10 +19,10 @@ import tornado
 from tornado import testing
 from tornado.web import Application
 
+from plugins.yadacoinpool.pool_api import POOL_HANDLERS
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo
-from yadacoin.http.pool import POOL_HANDLERS
 
 
 def make_mock_cursor(rows=None):

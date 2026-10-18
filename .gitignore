@@ -1,4 +1,5 @@
 *.pyc
+plugins/
 venv
 localtests
 .idea

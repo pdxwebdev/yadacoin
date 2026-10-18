@@ -17,11 +17,11 @@ import tornado
 from tornado import testing
 from tornado.web import Application
 
+from plugins.app.web import WEB_HANDLERS
 from plugins.operator.handlers import HANDLERS as OPERATOR_HANDLERS
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo
-from yadacoin.http.web import WEB_HANDLERS
 
 
 class WebHttpTestCase(testing.AsyncHTTPTestCase):
