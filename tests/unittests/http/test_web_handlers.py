@@ -65,15 +65,36 @@ class TestAppHandlerGet(WebHttpTestCase):
 
 
 class TestHomeHandlerGet(WebHttpTestCase):
-    def test_home_handler_renders_template(self):
-        """HomeHandler.get() renders dashboard.html at /"""
-        response = self.fetch("/")
-        self.assertIn(response.code, [200, 500])
+    def _ready_node(self):
+        self.config.setup_required = False
+        self.config.operator_onboarding = "done"
+        self.config.peer_type = "user"
+
+    def test_home_handler_serves_scroller(self):
+        self._ready_node()
+        response = self.fetch("/", follow_redirects=False)
+        self.assertEqual(response.code, 200)
+        self.assertIn("no-store", response.headers.get("Cache-Control", ""))
+        body = response.body.decode()
+        self.assertIn("<style>", body)
+        self.assertIn("html.landing", body)
+        self.assertNotIn("styles.css?v=", body)
+        self.assertIn('location.pathname === "/"', body)
+        self.assertIn('href="/exchanges">Get YDA', body)
+        self.assertIn('href="/download">Run a node', body)
+
+    def test_home_setup_redirects(self):
+        self.config.setup_required = True
+        self.config.operator_onboarding = "done"
+        self.config.peer_type = "user"
+        response = self.fetch("/", follow_redirects=False)
+        self.assertEqual(response.code, 302)
+        self.assertIn("/operator/setup", response.headers["Location"])
 
     def test_node_dashboard_route(self):
-        """HomeHandler is also served at /node-dashboard"""
-        response = self.fetch("/node-dashboard")
-        self.assertIn(response.code, [200, 500])
+        self._ready_node()
+        response = self.fetch("/node-dashboard", follow_redirects=False)
+        self.assertNotIn(b'location.pathname === "/"', response.body)
 
     def test_operator_page_requires_yada_password(self):
         response = self.fetch("/operator", follow_redirects=False)

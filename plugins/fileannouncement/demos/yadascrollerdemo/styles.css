@@ -163,10 +163,21 @@ body {
 .slide .meta {
   position: absolute;
   left: 0;
-  right: 56px;
+  right: 0;
   bottom: 0;
   z-index: 5;
-  padding: 0 16px calc(var(--nav-h) + 16px + var(--safe-bottom));
+  padding: 48px 72px calc(var(--nav-h) + 16px + var(--safe-bottom)) 16px;
+  pointer-events: none;
+}
+
+.slide .meta::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: -1;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.75), transparent);
   pointer-events: none;
 }
@@ -1441,6 +1452,40 @@ body {
 .gift-dlg h2 {
   margin: 0;
   font-size: 18px;
+}
+
+.gift-note a {
+  color: #fff;
+  font-weight: 700;
+}
+
+a.pill {
+  display: inline-block;
+  text-decoration: none;
+}
+
+html.landing .media-tabs,
+html.landing #refresh,
+html.landing .hint,
+html.landing #rail-report,
+html.landing #nav-fyp,
+html.landing #nav-profile {
+  display: none;
+}
+
+html.landing .top-actions {
+  max-width: none;
+}
+
+html.landing #search {
+  max-width: 280px;
+}
+
+html.landing .tabbar {
+  display: flex;
+  justify-content: center;
+  background: transparent;
+  border-top: 0;
 }
 
 .gift-to,

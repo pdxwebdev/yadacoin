@@ -1399,7 +1399,12 @@ async def search_chain(config, query: str, limit: int = 50) -> list:
 
 
 def _media_hit(txn, source, block_index, query: str, match) -> Optional[dict]:
-    rel = (txn.get("relationship") or {}).get("file") or {}
+    if not isinstance(txn, dict):
+        return None
+    relationship = txn.get("relationship")
+    if not isinstance(relationship, dict):
+        return None
+    rel = relationship.get("file") or {}
     if not match(rel):
         return None
     if not _file_text_matches(rel, query, txn.get("id") or ""):
@@ -1433,7 +1438,10 @@ async def search_announced(
         )
         async for block in cursor:
             for txn in block.get("transactions") or []:
-                hit = _media_hit(txn, "chain", block.get("index"), q, match)
+                try:
+                    hit = _media_hit(txn, "chain", block.get("index"), q, match)
+                except Exception:
+                    continue
                 if hit:
                     hits.append(hit)
     except Exception:

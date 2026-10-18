@@ -201,6 +201,35 @@ def issuer_matches(vc, required_issuer: str, issuer_names=None) -> bool:
     return same_issuer(required_issuer, named)
 
 
+ADULT_CLAIMS = ("ageOver18", "isOver18")
+
+
+def is_adult_post(item) -> bool:
+    if not isinstance(item, dict):
+        return False
+    gates = []
+    for src in (item, item.get("file") if isinstance(item.get("file"), dict) else {}):
+        raw = src.get("required_credentials")
+        if isinstance(raw, list):
+            gates.extend(raw)
+        claim = str(src.get("required_claim") or "").strip()
+        if claim:
+            gates.append({"claim": claim})
+    for gate in gates:
+        claim = gate if isinstance(gate, str) else (gate or {}).get("claim")
+        if str(claim or "").strip() in ADULT_CLAIMS:
+            return True
+    return False
+
+
+def badges_include_over18(badges, now=None) -> bool:
+    for badge in badges or []:
+        for claim in ADULT_CLAIMS:
+            if badge_satisfies(badge, claim, "", now):
+                return True
+    return False
+
+
 def badge_satisfies(badge, required_claim="", required_issuer="", now=None) -> bool:
     """UI gate: the signed-in badges list already contains a usable match."""
     required_claim = (required_claim or "").strip()

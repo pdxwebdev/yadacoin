@@ -222,6 +222,25 @@
 
   let myBadges = [];
   let signedIn = false;
+  let myUsername = "";
+
+  const ADULT_CLAIMS = ["ageOver18", "isOver18"];
+
+  function adultClaim(claim) {
+    return ADULT_CLAIMS.indexOf(String(claim || "").trim()) !== -1;
+  }
+
+  function postIsAdult(item) {
+    return credentialGates(item).some((gate) => adultClaim(gate.claim));
+  }
+
+  function viewerIsOver18() {
+    return ADULT_CLAIMS.some((claim) => myBadges.some((badge) => badgeMatches(badge, { claim, issuer: "" })));
+  }
+
+  function hideAdult(item) {
+    return postIsAdult(item) && !viewerIsOver18();
+  }
 
   function credentialGates(item) {
     const raw = item && item.required_credentials;
@@ -455,10 +474,12 @@
       const who = await me.json().catch(() => ({}));
       if (!who.authenticated || !who.username) {
         signedIn = false;
+        myUsername = "";
         myBadges = [];
         return myBadges;
       }
       signedIn = true;
+      myUsername = String(who.username || "").replace(/^@/, "");
       const res = await fetch(
         `${API_BADGES}?username=${encodeURIComponent(who.username)}`,
         { credentials: "same-origin" }
@@ -548,8 +569,19 @@
     return `${API_PURCHASE}/stream/${encodeURIComponent(id)}${q ? `?${q}` : ""}`;
   }
 
+  function lockedPrice(item) {
+    return !!(itemPrice(item) && !(item && item.price_unlocked));
+  }
+
+  function videoCandidate(item) {
+    if (!item || !item.file_id) return false;
+    if (!canLikelyPlay(mimeFor(item))) return false;
+    if (item.stream_url) return true;
+    return lockedPrice(item);
+  }
+
   function streamUrl(item) {
-    if (itemPrice(item) && !(item && item.price_unlocked)) return "";
+    if (lockedPrice(item)) return "";
     if (credentialGates(item).length && !matchingBadges(item)) return "";
     if (!item || !item.stream_url) return "";
     const params = new URLSearchParams();
@@ -663,7 +695,10 @@
   }
 
   function indexLive(list) {
-    liveStreams = list || [];
+    liveStreams = (list || []).filter((stream) => {
+      if (!stream || !stream.age_restricted) return true;
+      return viewerIsOver18();
+    });
     liveByName.clear();
     liveByOwner.clear();
     liveStreams.forEach((stream) => {
@@ -942,6 +977,10 @@
     ensureSrc(video);
     video.muted = muted;
     syncBuyRail();
+    if (!video.getAttribute("data-src")) {
+      slide.classList.add("ready");
+      return;
+    }
     pauseAllExcept(video);
     const play = () => {
       if (!slide.isConnected || viewName !== "feed" || mediaMode === "photos" || !playerEl.hidden) return;
@@ -1095,6 +1134,7 @@
   }
 
   async function streamFailure(item, signal) {
+    if (lockedPrice(item)) return "";
     const url = streamUrl(item);
     if (!url) return "missing stream";
     try {
@@ -1307,6 +1347,7 @@
   async function loadPhotos(q) {
     const gen = ++photoGen;
     showStatus("Loading photos…", 0);
+    await loadMyBadges();
     try {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), skip: "0" });
       if (q) params.set("q", q);
@@ -1318,7 +1359,7 @@
       const seen = new Set();
       photos = [];
       for (const item of data.results || []) {
-        if (isProfilePhoto(item) || !photoSrc(item)) continue;
+        if (isProfilePhoto(item) || hideAdult(item) || !photoSrc(item)) continue;
         const id = itemKey(item);
         const content = contentKey(item);
         if (seen.has(id) || (content && seen.has(content))) continue;
@@ -1803,6 +1844,7 @@
     probeAbort = new AbortController();
     const signal = probeAbort.signal;
     const gen = ++feedGen;
+    await loadMyBadges();
     loading = true;
     showStatus("Loading videos…", 0);
     resetFeed();
@@ -1836,17 +1878,20 @@
       if (!data.status) throw new Error(data.error || "search failed");
       const seen = new Set();
       const candidates = [];
-      if (pinned && pinned.stream_url && pinned.file_id) candidates.push(pinned);
+      if (pinned && videoCandidate(pinned) && !hideAdult(pinned)) candidates.push(pinned);
       for (const item of data.results || []) {
         if (pinId && item.transaction_id === pinId) continue;
-        if (!item.stream_url || !item.file_id) continue;
-        if (!canLikelyPlay(mimeFor(item))) continue;
+        if (!videoCandidate(item) || hideAdult(item)) continue;
         const id = itemKey(item);
         const content = contentKey(item);
         if (seen.has(id) || (content && seen.has(content))) continue;
         seen.add(id);
         if (content) seen.add(content);
         candidates.push(item);
+      }
+      if (!pinId) {
+        const open = candidates.findIndex((item) => !lockedPrice(item));
+        if (open > 0) candidates.unshift(candidates.splice(open, 1)[0]);
       }
       let firstFailure = "";
       const accept = async (item) => {
@@ -2449,12 +2494,12 @@
   }
 
   function claimLabel(claim) {
-    if (claim === "ageOver18") return "18+";
+    if (claim === "ageOver18" || claim === "isOver18") return "18+";
     return claim || "Credential";
   }
 
   function claimMark(claim) {
-    if (claim === "ageOver18") return "18+";
+    if (claim === "ageOver18" || claim === "isOver18") return "18+";
     return "🏅";
   }
 
@@ -3735,7 +3780,19 @@
   });
   loadSigninUsername();
 
-  navUpload.addEventListener("click", () => openUpload(""));
+  navUpload.addEventListener("click", () => {
+    if (location.pathname !== "/") {
+      openUpload("");
+      return;
+    }
+    const next = "#/publish";
+    if ((location.hash || "") === next) {
+      closePlayer();
+      syncRoute();
+      return;
+    }
+    location.hash = next;
+  });
   uploadBack.addEventListener("click", leaveOverlay);
   composeSignin.addEventListener("click", () => {
     location.hash = "#/me";
@@ -3819,6 +3876,7 @@
 
   async function loadLive() {
     try {
+      await loadMyBadges();
       const res = await fetch(API_LIVE, { credentials: "same-origin" });
       if (!res.ok) return;
       const data = await res.json();

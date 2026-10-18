@@ -866,6 +866,10 @@ async def _public_media_list(handler, match, search):
         if r.get("file_id")
         and (r.get("stream_url") or r.get("price") or r.get("thumbnail_url"))
     ]
+    from .credentials import badges_include_over18, is_adult_post
+
+    if not badges_include_over18(await _operator_credential_badges(handler)):
+        results = [r for r in results if not is_adult_post(r)]
     try:
         names = await store.identity_usernames(handler.config)
     except Exception:
@@ -1518,6 +1522,28 @@ class PublicStreamHandler(BaseHandler):
                 await chunks.aclose()
             except Exception:
                 pass
+
+
+def write_scroller_index(handler):
+    full = os.path.join(DEMO_DIR, "index.html")
+    css_path = os.path.join(DEMO_DIR, "styles.css")
+    if not os.path.isfile(full):
+        handler.set_status(404)
+        handler.finish("not found")
+        return
+    with open(full, encoding="utf-8") as fh:
+        html = fh.read()
+    if os.path.isfile(css_path):
+        with open(css_path, encoding="utf-8") as fh:
+            css = fh.read().replace("</style", "<\\/style")
+        html = html.replace(
+            '<link rel="stylesheet" href="/file-announcements/demo/yadascroller/styles.css" />',
+            "<style>\n" + css + "\n</style>",
+        )
+    handler.set_header("Cache-Control", "no-store")
+    handler.set_header("Content-Type", "text/html; charset=UTF-8")
+    handler.write(html.encode("utf-8"))
+    handler.finish()
 
 
 class YadaScrollerDemoHandler(BaseHandler):

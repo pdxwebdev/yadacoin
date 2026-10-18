@@ -15,15 +15,29 @@ Full license terms: see LICENSE.txt in this repository.
 Handlers required by the web operations
 """
 
+import os
+
 from plugins.yadapasswordsignin.handlers import redirect_to_signin
 from yadacoin.http.base import BaseHandler
+
+SCROLLER_DIR = os.path.normpath(
+    os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "..",
+        "plugins",
+        "fileannouncement",
+        "demos",
+        "yadascrollerdemo",
+    )
+)
 
 
 class HomeHandler(BaseHandler):
     async def get(self):
         """
-        Serve the main node dashboard, or redirect to the pool dashboard
-        when peer_type is 'pool'.
+        Serve the feed at /, or the node dashboard at /node-dashboard.
+        Pool nodes still redirect to /pool. Setup still wins over both.
         """
         from plugins.operator.setup import onboarding_pending
 
@@ -34,7 +48,12 @@ class HomeHandler(BaseHandler):
             return self.redirect("/operator/setup")
         if getattr(self.config, "peer_type", None) == "pool":
             return self.redirect("/pool")
-        self.render("dashboard.html")
+        if self.request.path.rstrip("/") == "/node-dashboard":
+            self.render("dashboard.html")
+            return
+        from plugins.fileannouncement.handlers import write_scroller_index
+
+        write_scroller_index(self)
 
 
 class AppHandler(BaseHandler):
@@ -52,8 +71,33 @@ class AppHandler(BaseHandler):
         self.render("app.html")
 
 
+class ScrollerAssetHandler(BaseHandler):
+    async def get(self, name):
+        name = os.path.basename(name or "")
+        if name not in ("styles.css", "app.js"):
+            self.set_status(404)
+            self.finish("not found")
+            return
+        full = os.path.join(SCROLLER_DIR, name)
+        if not os.path.isfile(full):
+            self.set_status(404)
+            self.finish("not found")
+            return
+        kind = "text/css" if name.endswith(".css") else "application/javascript"
+        self.set_header("Content-Type", kind + "; charset=UTF-8")
+        self.set_header("Cache-Control", "no-store")
+        self.set_header("X-Content-Type-Options", "nosniff")
+        with open(full, "rb") as fh:
+            self.write(fh.read())
+        self.finish()
+
+
 WEB_HANDLERS = [
     (r"/", HomeHandler),
     (r"/node-dashboard", HomeHandler),
     (r"/app", AppHandler),
+    (
+        r"/file-announcements/demo/yadascroller/(styles\.css|app\.js)",
+        ScrollerAssetHandler,
+    ),
 ]

@@ -6,7 +6,13 @@
   <meta name="theme-color" content="#000000" />
   <title>Yada Scroller Demo</title>
   <base href="/file-announcements/demo/yadascroller/" />
-  <link rel="stylesheet" href="styles.css?v=22" />
+  <link rel="stylesheet" href="/file-announcements/demo/yadascroller/styles.css" />
+  <script>
+    if (location.pathname === "/") {
+      document.documentElement.classList.add("landing");
+      document.title = "YadaCoin";
+    }
+  </script>
 </head>
 <body>
   <div id="app">
@@ -102,13 +108,9 @@
       </header>
       <div class="profile-scroll">
         <article class="doc">
-          <h1>Start your own node</h1>
-          <p>
-            You are not signed in on this node, so this demo cannot open your profile.
-            Start your own Yadacoin node, then visit
-            <code>/file-announcements/demo/yadascroller</code>
-            from that node.
-          </p>
+          <h1>Run a node</h1>
+          <p>Uploading needs your own node. Watching this feed does not.</p>
+          <p><a class="pill" href="/download">Run a node</a></p>
           <p id="ext-status" class="signin-status">Sign in sends a request. Approve it in the Yada Password extension or the Android/iOS app.</p>
           <label class="signin-label" for="signin-username">Yada username</label>
           <input id="signin-username" class="signin-input" type="text" autocomplete="username" placeholder="your-yada-username" />
@@ -205,7 +207,8 @@
         <div id="buy-qr" class="gift-qr"></div>
         <p class="gift-address" id="buy-address"></p>
         <p class="gift-note" id="buy-note"></p>
-        <p class="gift-note" id="buy-warn">This purchase stays in this browser. To open it from other browsers, run your own node and sign in. The creator's node then allows playback when it sees a payment from that identity. A Sia account is only for publishing, not for buying.</p>
+        <p class="gift-note"><a href="/exchanges">Get YDA</a></p>
+        <p class="gift-note" id="buy-warn">This purchase stays in this browser. <a href="/download">Run a node</a> to open it from another browser.</p>
         <button type="button" class="btn" id="buy-check">I've paid</button>
         <button type="button" class="btn ghost" id="buy-node" hidden>Pay from this node</button>
       </form>
@@ -218,6 +221,7 @@
           <button type="button" class="btn ghost" id="gift-close">Close</button>
         </header>
         <p class="gift-to" id="gift-to"></p>
+        <p class="gift-note"><a href="/exchanges">Get YDA</a></p>
         <label for="gift-chain">Chain</label>
         <select id="gift-chain"></select>
         <div id="gift-pick">
@@ -249,6 +253,6 @@
     </dialog>
   </div>
   <script src="/app/assets/qrcode.js"></script>
-  <script src="app.js?v=32"></script>
+  <script src="/file-announcements/demo/yadascroller/app.js"></script>
 </body>
 </html>
