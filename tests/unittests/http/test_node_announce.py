@@ -338,7 +338,9 @@ class NodeAnnounceHttpTestCase(testing.AsyncHTTPTestCase):
         c.mongo.db = MagicMock()
         c.mongo.db.config.find_one = MagicMock(return_value={"value": {"timestamp": 0}})
         c.kel_manager = MagicMock()
-        c.kel_manager.generate_signature = AsyncMock(return_value="fakesig")
+        c.kel_manager.generate_signature = AsyncMock(
+            return_value=("fakepub", "fakesig")
+        )
         self.config = c
         return Application(
             NODE_ANNOUNCE_HANDLERS,
@@ -791,14 +793,13 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
                 side_effect=InvalidTransactionException("bad txn")
             )
             MockTxn.return_value = mock_txn
-            with patch("plugins.nodeapi.node_announce.TU"):
-                with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
-                    MockNA.from_dict.return_value.to_string.return_value = (
-                        "test_announcement"
-                    )
-                    response = self._fetch_with_jwt(
-                        "/node-announce", method="POST", body=self._valid_body()
-                    )
+            with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
+                MockNA.from_dict.return_value.to_string.return_value = (
+                    "test_announcement"
+                )
+                response = self._fetch_with_jwt(
+                    "/node-announce", method="POST", body=self._valid_body()
+                )
         LatestBlock.block = None
         self.assertEqual(response.code, 400)
         data = json.loads(response.body)
@@ -822,14 +823,13 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
                 side_effect=InvalidTransactionSignatureException("bad sig")
             )
             MockTxn.return_value = mock_txn
-            with patch("plugins.nodeapi.node_announce.TU"):
-                with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
-                    MockNA.from_dict.return_value.to_string.return_value = (
-                        "test_announcement"
-                    )
-                    response = self._fetch_with_jwt(
-                        "/node-announce", method="POST", body=self._valid_body()
-                    )
+            with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
+                MockNA.from_dict.return_value.to_string.return_value = (
+                    "test_announcement"
+                )
+                response = self._fetch_with_jwt(
+                    "/node-announce", method="POST", body=self._valid_body()
+                )
         LatestBlock.block = None
         self.assertEqual(response.code, 400)
         data = json.loads(response.body)
@@ -851,14 +851,13 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
             mock_txn.transaction_signature = "fakesig"
             mock_txn.verify = AsyncMock(side_effect=KELException("kel error"))
             MockTxn.return_value = mock_txn
-            with patch("plugins.nodeapi.node_announce.TU"):
-                with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
-                    MockNA.from_dict.return_value.to_string.return_value = (
-                        "test_announcement"
-                    )
-                    response = self._fetch_with_jwt(
-                        "/node-announce", method="POST", body=self._valid_body()
-                    )
+            with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
+                MockNA.from_dict.return_value.to_string.return_value = (
+                    "test_announcement"
+                )
+                response = self._fetch_with_jwt(
+                    "/node-announce", method="POST", body=self._valid_body()
+                )
         LatestBlock.block = None
         self.assertEqual(response.code, 400)
         data = json.loads(response.body)
@@ -890,7 +889,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
             with patch.object(
                 self.config.kel_manager,
                 "generate_signature",
-                new=AsyncMock(return_value="fakesig"),
+                new=AsyncMock(return_value=("fakepub", "fakesig")),
             ):
                 with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
@@ -931,7 +930,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
             with patch.object(
                 self.config.kel_manager,
                 "generate_signature",
-                new=AsyncMock(return_value="fakesig"),
+                new=AsyncMock(return_value=("fakepub", "fakesig")),
             ):
                 with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
@@ -983,7 +982,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
             with patch.object(
                 self.config.kel_manager,
                 "generate_signature",
-                new=AsyncMock(return_value="fakesig"),
+                new=AsyncMock(return_value=("fakepub", "fakesig")),
             ):
                 with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
@@ -1015,7 +1014,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
             with patch.object(
                 self.config.kel_manager,
                 "generate_signature",
-                new=AsyncMock(return_value="fakesig"),
+                new=AsyncMock(return_value=("fakepub", "fakesig")),
             ):
                 with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
@@ -1070,7 +1069,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
             with patch.object(
                 self.config.kel_manager,
                 "generate_signature",
-                new=AsyncMock(return_value="fakesig"),
+                new=AsyncMock(return_value=("fakepub", "fakesig")),
             ):
                 with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
@@ -1124,7 +1123,7 @@ class TestNodeAnnounceHandlerPost(NodeAnnounceHttpTestCase):
             with patch.object(
                 self.config.kel_manager,
                 "generate_signature",
-                new=AsyncMock(return_value="fakesig"),
+                new=AsyncMock(return_value=("fakepub", "fakesig")),
             ):
                 with patch("plugins.nodeapi.node_announce.NodeAnnouncement") as MockNA:
                     MockNA.from_dict.return_value.to_string.return_value = (
