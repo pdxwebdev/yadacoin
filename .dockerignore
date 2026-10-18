@@ -53,8 +53,16 @@ coverage.json
 
 # Docker files (not needed inside container)
 docker-compose.yml
+docker-compose.example.yml
 docker/
 Dockerfile
+
+# Host state. Never bake wallets, seeds, or chain dumps into the image.
+config/*.json
+config/second_factor
+config/seed*
+dump/
+bootstrap.tar.gz
 
 # Node modules (if any)
 node_modules/

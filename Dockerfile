@@ -16,9 +16,8 @@ COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.txt --src /usr/local/src
 
-# Copy plugins directory to install plugin-specific requirements
-# (app source code is provided at runtime via the volume mount: - .:/app)
-COPY plugins/ ./plugins/
+# The image is the release. Host mounts supply config and data, not source.
+COPY . .
 RUN --mount=type=cache,target=/root/.cache/pip \
     find plugins -name "requirements.txt" -exec pip install -r {} \;
 

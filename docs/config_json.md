@@ -2,8 +2,7 @@
 
 The config file is config/config.json
 
-A default file is auto-generated at install step via `utils/generate_config.py auto > config/config.json`  
-(see setup.sh)
+If `config/config.json` is missing, the node writes a default on first start.
 
 ## Sample commented config.json
 

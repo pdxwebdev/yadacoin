@@ -91,9 +91,9 @@ sysctl --system
 # Install required packages
 if command -v apt-get >/dev/null 2>&1; then
   apt-get update
-  apt-get install -y docker.io python3 python3-setuptools curl git tar
+  apt-get install -y docker.io curl tar
 elif command -v dnf >/dev/null 2>&1; then
-  dnf install -y python3 python3-setuptools curl git tar
+  dnf install -y curl tar
 
   if dnf install -y docker docker-compose-plugin; then
     true
@@ -103,13 +103,13 @@ elif command -v dnf >/dev/null 2>&1; then
     curl -fsSL https://get.docker.com | sh
   fi
 elif command -v yum >/dev/null 2>&1; then
-  yum install -y python3 python3-setuptools curl git tar
+  yum install -y curl tar
   if ! yum install -y docker; then
     curl -fsSL https://get.docker.com | sh
   fi
 elif command -v apk >/dev/null 2>&1; then
   apk update
-  apk add --no-cache docker docker-cli-compose python3 py3-setuptools curl git tar
+  apk add --no-cache docker docker-cli-compose curl tar
 else
   echo "Unsupported package manager for OS ID '${OS_ID}' (ID_LIKE='${OS_ID_LIKE}')."
   exit 1
@@ -165,72 +165,116 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
-# Create the directory for your application
+COMPOSE_URL="https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/docker-compose.example.yml"
+STRIP_URL="https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/docker/strip-block-indexes.sh"
+RESTORE_MARKER=".bootstrap-restore-pending"
+
+compose_has_service() {
+  docker compose --profile restore config --services | grep -qx "$1"
+}
+
+node_restarts() {
+  docker compose config | awk '
+    /^  yada-node:/ { in_node=1; next }
+    in_node && /^  [^ ]/ { in_node=0 }
+    in_node && $1 == "restart:" {
+      gsub(/"/, "", $2)
+      if ($2 == "always" || $2 == "on-failure" || $2 == "unless-stopped") found=1
+    }
+    END { exit found ? 0 : 1 }
+  '
+}
+
+stop_legacy_manager() {
+  if [ "$INIT_SYSTEM" = "systemd" ]; then
+    if ! systemctl cat yadanodemanager.service >/dev/null 2>&1; then
+      return 0
+    fi
+    install -d /etc/systemd/system/yadanodemanager.service.d
+    cat > /etc/systemd/system/yadanodemanager.service.d/no-compose-down.conf << 'EOF'
+[Service]
+ExecStop=
+ExecStop=/bin/true
+EOF
+    systemctl daemon-reload
+    systemctl disable --now yadanodemanager
+    echo "Stopped yadanodemanager without running its compose down hook."
+  elif [ -x /etc/init.d/yadanodemanager ]; then
+    rc-service yadanodemanager stop || true
+    rc-update del yadanodemanager default || true
+    echo "Stopped yadanodemanager."
+  fi
+}
+
+# Host state only. The published image is the application.
 DEFAULT_APP_DIR="/etc/yadacoin"
 APP_DIR="${1:-$DEFAULT_APP_DIR}"
-mkdir -p "$APP_DIR"
+mkdir -p "$APP_DIR/config"
 cd "$APP_DIR"
 
-# Clone the repository
-if [ -d .git ]; then
-  git pull --ff-only
-else
-  git clone https://github.com/pdxwebdev/yadacoin .
+FIRST_INSTALL=0
+if [ ! -f docker-compose.yml ]; then
+  FIRST_INSTALL=1
+  curl -fsSL "$COMPOSE_URL" -o docker-compose.yml
 fi
 
-# Download blockchain data
-curl -fsSL "$BOOTSTRAP_URL" | tar -xz
+curl -fsSL "$STRIP_URL" -o strip-block-indexes.sh
+chmod +x strip-block-indexes.sh
 
-if [ "$INIT_SYSTEM" = "systemd" ]; then
-  # Create a systemd service for the process manager
-  SERVICE_FILE="/etc/systemd/system/yadanodemanager.service"
-  cat << EOF > "$SERVICE_FILE"
-[Unit]
-Description=YadaCoin Node Manager
-After=network.target
-StartLimitIntervalSec=500
-StartLimitBurst=5
-
-[Service]
-User=root
-WorkingDirectory=$APP_DIR
-ExecStart=/usr/bin/env python3 yadanodemanager.py
-ExecStop=/bin/sh -c 'docker compose -f $APP_DIR/docker-compose.yml down 2>/dev/null || docker-compose -f $APP_DIR/docker-compose.yml down'
-KillMode=process
-Restart=always
-Restart=on-failure
-RestartSec=5s
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  # Reload systemd and start the service
-  systemctl daemon-reload
-  systemctl enable yadanodemanager
-  systemctl start yadanodemanager
-else
-  # Create an OpenRC service for the process manager
-  SERVICE_FILE="/etc/init.d/yadanodemanager"
-  cat << EOF > "$SERVICE_FILE"
-#!/sbin/openrc-run
-
-name="YadaCoin Node Manager"
-description="YadaCoin Node Manager"
-directory="$APP_DIR"
-pidfile="/run/yadanodemanager.pid"
-command="/usr/bin/env"
-command_args="python3 $APP_DIR/yadanodemanager.py"
-command_background="yes"
-command_user="root"
-
-depend() {
-    need net docker
-}
-EOF
-  chmod +x "$SERVICE_FILE"
-  rc-update add yadanodemanager default
-  rc-service yadanodemanager start
+if [ "$FIRST_INSTALL" -eq 1 ]; then
+  touch "$RESTORE_MARKER"
 fi
 
-echo "Initial setup complete. Now the boostrap data will install in the background. This will take a few minutes. Check status with: service yadanodemanager status. Once that completes, your node will start automatically. You can access in on the web at port 8001"
+if [ -f "$RESTORE_MARKER" ]; then
+  if [ ! -f dump/yadacoin/blocks.metadata.json ]; then
+    rm -rf dump
+    curl -fsSL "$BOOTSTRAP_URL" | tar -xz
+  fi
+elif [ -d dump ]; then
+  echo "Leaving dump/ in place. This run will not restore over an existing database."
+fi
+
+if node_restarts; then
+  stop_legacy_manager
+else
+  echo "Leaving yadanodemanager enabled: yada-node has no restart policy in docker-compose.yml."
+fi
+
+if ! compose_has_service mongodb; then
+  echo "docker-compose.yml has no mongodb service. Not restoring or starting the node."
+  exit 1
+fi
+
+docker compose up -d mongodb
+
+if [ -f "$RESTORE_MARKER" ]; then
+  if ! compose_has_service restore; then
+    echo "Bootstrap is pending, but docker-compose.yml has no restore service. dump/ was left in place."
+    exit 1
+  fi
+  docker compose --profile restore up --abort-on-container-exit --exit-code-from restore restore
+  docker compose --profile restore rm -f restore
+  rm -rf dump
+  rm -f "$RESTORE_MARKER"
+fi
+
+if [ "$FIRST_INSTALL" -eq 1 ]; then
+  docker compose up -d yada-node updater
+else
+  docker compose up -d
+fi
+
+echo "Node is starting."
+echo "Config stays in $APP_DIR/config/config.json. Compose stays in $APP_DIR/docker-compose.yml."
+if grep -q '\.:/app' docker-compose.yml; then
+  echo "docker-compose.yml still bind-mounts the repo at /app. It was not overwritten."
+  echo "The current example does not: $COMPOSE_URL"
+fi
+if ! compose_has_service updater; then
+  echo "This compose file has no updater service, so it was left unchanged."
+  echo "The current example is $COMPOSE_URL"
+else
+  echo "Image updates are applied by the updater service."
+fi
+echo "Logs: docker compose -f $APP_DIR/docker-compose.yml logs -f yada-node"
+echo "The web UI is on port 8001."
