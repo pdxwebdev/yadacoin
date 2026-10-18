@@ -1475,6 +1475,7 @@ html.landing .site-menu-btn {
 }
 
 .plus-mark {
+  position: relative;
   display: grid;
   place-items: center;
   width: 46px;
@@ -1484,9 +1485,44 @@ html.landing .site-menu-btn {
   background: #fff;
   color: #000;
   font-size: 28px;
-  font-weight: 400;
+  font-weight: 500;
   line-height: 1;
-  box-shadow: -4px 0 0 #25f4ee, 4px 0 0 var(--accent);
+  box-shadow: -5px 0 0 #25f4ee, 5px 0 0 #9dfff8, 0 0 12px rgba(37, 244, 238, 0.35);
+  animation: plus-pop 2.4s ease-in-out infinite;
+}
+
+.plus-mark::after {
+  content: "";
+  position: absolute;
+  inset: -7px -9px;
+  z-index: -1;
+  border-radius: 12px;
+  background: radial-gradient(circle, rgba(37, 244, 238, 0.55), transparent 68%);
+  pointer-events: none;
+  animation: plus-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes plus-pop {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    box-shadow: -5px 0 0 #25f4ee, 5px 0 0 #9dfff8, 0 0 12px rgba(37, 244, 238, 0.35);
+  }
+  50% {
+    transform: translateY(-1px) scale(1.07);
+    box-shadow: -8px 0 0 #25f4ee, 8px 0 0 #e8fffd, 0 0 18px rgba(37, 244, 238, 0.75);
+  }
+}
+
+@keyframes plus-glow {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.12); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plus-mark,
+  .plus-mark::after {
+    animation: none;
+  }
 }
 
 #app.view-profile .top-bar,
