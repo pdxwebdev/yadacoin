@@ -73,6 +73,22 @@ html.landing .site-menu-btn {
   place-items: center;
 }
 
+@media (min-width: 768px) {
+  html.landing .site-menu-btn,
+  html.landing .site-drawer-backdrop,
+  html.landing .site-drawer-head button {
+    display: none !important;
+  }
+
+  html.landing .site-drawer {
+    display: block !important;
+    left: max(12px, calc(50% - 280px - 248px));
+    width: 232px;
+    box-shadow: none;
+    background: transparent;
+  }
+}
+
 .site-drawer-backdrop {
   position: fixed;
   inset: 0;
