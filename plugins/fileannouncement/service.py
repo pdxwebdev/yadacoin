@@ -441,7 +441,6 @@ async def _next_kel_signer(config):
         if confirming is None:
             confirming = await _synthesize_confirming(config, latest, k0, second_factor)
         latest = confirming
-        # Re-read ordered KEL so counter/prev hashes stay consistent when possible
         kel2 = await _ordered_kel(config, k0_pub)
         if kel2 and classify_key_event_flag(kel2[-1]) != KeyEventFlag.UNCONFIRMED:
             latest = kel2[-1]
