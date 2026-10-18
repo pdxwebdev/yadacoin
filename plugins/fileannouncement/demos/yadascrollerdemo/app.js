@@ -3485,7 +3485,7 @@
   async function openOperatorSession(password, homeNode, passwordEnc) {
     const body = { branch_peer: signinOrigin };
     if (passwordEnc) body.password_enc = passwordEnc;
-    else body.password = password || "";
+    else if (password) body.password = password;
     if (homeNode) body.home_node = String(homeNode).replace(/\/+$/, "");
     const res = await fetch("/password-rotation/admin-session", {
       method: "POST",
@@ -3730,7 +3730,7 @@
         body: JSON.stringify({
           username,
           site: signinOrigin,
-          action: "signin",
+          action: "operator",
           expectedHash,
         }),
         signal,
@@ -3748,21 +3748,16 @@
           home
       );
       const view = await waitForAuthApproval(created.session_id, created, signal);
-      if (!view.ok) throw new Error(view.message || "sign-in was not approved");
-      if (view.token) {
-        stashOperatorToken(view.token);
-      } else {
-        if (!view.password_enc && !view.password) {
-          throw new Error("password app returned no password — approve again");
-        }
-        showSigninProgress("Approved — opening operator session…");
-        const session = await openOperatorSession(
-          view.password,
-          view.home_node || created.home_node || "",
-          view.password_enc || ""
-        );
-        stashOperatorToken(session && session.token);
+      if (!view.ok && !view.operator_session && !view.authenticated) {
+        throw new Error(view.message || "sign-in was not approved");
       }
+      showSigninProgress("Approved — opening operator session…");
+      const session = await openOperatorSession(
+        "",
+        view.home_node || created.home_node || "",
+        ""
+      );
+      stashOperatorToken((session && session.token) || view.token);
       stopSigninProgress();
       setSigninMsg("Session opened — opening your profile…", "ok");
       await openOwnProfile();
