@@ -15,6 +15,7 @@ services:
       - mongodb
     environment:
       - MONGODB_URI=mongodb://mongodb:27017/yadacoin
+      - SECOND_FACTOR_FILE=/app/config/second_factor
       - PYTHONUNBUFFERED=1
       - MOTOR_MAX_WORKERS=1
       - PYTHONPATH=/app

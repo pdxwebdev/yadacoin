@@ -212,6 +212,10 @@ APP_DIR="${1:-$DEFAULT_APP_DIR}"
 mkdir -p "$APP_DIR/config"
 cd "$APP_DIR"
 
+if [ ! -f config/second_factor ]; then
+  install -m 600 /dev/null config/second_factor
+fi
+
 FIRST_INSTALL=0
 if [ ! -f docker-compose.yml ]; then
   FIRST_INSTALL=1
@@ -265,7 +269,24 @@ else
 fi
 
 echo "Node is starting."
-echo "Config stays in $APP_DIR/config/config.json. Compose stays in $APP_DIR/docker-compose.yml."
+reset=$'\033[0m'
+bold=$'\033[1m'
+node_url="http://127.0.0.1:8001/operator/setup"
+printf '\n\n'
+printf '%s%s%s%s\n' "$bold" $'\033[38;5;39m' '██╗   ██╗ █████╗ ██████╗  █████╗  ██████╗ ██████╗ ██╗███╗   ██╗' "$reset"
+printf '%s%s%s%s\n' "$bold" $'\033[38;5;45m' '╚██╗ ██╔╝██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔═══██╗██║████╗  ██║' "$reset"
+printf '%s%s%s%s\n' "$bold" $'\033[38;5;51m' ' ╚████╔╝ ███████║██║  ██║███████║██║     ██║   ██║██║██╔██╗ ██║' "$reset"
+printf '%s%s%s%s\n' "$bold" $'\033[38;5;50m' '  ╚██╔╝  ██╔══██║██║  ██║██╔══██║██║     ██║   ██║██║██║╚██╗██║' "$reset"
+printf '%s%s%s%s\n' "$bold" $'\033[38;5;48m' '   ██║   ██║  ██║██████╔╝██║  ██║╚██████╗╚██████╔╝██║██║ ╚████║' "$reset"
+printf '%s%s%s%s\n' "$bold" $'\033[38;5;46m' '   ╚═╝   ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝' "$reset"
+printf '\n'
+printf '%s%s  VISIT %s%s%s TO CONFIGURE YOUR NODE%s\n' "$bold" $'\033[38;5;226m' $'\033[1;97m' "$node_url" $'\033[38;5;226m' "$reset"
+printf '\n'
+echo "Set a username and second factor. Write both down."
+echo "The next screen shows the seed once. It is also in $APP_DIR/config/config.json."
+echo "The second factor file is $APP_DIR/config/second_factor. Both are required to recover the node."
+echo "Wallet: http://127.0.0.1:8001/app"
+echo "From another machine, use this host's address on port 8001."
 if grep -q '\.:/app' docker-compose.yml; then
   echo "docker-compose.yml still bind-mounts the repo at /app. It was not overwritten."
   echo "The current example does not: $COMPOSE_URL"

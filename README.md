@@ -8,7 +8,11 @@
 
 ## Setup
 
-### Ubuntu 22/24 install command:
+### Get started
+
+Use the network at [/app](https://yadacoin.io/app). That does not require a node.
+
+To run a node, install Docker and follow the [download page](https://yadacoin.io/download). A Linux VPS with nothing installed can use:
 
 `curl -fsSL https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/yadanodesetup.sh | sudo bash`
 
