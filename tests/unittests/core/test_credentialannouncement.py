@@ -12,12 +12,16 @@ Full license terms: see LICENSE.txt in this repository.
 """
 
 import hashlib
+import os
 import time
 import unittest
+from hashlib import sha256
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from coincurve import PublicKey
+from coincurve.utils import GROUP_ORDER_INT
+
 import yadacoin.core.config
-from plugins.credentialissuer.zkp import generate_proof
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.credentialannouncement import (
@@ -25,7 +29,7 @@ from yadacoin.core.credentialannouncement import (
     CredentialAnnouncement,
     did_for,
 )
-from yadacoin.core.locationrecovery import verify_proof
+from yadacoin.core.locationrecovery import CURVE_N, verify_proof
 from yadacoin.core.transaction import InvalidTransactionException, Transaction
 
 from ..test_setup import AsyncTestCase
@@ -33,6 +37,27 @@ from ..test_setup import AsyncTestCase
 _SUBJECT = "subjectUsernameSignatureAAAA"
 _ISSUER = "issuerUsernameSignatureBBBB"
 _ISSUER_ID = "identityAnnouncementTxnIdCCCC"
+
+
+def generate_proof(witness_hex, prev_key_hash=None):
+    x = int.from_bytes(bytes.fromhex(witness_hex), "big") % GROUP_ORDER_INT
+    x_bytes = x.to_bytes(32, "big")
+    commitment_hex = PublicKey.from_secret(x_bytes).format(compressed=True).hex()
+    r = int.from_bytes(os.urandom(32), "big") % GROUP_ORDER_INT or 1
+    r_bytes = r.to_bytes(32, "big")
+    R_hex = PublicKey.from_secret(r_bytes).format(compressed=True).hex()
+    prev = prev_key_hash.encode("utf-8") if prev_key_hash else b"\x00" * 32
+    e = (
+        int.from_bytes(
+            sha256(
+                bytes.fromhex(R_hex) + bytes.fromhex(commitment_hex) + prev
+            ).digest(),
+            "big",
+        )
+        % CURVE_N
+    )
+    s_hex = ((r - e * x) % GROUP_ORDER_INT).to_bytes(32, "big").hex()
+    return {"commitment": commitment_hex, "R": R_hex, "s": s_hex}
 
 
 def _ann(expires=None):
