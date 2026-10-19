@@ -37,14 +37,38 @@ if [ -f "$manifest" ]; then
     case "$name" in \#*) continue ;; esac
     wanted "$name" || continue
     url=$(https_url "$url")
+    tag=$(git ls-remote --tags "$url" | python3 -c '
+import sys
+found = {}
+for line in sys.stdin:
+    parts = line.split()
+    if len(parts) != 2 or not parts[1].startswith("refs/tags/"):
+        continue
+    ref = parts[1][:-3] if parts[1].endswith("^{}") else parts[1]
+    name = ref.rsplit("/", 1)[-1]
+    text = name[1:] if name.startswith("v") else name
+    bits = text.split(".")
+    if bits and all(bit.isdigit() for bit in bits):
+        found[name] = tuple(int(bit) for bit in bits)
+if found:
+    print(max(found, key=found.get))
+' || true)
     if [ -d "$dest/$name/.git" ] || [ -f "$dest/$name/.git" ]; then
-      git -C "$dest/$name" pull --ff-only || true
+      if [ -n "$tag" ]; then
+        git -C "$dest/$name" remote set-url origin "$url" || true
+        git -C "$dest/$name" fetch --depth 1 origin "refs/tags/$tag:refs/tags/$tag"
+        git -C "$dest/$name" checkout --detach "$tag"
+      fi
       continue
     fi
     if [ -d "$dest/$name" ]; then
       continue
     fi
-    git clone --depth 1 "$url" "$dest/$name"
+    if [ -n "$tag" ]; then
+      git clone --depth 1 --branch "$tag" "$url" "$dest/$name"
+    else
+      git clone --depth 1 "$url" "$dest/$name"
+    fi
   done < "$manifest"
 fi
 
