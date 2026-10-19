@@ -13,13 +13,17 @@ Full license terms: see LICENSE.txt in this repository.
 
 import asyncio
 import json
+import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import tornado
 from tornado import testing
 from tornado.web import Application
 
-from plugins.explorerapi.explorer import EXPLORER_HANDLERS
+try:
+    from plugins.explorerapi.explorer import EXPLORER_HANDLERS
+except ImportError:
+    raise unittest.SkipTest("explorerapi plugin is not installed")
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo

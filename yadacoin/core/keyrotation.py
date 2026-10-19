@@ -15,8 +15,7 @@ Full license terms: see LICENSE.txt in this repository.
 Server-side BIP32-style hardened key derivation and node KEL lifecycle manager.
 
 Provides:
-  - derive_secure_path()       — pure function used by this module and
-                                 plugins/keyrotation/handlers.py
+  - derive_secure_path()       — pure hardened derivation used by this module
   - NodeKeyRotationManager     — enforces KEL lifecycle at startup and runs the
                                  periodic background checker
 
@@ -217,13 +216,6 @@ def _read_second_factor() -> str:
     Priority: SECOND_FACTOR_FILE > SECOND_FACTOR env var.
     Returns an empty string if neither is set (caller decides how to handle it).
     """
-    try:
-        from plugins.operator.setup import bind_second_factor_file
-        from yadacoin.core.config import Config
-
-        bind_second_factor_file(Config())
-    except Exception:
-        pass
     sf_file = os.environ.get("SECOND_FACTOR_FILE", "")
     if sf_file:
         try:
@@ -402,9 +394,6 @@ class NodeKeyRotationManager:
         #   2. SECOND_FACTOR       — plain environment variable
         #
         second_factor = ""
-        from plugins.operator.setup import bind_second_factor_file
-
-        bind_second_factor_file(config)
         sf_file = os.environ.get("SECOND_FACTOR_FILE", "")
         if sf_file:
             try:

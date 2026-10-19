@@ -15,5 +15,8 @@ while IFS="$(printf '\t')" read -r name url; do
     echo "skip $name (exists, not a git checkout)"
     continue
   fi
-  git clone "$url" "$dest/$name"
+  case "$url" in
+    git@github.com:*) url="https://github.com/${url#git@github.com:}" ;;
+  esac
+  git clone --depth 1 "$url" "$dest/$name" || echo "skip $name (clone failed)"
 done < "$manifest"

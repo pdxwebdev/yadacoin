@@ -314,12 +314,16 @@ import tornado
 from tornado import testing
 from tornado.web import Application
 
-from plugins.nodeapi.node_announce import NODE_ANNOUNCE_HANDLERS
+try:
+    from plugins.nodeapi.node_announce import NODE_ANNOUNCE_HANDLERS
+except ImportError:
+    NODE_ANNOUNCE_HANDLERS = None
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo
 
 
+@unittest.skipIf(NODE_ANNOUNCE_HANDLERS is None, "nodeapi plugin is not installed")
 class NodeAnnounceHttpTestCase(testing.AsyncHTTPTestCase):
     def get_new_ioloop(self):
         return tornado.ioloop.IOLoop()

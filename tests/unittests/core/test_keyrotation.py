@@ -67,17 +67,6 @@ _VALID_PRIV = bytes.fromhex(
 class TestDerivePureFunctions(unittest.TestCase):
     """Tests for _bip32_hardened_child, _derive_index, derive_secure_path."""
 
-    def test_read_second_factor_bind_error_is_ignored(self):
-        from yadacoin.core.keyrotation import _read_second_factor
-
-        with patch.dict(os.environ, {"SECOND_FACTOR": "envsecret"}, clear=False):
-            os.environ.pop("SECOND_FACTOR_FILE", None)
-            with patch(
-                "plugins.operator.setup.bind_second_factor_file",
-                side_effect=RuntimeError("bind failed"),
-            ):
-                self.assertEqual(_read_second_factor(), "envsecret")
-
     def test_read_second_factor_from_env(self):
         from yadacoin.core.keyrotation import _read_second_factor
 

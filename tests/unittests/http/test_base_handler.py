@@ -19,7 +19,10 @@ import tornado
 from tornado import testing
 from tornado.web import Application
 
-from plugins.product.product import PRODUCT_HANDLERS
+try:
+    from plugins.product.product import PRODUCT_HANDLERS
+except ImportError:
+    raise unittest.SkipTest("product plugin is not installed")
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo

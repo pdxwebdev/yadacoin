@@ -4,6 +4,7 @@ Tests for yadacoin/http/graph.py — targeting 100% coverage.
 
 import asyncio
 import json
+import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import tornado
@@ -11,7 +12,10 @@ import tornado.httputil
 from tornado import testing
 from tornado.web import Application
 
-from plugins.graphapi.graph import GRAPH_HANDLERS
+try:
+    from plugins.graphapi.graph import GRAPH_HANDLERS
+except ImportError:
+    raise unittest.SkipTest("graphapi plugin is not installed")
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo

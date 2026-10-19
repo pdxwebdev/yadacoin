@@ -11,9 +11,8 @@ NO commercial use, NO blockchain forks, and NO branding use without permission.
 Unit tests for the consensus-side Schnorr verifier in
 ``yadacoin.core.locationrecovery``.
 
-These tests construct proofs in pure Python (mirroring the JS prover in
-``plugins/yadacoinwallet/ui/src/composables/useLocationRecovery.js``) and
-exercise the verifier's positive, negative, and malformed-input paths.
+These tests construct proofs in pure Python and exercise the verifier's
+positive, negative, and malformed-input paths.
 """
 
 import os

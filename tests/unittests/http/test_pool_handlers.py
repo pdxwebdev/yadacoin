@@ -13,13 +13,17 @@ Full license terms: see LICENSE.txt in this repository.
 
 import asyncio
 import json
+import unittest
 from unittest.mock import AsyncMock, MagicMock
 
 import tornado
 from tornado import testing
 from tornado.web import Application
 
-from plugins.yadacoinpool.pool_api import POOL_HANDLERS
+try:
+    from plugins.yadacoinpool.pool_api import POOL_HANDLERS
+except ImportError:
+    raise unittest.SkipTest("yadacoinpool plugin is not installed")
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo

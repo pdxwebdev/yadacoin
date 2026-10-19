@@ -1004,9 +1004,12 @@ class NodeApplication(Application):
             self.config.mongodb_host = options.mongohost
         if options.modes:
             self.config.modes = options.modes
-        from plugins.operator.setup import apply_setup_gate
-
-        apply_setup_gate(self.config)
+        try:
+            from plugins.operator.setup import apply_setup_gate
+        except ImportError:
+            apply_setup_gate = None
+        if apply_setup_gate is not None:
+            apply_setup_gate(self.config)
 
     def init_consensus(self):
         self.config.consensus = tornado.ioloop.IOLoop.current().run_sync(
@@ -1120,9 +1123,12 @@ class NodeApplication(Application):
                 )
 
     def init_ioloop_tail(self):
-        from plugins.operator.letsencrypt import start_renew_loop
-
-        start_renew_loop(self.config)
+        try:
+            from plugins.operator.letsencrypt import start_renew_loop
+        except ImportError:
+            start_renew_loop = None
+        if start_renew_loop is not None:
+            start_renew_loop(self.config)
         if self.config.pool_payout:
             self.config.app_log.info("PoolPayout activated")
             self.config.pp = PoolPayer()
@@ -1646,13 +1652,17 @@ class NodeApplication(Application):
 
     async def rebind_after_setup(self):
         """Pause services, re-derive seed keys, then resume without a restart."""
-        from plugins.operator.setup import apply_setup_gate
+        try:
+            from plugins.operator.setup import apply_setup_gate
+        except ImportError:
+            apply_setup_gate = None
 
         self.enter_maintenance()
         try:
             if getattr(self.config, "mongo", None) is not None:
                 self.config.mongo.reconnect()
-            apply_setup_gate(self.config)
+            if apply_setup_gate is not None:
+                apply_setup_gate(self.config)
             self.config.cipher = Crypt(self.config.wif)
             self.init_jwt()
             if MODES.NODE.value in self.config.modes:

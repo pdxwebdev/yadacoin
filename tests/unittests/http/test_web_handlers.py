@@ -12,13 +12,17 @@ Full license terms: see LICENSE.txt in this repository.
 """
 
 import asyncio
+import unittest
 
 import tornado
 from tornado import testing
 from tornado.web import Application
 
-from plugins.app.web import WEB_HANDLERS
-from plugins.operator.handlers import HANDLERS as OPERATOR_HANDLERS
+try:
+    from plugins.app.web import WEB_HANDLERS
+    from plugins.operator.handlers import HANDLERS as OPERATOR_HANDLERS
+except ImportError:
+    raise unittest.SkipTest("app or operator plugin is not installed")
 from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo
