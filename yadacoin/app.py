@@ -1196,6 +1196,13 @@ class NodeApplication(Application):
             self.default_handlers.extend(PEERJS_HANDLERS)
 
     def _plugin_search_dirs(self):
+        for deps in (
+            path.join(os.environ.get("YADA_PLUGINS_DIR", ""), ".pydeps"),
+            "/plugins/.pydeps",
+            path.join(path.dirname(__file__), "..", "plugins", ".pydeps"),
+        ):
+            if deps and path.isdir(deps) and deps not in sys.path:
+                sys.path.insert(0, path.abspath(deps))
         search_dirs = []
         env_dir = os.environ.get("YADA_PLUGINS_DIR")
         if env_dir:
@@ -1244,7 +1251,20 @@ class NodeApplication(Application):
         return names
 
     def _plugin_enabled(self, name):
-        if name == "operator":
+        if name in (
+            "operator",
+            "app",
+            "nodeapi",
+            "graphapi",
+            "explorerapi",
+            "kel",
+            "apidocs",
+            "product",
+            "yadacoinwallet",
+            "yadacoinpool",
+            "yadapasswordsignin",
+            "passwordrotation",
+        ):
             return True
         disabled = getattr(self.config, "disabled_plugins", None) or []
         return name not in disabled

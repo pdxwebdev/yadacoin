@@ -4,7 +4,7 @@ FROM python:3.9-slim-bookworm
 
 # Install necessary system packages
 RUN apt-get update && \
-    apt-get install -y git libssl-dev libffi-dev cmake libjpeg-dev build-essential python3-setuptools \
+    apt-get install -y git ca-certificates libssl-dev libffi-dev cmake libjpeg-dev build-essential python3-setuptools \
         autoconf automake libtool pkg-config && \
     apt-get clean
 
@@ -19,5 +19,5 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # The image is the node. Plugins are mounted at /plugins (or YADA_PLUGINS_DIR).
 COPY . .
 
-# Command to run the application
+ENTRYPOINT ["sh", "/app/scripts/docker-entrypoint.sh"]
 CMD ["python", "yadacoin/app.py", "--config=config/config.json", "--mongohost=mongodb"]

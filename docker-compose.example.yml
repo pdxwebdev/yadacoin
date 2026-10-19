@@ -6,6 +6,7 @@ services:
       - com.centurylinklabs.watchtower.enable=true
     volumes:
       - ./config:/app/config
+      - plugins:/plugins
     ports:
       - "8000:8000"
       - "8001:8001"
@@ -18,7 +19,8 @@ services:
       - SECOND_FACTOR_FILE=/app/config/second_factor
       - PYTHONUNBUFFERED=1
       - MOTOR_MAX_WORKERS=1
-      - PYTHONPATH=/app
+      - PYTHONPATH=/plugins/.pydeps:/app
+      - YADA_PLUGINS_DIR=/plugins
     logging:
       driver: json-file
       options:
@@ -70,3 +72,4 @@ services:
 
 volumes:
   mongodb_data:
+  plugins:
