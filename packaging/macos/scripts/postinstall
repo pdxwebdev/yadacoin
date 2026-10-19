@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+
+CONSOLE_USER="$(stat -f "%Su" /dev/console)"
+if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ]; then
+  echo "No console user available to start Docker."
+  exit 1
+fi
+
+USER_HOME="$(dscl . -read "/Users/${CONSOLE_USER}" NFSHomeDirectory | awk '{print $2}')"
+install -d -o "$CONSOLE_USER" -g staff "/usr/local/yadacoin"
+chown -R "$CONSOLE_USER":staff /usr/local/yadacoin
+sudo -u "$CONSOLE_USER" -H env HOME="$USER_HOME" /bin/bash /usr/local/yadacoin/install-node.sh

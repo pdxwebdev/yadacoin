@@ -192,3 +192,88 @@ jobs:
           files: yadacoin-windows.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  macos-sign-check:
+    name: Check macOS signing secrets
+    needs: release
+    if: always() && needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      sign: ${{ steps.gate.outputs.sign }}
+    steps:
+      - name: Decide whether to build the signed DMG
+        id: gate
+        env:
+          MACOS_INSTALLER_CERTIFICATE_BASE64: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_BASE64 }}
+          MACOS_APPLICATION_CERTIFICATE_BASE64: ${{ secrets.MACOS_APPLICATION_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -eu
+          missing=0
+          present=0
+          for name in \
+            MACOS_INSTALLER_CERTIFICATE_BASE64 \
+            MACOS_APPLICATION_CERTIFICATE_BASE64 \
+            MACOS_CERTIFICATE_PASSWORD \
+            KEYCHAIN_PASSWORD \
+            APPLE_TEAM_ID \
+            APP_STORE_CONNECT_API_KEY \
+            APP_STORE_CONNECT_KEY_ID \
+            APP_STORE_CONNECT_ISSUER_ID
+          do
+            if [ -n "${!name}" ]; then
+              present=$((present + 1))
+            else
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$present" -eq 0 ]; then
+            echo "Signing secrets are not set. Skipping the macOS installer."
+            echo "sign=false" >> "$GITHUB_OUTPUT"
+          elif [ "$missing" -ne 0 ]; then
+            echo "Some macOS signing secrets are set and some are missing."
+            exit 1
+          else
+            echo "sign=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  macos:
+    name: Build and release macOS
+    needs: [release, macos-sign-check]
+    if: always() && needs.release.result == 'success' && needs.macos-sign-check.result == 'success' && needs.macos-sign-check.outputs.sign == 'true'
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Build package
+        run: bash packaging/macos/build-dmg.sh "$GITHUB_WORKSPACE/yadacoin-node.pkg"
+
+      - name: Sign, notarize, and wrap DMG
+        env:
+          MACOS_INSTALLER_CERTIFICATE_BASE64: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_BASE64 }}
+          MACOS_APPLICATION_CERTIFICATE_BASE64: ${{ secrets.MACOS_APPLICATION_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: bash packaging/macos/sign-and-notarize.sh "$GITHUB_WORKSPACE/yadacoin-node.pkg" "$GITHUB_WORKSPACE/yadacoin-macos.dmg"
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          files: yadacoin-macos.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
