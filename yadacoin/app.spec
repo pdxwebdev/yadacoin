@@ -51,9 +51,8 @@ a = Analysis(['app.py'],
                         ('C:\\Windows\\System32\\msvcr120.dll', 'msvcr120.dll',),
                         ('..\\winlibs\\libeay32.dll', '.',),
                         ('..\\winlibs\\libsecp256k1.dll', 'coincurve',)] + crypto_binaries,
-             datas=[
+              datas=[
 		('../static', 'static/'),
-		('../templates/', 'templates/'),
 		(mnemonic_wordlist, 'mnemonic/wordlist/'),
 	     ] + plugin_datas,
              hiddenimports=['eccsnacks', 'chardet', 'Crypto.PublicKey._nist_ecc', 'Crypto.PublicKey.ECC'] + crypto_hidden + plugin_hidden + node_dashboard_hidden,
