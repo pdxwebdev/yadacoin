@@ -62,6 +62,28 @@
       .btn-refresh:hover {
         background: #30363d;
       }
+      .btn-menu {
+        display: none;
+        width: 36px;
+        height: 36px;
+        padding: 8px 7px;
+        background: #21262d;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        cursor: pointer;
+        flex-direction: column;
+        justify-content: space-between;
+        flex-shrink: 0;
+      }
+      .btn-menu span {
+        display: block;
+        height: 2px;
+        background: #c9d1d9;
+        border-radius: 1px;
+      }
+      .sidebar-backdrop {
+        display: none;
+      }
       .last-updated {
         font-size: 12px;
         color: #8b949e;
@@ -341,10 +363,73 @@
         background: #30363d;
         border-radius: 3px;
       }
+
+      @media (max-width: 900px) {
+        .header {
+          padding: 10px 12px;
+          gap: 8px;
+        }
+        .header h1 {
+          font-size: 16px;
+        }
+        .header .subtitle {
+          display: none;
+        }
+        .last-updated {
+          display: none;
+        }
+        .btn-menu {
+          display: flex;
+        }
+        .btn-refresh {
+          margin-left: auto;
+          padding: 6px 10px;
+        }
+        .stats-bar {
+          padding: 8px;
+          gap: 6px;
+        }
+        .sidebar {
+          position: fixed;
+          top: 0;
+          right: 0;
+          bottom: 0;
+          width: min(340px, 92vw);
+          z-index: 160;
+          transform: translateX(100%);
+          transition: transform 0.2s ease;
+          box-shadow: -8px 0 24px rgba(0, 0, 0, 0.45);
+        }
+        .sidebar.open {
+          transform: translateX(0);
+        }
+        .sidebar-backdrop {
+          display: block;
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.5);
+          z-index: 150;
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.2s ease;
+        }
+        .sidebar-backdrop.open {
+          opacity: 1;
+          pointer-events: auto;
+        }
+      }
     </style>
   </head>
   <body>
     <div class="header">
+      <button
+        class="btn-menu"
+        id="btn-menu"
+        aria-label="Open node panels"
+        aria-expanded="false"
+      >
+        <span></span><span></span><span></span>
+      </button>
       <div>
         <h1>Network Topology</h1>
         <div class="subtitle">
@@ -373,7 +458,11 @@
         <svg id="graph"></svg>
       </div>
 
-      <div class="sidebar">
+      <div
+        class="sidebar-backdrop"
+        id="sidebar-backdrop"
+      ></div>
+      <div class="sidebar" id="sidebar">
         <div class="legend">
           <div class="legend-title">
             Node Types
@@ -666,6 +755,41 @@
         return String(v);
       }
 
+      const sidebar =
+        document.getElementById("sidebar");
+      const sidebarBackdrop =
+        document.getElementById(
+          "sidebar-backdrop",
+        );
+      const btnMenu =
+        document.getElementById("btn-menu");
+      function setSidebar(open) {
+        sidebar.classList.toggle("open", open);
+        sidebarBackdrop.classList.toggle(
+          "open",
+          open,
+        );
+        btnMenu.setAttribute(
+          "aria-expanded",
+          open ? "true" : "false",
+        );
+        btnMenu.setAttribute(
+          "aria-label",
+          open
+            ? "Close node panels"
+            : "Open node panels",
+        );
+      }
+      btnMenu.addEventListener("click", () =>
+        setSidebar(
+          !sidebar.classList.contains("open"),
+        ),
+      );
+      sidebarBackdrop.addEventListener(
+        "click",
+        () => setSidebar(false),
+      );
+
       // ── Tabs ─────────────────────────────────────────────────────────────────────
       document
         .querySelectorAll(".tab")
@@ -698,15 +822,60 @@
 
       let g = svg.append("g");
 
-      // Zoom
-      svg.call(
-        d3
-          .zoom()
-          .scaleExtent([0.1, 4])
-          .on("zoom", (e) =>
-            g.attr("transform", e.transform),
-          ),
-      );
+      const zoom = d3
+        .zoom()
+        .scaleExtent([0.02, 4])
+        .on("zoom", (e) =>
+          g.attr("transform", e.transform),
+        );
+      svg.call(zoom);
+
+      function fitGraph(instant) {
+        if (!simulation) return;
+        const nodes = simulation.nodes();
+        if (!nodes.length) return;
+        if (
+          nodes.some(
+            (d) =>
+              !Number.isFinite(d.x) ||
+              !Number.isFinite(d.y),
+          )
+        )
+          return;
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        nodes.forEach((d) => {
+          const pad = nodeRadius(d) + 12;
+          minX = Math.min(minX, d.x - pad);
+          minY = Math.min(minY, d.y - pad);
+          maxX = Math.max(maxX, d.x + pad);
+          maxY = Math.max(maxY, d.y + pad);
+        });
+        const w = container.clientWidth || 1;
+        const h = container.clientHeight || 1;
+        const bw = Math.max(maxX - minX, 1);
+        const bh = Math.max(maxY - minY, 1);
+        const margin = 20;
+        const narrowView = w < 900 || w < h;
+        const scale = Math.min(
+          (w - margin * 2) / bw,
+          (h - margin * 2) / bh,
+          narrowView ? 0.72 : 1.25,
+        );
+        const tx =
+          (w - bw * scale) / 2 - minX * scale;
+        const ty =
+          (h - bh * scale) / 2 - minY * scale;
+        const next = d3.zoomIdentity
+          .translate(tx, ty)
+          .scale(scale);
+        const target = instant
+          ? svg
+          : svg.transition().duration(180);
+        target.call(zoom.transform, next);
+      }
 
       let simulation, linkSel, nodeSel;
 
@@ -842,6 +1011,10 @@
 
         const width = container.clientWidth;
         const height = container.clientHeight;
+        const narrow = width < 900 || width < height;
+        const layoutScale = narrow
+          ? Math.max(0.32, Math.min(width / 1200, 0.5))
+          : 1;
 
         // Arrow markers
         svg.select("defs").remove();
@@ -947,15 +1120,18 @@
                   service_provider: 100,
                 };
                 return (
-                  (dist[st] || 70) +
-                  (dist[tt] || 50)
+                  ((dist[st] || 70) +
+                    (dist[tt] || 50)) *
+                  layoutScale
                 );
               })
               .strength(0.5),
           )
           .force(
             "charge",
-            d3.forceManyBody().strength(-300),
+            d3
+              .forceManyBody()
+              .strength(-300 * layoutScale),
           )
           .force(
             "center",
@@ -967,7 +1143,20 @@
               .forceCollide()
               .radius((d) => nodeRadius(d) + 8),
           )
-          .on("tick", ticked);
+          .on("tick", ticked)
+          .on("end", () => fitGraph(true));
+        if (narrow) {
+          svg.call(
+            zoom.transform,
+            d3.zoomIdentity
+              .translate(width * 0.14, height * 0.08)
+              .scale(0.62),
+          );
+          window.setTimeout(
+            () => fitGraph(true),
+            700,
+          );
+        }
 
         function ticked() {
           linkSel
@@ -1000,6 +1189,15 @@
 
         nodeSel = nodeGroup;
       }
+
+      window.addEventListener("resize", () => {
+        if (
+          window.innerWidth < 900 ||
+          window.innerWidth < window.innerHeight
+        ) {
+          fitGraph();
+        }
+      });
 
       // ── Stats bar ─────────────────────────────────────────────────────────────────
       function buildStats(data) {
