@@ -129,7 +129,7 @@ jobs:
   release:
     name: Publish image manifest and release
     needs: image
-    if: needs.image.result == 'success'
+    if: always() && needs.image.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
