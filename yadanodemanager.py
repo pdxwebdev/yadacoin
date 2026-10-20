@@ -1,7 +1,9 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -216,7 +218,113 @@ class YadaNodeManager:
         except Exception as e:
             print(f"Warning: network deduplication error: {e}")
 
+    def _legacy_plugin_image(self):
+        try:
+            rows = (
+                subprocess.check_output(
+                    ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"]
+                )
+                .decode()
+                .splitlines()
+            )
+        except Exception:
+            return None
+        for name in ("yadacoin_yada-node:latest", "yadacoin-yada-node:latest"):
+            if name in rows:
+                return name
+        for row in rows:
+            if row.startswith("yadacoin_yada-node:"):
+                return row
+        return None
+
+    def recover_legacy_plugins(self):
+        """Copy /app/plugins out of the pre-split image before it is removed.
+
+        Missing plugin directories are filled in. Existing directories are left
+        alone. No old image, or a failed copy, does not stop the deploy.
+        """
+        image = self._legacy_plugin_image()
+        if not image:
+            return False
+        dest = os.path.join(self.repo_path, "plugins")
+        os.makedirs(dest, exist_ok=True)
+        copied = False
+        name = "yada-plugin-recover"
+        try:
+            subprocess.run(["docker", "rm", "-f", name], stderr=subprocess.DEVNULL)
+            created = subprocess.run(
+                ["docker", "create", "--name", name, image],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if created.returncode != 0:
+                return False
+            with tempfile.TemporaryDirectory() as tmp:
+                extracted = os.path.join(tmp, "plugins")
+                copied_out = subprocess.run(
+                    ["docker", "cp", name + ":/app/plugins", extracted],
+                    stderr=subprocess.DEVNULL,
+                )
+                if copied_out.returncode != 0 or not os.path.isdir(extracted):
+                    return False
+                for plugin_name in os.listdir(extracted):
+                    src = os.path.join(extracted, plugin_name)
+                    target = os.path.join(dest, plugin_name)
+                    if not os.path.isdir(src) or os.path.exists(target):
+                        continue
+                    shutil.copytree(src, target)
+                    copied = True
+                    print(f"Recovered plugin {plugin_name} from {image}")
+        except Exception as e:
+            print(f"Warning: legacy plugin recovery failed: {e}")
+            return False
+        finally:
+            subprocess.run(["docker", "rm", "-f", name], stderr=subprocess.DEVNULL)
+        if copied:
+            self._install_recovered_plugins(dest)
+        return copied
+
+    def _install_recovered_plugins(self, dest):
+        try:
+            cid = (
+                subprocess.check_output(
+                    ["docker", "ps", "-q", "-f", f"name={self.service_name}"]
+                )
+                .decode()
+                .strip()
+                .splitlines()
+            )
+        except Exception:
+            return
+        if not cid:
+            return
+        cid = cid[0]
+        installed = False
+        for mount in ("/app/plugins", "/plugins"):
+            for plugin_name in os.listdir(dest):
+                src = os.path.join(dest, plugin_name)
+                if not os.path.isdir(src):
+                    continue
+                exists = subprocess.run(
+                    ["docker", "exec", cid, "test", "-e", f"{mount}/{plugin_name}"],
+                    stderr=subprocess.DEVNULL,
+                )
+                if exists.returncode == 0:
+                    continue
+                subprocess.run(
+                    ["docker", "exec", cid, "mkdir", "-p", mount],
+                    stderr=subprocess.DEVNULL,
+                )
+                result = subprocess.run(
+                    ["docker", "cp", src, f"{cid}:{mount}/{plugin_name}"],
+                    stderr=subprocess.DEVNULL,
+                )
+                installed = installed or result.returncode == 0
+        if installed:
+            subprocess.run(["docker", "restart", cid], stderr=subprocess.DEVNULL)
+
     def pull_and_restart(self):
+        self.recover_legacy_plugins()
         self.deduplicate_networks()
         subprocess.run(
             self.compose_cmd + ["down", "--remove-orphans"],
@@ -230,6 +338,7 @@ class YadaNodeManager:
             self.compose_cmd + ["up", "-d", self.service_name],
             cwd=self.repo_path,
         )
+        self._install_recovered_plugins(os.path.join(self.repo_path, "plugins"))
         subprocess.run(
             ["docker", "image", "prune", "-f"],
             cwd=self.repo_path,
@@ -240,6 +349,7 @@ class YadaNodeManager:
             self.compose_cmd + ["up", "-d", self.service_name],
             cwd=self.repo_path,
         )
+        self._install_recovered_plugins(os.path.join(self.repo_path, "plugins"))
 
     def is_mongodump_directory_present(self):
         mongodump_path = os.path.join(self.repo_path, "dump")
@@ -258,6 +368,7 @@ class YadaNodeManager:
         print(f"Restore from bootstrap data complete.")
 
     def run(self):
+        self.recover_legacy_plugins()
         self.deduplicate_networks()  # Fix any duplicate networks before touching compose
         self.stop_previous_containers()  # Stop and remove previous containers
         if self.is_mongodump_directory_present():
