@@ -185,17 +185,6 @@ class NodeApplication(Application):
                 )  # probably running from binary
 
             if os.path.exists(
-                path.join(path.join(path.dirname(__file__), "..", "static"), "app")
-            ):
-                static_app_path = path.join(
-                    path.join(path.dirname(__file__), "..", "static"), "app"
-                )
-            else:
-                static_app_path = path.join(
-                    path.join(path.dirname(__file__), "static"), "app"
-                )  # probably running from binary
-
-            if os.path.exists(
                 path.join(path.join(path.dirname(__file__), "..", "static"), "wallet")
             ):
                 static_wallet_path = path.join(
@@ -218,7 +207,6 @@ class NodeApplication(Application):
                 )  # probably running from binary
 
             self.default_handlers = [
-                (r"/app/(.*)", StaticFileHandler, {"path": static_app_path}),
                 (
                     r"/wallet/([\w\-0-9\/]+\.[\w]+)",
                     StaticFileHandler,
@@ -1323,7 +1311,6 @@ class NodeApplication(Application):
             and handler
             and handler[0]
             in (
-                r"/app/(.*)",
                 r"/wallet/([\w\-0-9\/]+\.[\w]+)",
                 r"/unwrap/([\w\-0-9\/]+\.[\w]+)",
                 r"/yadacoinstatic/(.*)",

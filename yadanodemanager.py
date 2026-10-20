@@ -237,17 +237,60 @@ class YadaNodeManager:
                 return row
         return None
 
-    def ensure_plugin_repos(self):
-        """Clone plugin repos that used to live in this tree.
+    def _plugin_catalog(self):
+        path = os.path.join(self.repo_path, "plugins.txt")
+        entries = []
+        if not os.path.isfile(path):
+            return entries
+        with open(path, "r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line or line.startswith("#") or "\t" not in line:
+                    continue
+                name, url = line.split("\t", 1)
+                name = name.strip()
+                url = url.strip()
+                if not name or not url:
+                    continue
+                if url.startswith("git@github.com:"):
+                    url = "https://github.com/" + url[len("git@github.com:") :]
+                entries.append((name, url))
+        return entries
 
-        Existing directories are not replaced. A failed clone does not stop
-        the deploy.
+    def ensure_plugin_repos(self):
+        """Clone catalog plugins that are missing or have no handlers.py.
+
+        A directory that only has cache is replaced. A failed clone leaves the
+        existing directory in place and does not stop the deploy.
         """
-        script = os.path.join(self.repo_path, "scripts", "sync-plugins.sh")
-        if not os.path.isfile(script):
-            return
-        subprocess.run(["sh", script], cwd=self.repo_path)
-        self._install_recovered_plugins(os.path.join(self.repo_path, "plugins"))
+        dest_root = os.path.join(self.repo_path, "plugins")
+        os.makedirs(dest_root, exist_ok=True)
+        for name, url in self._plugin_catalog():
+            dest = os.path.join(dest_root, name)
+            if os.path.isfile(os.path.join(dest, "handlers.py")):
+                continue
+            tmp = tempfile.mkdtemp()
+            try:
+                cloned = os.path.join(tmp, name)
+                result = subprocess.run(
+                    ["git", "clone", "--depth", "1", url, cloned],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                if result.returncode != 0 or not os.path.isfile(
+                    os.path.join(cloned, "handlers.py")
+                ):
+                    print(f"skip {name} (clone failed)")
+                    continue
+                if os.path.isdir(dest):
+                    shutil.rmtree(dest)
+                shutil.copytree(cloned, dest)
+                print(f"installed plugin {name}")
+            except Exception as e:
+                print(f"Warning: plugin {name} install failed: {e}")
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+        self._install_recovered_plugins(dest_root)
 
     def recover_legacy_plugins(self):
         """Copy /app/plugins out of the pre-split image before it is removed.

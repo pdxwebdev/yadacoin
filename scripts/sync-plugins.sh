@@ -11,12 +11,19 @@ while IFS="$(printf '\t')" read -r name url; do
     git -C "$dest/$name" pull --ff-only || true
     continue
   fi
-  if [ -d "$dest/$name" ]; then
+  if [ -d "$dest/$name" ] && [ -f "$dest/$name/handlers.py" ]; then
     echo "skip $name (exists, not a git checkout)"
     continue
   fi
   case "$url" in
     git@github.com:*) url="https://github.com/${url#git@github.com:}" ;;
   esac
-  git clone --depth 1 "$url" "$dest/$name" || echo "skip $name (clone failed)"
+  tmp=$(mktemp -d)
+  if git clone --depth 1 "$url" "$tmp/$name" && [ -f "$tmp/$name/handlers.py" ]; then
+    rm -rf "$dest/$name"
+    mv "$tmp/$name" "$dest/$name"
+  else
+    echo "skip $name (clone failed)"
+  fi
+  rm -rf "$tmp"
 done < "$manifest"
