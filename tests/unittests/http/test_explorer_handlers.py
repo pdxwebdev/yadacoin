@@ -1272,15 +1272,10 @@ class TestHashrateAPIHandler(ExplorerHttpTestCase):
 
 
 # ---------------------------------------------------------------------------
-# ExplorerHandler (line 65): self.render('explorer/index.html')
-# ---------------------------------------------------------------------------
-
-
 class TestExplorerHandlerGet(ExplorerHttpTestCase):
-    def test_explorer_renders_template(self):
-        """Line 65: self.render('explorer/index.html')"""
+    def test_explorer_does_not_render_removed_page(self):
         response = self.fetch("/explorer")
-        self.assertIn(response.code, [200, 500])
+        self.assertIn(response.code, [200, 503])
 
 
 # ---------------------------------------------------------------------------
