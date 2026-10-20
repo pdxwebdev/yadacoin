@@ -237,6 +237,18 @@ class YadaNodeManager:
                 return row
         return None
 
+    def ensure_plugin_repos(self):
+        """Clone plugin repos that used to live in this tree.
+
+        Existing directories are not replaced. A failed clone does not stop
+        the deploy.
+        """
+        script = os.path.join(self.repo_path, "scripts", "sync-plugins.sh")
+        if not os.path.isfile(script):
+            return
+        subprocess.run(["sh", script], cwd=self.repo_path)
+        self._install_recovered_plugins(os.path.join(self.repo_path, "plugins"))
+
     def recover_legacy_plugins(self):
         """Copy /app/plugins out of the pre-split image before it is removed.
 
@@ -325,6 +337,7 @@ class YadaNodeManager:
 
     def pull_and_restart(self):
         self.recover_legacy_plugins()
+        self.ensure_plugin_repos()
         self.deduplicate_networks()
         subprocess.run(
             self.compose_cmd + ["down", "--remove-orphans"],
@@ -369,6 +382,7 @@ class YadaNodeManager:
 
     def run(self):
         self.recover_legacy_plugins()
+        self.ensure_plugin_repos()
         self.deduplicate_networks()  # Fix any duplicate networks before touching compose
         self.stop_previous_containers()  # Stop and remove previous containers
         if self.is_mongodump_directory_present():
