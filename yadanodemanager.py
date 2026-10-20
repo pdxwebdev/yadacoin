@@ -302,6 +302,57 @@ class YadaNodeManager:
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
         self._install_recovered_plugins(dest_root)
+        self.install_plugin_requirements()
+
+    def install_plugin_requirements(self):
+        """Install each plugin requirements.txt inside the running node.
+
+        Packages land in plugins/.pydeps, which the app adds to sys.path.
+        A failed install does not stop the deploy.
+        """
+        try:
+            cid = (
+                subprocess.check_output(
+                    ["docker", "ps", "-q", "-f", f"name={self.service_name}"]
+                )
+                .decode()
+                .strip()
+                .splitlines()
+            )
+        except Exception:
+            return
+        if not cid:
+            return
+        cid = cid[0]
+        dest_root = os.path.join(self.repo_path, "plugins")
+        if not os.path.isdir(dest_root):
+            return
+        subprocess.run(
+            ["docker", "exec", cid, "mkdir", "-p", "/app/plugins/.pydeps"],
+            stderr=subprocess.DEVNULL,
+        )
+        for name in os.listdir(dest_root):
+            if not os.path.isfile(os.path.join(dest_root, name, "requirements.txt")):
+                continue
+            result = subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    cid,
+                    "pip",
+                    "install",
+                    "-r",
+                    f"/app/plugins/{name}/requirements.txt",
+                    "--target",
+                    "/app/plugins/.pydeps",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            if result.returncode != 0:
+                print(f"Warning: plugin {name} requirements failed")
+            else:
+                print(f"installed requirements for {name}")
 
     def recover_legacy_plugins(self):
         """Copy /app/plugins out of the pre-split image before it is removed.
@@ -406,6 +457,7 @@ class YadaNodeManager:
             cwd=self.repo_path,
         )
         self._install_recovered_plugins(os.path.join(self.repo_path, "plugins"))
+        self.install_plugin_requirements()
         subprocess.run(
             ["docker", "image", "prune", "-f"],
             cwd=self.repo_path,
@@ -417,6 +469,7 @@ class YadaNodeManager:
             cwd=self.repo_path,
         )
         self._install_recovered_plugins(os.path.join(self.repo_path, "plugins"))
+        self.install_plugin_requirements()
 
     def is_mongodump_directory_present(self):
         mongodump_path = os.path.join(self.repo_path, "dump")
