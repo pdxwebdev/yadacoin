@@ -262,6 +262,71 @@ class YadaNodeManager:
             os.path.join(dest, ".git")
         )
 
+    def _latest_plugin_tag(self, url):
+        try:
+            output = subprocess.check_output(
+                ["git", "ls-remote", "--tags", url],
+                stderr=subprocess.DEVNULL,
+                timeout=30,
+            ).decode()
+        except Exception:
+            return None
+        found = {}
+        for line in output.splitlines():
+            parts = line.split()
+            if len(parts) != 2 or not parts[1].startswith("refs/tags/"):
+                continue
+            ref = parts[1][:-3] if parts[1].endswith("^{}") else parts[1]
+            name = ref.rsplit("/", 1)[-1]
+            text = name[1:] if name.startswith("v") else name
+            bits = text.split(".")
+            if bits and all(bit.isdigit() for bit in bits):
+                found[name] = tuple(int(bit) for bit in bits)
+        if not found:
+            return None
+        return max(found, key=found.get)
+
+    def _update_plugin_checkout(self, dest, url):
+        subprocess.run(
+            ["git", "-C", dest, "remote", "set-url", "origin", url],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        tag = self._latest_plugin_tag(url)
+        if tag:
+            fetched = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    dest,
+                    "fetch",
+                    "--depth",
+                    "1",
+                    "origin",
+                    f"refs/tags/{tag}:refs/tags/{tag}",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if fetched.returncode == 0:
+                subprocess.run(
+                    ["git", "-C", dest, "checkout", "--detach", tag],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return
+        fetched = subprocess.run(
+            ["git", "-C", dest, "fetch", "--depth", "1", "origin"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if fetched.returncode == 0:
+            subprocess.run(
+                ["git", "-C", dest, "checkout", "--detach", "FETCH_HEAD"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
     def ensure_plugin_repos(self):
         """Install every catalog plugin as a git checkout.
 
@@ -274,17 +339,18 @@ class YadaNodeManager:
         for name, url in self._plugin_catalog():
             dest = os.path.join(dest_root, name)
             if self._is_plugin_checkout(dest):
-                subprocess.run(
-                    ["git", "-C", dest, "pull", "--ff-only"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+                self._update_plugin_checkout(dest, url)
                 continue
             tmp = tempfile.mkdtemp()
             try:
                 cloned = os.path.join(tmp, name)
+                tag = self._latest_plugin_tag(url)
+                clone_cmd = ["git", "clone", "--depth", "1"]
+                if tag:
+                    clone_cmd.extend(["--branch", tag])
+                clone_cmd.extend([url, cloned])
                 result = subprocess.run(
-                    ["git", "clone", "--depth", "1", url, cloned],
+                    clone_cmd,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
@@ -464,6 +530,7 @@ class YadaNodeManager:
         )
 
     def start_docker_image(self):
+        self.ensure_plugin_repos()
         subprocess.run(
             self.compose_cmd + ["up", "-d", self.service_name],
             cwd=self.repo_path,

@@ -24,20 +24,8 @@ https_url() {
   esac
 }
 
-wanted() {
-  case " $essential " in
-    *" $1 "*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-if [ -f "$manifest" ]; then
-  while IFS="$(printf '\t')" read -r name url; do
-    [ -n "${name:-}" ] || continue
-    case "$name" in \#*) continue ;; esac
-    wanted "$name" || continue
-    url=$(https_url "$url")
-    tag=$(git ls-remote --tags "$url" | python3 -c '
+latest_tag() {
+  git ls-remote --tags "$1" | python3 -c '
 import sys
 found = {}
 for line in sys.stdin:
@@ -52,22 +40,44 @@ for line in sys.stdin:
         found[name] = tuple(int(bit) for bit in bits)
 if found:
     print(max(found, key=found.get))
-' || true)
-    if [ -d "$dest/$name/.git" ] || [ -f "$dest/$name/.git" ]; then
-      if [ -n "$tag" ]; then
-        git -C "$dest/$name" remote set-url origin "$url" || true
-        git -C "$dest/$name" fetch --depth 1 origin "refs/tags/$tag:refs/tags/$tag"
-        git -C "$dest/$name" checkout --detach "$tag"
-      fi
-      continue
-    fi
-    if [ -d "$dest/$name" ]; then
-      continue
-    fi
+' || true
+}
+
+update_plugin() {
+  name=$1
+  url=$2
+  tag=$(latest_tag "$url")
+  if [ -d "$dest/$name/.git" ] || [ -f "$dest/$name/.git" ]; then
+    git -C "$dest/$name" remote set-url origin "$url"
     if [ -n "$tag" ]; then
-      git clone --depth 1 --branch "$tag" "$url" "$dest/$name"
+      git -C "$dest/$name" fetch --depth 1 origin "refs/tags/$tag:refs/tags/$tag"
+      git -C "$dest/$name" checkout --detach "$tag"
     else
-      git clone --depth 1 "$url" "$dest/$name"
+      git -C "$dest/$name" fetch --depth 1 origin
+      git -C "$dest/$name" checkout --detach FETCH_HEAD
+    fi
+    return
+  fi
+  tmp=$(mktemp -d)
+  if [ -n "$tag" ]; then
+    git clone --depth 1 --branch "$tag" "$url" "$tmp/$name"
+  else
+    git clone --depth 1 "$url" "$tmp/$name"
+  fi
+  if [ -f "$tmp/$name/handlers.py" ]; then
+    rm -rf "$dest/$name"
+    mv "$tmp/$name" "$dest/$name"
+  fi
+  rm -rf "$tmp"
+}
+
+if [ -f "$manifest" ]; then
+  while IFS="$(printf '\t')" read -r name url; do
+    [ -n "${name:-}" ] || continue
+    case "$name" in \#*) continue ;; esac
+    url=$(https_url "$url")
+    if ! update_plugin "$name" "$url"; then
+      echo "skip $name (update failed)" >&2
     fi
   done < "$manifest"
 fi
