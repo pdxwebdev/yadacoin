@@ -11,10 +11,6 @@ while IFS="$(printf '\t')" read -r name url; do
     git -C "$dest/$name" pull --ff-only || true
     continue
   fi
-  if [ -d "$dest/$name" ] && [ -f "$dest/$name/handlers.py" ]; then
-    echo "skip $name (exists, not a git checkout)"
-    continue
-  fi
   case "$url" in
     git@github.com:*) url="https://github.com/${url#git@github.com:}" ;;
   esac

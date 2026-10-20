@@ -257,17 +257,28 @@ class YadaNodeManager:
                 entries.append((name, url))
         return entries
 
-    def ensure_plugin_repos(self):
-        """Clone catalog plugins that are missing or have no handlers.py.
+    def _is_plugin_checkout(self, dest):
+        return os.path.isdir(os.path.join(dest, ".git")) or os.path.isfile(
+            os.path.join(dest, ".git")
+        )
 
-        A directory that only has cache is replaced. A failed clone leaves the
-        existing directory in place and does not stop the deploy.
+    def ensure_plugin_repos(self):
+        """Install every catalog plugin as a git checkout.
+
+        A copied directory is not current just because it has handlers.py.
+        A failed clone leaves the existing directory in place and does not
+        stop the deploy.
         """
         dest_root = os.path.join(self.repo_path, "plugins")
         os.makedirs(dest_root, exist_ok=True)
         for name, url in self._plugin_catalog():
             dest = os.path.join(dest_root, name)
-            if os.path.isfile(os.path.join(dest, "handlers.py")):
+            if self._is_plugin_checkout(dest):
+                subprocess.run(
+                    ["git", "-C", dest, "pull", "--ff-only"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
                 continue
             tmp = tempfile.mkdtemp()
             try:
