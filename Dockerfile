@@ -27,7 +27,11 @@ RUN mkdir -p /app/plugins && \
         git@github.com:*) url="https://github.com/${url#git@github.com:}" ;; \
       esac; \
       git clone --depth 1 "$url" "/app/plugins/$name" || true; \
-    done < /app/plugins.txt
+    done < /app/plugins.txt && \
+    for req in /app/plugins/*/requirements.txt; do \
+      [ -f "$req" ] || continue; \
+      pip install -r "$req"; \
+    done
 
 ENTRYPOINT ["sh", "/app/scripts/docker-entrypoint.sh"]
 CMD ["python", "yadacoin/app.py", "--config=config/config.json", "--mongohost=mongodb"]

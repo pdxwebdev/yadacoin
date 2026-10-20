@@ -55,3 +55,4 @@ web3
 eth_account
 eth_abi
 argon2-cffi
+sia-storage>=0.12.0
