@@ -2,7 +2,6 @@ apidocs	git@github.com:pdxwebdev/apidocs.git
 app	git@github.com:pdxwebdev/app.git
 chainexplorer	git@github.com:pdxwebdev/chainexplorer.git
 credentialissuer	git@github.com:pdxwebdev/credentialissuer.git
-explorer	git@github.com:pdxwebdev/explorer.git
 explorerapi	git@github.com:pdxwebdev/explorerapi.git
 fileannouncement	git@github.com:pdxwebdev/fileannouncement.git
 graphapi	git@github.com:pdxwebdev/graphapi.git
