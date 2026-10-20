@@ -61,6 +61,19 @@ else
 fi
 
 echo "Node is starting."
-echo "Open http://127.0.0.1:8001/operator/setup"
+node_url=""
+for _ in $(seq 1 30); do
+  node_url=$(docker compose logs --no-color --tail 200 yada-node 2>/dev/null | grep -o 'http://[^ ]*/operator/setup?code=[^ ]*' | tail -n 1 || true)
+  if [ -n "$node_url" ]; then
+    break
+  fi
+  sleep 1
+done
+if [ -z "$node_url" ]; then
+  echo "Setup link was not in the node log yet. Read it from: docker compose logs yada-node"
+  echo "Do not open /operator/setup without the code from that log."
+else
+  echo "Open $node_url"
+  open "$node_url" || true
+fi
 echo "State is in $APP_DIR"
-open "http://127.0.0.1:8001/operator/setup" || true

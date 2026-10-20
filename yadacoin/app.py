@@ -1329,7 +1329,12 @@ class NodeApplication(Application):
         host = self.config.serve_host
         if host in ("0.0.0.0", "::", ""):
             host = "127.0.0.1"
-        url = "http://{}:{}/operator/setup".format(host, self.config.serve_port)
+        from urllib.parse import quote
+
+        code = quote(getattr(self.config, "operator_access_code", "") or "", safe="")
+        url = "http://{}:{}/operator/setup?code={}".format(
+            host, self.config.serve_port, code
+        )
         reset = "\033[0m"
         bold = "\033[1m"
         lines = (

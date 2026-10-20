@@ -12,6 +12,8 @@ Full license terms: see LICENSE.txt in this repository.
 """
 
 import asyncio
+import os
+import tempfile
 import unittest
 
 import tornado
@@ -114,3 +116,45 @@ class TestHomeHandlerGet(WebHttpTestCase):
             headers={"Content-Type": "application/json"},
         )
         self.assertEqual(denied.code, 401)
+
+    def test_seed_requires_startup_access_code(self):
+        from plugins.operator.setup import write_onboarding
+
+        directory = tempfile.mkdtemp()
+        config_path = os.path.join(directory, "config.json")
+        with open(config_path, "w") as handle:
+            handle.write("{}")
+        previous_path = getattr(self.config, "config_path", None)
+        previous_factor = os.environ.get("SECOND_FACTOR")
+        previous_file = os.environ.get("SECOND_FACTOR_FILE")
+        self.config.config_path = config_path
+        self.config.setup_required = False
+        self.config.username = "operator"
+        self.config.seed = "test seed phrase"
+        self.config.operator_access_code = "startup-code"
+        os.environ["SECOND_FACTOR"] = "factor"
+        os.environ.pop("SECOND_FACTOR_FILE", None)
+        try:
+            write_onboarding(self.config, "seed")
+            denied = self.fetch("/operator/api/setup/seed")
+            self.assertEqual(denied.code, 401)
+            self.assertNotIn(b"test seed phrase", denied.body)
+            allowed = self.fetch(
+                "/operator/api/setup/seed",
+                headers={"X-Operator-Code": "startup-code"},
+            )
+            self.assertEqual(allowed.code, 200)
+            self.assertIn(b"test seed phrase", allowed.body)
+        finally:
+            if previous_path is None:
+                self.config.config_path = ""
+            else:
+                self.config.config_path = previous_path
+            if previous_factor is None:
+                os.environ.pop("SECOND_FACTOR", None)
+            else:
+                os.environ["SECOND_FACTOR"] = previous_factor
+            if previous_file is None:
+                os.environ.pop("SECOND_FACTOR_FILE", None)
+            else:
+                os.environ["SECOND_FACTOR_FILE"] = previous_file

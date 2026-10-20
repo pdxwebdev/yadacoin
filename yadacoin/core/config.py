@@ -14,6 +14,7 @@ Full license terms: see LICENSE.txt in this repository.
 import binascii
 import hashlib
 import json
+import secrets
 from time import time
 
 import base58
@@ -47,6 +48,8 @@ class Config:
         self.start_time = int(time())
         # Operator cookie/JWT issued before this process started is invalid.
         self.operator_session_epoch = time()
+        # Process-local grant for operator routes before wallet sign-in.
+        self.operator_access_code = secrets.token_urlsafe(32)
         self.modes = config.get(
             "modes",
             [

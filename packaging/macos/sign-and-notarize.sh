@@ -72,7 +72,8 @@ Open "YadaCoin Node.pkg".
 
 Docker Desktop must already be installed and running.
 The package installs to /usr/local/yadacoin and starts the node for the logged-in user.
-Then open http://127.0.0.1:8001/operator/setup
+Then open the /operator/setup?code= link printed in the node log.
+Do not open /operator/setup without that code.
 EOF
 
 rm -f "$DMG"

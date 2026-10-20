@@ -271,7 +271,19 @@ fi
 echo "Node is starting."
 reset=$'\033[0m'
 bold=$'\033[1m'
-node_url="http://127.0.0.1:8001/operator/setup"
+node_url=""
+for _ in $(seq 1 30); do
+  node_url=$(docker compose logs --no-color --tail 200 yada-node 2>/dev/null | grep -o 'http://[^ ]*/operator/setup?code=[^ ]*' | tail -n 1 || true)
+  if [ -n "$node_url" ]; then
+    break
+  fi
+  sleep 1
+done
+if [ -z "$node_url" ]; then
+  echo "Setup link was not in the node log yet. Read it from: docker compose logs yada-node"
+  echo "Do not open /operator/setup without the code from that log."
+  node_url="(see node log)"
+fi
 printf '\n\n'
 printf '%s%s%s%s\n' "$bold" $'\033[38;5;39m' '██╗   ██╗ █████╗ ██████╗  █████╗  ██████╗ ██████╗ ██╗███╗   ██╗' "$reset"
 printf '%s%s%s%s\n' "$bold" $'\033[38;5;45m' '╚██╗ ██╔╝██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔═══██╗██║████╗  ██║' "$reset"
