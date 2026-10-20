@@ -13,6 +13,7 @@ Full license terms: see LICENSE.txt in this repository.
 
 import base64
 import json
+import os
 from pathlib import Path
 
 import tornado.ioloop
@@ -29,6 +30,16 @@ groups = {}
 
 
 class MainHandler(BaseHandler):
+    def get_template_path(self):
+        return os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "plugins",
+            "app",
+            "templates",
+        )
+
     async def get(self):
         self.render("peerjsclient.html")
 

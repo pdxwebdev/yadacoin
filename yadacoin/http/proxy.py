@@ -128,7 +128,14 @@ def fetch_request(url, **kwargs):
 
 class AuthHandler(tornado.web.RequestHandler):
     def get_template_path(self):
-        return os.path.join(os.path.dirname(__file__), "..", "..", "templates")
+        return os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "plugins",
+            "yadacoinwallet",
+            "templates",
+        )
 
     def make_qr(self, data):
         qr = qrcode.QRCode(

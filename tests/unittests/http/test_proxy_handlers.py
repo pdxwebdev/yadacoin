@@ -189,7 +189,7 @@ class TestAuthHandlerGetTemplatePath(testing.AsyncTestCase):
         request.connection = MagicMock()
         handler = AuthHandler(app, request)
         path = handler.get_template_path()
-        self.assertTrue(path.endswith("templates"))
+        self.assertTrue(path.endswith(os.path.join("yadacoinwallet", "templates")))
 
     def test_make_qr_returns_base64_png(self):
         try:

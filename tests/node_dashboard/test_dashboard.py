@@ -284,7 +284,8 @@ def test_operator_page_warns_not_to_refresh():
     assert "purpose=operator" in js
     assert "/yada-password/signin" in js
     card = open(
-        os.path.join(ROOT, "templates", "dashboard.html"), encoding="utf-8"
+        os.path.join(ROOT, "plugins", "app", "templates", "dashboard.html"),
+        encoding="utf-8",
     ).read()
     assert 'href="/operator"' in card
     assert "127.0.0.1:8099" not in card
