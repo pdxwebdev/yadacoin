@@ -14,6 +14,7 @@ Full license terms: see LICENSE.txt in this repository.
 import asyncio
 import os
 import tempfile
+import time
 import unittest
 
 import tornado
@@ -132,6 +133,7 @@ class TestHomeHandlerGet(WebHttpTestCase):
         self.config.username = "operator"
         self.config.seed = "test seed phrase"
         self.config.operator_access_code = "startup-code"
+        self.config.operator_access_code_shown_at = time.time()
         os.environ["SECOND_FACTOR"] = "factor"
         os.environ.pop("SECOND_FACTOR_FILE", None)
         try:

@@ -1332,6 +1332,7 @@ class NodeApplication(Application):
         from urllib.parse import quote
 
         code = quote(getattr(self.config, "operator_access_code", "") or "", safe="")
+        self.config.operator_access_code_shown_at = time()
         url = "http://{}:{}/operator/setup?code={}".format(
             host, self.config.serve_port, code
         )
