@@ -10,10 +10,14 @@ import {
   materialFromPrivCc,
   nodeUrlToWebSocketUrl,
   normalizeNodeBaseUrl,
+  normalizeSiteId,
+  postAuthSessionResult,
   registerSite,
   resyncSiteFromNode,
   resyncVaultFromNode,
   rotateSitePassword,
+  sealToRatchetPub,
+  siteForSignIn,
   syncInceptionFromNode,
   unlockIdentity,
   vaultIdFromData,
@@ -141,6 +145,153 @@ async function refreshInception(
 }
 
 const EXT_VERSION = "0.1.8";
+
+function sameNode(a: string, b: string): boolean {
+  return a.replace(/\/+$/, "").toLowerCase() === b.replace(/\/+$/, "").toLowerCase();
+}
+
+let approveInFlight: string | null = null;
+let approveTail: Promise<void> = Promise.resolve();
+
+async function approveAuthRequest(
+  p: PasswordAuthRequestPayload,
+  pendingNodeUrl: string,
+  pageOrigin: string
+): Promise<{ ok: boolean; message: string; action?: string }> {
+  if (!p?.session_id) return { ok: false, message: "no pending request" };
+  if (approveInFlight === p.session_id) {
+    return { ok: true, message: "Already approving", action: p.action };
+  }
+  approveInFlight = p.session_id;
+  await chrome.storage.local.set({ yadaApproveBusy: p.session_id });
+  try {
+    const v = await loadVault();
+    if (!v) throw new Error("no vault");
+    const nodeUrl =
+      pendingNodeUrl.replace(/\/+$/, "") ||
+      (p.home_node || "").replace(/\/+$/, "") ||
+      (await apiBase(pageOrigin || undefined));
+    const identity: VaultIdentity = unlockIdentity(v.mnemonic, v.secondFactor, v.username, {
+      identityType: v.identityType,
+      mainDepth: v.mainDepth,
+      tipPrevPkh: v.tipPrevPkh,
+    });
+    let siteKey = p.site || "";
+    if (siteKey.startsWith("http://") || siteKey.startsWith("https://")) {
+      siteKey = normalizeSiteId(siteKey);
+    }
+    const action = (p.action || "signin").toLowerCase();
+
+    if (action === "status") {
+      await postAuthSessionResult(nodeUrl, p.session_id, {
+        result_token: p.result_token,
+        ok: true,
+        action: "status",
+        nonce: p.nonce,
+        message: "status ok",
+        registered: !!v.sites?.[siteKey],
+        counter: v.sites?.[siteKey]?.counter ?? null,
+      });
+      await chrome.storage.local.remove(["yadaPendingAuth", "yadaPendingHome", "yadaApproveBusy"]);
+      return { ok: true, message: "Status approved", action };
+    }
+
+    const rotateBase =
+      action === "operator" && siteKey.startsWith("http") ? siteKey : nodeUrl;
+    const siteReg = await siteForSignIn({ baseUrl: rotateBase }, identity, siteKey);
+    const rotated = await rotateSitePassword(
+      { baseUrl: rotateBase },
+      identity,
+      siteReg,
+      undefined,
+      { expectedHash: p.expectedHash || undefined }
+    );
+    v.sites[siteKey] = storeSite(rotated.site);
+    await saveVault(v);
+    const password = rotated.site.currentPassword;
+    const counter = rotated.site.counter;
+    const nextHash = hashPassword(rotated.site.nextPassword);
+    const sealTo =
+      action === "operator"
+        ? pendingNodeUrl || (siteKey.startsWith("http") ? siteKey : nodeUrl)
+        : nodeUrl;
+    const pubRes = await fetch(
+      sealTo.replace(/\/+$/, "") +
+        "/password-rotation/ratchet-pub?username_signature=" +
+        encodeURIComponent(identity.usernameSignature),
+      { headers: { Accept: "application/json" } }
+    );
+    const pubData = await pubRes.json().catch(() => ({}));
+    if (!pubRes.ok || !pubData.public_key) {
+      throw new Error(
+        pubData.message || "refusing to send a plaintext password — no ratchet public key"
+      );
+    }
+    const passwordEnc = await sealToRatchetPub(
+      JSON.stringify({ p: password, b: p.bind_id || "" }),
+      pubData.public_key
+    );
+    const resultBody = {
+      result_token: p.result_token,
+      ok: true,
+      action: action === "operator" ? "operator" : action === "register" ? "register" : "signin",
+      nonce: p.nonce,
+      password_enc: passwordEnc,
+      nextPasswordHash: nextHash,
+      counter,
+      registered: true,
+      message:
+        action === "operator"
+          ? `operator approved · counter ${counter}`
+          : `approved · counter ${counter}`,
+    };
+    const home = (p.home_node || "").replace(/\/+$/, "");
+    const page = (pageOrigin || "").replace(/\/+$/, "");
+    const ordered = [page, pendingNodeUrl, home, siteKey.startsWith("http") ? siteKey : "", nodeUrl]
+      .map((b) => b.replace(/\/+$/, ""))
+      .filter(Boolean)
+      .filter((b, i, all) => all.findIndex((x) => sameNode(x, b)) === i);
+    let posted = false;
+    let firstErr = "";
+    const primary = ordered[0] || nodeUrl;
+    try {
+      await postAuthSessionResult(primary, p.session_id, resultBody);
+      posted = true;
+    } catch (e) {
+      firstErr = e instanceof Error ? e.message : String(e);
+    }
+    if (!posted) {
+      for (const base of ordered.slice(1)) {
+        try {
+          await postAuthSessionResult(base, p.session_id, resultBody);
+          posted = true;
+          break;
+        } catch (e) {
+          firstErr = e instanceof Error ? e.message : String(e);
+        }
+      }
+    }
+    if (!posted) {
+      throw new Error(firstErr || "could not deliver approval to the sign-in node");
+    }
+    await chrome.storage.local.remove(["yadaPendingAuth", "yadaPendingHome"]);
+    approveTail = Promise.all(
+      ordered
+        .filter((b) => !sameNode(b, primary))
+        .map((base) => postAuthSessionResult(base, p.session_id, resultBody).catch(() => {}))
+    ).then(() => {});
+    return {
+      ok: true,
+      action,
+      message:
+        action === "operator"
+          ? "Operator request approved — wallet can finish unlock"
+          : "Request approved",
+    };
+  } finally {
+    await chrome.storage.local.remove("yadaApproveBusy");
+  }
+}
 
 function reportProgress(
   sender: chrome.runtime.MessageSender,
@@ -477,6 +628,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })();
     return true;
+  }
+
+  if (message.type === "YADA_APPROVE_AUTH") {
+    return (async () => {
+      try {
+        const p = message.request as PasswordAuthRequestPayload;
+        const pendingNodeUrl = String(message.pendingNodeUrl || "");
+        const pageOrigin = String(message.pageOrigin || "");
+        const result = await approveAuthRequest(p, pendingNodeUrl, pageOrigin);
+        await approveTail;
+        return result;
+      } catch (e) {
+        return {
+          ok: false,
+          message: e instanceof Error ? e.message : String(e),
+        };
+      } finally {
+        approveInFlight = null;
+      }
+    })();
   }
 
   if (message.type === "YADA_SITE_STATUS") {

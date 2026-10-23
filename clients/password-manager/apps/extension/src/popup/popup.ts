@@ -4,9 +4,7 @@ import {
   bytesToHex,
   createVaultSeed,
   fetchPendingAuthSessions,
-  hashPassword,
   hexToBytes,
-  sealToRatchetPub,
   identityAfterInception,
   isAlreadyInceptedError,
   LEGACY_KEYS,
@@ -16,8 +14,6 @@ import {
   postAuthSessionResult,
   registerSite,
   rotateSitePassword,
-  siteForSignIn,
-  resyncSiteFromNode,
   resyncVaultFromNode,
   siteAtCounter,
   siteKeysForOrigin,
@@ -361,126 +357,42 @@ async function drainPendingRequests(): Promise<void> {
   } else {
     showAlert("No pending auth requests on this node.", "success");
   }
+  const busy = await chrome.storage.local.get("yadaApproveBusy");
+  if (busy.yadaApproveBusy) {
+    setApproveBusy(true);
+    showAlert("Approving…", "success");
+  }
+}
+
+function setApproveBusy(busy: boolean): void {
+  const approve = $("approveRequestBtn") as HTMLButtonElement;
+  const deny = $("denyRequestBtn") as HTMLButtonElement;
+  approve.disabled = busy || !pendingRemote;
+  deny.disabled = busy || !pendingRemote;
+  approve.textContent = busy ? "Approving…" : "Approve";
 }
 
 async function approvePendingRequest(): Promise<void> {
   if (!pendingRemote) return;
   const p = pendingRemote;
-  const v = await loadVault();
-  if (!v) throw new Error("no vault");
-  const nodeUrl =
-    pendingNodeUrl ||
-    (p.home_node || "").replace(/\/+$/, "") ||
-    (await getApiBase(v.username));
-  const identity = identityFromStored(v);
-  let siteKey = p.site || "";
-  if (siteKey.startsWith("http://") || siteKey.startsWith("https://")) {
-    siteKey = normalizeSiteId(siteKey);
-  }
-  const action = (p.action || "signin").toLowerCase();
-  // Sign-in KEL lives on the password home. Operator unlock stays on the node origin.
-  const rotateBase =
-    action === "operator" && siteKey.startsWith("http") ? siteKey : nodeUrl;
-  let password = "";
-  let counter: number | null = null;
-
-  if (action === "status") {
-    await postAuthSessionResult(nodeUrl, p.session_id, {
-      result_token: p.result_token,
-      ok: true,
-      action: "status",
-      nonce: p.nonce,
-      message: "status ok",
-      registered: !!v.sites?.[siteKey],
-      counter: v.sites?.[siteKey]?.counter ?? null,
-    });
-    renderPendingRequest(null);
-    showAlert("Status approved", "success");
-    return;
-  }
-
-  await ensureNodeAccess(rotateBase);
-  const siteReg = await siteForSignIn({ baseUrl: rotateBase }, identity, siteKey);
-  const rotated = await rotateSitePassword(
-    { baseUrl: rotateBase },
-    identity,
-    siteReg,
-    undefined,
-    { expectedHash: p.expectedHash || undefined }
-  );
-  v.sites[siteKey] = storeSite(rotated.site);
-  await saveActiveVault(v);
-  password = rotated.site.currentPassword;
-  counter = rotated.site.counter;
-  const nextHash = hashPassword(rotated.site.nextPassword);
-  const sealTo =
-    action === "operator"
-      ? pendingNodeUrl || (siteKey.startsWith("http") ? siteKey : nodeUrl)
-      : nodeUrl;
-  await ensureNodeAccess(sealTo);
-  const pubRes = await fetch(
-    sealTo.replace(/\/+$/, "") +
-      "/password-rotation/ratchet-pub?username_signature=" +
-      encodeURIComponent(identity.usernameSignature),
-    { headers: { Accept: "application/json" } }
-  );
-  const pubData = await pubRes.json().catch(() => ({}));
-  if (!pubRes.ok || !pubData.public_key) {
-    throw new Error(
-      pubData.message || "refusing to send a plaintext password — no ratchet public key"
-    );
-  }
-  const passwordEnc = await sealToRatchetPub(
-    JSON.stringify({ p: password, b: p.bind_id || "" }),
-    pubData.public_key
-  );
-
-  const resultBody = {
-    result_token: p.result_token,
-    ok: true,
-    action: action === "operator" ? "operator" : action === "register" ? "register" : "signin",
-    nonce: p.nonce,
-    password_enc: passwordEnc,
-    nextPasswordHash: nextHash,
-    counter,
-    registered: true,
-    message:
-      action === "operator"
-        ? `operator approved · counter ${counter}`
-        : `approved · counter ${counter}`,
-  };
+  const nodeUrl = pendingNodeUrl;
   const pageOrigin = await getActiveOrigin();
-  const home = (p.home_node || "").replace(/\/+$/, "");
-  const required = [pendingNodeUrl, home, pageOrigin || ""].filter(Boolean);
-  const targets = [...required];
-  if (siteKey.startsWith("http") && !targets.some((t) => sameNode(t, siteKey))) {
-    targets.push(siteKey);
+  setApproveBusy(true);
+  showAlert("Approving…", "success");
+  const res = (await chrome.runtime.sendMessage({
+    type: "YADA_APPROVE_AUTH",
+    request: p,
+    pendingNodeUrl: nodeUrl,
+    pageOrigin,
+  })) as { ok?: boolean; message?: string } | undefined;
+  if (chrome.runtime.lastError) {
+    throw new Error(chrome.runtime.lastError.message || "approve failed");
   }
-  if (nodeUrl && !targets.some((t) => sameNode(t, nodeUrl))) targets.push(nodeUrl);
-  const errors: string[] = [];
-  const okBases: string[] = [];
-  for (const base of targets) {
-    try {
-      await ensureNodeAccess(base);
-      await postAuthSessionResult(base, p.session_id, resultBody);
-      okBases.push(base);
-    } catch (e) {
-      errors.push(`${base}: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-  const requiredOk = required.some((r) => okBases.some((b) => sameNode(b, r)));
-  if (!requiredOk) {
-    throw new Error(errors.join(" · ") || "could not deliver approval to the sign-in node");
-  }
-  await chrome.storage.local.remove(["yadaPendingAuth", "yadaPendingHome"]);
+  if (!res?.ok) throw new Error(res?.message || "approve failed: no response from extension");
   renderPendingRequest(null);
-  await fillSiteFromOrigin(siteKey, v);
-  showAlert(
-    action === "operator"
-      ? "Operator request approved — wallet can finish unlock"
-      : "Request approved",
-    "success"
-  );
+  const v = await loadVault();
+  if (v && p.site) await fillSiteFromOrigin(p.site, v);
+  showAlert(String(res.message || "Request approved"), "success");
 }
 
 async function denyPendingRequest(): Promise<void> {
@@ -542,6 +454,11 @@ async function main() {
     void drainPendingRequests().catch(() => {
       /* ignore drain errors on open */
     });
+  }
+  const busy = await chrome.storage.local.get("yadaApproveBusy");
+  if (busy.yadaApproveBusy) {
+    setApproveBusy(true);
+    showAlert("Approving…", "success");
   }
 
   ($("vaultSelect") as HTMLSelectElement).addEventListener("change", () => {
@@ -607,9 +524,10 @@ async function main() {
     );
   });
   $("approveRequestBtn").addEventListener("click", () => {
-    void approvePendingRequest().catch((e) =>
-      showAlert(e instanceof Error ? e.message : String(e), "error")
-    );
+    void approvePendingRequest().catch((e) => {
+      setApproveBusy(false);
+      showAlert(e instanceof Error ? e.message : String(e), "error");
+    });
   });
   $("denyRequestBtn").addEventListener("click", () => {
     void denyPendingRequest().catch((e) =>
