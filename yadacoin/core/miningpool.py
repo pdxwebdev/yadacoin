@@ -16,6 +16,7 @@ import random
 import uuid
 from logging import getLogger
 from time import time
+from traceback import format_exc
 
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
@@ -109,7 +110,10 @@ class MiningPool(object):
             except:
                 pass
             if "error" in data:
-                await StratumServer.send_job(stream)
+                try:
+                    await StratumServer.send_job(stream)
+                except Exception:
+                    self.config.app_log.warning(format_exc())
 
             await StratumServer.block_checker()
 

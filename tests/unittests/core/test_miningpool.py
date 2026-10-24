@@ -244,6 +244,29 @@ class TestProcessNonceQueue(AsyncTestCase):
         ), patch("yadacoin.core.miningpool.StratumServer.block_checker", AsyncMock()):
             await pool.process_nonce_queue()
 
+    async def test_send_job_failure_logged(self):
+        pool = _mk_pool()
+        cfg = pool.config
+        stream = MagicMock()
+        stream.write = AsyncMock()
+        stream.jobs = {"jid": MagicMock(extra_nonce="e", index=1)}
+        item = MagicMock()
+        item.body = {"params": {"nonce": "x", "id": "jid", "result": "h"}}
+        item.stream = stream
+        item.miner = MagicMock()
+        cfg.processing_queues.nonce_queue.pop = MagicMock(side_effect=[item, None])
+        cfg.processing_queues.nonce_queue.inc_num_items_processed = MagicMock()
+        cfg.app_log.warning = MagicMock()
+        pool.process_nonce = AsyncMock(return_value=False)
+        checker = AsyncMock()
+        with patch(
+            "yadacoin.core.miningpool.StratumServer.send_job",
+            AsyncMock(side_effect=Exception("rejob")),
+        ), patch("yadacoin.core.miningpool.StratumServer.block_checker", checker):
+            await pool.process_nonce_queue()
+        cfg.app_log.warning.assert_called()
+        checker.assert_awaited()
+
     async def test_max_loops(self):
         pool = _mk_pool()
         cfg = pool.config
@@ -1181,3 +1204,19 @@ class TestPendingWonAndInvalidate(AsyncTestCase):
             await pool.accept_block(block)
         self.assertEqual(pool.pending_won_index, 101)
         pool._invalidate_factory_and_refresh.assert_awaited()
+
+    async def test_send_job_skips_when_template_missing(self):
+        from yadacoin.tcpsocket.pool import StratumServer
+
+        stream = MagicMock()
+        stream.peer.agent = "xmrig"
+        stream.peer.peer_id = "p"
+        mp = MagicMock()
+        mp.block_template = AsyncMock(return_value=None)
+        mp.block_factory = None
+        cfg = MagicMock()
+        cfg.mp = mp
+        cfg.app_log = MagicMock()
+        with patch.object(StratumServer, "config", cfg):
+            await StratumServer.send_job(stream)
+        stream.write.assert_not_called()

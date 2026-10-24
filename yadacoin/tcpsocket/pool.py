@@ -77,6 +77,11 @@ class StratumServer(RPCSocketServer):
     @classmethod
     async def send_job(cls, stream):
         job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.peer_id)
+        if job is None or cls.config.mp.block_factory is None:
+            cls.config.app_log.warning("send_job skipped; mining template not ready")
+            return
+        if not hasattr(stream, "jobs"):
+            stream.jobs = {}
         stream.jobs[job.id] = job
         cls.current_header = cls.config.mp.block_factory.header
         params = {
