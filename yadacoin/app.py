@@ -544,15 +544,10 @@ class NodeApplication(Application):
                     if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
                         found = True
                         if message["retry_attempts"] > 3:
-                            await self.remove_peer(
-                                self.config.nodeServer.inbound_streams[peer_cls][x[0]],
-                                reason=f"background_message_sender nodeServer {x}",
-                            )
+                            self.config.nodeServer.retry_messages.pop(x, None)
                             self.config.app_log.warning(
-                                f"peer removed: background_message_sender nodeServer {x}"
-                            )
-                            self.config.app_log.debug(
-                                "background_message_sender - continue 2"
+                                "dropped unacked nodeServer retry; peer left connected: %s",
+                                x,
                             )
                             break
                         if len(x) > 3:
@@ -590,12 +585,10 @@ class NodeApplication(Application):
                     if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
                         found = True
                         if message["retry_attempts"] > 3:
-                            await self.remove_peer(
-                                self.config.nodeClient.outbound_streams[peer_cls][x[0]],
-                                reason=f"background_message_sender nodeClient {x}",
-                            )
+                            self.config.nodeClient.retry_messages.pop(x, None)
                             self.config.app_log.warning(
-                                f"peer removed: background_message_sender nodeClient {x}"
+                                "dropped unacked nodeClient retry; peer left connected: %s",
+                                x,
                             )
                             break
                         if message.get("test"):

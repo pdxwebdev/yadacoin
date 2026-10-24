@@ -1280,6 +1280,9 @@ class NodeRPC(BaseRPC):
                     "Rejecting coinbase transaction in newtxn package: %s",
                     txn.transaction_signature,
                 )
+                await self._confirm_txn_ids(
+                    stream, [t.transaction_signature for t in txns], body
+                )
                 return
         missing = []
         for txn in txns:
@@ -1327,6 +1330,9 @@ class NodeRPC(BaseRPC):
                     "newtxn package rejected; pair left intact: %s (%s)",
                     txn.transaction_signature,
                     exc,
+                )
+                await self._confirm_txn_ids(
+                    stream, [t.transaction_signature for t in txns], body
                 )
                 return
         await self.config.mongo.async_db.miner_transactions.bulk_write(
@@ -1761,8 +1767,9 @@ class NodeRPC(BaseRPC):
 
         for txn_id in txn_ids:
             retry_key = (stream.peer.rid, "newtxn", txn_id)
-            if retry_key in self.retry_messages:
-                del self.retry_messages[retry_key]
+            self.retry_messages.pop(retry_key, None)
+            self.config.nodeServer.retry_messages.pop(retry_key, None)
+            self.config.nodeClient.retry_messages.pop(retry_key, None)
             await self.config.mongo.async_db.txn_tracking.update_one(
                 {"rid": stream.peer.rid},
                 {
