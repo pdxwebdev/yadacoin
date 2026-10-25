@@ -1366,6 +1366,14 @@ class TestHolderListAPIHandler(ExplorerHttpTestCase):
         ):
             return self.fetch(path, headers={"Authorization": "Bearer faketoken"})
 
+    def test_holder_list_requires_yada_password(self):
+        response = self.fetch("/api-holders")
+        self.assertEqual(response.code, 401)
+        self.config.mongo.async_db.blocks.aggregate.assert_not_called()
+        page = self.fetch("/holders", follow_redirects=False)
+        self.assertEqual(page.code, 200)
+        self.assertIn(b"Run your own node", page.body)
+
     def test_holder_list_returns_json(self):
         """Lines 590-708: holder list computes balances and returns JSON."""
         response = self._fetch_with_jwt()
