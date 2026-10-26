@@ -5,6 +5,7 @@ credentialissuer	git@github.com:pdxwebdev/credentialissuer.git
 explorerapi	git@github.com:pdxwebdev/explorerapi.git
 fileannouncement	git@github.com:pdxwebdev/fileannouncement.git
 graphapi	git@github.com:pdxwebdev/graphapi.git
+httpanalytics	git@github.com:pdxwebdev/httpanalytics.git
 kel	git@github.com:pdxwebdev/kel.git
 kelutilization	git@github.com:pdxwebdev/kelutilization.git
 keyrotation	git@github.com:pdxwebdev/keyrotation.git
