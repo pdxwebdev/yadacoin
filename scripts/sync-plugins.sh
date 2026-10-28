@@ -5,6 +5,8 @@ dest=${YADA_PLUGINS_DIR:-"$root/plugins"}
 manifest="$root/plugins.txt"
 mkdir -p "$dest"
 while IFS="$(printf '\t')" read -r name url; do
+  name=$(printf '%s' "$name" | tr -d '\r')
+  url=$(printf '%s' "$url" | tr -d '\r')
   [ -n "${name:-}" ] || continue
   case "$name" in \#*) continue ;; esac
   if [ -d "$dest/$name/.git" ] || [ -f "$dest/$name/.git" ]; then

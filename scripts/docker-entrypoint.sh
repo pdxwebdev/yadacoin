@@ -73,6 +73,8 @@ update_plugin() {
 
 if [ -f "$manifest" ]; then
   while IFS="$(printf '\t')" read -r name url; do
+    name=$(printf '%s' "$name" | tr -d '\r')
+    url=$(printf '%s' "$url" | tr -d '\r')
     [ -n "${name:-}" ] || continue
     case "$name" in \#*) continue ;; esac
     url=$(https_url "$url")
