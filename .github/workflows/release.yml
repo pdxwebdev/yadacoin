@@ -217,6 +217,27 @@ jobs:
           python -m pip install "setuptools<82"
           python -c "import pyrx, pathlib; print(pathlib.Path(pyrx.__file__).resolve())" > pyrx_pyd_path.txt
 
+      - name: Sync HTTP plugins
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh scripts/sync-plugins.sh
+          essential="operator app nodeapi graphapi explorerapi kel apidocs product yadacoinwallet yadacoinpool yadapasswordsignin passwordrotation"
+          missing=""
+          for name in $essential; do
+            if [ ! -f "plugins/$name/handlers.py" ]; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "essential plugins missing:$missing" >&2
+            exit 1
+          fi
+          shopt -s nullglob
+          for req in plugins/*/requirements.txt; do
+            python -m pip install -r "$req"
+          done
+
       - name: Build with PyInstaller
         run: pyinstaller yadacoin/app.spec
 

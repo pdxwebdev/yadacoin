@@ -21,6 +21,18 @@ plugin_skip_dirs = {
 }
 plugin_hidden = []
 plugin_datas = []
+essential_plugins = (
+    'operator', 'app', 'nodeapi', 'graphapi', 'explorerapi', 'kel', 'apidocs',
+    'product', 'yadacoinwallet', 'yadacoinpool', 'yadapasswordsignin',
+    'passwordrotation',
+)
+missing_plugins = [
+    name for name in essential_plugins
+    if not os.path.isfile(os.path.join(plugins_root, name, 'handlers.py'))
+]
+if missing_plugins:
+    raise SystemExit('Windows build missing plugin handlers: %s' % ', '.join(missing_plugins))
+
 if os.path.isdir(plugins_root):
     for plugin_name in sorted(os.listdir(plugins_root)):
         plugin_dir = os.path.join(plugins_root, plugin_name)
