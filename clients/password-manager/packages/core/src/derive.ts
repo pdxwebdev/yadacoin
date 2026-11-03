@@ -8,10 +8,11 @@
 import { secp256k1 } from "@noble/curves/secp256k1";
 import { hmac } from "@noble/hashes/hmac";
 import { ripemd160 } from "@noble/hashes/ripemd160";
+import { keccak_256 } from "@noble/hashes/sha3";
 import { sha256 } from "@noble/hashes/sha256";
 import { sha512 } from "@noble/hashes/sha512";
 import { HDKey } from "@scure/bip32";
-import { generateMnemonic, mnemonicToEntropy, validateMnemonic } from "@scure/bip39";
+import { generateMnemonic, mnemonicToEntropy, mnemonicToSeedSync, validateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english";
 import { bytesToHex, hexToBytes } from "./bytes.js";
 
@@ -153,6 +154,24 @@ export function deriveMaterial(
 export function deriveK0(mnemonic: string, secondFactor: string): KeyMaterial {
   const root = rootFromMnemonic(mnemonic);
   return deriveMaterial(root, secondFactor);
+}
+
+/** EVM address of the same secp256k1 key. Stripe onramp cannot deliver to a Yada address. */
+export function evmAddress(publicKey: Uint8Array): string {
+  const point = secp256k1.ProjectivePoint.fromHex(publicKey);
+  const uncompressed = point.toRawBytes(false).slice(1);
+  return "0x" + bytesToHex(keccak_256(uncompressed).slice(-20));
+}
+
+/** Base/BSC receive address. Hardware wallet path m/2' from the BIP39 seed, not K0. */
+export function baseReceiveAddress(mnemonic: string): string {
+  if (!validateMnemonic(mnemonic, wordlist)) {
+    throw new Error("invalid BIP39 mnemonic");
+  }
+  const hd = HDKey.fromMasterSeed(mnemonicToSeedSync(mnemonic));
+  const child = hd.derive("m/2'");
+  if (!child.publicKey) throw new Error("failed to derive Base address");
+  return evmAddress(child.publicKey);
 }
 
 /** Walk n steps from K0 with main factor (K0 is step 0). */

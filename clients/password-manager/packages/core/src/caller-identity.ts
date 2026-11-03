@@ -341,5 +341,75 @@ export function verifyNativeCaller(opts: {
   };
 }
 
+export function verifyStorageCaller(opts: {
+  platform: string;
+  site: string;
+  callback: string;
+  caller: AttestedCaller | null;
+  pin?: SiteCallerPin | null;
+}): VerifyCallerResult {
+  let siteUrl: URL;
+  let callbackUrl: URL;
+  try {
+    siteUrl = new URL(opts.site);
+    callbackUrl = new URL(opts.callback);
+  } catch {
+    return { ok: false, reason: "origin-invalid" };
+  }
+  const loopback =
+    (siteUrl.hostname === "localhost" ||
+      siteUrl.hostname === "127.0.0.1" ||
+      siteUrl.hostname === "[::1]") &&
+    siteUrl.hostname === callbackUrl.hostname;
+  if (
+    !loopback &&
+    (siteUrl.protocol !== "https:" || callbackUrl.protocol !== "https:")
+  ) {
+    return { ok: false, reason: "https-required" };
+  }
+  if (loopback && siteUrl.protocol !== "http:" && siteUrl.protocol !== "https:") {
+    return { ok: false, reason: "https-required" };
+  }
+  if (siteUrl.origin !== callbackUrl.origin) {
+    return { ok: false, reason: "origin-mismatch" };
+  }
+  if (opts.platform !== "android" && opts.platform !== "ios") {
+    return { ok: false, reason: "native-caller-required" };
+  }
+  const caller = opts.caller;
+  if (!caller?.packageName) {
+    return { ok: false, reason: "os-caller-missing" };
+  }
+  const fps = (caller.sha256CertFingerprints || [])
+    .map(normalizeCertSha256)
+    .filter((x) => x.length === 64);
+  if (opts.platform === "android" && !fps.length) {
+    return {
+      ok: false,
+      reason: "os-certs-missing",
+      displayName: caller.appLabel || caller.packageName,
+    };
+  }
+  const attested: AttestedCaller = {
+    ...caller,
+    packageName: caller.packageName.toLowerCase(),
+    sha256CertFingerprints: fps,
+  };
+  if (opts.pin?.packageName && !pinMatches(opts.pin, attested, opts.platform)) {
+    return {
+      ok: false,
+      reason: "pinned-caller-mismatch",
+      displayName: attested.appLabel || attested.packageName,
+      pin: opts.pin,
+    };
+  }
+  return {
+    ok: true,
+    reason: opts.pin?.packageName ? "pinned-caller" : "tofu-first-seen",
+    pin: pinFromCaller(attested),
+    displayName: attested.appLabel || attested.packageName,
+  };
+}
+
 /** @deprecated use verifyNativeCaller */
 export const verifyAndroidCaller = verifyNativeCaller;

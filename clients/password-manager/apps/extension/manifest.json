@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Yada Password",
-  "version": "0.1.20",
+  "version": "0.1.29",
   "description": "YadaCoin KEL password rotation manager with customizable theming",
   "permissions": [
     "activeTab",
@@ -9,6 +9,19 @@
     "storage",
     "tabs",
     "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "https://sia.storage/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["http://localhost/*", "http://127.0.0.1/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
   ],
   "background": {
     "service_worker": "background.js",
@@ -26,6 +39,9 @@
   "options_ui": {
     "page": "options.html",
     "open_in_tab": true
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
   "icons": {
     "16": "icons/icon16.png",

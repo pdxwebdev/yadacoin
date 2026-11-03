@@ -55,6 +55,8 @@ export interface SignedTxn {
   prev_public_key_hash: string;
   requester_rid?: string;
   requested_rid?: string;
+  counter?: number;
+  inception_public_key_hash?: string;
 }
 
 export function buildTxHash(f: TxFields): string {

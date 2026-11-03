@@ -3,7 +3,7 @@
 export const PASSWORD_MANAGER_SCHEME = "yadapass";
 export const DEMO_HARNESS_SCHEME = "yadademo";
 
-export type BridgeAction = "signin" | "register" | "status" | "operator";
+export type BridgeAction = "signin" | "register" | "status" | "operator" | "storage" | "base" | "client";
 
 export interface BridgeRequest {
   action: BridgeAction;
@@ -20,6 +20,8 @@ export interface BridgeRequest {
   resultToken?: string;
   /** Public sign-in bind. Password is sealed to the site ratchet key with this id. */
   bindId?: string;
+  /** Page X25519 public key, hex. Storage handoff only. */
+  boxPub?: string;
   /** Source of the request for UI. */
   source?: "deeplink" | "remote";
 }
@@ -37,9 +39,17 @@ export interface BridgeResult {
   password_enc?: string;
   /** PHC of the next password. */
   nextPasswordHash?: string;
+  /** AES-GCM blob sealed to the page DH key. Storage handoff only. */
+  siaBox?: string;
+  /** Base receive address. Public. Onramp handoff only. */
+  baseAddress?: string;
+  /** Vault username. Public. Client sign-in only. */
+  username?: string;
+  /** K0 address. Public. Client sign-in only. */
+  identity?: string;
 }
 
-const ACTIONS = new Set<BridgeAction>(["signin", "register", "status", "operator"]);
+const ACTIONS = new Set<BridgeAction>(["signin", "register", "status", "operator", "storage", "base", "client"]);
 
 function isAction(v: string | null | undefined): v is BridgeAction {
   return !!v && ACTIONS.has(v as BridgeAction);
@@ -81,6 +91,10 @@ export function buildDemoCallbackUrl(
   }
   if (result.message) q.set("message", result.message);
   if (result.nextPasswordHash) q.set("nextPasswordHash", result.nextPasswordHash);
+  if (result.siaBox) q.set("siaBox", result.siaBox);
+  if (result.baseAddress) q.set("baseAddress", result.baseAddress);
+  if (result.username) q.set("username", result.username);
+  if (result.identity) q.set("identity", result.identity);
 
   const join = base.includes("?") ? "&" : "?";
   // If base already has path like yadademo://result, keep it
@@ -133,6 +147,7 @@ export function parseBridgeRequest(url: string): BridgeRequest | null {
     callback,
     nonce,
     expectedHash: params.get("expectedHash") || undefined,
+    boxPub: params.get("boxPub") || undefined,
   };
 }
 
@@ -159,6 +174,10 @@ export function parseBridgeResult(url: string): BridgeResult | null {
     message: params.get("message") || undefined,
     password: params.get("password") || undefined,
     nextPasswordHash: params.get("nextPasswordHash") || undefined,
+    siaBox: params.get("siaBox") || undefined,
+    baseAddress: params.get("baseAddress") || undefined,
+    username: params.get("username") || undefined,
+    identity: params.get("identity") || undefined,
   };
 }
 

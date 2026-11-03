@@ -48,7 +48,8 @@ export async function probeNodeAlive(
   timeoutMs = 2000
 ): Promise<boolean> {
   const base = normalizeNodeBaseUrl(baseUrl);
-  if (!base || isLoopback(base)) return false;
+  if (!base) return false;
+  if (isLoopback(base) && new URL(base).port === "") return false;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -71,7 +72,7 @@ export async function probeNodeAlive(
 
 function pushUnique(out: string[], raw: string): void {
   const n = normalizeNodeBaseUrl(raw);
-  if (!n || isLoopback(n) || out.includes(n)) return;
+  if (!n || out.includes(n)) return;
   out.push(n);
 }
 
@@ -138,7 +139,7 @@ export async function resolveHomeApiBase(opts: {
         /* keep http */
       }
     }
-    if (!home || isLoopback(home) || dead.has(home.toLowerCase())) return null;
+    if (!home || dead.has(home.toLowerCase())) return null;
     if (!(await ensureAccess(home, wantPerm))) {
       return null;
     }
@@ -164,6 +165,23 @@ export async function resolveHomeApiBase(opts: {
     } else if (cachedIsPage) {
       homeCache.delete(username.toLowerCase());
     }
+  }
+
+  const pageHome = normalizeNodeBaseUrl(opts.pageOrigin || "");
+  if (pageHome && isLoopback(pageHome)) {
+    const local = await accept(pageHome);
+    if (local) return local;
+  }
+  const cached = normalizeNodeBaseUrl(opts.cachedHome || "");
+  if (
+    pageHome &&
+    isLoopback(pageHome) &&
+    cached &&
+    isLoopback(cached) &&
+    new URL(cached).port === "" &&
+    new URL(pageHome).port !== ""
+  ) {
+    opts = { ...opts, cachedHome: pageHome };
   }
 
   const entries = await entryCandidates(opts.pageOrigin);

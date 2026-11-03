@@ -23,6 +23,8 @@ function copyStatic() {
     manifest.version = process.env.EXTENSION_VERSION;
   }
   writeFileSync(join(dist, "manifest.json"), JSON.stringify(manifest, null, 2));
+  const wasm = join(root, "../../node_modules/@siafoundation/sia-storage/wasm/sia_storage_wasm_bg.wasm");
+  if (existsSync(wasm)) cpSync(wasm, join(dist, "sia_storage_wasm_bg.wasm"));
 }
 
 const common = {
@@ -41,6 +43,10 @@ async function buildOnce() {
         background: join(root, "src/background/service-worker.ts"),
         popup: join(root, "src/popup/popup.ts"),
         options: join(root, "src/options/options.ts"),
+      "sia-connect": join(root, "src/sia-connect.ts"),
+      dial: join(root, "src/dial-probe.ts"),
+        upload: join(root, "src/upload.ts"),
+        dial: join(root, "src/dial-probe.ts"),
       },
       outdir: dist,
       format: "esm",
@@ -63,6 +69,7 @@ if (watch) {
       background: join(root, "src/background/service-worker.ts"),
       popup: join(root, "src/popup/popup.ts"),
       options: join(root, "src/options/options.ts"),
+      "sia-connect": join(root, "src/sia-connect.ts"),
     },
     outdir: dist,
     format: "esm",

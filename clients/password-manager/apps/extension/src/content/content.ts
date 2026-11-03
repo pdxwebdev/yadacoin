@@ -41,6 +41,26 @@ window.addEventListener("message", (event) => {
     );
   }
 
+  if (data.type === "YADA_PASSWORD_CLIENT") {
+    const requestId = data.requestId;
+    chrome.runtime.sendMessage(
+      { type: "YADA_CLIENT_IDENTITY", requestId },
+      (response) => {
+        const err = chrome.runtime.lastError;
+        window.postMessage(
+          {
+            type: "YADA_PASSWORD_CLIENT_RESULT",
+            requestId,
+            ...(err
+              ? { ok: false, message: err.message }
+              : response || { ok: false, message: "no response" }),
+          },
+          "*"
+        );
+      }
+    );
+  }
+
   if (data.type === "YADA_PASSWORD_SIGNIN") {
     const requestId = data.requestId;
     chrome.runtime.sendMessage(
@@ -87,6 +107,70 @@ window.addEventListener("message", (event) => {
         );
       }
     );
+  }
+
+  if (data.type === "YADA_PASSWORD_STORE") {
+    const requestId = data.requestId;
+    const toB64 = async (url: string) => {
+      if (!url) return "";
+      const res = await fetch(url);
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      let raw = "";
+      const step = 0x8000;
+      for (let i = 0; i < bytes.length; i += step) {
+        raw += String.fromCharCode(...bytes.subarray(i, i + step));
+      }
+      return btoa(raw);
+    };
+    void (async () => {
+      let fileB64 = "";
+      let thumbB64 = "";
+      try {
+        fileB64 = await toB64(String(data.fileUrl || ""));
+        thumbB64 = await toB64(String(data.thumbUrl || ""));
+      } catch (e) {
+        window.postMessage(
+          {
+            type: "YADA_PASSWORD_STORE_RESULT",
+            requestId,
+            ok: false,
+            message: e instanceof Error ? e.message : String(e),
+          },
+          "*"
+        );
+        return;
+      }
+      const hold = chrome.runtime.connect({ name: "yada-store" });
+      chrome.runtime.sendMessage(
+      {
+        type: "YADA_STORE_FILE",
+        requestId,
+        origin: window.location.origin.toLowerCase(),
+        title: data.title,
+        description: data.description,
+        filename: data.filename,
+        mime: data.mime,
+        size: data.size,
+        kind: data.kind,
+        fileB64,
+        thumbB64,
+      },
+      (response) => {
+        hold.disconnect();
+        const err = chrome.runtime.lastError;
+        window.postMessage(
+          {
+            type: "YADA_PASSWORD_STORE_RESULT",
+            requestId,
+            ...(err
+              ? { ok: false, message: err.message }
+              : response || { ok: false, message: "no response" }),
+          },
+          "*"
+        );
+      }
+    );
+    })();
   }
 
   if (data.type === "YADA_PASSWORD_STATUS") {

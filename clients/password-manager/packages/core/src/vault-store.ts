@@ -42,6 +42,13 @@ export interface StoredVault {
   mainDepth: number;
   tipPrevPkh: string;
   inceptionDone: boolean;
+  /** Sia App Key for the scroller. Not the seed. */
+  siaAppKey?: string;
+  /** OS caller pinned per HTTPS origin for storage handoff. */
+  storageCallers?: Record<
+    string,
+    { packageName: string; sha256CertFingerprints: string[] }
+  >;
   sites: Record<string, StoredSite>;
   theme?: {
     presetId: string;

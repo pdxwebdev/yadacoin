@@ -37,6 +37,7 @@ import {
 } from "../shared/permissions.js";
 import { createExtensionVaultBackend } from "../shared/vault-backend.js";
 
+
 const store = new VaultStore(createExtensionVaultBackend());
 
 function $(id: string): HTMLElement {
@@ -61,8 +62,8 @@ function showAlert(message: string, kind: "error" | "success" | "" = "") {
 async function getActiveOrigin(): Promise<string> {
   try {
     if (typeof chrome === "undefined" || !chrome.tabs?.query) return "";
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    const url = tabs[0]?.url;
+    const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const url = tabs.find((t) => t.url && /^https?:/i.test(t.url))?.url || "";
     if (!url) return "";
     const u = new URL(url);
     if (u.protocol !== "http:" && u.protocol !== "https:") return "";
@@ -390,9 +391,11 @@ async function approvePendingRequest(): Promise<void> {
   }
   if (!res?.ok) throw new Error(res?.message || "approve failed: no response from extension");
   renderPendingRequest(null);
-  const v = await loadVault();
-  if (v && p.site) await fillSiteFromOrigin(p.site, v);
+  await chrome.storage.local.remove("yadaApproveBusy");
+  setApproveBusy(false);
   showAlert(String(res.message || "Request approved"), "success");
+  const v = await loadVault();
+  if (v && p.site) void fillSiteFromOrigin(p.site, v);
 }
 
 async function denyPendingRequest(): Promise<void> {

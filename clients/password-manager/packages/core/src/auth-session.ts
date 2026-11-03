@@ -1,6 +1,6 @@
 /** Remote auth session (webview username handoff) HTTP helpers. */
 
-export type RemoteAuthAction = "signin" | "register" | "status" | "operator";
+export type RemoteAuthAction = "signin" | "register" | "status" | "operator" | "client" | "storage";
 
 export interface CreateAuthSessionRequest {
   username: string;
@@ -33,6 +33,9 @@ export interface AuthSessionView {
   proxied?: boolean;
   token?: string;
   operator_session?: boolean;
+  baseAddress?: string;
+  identity?: string;
+  siaBox?: string;
   hint?: string;
 }
 
@@ -47,6 +50,7 @@ export interface PasswordAuthRequestPayload {
   expires_at?: number;
   home_node?: string | null;
   bind_id?: string | null;
+  boxPub?: string | null;
 }
 
 export interface AuthSessionResultBody {
@@ -61,6 +65,10 @@ export interface AuthSessionResultBody {
   nextPasswordHash?: string;
   counter?: number | null;
   registered?: boolean;
+  baseAddress?: string;
+  identity?: string;
+  username?: string;
+  siaBox?: string;
 }
 
 export interface PasswordHomeClaim {

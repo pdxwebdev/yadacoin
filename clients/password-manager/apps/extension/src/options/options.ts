@@ -9,6 +9,8 @@ import {
 } from "../shared/settings.js";
 import { bootTheme } from "../shared/theme-boot.js";
 
+chrome.runtime.connect({ name: "yada-keepalive" });
+
 
 function $(id: string): HTMLElement {
   const el = document.getElementById(id);

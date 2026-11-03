@@ -234,6 +234,65 @@ export function isAlreadyInceptedError(message: string | undefined): boolean {
   );
 }
 
+export type PublishedKelTip = {
+  counter: number;
+  publicKeyHash: string;
+  prerotatedKeyHash: string;
+};
+
+function kelField(entry: any, name: string): string {
+  const direct = entry?.[name];
+  if (typeof direct === "string" && direct) return direct;
+  const nested = entry?.txn?.[name];
+  return typeof nested === "string" ? nested : "";
+}
+
+/** Highest on-log event. The next signer is its prerotated address. */
+export function latestPublishedKelTip(
+  entries: unknown[] | undefined | null
+): PublishedKelTip | null {
+  if (!Array.isArray(entries)) return null;
+  let best: PublishedKelTip | null = null;
+  for (const entry of entries) {
+    const prerotatedKeyHash = kelField(entry, "prerotated_key_hash");
+    const publicKeyHash = kelField(entry, "public_key_hash");
+    if (!prerotatedKeyHash || !publicKeyHash) continue;
+    const counter = Number((entry as any)?.counter ?? (entry as any)?.txn?.counter ?? -1);
+    if (!Number.isFinite(counter) || counter < 0) continue;
+    if (!best || counter >= best.counter) {
+      best = { counter, publicKeyHash, prerotatedKeyHash };
+    }
+  }
+  return best;
+}
+
+/**
+ * Sign only with the key the chain already published as prerotated.
+ * A depth count is not enough: a wrong step still has a prev hash and the node rejects it.
+ */
+export function identityAtPublishedTip(
+  identity: VaultIdentity,
+  tip: PublishedKelTip,
+  maxSteps = 4096
+): VaultIdentity {
+  let cur = identity.k0;
+  for (let step = 0; step <= maxSteps; step++) {
+    if (cur.address === tip.prerotatedKeyHash) {
+      return {
+        ...identity,
+        mainDepth: tip.counter + 1,
+        tipSigner: cur,
+        tipPrevPkh: tip.publicKeyHash,
+      };
+    }
+    cur = deriveMaterial(cur, identity.secondFactor);
+  }
+  throw new Error(
+    `Refusing to sign: vault cannot derive chain tip signer ${tip.prerotatedKeyHash} ` +
+      `(counter ${tip.counter}). The seed or second factor does not match this key event log.`
+  );
+}
+
 /** Derivation steps from a KEL list: one inception, plus real rotations. */
 export function kelRotationDepth(
   entries: Array<{ prev_public_key_hash?: string }> | undefined | null
@@ -382,18 +441,59 @@ export function identityFromInceptionStatus(
 export async function syncInceptionFromNode(
   api: NodeApi,
   identity: VaultIdentity
-): Promise<{ identity: VaultIdentity; inceptionDone: boolean; status: InceptionStatus }> {
+): Promise<{
+  identity: VaultIdentity;
+  inceptionDone: boolean;
+  aligned: boolean;
+  status: InceptionStatus;
+  alignError?: string;
+}> {
   const status = await fetchInceptionStatus(
     api,
     identity.k0.publicKeyHex,
     identity.username
   );
-  const next = identityFromInceptionStatus(identity, status);
-  return {
-    identity: next,
-    inceptionDone: status.incepted,
-    status,
-  };
+  const kel = await httpJson(
+    api,
+    `/key-event-log?public_key=${encodeURIComponent(identity.k0.publicKeyHex)}`
+  );
+  const tip =
+    kel.ok && Array.isArray(kel.body?.key_event_log)
+      ? latestPublishedKelTip(kel.body.key_event_log)
+      : null;
+  if (!tip) {
+    return {
+      identity: identityFromInceptionStatus(identity, status),
+      inceptionDone: status.incepted,
+      aligned: false,
+      status,
+      alignError: status.incepted
+        ? "Refusing to sign: node has no published key-event tip for this vault"
+        : "key event log is not on this node",
+    };
+  }
+  try {
+    return {
+      identity: identityAtPublishedTip(identity, tip),
+      inceptionDone: true,
+      aligned: true,
+      status: {
+        ...status,
+        incepted: true,
+        hasKel: true,
+        kelDepth: tip.counter + 1,
+        source: "key-event-log",
+      },
+    };
+  } catch (e) {
+    return {
+      identity,
+      inceptionDone: true,
+      aligned: false,
+      status,
+      alignError: e instanceof Error ? e.message : String(e),
+    };
+  }
 }
 
 /**
@@ -949,23 +1049,30 @@ export async function resyncVaultFromNode(
     api,
     `/key-event-log?public_key=${encodeURIComponent(identity.k0.publicKeyHex)}`
   );
+  let nextIdentity: VaultIdentity = identity;
   if (kelRes.ok && Array.isArray(kelRes.body?.key_event_log)) {
-    kelDepth = kelRotationDepth(kelRes.body.key_event_log);
+    const published = latestPublishedKelTip(kelRes.body.key_event_log);
+    if (!published) {
+      kelDepth = 0;
+      nextIdentity = {
+        ...identity,
+        mainDepth: 0,
+        tipSigner: identity.k0,
+        tipPrevPkh: "",
+      };
+    } else {
+      nextIdentity = identityAtPublishedTip(identity, published);
+      kelDepth = nextIdentity.mainDepth;
+    }
   } else if (kelRes.status === 404 || kelRes.body?.status === false) {
     kelDepth = 0;
+    nextIdentity = {
+      ...identity,
+      mainDepth: 0,
+      tipSigner: identity.k0,
+      tipPrevPkh: "",
+    };
   }
-
-  const tipSigner = walkMain(identity.k0, identity.secondFactor, kelDepth);
-  const tipPrevPkh =
-    kelDepth === 0
-      ? ""
-      : walkMain(identity.k0, identity.secondFactor, kelDepth - 1).address;
-  const nextIdentity: VaultIdentity = {
-    ...identity,
-    mainDepth: kelDepth,
-    tipSigner,
-    tipPrevPkh,
-  };
 
   const removedSites: string[] = [];
   const rewoundSites: string[] = [];
@@ -994,15 +1101,7 @@ export async function resyncVaultFromNode(
       (inception && inception !== keys.kp0.address) ||
       !!(tip.prerotated_key_hash && rebuilt.tip.address !== tip.prerotated_key_hash);
     if (keysMismatch) {
-      const replaced = await registerSite(
-        api,
-        nextIdentity,
-        keys.branchPeer,
-        undefined,
-        { replaceExisting: true }
-      );
-      nextSites[key] = replaced.site;
-      replacedSites.push(key);
+      removedSites.push(key);
       continue;
     }
     nextSites[key] = rebuilt;

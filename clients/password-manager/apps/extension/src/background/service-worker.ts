@@ -3,6 +3,7 @@
  * Password home SP is resolved automatically (no user Node URL).
  */
 import {
+  baseReceiveAddress,
   bytesToHex,
   hashPassword,
   hexToBytes,
@@ -17,8 +18,10 @@ import {
   resyncVaultFromNode,
   rotateSitePassword,
   sealToRatchetPub,
+  sealToX25519,
   siteForSignIn,
   syncInceptionFromNode,
+  broadcastTxns,
   unlockIdentity,
   vaultIdFromData,
   websocketPeerIdentity,
@@ -30,6 +33,7 @@ import {
   type VaultIdentity,
 } from "@yadacoin/password-core";
 import { createExtensionVaultBackend } from "../shared/vault-backend.js";
+import { announceFile } from "../shared/announce.js";
 import { resolveHomeApiBase } from "../shared/home.js";
 
 const store = new VaultStore(createExtensionVaultBackend());
@@ -144,10 +148,171 @@ async function refreshInception(
   return next;
 }
 
-const EXT_VERSION = "0.1.8";
+const EXT_VERSION = "0.1.29";
 
 function sameNode(a: string, b: string): boolean {
   return a.replace(/\/+$/, "").toLowerCase() === b.replace(/\/+$/, "").toLowerCase();
+}
+
+let siaWait: Promise<void> | null = null;
+
+type UploadJob = {
+  requestId: string;
+  appKey: string;
+  fileB64: string;
+  mime: string;
+  thumbB64: string;
+};
+
+let uploadJob: UploadJob | null = null;
+let uploadDone: ((value: Record<string, unknown>) => void) | null = null;
+let uploadSender: chrome.runtime.MessageSender | null = null;
+
+function takeUploadJob(): UploadJob | null {
+  const job = uploadJob;
+  uploadJob = null;
+  return job;
+}
+
+function finishUploadJob(result: Record<string, unknown>): void {
+  const done = uploadDone;
+  uploadDone = null;
+  done?.(result);
+}
+
+async function uploadInPage(
+  sender: chrome.runtime.MessageSender,
+  requestId: string,
+  job: UploadJob
+): Promise<Record<string, unknown>> {
+  uploadJob = job;
+  uploadSender = sender;
+  const result = new Promise<Record<string, unknown>>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      uploadJob = null;
+      uploadDone = null;
+      reject(new Error("Sia upload timed out"));
+    }, 20 * 60 * 1000);
+    uploadDone = (value) => {
+      clearTimeout(timer);
+      if (value.ok === false) reject(new Error(String(value.message || "upload failed")));
+      else resolve(value);
+    };
+  });
+  reportProgress(sender, requestId, "Uploading to Sia");
+  await chrome.windows.create({
+    url: chrome.runtime.getURL("upload.html"),
+    type: "popup",
+    width: 420,
+    height: 220,
+    focused: true,
+  });
+  return result;
+}
+
+async function storeFromPage(
+  message: Record<string, unknown>,
+  sender: chrome.runtime.MessageSender
+): Promise<Record<string, unknown>> {
+  const requestId = String(message.requestId || "");
+  const origin = String(message.origin || "").toLowerCase();
+  if (!requestId || !origin.startsWith("http")) throw new Error("invalid upload request");
+  const title = String(message.title || "").trim();
+  if (!title) throw new Error("title is required");
+  const fileB64 = String(message.fileB64 || "");
+  if (!fileB64) throw new Error("file bytes missing");
+  let v = await loadVault();
+  if (!v?.mnemonic) throw new Error("no vault");
+  if (!v.siaAppKey) {
+    await requestSiaKey();
+    const next = await loadVault();
+    if (!next?.siaAppKey) throw new Error("Sia app key was not saved");
+    v.siaAppKey = next.siaAppKey;
+  }
+  const baseUrl = await apiBase(origin);
+  reportProgress(sender, requestId, "Checking the key event log");
+  const seeded = unlockIdentity(v.mnemonic, v.secondFactor, v.username, {
+    identityType: v.identityType,
+    mainDepth: v.mainDepth,
+    tipPrevPkh: v.tipPrevPkh,
+  });
+  const synced = await syncInceptionFromNode({ baseUrl }, seeded);
+  if (!synced.aligned) {
+    throw new Error(synced.alignError || "Refusing to sign: key event tip is not this vault");
+  }
+  const uploaded = await uploadInPage(sender, requestId, {
+    requestId,
+    appKey: v.siaAppKey,
+    fileB64,
+    mime: String(message.mime || ""),
+    thumbB64: String(message.thumbB64 || ""),
+  });
+  const thumbnail_file_id = String(uploaded.thumbnail_file_id || "");
+  const thumbnail_share_url = String(uploaded.thumbnail_share_url || "");
+  const file = Uint8Array.from(atob(fileB64), (c) => c.charCodeAt(0));
+  if (synced.identity.tipSigner.address === synced.identity.k0.address && synced.identity.mainDepth > 1) {
+    throw new Error("Refusing to sign: tip signer is still the inception key");
+  }
+  v = {
+    ...v,
+    inceptionDone: true,
+    mainDepth: synced.identity.mainDepth,
+    tipPrevPkh: synced.identity.tipPrevPkh,
+    nodeUrl: baseUrl,
+  };
+  await saveVault(v);
+  const txns = announceFile(synced.identity, {
+    title,
+    description: String(message.description || ""),
+    filename: String(message.filename || ""),
+    mime: String(message.mime || ""),
+    size: file.length,
+    type: String(message.kind || ""),
+    file_id: String(uploaded.file_id || ""),
+    share_url: String(uploaded.share_url || ""),
+    thumbnail_file_id,
+    thumbnail_share_url,
+  });
+  const res = await broadcastTxns({ baseUrl }, txns);
+  if (!res.ok) throw new Error(res.body?.message || `announce failed (${res.status})`);
+  await saveVault({ ...v, mainDepth: v.mainDepth + 2, nodeUrl: baseUrl });
+  return {
+    ok: true,
+    file_id: uploaded.file_id,
+    share_url: uploaded.share_url,
+    thumbnail_file_id,
+    thumbnail_share_url,
+    transaction_id: txns[0]?.id || "",
+    message: "announced",
+  };
+}
+
+function requestSiaKey(): Promise<void> {
+  if (siaWait) return siaWait;
+  siaWait = new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      chrome.runtime.onMessage.removeListener(onMsg);
+      reject(new Error("Sia approval timed out"));
+    }, 180000);
+    function onMsg(msg: { type?: string; ok?: boolean; message?: string }) {
+      if (!msg || msg.type !== "YADA_SIA_KEY_READY") return;
+      clearTimeout(timer);
+      chrome.runtime.onMessage.removeListener(onMsg);
+      if (!msg.ok) reject(new Error(msg.message || "Sia connection failed"));
+      else resolve(undefined);
+    }
+    chrome.runtime.onMessage.addListener(onMsg);
+    void chrome.windows.create({
+      url: chrome.runtime.getURL("sia.html"),
+      type: "popup",
+      width: 420,
+      height: 240,
+      focused: true,
+    });
+  }).finally(() => {
+    siaWait = null;
+  });
+  return siaWait!;
 }
 
 let approveInFlight: string | null = null;
@@ -181,6 +346,53 @@ async function approveAuthRequest(
       siteKey = normalizeSiteId(siteKey);
     }
     const action = (p.action || "signin").toLowerCase();
+
+    if (action === "storage") {
+      const boxPub = String(p.boxPub || "").trim();
+      if (!/^[0-9a-fA-F]{64}$/.test(boxPub)) {
+        throw new Error("storage request has no page key");
+      }
+      if (!v.siaAppKey) {
+        await requestSiaKey();
+        const next = await loadVault();
+        if (!next?.siaAppKey) throw new Error("Sia app key was not saved");
+        v.siaAppKey = next.siaAppKey;
+      }
+      const siaBox = await sealToX25519(v.siaAppKey, boxPub);
+      await postAuthSessionResult(nodeUrl, p.session_id, {
+        result_token: p.result_token,
+        ok: true,
+        action: "storage",
+        nonce: p.nonce,
+        siaBox,
+        message: "storage key returned",
+      });
+      await chrome.storage.local.remove(["yadaPendingAuth", "yadaPendingHome", "yadaApproveBusy"]);
+      return { ok: true, message: "Storage key returned to the page", action };
+    }
+
+    if (action === "client") {
+      const asked = (p.username || "").replace(/^@/, "").toLowerCase();
+      const mine = (v.username || "").replace(/^@/, "").toLowerCase();
+      if (asked && mine && asked !== mine) {
+        throw new Error("username does not match this vault");
+      }
+      const address = baseReceiveAddress(v.mnemonic);
+      const identityId = vaultIdFromData(v);
+      const resultBody = {
+        result_token: p.result_token,
+        ok: true,
+        action: "client",
+        nonce: p.nonce,
+        username: (v.username || "").replace(/^@/, ""),
+        identity: identityId,
+        baseAddress: address,
+        message: "client identity returned",
+      };
+      await postAuthSessionResult(nodeUrl, p.session_id, resultBody);
+      await chrome.storage.local.remove(["yadaPendingAuth", "yadaPendingHome", "yadaApproveBusy"]);
+      return { ok: true, message: "Identity returned to the page", action };
+    }
 
     if (action === "status") {
       await postAuthSessionResult(nodeUrl, p.session_id, {
@@ -312,12 +524,28 @@ function reportProgress(
 let authWs: WebSocket | null = null;
 let authWsKey = "";
 
+async function activePageOrigin(): Promise<string> {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const url = tabs.find((t) => t.url && /^https?:/i.test(t.url))?.url || "";
+    if (!url) return "";
+    return new URL(url).origin.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 async function connectAuthHome(): Promise<void> {
   const v = await loadVault();
   if (!v?.inceptionDone || !v.username) return;
+  const pageOrigin = await activePageOrigin();
   const base = await resolveHomeApiBase({
     username: v.username,
-    cachedHome: v.nodeUrl,
+    pageOrigin: pageOrigin || undefined,
+    cachedHome:
+      v.nodeUrl && pageOrigin && v.nodeUrl.replace(/\/+$/, "").toLowerCase() === pageOrigin
+        ? undefined
+        : v.nodeUrl,
     requestPermission: false,
   });
   if (!base) return;
@@ -405,6 +633,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   void connectAuthHome().catch(() => {});
 });
 
+chrome.runtime.onConnect.addListener(() => {});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== "object") return false;
 
@@ -467,6 +697,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({
           ok: false,
           extVersion: EXT_VERSION,
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === "YADA_CLIENT_IDENTITY") {
+    void (async () => {
+      try {
+  let v = await loadVault();
+        if (!v?.mnemonic) {
+          sendResponse({ ok: false, message: "no vault" });
+          return;
+        }
+        const address = baseReceiveAddress(v.mnemonic);
+        sendResponse({
+          ok: true,
+          username: (v.username || "").replace(/^@/, ""),
+          identity: vaultIdFromData(v),
+          baseAddress: address,
+        });
+      } catch (e) {
+        sendResponse({
+          ok: false,
           message: e instanceof Error ? e.message : String(e),
         });
       }
@@ -648,6 +903,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         approveInFlight = null;
       }
     })();
+  }
+
+  if (message.type === "YADA_UPLOAD_PROGRESS") {
+    if (uploadSender) reportProgress(uploadSender, message.requestId, String(message.message || ""));
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (message.type === "YADA_UPLOAD_TAKE") {
+    const job = takeUploadJob();
+    sendResponse(job ? { ok: true, ...job } : { ok: false, message: "no upload waiting" });
+    return false;
+  }
+
+  if (message.type === "YADA_UPLOAD_DONE") {
+    finishUploadJob(message);
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (message.type === "YADA_STORE_FILE") {
+    void (async () => {
+      try {
+        const result = await storeFromPage(message, sender);
+        sendResponse(result);
+      } catch (e) {
+        sendResponse({ ok: false, message: e instanceof Error ? e.message : String(e) });
+      }
+    })();
+    return true;
   }
 
   if (message.type === "YADA_SITE_STATUS") {

@@ -1,6 +1,6 @@
 {
   "name": "@yadacoin/password-extension",
-  "version": "0.1.20",
+  "version": "0.1.29",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,13 +10,14 @@
     "package": "node ./scripts/package.mjs"
   },
   "dependencies": {
+    "@siafoundation/sia-storage": "0.2.0",
     "@yadacoin/password-core": "0.2.0",
     "@yadacoin/password-shared-ui": "0.1.0"
   },
   "devDependencies": {
+    "@types/chrome": "^0.0.287",
     "esbuild": "^0.24.0",
-    "typescript": "^5.6.0",
-    "@types/chrome": "^0.0.287"
+    "typescript": "^5.6.0"
   },
   "license": "YOSL-1.1"
 }
