@@ -1336,6 +1336,34 @@ class TestBlock(AsyncTestCase):
         group = Block.find_kel_linked_group(lone, [lone, other])
         self.assertEqual(group, [lone])
 
+    def _root_txn(self, sig, pkh, prev="", coinbase=False, populated=True):
+        t = Mock()
+        t.transaction_signature = sig
+        t.public_key_hash = pkh
+        t.prev_public_key_hash = prev
+        t.coinbase = coinbase
+        t.are_kel_fields_populated = Mock(return_value=populated)
+        return t
+
+    def test_duplicate_kel_root_slot_returns_pair(self):
+        a = self._root_txn("a", "P")
+        b = self._root_txn("b", "P")
+        self.assertEqual(Block.duplicate_kel_root_slot([a, b]), (a, b))
+
+    def test_duplicate_kel_root_slot_ignores_non_roots_and_distinct_keys(self):
+        root = self._root_txn("a", "P")
+        child = self._root_txn("b", "P", prev="Q")
+        other = self._root_txn("c", "R")
+        self.assertIsNone(Block.duplicate_kel_root_slot([root, child, other]))
+        self.assertIsNone(Block.duplicate_kel_root_slot([]))
+        self.assertIsNone(Block.duplicate_kel_root_slot(None))
+
+    def test_duplicate_kel_root_slot_ignores_coinbase_and_unpopulated(self):
+        a = self._root_txn("a", "P")
+        cb = self._root_txn("cb", "P", coinbase=True)
+        blank = self._root_txn("blank", "P", populated=False)
+        self.assertIsNone(Block.duplicate_kel_root_slot([a, cb, blank]))
+
     async def test_validate_transactions_duplicate_sig_and_spent_in_txn_removal(self):
         """Lines 597, 638-642: duplicate sig raises + spent_in_txn removed from txns list."""
         from yadacoin.core.blockchainutils import BlockChainUtils

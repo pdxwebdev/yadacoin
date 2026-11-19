@@ -21,6 +21,7 @@ from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import verify_signature
 from ecdsa import SECP256k1, VerifyingKey
 from ecdsa.util import sigdecode_der
+from pymongo.errors import DuplicateKeyError
 from tornado import ioloop
 from tornado.websocket import WebSocketClosedError, WebSocketHandler
 
@@ -267,6 +268,27 @@ class RCPWebSocketServer(WebSocketHandler):
         params = body.get("params")
         route = params.get("route")
         transaction = Transaction.from_dict(params["transaction"])
+        try:
+            await transaction.verify(
+                check_max_inputs=(
+                    self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK
+                ),
+                check_masternode_fee=(
+                    self.config.LatestBlock.block.index
+                    >= CHAIN.CHECK_MASTERNODE_FEE_FORK
+                ),
+                check_kel=(self.config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK),
+                check_dynamic_nodes=(
+                    self.config.LatestBlock.block.index >= CHAIN.DYNAMIC_NODES_FORK
+                ),
+            )
+        except Exception as exc:
+            self.config.app_log.warning(
+                "route: rejecting invalid transaction %s: %s",
+                transaction.transaction_signature,
+                exc,
+            )
+            return
         group = None
         for rid in route.split(":"):
             if rid in self.config.websocketServer.inbound_streams[User.__name__]:
@@ -280,12 +302,20 @@ class RCPWebSocketServer(WebSocketHandler):
             if group and rid in group:
                 peer_stream = group[rid]
                 await peer_stream.write_params("route", params)
-        await self.config.mongo.async_db.miner_transactions.replace_one(
-            {"id": transaction.transaction_signature},
-            transaction.to_dict(),
-            upsert=True,
-        )
-        if transaction.private == True:
+        stored = True
+        try:
+            await self.config.mongo.async_db.miner_transactions.replace_one(
+                {"id": transaction.transaction_signature},
+                transaction.to_dict(),
+                upsert=True,
+            )
+        except DuplicateKeyError:
+            stored = False
+            self.config.app_log.warning(
+                "route: KEL slot already occupied, not storing "
+                f"{transaction.transaction_signature}"
+            )
+        if stored and transaction.private == True:
             await self.config.mongo.async_db.private_transactions.replace_one(
                 {"id": transaction.transaction_signature},
                 transaction.to_dict(),
@@ -333,9 +363,17 @@ class RCPWebSocketServer(WebSocketHandler):
         except:
             return
 
-        await self.config.mongo.async_db.miner_transactions.replace_one(
-            {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
-        )
+        try:
+            await self.config.mongo.async_db.miner_transactions.replace_one(
+                {"id": txn.transaction_signature},
+                await txn.mempool_doc(),
+                upsert=True,
+            )
+        except DuplicateKeyError:
+            self.config.app_log.warning(
+                f"KEL slot already occupied, not storing {txn.transaction_signature}"
+            )
+            return
         if (
             self.peer.identity.public_key
             == params.get("transaction", {}).get("public_key")

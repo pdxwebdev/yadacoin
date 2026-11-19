@@ -612,11 +612,16 @@ class TestGraphTransactionPost(GraphHandlerTestBase):
         self.assertEqual(response.code, 200)
 
     def test_post_kel_duplicate_exception(self):
-        """KELException from is_already_in_mempool path (kel_fields populated)."""
+        """An occupied KEL slot is rejected by verify's mempool slot check."""
 
-        mock_txn = make_mock_txn()
+        from yadacoin.core.transaction import InvalidTransactionException
+
+        mock_txn = make_mock_txn(
+            verify_side_effect=InvalidTransactionException(
+                "Duplicate KEL entry: another entry already occupies this key event slot"
+            )
+        )
         mock_txn.are_kel_fields_populated = MagicMock(return_value=True)
-        mock_txn.is_already_in_mempool = AsyncMock(return_value=True)
         response = self._post_transaction([{"id": "t1"}], mock_txn=mock_txn)
         self.assertEqual(response.code, 400)
 

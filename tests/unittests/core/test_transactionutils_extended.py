@@ -775,6 +775,7 @@ class TestTUSendSupplemental(TUTestCase):
 
         mock_txn = MagicMock()
         mock_txn.to_dict.return_value = {"id": "txnid"}
+        mock_txn.mempool_doc = AsyncMock(return_value={"id": "txnid"})
         mock_txn.transaction_signature = "sig1"
         mock_txn.verify = AsyncMock()
 

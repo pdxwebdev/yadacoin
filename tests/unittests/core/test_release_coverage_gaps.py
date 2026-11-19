@@ -196,6 +196,7 @@ class TestBroadcastMempool(AsyncTestCase):
         cfg.peer.get_sync_peers = peers
         txn = MagicMock()
         txn.to_dict.return_value = {"id": "t1"}
+        txn.mempool_doc = AsyncMock(return_value={"id": "t1"})
         txn.transaction_signature = "sig1"
         await TU._broadcast_mempool(cfg, txn)
         cfg.mongo.async_db.miner_transactions.insert_one.assert_awaited_once()
@@ -207,6 +208,7 @@ class TestBroadcastMempool(AsyncTestCase):
         cfg.mongo.async_db.miner_transactions.insert_one = AsyncMock()
         txn = MagicMock()
         txn.to_dict.return_value = {"id": "t1"}
+        txn.mempool_doc = AsyncMock(return_value={"id": "t1"})
         await TU._broadcast_mempool(cfg, txn)
 
     async def test_broadcast_stamps_inception_on_outputs(self):
@@ -216,6 +218,7 @@ class TestBroadcastMempool(AsyncTestCase):
         cfg.mongo.async_db.miner_transactions.insert_one = AsyncMock()
         txn = MagicMock()
         txn.to_dict.return_value = {"id": "t1"}
+        txn.mempool_doc = AsyncMock(return_value={"id": "t1"})
         txn.outputs = [
             SimpleNamespace(to=None),
             SimpleNamespace(to=""),
@@ -245,11 +248,26 @@ class TestBroadcastMempool(AsyncTestCase):
         cfg.mongo.async_db.miner_transactions.insert_one = AsyncMock()
         txn = MagicMock()
         txn.to_dict.return_value = {"id": "t1"}
+        txn.mempool_doc = AsyncMock(return_value={"id": "t1"})
         txn.outputs = [SimpleNamespace(to="addr")]
         with patch(
             "yadacoin.core.keyeventlog.KeyEventLog.inception_for_address",
             new=AsyncMock(side_effect=RuntimeError("stamp")),
         ):
+            await TU._broadcast_mempool(cfg, txn)
+
+    async def test_broadcast_duplicate_key_raises_invalid_transaction(self):
+        from pymongo.errors import DuplicateKeyError
+
+        from yadacoin.core.transaction import InvalidTransactionException
+
+        cfg = MagicMock(spec=["mongo"])
+        cfg.mongo.async_db.miner_transactions.insert_one = AsyncMock(
+            side_effect=DuplicateKeyError("slot taken")
+        )
+        txn = MagicMock()
+        txn.mempool_doc = AsyncMock(return_value={"id": "t1"})
+        with self.assertRaises(InvalidTransactionException):
             await TU._broadcast_mempool(cfg, txn)
 
 

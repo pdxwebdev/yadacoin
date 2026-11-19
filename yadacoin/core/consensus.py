@@ -836,6 +836,11 @@ class Consensus(object):
             await self.mongo.async_db.miner_transactions.delete_many(
                 {"id": {"$in": [x.transaction_signature for x in block.transactions]}}
             )
+            from yadacoin.core.transaction import Transaction
+
+            await Transaction.purge_kel_slot_siblings(
+                self.mongo.async_db, block.transactions
+            )
 
             if block.index >= CHAIN.CONTENT_TAKEDOWN_FORK:
                 await self._apply_content_takedowns(block)

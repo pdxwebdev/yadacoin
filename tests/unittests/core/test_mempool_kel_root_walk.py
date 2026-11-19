@@ -563,8 +563,9 @@ class TestSelectKelChainsMoreBranches(AsyncTestCase):
                             a, r = await self.Block.select_kel_chains_for_block(
                                 [root, c1, c2]
                             )
-        self.assertEqual(a, [])
-        self.assertGreaterEqual(len(r), 2)
+        self.assertFalse(any(t.transaction_signature == "c2" for t in a))
+        self.assertTrue(any(t.transaction_signature == "c2" for t in r))
+        self.assertTrue(any(t.transaction_signature == "root" for t in a + r))
 
     async def test_complete_u_c_chain_accepted(self):
         root = _kel_txn(
@@ -963,9 +964,10 @@ class TestDiscardAlreadyClaimedInSameCall(AsyncTestCase):
                             a, r = await Block.select_kel_chains_for_block(
                                 [root, c1, c1b]
                             )
-        # discarded with duplicate sig in chain list hits continue
-        self.assertEqual(a, [])
-        self.assertGreaterEqual(len(r), 1)
+        # same-signature copies are one transaction, not a fork: accepted once
+        sigs = [t.transaction_signature for t in a]
+        self.assertEqual(sorted(sigs), ["c1", "root"])
+        self.assertEqual(r, [])
 
 
 class TestFailedTransactionsRecording(AsyncTestCase):

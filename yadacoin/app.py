@@ -793,6 +793,9 @@ class NodeApplication(Application):
             return
         self.config.background_mempool_cleaner.busy = True
         try:
+            from yadacoin.core.transaction import Transaction
+
+            await Transaction.ensure_kel_slot_index(self.config)
             await self.config.TU.clean_mempool(self.config)
             await self.config.TU.clean_txn_tracking(self.config)
             self.config.health.mempool_cleaner.last_activity = int(time())

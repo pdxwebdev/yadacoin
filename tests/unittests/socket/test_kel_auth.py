@@ -2389,7 +2389,10 @@ class TestAcceptPeerKelChainCoinbase(AsyncTestCase):
         )
         raw = txn.to_dict()
 
-        await rpc._accept_peer_kel_chain([raw])
+        with patch.object(
+            Transaction, "mempool_doc", AsyncMock(return_value=dict(raw, first_seen=1))
+        ):
+            await rpc._accept_peer_kel_chain([raw])
 
         mt = rpc.config.mongo.async_db.miner_transactions
         self.assertTrue(mt.bulk_write.await_count or mt.replace_one.await_count)

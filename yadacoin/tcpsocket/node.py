@@ -502,7 +502,7 @@ class NodeRPC(BaseRPC):
             ops = [
                 ReplaceOne(
                     {"id": t.transaction_signature},
-                    t.to_dict(),
+                    await t.mempool_doc(),
                     upsert=True,
                 )
                 for t in parsed
@@ -516,11 +516,7 @@ class NodeRPC(BaseRPC):
             )
             for t in parsed:
                 try:
-                    await self.config.mongo.async_db.miner_transactions.replace_one(
-                        {"id": t.transaction_signature},
-                        t.to_dict(),
-                        upsert=True,
-                    )
+                    await self._store_mempool_txn(t)
                 except Exception as exc2:
                     self.config.app_log.debug(
                         "_accept_peer_kel_chain: mempool store error: %s", exc2
@@ -1266,6 +1262,7 @@ class NodeRPC(BaseRPC):
 
     async def _accept_txn_package(self, raw_items, body, stream):
         from pymongo import ReplaceOne
+        from pymongo.errors import BulkWriteError
 
         txns = []
         for item in raw_items:
@@ -1335,15 +1332,28 @@ class NodeRPC(BaseRPC):
                     stream, [t.transaction_signature for t in txns], body
                 )
                 return
-        await self.config.mongo.async_db.miner_transactions.bulk_write(
-            [
+        ops = []
+        for txn in missing:
+            ops.append(
                 ReplaceOne(
-                    {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
+                    {"id": txn.transaction_signature},
+                    await txn.mempool_doc(),
+                    upsert=True,
                 )
-                for txn in missing
-            ],
-            ordered=True,
-        )
+            )
+        try:
+            await self.config.mongo.async_db.miner_transactions.bulk_write(
+                ops, ordered=True
+            )
+        except BulkWriteError as exc:
+            self.config.app_log.warning(
+                "newtxn package store rejected; KEL slot occupied: %s",
+                exc.details.get("writeErrors"),
+            )
+            await self._confirm_txn_ids(
+                stream, [t.transaction_signature for t in txns], body
+            )
+            return
         await self._confirm_txn_ids(
             stream, [txn.transaction_signature for txn in txns], body
         )
@@ -1653,9 +1663,8 @@ class NodeRPC(BaseRPC):
             self.config.app_log.warning(
                 f"process_transaction_queue_item, transient error — holding in mempool: {txn.transaction_signature}"
             )
-            await self.config.mongo.async_db.miner_transactions.replace_one(
-                {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
-            )
+            if not await self._store_mempool_txn(txn):
+                return
             await self._broadcast_newtxn(txn)
             return
         except Exception as e:
@@ -1673,11 +1682,22 @@ class NodeRPC(BaseRPC):
         ):
             return
 
-        await self.config.mongo.async_db.miner_transactions.replace_one(
-            {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
-        )
+        if not await self._store_mempool_txn(txn):
+            return
 
         await self._broadcast_newtxn(txn)
+
+    async def _store_mempool_txn(self, txn):
+        from pymongo.errors import DuplicateKeyError
+
+        try:
+            await txn.upsert_mempool()
+        except DuplicateKeyError:
+            self.config.app_log.warning(
+                f"KEL slot already occupied, not storing {txn.transaction_signature}"
+            )
+            return False
+        return True
 
     async def _confirm_newtxn(self, stream, txn, body):
         txn_id = txn.transaction_signature
@@ -2262,9 +2282,24 @@ class NodeRPC(BaseRPC):
             stream.close()
             return
         identity_announcement = params["identity_announcement"]
-        await self.config.mongo.async_db.miner_transactions.replace_one(
-            {"id": identity_announcement["id"]}, identity_announcement, upsert=True
-        )
+        from pymongo.errors import DuplicateKeyError as _DuplicateKeyError
+
+        try:
+            await self.config.mongo.async_db.miner_transactions.replace_one(
+                {"id": identity_announcement["id"]},
+                identity_announcement,
+                upsert=True,
+            )
+        except _DuplicateKeyError:
+            self.config.app_log.warning(
+                "Rejecting peer %s:%s: identity announcement %s occupies an "
+                "existing key event slot",
+                generic_peer.host,
+                generic_peer.port,
+                identity_announcement.get("id"),
+            )
+            stream.close()
+            return
         generic_peer.identity = Identity(
             public_key=identity_announcement["public_key"],
             username=identity_announcement["relationship"]["identity"]["username"],
@@ -2806,9 +2841,7 @@ class NodeRPC(BaseRPC):
                 getattr(txn, "relationship", "") == "peer-kel-branch"
             )
             if not txn.prev_public_key_hash and not _is_bridge:
-                await self.config.mongo.async_db.miner_transactions.replace_one(
-                    {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
-                )
+                await self._store_mempool_txn(txn)
             else:
                 if not _branch_inception_pkh:
                     _branch_inception_pkh = txn.public_key_hash

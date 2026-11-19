@@ -773,6 +773,20 @@ class Transaction(object):
         verify_hash = await self.generate_hash()
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
 
+        if check_kel and self.is_kel_slot_scoped():
+            if mempool and await self.is_kel_slot_taken():
+                raise InvalidTransactionException(
+                    "Duplicate KEL entry: another entry already occupies this key event slot"
+                )
+            slot_block_index = block.index if block is not None else None
+            if (
+                slot_block_index is None
+                or slot_block_index >= CHAIN.KEL_UNIQUE_SLOT_FORK
+            ) and self.kel_slot_in_batch(batch_txns):
+                raise InvalidTransactionException(
+                    "Duplicate KEL entry: another entry in this block occupies the same key event slot"
+                )
+
         if check_kel:
             from yadacoin.core.keyeventlog import KeyEvent
 
@@ -1446,6 +1460,10 @@ class Transaction(object):
         # Recovery / rotation entries carry prev; only bare inceptions.
         if self.prev_public_key_hash:
             return
+        # A spend from an already-incepted key also has empty prev. It is not
+        # a second inception.
+        if self.inputs:
+            return
         from yadacoin.core.recoveryannouncement import RecoveryProof, RecoveryTransition
 
         if isinstance(self.relationship, (RecoveryProof, RecoveryTransition)):
@@ -1823,6 +1841,170 @@ class Transaction(object):
         if result:
             return True
         return False
+
+    def is_kel_slot_scoped(self):
+        if not self.are_kel_fields_populated():
+            return False
+        if getattr(self, "coinbase", False) or getattr(self, "template_kel", False):
+            return False
+        return bool(self.public_key_hash)
+
+    def kel_slot_matches(self, other):
+        if other is None or other is self:
+            return False
+        if other.transaction_signature == self.transaction_signature:
+            return False
+        if not other.is_kel_slot_scoped():
+            return False
+        return (other.prev_public_key_hash or "") == (
+            self.prev_public_key_hash or ""
+        ) and other.public_key_hash == self.public_key_hash
+
+    def kel_slot_in_batch(self, batch_txns):
+        if not self.is_kel_slot_scoped():
+            return False
+        return any(self.kel_slot_matches(t) for t in batch_txns or [])
+
+    async def is_kel_slot_taken(self):
+        if not self.is_kel_slot_scoped():
+            return False
+        result = await self.config.mongo.async_db.miner_transactions.find_one(
+            {
+                "id": {"$ne": self.transaction_signature},
+                "prev_public_key_hash": self.prev_public_key_hash or "",
+                "public_key_hash": self.public_key_hash,
+            },
+            {"id": 1},
+        )
+        return result is not None
+
+    async def mempool_doc(self):
+        collection = self.config.mongo.async_db.miner_transactions
+        existing = await collection.find_one(
+            {"id": self.transaction_signature}, {"first_seen": 1}
+        )
+        first_seen = existing.get("first_seen") if existing else None
+        if first_seen is None:
+            prior = await self.config.mongo.async_db.failed_transactions.find_one(
+                {"txn.id": self.transaction_signature, "first_seen": {"$exists": True}},
+                {"first_seen": 1},
+            )
+            first_seen = prior.get("first_seen") if prior else None
+        doc = self.to_dict()
+        doc["first_seen"] = first_seen or time.time()
+        return doc
+
+    async def upsert_mempool(self):
+        doc = await self.mempool_doc()
+        await self.config.mongo.async_db.miner_transactions.replace_one(
+            {"id": self.transaction_signature}, doc, upsert=True
+        )
+
+    @staticmethod
+    async def purge_kel_slot_siblings(async_db, txns):
+        for txn in txns:
+            if not txn.is_kel_slot_scoped():
+                continue
+            siblings = async_db.miner_transactions.find(
+                {
+                    "id": {"$ne": txn.transaction_signature},
+                    "prev_public_key_hash": txn.prev_public_key_hash or "",
+                    "public_key_hash": txn.public_key_hash,
+                }
+            )
+            async for sibling in siblings:
+                sibling.pop("_id", None)
+                await async_db.failed_transactions.insert_one(
+                    {
+                        "reason": "KELSlotSuperseded",
+                        "message": "KEL slot confirmed by another entry",
+                        "first_seen": sibling.get("first_seen"),
+                        "txn": sibling,
+                    }
+                )
+                await async_db.miner_transactions.delete_one({"id": sibling["id"]})
+
+    @staticmethod
+    async def ensure_kel_slot_index(config):
+        from pymongo import ASCENDING, IndexModel
+
+        migration_id = "kel_slot_unique_v1"
+        migrations = config.mongo.async_db.migrations
+        if await migrations.find_one({"_id": migration_id, "complete": True}):
+            return
+
+        collection = config.mongo.async_db.miner_transactions
+        slot_filter = {"public_key_hash": {"$gt": ""}}
+        dup_groups = collection.aggregate(
+            [
+                {"$match": slot_filter},
+                {
+                    "$group": {
+                        "_id": {
+                            "prev": "$prev_public_key_hash",
+                            "pkh": "$public_key_hash",
+                        },
+                        "docs": {
+                            "$push": {
+                                "id": "$id",
+                                "_oid": "$_id",
+                                "first_seen": "$first_seen",
+                            }
+                        },
+                        "count": {"$sum": 1},
+                    }
+                },
+                {"$match": {"count": {"$gt": 1}}},
+            ]
+        )
+        async for group in dup_groups:
+            ranked = sorted(
+                group["docs"],
+                key=lambda d: (
+                    d.get("first_seen") or d["_oid"].generation_time.timestamp(),
+                    d["id"],
+                ),
+            )
+            for loser in ranked[1:]:
+                doc = await collection.find_one({"id": loser["id"]})
+                if doc is None:
+                    continue
+                await config.mongo.async_db.failed_transactions.insert_one(
+                    {
+                        "reason": "KELSlotDuplicate",
+                        "message": "duplicate KEL slot; earlier arrival kept",
+                        "first_seen": loser.get("first_seen")
+                        or loser["_oid"].generation_time.timestamp(),
+                        "txn": doc,
+                    }
+                )
+                await collection.delete_one({"id": loser["id"]})
+
+        try:
+            await collection.create_indexes(
+                [
+                    IndexModel(
+                        [
+                            ("prev_public_key_hash", ASCENDING),
+                            ("public_key_hash", ASCENDING),
+                        ],
+                        name="__kel_slot_unique",
+                        unique=True,
+                        partialFilterExpression=slot_filter,
+                    )
+                ]
+            )
+        except Exception as exc:
+            config.app_log.error(
+                "ensure_kel_slot_index: index not created (%s); will retry", exc
+            )
+            return
+
+        await migrations.update_one(
+            {"_id": migration_id},
+            {"$set": {"complete": True, "updated_at": time.time()}},
+            upsert=True,
+        )
 
     def _kel_walk_candidates(
         self, batch_txns=None, extra_blocks=None, block_index=None

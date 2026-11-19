@@ -151,6 +151,11 @@ class CHAIN(object):
     KEL_BRANCH_IDENTITY_FORK = 612000
     # On-chain CredentialAnnouncement (W3C VC + recovery Schnorr ZKP).
     CREDENTIAL_ANNOUNCEMENT_FORK = 610000
+    # One KEL entry per key event slot (prev_public_key_hash, public_key_hash).
+    # Block verification rejects a block containing two entries for the same
+    # slot. Mempool admission always enforces it. Placeholder height — set
+    # before mainnet activation.
+    KEL_UNIQUE_SLOT_FORK = 625000
 
     @classmethod
     def target_block_time(cls, network: str):

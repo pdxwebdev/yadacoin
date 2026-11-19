@@ -171,7 +171,18 @@ class TU(object):  # Transaction Utilities
 
     @classmethod
     async def _broadcast_mempool(cls, config, transaction):
-        await config.mongo.async_db.miner_transactions.insert_one(transaction.to_dict())
+        from pymongo.errors import DuplicateKeyError
+
+        from yadacoin.core.transaction import InvalidTransactionException
+
+        try:
+            await config.mongo.async_db.miner_transactions.insert_one(
+                await transaction.mempool_doc()
+            )
+        except DuplicateKeyError as exc:
+            raise InvalidTransactionException(
+                "Transaction already in mempool or occupies an existing key event slot"
+            ) from exc
         try:
             from yadacoin.core.keyeventlog import KeyEventLog
 

@@ -485,6 +485,34 @@ class Block(object):
         return not failed_is_template
 
     @staticmethod
+    def duplicate_kel_root_slot(txns):
+        """Return the first pair of KEL roots sharing a public_key_hash.
+
+        A KEL root (inception-shaped entry) has an empty
+        ``prev_public_key_hash``.  Two roots for one key are two different
+        key event logs for the same key, which is exactly the fork the
+        unique-slot rule forbids.  Non-root slots are already rejected by the
+        one-direct-child check in ``_verify``.  Coinbase entries are handled
+        by the exactly-one-coinbase check.
+        """
+        seen = {}
+        for txn in txns or []:
+            if getattr(txn, "coinbase", False):
+                continue
+            if getattr(txn, "prev_public_key_hash", None):
+                continue
+            if not txn.are_kel_fields_populated():
+                continue
+            pkh = getattr(txn, "public_key_hash", None) or ""
+            if not pkh:
+                continue
+            prior = seen.get(pkh)
+            if prior is not None:
+                return prior, txn
+            seen[pkh] = txn
+        return None
+
+    @staticmethod
     def find_kel_linked_group(txn: Transaction, candidates) -> list:
         """Return every transaction in *candidates* that is transitively
         linked to *txn* via the prerotated_key_hash/twice_prerotated_key_hash
@@ -897,6 +925,57 @@ class Block(object):
         rejected = []
         deferred = []  # valid chain tail deferred to next block (stay in mempool)
 
+        arrival = {}
+        try:
+            async for doc in config.mongo.async_db.miner_transactions.find(
+                {"id": {"$in": [t.transaction_signature for t in kel_candidates]}},
+                {"id": 1, "first_seen": 1, "_id": 1},
+            ):
+                seen = doc.get("first_seen")
+                if seen is None and doc.get("_id") is not None:
+                    seen = doc["_id"].generation_time.timestamp()
+                arrival[doc["id"]] = seen
+        except Exception as exc:
+            config.app_log.warning(
+                f"select_kel_chains_for_block: arrival lookup failed: {exc}"
+            )
+
+        def _arrival_key(t):
+            return (
+                arrival.get(t.transaction_signature) or float("inf"),
+                t.transaction_signature,
+            )
+
+        async def _drop_slot_duplicate(member, winner):
+            sig = member.transaction_signature
+            if sig in claimed or sig == winner.transaction_signature:
+                return
+            claimed.add(sig)
+            rejected.append(member)
+            config.app_log.info(
+                f"select_kel_chains_for_block: dropping duplicate KEL slot entry "
+                f"{sig[:24]}... (earlier arrival {winner.transaction_signature[:24]}... kept)"
+            )
+            try:
+                await config.mongo.async_db.failed_transactions.insert_one(
+                    {
+                        "reason": "KELSlotDuplicate",
+                        "message": "duplicate KEL slot; earlier arrival kept",
+                        "first_seen": arrival.get(sig),
+                        "txn": member.to_dict(),
+                    }
+                )
+            except Exception as exc:
+                config.app_log.warning(
+                    f"select_kel_chains_for_block: failed_transactions insert failed: {exc}"
+                )
+            try:
+                await config.mongo.async_db.miner_transactions.delete_one({"id": sig})
+            except Exception as exc:
+                config.app_log.warning(
+                    f"select_kel_chains_for_block: mempool delete failed: {exc}"
+                )
+
         # Capacity: non-KEL already in the candidate set consume slots.
         kel_sigs = {t.transaction_signature for t in kel_candidates}
         non_kel_count = sum(1 for t in txns if t.transaction_signature not in kel_sigs)
@@ -976,6 +1055,7 @@ class Block(object):
                         {
                             "reason": "KELChainDiscard",
                             "message": str(reason),
+                            "first_seen": arrival.get(sig),
                             "txn": m.to_dict(),
                         }
                     )
@@ -1016,6 +1096,19 @@ class Block(object):
             if is_root:
                 roots.append(txn)
                 root_parents[txn.transaction_signature] = parent
+
+        roots_by_slot = {}
+        for root in roots:
+            if root.is_kel_slot_scoped() and not _is_template_kel(root):
+                roots_by_slot.setdefault(
+                    (root.prev_public_key_hash or "", root.public_key_hash), []
+                ).append(root)
+        for group in roots_by_slot.values():
+            if len(group) > 1:
+                group.sort(key=_arrival_key)
+                for loser in group[1:]:
+                    await _drop_slot_duplicate(loser, group[0])
+        roots = [r for r in roots if r.transaction_signature not in claimed]
 
         for root in roots:
             if root.transaction_signature in claimed:
@@ -1090,9 +1183,14 @@ class Block(object):
                         chain = []
                         break
                     # Ambiguous fork in mempool.
-                    walk_failed = True
-                    chain.extend(valid_kids)
-                    break
+                    if template_kids:
+                        walk_failed = True
+                        chain.extend(valid_kids)
+                        break
+                    ranked = sorted(valid_kids, key=_arrival_key)
+                    for loser in ranked[1:]:
+                        await _drop_slot_duplicate(loser, ranked[0])
+                    valid_kids = ranked[:1]
                 nxt = valid_kids[0]
                 chain.append(nxt)
                 prev = nxt
@@ -1585,6 +1683,15 @@ class Block(object):
             raise Exception(
                 f"Block must contain exactly one coinbase transaction, found {coinbase_count}"
             )
+
+        if int(self.index) >= CHAIN.KEL_UNIQUE_SLOT_FORK:
+            duplicate_roots = Block.duplicate_kel_root_slot(self.transactions)
+            if duplicate_roots is not None:
+                raise Exception(
+                    "Block contains two KEL roots for one key event slot: "
+                    f"{duplicate_roots[0].transaction_signature} and "
+                    f"{duplicate_roots[1].transaction_signature}"
+                )
 
         txns = self.get_transaction_hashes()
         verify_merkle_root = self.get_merkle_root(txns)

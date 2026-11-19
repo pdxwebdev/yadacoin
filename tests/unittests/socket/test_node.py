@@ -508,11 +508,13 @@ class TestNewTxnRelay(AsyncTestCase):
         unconfirmed.coinbase = False
         unconfirmed.verify = AsyncMock()
         unconfirmed.to_dict.return_value = {"id": "u"}
+        unconfirmed.mempool_doc = AsyncMock(return_value={"id": "u"})
         confirming = MagicMock()
         confirming.transaction_signature = "c"
         confirming.coinbase = False
         confirming.verify = AsyncMock()
         confirming.to_dict.return_value = {"id": "c"}
+        confirming.mempool_doc = AsyncMock(return_value={"id": "c"})
         stream = MagicMock()
         stream.peer.protocol_version = 4
         stream.peer.rid = "sender"
@@ -534,6 +536,42 @@ class TestNewTxnRelay(AsyncTestCase):
         self.assertEqual(len(ops), 2)
         self.assertIs(confirming.verify.await_args.kwargs["batch_txns"][0], unconfirmed)
         server._broadcast_txn_package.assert_awaited()
+
+    async def test_newtxn_package_slot_collision_is_rejected_without_relay(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from pymongo.errors import BulkWriteError
+
+        server = self._server()
+        server.config.mongo.async_db.miner_transactions.bulk_write = AsyncMock(
+            side_effect=BulkWriteError({"writeErrors": [{"code": 11000}]})
+        )
+        server._broadcast_txn_package = AsyncMock()
+        unconfirmed = MagicMock()
+        unconfirmed.transaction_signature = "u"
+        unconfirmed.coinbase = False
+        unconfirmed.verify = AsyncMock()
+        unconfirmed.mempool_doc = AsyncMock(return_value={"id": "u"})
+        confirming = MagicMock()
+        confirming.transaction_signature = "c"
+        confirming.coinbase = False
+        confirming.verify = AsyncMock()
+        confirming.mempool_doc = AsyncMock(return_value={"id": "c"})
+        stream = MagicMock()
+        stream.peer.protocol_version = 4
+        stream.peer.rid = "sender"
+        stream.peer.host = "10.0.0.1"
+        body = {
+            "id": "req",
+            "params": {"transactions": [{"id": "u"}, {"id": "c"}]},
+        }
+        with patch(
+            "yadacoin.tcpsocket.node.Transaction.from_dict",
+            side_effect=[unconfirmed, confirming],
+        ), patch.object(server, "_is_coinbase_shaped", return_value=False):
+            await server.newtxn(body, stream)
+        server.config.mongo.async_db.miner_transactions.bulk_write.assert_awaited_once()
+        server._broadcast_txn_package.assert_not_awaited()
 
     async def test_newtxn_kel_null_fields_do_not_false_match(self):
         from unittest.mock import AsyncMock, MagicMock, patch
@@ -604,12 +642,33 @@ class TestNewTxnRelay(AsyncTestCase):
         txn.transaction_signature = "sig-hold"
         txn.to_dict.return_value = {"id": "sig-hold"}
         txn.verify = AsyncMock(side_effect=MissingInputTransactionException("missing"))
+        txn.upsert_mempool = AsyncMock()
 
         item = MagicMock()
         item.transaction = txn
         await server.process_transaction_queue_item(item)
-        server.config.mongo.async_db.miner_transactions.replace_one.assert_awaited()
+        txn.upsert_mempool.assert_awaited()
         server._broadcast_newtxn.assert_awaited_with(txn)
+
+    async def test_store_mempool_txn_rejects_occupied_slot(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from pymongo.errors import DuplicateKeyError
+
+        server = self._server()
+        txn = MagicMock()
+        txn.transaction_signature = "sig-dup"
+        txn.upsert_mempool = AsyncMock(side_effect=DuplicateKeyError("dup"))
+        self.assertFalse(await server._store_mempool_txn(txn))
+
+    async def test_store_mempool_txn_stores(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        server = self._server()
+        txn = MagicMock()
+        txn.upsert_mempool = AsyncMock()
+        self.assertTrue(await server._store_mempool_txn(txn))
+        txn.upsert_mempool.assert_awaited()
 
     async def test_send_mempool_skips_invalid_without_deleting(self):
         from unittest.mock import AsyncMock, MagicMock, patch
