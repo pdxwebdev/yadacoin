@@ -14,6 +14,7 @@ Full license terms: see LICENSE.txt in this repository.
 import unittest
 from unittest.mock import MagicMock
 
+from yadacoin.core.config import Config
 from yadacoin.core.processingqueue import (
     BlockProcessingQueue,
     BlockProcessingQueueItem,
@@ -24,6 +25,7 @@ from yadacoin.core.processingqueue import (
     TransactionProcessingQueue,
     TransactionProcessingQueueItem,
 )
+from yadacoin.enums.modes import MODES
 
 from ..test_setup import AsyncTestCase
 
@@ -254,6 +256,20 @@ class TestProcessingQueues(AsyncTestCase):
         pq = ProcessingQueues()
         self.assertIsNotNone(pq.block_queue)
         self.assertIsNotNone(pq.transaction_queue)
+        self.assertIsNotNone(pq.nonce_queue)
+
+    async def test_nonce_queue_available_without_pool_mode(self):
+        config = Config()
+        original_modes = list(config.modes or [])
+        try:
+            config.modes = [
+                mode for mode in original_modes if mode != MODES.POOL.value
+            ] or [MODES.WEB.value]
+            pq = ProcessingQueues()
+            self.assertIn(pq.nonce_queue, pq.queues)
+            self.assertIn("NonceProcessingQueue", pq.to_status_dict())
+        finally:
+            config.modes = original_modes
 
     async def test_to_dict(self):
         pq = ProcessingQueues()
