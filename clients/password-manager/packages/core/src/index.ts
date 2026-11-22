@@ -2,6 +2,8 @@ export * from "./vault-store.js";
 export * from "./bytes.js";
 export * from "./hash.js";
 export * from "./derive.js";
+export * from "./base-swap.js";
+export * from "./unwrap-request.js";
 export * from "./relationship.js";
 export * from "./transaction.js";
 export * from "./vault.js";

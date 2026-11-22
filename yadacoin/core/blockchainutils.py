@@ -1080,6 +1080,16 @@ class BlockChainUtils(object):
         utxos = await self._load_tagged_utxos(inception)
         if not utxos:
             return 0.0
+        candidates = {
+            out.get("to")
+            for item in utxos
+            for out in (item.get("outputs") or [])
+            if isinstance(out, dict)
+        }
+        owned = await self._owned_tagged_addresses(address, inception, candidates)
+        utxos = self._filter_and_rank_tagged_utxos(utxos, address, owned)
+        if not utxos:
+            return 0.0
         return sum(self._utxo_value(item) for item in utxos)
 
     async def _load_tagged_utxos(self, inception):
@@ -1103,6 +1113,69 @@ class BlockChainUtils(object):
                         spent.add(inp["id"])
         return [item for item in utxos if item.get("id") not in spent]
 
+    async def _owned_tagged_addresses(self, address, inception, candidates):
+        """Map tagged output addresses to whether a KEL spend can unlock them.
+
+        Mirrors ``Transaction._output_owned_by_kel_spender``: an output is
+        spendable by *address* when it pays that address directly, or pays an
+        address that resolves on-chain to the same KEL inception. Outputs
+        tagged with the inception but paid to an address that never became a
+        provable KEL address (for example a key only announced by a discarded
+        orphan KEL entry) can never be unlocked cross-key, so wallets must not
+        advertise or select them.
+        """
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        owned = {}
+        for to in candidates:
+            if not to or to in owned:
+                continue
+            if to == address:
+                owned[to] = True
+                continue
+            try:
+                out_inc = await KeyEventLog.get_inception(address=to, onchain_only=True)
+            except Exception:
+                out_inc = None
+            if out_inc is not None:
+                out_tag = getattr(
+                    out_inc, "inception_public_key_hash", None
+                ) or getattr(out_inc, "public_key_hash", None)
+                if out_tag == inception:
+                    owned[to] = True
+                    continue
+            try:
+                owned[to] = bool(
+                    await KeyEventLog.is_same_kel(to, address, onchain_only=True)
+                )
+            except Exception:
+                owned[to] = False
+        return owned
+
+    def _filter_and_rank_tagged_utxos(self, utxos, address, owned):
+        """Drop unspendable tagged outputs; rank direct payments to *address* first."""
+        ranked = []
+        for item in utxos or []:
+            outputs = [
+                out
+                for out in (item.get("outputs") or [])
+                if isinstance(out, dict) and owned.get(out.get("to"))
+            ]
+            if not outputs:
+                continue
+            entry = dict(item)
+            entry["outputs"] = outputs
+            direct = any(out.get("to") == address for out in outputs)
+            ranked.append((0 if direct else 1, entry))
+        ranked.sort(
+            key=lambda pair: (
+                pair[0],
+                -self._utxo_value(pair[1]),
+                pair[1].get("time") or 0,
+            )
+        )
+        return [entry for _, entry in ranked]
+
     async def tagged_kel_utxos(self, address, amount_needed=0, max_utxos=None):
         from yadacoin.core.keyeventlog import KeyEventLog
 
@@ -1117,9 +1190,14 @@ class BlockChainUtils(object):
         utxos = await self._load_tagged_utxos(inception)
         if utxos is None:
             return None
-        utxos = sorted(
-            utxos, key=lambda item: (-self._utxo_value(item), item.get("time") or 0)
-        )
+        candidates = {
+            out.get("to")
+            for item in utxos
+            for out in (item.get("outputs") or [])
+            if isinstance(out, dict)
+        }
+        owned = await self._owned_tagged_addresses(address, inception, candidates)
+        utxos = self._filter_and_rank_tagged_utxos(utxos, address, owned)
         balance = sum(self._utxo_value(item) for item in utxos)
         capped = utxos[:max_utxos]
         max_transferable = self.floor_to_two_decimal_places(

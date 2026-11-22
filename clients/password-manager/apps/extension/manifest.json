@@ -18,7 +18,7 @@
   ],
   "content_scripts": [
     {
-      "matches": ["http://localhost/*", "http://127.0.0.1/*"],
+      "matches": ["http://localhost/*", "http://127.0.0.1/*", "https://centeridentity.com/*", "https://*.centeridentity.com/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

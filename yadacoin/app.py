@@ -195,11 +195,24 @@ class NodeApplication(Application):
                     path.join(path.dirname(__file__), "static"), "unwrap"
                 )  # probably running from binary
 
+            plugin_app_static = path.join(
+                path.dirname(__file__),
+                "..",
+                "plugins",
+                "centeridentity",
+                "static",
+                "app",
+            )
             self.default_handlers = [
                 (
                     r"/unwrap/([\w\-0-9\/]+\.[\w]+)",
                     StaticFileHandler,
                     {"path": static_unwrap_path},
+                ),
+                (
+                    r"/yadacoinstatic/app/(.*)",
+                    StaticFileHandler,
+                    {"path": plugin_app_static},
                 ),
                 (r"/yadacoinstatic/(.*)", StaticFileHandler, {"path": static_path}),
             ]
@@ -1292,6 +1305,7 @@ class NodeApplication(Application):
             and handler[0]
             in (
                 r"/unwrap/([\w\-0-9\/]+\.[\w]+)",
+                r"/yadacoinstatic/app/(.*)",
                 r"/yadacoinstatic/(.*)",
             )
         ]

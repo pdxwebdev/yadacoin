@@ -920,6 +920,10 @@ var SendReceive = /** @class */ (function () {
         this.address = null;
         this.balance = null;
         this.isDevice = null;
+        this.bridgeAddresses = {
+            bsc: "16U1gAmHazqqEkbRE9KFPShAperjJreMRA",
+            base: "1FcYP3BMxJphZzw9uJkVEEKzWVV8QyBFhs",
+        };
         if (this.navParams.get("identity")) {
             this.identity = this.navParams.get("identity");
             this.bulletinSecretService
@@ -970,29 +974,38 @@ var SendReceive = /** @class */ (function () {
             });
         });
         this.isCrossChain = false;
+        this.wrapChain = null;
         this.bscAddress = "";
         this.wrapAmount = 0;
+        this.unwrapTxId = "";
     }
-    SendReceive.prototype.toggleIsCrossChain = function () {
+    SendReceive.prototype.isBridgeWallet = function () {
+        var _this = this;
+        var address = this.bulletinSecretService.getSpendAddress();
+        return Object.keys(this.bridgeAddresses).some(function (chain) { return _this.bridgeAddresses[chain] === address; });
+    };
+    SendReceive.prototype.selectWrapChain = function (chain) {
         return __awaiter(this, void 0, void 0, function () {
             return __generator(this, function (_a) {
-                this.isCrossChain = !this.isCrossChain;
-                if (this.isCrossChain) {
-                    this.recipients = [
-                        {
-                            to: "16U1gAmHazqqEkbRE9KFPShAperjJreMRA",
-                            value: 0,
-                        },
-                    ];
-                }
-                else {
+                if (this.wrapChain === chain) {
+                    this.wrapChain = null;
+                    this.isCrossChain = false;
                     this.recipients = [
                         {
                             to: "",
                             value: 0,
                         },
                     ];
+                    return [2 /*return*/];
                 }
+                this.wrapChain = chain;
+                this.isCrossChain = true;
+                this.recipients = [
+                    {
+                        to: this.bridgeAddresses[chain],
+                        value: 0,
+                    },
+                ];
                 return [2 /*return*/];
             });
         });
@@ -1072,7 +1085,7 @@ var SendReceive = /** @class */ (function () {
             return;
         }
         if (this.isCrossChain && !this.bscAddress.includes("0x")) {
-            alert.setTitle("Enter a valid BSC Address");
+            alert.setTitle("Enter a valid " + (this.wrapChain === "base" ? "Base" : "BSC") + " Address");
             alert.addButton("Ok");
             alert.present();
             return;
@@ -1092,7 +1105,7 @@ var SendReceive = /** @class */ (function () {
         if (this.isCrossChain) {
             this.recipients = [
                 {
-                    to: "16U1gAmHazqqEkbRE9KFPShAperjJreMRA",
+                    to: this.bridgeAddresses[this.wrapChain],
                     value: parseFloat(this.wrapAmount),
                 },
             ];
@@ -1117,10 +1130,11 @@ var SendReceive = /** @class */ (function () {
                 _this.loadingModal.present();
                 _this.walletService
                     .get(total)
-                    .then(function () {
-                    var maxTransferable = _this.walletService.wallet.max_transferable_value != null
-                        ? _this.walletService.wallet.max_transferable_value
-                        : _this.walletService.wallet.balance;
+                    .then(function (wallet) {
+                    var spendWallet = wallet || _this.walletService.wallet;
+                    var maxTransferable = spendWallet.max_transferable_value != null
+                        ? spendWallet.max_transferable_value
+                        : spendWallet.balance;
                     if (maxTransferable < total) {
                         var title = "Insufficient Funds";
                         var message = "Not enough transferable YadaCoins for transaction. Max transferable: " +
@@ -1137,7 +1151,7 @@ var SendReceive = /** @class */ (function () {
                         _this.loadingModal.dismiss().catch(function () { });
                         throw "insufficient funds";
                     }
-                    if (_this.walletService.wallet.unspent_transactions.length > 100) {
+                    if ((spendWallet.unspent_transactions || []).length > 100) {
                         var title = "Too many inputs";
                         var message = "This transaction requires too many inputs. Send a smaller amount.";
                         var alert = _this.alertCtrl.create();
@@ -1155,7 +1169,7 @@ var SendReceive = /** @class */ (function () {
                     }
                     return _this.transactionService.generateTransaction({
                         outputs: clonedRecipients,
-                        unspent_transactions: _this.walletService.wallet.unspent_transactions,
+                        unspent_transactions: spendWallet.unspent_transactions,
                         fee: _this.fee,
                         masternode_fee: _this.masternode_fee,
                         masternode_fee_delegate: _this.selected_masernode_fee_delegate
@@ -1163,6 +1177,7 @@ var SendReceive = /** @class */ (function () {
                             : "",
                         isCrossChain: _this.isCrossChain,
                         bscAddress: _this.bscAddress,
+                        unwrapTxId: _this.isBridgeWallet() ? _this.unwrapTxId : "",
                     });
                 })
                     .then(function (txn) {
@@ -1243,6 +1258,7 @@ var SendReceive = /** @class */ (function () {
                         to: outputs[0].to,
                         value: total,
                         from: _this.bulletinSecretService.getSpendAddress(),
+                        relationship: _this.isBridgeWallet() ? _this.unwrapTxId : "",
                     });
                 })
                     .then(function () {
@@ -1567,7 +1583,7 @@ var SendReceive = /** @class */ (function () {
     };
     SendReceive = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: "page-sendreceive",template:/*ion-inline-start:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h4>Balance</h4>\n  <ion-item> {{walletService.wallet.balance}} YADA </ion-item>\n  <h4>Pending Balance</h4>\n  <ion-note\n    >(including funds to be returned to you from your transactions)</ion-note\n  >\n  <ion-item> {{walletService.wallet.pending_balance}} YADA </ion-item>\n  <h4>Max Transferable</h4>\n  <ion-note\n    >(maximum you can send in a single transaction)</ion-note\n  >\n  <ion-item> {{walletService.wallet.max_transferable_value}} YADA </ion-item>\n\n  <h4>Wrap on Binance Smart Chain</h4>\n  <button\n    ion-button\n    menuToggle\n    [color]="isCrossChain === true ? \'secondary\' : \'primary\'"\n    (click)="toggleIsCrossChain($event)"\n  >\n    Wrap on BSC\n  </button>\n  <h4 *ngIf="!isCrossChain">Send YadaCoins</h4>\n  <button *ngIf="isDevice" ion-button color="secondary" (click)="scan()" full>\n    Scan Address\n  </button>\n  <ion-item *ngIf="identity && !isCrossChain" title="Verified" class="sender"\n    >Recipient: {{identity.username}}\n    <ion-icon\n      *ngIf="graphService.isAdded(identity)"\n      name="checkmark-circle"\n      class="success"\n    ></ion-icon\n  ></ion-item>\n  <ion-list *ngIf="!isCrossChain">\n    <ion-row *ngFor="let recipient of recipients; let i = index">\n      <ion-col col-12 col-lg-6>\n        <ion-item>\n          <ion-label color="primary" stacked>Address</ion-label>\n          <ion-input\n            type="text"\n            placeholder="Recipient address..."\n            [(ngModel)]="recipients[i].to"\n            class="addressinput"\n          >\n          </ion-input>\n        </ion-item>\n        <ion-item>\n          <ion-label color="primary" fixed>Amount</ion-label>\n          <ion-input\n            type="number"\n            placeholder="Amount..."\n            [(ngModel)]="recipients[i].value"\n          ></ion-input>\n        </ion-item>\n      </ion-col>\n      <ion-col>\n        <button ion-button secondary (click)="removeRecipient(i)" *ngIf="i > 0">\n          <ion-icon name="trash"></ion-icon>\n        </button>\n      </ion-col>\n    </ion-row>\n  </ion-list>\n  <button *ngIf="!isCrossChain" ion-button secondary (click)="addRecipient()">\n    <ion-icon name="add"></ion-icon>&nbsp;Add recipient\n  </button>\n  <h4 *ngIf="isCrossChain === true">Cross-bridge Address</h4>\n  <p *ngIf="isCrossChain === true">\n    Enter the address where you\'d like your new coins minted on the Binanace\n    Smart Chain.\n  </p>\n  <ion-label color="primary" fixed *ngIf="isCrossChain === true"\n    >BSC Address</ion-label\n  >\n  <ion-item *ngIf="isCrossChain === true">\n    <ion-input\n      type="text"\n      placeholder="BSC address..."\n      [(ngModel)]="bscAddress"\n      class="addressinput"\n    >\n    </ion-input>\n  </ion-item>\n  <ion-item *ngIf="isCrossChain === true">\n    <ion-input\n      type="number"\n      placeholder="YDA amount to wrap"\n      [(ngModel)]="wrapAmount"\n    >\n    </ion-input>\n  </ion-item>\n  <h4>Fee</h4>\n  <p>\n    Enter a fee amount to give your transaction higher priority or to support\n    the miners.\n  </p>\n  <ion-item>\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input\n      type="number"\n      placeholder="Amount..."\n      [(ngModel)]="fee"\n    ></ion-input>\n  </ion-item>\n  <h4 *ngIf="!isCrossChain">Masternode Fee</h4>\n  <p *ngIf="!isCrossChain">\n    Enter a masternode fee if you intend to use p2p communication services. If\n    you enter a value you do not need to send coins to anyone. However, you can\n    pay masternode fees and send coins to recipients.\n  </p>\n  <ion-item *ngIf="!isCrossChain">\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input\n      type="number"\n      placeholder="Amount..."\n      [(ngModel)]="masternode_fee"\n    ></ion-input>\n  </ion-item>\n  <ion-item *ngIf="!isCrossChain">\n    <ion-label color="primary" stacked\n      >Deligate masternode fee to another identity</ion-label\n    >\n    <ion-checkbox\n      [(ngModel)]="delegate_masternode_fee"\n      [disabled]="masternode_fee <= 0"\n    ></ion-checkbox>\n  </ion-item>\n  <ion-list *ngIf="delegate_masternode_fee && keys.length > 0">\n    <button\n      *ngFor="let key of keys"\n      ion-item\n      (click)="selectMasterNodeFeeDelegate(key)"\n      [color]="selected_masernode_fee_delegate && key.key === selected_masernode_fee_delegate.wif ? \'primary\' : \'dark\'"\n    >\n      <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n      {{key.username}}\n    </button>\n  </ion-list>\n  <ion-item *ngIf="delegate_masternode_fee && keys.length <= 0"\n    >No identities to delegate to. Create a new identity on the identity\n    tab.</ion-item\n  >\n  <button ion-button secondary (click)="submit()" style="margin-top: 15px">\n    {{isCrossChain ? \'wrap\': \'send\'}}&nbsp;<ion-icon name="send"></ion-icon>\n  </button>\n  <h4>Receive YadaCoins</h4>\n  <ion-item>\n    <ion-label color="primary" stacked>Your Address:</ion-label>\n    <ion-input type="text" [(ngModel)]="createdCode"></ion-input>\n  </ion-item>\n  <ion-item mt-5>\n    <button\n      *ngIf="isDevice"\n      ion-button\n      outline\n      item-end\n      (click)="shareAddress()"\n    >\n      share address&nbsp;<ion-icon name="share"></ion-icon>\n    </button>\n  </ion-item>\n  <ion-card>\n    <ion-card-content>\n      <ngx-qrcode [qrc-value]="createdCode"></ngx-qrcode>\n    </ion-card-content>\n  </ion-card>\n  <h4>Pending Transactions</h4>\n  <strong>Received</strong><br />\n  <button\n    ion-button\n    small\n    (click)="prevReceivedPendingPage()"\n    [disabled]="receivedPendingPage <= 1"\n  >\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextReceivedPendingPage()"\n    [disabled]="past_received_pending_transactions.length === 0 || past_received_pending_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_received_pending_transactions.length === 0">No more results</p>\n  <span *ngIf="receivedPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br />\n  <button\n    ion-button\n    small\n    (click)="prevSentPendingPage()"\n    [disabled]="sentPendingPage <= 1"\n  >\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextSentPendingPage()"\n    [disabled]="past_sent_pending_transactions.length === 0 || past_sent_pending_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_sent_pending_transactions.length === 0">No more results</p>\n  <span *ngIf="sentPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <h4>Transaction history</h4>\n  <strong>Received</strong><br />\n  <button\n    ion-button\n    small\n    (click)="prevReceivedPage()"\n    [disabled]="receivedPage <= 1"\n  >\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextReceivedPage()"\n    [disabled]="past_received_transactions.length === 0 || past_received_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_received_transactions.length === 0">No more results</p>\n  <span *ngIf="receivedLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br />\n  <button ion-button small (click)="prevSentPage()" [disabled]="sentPage <= 1">\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextSentPage()"\n    [disabled]="past_sent_transactions.length === 0 || past_sent_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_sent_transactions.length === 0">No more results</p>\n  <span *ngIf="sentLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n</ion-content>\n'/*ion-inline-end:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/,
+            selector: "page-sendreceive",template:/*ion-inline-start:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h4>Balance</h4>\n  <ion-item> {{walletService.wallet.balance}} YADA </ion-item>\n  <h4>Pending Balance</h4>\n  <ion-note\n    >(including funds to be returned to you from your transactions)</ion-note\n  >\n  <ion-item> {{walletService.wallet.pending_balance}} YADA </ion-item>\n  <h4>Max Transferable</h4>\n  <ion-note\n    >(maximum you can send in a single transaction)</ion-note\n  >\n  <ion-item> {{walletService.wallet.max_transferable_value}} YADA </ion-item>\n\n  <h4>Wrap</h4>\n  <button\n    ion-button\n    menuToggle\n    [color]="wrapChain === \'bsc\' ? \'secondary\' : \'primary\'"\n    (click)="selectWrapChain(\'bsc\')"\n  >\n    Wrap on BSC\n  </button>\n  <button\n    ion-button\n    menuToggle\n    [color]="wrapChain === \'base\' ? \'secondary\' : \'primary\'"\n    (click)="selectWrapChain(\'base\')"\n  >\n    Wrap on Base\n  </button>\n  <div *ngIf="isCrossChain && isBridgeWallet()">\n    <h4>Unwrap</h4>\n    <p>\n      Paste the BSC, ETH, or Base transaction id. It is stored in the\n      relationship field.\n    </p>\n    <ion-item>\n      <ion-label color="primary" stacked>Transaction id</ion-label>\n      <ion-input\n        type="text"\n        placeholder="0x..."\n        [(ngModel)]="unwrapTxId"\n        class="addressinput"\n      ></ion-input>\n    </ion-item>\n  </div>\n  <h4 *ngIf="!isCrossChain">Send YadaCoins</h4>\n  <button *ngIf="isDevice" ion-button color="secondary" (click)="scan()" full>\n    Scan Address\n  </button>\n  <ion-item *ngIf="identity && !isCrossChain" title="Verified" class="sender"\n    >Recipient: {{identity.username}}\n    <ion-icon\n      *ngIf="graphService.isAdded(identity)"\n      name="checkmark-circle"\n      class="success"\n    ></ion-icon\n  ></ion-item>\n  <ion-list *ngIf="!isCrossChain">\n    <ion-row *ngFor="let recipient of recipients; let i = index">\n      <ion-col col-12 col-lg-6>\n        <ion-item>\n          <ion-label color="primary" stacked>Address</ion-label>\n          <ion-input\n            type="text"\n            placeholder="Recipient address..."\n            [(ngModel)]="recipients[i].to"\n            class="addressinput"\n          >\n          </ion-input>\n        </ion-item>\n        <ion-item>\n          <ion-label color="primary" fixed>Amount</ion-label>\n          <ion-input\n            type="number"\n            placeholder="Amount..."\n            [(ngModel)]="recipients[i].value"\n          ></ion-input>\n        </ion-item>\n      </ion-col>\n      <ion-col>\n        <button ion-button secondary (click)="removeRecipient(i)" *ngIf="i > 0">\n          <ion-icon name="trash"></ion-icon>\n        </button>\n      </ion-col>\n    </ion-row>\n  </ion-list>\n  <button *ngIf="!isCrossChain" ion-button secondary (click)="addRecipient()">\n    <ion-icon name="add"></ion-icon>&nbsp;Add recipient\n  </button>\n  <h4 *ngIf="isCrossChain === true">Cross-bridge Address</h4>\n  <p *ngIf="isCrossChain === true">\n    Enter the address where you\'d like your new coins minted on\n    {{wrapChain === \'base\' ? \'Base\' : \'Binance Smart Chain\'}}.\n  </p>\n  <ion-label color="primary" fixed *ngIf="isCrossChain === true"\n    >{{wrapChain === \'base\' ? \'Base\' : \'BSC\'}} Address</ion-label\n  >\n  <ion-item *ngIf="isCrossChain === true">\n    <ion-input\n      type="text"\n      placeholder="{{wrapChain === \'base\' ? \'Base\' : \'BSC\'}} address..."\n      [(ngModel)]="bscAddress"\n      class="addressinput"\n    >\n    </ion-input>\n  </ion-item>\n  <ion-item *ngIf="isCrossChain === true">\n    <ion-input\n      type="number"\n      placeholder="YDA amount to wrap"\n      [(ngModel)]="wrapAmount"\n    >\n    </ion-input>\n  </ion-item>\n  <h4>Fee</h4>\n  <p>\n    Enter a fee amount to give your transaction higher priority or to support\n    the miners.\n  </p>\n  <ion-item>\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input\n      type="number"\n      placeholder="Amount..."\n      [(ngModel)]="fee"\n    ></ion-input>\n  </ion-item>\n  <h4 *ngIf="!isCrossChain">Masternode Fee</h4>\n  <p *ngIf="!isCrossChain">\n    Enter a masternode fee if you intend to use p2p communication services. If\n    you enter a value you do not need to send coins to anyone. However, you can\n    pay masternode fees and send coins to recipients.\n  </p>\n  <ion-item *ngIf="!isCrossChain">\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input\n      type="number"\n      placeholder="Amount..."\n      [(ngModel)]="masternode_fee"\n    ></ion-input>\n  </ion-item>\n  <ion-item *ngIf="!isCrossChain">\n    <ion-label color="primary" stacked\n      >Deligate masternode fee to another identity</ion-label\n    >\n    <ion-checkbox\n      [(ngModel)]="delegate_masternode_fee"\n      [disabled]="masternode_fee <= 0"\n    ></ion-checkbox>\n  </ion-item>\n  <ion-list *ngIf="delegate_masternode_fee && keys.length > 0">\n    <button\n      *ngFor="let key of keys"\n      ion-item\n      (click)="selectMasterNodeFeeDelegate(key)"\n      [color]="selected_masernode_fee_delegate && key.key === selected_masernode_fee_delegate.wif ? \'primary\' : \'dark\'"\n    >\n      <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n      {{key.username}}\n    </button>\n  </ion-list>\n  <ion-item *ngIf="delegate_masternode_fee && keys.length <= 0"\n    >No identities to delegate to. Create a new identity on the identity\n    tab.</ion-item\n  >\n  <button ion-button secondary (click)="submit()" style="margin-top: 15px">\n    {{isCrossChain ? \'wrap\': \'send\'}}&nbsp;<ion-icon name="send"></ion-icon>\n  </button>\n  <h4>Receive YadaCoins</h4>\n  <ion-item>\n    <ion-label color="primary" stacked>Your Address:</ion-label>\n    <ion-input type="text" [(ngModel)]="createdCode"></ion-input>\n  </ion-item>\n  <ion-item mt-5>\n    <button\n      *ngIf="isDevice"\n      ion-button\n      outline\n      item-end\n      (click)="shareAddress()"\n    >\n      share address&nbsp;<ion-icon name="share"></ion-icon>\n    </button>\n  </ion-item>\n  <ion-card>\n    <ion-card-content>\n      <ngx-qrcode [qrc-value]="createdCode"></ngx-qrcode>\n    </ion-card-content>\n  </ion-card>\n  <h4>Pending Transactions</h4>\n  <strong>Received</strong><br />\n  <button\n    ion-button\n    small\n    (click)="prevReceivedPendingPage()"\n    [disabled]="receivedPendingPage <= 1"\n  >\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextReceivedPendingPage()"\n    [disabled]="past_received_pending_transactions.length === 0 || past_received_pending_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_received_pending_transactions.length === 0">No more results</p>\n  <span *ngIf="receivedPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br />\n  <button\n    ion-button\n    small\n    (click)="prevSentPendingPage()"\n    [disabled]="sentPendingPage <= 1"\n  >\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextSentPendingPage()"\n    [disabled]="past_sent_pending_transactions.length === 0 || past_sent_pending_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_sent_pending_transactions.length === 0">No more results</p>\n  <span *ngIf="sentPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <h4>Transaction history</h4>\n  <strong>Received</strong><br />\n  <button\n    ion-button\n    small\n    (click)="prevReceivedPage()"\n    [disabled]="receivedPage <= 1"\n  >\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextReceivedPage()"\n    [disabled]="past_received_transactions.length === 0 || past_received_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_received_transactions.length === 0">No more results</p>\n  <span *ngIf="receivedLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br />\n  <button ion-button small (click)="prevSentPage()" [disabled]="sentPage <= 1">\n    < Prev\n  </button>\n  <button\n    ion-button\n    small\n    (click)="nextSentPage()"\n    [disabled]="past_sent_transactions.length === 0 || past_sent_transactions.length < 10"\n  >\n    Next >\n  </button>\n  <p *ngIf="past_sent_transactions.length === 0">No more results</p>\n  <span *ngIf="sentLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label\n        ><a href="/explorer?term={{txn.id}}" target="_blank"\n          >{{txn.id}}</a\n        ></ion-label\n      >\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n</ion-content>\n'/*ion-inline-end:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/,
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -4675,16 +4691,16 @@ var TransactionService = /** @class */ (function () {
                         unspent_transactions = (_this.info.unspent_transactions ||
                             _this.walletService.wallet.unspent_transactions ||
                             []).slice();
-                        var spendAddress = _this.key.getAddress();
-                        var ownedValue = function (txn) {
+                        var mine_1 = _this.key.getAddress();
+                        var ownedValue_1 = function (txn) {
                             return (txn.outputs || []).reduce(function (sum, output) {
-                                return output && output.to === spendAddress
+                                return output && output.to === mine_1
                                     ? sum + parseFloat(output.value)
                                     : sum;
                             }, 0);
                         };
                         unspent_transactions.sort(function (a, b) {
-                            return ownedValue(b) - ownedValue(a);
+                            return ownedValue_1(b) - ownedValue_1(a);
                         });
                     }
                     var already_added = [];
@@ -4763,6 +4779,12 @@ var TransactionService = /** @class */ (function () {
             }
             if (_this.isCrossChain === true && _this.bscAddress) {
                 _this.info.relationship = _this.bscAddress;
+                _this.info.relationship_hash = foobar.bitcoin.crypto
+                    .sha256(_this.info.relationship)
+                    .toString("hex");
+            }
+            if (_this.info.unwrapTxId) {
+                _this.info.relationship = _this.info.unwrapTxId;
                 _this.info.relationship_hash = foobar.bitcoin.crypto
                     .sha256(_this.info.relationship)
                     .toString("hex");
@@ -5138,6 +5160,9 @@ var TransactionService = /** @class */ (function () {
                     dry_run: !!info.dry_run,
                     exact_match: !!info.exact_match,
                 };
+                if (info.relationship) {
+                    body.relationship = info.relationship;
+                }
                 if (info.outputs && info.outputs.length) {
                     body.outputs = info.outputs;
                 }
@@ -8443,9 +8468,7 @@ var Settings = /** @class */ (function () {
         this.prefix = "usernames-";
         this.ci = new CenterIdentity(undefined, undefined, undefined, undefined, true, 5);
         this.consumeYadaPasswordSignin()
-            .then(function () {
-            return _this.refresh(null);
-        })
+            .then(function () { return _this.refresh(null); })
             .then(function () {
             return _this.peerService.go();
         })
@@ -9158,7 +9181,7 @@ var Settings = /** @class */ (function () {
             _this.operatorSessionActive = false;
             _this.loadingModal.dismiss().catch(function () { });
             var toast = _this.toastCtrl.create({
-                message: "Operator identity saved for this node. Sign in with Yada Password — no WIF stored.",
+                message: "Operator identity saved for this node. Authenticate with Yada Password — no WIF stored.",
                 duration: 3500,
             });
             toast.present();

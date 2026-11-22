@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy — Yada Password</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.5; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; color: #111; }
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.15rem; margin-top: 1.75rem; }
+    .meta { color: #555; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>Privacy Policy — Yada Password</h1>
+  <p class="meta">Effective date: September 4, 2026<br />
+  App: Yada Password (Android package <code>io.yadacoin.passwordrotation</code>)<br />
+  Contact: replace-with-your@email.example</p>
+
+  <p>
+    Yada Password (“the App”) is a self-custody password manager and authentication
+    provider for the YadaCoin password-rotation protocol. This policy describes what
+    data the App handles and how it is used.
+  </p>
+
+  <h2>1. Data stored on your device</h2>
+  <p>The App stores the following in the App’s private storage on your device:</p>
+  <ul>
+    <li>Vault configuration you enter (for example username, node URL)</li>
+    <li>BIP39 seed phrase and master password (second factor) you provide</li>
+    <li>Derived site credentials and rotation state for registered sites</li>
+    <li>Caller pins used to recognize trusted requesting apps (package name and signing certificate fingerprints on Android)</li>
+  </ul>
+  <p>
+    Your seed phrase and master password are intended to remain on your device.
+    Do not back them up to untrusted cloud services. Anyone with your seed and
+    master password can control the vault.
+  </p>
+
+  <h2>2. Data sent over the network</h2>
+  <p>
+    The App communicates only with the <strong>node URL you configure</strong>
+    (a YadaCoin node with the password-rotation features you choose to use).
+    Depending on the action you approve, that may include identity and transaction
+    payloads, password hashes, public key material, and rotation/sync requests.
+  </p>
+  <p>
+    The App does not require a Yada-operated cloud account. If you point the node URL
+    at a third-party or public node, that operator processes the protocol data you send.
+    Prefer HTTPS node URLs so traffic is encrypted in transit. HTTP (for example a
+    local development node) is not encrypted.
+  </p>
+  <p>
+    When verifying some HTTPS site identities, the App may fetch public files such as
+    Digital Asset Links (<code>/.well-known/assetlinks.json</code>) from the relevant host.
+  </p>
+
+  <h2>3. Deep links and other apps</h2>
+  <p>
+    Other apps may open the App via <code>yadapass://</code> links to request site
+    registration or sign-in/rotation. On Android, the App attempts to identify the
+    calling app (package and signing certificates) before you approve. Approval is
+    under your control. Callbacks are directed to the attested caller when possible.
+  </p>
+
+  <h2>4. What we do not do</h2>
+  <ul>
+    <li>No advertising SDKs in the App as distributed for this listing</li>
+    <li>No sale of personal data</li>
+    <li>No analytics or crash-reporting SDKs unless listed in a later update to this policy</li>
+  </ul>
+
+  <h2>5. Children</h2>
+  <p>
+    The App is not directed at children under 13 (or the equivalent age in your
+    jurisdiction). Do not use the App if you are under the applicable age.
+  </p>
+
+  <h2>6. Retention and deletion</h2>
+  <p>
+    On-device data remains until you clear the App’s storage or uninstall the App.
+    Data already sent to a node you configured is retained according to that node
+    operator’s practices and the public or private nature of the ledger or APIs involved.
+  </p>
+
+  <h2>7. Changes</h2>
+  <p>
+    We may update this policy when the App’s behavior changes. The effective date
+    above will be revised accordingly. Continued use after an update constitutes
+    acceptance of the revised policy where permitted by law.
+  </p>
+
+  <h2>8. Contact</h2>
+  <p>
+    Questions about this policy: replace-with-your@email.example<br />
+    Product information: <a href="https://yadacoin.io">https://yadacoin.io</a>
+  </p>
+</body>
+</html>

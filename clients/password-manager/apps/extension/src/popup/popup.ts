@@ -1,4 +1,5 @@
 import {
+  baseReceiveAddress,
   broadcastTxns,
   buildInceptionTxn,
   bytesToHex,
@@ -257,6 +258,8 @@ async function switchToVault(id: string) {
 
 let pendingRemote: PasswordAuthRequestPayload | null = null;
 let pendingNodeUrl = "";
+let pendingSwap: { session_id?: string; source_amount?: string; wallet_address?: string } | null = null;
+let pendingUnwrap: { amount?: string; yadacoin_address?: string; wallet_address?: string } | null = null;
 
 function renderPendingRequest(
   p: PasswordAuthRequestPayload | null,
@@ -268,11 +271,15 @@ function renderPendingRequest(
   const approve = $("approveRequestBtn") as HTMLButtonElement;
   const deny = $("denyRequestBtn") as HTMLButtonElement;
   if (!p) {
-    summary.textContent = "No pending request";
-    approve.disabled = true;
-    deny.disabled = true;
+    if (!pendingSwap && !pendingUnwrap) {
+      summary.textContent = "No pending request";
+      approve.disabled = true;
+      deny.disabled = true;
+    }
     return;
   }
+  pendingSwap = null;
+  pendingUnwrap = null;
   summary.textContent = [
     `action: ${p.action}`,
     `site: ${p.site}`,
@@ -292,9 +299,9 @@ function sameNode(a: string, b: string): boolean {
 
 async function drainPendingRequests(): Promise<void> {
   const v = await loadVault();
-  if (!v || !v.inceptionDone) {
+  if (!v?.mnemonic) {
     renderPendingRequest(null);
-    showAlert("Save vault and broadcast inception first.", "error");
+    showAlert("Unlock the vault first.", "error");
     return;
   }
   const id = identityFromStored(v);
@@ -304,6 +311,47 @@ async function drainPendingRequests(): Promise<void> {
     public_key: id.k0.publicKeyHex,
     inception_pkh: id.k0.address,
   };
+  const unwrapStored = await chrome.storage.local.get("yadaPendingUnwrap");
+  const unwrap = unwrapStored.yadaPendingUnwrap as { amount?: string; yadacoin_address?: string } | undefined;
+  if (unwrap && /^\d+$/.test(String(unwrap.amount || ""))) {
+    const payout = unwrap.yadacoin_address || identityFromStored(v).tipSigner.address;
+    pendingUnwrap = { ...unwrap, yadacoin_address: payout };
+    pendingRemote = null;
+    pendingSwap = null;
+    $("requestSummary").textContent = [
+      "action: unwrap WYDA to YDA",
+      `amount: ${unwrap.amount}`,
+      `yadacoin: ${payout}`,
+    ].join("\n");
+    ($("approveRequestBtn") as HTMLButtonElement).disabled = false;
+    ($("denyRequestBtn") as HTMLButtonElement).disabled = false;
+    showAlert("Pending unwrap to Yadacoin", "success");
+    setTab("request");
+    return;
+  }
+  let swap: { session_id?: string; source_amount?: string; wallet_address?: string } | null = null;
+  try {
+    swap = await loadPendingSwap();
+  } catch (e) {
+    showAlert(e instanceof Error ? e.message : String(e), "error");
+    swap = null;
+  }
+  if (swap) {
+    pendingSwap = swap;
+    pendingRemote = null;
+    pendingUnwrap = null;
+    $("requestSummary").textContent = [
+      "action: swap USDC to WYDA",
+      `amount: ${swap.source_amount || "all"}`,
+      `wallet: ${swap.wallet_address || "—"}`,
+      `session: ${swap.session_id || "—"}`,
+    ].join("\n");
+    ($("approveRequestBtn") as HTMLButtonElement).disabled = false;
+    ($("denyRequestBtn") as HTMLButtonElement).disabled = false;
+    showAlert("Pending USDC to WYDA swap", "success");
+    setTab("request");
+    return;
+  }
   const pageOrigin = await getActiveOrigin();
   const stored = await chrome.storage.local.get(["yadaPendingAuth", "yadaPendingHome"]);
   const storedSite = String(stored.yadaPendingAuth?.site || "");
@@ -349,6 +397,27 @@ async function drainPendingRequests(): Promise<void> {
       lastErr = e instanceof Error ? e.message : String(e);
     }
   }
+  if (!first) {
+    const stored = await chrome.storage.local.get("yadaPendingUnwrap");
+    const unwrap = stored.yadaPendingUnwrap as { amount?: string; yadacoin_address?: string } | undefined;
+    if (unwrap && !/^\d+$/.test(String(unwrap.amount || ""))) {
+      await chrome.storage.local.remove("yadaPendingUnwrap");
+    } else if (unwrap) {
+      pendingUnwrap = unwrap;
+      pendingRemote = null;
+      pendingSwap = null;
+      $("requestSummary").textContent = [
+        "action: unwrap WYDA to YDA",
+        `amount: ${unwrap.amount || "WYDA balance"}`,
+      `yadacoin: ${unwrap.yadacoin_address || "tip address"}`,
+      ].join("\n");
+      ($("approveRequestBtn") as HTMLButtonElement).disabled = false;
+      ($("denyRequestBtn") as HTMLButtonElement).disabled = false;
+      showAlert("Pending unwrap to Yadacoin", "success");
+      setTab("request");
+      return;
+    }
+  }
   renderPendingRequest(first, from);
   if (first) {
     showAlert(`Pending ${first.action} for ${first.site}`, "success");
@@ -368,12 +437,38 @@ async function drainPendingRequests(): Promise<void> {
 function setApproveBusy(busy: boolean): void {
   const approve = $("approveRequestBtn") as HTMLButtonElement;
   const deny = $("denyRequestBtn") as HTMLButtonElement;
-  approve.disabled = busy || !pendingRemote;
-  deny.disabled = busy || !pendingRemote;
+  approve.disabled = busy || (!pendingRemote && !pendingSwap && !pendingUnwrap);
+  deny.disabled = busy || (!pendingRemote && !pendingSwap && !pendingUnwrap);
   approve.textContent = busy ? "Approving…" : "Approve";
 }
 
 async function approvePendingRequest(): Promise<void> {
+  if (pendingUnwrap) {
+    setApproveBusy(true);
+    const res = (await chrome.runtime.sendMessage({ type: "YADA_UNWRAP_YDA" })) as {
+      ok?: boolean;
+      message?: string;
+      request?: string;
+      yadacoin_address?: string;
+      burn?: string;
+    } | undefined;
+    setApproveBusy(false);
+    if (!res?.ok) throw new Error(res?.message || "unwrap failed");
+    pendingUnwrap = null;
+    renderPendingRequest(null);
+    showAlert(`Pay ${res.yadacoin_address || ""} burn ${res.burn || ""}`, "success");
+    return;
+  }
+  if (pendingSwap) {
+    setApproveBusy(true);
+    const res = (await chrome.runtime.sendMessage({ type: "YADA_SWAP_USDC", sessionId: pendingSwap.session_id, source_amount: pendingSwap.source_amount })) as { ok?: boolean; message?: string; swap?: string } | undefined;
+    setApproveBusy(false);
+    if (!res?.ok) throw new Error(res?.message || "permit failed");
+    pendingSwap = null;
+    renderPendingRequest(null);
+    showAlert("Permit signed. The swap is handled for you.", "success");
+    return;
+  }
   if (!pendingRemote) return;
   const p = pendingRemote;
   const nodeUrl = pendingNodeUrl;
@@ -399,6 +494,28 @@ async function approvePendingRequest(): Promise<void> {
 }
 
 async function denyPendingRequest(): Promise<void> {
+  if (pendingUnwrap) {
+    pendingUnwrap = null;
+    await chrome.storage.local.remove("yadaPendingUnwrap");
+    renderPendingRequest(null);
+    showAlert("Unwrap denied", "success");
+    return;
+  }
+  if (pendingSwap) {
+    const origin = (await onrampOrigins())[0] || (await getActiveOrigin());
+    if (origin && pendingSwap.session_id) {
+      await fetch(origin.replace(/\/+$/, "") + "/crypto-onramp/pending-swap", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ session_id: pendingSwap.session_id }),
+      });
+    }
+    pendingSwap = null;
+    await chrome.storage.local.remove("yadaPendingSwap");
+    renderPendingRequest(null);
+    showAlert("Swap denied", "success");
+    return;
+  }
   if (!pendingRemote) return;
   const p = pendingRemote;
   const v = await loadVault();
@@ -419,10 +536,112 @@ async function denyPendingRequest(): Promise<void> {
   showAlert("Request denied", "success");
 }
 
+async function onrampOrigins(): Promise<string[]> {
+  const tabs = await chrome.tabs.query({});
+  const out = new Set<string>();
+  for (const tab of tabs) {
+    if (!tab.url || !tab.url.includes("/crypto-onramp")) continue;
+    try {
+      out.add(new URL(tab.url).origin);
+    } catch {
+      /* ignore */
+    }
+  }
+  return [...out];
+}
+
+async function settleSwap(
+  sessionId: string | undefined,
+  status: "fulfilled" | "denied",
+  wallet?: string
+): Promise<void> {
+  if (!sessionId && !wallet) return;
+  const origin = (await swapOrigins())[0] || (await getActiveOrigin());
+  if (!origin) return;
+  await fetch(origin.replace(/\/+$/, "") + "/crypto-onramp/pending-swap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, status, wallet_address: wallet || "" }),
+  });
+  void chrome.action.setBadgeText({ text: "" });
+  const done = await chrome.storage.local.get("yadaFulfilledSwaps");
+  const ids = Array.isArray(done.yadaFulfilledSwaps) ? done.yadaFulfilledSwaps : [];
+  if (sessionId && !ids.includes(sessionId)) ids.push(sessionId);
+  await chrome.storage.local.set({ yadaFulfilledSwaps: ids });
+  await chrome.storage.local.remove("yadaPendingSwap");
+}
+
+async function swapOrigins(): Promise<string[]> {
+  const out = new Set<string>();
+  const add = (value: string | undefined) => {
+    const origin = String(value || "").replace(/\/+$/, "");
+    if (origin.startsWith("http")) out.add(origin);
+  };
+  add("http://localhost:8111");
+  add("http://127.0.0.1:8111");
+  for (const origin of await onrampOrigins()) add(origin);
+  add(await getActiveOrigin());
+  const remembered = await chrome.storage.local.get("yadaOnrampOrigin");
+  add(remembered.yadaOnrampOrigin);
+  const v = await loadVault();
+  add(v?.nodeUrl);
+  return [...out];
+}
+
+async function loadPendingSwap(): Promise<{ session_id?: string; source_amount?: string; wallet_address?: string } | null> {
+  const stored = await chrome.storage.local.get(["yadaPendingSwap", "yadaFulfilledSwaps"]);
+  const fulfilled = new Set<string>(Array.isArray(stored.yadaFulfilledSwaps) ? stored.yadaFulfilledSwaps : []);
+  const bases = await swapOrigins();
+  const v = await loadVault();
+  if (!v?.mnemonic) return null;
+  const username = (v.username || "").replace(/^@/, "");
+  const wallet = baseReceiveAddress(v.mnemonic);
+  const candidates = bases.length ? bases : [];
+  let last = "";
+  const rows: { session_id?: string; source_amount?: string; wallet_address?: string }[] = [];
+  for (const base of candidates) {
+    const url =
+      base.replace(/\/+$/, "") +
+      "/crypto-onramp/pending-swap?username=" +
+      encodeURIComponent(username) +
+      "&wallet=" +
+      encodeURIComponent(wallet);
+    try {
+      const res = await fetch(url);
+      last = `${res.status} ${url}`;
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data.swaps?.[0]) {
+        rows.push(data.swaps[0]);
+        await chrome.storage.local.set({ yadaOnrampOrigin: base.replace(/\/+$/, "") });
+      }
+    } catch (e) {
+      last = `${e instanceof Error ? e.message : String(e)} ${url}`;
+    }
+  }
+  if (!rows.length) {
+    const local = stored.yadaPendingSwap as { session_id?: string; source_amount?: string; wallet_address?: string } | undefined;
+    if (local?.session_id && !fulfilled.has(String(local.session_id))) return local;
+    return null;
+  }
+  const row = rows.find((item) => item.session_id) || null;
+  if (!row) {
+    await chrome.storage.local.remove("yadaPendingSwap");
+    return null;
+  }
+  if (row.session_id && fulfilled.has(String(row.session_id))) {
+    fulfilled.delete(String(row.session_id));
+    await chrome.storage.local.set({ yadaFulfilledSwaps: [...fulfilled] });
+  }
+  await chrome.storage.local.set({ yadaPendingSwap: row });
+  return row;
+}
+
 async function refreshStatus() {
   const v = await loadVault();
   if (!v) {
     $("k0Addr").textContent = "no vault";
+    $("baseAddr").textContent = "—";
     $("mainDepth").textContent = "—";
     $("siteList").textContent = "—";
     return;
@@ -430,6 +649,7 @@ async function refreshStatus() {
   try {
     const id = identityFromStored(v);
     $("k0Addr").textContent = id.k0.address;
+    $("baseAddr").textContent = baseReceiveAddress(v.mnemonic);
     $("mainDepth").textContent =
       String(v.mainDepth) + (v.inceptionDone ? " (incepted)" : " (pending inception)");
     $("siteList").textContent =
@@ -453,11 +673,9 @@ async function main() {
   await fillSiteFromOrigin(activeOrigin, vault);
 
   setTab(vault?.inceptionDone ? "request" : "setup");
-  if (vault?.inceptionDone) {
-    void drainPendingRequests().catch(() => {
-      /* ignore drain errors on open */
-    });
-  }
+  void drainPendingRequests().catch((e) => {
+    showAlert(e instanceof Error ? e.message : String(e), "error");
+  });
   const busy = await chrome.storage.local.get("yadaApproveBusy");
   if (busy.yadaApproveBusy) {
     setApproveBusy(true);
@@ -599,10 +817,8 @@ async function main() {
         `Vault saved · K0 ${id.k0.address.slice(0, 12)}… · ${ready}`,
         "success"
       );
-      if (stored.inceptionDone) {
-        setTab("request");
-        await refreshStatus();
-      }
+      if (stored.inceptionDone) setTab("request");
+      await refreshStatus();
     } catch (e) {
       showAlert(e instanceof Error ? e.message : String(e), "error");
     }

@@ -6258,6 +6258,12 @@ class TestKeyEventLogCoverage100(AsyncTestCase):
                 }
             ]
         }
+        _empty = MagicMock()
+        _empty.to_list = AsyncMock(return_value=[])
+        Config().mongo.async_db.blocks.aggregate = MagicMock(return_value=_empty)
+        Config().mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value=None
+        )
         Config().mongo.async_db.blocks.find_one = AsyncMock(
             side_effect=[tagged_block, inception_block]
         )
@@ -6267,6 +6273,9 @@ class TestKeyEventLogCoverage100(AsyncTestCase):
     async def test_get_inception_slow_path_onchain_inception(self):
         from yadacoin.core.keyeventlog import KeyEventLog
 
+        Config().mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value=None
+        )
         Config().mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
         inception_doc = {
             **_INCEPTION_TXN_DICT,
@@ -6356,6 +6365,9 @@ class TestKeyEventLogCoverage100(AsyncTestCase):
     async def test_get_inception_slow_path_walks_prev(self):
         from yadacoin.core.keyeventlog import KeyEventLog
 
+        Config().mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value=None
+        )
         Config().mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
         hop1 = {
             **_INCEPTION_TXN_DICT,

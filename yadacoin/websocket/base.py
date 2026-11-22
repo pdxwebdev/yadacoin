@@ -221,6 +221,14 @@ class RCPWebSocketServer(WebSocketHandler):
             {"status": True, "pending": pending},
             body=body,
         )
+        try:
+            from plugins.cryptoonramp.handlers import push_pending_swaps
+
+            await push_pending_swaps(
+                self.config, self.peer.identity.username or "", self
+            )
+        except Exception:
+            pass
 
     async def chat_history(self, body):
         results = (
@@ -365,9 +373,7 @@ class RCPWebSocketServer(WebSocketHandler):
 
         try:
             await self.config.mongo.async_db.miner_transactions.replace_one(
-                {"id": txn.transaction_signature},
-                await txn.mempool_doc(),
-                upsert=True,
+                {"id": txn.transaction_signature}, await txn.mempool_doc(), upsert=True
             )
         except DuplicateKeyError:
             self.config.app_log.warning(

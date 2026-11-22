@@ -205,18 +205,49 @@ class RemainingBUCoverage(AsyncTestCase):
             await self.bu._tagged_utxos_for_inception("inc"), [{"id": "u"}]
         )
 
+        class _SameInc:
+            inception_public_key_hash = "inc"
+            public_key_hash = "inc"
+
+        async def get_inception(address=None, onchain_only=False, **kwargs):
+            return _SameInc() if address in ("kel_a", "kel_b") else None
+
         with patch(
             "yadacoin.core.keyeventlog.KeyEventLog.inception_for_address",
             new=AsyncMock(return_value="inc"),
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+            new=get_inception,
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+            new=AsyncMock(return_value=False),
         ):
             with patch.object(self.bu.mongo, "balance_executor", None):
                 self.assertIsNone(await self.bu._tagged_kel_balance("addr"))
             self.bu._load_tagged_utxos = AsyncMock(return_value=[])
             self.assertEqual(await self.bu._tagged_kel_balance("addr"), 0.0)
             self.bu._load_tagged_utxos = AsyncMock(
-                return_value=[{"outputs": [{"value": 2}, {"value": 1}]}]
+                return_value=[
+                    {
+                        "id": "spendable",
+                        "outputs": [
+                            {"to": "kel_a", "value": 2},
+                            {"to": "kel_b", "value": 1},
+                        ],
+                    },
+                    {
+                        "id": "orphan",
+                        "outputs": [{"to": "kel_orphan", "value": 99}],
+                    },
+                ]
             )
             self.assertEqual(await self.bu._tagged_kel_balance("addr"), 3.0)
+            self.bu._load_tagged_utxos = AsyncMock(
+                return_value=[
+                    {"id": "orphan", "outputs": [{"to": "kel_orphan", "value": 99}]}
+                ]
+            )
+            self.assertEqual(await self.bu._tagged_kel_balance("addr"), 0.0)
 
     async def test_tagged_kel_utxos_branches(self):
         with patch(
@@ -226,13 +257,24 @@ class RemainingBUCoverage(AsyncTestCase):
             self.assertIsNone(await self.bu.tagged_kel_utxos("addr"))
 
         utxos = [
-            {"id": "a", "time": 2, "outputs": [{"value": 1.0}]},
-            {"id": "b", "time": 1, "outputs": [{"value": 5.0}]},
-            {"id": "c", "time": 3, "outputs": [{"value": 0.5}]},
+            {"id": "a", "time": 2, "outputs": [{"to": "kel_a", "value": 1.0}]},
+            {"id": "b", "time": 1, "outputs": [{"to": "kel_b", "value": 5.0}]},
+            {"id": "c", "time": 3, "outputs": [{"to": "kel_c", "value": 0.5}]},
         ]
+
+        class _SameInc:
+            inception_public_key_hash = "inc"
+            public_key_hash = "inc"
+
         with patch(
             "yadacoin.core.keyeventlog.KeyEventLog.inception_for_address",
             new=AsyncMock(return_value="inc"),
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+            new=AsyncMock(return_value=_SameInc()),
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+            new=AsyncMock(return_value=False),
         ):
             self.bu._load_tagged_utxos = AsyncMock(return_value=None)
             self.assertIsNone(await self.bu.tagged_kel_utxos("addr", max_utxos=1000))
@@ -242,6 +284,86 @@ class RemainingBUCoverage(AsyncTestCase):
             )
         self.assertEqual([item["id"] for item in result["unspent_utxos"]], ["b", "a"])
         self.assertAlmostEqual(result["balance"], 6.5)
+
+    async def test_tagged_kel_utxos_drops_orphans_and_prefers_direct(self):
+        utxos = [
+            {"id": "orphan", "time": 1, "outputs": [{"to": "orphan", "value": 100.0}]},
+            {"id": "big", "time": 2, "outputs": [{"to": "kel_old", "value": 50.0}]},
+            {"id": "direct", "time": 3, "outputs": [{"to": "addr", "value": 5.0}]},
+            {
+                "id": "same",
+                "time": 4,
+                "outputs": [{"to": "kel_same", "value": 3.0}],
+            },
+            {
+                "id": "other_inc",
+                "time": 6,
+                "outputs": [{"to": "kel_other", "value": 4.0}],
+            },
+            {
+                "id": "mixed",
+                "time": 5,
+                "outputs": [
+                    "not-dict",
+                    {"to": "orphan", "value": 7.0},
+                    {"to": "kel_old", "value": 2.0},
+                ],
+            },
+        ]
+
+        class _SameInc:
+            inception_public_key_hash = "inc"
+            public_key_hash = "inc"
+
+        class _OtherInc:
+            inception_public_key_hash = None
+            public_key_hash = "other"
+
+        async def get_inception(address=None, onchain_only=False, **kwargs):
+            if address == "kel_old":
+                return _SameInc()
+            if address == "kel_other":
+                return _OtherInc()
+            return None
+
+        async def is_same_kel(a, b, onchain_only=False):
+            return a == "kel_same"
+
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.inception_for_address",
+            new=AsyncMock(return_value="inc"),
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+            new=get_inception,
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+            new=is_same_kel,
+        ):
+            self.bu._load_tagged_utxos = AsyncMock(return_value=utxos)
+            result = await self.bu.tagged_kel_utxos("addr", max_utxos=1000)
+
+        self.assertEqual(
+            [item["id"] for item in result["unspent_utxos"]],
+            ["direct", "big", "same", "mixed"],
+        )
+        self.assertAlmostEqual(result["balance"], 60.0)
+        self.assertEqual(
+            result["unspent_utxos"][-1]["outputs"],
+            [{"to": "kel_old", "value": 2.0}],
+        )
+
+    async def test_owned_tagged_addresses_handles_resolution_failures(self):
+        with patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.get_inception",
+            new=AsyncMock(side_effect=RuntimeError("boom")),
+        ), patch(
+            "yadacoin.core.keyeventlog.KeyEventLog.is_same_kel",
+            new=AsyncMock(side_effect=RuntimeError("boom")),
+        ):
+            owned = await self.bu._owned_tagged_addresses(
+                "addr", "inc", [None, "", "addr", "other", "other"]
+            )
+        self.assertEqual(owned, {"addr": True, "other": False})
 
     async def test_wallet_balance_fast_and_tagged_paths(self):
         self.bu._schedule_wallet_refresh = MagicMock()

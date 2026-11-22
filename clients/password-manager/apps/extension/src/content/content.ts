@@ -41,6 +41,31 @@ window.addEventListener("message", (event) => {
     );
   }
 
+  if (data.type === "YADA_PENDING_SWAP") {
+    chrome.runtime.sendMessage({
+      type: "YADA_STORE_PENDING_SWAP",
+      session_id: data.session_id,
+      source_amount: data.source_amount,
+      wallet_address: data.wallet_address,
+      origin: window.location.origin,
+    });
+  }
+
+  if (data.type === "YADA_PAYOUT_STATUS") {
+    const requestId = data.requestId;
+    chrome.runtime.sendMessage({ type: "YADA_PAYOUT_STATUS" }, (response) => {
+      const err = chrome.runtime.lastError;
+      window.postMessage(
+        {
+          type: "YADA_PAYOUT_STATUS_RESULT",
+          requestId,
+          ...(err ? { ok: false, message: err.message } : response || { ok: false, message: "no response" }),
+        },
+        location.origin
+      );
+    });
+  }
+
   if (data.type === "YADA_PASSWORD_CLIENT") {
     const requestId = data.requestId;
     chrome.runtime.sendMessage(
@@ -198,7 +223,12 @@ window.addEventListener("message", (event) => {
 });
 
 chrome.runtime.onMessage.addListener((msg) => {
-  if (!msg || msg.type !== "YADA_PASSWORD_PROGRESS") return;
+  if (!msg) return;
+  if (msg.type === "YADA_SWAP_DONE" || msg.type === "YADA_UNWRAP_DONE") {
+    window.postMessage(msg, location.origin);
+    return;
+  }
+  if (msg.type !== "YADA_PASSWORD_PROGRESS") return;
   window.postMessage(
     {
       type: "YADA_PASSWORD_PROGRESS",

@@ -33,6 +33,7 @@ import {
   siteAtCounter,
   siteKeysForOrigin,
   unlockIdentity,
+  swapUsdcToWyda,
   vaultIdFromData,
   VaultStore,
   verifyNativeCaller,
@@ -645,6 +646,17 @@ function scheduleAuthWsReconnect(delayMs?: number) {
   }, wait);
 }
 
+async function approveWydaSwap(v: StoredVault, params: { source_amount?: string; wallet_address?: string }): Promise<void> {
+  const amount = params?.source_amount || "the received";
+  if (!confirm(`Swap ${amount} USDC to WYDA from ${params?.wallet_address || "this wallet"}?`)) return;
+  try {
+    const result = await swapUsdcToWyda(v.mnemonic);
+    alert(`WYDA swap sent ${result.swap}`);
+  } catch (e) {
+    alert(e instanceof Error ? e.message : String(e));
+  }
+}
+
 async function ensureAuthWs(): Promise<void> {
   let v = await loadVault();
   if (!v) {
@@ -778,6 +790,9 @@ async function ensureAuthWs(): Promise<void> {
       }
       if (method === "password_auth_request") {
         void ingestRemoteAuth(params as PasswordAuthRequestPayload);
+      }
+      if (method === "wyda_swap_request") {
+        void approveWydaSwap(v, params);
       }
     };
     ws.onerror = () => {

@@ -3447,6 +3447,62 @@ class KeyEventLog:
                                     else None
                                 ),
                             )
+                    if inception is not None:
+                        return inception
+
+        # Fast path via mempool commitments. A key referenced only by a
+        # mempool entry (as public_key_hash, prerotated_key_hash, or
+        # twice_prerotated_key_hash) still belongs to the KEL of that entry's
+        # inception tag.  Only applicable when mempool is in scope.
+        if not onchain_only:
+            tagged_mempool = await config.mongo.async_db.miner_transactions.find_one(
+                {
+                    "$or": [
+                        {MempoolQueryFields.PUBLIC_KEY_HASH.value: address},
+                        {MempoolQueryFields.PREROTATED_KEY_HASH.value: address},
+                        {MempoolQueryFields.TWICE_PREROTATED_KEY_HASH.value: address},
+                    ],
+                    "inception_public_key_hash": {"$exists": True, "$ne": ""},
+                }
+            )
+            inception_pkh = (
+                tagged_mempool.get("inception_public_key_hash")
+                if tagged_mempool
+                else None
+            )
+            if inception_pkh:
+                inception_doc = await config.mongo.async_db.blocks.find_one(
+                    {
+                        "transactions.inception_public_key_hash": inception_pkh,
+                        "transactions.counter": 0,
+                    },
+                    {"transactions": 1},
+                )
+                if isinstance(inception_doc, dict) and inception_doc.get(
+                    "transactions"
+                ):
+                    matching_txns = [
+                        t
+                        for t in inception_doc["transactions"]
+                        if t.get("inception_public_key_hash") == inception_pkh
+                        and t.get("counter") == 0
+                    ]
+                    if matching_txns:
+                        inception = Transaction.from_dict(matching_txns[0])
+                        inception.inception_public_key_hash = inception_pkh
+                        return inception
+                inception_mempool = (
+                    await config.mongo.async_db.miner_transactions.find_one(
+                        {
+                            "inception_public_key_hash": inception_pkh,
+                            "counter": 0,
+                        }
+                    )
+                )
+                if inception_mempool:
+                    inception = Transaction.from_dict(inception_mempool)
+                    inception.mempool = True
+                    inception.inception_public_key_hash = inception_pkh
                     return inception
 
         if hasattr(config, "key_log_debug") and config.key_log_debug:
