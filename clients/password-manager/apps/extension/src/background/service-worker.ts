@@ -4,6 +4,9 @@
  */
 import {
   baseReceiveAddress,
+  signUsdcPermit,
+  baseTokenBalance,
+  unwrapWyda,
   bytesToHex,
   hashPassword,
   hexToBytes,
@@ -505,6 +508,30 @@ async function approveAuthRequest(
   }
 }
 
+async function reportUnwrap(
+  detail: { wallet_address: string; yadacoin_address: string; burn: string },
+  notify = true
+): Promise<void> {
+  const base = await apiBase();
+  await fetch(base.replace(/\/+$/, "") + "/crypto-onramp/unwrap-done", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(detail),
+  }).catch(() => undefined);
+  if (notify) notifyOnramp("YADA_UNWRAP_DONE", detail);
+}
+
+function notifyOnramp(type: string, detail: Record<string, string> = {}): void {
+  void chrome.tabs.query({}).then((tabs) => {
+    for (const tab of tabs) {
+      if (tab.id == null || !tab.url || !tab.url.includes("/crypto-onramp")) continue;
+      chrome.tabs.sendMessage(tab.id, { type, ...detail }, () => {
+        void chrome.runtime.lastError;
+      });
+    }
+  });
+}
+
 function reportProgress(
   sender: chrome.runtime.MessageSender,
   requestId: unknown,
@@ -609,6 +636,9 @@ async function connectAuthHome(): Promise<void> {
     if (msg.method === "password_auth_request" && payload && "session_id" in payload) {
       void chrome.storage.local.set({ yadaPendingAuth: payload, yadaPendingHome: base });
     }
+    if (msg.method === "wyda_swap_request" && payload && "session_id" in payload) {
+      void chrome.storage.local.set({ yadaPendingSwap: payload });
+    }
   };
   ws.onclose = () => {
     if (authWs === ws) authWs = null;
@@ -621,22 +651,64 @@ chrome.runtime.onInstalled.addListener(() => {
   void import("../shared/home.js").then((m) => m.refreshTopologyCache()).catch(() => {});
   chrome.alarms.create("yada-auth-home", { periodInMinutes: 1 });
   void connectAuthHome().catch(() => {});
+  void pollPendingSwap().catch(() => {});
 });
 
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create("yada-auth-home", { periodInMinutes: 1 });
   void connectAuthHome().catch(() => {});
+  void pollPendingSwap().catch(() => {});
 });
+
+async function pollPendingSwap(): Promise<void> {
+  const v = await loadVault();
+  if (!v?.mnemonic) return;
+  const wallet = baseReceiveAddress(v.mnemonic);
+  const username = (v.username || "").replace(/^@/, "");
+  const url =
+    "http://localhost:8111/crypto-onramp/pending-swap?username=" +
+    encodeURIComponent(username) +
+    "&wallet=" +
+    encodeURIComponent(wallet);
+  const res = await fetch(url);
+  if (!res.ok) return;
+  const data = (await res.json()) as { swaps?: { session_id?: string; source_amount?: string; wallet_address?: string }[] };
+  const row = data.swaps?.[0];
+  if (!row?.session_id) return;
+  const done = await chrome.storage.local.get("yadaFulfilledSwaps");
+  const ids = Array.isArray(done.yadaFulfilledSwaps) ? done.yadaFulfilledSwaps : [];
+  if (ids.includes(row.session_id)) return;
+  await chrome.storage.local.set({ yadaPendingSwap: row, yadaOnrampOrigin: "http://localhost:8111" });
+  await chrome.action.setBadgeText({ text: "1" });
+  const open = chrome.action.openPopup;
+  if (open) await open().catch(() => undefined);
+}
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name !== "yada-auth-home") return;
   void connectAuthHome().catch(() => {});
+  void pollPendingSwap().catch(() => {});
 });
+void pollPendingSwap().catch(() => {});
 
 chrome.runtime.onConnect.addListener(() => {});
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== "object") return false;
+
+  if (message.type === "YADA_STORE_PENDING_SWAP") {
+    void chrome.storage.local.set({
+      yadaPendingSwap: {
+        session_id: message.session_id,
+        source_amount: message.source_amount,
+        wallet_address: message.wallet_address,
+      },
+      yadaOnrampOrigin: message.origin,
+    });
+    void chrome.action.setBadgeText({ text: "1" });
+    sendResponse({ ok: true });
+    return false;
+  }
 
   if (message.type === "YADA_REGISTER_SITE") {
     void (async () => {
@@ -704,10 +776,158 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "YADA_SWAP_USDC") {
+    void (async () => {
+      try {
+        const v = await loadVault();
+        if (!v?.mnemonic) {
+          sendResponse({ ok: false, message: "no vault" });
+          return;
+        }
+        const permit = await signUsdcPermit(v.mnemonic, (message as { source_amount?: string }).source_amount);
+        await chrome.storage.local.remove("yadaPendingSwap");
+        const done = await chrome.storage.local.get("yadaFulfilledSwaps");
+        const ids = Array.isArray(done.yadaFulfilledSwaps) ? done.yadaFulfilledSwaps : [];
+        const sessionId = (message as { sessionId?: string }).sessionId;
+        if (sessionId && !ids.includes(sessionId)) ids.push(sessionId);
+        await chrome.storage.local.set({ yadaFulfilledSwaps: ids });
+        const identity = unlockIdentity(v.mnemonic, v.secondFactor, v.username, {
+          identityType: v.identityType,
+          mainDepth: v.mainDepth,
+          tipPrevPkh: v.tipPrevPkh,
+        });
+        const saved = {
+          ...permit,
+          session_id: sessionId || "",
+          wallet_address: permit.owner,
+          yadacoin_address: identity.tipSigner.address,
+          source_amount: (message as { source_amount?: string }).source_amount || "",
+        };
+        const storedOrigin = await chrome.storage.local.get("yadaOnrampOrigin");
+        const bases = new Set([
+          "http://127.0.0.1:8111",
+          "http://localhost:8111",
+          String(storedOrigin.yadaOnrampOrigin || "").replace(/\/+$/, ""),
+          (await apiBase()).replace(/\/+$/, ""),
+        ]);
+        await Promise.all([...bases].filter((base) => base.startsWith("http")).map((base) =>
+          fetch(base + "/crypto-onramp/pending-swap", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(saved),
+          }).catch(() => undefined)
+        ));
+        notifyOnramp("YADA_SWAP_DONE", saved);
+        sendResponse({ ok: true, ...permit, yadacoin_address: identity.tipSigner.address });
+      } catch (e) {
+        sendResponse({ ok: false, message: e instanceof Error ? e.message : String(e) });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === "YADA_BASE_USDC") {
+    void (async () => {
+      try {
+        const v = await loadVault();
+        if (!v?.mnemonic) {
+          sendResponse({ ok: false });
+          return;
+        }
+        sendResponse({ ok: true, usdc: await baseTokenBalance(v.mnemonic, "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913") });
+      } catch (e) {
+        sendResponse({ ok: false, message: e instanceof Error ? e.message : String(e) });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === "YADA_PREPARE_UNWRAP") {
+    void (async () => {
+      try {
+        const v = await loadVault();
+        if (!v?.mnemonic) {
+          sendResponse({ ok: false });
+          return;
+        }
+        const seeded = unlockIdentity(v.mnemonic, v.secondFactor, v.username, {
+          identityType: v.identityType,
+          mainDepth: v.mainDepth,
+          tipPrevPkh: v.tipPrevPkh,
+        });
+        await chrome.storage.local.set({
+          yadaPendingUnwrap: {
+            amount: "WYDA balance",
+            yadacoin_address: seeded.tipSigner.address,
+            wallet_address: baseReceiveAddress(v.mnemonic),
+          },
+        });
+        sendResponse({ ok: true });
+      } catch (e) {
+        sendResponse({ ok: false, message: e instanceof Error ? e.message : String(e) });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === "YADA_UNWRAP_YDA") {
+    void (async () => {
+      try {
+        let v = await loadVault();
+        if (!v?.mnemonic) throw new Error("no vault");
+        const baseUrl = await apiBase();
+        const seeded = unlockIdentity(v.mnemonic, v.secondFactor, v.username, {
+          identityType: v.identityType,
+          mainDepth: v.mainDepth,
+          tipPrevPkh: v.tipPrevPkh,
+        });
+        const synced = await syncInceptionFromNode({ baseUrl }, seeded);
+        if (!synced.aligned) throw new Error(synced.alignError || "key event tip is not this vault");
+        const yadacoinAddress = synced.identity.tipSigner.address;
+        const burned = await unwrapWyda(v.mnemonic, yadacoinAddress);
+        await chrome.storage.local.set({
+          yadaLastUnwrap: {
+            wallet_address: baseReceiveAddress(v.mnemonic),
+            yadacoin_address: yadacoinAddress,
+            burn: burned.burn,
+            at: Date.now(),
+          },
+        });
+        await chrome.storage.local.remove("yadaPendingUnwrap");
+        await reportUnwrap({
+          wallet_address: baseReceiveAddress(v.mnemonic),
+          yadacoin_address: yadacoinAddress,
+          burn: burned.burn,
+        });
+        sendResponse({
+          ok: true,
+          burn: burned.burn,
+          request: "",
+          amount: burned.amount,
+          yadacoin_address: yadacoinAddress,
+        });
+      } catch (e) {
+        sendResponse({ ok: false, message: e instanceof Error ? e.message : String(e) });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === "YADA_PAYOUT_STATUS") {
+    void chrome.storage.local.get(["yadaPendingUnwrap", "yadaLastUnwrap"]).then((stored) => {
+      sendResponse({
+        ok: true,
+        pendingUnwrap: stored.yadaPendingUnwrap || null,
+        lastUnwrap: stored.yadaLastUnwrap || null,
+      });
+    });
+    return true;
+  }
+
   if (message.type === "YADA_CLIENT_IDENTITY") {
     void (async () => {
       try {
-  let v = await loadVault();
+        let v = await loadVault();
         if (!v?.mnemonic) {
           sendResponse({ ok: false, message: "no vault" });
           return;
@@ -951,4 +1171,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   return false;
+});
+
+void chrome.storage.local.get("yadaLastUnwrap").then((stored) => {
+  const last = stored.yadaLastUnwrap as { wallet_address?: string; yadacoin_address?: string; burn?: string } | undefined;
+  if (!last?.burn || !last.wallet_address) return;
+  return reportUnwrap({
+    wallet_address: last.wallet_address,
+    yadacoin_address: last.yadacoin_address || "",
+    burn: last.burn,
+  }, false);
 });
