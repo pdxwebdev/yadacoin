@@ -6197,6 +6197,66 @@ class TestKeyEventLogCoverage100(AsyncTestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result.public_key, _VALID_PUBKEY)
 
+    async def test_get_inception_mempool_tag_block_inception_hit(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        inception_txn = {
+            **_INCEPTION_TXN_DICT,
+            "inception_public_key_hash": _VALID_ADDR_A,
+            "counter": 0,
+            "public_key": _VALID_PUBKEY,
+            "public_key_hash": _VALID_ADDR_A,
+            "id": "incep_sig",
+            "transaction_signature": "incep_sig",
+        }
+        tagged_mempool = {
+            "public_key_hash": _VALID_ADDR_A,
+            "inception_public_key_hash": _VALID_ADDR_A,
+        }
+        Config().mongo.async_db.blocks.find_one = AsyncMock(
+            side_effect=[None, {"transactions": [inception_txn]}]
+        )
+        Config().mongo.async_db.miner_transactions.find_one = AsyncMock(
+            return_value=tagged_mempool
+        )
+        result = await KeyEventLog.get_inception(
+            public_key=_VALID_PUBKEY, address=_VALID_ADDR_A
+        )
+        self.assertIsNotNone(result)
+        self.assertEqual(result.public_key, _VALID_PUBKEY)
+        self.assertEqual(result.inception_public_key_hash, _VALID_ADDR_A)
+
+    async def test_get_inception_mempool_tag_falls_back_to_mempool_inception(self):
+        from yadacoin.core.keyeventlog import KeyEventLog
+
+        tagged_mempool = {
+            "public_key_hash": _VALID_ADDR_A,
+            "inception_public_key_hash": _VALID_ADDR_A,
+        }
+        inception_mempool = {
+            **_INCEPTION_TXN_DICT,
+            "inception_public_key_hash": _VALID_ADDR_A,
+            "counter": 0,
+            "public_key": _VALID_PUBKEY,
+            "public_key_hash": _VALID_ADDR_A,
+            "id": "incep_mempool_sig",
+            "transaction_signature": "incep_mempool_sig",
+        }
+        other_block_txn = {"inception_public_key_hash": "OTHER", "counter": 0}
+        Config().mongo.async_db.blocks.find_one = AsyncMock(
+            side_effect=[None, {"transactions": [other_block_txn]}]
+        )
+        Config().mongo.async_db.miner_transactions.find_one = AsyncMock(
+            side_effect=[tagged_mempool, inception_mempool]
+        )
+        result = await KeyEventLog.get_inception(
+            public_key=_VALID_PUBKEY, address=_VALID_ADDR_A
+        )
+        self.assertIsNotNone(result)
+        self.assertTrue(result.mempool)
+        self.assertEqual(result.public_key, _VALID_PUBKEY)
+        self.assertEqual(result.inception_public_key_hash, _VALID_ADDR_A)
+
     async def test_get_inception_fast_path_no_matching_tag_txn(self):
         from yadacoin.core.keyeventlog import KeyEventLog
 
