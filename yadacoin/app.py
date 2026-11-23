@@ -17,8 +17,16 @@ import logging
 import ntpath
 import os
 import pkgutil
+import re
+import shutil
 import ssl
+import subprocess
 import sys
+import tempfile
+
+PLUGIN_IMPORT_RE = re.compile(
+    r"^\s*(?:from|import)\s+plugins\.([A-Za-z_][A-Za-z0-9_]*)", re.MULTILINE
+)
 
 currentdir = os.path.dirname(os.path.realpath(__file__))
 parentdir = os.path.dirname(currentdir)
@@ -172,9 +180,10 @@ class NodeApplication(Application):
                 )
             except Exception as e:
                 self.config.app_log.info("{}, starting without node enabled.".format(e))
-            self.config.node_server_instance = self.config.nodeServer()
-            self.config.node_server_instance.bind(self.config.peer_port)
-            self.config.node_server_instance.start(1)
+            if getattr(self.config, "kel_ready", False):
+                self.config.node_server_instance = self.config.nodeServer()
+                self.config.node_server_instance.bind(self.config.peer_port)
+                self.config.node_server_instance.start(1)
 
         if MODES.WEB.value in self.config.modes:
             if os.path.exists(path.join(path.dirname(__file__), "..", "static")):
@@ -219,10 +228,14 @@ class NodeApplication(Application):
             self.init_websocket()
             self.init_webui()
             self.init_plugins()
+            self.ensure_operator_setup_available()
             self.init_http()
             self.init_whitelist()
             self.init_jwt()
-        if MODES.POOL.value in self.config.modes:
+        if MODES.POOL.value in self.config.modes and (
+            MODES.NODE.value not in self.config.modes
+            or getattr(self.config, "kel_ready", False)
+        ):
             self.init_pool()
         self.init_ioloop()
 
@@ -862,16 +875,26 @@ class NodeApplication(Application):
             self.config.app_log.debug("background_nonce_processor - busy")
             return
         self.config.background_nonce_processor.busy = True
+        nonce_queue = getattr(self.config.processing_queues, "nonce_queue", None)
+        timing = False
         try:
-            if self.config.processing_queues.nonce_queue.queue:
-                self.config.processing_queues.nonce_queue.time_sum_start()
+            if (
+                nonce_queue is not None
+                and nonce_queue.queue
+                and getattr(self.config, "mp", None) is not None
+            ):
+                nonce_queue.time_sum_start()
+                timing = True
                 await self.config.mp.process_nonce_queue()
-                self.config.processing_queues.nonce_queue.time_sum_end()
+                nonce_queue.time_sum_end()
+                timing = False
             self.config.health.nonce_processor.last_activity = int(time())
-        except:
+        except Exception:
             self.config.app_log.error(format_exc())
-            self.config.processing_queues.nonce_queue.time_sum_end()
-        self.config.background_nonce_processor.busy = False
+            if timing:
+                nonce_queue.time_sum_end()
+        finally:
+            self.config.background_nonce_processor.busy = False
 
     async def background_node_testing(self):
         """Responsible for testing masternodes in the background."""
@@ -1033,17 +1056,24 @@ class NodeApplication(Application):
             ThreadPoolExecutor(max_workers=1)
         )
 
+        node_ready = MODES.NODE.value not in self.config.modes or getattr(
+            self.config, "kel_ready", False
+        )
         self._node_services_started = False
         self._pool_started = False
-        if MODES.NODE.value in self.config.modes:
+        if MODES.NODE.value in self.config.modes and node_ready:
             self._start_node_periodics()
             self._node_services_started = True
-        if MODES.POOL.value in self.config.modes:
+        if MODES.POOL.value in self.config.modes and node_ready:
             self._pool_started = True
         self.init_ioloop_tail()
 
     def _start_node_periodics(self):
         if getattr(self, "_node_periodics_started", False):
+            return
+        if MODES.NODE.value in self.config.modes and not getattr(
+            self.config, "kel_ready", False
+        ):
             return
         self._node_periodics_started = True
         if MODES.NODE.value in self.config.modes:
@@ -1256,39 +1286,340 @@ class NodeApplication(Application):
         disabled = getattr(self.config, "disabled_plugins", None) or []
         return name not in disabled
 
+    def _plugin_manifest_path(self):
+        return path.abspath(path.join(path.dirname(__file__), "..", "plugins.txt"))
+
+    def _plugin_catalog(self):
+        """Return {plugin name: clone url} from plugins.txt."""
+        catalog = {}
+        try:
+            with open(self._plugin_manifest_path(), "r", encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "\t" not in line:
+                        continue
+                    name, url = line.split("\t", 1)
+                    name = name.strip()
+                    url = url.strip()
+                    if not name or not url:
+                        continue
+                    if url.startswith("git@github.com:"):
+                        url = "https://github.com/" + url[len("git@github.com:") :]
+                    catalog[name] = url
+        except OSError:
+            return {}
+        return catalog
+
+    def _plugin_install_dir(self):
+        """Directory where plugin checkouts live."""
+        env_dir = os.environ.get("YADA_PLUGINS_DIR")
+        if env_dir:
+            return path.abspath(env_dir)
+        if path.isdir("/plugins"):
+            return "/plugins"
+        return path.abspath(path.join(path.dirname(__file__), "..", "plugins"))
+
+    def _operator_routes_registered(self):
+        for handler in getattr(self, "default_handlers", []):
+            if not isinstance(handler, (list, tuple)) or not handler:
+                continue
+            pattern = handler[0]
+            if isinstance(pattern, str) and pattern.startswith("/operator"):
+                return True
+        return False
+
+    def _node_needs_setup(self):
+        """True while the node still needs the browser setup flow."""
+        if not (getattr(self.config, "username", "") or "").strip():
+            return True
+        second_factor_file = os.environ.get("SECOND_FACTOR_FILE", "") or getattr(
+            self.config, "second_factor_file", ""
+        )
+        if second_factor_file:
+            try:
+                with open(second_factor_file, "r", encoding="utf-8") as handle:
+                    return not handle.read().strip()
+            except OSError:
+                return True
+        return not (os.environ.get("SECOND_FACTOR", "") or "").strip()
+
+    def _plugin_dependencies(self, name):
+        """Return the plugin names imported by a plugin's Python sources."""
+        plugin_dir = path.join(self._plugin_install_dir(), name)
+        dependencies = set()
+        for dirpath, dirnames, filenames in os.walk(plugin_dir):
+            dirnames[:] = [
+                dirname
+                for dirname in dirnames
+                if dirname not in ("__pycache__", ".git")
+            ]
+            for filename in filenames:
+                if not filename.endswith(".py"):
+                    continue
+                try:
+                    with open(
+                        path.join(dirpath, filename),
+                        "r",
+                        encoding="utf-8",
+                        errors="ignore",
+                    ) as handle:
+                        source = handle.read()
+                except OSError:
+                    continue
+                dependencies.update(PLUGIN_IMPORT_RE.findall(source))
+        dependencies.discard(name)
+        return dependencies
+
+    def _install_plugin_requirements(self, plugin_dir):
+        """Install plugin requirements into the shared .pydeps directory."""
+        requirements = path.join(plugin_dir, "requirements.txt")
+        if not path.isfile(requirements):
+            return
+        name = path.basename(plugin_dir)
+        deps = path.join(self._plugin_install_dir(), ".pydeps")
+        try:
+            os.makedirs(deps, exist_ok=True)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--no-input",
+                    "--upgrade",
+                    "--target",
+                    deps,
+                    "-r",
+                    requirements,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+            )
+        except Exception:
+            self.config.app_log.warning(
+                "Could not install the %s plugin requirements\n%s",
+                name,
+                format_exc(),
+            )
+            return
+        if result.returncode != 0:
+            self.config.app_log.warning(
+                "Could not install the %s plugin requirements: %s",
+                name,
+                (result.stderr or "").strip(),
+            )
+
+    def _install_plugin_checkout(self, name):
+        """Clone one catalog plugin into the install directory."""
+        url = self._plugin_catalog().get(name)
+        if not url:
+            self.config.app_log.error(
+                "Cannot install the %s plugin: no entry in %s",
+                name,
+                self._plugin_manifest_path(),
+            )
+            return False
+        root = self._plugin_install_dir()
+        dest = path.join(root, name)
+        if name != "operator" and path.isfile(path.join(dest, "handlers.py")):
+            return True
+        try:
+            os.makedirs(root, exist_ok=True)
+            tmp = tempfile.mkdtemp(prefix=".{}-".format(name), dir=root)
+        except OSError:
+            self.config.app_log.error(
+                "Cannot install the %s plugin in %s\n%s", name, root, format_exc()
+            )
+            return False
+        try:
+            cloned = path.join(tmp, name)
+            result = subprocess.run(
+                ["git", "clone", "--depth", "1", url, cloned],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+            )
+            if result.returncode != 0 or not path.isfile(
+                path.join(cloned, "handlers.py")
+            ):
+                self.config.app_log.error(
+                    "Could not clone the %s plugin from %s: %s",
+                    name,
+                    url,
+                    (result.stderr or "").strip(),
+                )
+                return False
+            self._install_plugin_requirements(cloned)
+            if path.isdir(dest):
+                shutil.rmtree(dest)
+            shutil.move(cloned, dest)
+        except Exception:
+            self.config.app_log.error(
+                "Could not install the %s plugin\n%s", name, format_exc()
+            )
+            return False
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        self.config.app_log.info("Installed the %s plugin in %s", name, dest)
+        return True
+
+    def _install_plugin_tree(self, name, seen=None):
+        """Install a plugin and the plugins it imports."""
+        seen = set() if seen is None else seen
+        if name in seen:
+            return True
+        seen.add(name)
+        if not self._install_plugin_checkout(name):
+            return False
+        catalog = self._plugin_catalog()
+        for dependency in sorted(self._plugin_dependencies(name)):
+            if dependency not in catalog:
+                continue
+            if not self._install_plugin_tree(dependency, seen):
+                return False
+        return True
+
+    def _install_operator_plugin(self):
+        """Clone the operator plugin and the plugins it imports."""
+        return self._install_plugin_tree("operator")
+
+    def ensure_operator_setup_available(self):
+        """Offer to install the operator plugin when setup cannot be served.
+
+        An unconfigured node without operator routes prints a setup URL that
+        returns 404. Ask on the terminal whether to install the plugin from
+        plugins.txt and load it into this process.
+        """
+        self._apply_operator_setup_gate()
+        if self._operator_routes_registered() or not self._node_needs_setup():
+            return
+        install_dir = path.join(self._plugin_install_dir(), "operator")
+        self.config.app_log.warning(
+            "The operator plugin is not installed; /operator/setup returns 404."
+        )
+        stdin = getattr(sys, "stdin", None)
+        try:
+            interactive = bool(stdin and stdin.isatty())
+        except (AttributeError, OSError, ValueError):
+            interactive = False
+        if not interactive:
+            self.config.app_log.warning(
+                "Install the operator plugin in %s and restart the node.",
+                install_dir,
+            )
+            return
+        if path.isdir(install_dir):
+            prompt = (
+                "The operator plugin exists at {} but its routes failed to load.\n"
+                "Reinstall it (replaces that directory) and enable it now? [y/N] "
+            ).format(install_dir)
+        else:
+            prompt = (
+                "The operator plugin is required to finish setting up this node.\n"
+                "Install it and enable it now? [y/N] "
+            )
+        sys.stdout.write(prompt)
+        sys.stdout.flush()
+        try:
+            answer = (stdin.readline() or "").strip().lower()
+        except (KeyboardInterrupt, OSError):
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            answer = ""
+        if answer not in ("y", "yes"):
+            self.config.app_log.warning(
+                "Continuing without the operator plugin; /operator/setup will "
+                "return 404 until it is installed and the node restarts."
+            )
+            return
+        if not self._install_operator_plugin():
+            self.config.app_log.error(
+                "The operator plugin was not installed; continuing without it."
+            )
+            return
+        if not self._activate_operator_plugin():
+            self.config.app_log.error(
+                "The operator plugin was installed but its routes failed to load; "
+                "check the log and restart the node."
+            )
+            return
+        self.config.app_log.info(
+            "Loaded the operator plugin from %s without restarting the node",
+            install_dir,
+        )
+
+    def _activate_operator_plugin(self):
+        """Load a freshly installed operator plugin in this process."""
+        self._plugin_search_dirs()
+        if getattr(self, "wildcard_router", None) is not None:
+            self.reload_http_routes()
+            loaded = self._operator_routes_registered()
+        else:
+            loaded = self._activate_plugin_tree("operator", set())
+        if loaded:
+            self._apply_operator_setup_gate()
+        return loaded
+
+    def _apply_operator_setup_gate(self):
+        """Recompute setup_required after the operator plugin is available."""
+        try:
+            from plugins.operator.setup import apply_setup_gate
+        except ImportError:
+            return False
+        apply_setup_gate(self.config)
+        return True
+
+    def _activate_plugin_tree(self, name, seen):
+        """Load a plugin and its plugin dependencies into this process."""
+        if name in seen:
+            return True
+        seen.add(name)
+        catalog = self._plugin_catalog()
+        for dependency in sorted(self._plugin_dependencies(name)):
+            if dependency in catalog and not self._activate_plugin_tree(
+                dependency, seen
+            ):
+                return False
+        return self._load_plugin(name, run_postboot=True)
+
     def _load_plugin_handlers(self, run_postboot=False):
         for name in self._plugin_names():
             if not self._plugin_enabled(name):
                 continue
-            try:
-                if run_postboot:
-                    try:
-                        post_boot = importlib.import_module(
-                            "plugins." + name + ".postboot"
-                        )
-                    except ModuleNotFoundError:
-                        post_boot = None
-                    if post_boot is not None and hasattr(post_boot, "go"):
-                        tornado.ioloop.IOLoop.current().run_sync(
-                            lambda post_boot=post_boot: post_boot.go(self)
-                        )
-                module_name = "plugins." + name + ".handlers"
-                if module_name in sys.modules:
-                    plugin_handlers = importlib.reload(sys.modules[module_name])
-                else:
-                    plugin_handlers = importlib.import_module(module_name)
-            except Exception:
-                self.config.app_log.warning(
-                    "plugin %s failed to load\n%s", name, format_exc()
-                )
-                continue
-            if not hasattr(plugin_handlers, "HANDLERS"):
-                continue
-            if name == self.config.root_app:
-                for handler in reversed(list(plugin_handlers.HANDLERS)):
-                    self.default_handlers.insert(0, handler)
+            self._load_plugin(name, run_postboot=run_postboot)
+
+    def _load_plugin(self, name, run_postboot=False):
+        try:
+            if run_postboot:
+                try:
+                    post_boot = importlib.import_module("plugins." + name + ".postboot")
+                except ModuleNotFoundError:
+                    post_boot = None
+                if post_boot is not None and hasattr(post_boot, "go"):
+                    tornado.ioloop.IOLoop.current().run_sync(
+                        lambda post_boot=post_boot: post_boot.go(self)
+                    )
+            module_name = "plugins." + name + ".handlers"
+            if module_name in sys.modules:
+                plugin_handlers = importlib.reload(sys.modules[module_name])
             else:
-                self.default_handlers.extend(plugin_handlers.HANDLERS)
+                plugin_handlers = importlib.import_module(module_name)
+        except Exception as exc:
+            self.config.app_log.debug(
+                "plugin %s load traceback\n%s", name, format_exc()
+            )
+            detail = str(exc).strip() or exc.__class__.__name__
+            self.config.app_log.warning("plugin %s failed to load: %s", name, detail)
+            return False
+        if not hasattr(plugin_handlers, "HANDLERS"):
+            return False
+        if name == self.config.root_app:
+            for handler in reversed(list(plugin_handlers.HANDLERS)):
+                self.default_handlers.insert(0, handler)
+        else:
+            self.default_handlers.extend(plugin_handlers.HANDLERS)
+        return True
 
     def init_plugins(self):
         self._load_plugin_handlers(run_postboot=True)
@@ -1324,11 +1655,15 @@ class NodeApplication(Application):
             host = "127.0.0.1"
         from urllib.parse import quote
 
-        code = quote(getattr(self.config, "operator_access_code", "") or "", safe="")
-        self.config.operator_access_code_shown_at = time()
-        url = "http://{}:{}/operator/setup?code={}".format(
-            host, self.config.serve_port, code
-        )
+        url = None
+        if self._operator_routes_registered():
+            code = quote(
+                getattr(self.config, "operator_access_code", "") or "", safe=""
+            )
+            self.config.operator_access_code_shown_at = time()
+            url = "http://{}:{}/operator/setup?code={}".format(
+                host, self.config.serve_port, code
+            )
         reset = "\033[0m"
         bold = "\033[1m"
         lines = (
@@ -1351,16 +1686,28 @@ class NodeApplication(Application):
         for color, line in zip(colors, lines):
             out.append("{}{}{}{}".format(bold, color, line, reset))
         out.append("")
-        out.append(
-            "{}{}  VISIT {}{}{} TO CONFIGURE YOUR NODE{}".format(
-                bold,
-                "\033[38;5;226m",
-                "\033[1;97m",
-                url,
-                "\033[38;5;226m",
-                reset,
+        if url is not None:
+            out.append(
+                "{}{}  VISIT {}{}{} TO CONFIGURE YOUR NODE{}".format(
+                    bold,
+                    "\033[38;5;226m",
+                    "\033[1;97m",
+                    url,
+                    "\033[38;5;226m",
+                    reset,
+                )
             )
-        )
+        else:
+            out.append(
+                "{}{}  OPERATOR SETUP UNAVAILABLE - operator plugin not installed{}".format(
+                    bold, "\033[38;5;196m", reset
+                )
+            )
+            out.append(
+                "  Install it in {} and restart the node.".format(
+                    path.join(self._plugin_install_dir(), "operator")
+                )
+            )
         out.append("")
         sys.stderr.write("\n".join(out) + "\n")
         sys.stderr.flush()
@@ -1654,6 +2001,9 @@ class NodeApplication(Application):
             if MODES.NODE.value in self.config.modes:
                 self.config.kel_manager = NodeKeyRotationManager(self.config)
                 await self.config.kel_manager.startup_check()
+                if not getattr(self.config, "kel_ready", False):
+                    await self.leave_maintenance()
+                    return
                 self.config.username_signature = (
                     NodeKeyRotationManager.generate_deterministic_signature(
                         self.config.username
@@ -1747,8 +2097,10 @@ class NodeApplication(Application):
             return
         self.config.mongo.reconnect()
         await self.refresh_chain_state()
-        if MODES.NODE.value in self.config.modes and getattr(
-            self.config, "nodeServer", None
+        if (
+            MODES.NODE.value in self.config.modes
+            and getattr(self.config, "kel_ready", False)
+            and getattr(self.config, "nodeServer", None)
         ):
             self._init_node_peers()
             self.config.node_server_instance = self.config.nodeServer()

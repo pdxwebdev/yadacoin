@@ -360,6 +360,7 @@ class NodeKeyRotationManager:
         Exits the process with a fatal message if prerequisites are not met.
         """
         config = self.config
+        config.kel_ready = False
 
         # 1. Require seed
         seed = getattr(config, "seed", "") or ""
@@ -585,6 +586,14 @@ class NodeKeyRotationManager:
             )
             inception = await self._create_inception(k0, second_factor, k0_pub_hex)
             self.config.inception = inception
+
+        config.kel_ready = bool(
+            self._k0
+            and self._second_factor
+            and getattr(config, "kel_anchor_private_key", None)
+            and getattr(config, "kel_anchor_public_key", None)
+            and getattr(config, "kel_anchor_chain_code", None)
+        )
 
     async def background_kel_checker(self):
         """Periodic callback: poll for inception on-chain and finalise config."""

@@ -218,6 +218,7 @@ class TestStartupCheckFailures(AsyncTestCase):
         with patch.dict(os.environ, {"SECOND_FACTOR": "mysecret"}):
             await mgr.startup_check()
         cfg.app_log.warning.assert_called()
+        self.assertFalse(cfg.kel_ready)
 
     async def test_missing_second_factor_returns(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
@@ -230,6 +231,7 @@ class TestStartupCheckFailures(AsyncTestCase):
             os.environ.pop("SECOND_FACTOR_FILE", None)
             await mgr.startup_check()
         cfg.app_log.warning.assert_called()
+        self.assertFalse(cfg.kel_ready)
 
     async def test_second_factor_file_read_success(self):
         from yadacoin.core.keyrotation import NodeKeyRotationManager
