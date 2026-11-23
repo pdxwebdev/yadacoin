@@ -637,6 +637,7 @@ async function connectAuthHome(): Promise<void> {
       void chrome.storage.local.set({ yadaPendingAuth: payload, yadaPendingHome: base });
     }
     if (msg.method === "wyda_swap_request" && payload && "session_id" in payload) {
+      if ((payload as { permit_signed?: boolean }).permit_signed) return;
       void chrome.storage.local.set({ yadaPendingSwap: payload });
     }
   };
@@ -672,8 +673,8 @@ async function pollPendingSwap(): Promise<void> {
     encodeURIComponent(wallet);
   const res = await fetch(url);
   if (!res.ok) return;
-  const data = (await res.json()) as { swaps?: { session_id?: string; source_amount?: string; wallet_address?: string }[] };
-  const row = data.swaps?.[0];
+  const data = (await res.json()) as { swaps?: { session_id?: string; source_amount?: string; wallet_address?: string; permit_signed?: boolean }[] };
+  const row = (data.swaps || []).find((item) => item?.session_id && !item.permit_signed);
   if (!row?.session_id) return;
   const done = await chrome.storage.local.get("yadaFulfilledSwaps");
   const ids = Array.isArray(done.yadaFulfilledSwaps) ? done.yadaFulfilledSwaps : [];
@@ -790,7 +791,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const ids = Array.isArray(done.yadaFulfilledSwaps) ? done.yadaFulfilledSwaps : [];
         const sessionId = (message as { sessionId?: string }).sessionId;
         if (sessionId && !ids.includes(sessionId)) ids.push(sessionId);
-        await chrome.storage.local.set({ yadaFulfilledSwaps: ids });
+        await chrome.storage.local.set({ yadaFulfilledSwaps: ids.slice(-100) });
         const identity = unlockIdentity(v.mnemonic, v.secondFactor, v.username, {
           identityType: v.identityType,
           mainDepth: v.mainDepth,

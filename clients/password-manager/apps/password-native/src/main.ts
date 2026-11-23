@@ -2,6 +2,7 @@ import { App } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
 import {
+  baseReceiveAddress,
   broadcastTxns,
 
   buildInceptionTxn,
@@ -481,6 +482,10 @@ async function respond(result: BridgeResult, _callback: string) {
       nonce: result.nonce,
       message: result.message,
       ...(passwordEnc ? { password_enc: passwordEnc } : {}),
+      ...(result.baseAddress ? { baseAddress: result.baseAddress } : {}),
+      ...(result.identity ? { identity: result.identity } : {}),
+      ...(result.username ? { username: result.username } : {}),
+      ...(result.siaBox ? { siaBox: result.siaBox } : {}),
       nextPasswordHash: result.nextPasswordHash,
       counter: result.counter,
       registered: result.registered,
@@ -529,7 +534,7 @@ function remotePayloadToRequest(p: PasswordAuthRequestPayload): BridgeRequest {
     site = normalizeSiteId(site);
   }
   const action = (p.action || "signin").toLowerCase();
-  const allowed = ["register", "signin", "status", "operator"] as const;
+  const allowed = ["register", "signin", "status", "operator", "client"] as const;
   const bridgeAction = (allowed as readonly string[]).includes(action)
     ? (action as (typeof allowed)[number])
     : "signin";
@@ -542,6 +547,7 @@ function remotePayloadToRequest(p: PasswordAuthRequestPayload): BridgeRequest {
     sessionId: p.session_id,
     resultToken: p.result_token,
     bindId: p.bind_id || undefined,
+    username: p.username || undefined,
     source: "remote",
   };
 }
@@ -646,11 +652,81 @@ function scheduleAuthWsReconnect(delayMs?: number) {
   }, wait);
 }
 
-async function approveWydaSwap(v: StoredVault, params: { source_amount?: string; wallet_address?: string }): Promise<void> {
+const HANDLED_SWAPS_PREF = "yadaHandledSwaps";
+
+async function readHandledSwaps(): Promise<string[]> {
+  try {
+    let raw: string | null = null;
+    if (Capacitor.isNativePlatform()) {
+      raw = (await Preferences.get({ key: HANDLED_SWAPS_PREF })).value;
+    } else {
+      raw = localStorage.getItem(HANDLED_SWAPS_PREF);
+    }
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function markSwapHandled(sessionId: string): Promise<void> {
+  try {
+    const ids = await readHandledSwaps();
+    if (ids.includes(sessionId)) return;
+    ids.push(sessionId);
+    const value = JSON.stringify(ids.slice(-100));
+    if (Capacitor.isNativePlatform()) {
+      await Preferences.set({ key: HANDLED_SWAPS_PREF, value });
+    } else {
+      localStorage.setItem(HANDLED_SWAPS_PREF, value);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+async function reportSwapOutcome(
+  v: StoredVault,
+  sessionId: string,
+  status: "fulfilled" | "denied"
+): Promise<boolean> {
+  const nodeUrl = resolveNodeUrl(v.nodeUrl || defaultNodeUrl());
+  if (!nodeUrl) return false;
+  try {
+    const res = await fetch(
+      nodeUrl.replace(/\/+$/, "") + "/crypto-onramp/pending-swap",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, status }),
+      }
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function approveWydaSwap(
+  v: StoredVault,
+  params: { source_amount?: string; wallet_address?: string; session_id?: string }
+): Promise<void> {
+  const sessionId = params?.session_id;
+  if (sessionId && (await readHandledSwaps()).includes(sessionId)) return;
   const amount = params?.source_amount || "the received";
-  if (!confirm(`Swap ${amount} USDC to WYDA from ${params?.wallet_address || "this wallet"}?`)) return;
+  if (!confirm(`Swap ${amount} USDC to WYDA from ${params?.wallet_address || "this wallet"}?`)) {
+    if (sessionId) {
+      await markSwapHandled(sessionId);
+      await reportSwapOutcome(v, sessionId, "denied");
+    }
+    return;
+  }
   try {
     const result = await swapUsdcToWyda(v.mnemonic);
+    if (sessionId) {
+      await markSwapHandled(sessionId);
+      await reportSwapOutcome(v, sessionId, "fulfilled");
+    }
     alert(`WYDA swap sent ${result.swap}`);
   } catch (e) {
     alert(e instanceof Error ? e.message : String(e));
@@ -982,6 +1058,27 @@ async function approvePending() {
     }
     const identity = identityFromVault(v);
     const siteKey = req.site;
+
+    if (req.action === "client") {
+      const asked = (req.username || "").replace(/^@/, "").toLowerCase();
+      const mine = (v.username || "").replace(/^@/, "").toLowerCase();
+      if (asked && mine && asked !== mine) {
+        throw new Error("username does not match this vault");
+      }
+      await respond(
+        {
+          nonce: req.nonce,
+          ok: true,
+          action: "client",
+          username: (v.username || "").replace(/^@/, ""),
+          identity: vaultIdFromData(v),
+          baseAddress: baseReceiveAddress(v.mnemonic),
+          message: "client identity returned",
+        },
+        req.callback
+      );
+      return;
+    }
 
     if (req.action === "status") {
       let hit = lookupStoredSite(v.sites, siteKey);

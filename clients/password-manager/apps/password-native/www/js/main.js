@@ -1046,6 +1046,10 @@ var rotrBH = (h, l, s) => h << 64 - s | l >>> s - 32;
 var rotrBL = (h, l, s) => h >>> s - 32 | l << 64 - s;
 var rotr32H = (_h, l) => l;
 var rotr32L = (h, _l) => h;
+var rotlSH = (h, l, s) => h << s | l >>> 32 - s;
+var rotlSL = (h, l, s) => l << s | h >>> 32 - s;
+var rotlBH = (h, l, s) => l << s - 32 | h >>> 64 - s;
+var rotlBL = (h, l, s) => h << s - 32 | l >>> 64 - s;
 function add(Ah, Al, Bh, Bl) {
   const l = (Al >>> 0) + (Bl >>> 0);
   return { h: Ah + Bh + (l / 2 ** 32 | 0) | 0, l: l | 0 };
@@ -1566,7 +1570,7 @@ function createHmacDrbg(hashLen, qByteLen, hmacFn) {
     k = h(u8of(1), seed);
     v = h();
   };
-  const gen = () => {
+  const gen2 = () => {
     if (i++ >= 1e3)
       throw new Error("drbg: tried 1000 values");
     let len = 0;
@@ -1583,7 +1587,7 @@ function createHmacDrbg(hashLen, qByteLen, hmacFn) {
     reset();
     reseed(seed);
     let res = void 0;
-    while (!(res = pred(gen())))
+    while (!(res = pred(gen2())))
       reseed();
     reset();
     return res;
@@ -3423,6 +3427,187 @@ var ripemd160 = /* @__PURE__ */ createHasher(() => new RIPEMD160());
 // ../../node_modules/@noble/hashes/esm/ripemd160.js
 var ripemd1602 = ripemd160;
 
+// ../../node_modules/@noble/hashes/esm/sha3.js
+var _0n5 = BigInt(0);
+var _1n5 = BigInt(1);
+var _2n4 = BigInt(2);
+var _7n2 = BigInt(7);
+var _256n = BigInt(256);
+var _0x71n = BigInt(113);
+var SHA3_PI = [];
+var SHA3_ROTL = [];
+var _SHA3_IOTA = [];
+for (let round = 0, R = _1n5, x = 1, y = 0; round < 24; round++) {
+  [x, y] = [y, (2 * x + 3 * y) % 5];
+  SHA3_PI.push(2 * (5 * y + x));
+  SHA3_ROTL.push((round + 1) * (round + 2) / 2 % 64);
+  let t = _0n5;
+  for (let j = 0; j < 7; j++) {
+    R = (R << _1n5 ^ (R >> _7n2) * _0x71n) % _256n;
+    if (R & _2n4)
+      t ^= _1n5 << (_1n5 << /* @__PURE__ */ BigInt(j)) - _1n5;
+  }
+  _SHA3_IOTA.push(t);
+}
+var IOTAS = split(_SHA3_IOTA, true);
+var SHA3_IOTA_H = IOTAS[0];
+var SHA3_IOTA_L = IOTAS[1];
+var rotlH = (h, l, s) => s > 32 ? rotlBH(h, l, s) : rotlSH(h, l, s);
+var rotlL = (h, l, s) => s > 32 ? rotlBL(h, l, s) : rotlSL(h, l, s);
+function keccakP(s, rounds = 24) {
+  const B = new Uint32Array(5 * 2);
+  for (let round = 24 - rounds; round < 24; round++) {
+    for (let x = 0; x < 10; x++)
+      B[x] = s[x] ^ s[x + 10] ^ s[x + 20] ^ s[x + 30] ^ s[x + 40];
+    for (let x = 0; x < 10; x += 2) {
+      const idx1 = (x + 8) % 10;
+      const idx0 = (x + 2) % 10;
+      const B0 = B[idx0];
+      const B1 = B[idx0 + 1];
+      const Th = rotlH(B0, B1, 1) ^ B[idx1];
+      const Tl = rotlL(B0, B1, 1) ^ B[idx1 + 1];
+      for (let y = 0; y < 50; y += 10) {
+        s[x + y] ^= Th;
+        s[x + y + 1] ^= Tl;
+      }
+    }
+    let curH = s[2];
+    let curL = s[3];
+    for (let t = 0; t < 24; t++) {
+      const shift = SHA3_ROTL[t];
+      const Th = rotlH(curH, curL, shift);
+      const Tl = rotlL(curH, curL, shift);
+      const PI = SHA3_PI[t];
+      curH = s[PI];
+      curL = s[PI + 1];
+      s[PI] = Th;
+      s[PI + 1] = Tl;
+    }
+    for (let y = 0; y < 50; y += 10) {
+      for (let x = 0; x < 10; x++)
+        B[x] = s[y + x];
+      for (let x = 0; x < 10; x++)
+        s[y + x] ^= ~B[(x + 2) % 10] & B[(x + 4) % 10];
+    }
+    s[0] ^= SHA3_IOTA_H[round];
+    s[1] ^= SHA3_IOTA_L[round];
+  }
+  clean(B);
+}
+var Keccak = class _Keccak extends Hash {
+  // NOTE: we accept arguments in bytes instead of bits here.
+  constructor(blockLen, suffix, outputLen, enableXOF = false, rounds = 24) {
+    super();
+    this.pos = 0;
+    this.posOut = 0;
+    this.finished = false;
+    this.destroyed = false;
+    this.enableXOF = false;
+    this.blockLen = blockLen;
+    this.suffix = suffix;
+    this.outputLen = outputLen;
+    this.enableXOF = enableXOF;
+    this.rounds = rounds;
+    anumber(outputLen);
+    if (!(0 < blockLen && blockLen < 200))
+      throw new Error("only keccak-f1600 function is supported");
+    this.state = new Uint8Array(200);
+    this.state32 = u32(this.state);
+  }
+  clone() {
+    return this._cloneInto();
+  }
+  keccak() {
+    swap32IfBE(this.state32);
+    keccakP(this.state32, this.rounds);
+    swap32IfBE(this.state32);
+    this.posOut = 0;
+    this.pos = 0;
+  }
+  update(data) {
+    aexists(this);
+    data = toBytes(data);
+    abytes(data);
+    const { blockLen, state } = this;
+    const len = data.length;
+    for (let pos = 0; pos < len; ) {
+      const take = Math.min(blockLen - this.pos, len - pos);
+      for (let i = 0; i < take; i++)
+        state[this.pos++] ^= data[pos++];
+      if (this.pos === blockLen)
+        this.keccak();
+    }
+    return this;
+  }
+  finish() {
+    if (this.finished)
+      return;
+    this.finished = true;
+    const { state, suffix, pos, blockLen } = this;
+    state[pos] ^= suffix;
+    if ((suffix & 128) !== 0 && pos === blockLen - 1)
+      this.keccak();
+    state[blockLen - 1] ^= 128;
+    this.keccak();
+  }
+  writeInto(out) {
+    aexists(this, false);
+    abytes(out);
+    this.finish();
+    const bufferOut = this.state;
+    const { blockLen } = this;
+    for (let pos = 0, len = out.length; pos < len; ) {
+      if (this.posOut >= blockLen)
+        this.keccak();
+      const take = Math.min(blockLen - this.posOut, len - pos);
+      out.set(bufferOut.subarray(this.posOut, this.posOut + take), pos);
+      this.posOut += take;
+      pos += take;
+    }
+    return out;
+  }
+  xofInto(out) {
+    if (!this.enableXOF)
+      throw new Error("XOF is not possible for this instance");
+    return this.writeInto(out);
+  }
+  xof(bytes) {
+    anumber(bytes);
+    return this.xofInto(new Uint8Array(bytes));
+  }
+  digestInto(out) {
+    aoutput(out, this);
+    if (this.finished)
+      throw new Error("digest() was already called");
+    this.writeInto(out);
+    this.destroy();
+    return out;
+  }
+  digest() {
+    return this.digestInto(new Uint8Array(this.outputLen));
+  }
+  destroy() {
+    this.destroyed = true;
+    clean(this.state);
+  }
+  _cloneInto(to) {
+    const { blockLen, suffix, outputLen, rounds, enableXOF } = this;
+    to || (to = new _Keccak(blockLen, suffix, outputLen, enableXOF, rounds));
+    to.state32.set(this.state32);
+    to.pos = this.pos;
+    to.posOut = this.posOut;
+    to.finished = this.finished;
+    to.rounds = rounds;
+    to.suffix = suffix;
+    to.outputLen = outputLen;
+    to.enableXOF = enableXOF;
+    to.destroyed = this.destroyed;
+    return to;
+  }
+};
+var gen = (suffix, blockLen, outputLen) => createHasher(() => new Keccak(blockLen, suffix, outputLen));
+var keccak_256 = /* @__PURE__ */ (() => gen(1, 136, 256 / 8))();
+
 // ../../node_modules/@noble/hashes/esm/sha256.js
 var sha2562 = sha256;
 
@@ -4059,6 +4244,10 @@ function validateMnemonic(mnemonic, wordlist2) {
     return false;
   }
   return true;
+}
+var psalt = (passphrase) => nfkd("mnemonic" + passphrase);
+function mnemonicToSeedSync(mnemonic, passphrase = "") {
+  return pbkdf2(sha512, normalize(mnemonic).nfkd, psalt(passphrase), { c: 2048, dkLen: 64 });
 }
 
 // ../../node_modules/@scure/bip39/esm/wordlists/english.js
@@ -6227,6 +6416,21 @@ function deriveMaterial(parent, factor) {
 function deriveK0(mnemonic, secondFactor) {
   const root = rootFromMnemonic(mnemonic);
   return deriveMaterial(root, secondFactor);
+}
+function evmAddress(publicKey) {
+  const point = secp256k1.ProjectivePoint.fromHex(publicKey);
+  const uncompressed = point.toRawBytes(false).slice(1);
+  return "0x" + bytesToHex2(keccak_256(uncompressed).slice(-20));
+}
+function baseReceiveAddress(mnemonic) {
+  if (!validateMnemonic(mnemonic, wordlist)) {
+    throw new Error("invalid BIP39 mnemonic");
+  }
+  const hd = HDKey.fromMasterSeed(mnemonicToSeedSync(mnemonic));
+  const child = hd.derive("m/2'");
+  if (!child.publicKey)
+    throw new Error("failed to derive Base address");
+  return evmAddress(child.publicKey);
 }
 function walkMain(k0, secondFactor, steps) {
   let cur = k0;
@@ -9269,6 +9473,7 @@ async function sealToRatchetPub(plaintext, recipientPubHex) {
   blob.set(ct, ephPub.length + nonce.length);
   return bytesToBase64(blob);
 }
+var SIA_BOX_DOMAIN = new TextEncoder().encode("yada-sia-box-v1");
 
 // ../../packages/core/dist/vault.js
 function normalizeNodeBaseUrl(url) {
@@ -9388,6 +9593,46 @@ function isAlreadyInceptedError(message) {
   const m = (message || "").toLowerCase();
   return m.includes("already onchain") || m.includes("already on-chain") || m.includes("already incepted") || m.includes("duplicate kel inception") || m.includes("kel already exists") || m.includes("key event log already exists") || m.includes("username") && m.includes("already claimed");
 }
+function kelField(entry, name) {
+  const direct = entry?.[name];
+  if (typeof direct === "string" && direct)
+    return direct;
+  const nested = entry?.txn?.[name];
+  return typeof nested === "string" ? nested : "";
+}
+function latestPublishedKelTip(entries) {
+  if (!Array.isArray(entries))
+    return null;
+  let best = null;
+  for (const entry of entries) {
+    const prerotatedKeyHash = kelField(entry, "prerotated_key_hash");
+    const publicKeyHash = kelField(entry, "public_key_hash");
+    if (!prerotatedKeyHash || !publicKeyHash)
+      continue;
+    const counter = Number(entry?.counter ?? entry?.txn?.counter ?? -1);
+    if (!Number.isFinite(counter) || counter < 0)
+      continue;
+    if (!best || counter >= best.counter) {
+      best = { counter, publicKeyHash, prerotatedKeyHash };
+    }
+  }
+  return best;
+}
+function identityAtPublishedTip(identity, tip, maxSteps = 4096) {
+  let cur = identity.k0;
+  for (let step = 0; step <= maxSteps; step++) {
+    if (cur.address === tip.prerotatedKeyHash) {
+      return {
+        ...identity,
+        mainDepth: tip.counter + 1,
+        tipSigner: cur,
+        tipPrevPkh: tip.publicKeyHash
+      };
+    }
+    cur = deriveMaterial(cur, identity.secondFactor);
+  }
+  throw new Error(`Refusing to sign: vault cannot derive chain tip signer ${tip.prerotatedKeyHash} (counter ${tip.counter}). The seed or second factor does not match this key event log.`);
+}
 function kelRotationDepth(entries) {
   if (!Array.isArray(entries) || !entries.length)
     return 0;
@@ -9485,12 +9730,39 @@ function identityFromInceptionStatus(identity, status) {
 }
 async function syncInceptionFromNode(api, identity) {
   const status = await fetchInceptionStatus(api, identity.k0.publicKeyHex, identity.username);
-  const next = identityFromInceptionStatus(identity, status);
-  return {
-    identity: next,
-    inceptionDone: status.incepted,
-    status
-  };
+  const kel = await httpJson(api, `/key-event-log?public_key=${encodeURIComponent(identity.k0.publicKeyHex)}`);
+  const tip = kel.ok && Array.isArray(kel.body?.key_event_log) ? latestPublishedKelTip(kel.body.key_event_log) : null;
+  if (!tip) {
+    return {
+      identity: identityFromInceptionStatus(identity, status),
+      inceptionDone: status.incepted,
+      aligned: false,
+      status,
+      alignError: status.incepted ? "Refusing to sign: node has no published key-event tip for this vault" : "key event log is not on this node"
+    };
+  }
+  try {
+    return {
+      identity: identityAtPublishedTip(identity, tip),
+      inceptionDone: true,
+      aligned: true,
+      status: {
+        ...status,
+        incepted: true,
+        hasKel: true,
+        kelDepth: tip.counter + 1,
+        source: "key-event-log"
+      }
+    };
+  } catch (e) {
+    return {
+      identity,
+      inceptionDone: true,
+      aligned: false,
+      status,
+      alignError: e instanceof Error ? e.message : String(e)
+    };
+  }
 }
 function normalizeSiteId(siteId) {
   const raw = siteId.trim();
@@ -9865,19 +10137,30 @@ function siteAtCounter(identity, site, counter) {
 async function resyncVaultFromNode(api, identity, sites) {
   let kelDepth = identity.mainDepth;
   const kelRes = await httpJson(api, `/key-event-log?public_key=${encodeURIComponent(identity.k0.publicKeyHex)}`);
+  let nextIdentity = identity;
   if (kelRes.ok && Array.isArray(kelRes.body?.key_event_log)) {
-    kelDepth = kelRotationDepth(kelRes.body.key_event_log);
+    const published = latestPublishedKelTip(kelRes.body.key_event_log);
+    if (!published) {
+      kelDepth = 0;
+      nextIdentity = {
+        ...identity,
+        mainDepth: 0,
+        tipSigner: identity.k0,
+        tipPrevPkh: ""
+      };
+    } else {
+      nextIdentity = identityAtPublishedTip(identity, published);
+      kelDepth = nextIdentity.mainDepth;
+    }
   } else if (kelRes.status === 404 || kelRes.body?.status === false) {
     kelDepth = 0;
+    nextIdentity = {
+      ...identity,
+      mainDepth: 0,
+      tipSigner: identity.k0,
+      tipPrevPkh: ""
+    };
   }
-  const tipSigner = walkMain(identity.k0, identity.secondFactor, kelDepth);
-  const tipPrevPkh = kelDepth === 0 ? "" : walkMain(identity.k0, identity.secondFactor, kelDepth - 1).address;
-  const nextIdentity = {
-    ...identity,
-    mainDepth: kelDepth,
-    tipSigner,
-    tipPrevPkh
-  };
   const removedSites = [];
   const rewoundSites = [];
   const replacedSites = [];
@@ -9899,9 +10182,7 @@ async function resyncVaultFromNode(api, identity, sites) {
     const rebuilt = siteAtCounter(nextIdentity, { siteId: keys.branchPeer, branchPeer: keys.branchPeer, kp0: keys.kp0 }, counter);
     const keysMismatch = inception && inception !== keys.kp0.address || !!(tip.prerotated_key_hash && rebuilt.tip.address !== tip.prerotated_key_hash);
     if (keysMismatch) {
-      const replaced = await registerSite(api, nextIdentity, keys.branchPeer, void 0, { replaceExisting: true });
-      nextSites[key] = replaced.site;
-      replacedSites.push(key);
+      removedSites.push(key);
       continue;
     }
     nextSites[key] = rebuilt;
@@ -10083,6 +10364,136 @@ var LEGACY_KEYS = {
   native: "yadaPasswordNativeVault",
   mobile: "yadaPasswordMobileVault"
 };
+
+// ../../packages/core/dist/base-swap.js
+var BASE_CHAIN_ID = 8453;
+var BASE_RPC = "https://mainnet.base.org";
+var BASE_USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+var WYDA_POOL = "0x7beCd9Bbe91DE47eD60da5DE70eb280f947Dd44B";
+function concat(parts) {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let o = 0;
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.length;
+  }
+  return out;
+}
+function rlpBytes(data) {
+  if (data.length === 1 && data[0] < 128)
+    return data;
+  return concat([rlpLen(128, data.length), data]);
+}
+function rlpLen(offset, length) {
+  if (length < 56)
+    return new Uint8Array([offset + length]);
+  let hex = length.toString(16);
+  if (hex.length % 2)
+    hex = "0" + hex;
+  const len = hexToBytes2(hex);
+  return concat([new Uint8Array([offset + 55 + len.length]), len]);
+}
+function rlp(item) {
+  if (item instanceof Uint8Array)
+    return rlpBytes(item);
+  const payload = concat(item.map((x) => rlp(x)));
+  return concat([rlpLen(192, payload.length), payload]);
+}
+function u256(n) {
+  if (n === 0n)
+    return new Uint8Array();
+  let hex = n.toString(16);
+  if (hex.length % 2)
+    hex = "0" + hex;
+  return hexToBytes2(hex);
+}
+function addr(hex) {
+  return hexToBytes2(hex.toLowerCase());
+}
+function pad32(n) {
+  return n.toString(16).padStart(64, "0");
+}
+function baseKey(mnemonic) {
+  if (!validateMnemonic(mnemonic, wordlist))
+    throw new Error("invalid BIP39 mnemonic");
+  const child = HDKey.fromMasterSeed(mnemonicToSeedSync(mnemonic)).derive("m/2'");
+  if (!child.privateKey)
+    throw new Error("failed to derive Base key");
+  return child.privateKey;
+}
+async function rpc(method, params) {
+  const res = await fetch(BASE_RPC, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params })
+  });
+  const data = await res.json();
+  if (data.error)
+    throw new Error(data.error.message || "base rpc failed");
+  return data.result;
+}
+function recoveryBit(sighash, key, sig) {
+  if (typeof sig.recovery === "number")
+    return sig.recovery;
+  const pub = secp256k1.getPublicKey(key, false);
+  const compact = new Uint8Array(64);
+  const r = u256(sig.r);
+  const s = u256(sig.s);
+  compact.set(r, 32 - r.length);
+  compact.set(s, 64 - s.length);
+  for (const bit of [0, 1]) {
+    const rec = secp256k1.Signature.fromCompact(compact).addRecoveryBit(bit).recoverPublicKey(sighash).toRawBytes(false);
+    if (bytesToHex2(rec) === bytesToHex2(pub))
+      return bit;
+  }
+  throw new Error("could not recover signature");
+}
+function signTx(key, nonce, gas, to, data, maxFee) {
+  const fields = [
+    u256(BigInt(BASE_CHAIN_ID)),
+    u256(nonce),
+    u256(1000000n),
+    u256(maxFee),
+    u256(gas),
+    addr(to),
+    u256(0n),
+    hexToBytes2(data),
+    []
+  ];
+  const sighash = keccak_256(concat([new Uint8Array([2]), rlp(fields)]));
+  const sig = secp256k1.sign(sighash, key);
+  const raw = concat([
+    new Uint8Array([2]),
+    rlp([...fields, u256(BigInt(recoveryBit(sighash, key, sig))), u256(sig.r), u256(sig.s)])
+  ]);
+  return "0x" + bytesToHex2(raw);
+}
+async function swapUsdcToWyda(mnemonic) {
+  const key = baseKey(mnemonic);
+  const from = "0x" + bytesToHex2(keccak_256(secp256k1.ProjectivePoint.fromHex(secp256k1.getPublicKey(key, false)).toRawBytes(false).slice(1)).slice(-20));
+  const usdc = BigInt(await rpc("eth_call", [{ to: BASE_USDC, data: "0x70a08231" + from.slice(2).padStart(64, "0") }, "latest"]));
+  if (usdc === 0n)
+    throw new Error("no USDC on the Base address");
+  const eth = BigInt(await rpc("eth_getBalance", [from, "latest"]));
+  if (eth === 0n)
+    throw new Error("Send a little ETH for gas to " + from + " before the swap");
+  const reserveUsdc = BigInt(await rpc("eth_call", [{ to: WYDA_POOL, data: "0x5eb94d2a" }, "latest"]));
+  const reserveWyda = BigInt(await rpc("eth_call", [{ to: WYDA_POOL, data: "0x80cf21ce" }, "latest"]));
+  if (reserveUsdc === 0n || reserveWyda === 0n)
+    throw new Error("pool is empty");
+  const out = reserveWyda * usdc / (reserveUsdc + usdc);
+  const minOut = out * 99n / 100n;
+  const nonce = BigInt(await rpc("eth_getTransactionCount", [from, "pending"]));
+  const gasPrice = BigInt(await rpc("eth_gasPrice", []));
+  const maxFee = gasPrice * 2n + 1000000n;
+  const approveData = "0x095ea7b3" + WYDA_POOL.slice(2).toLowerCase().padStart(64, "0") + pad32(usdc);
+  const swapData = "0x36480f08" + pad32(usdc) + pad32(minOut);
+  const approve = signTx(key, nonce, 80000n, BASE_USDC, approveData, maxFee);
+  const swap = signTx(key, nonce + 1n, 160000n, WYDA_POOL, swapData, maxFee);
+  const approveHash = await rpc("eth_sendRawTransaction", [approve]);
+  const swapHash = await rpc("eth_sendRawTransaction", [swap]);
+  return { approve: approveHash, swap: swapHash, amount: usdc.toString() };
+}
 
 // ../../packages/core/dist/deeplink.js
 function schemeOf(url) {
@@ -10356,7 +10767,7 @@ async function postAuthSessionResult(nodeUrl, sessionId, result) {
     method: "POST",
     body: JSON.stringify(result)
   });
-  if (!ok || body?.status === false) {
+  if (!ok || body?.status === false || body?.ok === false) {
     throw new Error(body?.message || `result post failed (${status}) ${base(nodeUrl)}`);
   }
   return body;
@@ -10954,7 +11365,7 @@ async function respond(result, _callback) {
     if (!passwordEnc && result.password && result.ok) {
       if (!v) throw new Error("vault locked");
       const id = identityFromVault(v);
-      const sealTo = req.site.startsWith("http") ? req.site : nodeUrl;
+      const sealTo = result.action === "operator" && req.site.startsWith("http") ? req.site : nodeUrl;
       const pubRes = await fetch(
         sealTo.replace(/\/+$/, "") + "/password-rotation/ratchet-pub?username_signature=" + encodeURIComponent(id.usernameSignature),
         { headers: { Accept: "application/json" } }
@@ -10978,6 +11389,10 @@ async function respond(result, _callback) {
       nonce: result.nonce,
       message: result.message,
       ...passwordEnc ? { password_enc: passwordEnc } : {},
+      ...result.baseAddress ? { baseAddress: result.baseAddress } : {},
+      ...result.identity ? { identity: result.identity } : {},
+      ...result.username ? { username: result.username } : {},
+      ...result.siaBox ? { siaBox: result.siaBox } : {},
       nextPasswordHash: result.nextPasswordHash,
       counter: result.counter,
       registered: result.registered
@@ -11022,7 +11437,7 @@ function remotePayloadToRequest(p) {
     site = normalizeSiteId(site);
   }
   const action = (p.action || "signin").toLowerCase();
-  const allowed = ["register", "signin", "status", "operator"];
+  const allowed = ["register", "signin", "status", "operator", "client"];
   const bridgeAction = allowed.includes(action) ? action : "signin";
   return {
     action: bridgeAction,
@@ -11033,6 +11448,7 @@ function remotePayloadToRequest(p) {
     sessionId: p.session_id,
     resultToken: p.result_token,
     bindId: p.bind_id || void 0,
+    username: p.username || void 0,
     source: "remote"
   };
 }
@@ -11125,6 +11541,74 @@ function scheduleAuthWsReconnect(delayMs) {
   authWsTimer = setTimeout(() => {
     void ensureAuthWs();
   }, wait);
+}
+var HANDLED_SWAPS_PREF = "yadaHandledSwaps";
+async function readHandledSwaps() {
+  try {
+    let raw = null;
+    if (Capacitor.isNativePlatform()) {
+      raw = (await Preferences.get({ key: HANDLED_SWAPS_PREF })).value;
+    } else {
+      raw = localStorage.getItem(HANDLED_SWAPS_PREF);
+    }
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+async function markSwapHandled(sessionId) {
+  try {
+    const ids = await readHandledSwaps();
+    if (ids.includes(sessionId)) return;
+    ids.push(sessionId);
+    const value = JSON.stringify(ids.slice(-100));
+    if (Capacitor.isNativePlatform()) {
+      await Preferences.set({ key: HANDLED_SWAPS_PREF, value });
+    } else {
+      localStorage.setItem(HANDLED_SWAPS_PREF, value);
+    }
+  } catch {
+  }
+}
+async function reportSwapOutcome(v, sessionId, status) {
+  const nodeUrl = resolveNodeUrl(v.nodeUrl || defaultNodeUrl());
+  if (!nodeUrl) return false;
+  try {
+    const res = await fetch(
+      nodeUrl.replace(/\/+$/, "") + "/crypto-onramp/pending-swap",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, status })
+      }
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+async function approveWydaSwap(v, params) {
+  const sessionId = params?.session_id;
+  if (sessionId && (await readHandledSwaps()).includes(sessionId)) return;
+  const amount = params?.source_amount || "the received";
+  if (!confirm(`Swap ${amount} USDC to WYDA from ${params?.wallet_address || "this wallet"}?`)) {
+    if (sessionId) {
+      await markSwapHandled(sessionId);
+      await reportSwapOutcome(v, sessionId, "denied");
+    }
+    return;
+  }
+  try {
+    const result = await swapUsdcToWyda(v.mnemonic);
+    if (sessionId) {
+      await markSwapHandled(sessionId);
+      await reportSwapOutcome(v, sessionId, "fulfilled");
+    }
+    alert(`WYDA swap sent ${result.swap}`);
+  } catch (e) {
+    alert(e instanceof Error ? e.message : String(e));
+  }
 }
 async function ensureAuthWs() {
   let v = await loadVault();
@@ -11252,6 +11736,9 @@ async function ensureAuthWs() {
       }
       if (method === "password_auth_request") {
         void ingestRemoteAuth(params);
+      }
+      if (method === "wyda_swap_request") {
+        void approveWydaSwap(v, params);
       }
     };
     ws.onerror = () => {
@@ -11419,6 +11906,26 @@ async function approvePending() {
     }
     const identity = identityFromVault(v);
     const siteKey = req.site;
+    if (req.action === "client") {
+      const asked = (req.username || "").replace(/^@/, "").toLowerCase();
+      const mine = (v.username || "").replace(/^@/, "").toLowerCase();
+      if (asked && mine && asked !== mine) {
+        throw new Error("username does not match this vault");
+      }
+      await respond(
+        {
+          nonce: req.nonce,
+          ok: true,
+          action: "client",
+          username: (v.username || "").replace(/^@/, ""),
+          identity: vaultIdFromData(v),
+          baseAddress: baseReceiveAddress(v.mnemonic),
+          message: "client identity returned"
+        },
+        req.callback
+      );
+      return;
+    }
     if (req.action === "status") {
       let hit = lookupStoredSite(v.sites, siteKey);
       if (!hit) {

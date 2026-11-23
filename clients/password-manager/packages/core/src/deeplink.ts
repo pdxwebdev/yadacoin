@@ -22,6 +22,8 @@ export interface BridgeRequest {
   bindId?: string;
   /** Page X25519 public key, hex. Storage handoff only. */
   boxPub?: string;
+  /** Requested Yada username. Client sign-in only. */
+  username?: string;
   /** Source of the request for UI. */
   source?: "deeplink" | "remote";
 }

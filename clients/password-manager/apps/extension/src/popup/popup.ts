@@ -256,10 +256,25 @@ async function switchToVault(id: string) {
   await refreshStatus();
 }
 
+interface PendingSwap {
+  session_id?: string;
+  source_amount?: string;
+  wallet_address?: string;
+  permit_signed?: boolean;
+}
+
 let pendingRemote: PasswordAuthRequestPayload | null = null;
 let pendingNodeUrl = "";
-let pendingSwap: { session_id?: string; source_amount?: string; wallet_address?: string } | null = null;
+let pendingSwap: PendingSwap | null = null;
 let pendingUnwrap: { amount?: string; yadacoin_address?: string; wallet_address?: string } | null = null;
+
+async function markSwapHandled(sessionId: string | undefined): Promise<void> {
+  if (!sessionId) return;
+  const stored = await chrome.storage.local.get("yadaFulfilledSwaps");
+  const ids = Array.isArray(stored.yadaFulfilledSwaps) ? stored.yadaFulfilledSwaps : [];
+  if (!ids.includes(sessionId)) ids.push(sessionId);
+  await chrome.storage.local.set({ yadaFulfilledSwaps: ids.slice(-100) });
+}
 
 function renderPendingRequest(
   p: PasswordAuthRequestPayload | null,
@@ -329,7 +344,7 @@ async function drainPendingRequests(): Promise<void> {
     setTab("request");
     return;
   }
-  let swap: { session_id?: string; source_amount?: string; wallet_address?: string } | null = null;
+  let swap: PendingSwap | null = null;
   try {
     swap = await loadPendingSwap();
   } catch (e) {
@@ -461,9 +476,12 @@ async function approvePendingRequest(): Promise<void> {
   }
   if (pendingSwap) {
     setApproveBusy(true);
-    const res = (await chrome.runtime.sendMessage({ type: "YADA_SWAP_USDC", sessionId: pendingSwap.session_id, source_amount: pendingSwap.source_amount })) as { ok?: boolean; message?: string; swap?: string } | undefined;
+    const sessionId = pendingSwap.session_id;
+    const res = (await chrome.runtime.sendMessage({ type: "YADA_SWAP_USDC", sessionId, source_amount: pendingSwap.source_amount })) as { ok?: boolean; message?: string; swap?: string } | undefined;
     setApproveBusy(false);
     if (!res?.ok) throw new Error(res?.message || "permit failed");
+    await markSwapHandled(sessionId);
+    await chrome.storage.local.remove("yadaPendingSwap");
     pendingSwap = null;
     renderPendingRequest(null);
     showAlert("Permit signed. The swap is handled for you.", "success");
@@ -502,13 +520,23 @@ async function denyPendingRequest(): Promise<void> {
     return;
   }
   if (pendingSwap) {
-    const origin = (await onrampOrigins())[0] || (await getActiveOrigin());
-    if (origin && pendingSwap.session_id) {
-      await fetch(origin.replace(/\/+$/, "") + "/crypto-onramp/pending-swap", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ session_id: pendingSwap.session_id }),
-      });
+    const sessionId = pendingSwap.session_id;
+    if (sessionId) {
+      const origins = await swapOrigins();
+      await Promise.all(
+        origins.map(async (origin) => {
+          try {
+            await fetch(origin.replace(/\/+$/, "") + "/crypto-onramp/pending-swap", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ session_id: sessionId, status: "denied" }),
+            });
+          } catch {
+            /* keep trying the other nodes */
+          }
+        })
+      );
+      await markSwapHandled(sessionId);
     }
     pendingSwap = null;
     await chrome.storage.local.remove("yadaPendingSwap");
@@ -567,7 +595,7 @@ async function swapOrigins(): Promise<string[]> {
   return [...out];
 }
 
-async function loadPendingSwap(): Promise<{ session_id?: string; source_amount?: string; wallet_address?: string } | null> {
+async function loadPendingSwap(): Promise<PendingSwap | null> {
   const stored = await chrome.storage.local.get(["yadaPendingSwap", "yadaFulfilledSwaps"]);
   const fulfilled = new Set<string>(Array.isArray(stored.yadaFulfilledSwaps) ? stored.yadaFulfilledSwaps : []);
   const bases = await swapOrigins();
@@ -576,7 +604,7 @@ async function loadPendingSwap(): Promise<{ session_id?: string; source_amount?:
   const username = (v.username || "").replace(/^@/, "");
   const wallet = baseReceiveAddress(v.mnemonic);
   const candidates = bases.length ? bases : [];
-  const rows: { session_id?: string; source_amount?: string; wallet_address?: string }[] = [];
+  const rows: PendingSwap[] = [];
   for (const base of candidates) {
     const url =
       base.replace(/\/+$/, "") +
@@ -588,27 +616,34 @@ async function loadPendingSwap(): Promise<{ session_id?: string; source_amount?:
       const res = await fetch(url);
       if (!res.ok) continue;
       const data = await res.json();
-      if (data.swaps?.[0]) {
-        rows.push(data.swaps[0]);
+      for (const item of data.swaps || []) {
+        if (item?.session_id) rows.push(item);
+      }
+      if (data.swaps?.length) {
         await chrome.storage.local.set({ yadaOnrampOrigin: base.replace(/\/+$/, "") });
       }
     } catch {
       continue;
     }
   }
+  const isHandled = (row: PendingSwap | undefined): boolean =>
+    Boolean(
+      row &&
+        (row.permit_signed || (row.session_id && fulfilled.has(String(row.session_id))))
+    );
   if (!rows.length) {
-    const local = stored.yadaPendingSwap as { session_id?: string; source_amount?: string; wallet_address?: string } | undefined;
-    if (local?.session_id && !fulfilled.has(String(local.session_id))) return local;
+    const local = stored.yadaPendingSwap as PendingSwap | undefined;
+    if (local?.session_id && isHandled(local)) {
+      await chrome.storage.local.remove("yadaPendingSwap");
+      return null;
+    }
+    if (local?.session_id) return local;
     return null;
   }
-  const row = rows.find((item) => item.session_id) || null;
+  const row = rows.find((item) => item.session_id && !isHandled(item)) || null;
   if (!row) {
     await chrome.storage.local.remove("yadaPendingSwap");
     return null;
-  }
-  if (row.session_id && fulfilled.has(String(row.session_id))) {
-    fulfilled.delete(String(row.session_id));
-    await chrome.storage.local.set({ yadaFulfilledSwaps: [...fulfilled] });
   }
   await chrome.storage.local.set({ yadaPendingSwap: row });
   return row;
