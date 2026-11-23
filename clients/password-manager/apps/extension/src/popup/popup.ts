@@ -550,27 +550,6 @@ async function onrampOrigins(): Promise<string[]> {
   return [...out];
 }
 
-async function settleSwap(
-  sessionId: string | undefined,
-  status: "fulfilled" | "denied",
-  wallet?: string
-): Promise<void> {
-  if (!sessionId && !wallet) return;
-  const origin = (await swapOrigins())[0] || (await getActiveOrigin());
-  if (!origin) return;
-  await fetch(origin.replace(/\/+$/, "") + "/crypto-onramp/pending-swap", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId, status, wallet_address: wallet || "" }),
-  });
-  void chrome.action.setBadgeText({ text: "" });
-  const done = await chrome.storage.local.get("yadaFulfilledSwaps");
-  const ids = Array.isArray(done.yadaFulfilledSwaps) ? done.yadaFulfilledSwaps : [];
-  if (sessionId && !ids.includes(sessionId)) ids.push(sessionId);
-  await chrome.storage.local.set({ yadaFulfilledSwaps: ids });
-  await chrome.storage.local.remove("yadaPendingSwap");
-}
-
 async function swapOrigins(): Promise<string[]> {
   const out = new Set<string>();
   const add = (value: string | undefined) => {
@@ -597,7 +576,6 @@ async function loadPendingSwap(): Promise<{ session_id?: string; source_amount?:
   const username = (v.username || "").replace(/^@/, "");
   const wallet = baseReceiveAddress(v.mnemonic);
   const candidates = bases.length ? bases : [];
-  let last = "";
   const rows: { session_id?: string; source_amount?: string; wallet_address?: string }[] = [];
   for (const base of candidates) {
     const url =
@@ -608,15 +586,14 @@ async function loadPendingSwap(): Promise<{ session_id?: string; source_amount?:
       encodeURIComponent(wallet);
     try {
       const res = await fetch(url);
-      last = `${res.status} ${url}`;
       if (!res.ok) continue;
       const data = await res.json();
       if (data.swaps?.[0]) {
         rows.push(data.swaps[0]);
         await chrome.storage.local.set({ yadaOnrampOrigin: base.replace(/\/+$/, "") });
       }
-    } catch (e) {
-      last = `${e instanceof Error ? e.message : String(e)} ${url}`;
+    } catch {
+      continue;
     }
   }
   if (!rows.length) {

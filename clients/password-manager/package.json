@@ -1,7 +1,7 @@
 {
   "name": "@yadacoin/password-manager",
   "private": true,
-  "version": "0.1.19",
+  "version": "0.1.33",
   "description": "YadaCoin password manager \u2014 shared core, themed UI, browser extension, mobile shell",
   "workspaces": [
     "packages/*",

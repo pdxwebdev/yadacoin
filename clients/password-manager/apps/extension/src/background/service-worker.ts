@@ -151,7 +151,7 @@ async function refreshInception(
   return next;
 }
 
-const EXT_VERSION = "0.1.30";
+const EXT_VERSION = "0.1.33";
 
 function sameNode(a: string, b: string): boolean {
   return a.replace(/\/+$/, "").toLowerCase() === b.replace(/\/+$/, "").toLowerCase();
