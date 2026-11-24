@@ -97,7 +97,7 @@ fi
 
 for req in "$dest"/*/requirements.txt; do
   [ -f "$req" ] || continue
-  pip install -r "$req" --target "$deps"
+  pip install --upgrade -r "$req" --target "$deps"
 done
 
 exec "$@"

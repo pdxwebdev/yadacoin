@@ -24,3 +24,6 @@ config/pqr_llm_secrets.json
 config/local_node_*.json
 data/fileannouncement-paid/
 .node-dashboard-work/
+
+# Each app under clients/ is an independent Git repository
+clients/*/

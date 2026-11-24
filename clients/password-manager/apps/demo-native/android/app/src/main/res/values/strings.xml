@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Yada Auth Demo</string>
-    <string name="title_activity_main">Yada Auth Demo</string>
-    <string name="package_name">io.yadacoin.passwordrotation.demo</string>
-    <string name="custom_url_scheme">io.yadacoin.passwordrotation.demo</string>
-</resources>
