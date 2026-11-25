@@ -160,3 +160,42 @@ class TestHomeHandlerGet(WebHttpTestCase):
                 os.environ.pop("SECOND_FACTOR_FILE", None)
             else:
                 os.environ["SECOND_FACTOR_FILE"] = previous_file
+
+
+# ---------------------------------------------------------------------------
+# /yadacoinstatic/app assets are owned by the app plugin
+# ---------------------------------------------------------------------------
+
+
+class TestAppAssetsOwnedByPlugin(testing.AsyncHTTPTestCase):
+    def get_new_ioloop(self):
+        return tornado.ioloop.IOLoop()
+
+    def get_app(self):
+        from tornado.web import StaticFileHandler
+
+        from plugins.app.web import APP_STATIC_DIR
+
+        self.app_static_dir = APP_STATIC_DIR
+        static_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "static"
+        )
+        core_routes = [
+            (
+                r"/yadacoinstatic/(?!app/)(.*)",
+                StaticFileHandler,
+                {"path": static_path},
+            ),
+        ]
+        return Application(core_routes + WEB_HANDLERS)
+
+    def test_app_assets_are_served_from_the_plugin(self):
+        self.assertTrue(os.path.isdir(self.app_static_dir))
+        response = self.fetch("/yadacoinstatic/app/build/main.js")
+        self.assertEqual(response.code, 200)
+        with open(os.path.join(self.app_static_dir, "build", "main.js"), "rb") as fh:
+            self.assertEqual(response.body, fh.read())
+
+    def test_core_static_route_still_serves_other_assets(self):
+        response = self.fetch("/yadacoinstatic/peer.js")
+        self.assertEqual(response.code, 200)
