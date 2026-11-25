@@ -140,11 +140,8 @@ class RCPWebSocketServer(WebSocketHandler):
             self.close()
             return {}
 
-        # Auto-register password-auth presence for identity-bearing clients
-        try:
-            await self._bind_password_auth_presence()
-        except Exception:
-            pass
+        # Password-auth presence is NOT bound here. A public username_signature
+        # is replayable, so presence requires join_password_auth with a proof.
 
     async def _bind_password_auth_presence(self):
         if not self.peer or not self.peer.identity:
@@ -185,6 +182,42 @@ class RCPWebSocketServer(WebSocketHandler):
         except Exception:
             pass
 
+    async def _verified_password_auth_presence(self, params) -> bool:
+        """True only when the peer proves control of its on-chain identity key.
+
+        The claimed public_key must match the key announced on chain for the
+        username, and the signature must be fresh and unused.
+        """
+        from plugins.passwordrotation import auth_session as asess
+
+        ident = self.peer.identity if self.peer else None
+        if not ident:
+            return False
+        params = params or {}
+        username = (ident.username or "").strip()
+        signature = str(params.get("signature") or "")
+        try:
+            timestamp = int(params.get("timestamp"))
+        except (TypeError, ValueError):
+            return False
+        if not username or not signature:
+            return False
+        if abs(asess._now() - timestamp) > asess.PENDING_AUTH_WINDOW_SEC:
+            return False
+        onchain = await asess.resolve_identity(username)
+        if not onchain:
+            return False
+        chain_pub = (onchain.get("public_key") or "").strip().lower()
+        if not chain_pub or chain_pub != (ident.public_key or "").strip().lower():
+            return False
+        if not asess.verify_identity_signature(
+            public_key=chain_pub,
+            message=asess.password_auth_presence_message(username, timestamp),
+            signature_b64=signature,
+        ):
+            return False
+        return asess.consume_auth_proof(signature)
+
     async def join_password_auth(self, body):
         """Explicit password-app presence registration + pending drain."""
         if not self.peer or not self.peer.identity:
@@ -194,11 +227,18 @@ class RCPWebSocketServer(WebSocketHandler):
                 body=body,
             )
             return
+        from plugins.passwordrotation import auth_session as asess
+
+        if not await self._verified_password_auth_presence(body.get("params")):
+            await self.write_result(
+                "join_password_auth_confirm",
+                {"status": False, "message": "signed presence proof required"},
+                body=body,
+            )
+            return
         await self._bind_password_auth_presence()
         pending = []
         try:
-            from plugins.passwordrotation import auth_session as asess
-
             ident = self.peer.identity
             pkh = ""
             try:

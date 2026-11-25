@@ -71,6 +71,8 @@ class TestYadaPasswordSignin(unittest.TestCase):
             html = fh.read()
         self.assertIn("/password-rotation/auth-session", html)
         self.assertIn('id="signinUsername"', html)
+        self.assertIn("X-Password-Auth-RP-Token", html)
+        self.assertIn("yadaActiveAuthSession", html)
         self.assertNotIn("YADA_PASSWORD_SIGNIN", html)
 
     def test_redirect_uses_request_uri(self):
@@ -80,3 +82,54 @@ class TestYadaPasswordSignin(unittest.TestCase):
         url = handler.redirect.call_args[0][0]
         self.assertIn("purpose=file-announcements", url)
         self.assertIn("next=%2Ffile-announcements", url)
+
+    def test_rp_pages_send_read_token_and_mark_active_session(self):
+        root = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "..")
+        )
+        for rel in (
+            ("plugins", "passwordrotation", "templates", "password_harness.html"),
+            ("plugins", "operator", "static", "workflow.html"),
+        ):
+            path = os.path.join(root, *rel)
+            with open(path, encoding="utf-8") as fh:
+                html = fh.read()
+            self.assertIn("X-Password-Auth-RP-Token", html, path)
+            self.assertIn("yadaActiveAuthSession", html, path)
+            self.assertIn("verification_code", html, path)
+
+    def test_clients_require_browser_code(self):
+        root = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "..")
+        )
+        checks = (
+            (
+                os.path.join(
+                    root,
+                    "clients",
+                    "password-manager",
+                    "apps",
+                    "extension",
+                    "public",
+                    "popup.html",
+                ),
+                ("authCode", "6-digit code"),
+            ),
+            (
+                os.path.join(
+                    root,
+                    "clients",
+                    "password-manager",
+                    "apps",
+                    "password-native",
+                    "www",
+                    "index.html",
+                ),
+                ("reqCode", "requesting browser"),
+            ),
+        )
+        for path, needles in checks:
+            with open(path, encoding="utf-8") as fh:
+                html = fh.read()
+            for needle in needles:
+                self.assertIn(needle, html, path)

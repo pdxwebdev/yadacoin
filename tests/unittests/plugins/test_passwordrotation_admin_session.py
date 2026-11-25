@@ -83,40 +83,55 @@ class TestAdminSession(AsyncTestCase):
         await PasswordAdminSessionHandler.post(h)
         h.set_status.assert_called_with(401)
 
+    async def test_plaintext_password_refused(self):
+        h = self._handler(body=b'{"password":"nope"}')
+        await PasswordAdminSessionHandler.post(h)
+        h.set_status.assert_called_with(400)
+        h.issue_operator_session.assert_not_called()
+
     async def test_recent_tip_without_matching_identity_rejected(self):
-        h = self._handler()
+        h = self._handler(body=b'{"password_enc":"sealed"}')
         h.config.username = "nodeuser"
-        h.config.kel_manager = None
-        h.config.inception = None
-        h.config.mongo.async_db.key_event_log.find_one = AsyncMock(
-            return_value={
-                "counter": 2,
-                "timestamp": time.time(),
-                "password": {},
-                "inception_public_key_hash": "1ForeignInceptionXXXXXXXXXXXXXXX",
-            }
-        )
+        foreign_tip = {
+            "counter": 2,
+            "timestamp": time.time(),
+            "password": {},
+            "inception_public_key_hash": "1ForeignInceptionXXXXXXXXXXXXXXXXXXX",
+        }
         with patch(
+            "plugins.passwordrotation.handlers._open_signin_password",
+            AsyncMock(return_value="pw"),
+        ), patch(
+            "plugins.passwordrotation.handlers._admin_tip_candidates",
+            AsyncMock(return_value=[("local", foreign_tip)]),
+        ), patch(
             "plugins.passwordrotation.handlers.node_inception_pkh",
-            AsyncMock(return_value="1NodeInceptionXXXXXXXXXXXXXXXXXX"),
+            AsyncMock(return_value="1NodeInceptionXXXXXXXXXXXXXXXXXXX"),
+        ), patch(
+            "plugins.passwordrotation.handlers._verify_password",
+            return_value=True,
         ):
             await PasswordAdminSessionHandler.post(h)
         h.set_status.assert_called_with(403)
         h.issue_operator_session.assert_not_called()
 
     async def test_matching_identity_wrong_password_rejected(self):
-        h = self._handler(body=b'{"password":"nope"}')
-        h.config.mongo.async_db.key_event_log.find_one = AsyncMock(
-            return_value={
-                "counter": 2,
-                "timestamp": time.time(),
-                "inception_public_key_hash": "1NodeInceptionXXXXXXXXXXXXXXXXXX",
-                "password": {"prerotated_password_hash": "00" * 32},
-            }
-        )
+        h = self._handler(body=b'{"password_enc":"sealed"}')
+        node_tip = {
+            "counter": 2,
+            "timestamp": time.time(),
+            "inception_public_key_hash": "1NodeInceptionXXXXXXXXXXXXXXXXXXX",
+            "password": {"prerotated_password_hash": "00" * 32},
+        }
         with patch(
+            "plugins.passwordrotation.handlers._open_signin_password",
+            AsyncMock(return_value="nope"),
+        ), patch(
+            "plugins.passwordrotation.handlers._admin_tip_candidates",
+            AsyncMock(return_value=[("local", node_tip)]),
+        ), patch(
             "plugins.passwordrotation.handlers.node_inception_pkh",
-            AsyncMock(return_value="1NodeInceptionXXXXXXXXXXXXXXXXXX"),
+            AsyncMock(return_value="1NodeInceptionXXXXXXXXXXXXXXXXXXX"),
         ), patch(
             "plugins.passwordrotation.handlers._verify_password",
             return_value=False,
