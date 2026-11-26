@@ -274,6 +274,24 @@ class TestIdentityInceptionStatusHandler(ExtrasHttpTestCase):
         self.assertTrue(data["has_kel"])
         self.assertGreaterEqual(data["kel_depth"], 1)
 
+    def test_onchain_only_flag_is_forwarded(self):
+        pubkey = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+        mock_item = MagicMock()
+        mock_item.txn = MagicMock(prev_public_key_hash="")
+        mock_item.to_dict = MagicMock(
+            return_value={"prev_public_key_hash": "", "public_key": pubkey}
+        )
+        build = AsyncMock(return_value=[mock_item])
+        with patch(
+            "plugins.kel.keyeventlog.KeyEventLog.build_from_public_key",
+            new=build,
+        ):
+            response = self.fetch(
+                f"/identity-inception-status?public_key={pubkey}&onchain_only=1"
+            )
+        self.assertEqual(response.code, 200)
+        build.assert_awaited_once_with(pubkey, onchain_only=True)
+
     def test_incepted_via_username_match(self):
         pubkey = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
         with patch(
@@ -350,6 +368,17 @@ class TestKELHandler(ExtrasHttpTestCase):
         data = json.loads(response.body)
         self.assertEqual(len(data["key_event_log"]), 1)
         self.assertTrue(data["key_event_log"][0]["mempool"])
+
+    def test_onchain_only_flag_is_forwarded(self):
+        pubkey = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+        build = AsyncMock(return_value=[])
+        with patch(
+            "plugins.kel.keyeventlog.KeyEventLog.build_from_public_key",
+            new=build,
+        ):
+            response = self.fetch(f"/key-event-log?public_key={pubkey}&onchain_only=1")
+        self.assertEqual(response.code, 200)
+        build.assert_awaited_once_with(pubkey, onchain_only=True)
 
 
 # ---------------------------------------------------------------------------

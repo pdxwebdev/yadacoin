@@ -114,6 +114,7 @@ class TestExplorerGetBalance(ExplorerHttpTestCase):
         data = json.loads(response.body)
         self.assertIn("balance", data)
         self.assertEqual(data["balance"], "5.00000000")
+        self.config.BU.get_wallet_balance.assert_awaited_once_with("1TestAddr")
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +258,20 @@ class TestExplorerSearchHandler(ExplorerHttpTestCase):
         data = json.loads(response.body)
         self.assertIn("balance", data)
         self.assertEqual(data["resultType"], "txn_outputs_to")
+
+    def test_kel_balance_without_direct_outputs(self):
+        address = "177vUZ671nuEgUemQ843FzWEGNzva1GQZp"
+        self.mock_db.blocks.count_documents = AsyncMock(return_value=0)
+        self.config.BU.get_wallet_balance = AsyncMock(return_value=5.04201681)
+        response = self.fetch(
+            f"/explorer-search?term={address}&result_type=get_wallet_balance"
+        )
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertEqual(data["balance"], "5.04201681")
+        self.assertEqual(data["resultType"], "txn_outputs_to")
+        self.assertEqual(data["result"], [])
+        self.config.BU.get_wallet_balance.assert_awaited_once_with(address)
 
 
 def make_count_side_effect(target_key, exact=True):
