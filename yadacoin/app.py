@@ -1215,11 +1215,11 @@ class NodeApplication(Application):
         env_dir = os.environ.get("YADA_PLUGINS_DIR")
         if env_dir:
             search_dirs.append(env_dir)
-        elif path.isdir("/plugins"):
-            search_dirs.append("/plugins")
         repo_dir = path.join(path.dirname(__file__), "..", "plugins")
         if path.isdir(repo_dir):
             search_dirs.append(repo_dir)
+        if not env_dir and path.isdir("/plugins"):
+            search_dirs.append("/plugins")
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
             search_dirs.insert(0, path.join(meipass, "plugins"))

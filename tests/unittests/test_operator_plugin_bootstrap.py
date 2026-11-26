@@ -457,3 +457,59 @@ class StartupBannerTest(unittest.TestCase):
         out = self._banner(app)
         self.assertNotIn("/operator/setup?code=", out)
         self.assertIn("OPERATOR SETUP UNAVAILABLE", out)
+
+
+class PluginSearchOrderTest(unittest.TestCase):
+    def setUp(self):
+        import yadacoin.app as app_module
+
+        self.repo_plugins = os.path.abspath(
+            os.path.join(os.path.dirname(app_module.__file__), "..", "plugins")
+        )
+
+    def _search(self, isdir, env_dir=None):
+        app = make_app()
+        original = list(sys.path)
+        self.addCleanup(lambda: sys.path.__setitem__(slice(None), original))
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("YADA_PLUGINS_DIR", None)
+            if env_dir is not None:
+                os.environ["YADA_PLUGINS_DIR"] = env_dir
+            with mock.patch("yadacoin.app.path.isdir", side_effect=isdir):
+                return app._plugin_search_dirs()
+
+    def _only_repo_plugins(self, candidate):
+        return os.path.basename(os.path.normpath(candidate)) == "plugins"
+
+    def test_shipped_plugins_come_before_incidental_plugins_dir(self):
+        def isdir(candidate):
+            return candidate == "/plugins" or self._only_repo_plugins(candidate)
+
+        dirs = self._search(isdir)
+        self.assertEqual(dirs[0], self.repo_plugins)
+        self.assertEqual(dirs[1], "/plugins")
+
+    def test_explicit_plugins_dir_still_wins(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+
+        def isdir(candidate):
+            return candidate == root or self._only_repo_plugins(candidate)
+
+        dirs = self._search(isdir, env_dir=root)
+        self.assertEqual(dirs[0], root)
+        self.assertEqual(dirs[1], self.repo_plugins)
+
+    def test_incidental_plugins_dir_still_contributes_extra_plugins(self):
+        def isdir(candidate):
+            return candidate == "/plugins" or self._only_repo_plugins(candidate)
+
+        dirs = self._search(isdir)
+        self.assertEqual(dirs, [self.repo_plugins, "/plugins"])
+
+    def test_plugins_dir_is_skipped_when_absent(self):
+        def isdir(candidate):
+            return candidate != "/plugins" and self._only_repo_plugins(candidate)
+
+        dirs = self._search(isdir)
+        self.assertEqual(dirs, [self.repo_plugins])
