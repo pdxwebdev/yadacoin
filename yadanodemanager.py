@@ -367,7 +367,6 @@ class YadaNodeManager:
                 print(f"Warning: plugin {name} install failed: {e}")
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
-        self._install_recovered_plugins(dest_root)
         self.install_plugin_requirements()
 
     def install_plugin_requirements(self):
@@ -463,48 +462,7 @@ class YadaNodeManager:
             return False
         finally:
             subprocess.run(["docker", "rm", "-f", name], stderr=subprocess.DEVNULL)
-        if copied:
-            self._install_recovered_plugins(dest)
         return copied
-
-    def _install_recovered_plugins(self, dest):
-        try:
-            cid = (
-                subprocess.check_output(
-                    ["docker", "ps", "-q", "-f", f"name={self.service_name}"]
-                )
-                .decode()
-                .strip()
-                .splitlines()
-            )
-        except Exception:
-            return
-        if not cid:
-            return
-        cid = cid[0]
-        installed = False
-        for mount in ("/app/plugins", "/plugins"):
-            for plugin_name in os.listdir(dest):
-                src = os.path.join(dest, plugin_name)
-                if not os.path.isdir(src):
-                    continue
-                exists = subprocess.run(
-                    ["docker", "exec", cid, "test", "-e", f"{mount}/{plugin_name}"],
-                    stderr=subprocess.DEVNULL,
-                )
-                if exists.returncode == 0:
-                    continue
-                subprocess.run(
-                    ["docker", "exec", cid, "mkdir", "-p", mount],
-                    stderr=subprocess.DEVNULL,
-                )
-                result = subprocess.run(
-                    ["docker", "cp", src, f"{cid}:{mount}/{plugin_name}"],
-                    stderr=subprocess.DEVNULL,
-                )
-                installed = installed or result.returncode == 0
-        if installed:
-            subprocess.run(["docker", "restart", cid], stderr=subprocess.DEVNULL)
 
     def pull_and_restart(self):
         self.recover_legacy_plugins()
@@ -522,7 +480,6 @@ class YadaNodeManager:
             self.compose_cmd + ["up", "-d", self.service_name],
             cwd=self.repo_path,
         )
-        self._install_recovered_plugins(os.path.join(self.repo_path, "plugins"))
         self.install_plugin_requirements()
         subprocess.run(
             ["docker", "image", "prune", "-f"],
@@ -535,7 +492,6 @@ class YadaNodeManager:
             self.compose_cmd + ["up", "-d", self.service_name],
             cwd=self.repo_path,
         )
-        self._install_recovered_plugins(os.path.join(self.repo_path, "plugins"))
         self.install_plugin_requirements()
 
     def is_mongodump_directory_present(self):
