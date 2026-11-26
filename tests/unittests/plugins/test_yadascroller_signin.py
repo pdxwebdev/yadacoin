@@ -46,3 +46,18 @@ class TestYadaScrollerSignin(unittest.TestCase):
         self.assertIn("YADA_PASSWORD_CLIENT", src)
         self.assertIn("YADA_PASSWORD_CLIENT_RESULT", src)
         self.assertIn("syncExtensionUsername", src)
+
+    def test_poll_sends_rp_token(self):
+        src = self._app_js()
+        self.assertIn("X-Password-Auth-RP-Token", src)
+        self.assertIn("created.rp_token", src)
+
+    def test_signin_persists_active_session_for_extension(self):
+        src = self._app_js()
+        self.assertIn("yadaActiveAuthSession", src)
+        self.assertIn("sessionStorage.setItem", src)
+
+    def test_signin_shows_verification_code(self):
+        src = self._app_js()
+        self.assertIn("created.verification_code", src)
+        self.assertIn("showSigninCode", src)

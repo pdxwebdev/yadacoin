@@ -414,6 +414,44 @@ class TestCreateReturnsReadToken(AsyncTestCase):
             inserted.get("verification_code"), view.get("verification_code")
         )
 
+    async def test_loopback_site_uses_local_home_even_with_remote_route(self):
+        h = _handler(
+            PasswordAuthSessionCreateHandler,
+            body={
+                "username": "alice",
+                "site": "http://localhost:8111",
+                "action": "client",
+            },
+        )
+        h.request.host = "localhost:8111"
+        route = {
+            "status": True,
+            "public_key": "ab" * 33,
+            "username_signature": "sig",
+            "node_http_base": "https://serviceprovider.example",
+            "is_local": False,
+        }
+        with patch.object(asess, "check_rate_limits", return_value=None), patch.object(
+            asess, "resolve_password_route", AsyncMock(return_value=route)
+        ), patch.object(asess, "_pkh_from_pubhex", return_value="pkh"), patch.object(
+            asess, "this_node_http_base", return_value="http://localhost:8111"
+        ), patch.object(
+            asess, "issue_signin_bind", AsyncMock(return_value="bind")
+        ), patch.object(
+            asess, "insert_session", AsyncMock()
+        ) as insert, patch.object(
+            asess, "push_password_auth_request", AsyncMock(return_value=True)
+        ) as push, patch.object(
+            asess, "_now", return_value=time.time()
+        ):
+            await PasswordAuthSessionCreateHandler.post(h)
+        view = h.render_as_json.call_args[0][0]
+        self.assertEqual(view.get("home_node"), "http://localhost:8111")
+        self.assertNotIn("proxied", view)
+        inserted = insert.call_args[0][0]
+        self.assertEqual(inserted.get("home_node"), "http://localhost:8111")
+        push.assert_awaited_once()
+
 
 class TestWebsocketPresenceProof(AsyncTestCase):
     def _signed(self, priv, username, ts):
