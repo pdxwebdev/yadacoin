@@ -31,6 +31,7 @@ class YadaNodeManager:
         self.service_name = "yada-node"
         self.update_interval_seconds = 3600  # how often to check for git updates
         self.health_check_interval_seconds = 30  # how often to check container health
+        self.plugin_update_interval_seconds = 3600  # how often to check plugin tags
         self.compose_cmd = _detect_compose_cmd()
 
     def stop_previous_containers(self):
@@ -309,23 +310,69 @@ class YadaNodeManager:
                 stderr=subprocess.DEVNULL,
             )
             if fetched.returncode == 0:
-                subprocess.run(
+                if self._current_plugin_tag(dest) == tag:
+                    return False
+                checked_out = subprocess.run(
                     ["git", "-C", dest, "checkout", "--detach", tag],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-                return
+                return checked_out.returncode == 0
         fetched = subprocess.run(
             ["git", "-C", dest, "fetch", "--depth", "1", "origin"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         if fetched.returncode == 0:
-            subprocess.run(
+            checked_out = subprocess.run(
                 ["git", "-C", dest, "checkout", "--detach", "FETCH_HEAD"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
+            return checked_out.returncode == 0
+        return False
+
+    def _current_plugin_tag(self, dest):
+        try:
+            return (
+                subprocess.check_output(
+                    ["git", "-C", dest, "describe", "--tags", "--exact-match", "HEAD"],
+                    stderr=subprocess.DEVNULL,
+                )
+                .decode()
+                .strip()
+            )
+        except Exception:
+            return None
+
+    def sync_plugin_checkouts(self):
+        """Move catalog plugin checkouts to their latest published tags.
+
+        Returns True when a checkout changed, so the caller can restart the
+        node to load the new plugin code without a main repo release.
+        """
+        dest_root = os.path.join(self.repo_path, "plugins")
+        if not os.path.isdir(dest_root):
+            return False
+        changed = False
+        for name, url in self._plugin_catalog():
+            dest = os.path.join(dest_root, name)
+            if not self._is_plugin_checkout(dest):
+                continue
+            try:
+                if self._update_plugin_checkout(dest, url):
+                    print(f"updated plugin {name}")
+                    changed = True
+            except Exception as e:
+                print(f"Warning: plugin update failed for {name}: {e}")
+        return changed
+
+    def restart_node(self):
+        """Restart the node container so new plugin code is loaded."""
+        subprocess.run(
+            self.compose_cmd + ["restart", self.service_name],
+            cwd=self.repo_path,
+        )
 
     def ensure_plugin_repos(self):
         """Install every catalog plugin as a git checkout.
@@ -519,6 +566,7 @@ class YadaNodeManager:
             self.start_restore_service()  # Start the restore service if directory exists
             print(f"Restoring from bootstrap data")
         last_update_check = 0
+        last_plugin_check = 0
         while True:
             if not self.ensure_container_running():
                 print(
@@ -541,6 +589,15 @@ class YadaNodeManager:
                         )
                     )
                 last_update_check = time.time()
+
+            # Plugin tags ship without a main repo release. Check them on
+            # their own interval and restart only when a checkout moved.
+            if time.time() - last_plugin_check >= self.plugin_update_interval_seconds:
+                if self.ensure_container_running() and self.sync_plugin_checkouts():
+                    print("Plugin updates detected. Restarting container...")
+                    self.restart_node()
+                    self.install_plugin_requirements()
+                last_plugin_check = time.time()
 
             time.sleep(self.health_check_interval_seconds)
 
