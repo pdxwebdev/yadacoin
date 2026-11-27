@@ -238,5 +238,60 @@ class TestWebSocketHandlers(unittest.TestCase):
         self.assertIs(handler_map["/websocket"], RCPWebSocketServer)
 
 
+class TestVerifiedPasswordAuthPresence(unittest.TestCase):
+    """Rotated identities present a tip key, not the inception key."""
+
+    def _make_server(self, public_key):
+        from yadacoin.websocket.base import RCPWebSocketServer
+
+        server = RCPWebSocketServer.__new__(RCPWebSocketServer)
+        server.peer = MagicMock()
+        server.peer.identity = MagicMock()
+        server.peer.identity.username = "local_node_B"
+        server.peer.identity.public_key = public_key
+        server.peer.identity.username_signature = "sig"
+        return server
+
+    @patch("plugins.passwordrotation.auth_session.consume_auth_proof")
+    @patch("plugins.passwordrotation.auth_session.verify_identity_signature")
+    @patch("plugins.passwordrotation.auth_session.resolve_identity")
+    @patch("plugins.passwordrotation.auth_session._now")
+    def test_accepts_rotated_tip_key(
+        self, mock_now, mock_resolve, mock_verify, mock_consume
+    ):
+        server = self._make_server("03" + "ab" * 32)
+        mock_now.return_value = 1000.0
+        mock_resolve.return_value = {"public_key": "03" + "cd" * 32}
+        mock_verify.return_value = True
+        mock_consume.return_value = True
+        result = asyncio.run(
+            server._verified_password_auth_presence(
+                {"timestamp": 1000, "signature": "sig"}
+            )
+        )
+        self.assertTrue(result)
+        mock_verify.assert_called_once()
+        self.assertEqual(mock_verify.call_args.kwargs["public_key"], "03" + "cd" * 32)
+
+    @patch("plugins.passwordrotation.auth_session.consume_auth_proof")
+    @patch("plugins.passwordrotation.auth_session.verify_identity_signature")
+    @patch("plugins.passwordrotation.auth_session.resolve_identity")
+    @patch("plugins.passwordrotation.auth_session._now")
+    def test_rejects_bad_presence_signature(
+        self, mock_now, mock_resolve, mock_verify, mock_consume
+    ):
+        server = self._make_server("03" + "ab" * 32)
+        mock_now.return_value = 1000.0
+        mock_resolve.return_value = {"public_key": "03" + "cd" * 32}
+        mock_verify.return_value = False
+        result = asyncio.run(
+            server._verified_password_auth_presence(
+                {"timestamp": 1000, "signature": "sig"}
+            )
+        )
+        self.assertFalse(result)
+        mock_consume.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)

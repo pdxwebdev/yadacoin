@@ -185,8 +185,11 @@ class RCPWebSocketServer(WebSocketHandler):
     async def _verified_password_auth_presence(self, params) -> bool:
         """True only when the peer proves control of its on-chain identity key.
 
-        The claimed public_key must match the key announced on chain for the
-        username, and the signature must be fresh and unused.
+        The peer presents its current tip key on the WS, which differs from the
+        on-chain inception key once the identity has rotated. The fresh presence
+        proof below is signed by the inception key, so it is what binds the
+        stream to the announced identity; the presented tip key is not required
+        to equal the inception key.
         """
         from plugins.passwordrotation import auth_session as asess
 
@@ -208,7 +211,7 @@ class RCPWebSocketServer(WebSocketHandler):
         if not onchain:
             return False
         chain_pub = (onchain.get("public_key") or "").strip().lower()
-        if not chain_pub or chain_pub != (ident.public_key or "").strip().lower():
+        if not chain_pub:
             return False
         if not asess.verify_identity_signature(
             public_key=chain_pub,
