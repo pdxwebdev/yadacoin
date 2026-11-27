@@ -18,12 +18,47 @@ import pytest
 
 import yadacoin.core.config as core_config
 
-# Add the workspace root to sys.path so yadacoin module can be imported
-workspace_root = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+# Add the workspace root to sys.path so yadacoin and plugin tests can be
+# imported regardless of which test directory pytest is pointed at.
+workspace_root = os.path.dirname(os.path.abspath(__file__))
 if workspace_root not in sys.path:
     sys.path.insert(0, workspace_root)
+
+# pytest + tornado.testing.AsyncHTTPTestCase incompatibility fix.
+#
+# pytest discovers test classes by instantiating them with no arguments, which
+# defaults to methodName='runTest'.  AsyncHTTPTestCase's __init__ calls
+# setattr(self, methodName, ...) and raises AttributeError when there is no
+# 'runTest' method on the class.
+#
+# The standard pytest unittest integration handles this by using
+# UnitTestCase instead of the generic Class collector when it detects a
+# unittest.TestCase subclass.  However, tornado.testing.AsyncHTTPTestCase
+# overrides __init__ in a way that triggers the error before pytest's
+# unittest collector can intercept it.
+#
+# Fix: patch tornado.testing.AsyncHTTPTestCase.__init__ so that a missing
+# 'runTest' method doesn't raise, allowing pytest's unittest collector to
+# proceed normally and discover all test_ methods on the class.
+
+import tornado.testing
+
+
+def _make_patched_init(original_init):
+    def _patched_init(self, methodName="runTest", **kwargs):
+        if methodName == "runTest" and not hasattr(self, "runTest"):
+            self.runTest = lambda: None
+        original_init(self, methodName=methodName, **kwargs)
+
+    return _patched_init
+
+
+tornado.testing.AsyncTestCase.__init__ = _make_patched_init(
+    tornado.testing.AsyncTestCase.__init__
+)
+tornado.testing.AsyncHTTPTestCase.__init__ = _make_patched_init(
+    tornado.testing.AsyncHTTPTestCase.__init__
+)
 
 
 @pytest.fixture(scope="session", autouse=True)

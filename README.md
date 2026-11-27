@@ -715,9 +715,23 @@ pytest tests/unittests/ -q
 pytest tests/unittests/ -q --tb=no
 ```
 
+#### Run Plugin Tests
+
+HTTP handler and plugin unit tests live with their plugin under
+`plugins/<plugin>/tests/`. Run them from the project root so the shared
+`conftest.py` can initialize the test config:
+
+```bash
+# Run one plugin's tests
+pytest plugins/explorerapi/tests -v
+
+# Run every plugin test suite
+pytest plugins/*/tests -q
+```
+
 ### Test Organization
 
-Tests are organized in the `tests/unittests/` directory:
+Core tests are organized in the `tests/unittests/` directory:
 
 - `core/` - Tests for core blockchain functionality
   - `test_block.py` - Block creation, validation, and hashing
@@ -733,17 +747,25 @@ Tests are organized in the `tests/unittests/` directory:
 - `socket/` - WebSocket and networking tests
 - `config/` - Test configuration files
 
+HTTP handler and plugin unit tests are colocated with their plugin in
+`plugins/<plugin>/tests/`. Each plugin is an independent repository, so
+commit its tests there rather than in the host repository.
+
 ### Test Configuration
 
 The test configuration is specified in `pytest.ini` at the project root. Key settings:
 
 - **Test Discovery**: Follows pytest conventions (`test_*.py` files, `Test*` classes, `test_*` methods)
 - **Async Support**: Tests use `IsolatedAsyncioTestCase` for async/await testing
-- **Path Setup**: `conftest.py` automatically adds the workspace root to Python path for proper imports
+- **Path Setup**: the root `conftest.py` adds the workspace root to `sys.path`, initializes the shared `Config` singleton, and patches Tornado's `AsyncHTTPTestCase` for pytest
 
 ### Writing New Tests
 
-New tests should inherit from `AsyncTestCase` defined in `test_setup.py`:
+Core tests belong in `tests/unittests/`. Tests for a plugin or its HTTP
+handlers belong in that plugin's own `tests/` directory
+(`plugins/<plugin>/tests/test_*.py`) and should be committed with the plugin
+repository. New async tests should inherit from `AsyncTestCase` defined in
+`test_setup.py`:
 
 ```python
 from tests.unittests.test_setup import AsyncTestCase
